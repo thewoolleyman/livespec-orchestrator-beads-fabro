@@ -225,8 +225,8 @@ class ShellBeadsClient:
         self._config = config
 
     def _build_argv(self, *, verb_args: list[str]) -> list[str]:
-        """Compose `<bd_path> <verb_args...>` with no connection flags."""
-        return [self._config.bd_path, *verb_args]
+        """Compose the target wrapper and `<bd_path> <verb_args...>` command."""
+        return [*self._config.credential_wrapper, self._config.bd_path, *verb_args]
 
     def _run_json(self, *, verb_args: list[str]) -> Any:
         """Run a read verb and parse its `--json` stdout into a Python value."""

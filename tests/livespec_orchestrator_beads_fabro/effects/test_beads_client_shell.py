@@ -77,7 +77,9 @@ def test_raise_for_status_nonzero_keeps_typed_error_without_warning(
     assert caplog.messages == []
 
 
-def _tenant_config(*, repo_root: Path, tenant: str = "tenant-db") -> StoreConfig:
+def _tenant_config(
+    *, repo_root: Path, tenant: str = "tenant-db", credential_wrapper: tuple[str, ...] = ()
+) -> StoreConfig:
     return StoreConfig(
         tenant=tenant,
         prefix="td",
@@ -85,6 +87,7 @@ def _tenant_config(*, repo_root: Path, tenant: str = "tenant-db") -> StoreConfig
         database=tenant,
         bd_path="/nonexistent/bd",
         repo_root=repo_root,
+        credential_wrapper=credential_wrapper,
     )
 
 
@@ -168,6 +171,44 @@ def test_run_void_surfaces_zero_exit_stderr(
     assert caplog.records[0].bd_argv == ["/nonexistent/bd", "comment", "li-a", "body"]
     assert caplog.records[0].bd_tenant == "tenant-db"
     assert caplog.records[0].bd_stderr == "synthetic void-path warning"
+
+
+def test_shell_uses_the_target_wrapper_for_preflight_and_bd_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root, _ = _server_mode_repo(tmp_path=tmp_path)
+    _ = (repo_root / ".beads" / "config.yaml").write_text("dolt.mode: server\n", encoding="utf-8")
+    wrapper = tmp_path / "with-target-tenant-env.sh"
+    client = ShellBeadsClient(
+        config=_tenant_config(
+            repo_root=repo_root,
+            credential_wrapper=(str(wrapper), "--"),
+        )
+    )
+    calls: list[tuple[list[str], Path]] = []
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        cwd = kwargs["cwd"]
+        assert isinstance(cwd, Path)
+        calls.append((argv, cwd))
+        if argv[-3:-1] == ["config", "get"]:
+            return subprocess.CompletedProcess(
+                args=argv, returncode=0, stdout="tenant-db\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout="[]\n", stderr="")
+
+    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
+    _ = _tmp_xdg_cache_dir(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setattr(shell.subprocess, "run", run)
+    shell.reset_tenant_verification_memo()
+
+    assert client._run_json(verb_args=["list", "--json"]) == []  # noqa: SLF001
+
+    assert calls == [
+        ([str(wrapper), "--", "/nonexistent/bd", "config", "get", "dolt.server-user"], repo_root),
+        ([str(wrapper), "--", "/nonexistent/bd", "config", "get", "dolt.database"], repo_root),
+        ([str(wrapper), "--", "/nonexistent/bd", "list", "--json"], repo_root),
+    ]
 
 
 def _tmp_xdg_cache_dir(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:

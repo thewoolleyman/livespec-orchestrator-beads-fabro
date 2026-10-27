@@ -2335,5 +2335,45 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-record-binding (v230), and the owning work-item bd-ib-poh6jg writes the binding line through the posting primitive, selects records by binding with the legacy every-dispatch match, adds the unbindable refusal and the per-record bind verdicts, together with the test that binds this entry.",
     "work_item": "bd-ib-poh6jg"
+  },
+  {
+    "heading": "## Scenario 253 \u2014 A green aggregate on a tree carries to a push of the same tree, and a push of any other tree runs the gate",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal green-verdict-carries-to-the-push, and the owning work-item bd-ib-n4twqd records the green verdict on a skipping aggregate and honours it at publish_draft's pre-push, together with the test that binds this entry.",
+    "work_item": "bd-ib-n4twqd"
+  },
+  {
+    "heading": "## Scenario 254 \u2014 The check aggregate runs its independent targets beside the pytest lane and still reports and fails as the serial loop did",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal check-aggregate-runs-targets-concurrently, and the owning work-item bd-ib-6zy3zd makes dev-tooling/just-check.sh run its independent targets concurrently, together with the test that binds this entry.",
+    "work_item": "bd-ib-6zy3zd"
+  },
+  {
+    "heading": "## Scenario 255 \u2014 A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal in-turn-commits-run-the-affected-tests-gate, and the owning work-item bd-ib-72hvx5 makes the commit hook of implement and review_fix turns run the affected-tests gate with a full-aggregate fallback, together with the test that binds this entry.",
+    "work_item": "bd-ib-72hvx5"
+  },
+  {
+    "heading": "## Scenario 256 \u2014 A publication that already landed is finished at publish_draft, not a failure",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal landed-publication-is-finished-at-publish, and the owning work-item bd-ib-weje2m adds the landed-publication check to publish_draft beside pr_refresh's, together with the test that binds this entry.",
+    "work_item": "bd-ib-weje2m"
+  },
+  {
+    "heading": "## Scenario 257 \u2014 A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-only-resume-of-a-merged-pull-request, and the owning work-item bd-ib-opd3hq builds the proof-only resume arm on a merged pull request, together with the test that binds this entry.",
+    "work_item": "bd-ib-opd3hq"
   }
 ]

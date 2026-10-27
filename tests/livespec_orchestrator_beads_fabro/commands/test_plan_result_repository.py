@@ -146,6 +146,35 @@ def test_the_connection_is_resolved_from_the_target_repositorys_own_clone(
     assert config.tenant == "sib"
 
 
+def test_the_connection_carries_the_target_repositories_declared_credential_wrapper(
+    tmp_path: Path,
+) -> None:
+    """A cross-tenant result read must re-exec through the target's wrapper.
+
+    The invoking plan process may hold a family password, while this sibling's
+    tenant accepts only the password its committed wrapper injects. Carrying the
+    prefix on the connection descriptor lets every `bd` read from this result
+    reader use the target's credential seam without changing unwrapped callers.
+    """
+    sibling = tmp_path / "sibling"
+    sibling.mkdir()
+    wrapper = sibling / "with-sibling-env.sh"
+    _ = (sibling / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "credential_wrapper": [str(wrapper), "--"],
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"prefix": "sib", "tenant": "sib"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = result_store_config(repository=ResultRepository(name="sibling", clone=sibling))
+    assert config is not None
+    assert getattr(config, "credential_wrapper", ()) == (str(wrapper), "--")
+
+
 def test_an_unreadable_target_configuration_yields_no_connection(tmp_path: Path) -> None:
     """A repository whose configuration declares no create-prefix is unreadable.
 

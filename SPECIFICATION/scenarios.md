@@ -4923,7 +4923,7 @@ Feature: A resume never continues from a state the records do not describe
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists, naming the pull request state and a plain dispatch as the remedy
   Scenario: The pull request is merged
-    Given an item whose earlier run's pull request is merged
+    Given an item whose earlier run's pull request is merged, and that is not parked in acceptance on its proof evidence leg
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists, naming the pull request state and reconcile-merged as the remedy
     And reconcile-merged for the item still requires that real merge
@@ -7615,6 +7615,44 @@ Feature: An agent stage does not act on instructions its stage prompt never gave
     Given the implement, fix and review_fix prompts of the released implement-work-item workflow
     When each prompt is read
     Then each states that the stage prompt is the turn's only instruction, that the turn never pushes or publishes, and that commits are ordinary git commits through the repository hooks unless the stage prompt names another mechanism
+
+  Scenario: An agent stage's publication attempt is refused mechanically
+    Given an agent stage of a run, whichever node it is
+    When its agent runs git push to origin, gh pr create, gh pr ready, gh pr merge, gh pr edit or a merge through gh api
+    Then the action exits non-zero printing LIVESPEC_AGENT_PUBLICATION_DENIED with the stage and the action
+    And nothing reaches origin or the forge
+
+  Scenario: An agent stage holds no credential that can publish
+    Given an agent stage of a run, whichever node it is
+    When its agent searches its environment, files and processes for a forge token or App key and attempts a push or a merge with a raw git command or a direct API request
+    Then it finds no publication-capable credential and no key that mints one
+    And the attempt fails without changing origin or the run's pull request
+
+  Scenario: The broker cannot be steered into publishing
+    Given an agent stage that asks the proof broker to merge, ready or edit the run's pull request, or claims to be the pr stage
+    When the broker handles the request
+    Then the broker refuses it, because it performs only the new comments the stage's contract requires on the run's pull request and proof asset uploads, for the stage the workflow launched
+
+  Scenario: A planted hook cannot publish with a publication stage's credential
+    Given an agent stage that changed the repository's pre-push hook to merge the run's pull request
+    When publish_draft pushes the run's publish branch
+    Then the hook runs without the credential and its merge attempt fails
+    And the pull request is not merged
+
+  Scenario: An agent stage still posts its proof records
+    Given a proof_verify turn of a run
+    When its agent posts a Proof of Done record through the posting primitive and uploads its proof assets through the proof asset store
+    Then the broker posts the record on the run's pull request and uploads the assets
+
+  Scenario: The review stage still posts its findings record
+    Given a review turn of a run
+    When its agent posts its findings record as a comment on the run's pull request
+    Then the broker posts the comment, and the turn's publication actions remain refused
+
+  Scenario: The scripted publication stages still publish
+    Given a run reaching publish_draft, pr_refresh and pr
+    When each stage pushes, opens, readies or arms the run's pull request as specified
+    Then no LIVESPEC_AGENT_PUBLICATION_DENIED refusal is raised
 ```
 
 ## Scenario 203 — An unpinned dispatch goes to the least-utilized declared factory that has a free scheduler slot
@@ -9973,4 +10011,178 @@ Feature: A Proof of Done record is mechanically linked to the item it proves
     When the acceptance pass grades the item
     Then the record is reported stale-head and is not evidence
     And each factory_captured assertion is UNOBSERVED
+```
+
+## Scenario 253 — A green aggregate on a tree carries to a push of the same tree, and a push of any other tree runs the gate
+
+```gherkin
+Feature: A push of a tree the aggregate just passed does not run the aggregate again
+  As the operator of a factory
+  I want publish_draft to reuse the janitor's green verdict on the same tree
+  So that a run does not pay a second full check aggregate for bytes already checked
+
+  Scenario: A janitor pass that skipped targets carries to a push of the same tree
+    Given the just check aggregate passed on a tree while skipping a declared target
+    When publish_draft pushes a commit whose tree is byte-identical to that tree with a clean worktree
+    Then the pre-push gate honours the recorded green verdict and does not run the tree-pure members again
+    And it prints one line naming the honoured verdict and the skipped target
+
+  Scenario: A member that reads outside the tree still runs on a byte-identical push
+    Given the just check aggregate passed on a tree and recorded a green verdict
+    And state outside the tree that a pre-push member reads has since changed so that member now fails
+    When a commit whose tree is byte-identical to that tree is pushed with a clean worktree
+    Then the pre-push gate runs that member and refuses the push
+
+  Scenario: A push of a different tree runs the full gate
+    Given the just check aggregate passed on a tree
+    When publish_draft refreshes onto a moved default branch and pushes a commit whose tree differs
+    Then the pre-push gate runs the full pre-push gate
+
+  Scenario: No flag or variable reaches the verdict skip
+    Given no recorded green verdict for the tree being pushed
+    When a push sets an environment variable or passes a flag
+    Then the pre-push gate runs the full pre-push gate
+```
+
+## Scenario 254 — The check aggregate runs its independent targets beside the pytest lane and still reports and fails as the serial loop did
+
+```gherkin
+Feature: The check aggregate does not wait for the pytest lane to run its independent targets
+  As the operator of a factory
+  I want lint, types and static checks to run beside the pytest lane
+  So that a check pass costs about as long as its longest lane rather than the sum of every target
+
+  Scenario: Independent targets run beside a single pytest lane
+    Given LIVESPEC_TEST_PARALLELISM is 4
+    When the just check aggregate runs
+    Then the pytest lane runs once with four workers, with check-coverage after check-per-file-coverage and no overlapping test-suite runs
+    And the lint, type and static targets run while the pytest lane is running
+
+  Scenario: A failing target still fails the concurrent aggregate
+    Given one non-pytest target fails while the pytest lane passes
+    When the just check aggregate runs
+    Then it reports every target's verdict with each target's output kept together
+    And it exits non-zero naming the failed target, exactly as the serial loop does
+
+  Scenario: The concurrent aggregate stays within the sandbox memory limit
+    Given a factory sandbox with a 7630 MiB memory limit and LIVESPEC_TEST_PARALLELISM of 4
+    When the just check aggregate runs
+    Then the sandbox's peak memory stays under its memory limit
+```
+
+## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
+
+```gherkin
+Feature: In-turn commits pay the scoped gate, and the full aggregate runs once per run
+  As the operator of a factory
+  I want implement and review_fix commits to run only the tests their change affects
+  So that a run does not repeat the full check aggregate at every commit before the janitor runs it
+
+  Scenario: An implement turn's commit runs the affected-tests gate
+    Given an implement turn committing a change to product modules and their tests
+    When its commit hook runs
+    Then it runs just check-changed on the change and not the full check aggregate
+
+  Scenario: A change the affected-tests gate cannot scope falls back to the full aggregate
+    Given a review_fix turn committing a change to a shared configuration file
+    When its commit hook runs
+    Then it runs the full check aggregate
+
+  Scenario: The janitor still runs the full aggregate once
+    Given a run whose implement turn committed through the affected-tests gate
+    When the run reaches the janitor stage
+    Then the janitor runs the full check aggregate once on the run's tree before publication
+
+  Scenario: A Red commit and its Green amend go through the affected-tests gate
+    Given an implement turn staging one failing test alone for its Red commit
+    When its commit hook runs
+    Then the gate accepts the commit because the staged test fails, without demanding passing tests or coverage
+    When the turn stages the implementation and amends to Green
+    Then the commit hook runs the affected-tests gate and requires the scoped tests and their coverage to pass
+```
+
+## Scenario 256 — A publication that already landed is finished at publish_draft, not a failure
+
+```gherkin
+Feature: publish_draft tells a landed publication from a failure
+  Scenario: publish_draft finds the item's change already merged
+    Given a run whose head adds no change to the default branch's tip
+    And an earlier dispatch of the item has a pull request that the forge reports MERGED into the default branch with merge commit M contained in the tip
+    When publish_draft finishes its refresh
+    Then publish_draft does not push or open a pull request
+    And the run takes the merged-reconcile ending and records the pull request, merge commit M and the merged head
+
+  Scenario: A refused pull-request creation is checked before it fails
+    Given a publish_draft that pushed the run's publish branch
+    And the forge refuses pull-request creation because the branch has no commits beyond the default branch
+    And an earlier dispatch of the item has a MERGED pull request whose merge commit is contained in the default branch's tip
+    When publish_draft handles the refusal
+    Then the run takes the merged-reconcile ending instead of failing
+
+  Scenario: A run that adds a change has not landed
+    Given a run whose head adds a change to the default branch's tip
+    And an earlier dispatch of the item has a MERGED pull request
+    When publish_draft finishes its refresh
+    Then publish_draft pushes and opens a pull request as before
+
+  Scenario: A reused branch name does not make a publication landed
+    Given a run whose head adds no change to the default branch's tip
+    And a MERGED pull request on the same branch name that no dispatch of this item produced
+    When publish_draft finishes its refresh
+    Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
+
+  Scenario: A merge into another base does not make a publication landed
+    Given a run whose head adds no change to the default branch's tip
+    And a pull request of an earlier dispatch of the item MERGED into a branch other than the default branch
+    When publish_draft finishes its refresh
+    Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
+```
+
+## Scenario 257 — A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request
+
+```gherkin
+Feature: A merged item whose proof is missing or record-wide is re-proven without republishing
+  Scenario: A merged item with no verified record is re-proven on its merged head
+    Given an item whose pull request merged with no Proof of Done record on its merged head
+    And the item rests in acceptance parked NEEDS_ATTENTION by the proof evidence leg
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm and runs only proof_capture, proof_verify and proof_grade against the merged head
+    And it pushes nothing and opens no branch or pull request
+    And its records are posted on the merged pull request bound to the item, that pull request and the merged head
+    And the acceptance pass then reads the new verified record and grades each factory_captured assertion from it
+
+  Scenario: The proof-only arm visits its three stages in order and nothing else
+    Given a proof-only arm whose capture succeeds and whose verification returns verified
+    When the run executes
+    Then it visits proof_capture, then proof_verify, then proof_grade, and then ends
+    And it visits no other stage
+
+  Scenario: A merged item parked on a record-wide verdict is re-proven per assertion
+    Given an item whose pull request is merged and whose only verified record carries no per-assertion Reproduced lines
+    And the item rests in acceptance parked NEEDS_ATTENTION by the proof evidence leg
+    When the operator drives resume for the item
+    Then the proof-only arm publishes a verified record with a Reproduced line in each factory_captured assertion's section
+
+  Scenario: A merged item not parked on its proof leg still refuses
+    Given an item whose pull request is merged and that is not parked in acceptance on its proof evidence leg
+    When the operator drives resume for the item
+    Then the resume refuses with exit code 3, naming the pull request state and reconcile-merged as the remedy
+
+  Scenario: An assertion the arm does not reproduce leaves the item parked under every policy
+    Given a proof-only arm whose proof_verify lists one factory_captured assertion as not reproduced
+    And the item's acceptance policy is ai-only, ai-then-human or human-only
+    When the acceptance pass re-runs
+    Then the item stays in acceptance with a parking record naming that assertion and the arm's record
+    And no rework is stamped, the rework cap is unchanged, and no fix stage runs
+
+  Scenario: The proof-only arm needs no proof record and no open pull request
+    Given a merged item parked on its proof leg whose publish branch was deleted and which has no Proof of Done record at all
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm, anchored on the merged pull request, its head commit at merge and the parking record
+    And the item stays in acceptance
+
+  Scenario: A third resume of the same pull request is refused
+    Given a merged pull request that has already anchored two resumes
+    When the operator drives resume for its item parked on its proof leg
+    Then the resume refuses naming the two earlier resumes
 ```

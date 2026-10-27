@@ -148,6 +148,7 @@ class StoreConfig:
     socket: str | None = None
     fake: bool = False
     repo_root: Path | None = None
+    credential_wrapper: tuple[str, ...] = ()
 
     @property
     def work_items_path(self) -> "StoreConfig":
