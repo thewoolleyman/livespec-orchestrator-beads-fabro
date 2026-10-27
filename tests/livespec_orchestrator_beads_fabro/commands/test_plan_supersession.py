@@ -205,12 +205,13 @@ def test_evidence_that_could_not_be_read_at_all_is_refused() -> None:
 
 
 def test_an_obligation_whose_target_is_not_the_plan_epic_is_not_plan_level() -> None:
-    """The plan-level arm is the only `misderived` arm this build verifies.
+    """A non-plan obligation needs the implementation evidence arm.
 
     The cause's other arm — an `impl` step whose target already carried a
     `factory-safety` label — takes a different reading entirely, so an
-    obligation that is not plan-level is refused rather than graded against
-    carrier evidence that says nothing about it.
+    obligation that is not plan-level is refused when its implementation
+    evidence is absent rather than graded against carrier evidence that says
+    nothing about it.
     """
     verdict = _refusal(
         supersession=_supersession(),
@@ -220,7 +221,7 @@ def test_an_obligation_whose_target_is_not_the_plan_epic_is_not_plan_level() -> 
         replacement=_REPLACEMENT,
     )
 
-    assert "plan epic" in verdict.detail
+    assert "factory-safety" in verdict.detail
 
 
 def test_a_deriving_operation_that_resolves_to_no_transition_is_refused() -> None:

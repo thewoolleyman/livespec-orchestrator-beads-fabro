@@ -52,7 +52,7 @@ collapsed verdict.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import plan_carrier_ids
@@ -65,11 +65,20 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
 )
 from livespec_orchestrator_beads_fabro.commands._plan_obligation import obligation_of
 from livespec_orchestrator_beads_fabro.commands._plan_result_plan_owned import names_plan_epic
-from livespec_orchestrator_beads_fabro.commands._plan_result_repository import result_store_config
+from livespec_orchestrator_beads_fabro.commands._plan_result_reference import parse_result_reference
+from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
+    resolve_result_repository,
+    result_store_config,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
+    ItemStatusTarget,
+    ResultReference,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
     CarrierEvidence,
     CausalSupersession,
     DerivingTransition,
+    ImplementationEvidence,
     SupersessionEvidence,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -102,6 +111,11 @@ _LEDGER_ERRORS: tuple[type[Exception], ...] = (
 )
 _STATUS_FIELD = "status"
 _CLOSED_AT_FIELD = "closed_at"
+_LABELS_FIELD = "labels"
+_CREATED_AT_FIELD = "created_at"
+_METADATA_FIELD = "metadata"
+_FACTORY_SAFETY_RECORDED_AT = "factory_safety_recorded_at"
+_FACTORY_SAFETY_LABEL = "factory-safety:"
 
 
 def supersession_evidence(
@@ -130,6 +144,9 @@ def supersession_evidence(
         carrier=_carrier(config=config, epic_id=epic_id, carrier_id=supersession.open_carrier_id),
         plan_level=obligation is not None
         and names_plan_epic(required_result=obligation.required_result, epic_id=epic_id),
+        implementation=None
+        if obligation is None
+        else _implementation(config=config, required_result=obligation.required_result),
     )
 
 
@@ -173,6 +190,74 @@ def _deriving(
             ),
         )
     return None
+
+
+def _implementation(
+    *, config: StoreConfig, required_result: object
+) -> ImplementationEvidence | None:
+    """Read factory-safety evidence for an implementation result target."""
+    parsed = parse_result_reference(value=required_result)
+    if not isinstance(parsed, ResultReference) or not isinstance(parsed.target, ItemStatusTarget):
+        return None
+    return _implementation_from_reference(
+        config=config, repository_name=parsed.repo, item_id=parsed.target.item_id
+    )
+
+
+def _implementation_from_reference(
+    *, config: StoreConfig, repository_name: str, item_id: str
+) -> ImplementationEvidence | None:
+    """Read the item record that one already-parsed implementation reference names."""
+    record = _implementation_record(
+        config=config, repository_name=repository_name, item_id=item_id
+    )
+    if record is None:
+        return None
+    labels = _labels(record=record)
+    if labels is None:
+        return None
+    raw_metadata = record.get(_METADATA_FIELD)
+    metadata = cast("dict[str, object]", raw_metadata) if isinstance(raw_metadata, dict) else {}
+    recorded = metadata.get(_FACTORY_SAFETY_RECORDED_AT)
+    if not isinstance(recorded, str):
+        recorded = record.get(_CREATED_AT_FIELD)
+    return ImplementationEvidence(
+        factory_safe=any(one.startswith(_FACTORY_SAFETY_LABEL) for one in labels),
+        recorded_at=recorded if isinstance(recorded, str) and recorded != "" else None,
+    )
+
+
+def _implementation_record(
+    *, config: StoreConfig, repository_name: str, item_id: str
+) -> dict[str, object] | None:
+    """The implementation record one reference names, or ``None`` when unreadable."""
+    project_root = config.repo_root
+    if project_root is None:
+        return None
+    repository = resolve_result_repository(project_root=project_root, name=repository_name)
+    if repository is None:
+        return None
+    resolved = result_store_config(repository=repository)
+    if resolved is None:
+        return None
+    read = attempt(
+        action=lambda: make_beads_client(config=resolved).show_issue(issue_id=item_id),
+        exceptions=_LEDGER_ERRORS,
+    )
+    if isinstance(read, AttemptFailure):
+        return None
+    return cast("dict[str, object]", read)
+
+
+def _labels(*, record: dict[str, object]) -> list[str] | None:
+    """The record's labels only when every ledger value is a string."""
+    raw_labels = record.get(_LABELS_FIELD)
+    if not isinstance(raw_labels, list):
+        return None
+    label_values = cast("list[object]", raw_labels)
+    if not all(isinstance(one, str) for one in label_values):
+        return None
+    return cast("list[str]", label_values)
 
 
 def _carrier(*, config: StoreConfig, epic_id: str, carrier_id: str) -> CarrierEvidence | None:
