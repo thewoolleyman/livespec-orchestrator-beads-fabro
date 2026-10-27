@@ -111,6 +111,33 @@ repository. A PreToolUse hook refuses memory-file writes, and routing
 around it through a shell command defeats it. Put durable guidance here
 or in AGENTS.md.
 
+## Cost a new mechanism for the whole fleet before endorsing it (maintainer correction 2026-10-27)
+
+When the maintainer floats a technique, do not recommend adopting it on the
+strength of the mechanism alone. First cost what committing to it means for
+EVERY repository that would carry it, and compare that with the cheapest
+measured alternative:
+
+- **Freshness infrastructure.** What keeps any generated artifact (a summary,
+  an index, a cache) current in every repository, on every revision, and what
+  a stale copy does. A stale summary is a silent wrong answer.
+- **Storage.** Where the artifact lives, who validates it, and what each
+  revise must now co-edit.
+- **Harness coupling.** Tool calling inside a shared judgement couples it to
+  each harness's and model's tool mechanics, multiplies turns, and breaks a
+  deterministic selection that reuse rules depend on. The spec-stated
+  judgement is text-in/text-out precisely so that it stays harness-neutral.
+- **Fleet maintenance.** Who carries it indefinitely, across every member.
+
+Prefer the proportionate path that keeps the component stateless,
+deterministic and harness-neutral: measure the remaining waste first, then tune
+a constant behind a measured gate. *Instance:* asked about pyramid summaries
+for the oversized spec-stated judgement prompt, a session endorsed them and
+proposed moving the fix into `livespec_runtime` with a tool-using judge,
+without costing summary-refresh infrastructure, storage, cross-harness tool
+calling or fleet maintenance. The 200,000-character stopgap and the two
+verdict-reuse items already remove most of the cost.
+
 ## Spinning up a Codex reviewer in a herdr pane
 
 "Astra" is OpenAI's `gpt-6-astra`; it is the default model in
