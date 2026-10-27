@@ -47,7 +47,7 @@ from livespec_orchestrator_beads_fabro.commands.needs_attention import (
     build_attention,
     render_json,
 )
-from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_orchestrator_beads_fabro.store import append_work_item, append_work_item_comment
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.needs_attention import SpecNextOutput
 
@@ -155,6 +155,51 @@ def test_scenario125_the_valve_summary_carries_the_terminated_runs_account(
     assert runner.calls[0][runner.calls[0].index("--server") + 1] == _SERVER
 
 
+def test_scenario125_a_cause_comment_supplies_the_account_without_a_factory_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The durable run account survives an unavailable factory without probing it."""
+    repo = _repo(tmp_path=tmp_path)
+    _seed(repo=repo)
+    append_work_item_comment(path=_config(), work_item_id=_ITEM, body=_cause_comment())
+    append_work_item_comment(path=_config(), work_item_id=_ITEM, body=_preserve_comment())
+    runner = _Runner(raises=_REFUSED_CONNECTION)
+
+    summary = str(_valve_entry(repo=repo, monkeypatch=monkeypatch, runner=runner)["summary"])
+
+    assert summary.startswith(_UNENRICHED)
+    assert _RUN in summary
+    assert f"factory {_FACTORY} ({_SERVER})" in summary
+    assert "terminated at the needs_human node and routed the decision" in summary
+    assert "Why: the durable terminal account." in summary
+    assert "Innermost cause: the durable cause." in summary
+    assert "livespec-preserve-by-reference" in summary
+    assert f"resolve-blocked:{_ITEM}:ready" in summary
+    assert runner.calls == []
+
+
+def test_scenario125_a_sparse_cause_comment_omits_missing_details_without_a_factory_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ledger account remains authoritative even when optional details are absent."""
+    repo = _repo(tmp_path=tmp_path)
+    _seed(repo=repo)
+    append_work_item_comment(path=_config(), work_item_id=_ITEM, body=_minimal_cause_comment())
+    runner = _Runner(raises=_REFUSED_CONNECTION)
+
+    summary = str(_valve_entry(repo=repo, monkeypatch=monkeypatch, runner=runner)["summary"])
+
+    assert summary.startswith(_UNENRICHED)
+    assert _RUN in summary
+    assert f"factory {_FACTORY} ({_SERVER})" in summary
+    assert "Why: the implementer reported a needs-human ending; the engine recorded no " in summary
+    assert "loop failure signature." in summary
+    assert "Innermost cause:" not in summary
+    assert "livespec-preserve-by-reference" not in summary
+    assert f"resolve-blocked:{_ITEM}:ready" in summary
+    assert runner.calls == []
+
+
 def test_scenario125_an_unreachable_factory_costs_the_enrichment_and_never_the_valve(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -260,6 +305,47 @@ def _terminated_record() -> str:
                 ],
             }
         ]
+    )
+
+
+def _cause_comment() -> str:
+    """The durable account the termination writer records for this run."""
+    return "\n".join(
+        (
+            "livespec-needs-human-cause",
+            "",
+            f"work-item: {_ITEM}",
+            f"run id: {_RUN}",
+            "ending: stage-failure",
+            "innermost cause: the durable cause",
+            "terminal reason: the durable terminal account",
+        )
+    )
+
+
+def _preserve_comment() -> str:
+    """A matching preserve-by-reference record supplies the durable reference."""
+    return "\n".join(
+        (
+            "livespec-preserve-by-reference",
+            "",
+            f"run id: {_RUN}",
+            f"factory server url: {_SERVER}",
+            "stage artifact path: stages/implement/diff.patch",
+            "sha256: " + "0" * 64,
+        )
+    )
+
+
+def _minimal_cause_comment() -> str:
+    """A valid cause record whose optional account fields were not written."""
+    return "\n".join(
+        (
+            "livespec-needs-human-cause",
+            "",
+            f"run id: {_RUN}",
+            "ending: stage-failure",
+        )
     )
 
 
