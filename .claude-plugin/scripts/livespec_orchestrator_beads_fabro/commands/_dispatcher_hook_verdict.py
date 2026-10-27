@@ -37,6 +37,16 @@ the latest commit attempt passed. A commit whose hook ran leaves the hook's own
 banner in the recorded output, so the banner is the discriminator, and a
 commit attempt whose output shows no hook run is — as the clause says — not
 governed here and keeps its existing classification.
+
+A COMMIT ROUTED THROUGH THE SANDBOX RUNNER IS READ FROM THE RUNNER'S REPORT.
+"A commit leg completes past one tool call" (`bd-ib-atyefi`) has the agent
+start each commit through `livespec-commit-runner.py` and wait on it in later
+tool calls; both of those calls exit 0 whatever the hook decided, so the
+tool call's own exit status says nothing. `CommitRunnerReplay` drives the
+`DetachedCommitRunner` state machine from the recorded `start` and `wait`
+reports instead, and each runner `start` is a new attempt: a run that ends
+with that attempt still `running`, or `no-verdict`, reports no refusal here,
+because an earlier attempt's refusal is not the latest attempt's verdict.
 """
 
 from __future__ import annotations
@@ -44,6 +54,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import (
+    CommitRunResult,
+    result_from_observation,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
+    HOOK_BANNER_PATTERN,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_replay import (
+    CommitRunnerReplay,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroInspectResult
@@ -56,17 +77,11 @@ __all__: list[str] = [
     "innermost_cause_label",
 ]
 
-# The lefthook banner a hook run prints, `│ 🥊 lefthook v1.13.6  hook: pre-commit │`
-# as measured; the hook name varies, the `hook: ` prefix does not.
-_HOOK_BANNER = re.compile(r"\blefthook\b.*\bhook: ")
+# The lefthook banner a hook run prints; the sandbox runner reports the same test.
+_HOOK_BANNER = re.compile(HOOK_BANNER_PATTERN)
 
 # `git commit` as an invoked command rather than as a quoted search pattern.
 _GIT_COMMIT = re.compile(r"\bgit commit\b")
-
-# The gate aggregate's own list of failed recipes: `Failed targets (1):` followed
-# by `  - check-types` lines.
-_FAILED_TARGETS_HEADER = re.compile(r"^Failed targets \(\d+\):\s*$", re.MULTILINE)
-_FAILED_TARGET_LINE = re.compile(r"^\s+-\s+(\S+)\s*$")
 
 # An agent sentence that describes the hook as having NOT reached a verdict.
 _INTERRUPTION_CLAIM = re.compile(
@@ -122,7 +137,8 @@ def hook_verdict_from_events(
         return None
     node = _node_id(stage=stage)
     commands: dict[str, str] = {}
-    latest: tuple[int, str] | None = None
+    replay = CommitRunnerReplay()
+    latest: CommitRunResult | None = None
     for raw in cast("list[object]", events_payload):
         if not isinstance(raw, dict):
             continue
@@ -136,14 +152,14 @@ def hook_verdict_from_events(
         if update.get("sessionUpdate") == _TOOL_CALL:
             commands[call_id] = _command(update=update)
         if update.get("sessionUpdate") == _TOOL_CALL_UPDATE:
-            completion = _completed_commit(update=update, command=commands.get(call_id, ""))
+            completion = _completed_commit(
+                update=update, command=commands.get(call_id, ""), replay=replay
+            )
             if completion is not None:
                 latest = completion
-    if latest is None or latest[0] == 0:
+    if latest is None or latest.state != "failed" or latest.exit_code is None:
         return None
-    return HookVerdict(
-        node=node, exit_code=latest[0], failed_targets=_failed_targets(output=latest[1])
-    )
+    return HookVerdict(node=node, exit_code=latest.exit_code, failed_targets=latest.failed_targets)
 
 
 def hook_verdict_cause_lines(
@@ -189,8 +205,10 @@ def _contradicted(*, verdict: HookVerdict | None, agent_cause: str | None) -> bo
     )
 
 
-def _completed_commit(*, update: dict[str, object], command: str) -> tuple[int, str] | None:
-    """(exit status, output) when this completion ends a hook-running commit, else None."""
+def _completed_commit(
+    *, update: dict[str, object], command: str, replay: CommitRunnerReplay
+) -> CommitRunResult | None:
+    """The commit attempt's result when this completion is a commit or runner call."""
     raw_output = _mapping(value=update.get("rawOutput"))
     exit_code = raw_output.get("exit_code")
     output = raw_output.get("formatted_output")
@@ -198,22 +216,12 @@ def _completed_commit(*, update: dict[str, object], command: str) -> tuple[int, 
         return None
     if not isinstance(output, str):
         return None
+    runner_result = replay.observe(command=command, output=output)
+    if runner_result is not None:
+        return runner_result
     if _GIT_COMMIT.search(command) is None or _HOOK_BANNER.search(output) is None:
         return None
-    return exit_code, output
-
-
-def _failed_targets(*, output: str) -> tuple[str, ...]:
-    header = _FAILED_TARGETS_HEADER.search(output)
-    if header is None:
-        return ()
-    targets: list[str] = []
-    for line in output[header.end() :].splitlines()[1:]:
-        match = _FAILED_TARGET_LINE.match(line)
-        if match is None:
-            break
-        targets.append(match.group(1))
-    return tuple(targets)
+    return result_from_observation(exit_code=exit_code, output=output)
 
 
 def _command(*, update: dict[str, object]) -> str:
