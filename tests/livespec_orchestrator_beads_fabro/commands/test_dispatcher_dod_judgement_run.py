@@ -93,6 +93,7 @@ class _Runner:
 
     result: CommandResult
     argv: list[str] | None = None
+    cwd: Path | None = None
     timeout_seconds: float | None = None
     environ: dict[str, str] | None = None
     stdin_text: list[str] = field(default_factory=list)
@@ -110,7 +111,8 @@ class _Runner:
         self.argv = argv
         self.timeout_seconds = timeout_seconds
         self.environ = env
-        _ = (cwd, start_new_session)
+        self.cwd = cwd
+        _ = start_new_session
         if stdin is not None:
             _ = os.lseek(stdin, 0, os.SEEK_SET)
             self.stdin_text.append(os.read(stdin, 1_000_000).decode("utf-8"))
@@ -315,6 +317,66 @@ def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_clau
     assert verdict.outcome == JUDGEMENT_ADMITTED
     assert runner.argv is not None
     assert runner.argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
+
+
+def _assert_isolated_claude(*, runner: _Runner, repo: Path, interactive_config: Path) -> None:
+    assert runner.argv is not None
+    assert runner.cwd is not None and runner.cwd != repo
+    assert runner.environ is not None
+    assert runner.environ["CLAUDE_CONFIG_DIR"] != str(interactive_config)
+    assert "--setting-sources" in runner.argv
+    assert runner.argv[runner.argv.index("--setting-sources") + 1] == ""
+    assert "--managed-settings" in runner.argv
+    assert runner.argv[runner.argv.index("--managed-settings") + 1] == "{}"
+    assert "--strict-mcp-config" in runner.argv
+    assert "--disable-slash-commands" in runner.argv
+    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
+
+
+def _assert_isolated_codex(*, runner: _Runner, repo: Path, interactive_home: Path) -> None:
+    assert runner.argv is not None
+    assert runner.cwd is not None and runner.cwd != repo
+    assert runner.environ is not None
+    assert runner.environ["CODEX_HOME"] != str(interactive_home)
+    assert "project_doc_max_bytes=0" in runner.argv
+    assert "features.skills=false" in runner.argv
+    assert "features.multi_agent=false" in runner.argv
+    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
+
+
+def test_host_judges_use_only_their_invocation_configuration_for_claude_and_codex(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shared launcher covers every host judgement, including drift."""
+    repo = _repo(tmp_path=tmp_path)
+    payload = _payload(tmp_path=tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "interactive-claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "interactive-codex"))
+
+    claude_runner = _Runner(
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr="")
+    )
+    claude_verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=claude_runner, payload_root=payload
+    )
+
+    assert claude_verdict.outcome == JUDGEMENT_ADMITTED
+    _assert_isolated_claude(
+        runner=claude_runner, repo=repo, interactive_config=tmp_path / "interactive-claude"
+    )
+
+    _write_codex_first_dod_gate(repo=repo)
+    codex_runner = _Runner(
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr="")
+    )
+    codex_verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=codex_runner, payload_root=payload
+    )
+
+    assert codex_verdict.outcome == JUDGEMENT_ADMITTED
+    _assert_isolated_codex(
+        runner=codex_runner, repo=repo, interactive_home=tmp_path / "interactive-codex"
+    )
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
