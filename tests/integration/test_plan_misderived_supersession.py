@@ -108,6 +108,8 @@ _DERIVING_OPERATION = "op-derived-while-the-carrier-was-open"
 _OPEN = "open"
 _CLOSED = "closed"
 _PLAN_RESUME_ACTOR = "plan-resume"
+_IMPLEMENTATION = f"{_OWN_PREFIX}-implementation"
+_REPLACEMENT = f"{_OWN_PREFIX}-replacement"
 # The obligation the false derivation persisted: the plan's own proof record.
 _SUPERSEDED_RESULT: dict[str, object] = {
     "repo": _OWN,
@@ -116,6 +118,14 @@ _SUPERSEDED_RESULT: dict[str, object] = {
 _CARRIER_RESULT: dict[str, object] = {
     "repo": _CARRIER_REPO,
     "item_status": {"item_id": _OPEN_CARRIER, "status": "closed"},
+}
+_IMPLEMENTATION_RESULT: dict[str, object] = {
+    "repo": _OWN,
+    "item_status": {"item_id": _IMPLEMENTATION, "status": "closed"},
+}
+_REPLACEMENT_RESULT: dict[str, object] = {
+    "repo": _OWN,
+    "item_status": {"item_id": _REPLACEMENT, "status": "closed"},
 }
 
 
@@ -194,7 +204,9 @@ def _carrier(*, repo: Path, status: str) -> None:
         fake.close_issue(issue_id=_OPEN_CARRIER, reason="the carrier landed")
 
 
-def _seed(*, repo: Path, author: str) -> int:
+def _seed(
+    *, repo: Path, author: str, required_result: dict[str, object] = _SUPERSEDED_RESULT
+) -> int:
     """An epic whose chain records a plan-level obligation one transition wrote.
 
     `author` is the party the deriving transition is recorded under — the whole
@@ -203,7 +215,6 @@ def _seed(*, repo: Path, author: str) -> int:
     actor), not by a writer that named it". Returns the epoch that transition
     moved the chain to, which is the epoch the supersession must name.
     """
-    required_result = _SUPERSEDED_RESULT
     fake = _fake(repo=repo)
     _ = fake.create_issue(
         draft=IssueDraft(
@@ -283,6 +294,32 @@ def _replacement() -> NextAction:
     )
 
 
+def _implementation_target(*, repo: Path, item_id: str, factory_safe: bool) -> None:
+    """Seed one implementation result target with its label recorded at creation."""
+    _ = _fake(repo=repo).create_issue(
+        draft=IssueDraft(
+            issue_id=item_id,
+            issue_type="task",
+            title=item_id,
+            description="an implementation result target",
+            assignee=None,
+            created_at=_NOW,
+            labels=["factory-safety:needs-host-secrets"] if factory_safe else [],
+        )
+    )
+
+
+def _implementation_replacement() -> NextAction:
+    """A distinct unmet implementation result replacing the false derivation."""
+    return NextAction(
+        kind="impl",
+        ref=f"item:{_REPLACEMENT}",
+        text=f"Implement {_REPLACEMENT} after correcting the derived target.",
+        required_result=_REPLACEMENT_RESULT,
+        budget={"deadline": _DEADLINE, "max_handoffs": _MAX_HANDOFFS},
+    )
+
+
 def _supersession(*, epoch: int, module: Any, **overrides: object) -> Any:
     fields: dict[str, object] = {
         "superseded_result_identity": _canonical_identity(required_result=_SUPERSEDED_RESULT),
@@ -352,6 +389,40 @@ def test_a_misderived_plan_level_obligation_is_replaced_by_an_await_on_its_carri
     assert budget["deadline"] == _DEADLINE
     assert budget["handoff_count"] == _CONSUMED_HANDOFFS
     assert budget["max_handoffs"] == _MAX_HANDOFFS
+
+
+def test_a_factory_safe_implementation_obligation_is_superseded_by_set_next_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan-resume derivation may replace the factory-safe target it misderived."""
+    module = importlib.import_module(_MODULE)
+    repo = _project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _implementation_target(repo=repo, item_id=_IMPLEMENTATION, factory_safe=True)
+    _implementation_target(repo=repo, item_id=_REPLACEMENT, factory_safe=False)
+    epoch = _seed(repo=repo, author=_PLAN_RESUME_ACTOR, required_result=_IMPLEMENTATION_RESULT)
+
+    refusal = set_next_action(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        action=_implementation_replacement(),
+        session="plan-session",
+        now=_LATER,
+        supersession=_supersession(
+            epoch=epoch,
+            module=module,
+            superseded_result_identity=_canonical_identity(required_result=_IMPLEMENTATION_RESULT),
+        ),
+    )
+
+    assert refusal is None, refusal
+    pointer = _pointer(repo=repo)
+    assert pointer["required_result"] == _REPLACEMENT_RESULT
+    budget = cast("dict[str, object]", pointer["budget"])
+    assert budget["deadline"] == _DEADLINE
+    assert budget["handoff_count"] == _CONSUMED_HANDOFFS
+    events = _progress_events(repo=repo)
+    assert "event: supersession" in events[-1]
 
 
 def test_the_supersession_is_recorded_as_a_progress_event_before_the_pointer_changes(
