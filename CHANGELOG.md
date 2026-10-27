@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.12...v0.243.13) (2026-10-27)
+
+
+### Bug Fixes
+
+* **dispatcher:** commit through a detached sandbox runner and read its verdict from the runner's report ([4b1cd76](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4b1cd7632ecb2705f52049dc5641befa6b09f89f))
+
 ## [0.243.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.11...v0.243.12) (2026-10-27)
 
 
