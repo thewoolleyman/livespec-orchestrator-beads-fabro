@@ -33,8 +33,14 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_confirmation i
     AcpAvailabilityConfirmation,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
+    CODEX_PROVIDER,
+    CodexHeadroomPolicy,
+    CodexUsageReading,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    CLAUDE_PROVIDER,
     SessionHeadroomPolicy,
     SessionHeadroomReading,
 )
@@ -47,10 +53,12 @@ __all__: list[str] = [
     "PROVIDER_LIMIT_CONDITIONS",
     "TYPED_HOLD_SKIP",
     "UNAVAILABLE_EVIDENCE_SKIP",
+    "CodexHeadroomShortfall",
     "HeadroomShortfall",
     "NodePreflight",
     "PreflightInputs",
     "SkippedCandidate",
+    "codex_headroom_skip",
     "confirmation_skip",
     "ephemeral_skip",
     "record_skip",
@@ -125,6 +133,20 @@ class SkippedCandidate:
     headroom_floor_percent: int | None = None
     headroom_horizon_minutes: int | None = None
     headroom_skip_kind: str | None = None
+    # WHOSE usage window ran short, as the record surfaces name it. Two clauses
+    # govern this one skip reason through one set of record surfaces, so a skip
+    # that named no provider could not be read: a floor skip beside a horizon
+    # says nothing about which allowance was measured. It is `None` for every
+    # skip that is not a headroom skip, which is what keeps a probe refusal from
+    # reading as a provider-attributed measurement.
+    headroom_provider: str | None = None
+    # The CODEX reading, kept in its own field rather than widening `headroom`.
+    # The two readings have different shapes -- one utilization against one
+    # window, versus a provider verdict plus up to two windows -- so one field
+    # holding either would make every consumer ask which shape it got, and the
+    # natural coding of that question reports a Codex reading's absent
+    # five-hour figure as an unobservable Claude reading.
+    codex_headroom: CodexUsageReading | None = None
     confirmation_observation_ids: tuple[str, ...] = ()
 
 
@@ -139,6 +161,28 @@ class HeadroomShortfall:
     """
 
     reading: SessionHeadroomReading
+    floor_percent: int
+    horizon_minutes: int
+    kind: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class CodexHeadroomShortfall:
+    """The four facts ONE Codex headroom skip is recorded from, as one value.
+
+    A TYPE OF ITS OWN rather than a nullable second reading on the Claude
+    carrier, and the reason is the same one that keeps the three KINDS of skip
+    apart one level up: a carrier accepting either reading is one a caller can
+    fill with the wrong one, and a Codex reading recorded under `headroom`
+    would be rendered by the Claude projection -- which reads a five-hour
+    utilization this reading does not have, and would therefore report a
+    measured window as an unobservable one.
+
+    The two dials are the Claude clause's own committed pair, which this clause
+    states outright, so they are named identically here rather than respelled.
+    """
+
+    reading: CodexUsageReading
     floor_percent: int
     horizon_minutes: int
     kind: str
@@ -160,6 +204,12 @@ class NodePreflight:
     candidates: tuple[AcpCandidate, ...]
     skipped: tuple[SkippedCandidate, ...]
     assessments: tuple[SessionHeadroomReading, ...] = ()
+    # Every DISTINCT Codex usage reading this node's filter took, skipped or
+    # not, for the reason `assessments` beside it exists: the Codex clause
+    # requires the reading to be journaled for each affected work-item whether
+    # or not it refused anything, so a reading reported only through `skipped`
+    # would vanish on exactly the admitted case the journal exists to record.
+    codex_assessments: tuple[CodexUsageReading, ...] = ()
 
     @property
     def exhausted(self) -> bool:
@@ -197,6 +247,13 @@ class PreflightInputs:
     # different routes and a boolean cannot tell a reader which happened.
     confirm: Callable[[AcpCandidate], str] | None = None
     headroom: SessionHeadroomPolicy | None = None
+    # The CODEX usage-window policy, defaulting to ABSENT for exactly the
+    # reason `headroom` above does: snapshot composition must issue no live
+    # usage request, so wait attention and idle-factory resolve a verdict with
+    # no policy and this clause's filter becomes a total no-op. It is a SECOND
+    # policy rather than a provider field on one, because each carries its own
+    # memoized reading of its own credential and one policy could not hold two.
+    codex_headroom: CodexHeadroomPolicy | None = None
     # The domain hold keys an UNREAD evidence source leaves unconfirmed. It is
     # a key set rather than the unobservable entries themselves because the
     # question asked of it is a coverage test, and because an entry's shape
@@ -280,6 +337,38 @@ def ephemeral_skip(
         headroom_floor_percent=None if shortfall is None else shortfall.floor_percent,
         headroom_horizon_minutes=None if shortfall is None else shortfall.horizon_minutes,
         headroom_skip_kind=None if shortfall is None else shortfall.kind,
+        headroom_provider=None if shortfall is None else CLAUDE_PROVIDER,
+    )
+
+
+def codex_headroom_skip(
+    *, candidate: AcpCandidate, shortfall: CodexHeadroomShortfall
+) -> SkippedCandidate:
+    """A skip ONE Codex usage-window reading decided, naming its provider.
+
+    Its own factory rather than a fourth parameter on `ephemeral_skip`, which
+    is the same argument that keeps the three kinds apart there: the two
+    headroom providers populate DISJOINT reading fields, and one factory
+    accepting both is how a Codex reading comes to be recorded under the
+    Claude key -- where the Claude record projection then renders it, reporting
+    a measured window as an unobservable five-hour utilization.
+
+    It shares `HEADROOM_SKIP` with its Claude sibling deliberately, because the
+    clause gives every skip it defines "exactly the semantics of a Claude floor
+    skip". Every surface downstream -- the governing-condition precedence, the
+    availability wait, the idle-factory projection -- keys on that reason, so a
+    second token would leave a Codex-emptied chain unnamed by all three.
+    """
+    availability_key, candidate_key = skip_identity(candidate=candidate)
+    return SkippedCandidate(
+        availability_key=availability_key,
+        candidate_key=candidate_key,
+        reason=HEADROOM_SKIP,
+        codex_headroom=shortfall.reading,
+        headroom_floor_percent=shortfall.floor_percent,
+        headroom_horizon_minutes=shortfall.horizon_minutes,
+        headroom_skip_kind=shortfall.kind,
+        headroom_provider=CODEX_PROVIDER,
     )
 
 

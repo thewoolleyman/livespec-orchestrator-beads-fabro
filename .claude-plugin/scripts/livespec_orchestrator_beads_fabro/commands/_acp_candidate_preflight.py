@@ -8,7 +8,7 @@ admission-time credential probe creates no observed record. For a fallback-
 enabled chain, a provider-limit/rate-limit probe refusal is an ephemeral
 candidate-local skip for that one admission evaluation."
 
-FIVE FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
+SIX FILTERS, AND THE ORDER BETWEEN THEM IS LOAD-BEARING -- IT *IS* THE
 PRECEDENCE RULE. "Typed candidate evidence takes precedence over legacy
 cause-text attribution when a chain executed", and consulting typed records
 FIRST is what implements that: a candidate carrying typed evidence is skipped
@@ -42,7 +42,14 @@ skipped by a durable record is never probed and never assessed for headroom,
 which is most of why "at most once per admission evaluation" is cheap to
 honour.
 
-THE SESSION-HEADROOM FILTER IS FOURTH, AND BELOW THE PROBE SPECIFICALLY.
+THE TWO HEADROOM FILTERS ARE LAST, AND BELOW THE PROBE SPECIFICALLY. Their
+BODIES live in `_acp_headroom_filters`, split out by cohesion -- one per
+provider, same shape, same memo discipline -- so this module keeps the ORDER and
+one line per filter. The Codex one is `codex-acp`'s own clause (section
+"Provider spend containment", "Admission filters Codex candidates by projected
+usage-window headroom"), and the two populations are disjoint, so the order
+between THEM decides nothing while their position below the probe decides a
+great deal:
 `SPECIFICATION/contracts.md` section "Dispatcher admission, WIP cap, and
 post-merge acceptance": "With a positive floor, a successful credential-
 usability probe MUST NOT override a headroom skip." A probe answers "can this
@@ -103,6 +110,14 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome 
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexUsageReading
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom_projection import (
+    CODEX_LIMIT_SKIP_KIND,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_headroom_filters import (
+    claude_headroom_skip_for,
+    codex_headroom_skip_for,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
     candidate_domain_keys,
     hold_covers_candidate,
@@ -116,7 +131,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import (
     PROVIDER_LIMIT_CONDITIONS,
     TYPED_HOLD_SKIP,
     UNAVAILABLE_EVIDENCE_SKIP,
-    HeadroomShortfall,
     NodePreflight,
     PreflightInputs,
     SkippedCandidate,
@@ -126,16 +140,15 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomReading,
-    headroom_covers_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection import (
     FLOOR_SKIP_KIND,
     PROJECTION_SKIP_KIND,
     SEVEN_DAY_SKIP_KIND,
-    headroom_skip_kind,
 )
 
 __all__: list[str] = [
+    "CODEX_LIMIT_SKIP_KIND",
     "FLOOR_SKIP_KIND",
     "HEADROOM_SKIP",
     "LEGACY_HOLD_SKIP",
@@ -181,6 +194,7 @@ def filter_node_candidates(
     selectable: list[AcpCandidate] = []
     skipped: list[SkippedCandidate] = []
     assessments: list[SessionHeadroomReading] = []
+    codex: list[CodexUsageReading] = []
     turns: dict[str, str] = {} if confirmed is None else confirmed
     for candidate in ordered:
         skip = _skip_for(
@@ -188,6 +202,7 @@ def filter_node_candidates(
             inputs=inputs,
             assessed=assessed,
             assessments=assessments,
+            codex=codex,
             confirmed=turns,
         )
         if skip is None:
@@ -200,6 +215,7 @@ def filter_node_candidates(
         candidates=tuple(selectable),
         skipped=tuple(skipped),
         assessments=tuple(assessments),
+        codex_assessments=tuple(codex),
     )
 
 
@@ -209,9 +225,10 @@ def _skip_for(
     inputs: PreflightInputs,
     assessed: dict[str, str],
     assessments: list[SessionHeadroomReading],
+    codex: list[CodexUsageReading],
     confirmed: dict[str, str],
 ) -> SkippedCandidate | None:
-    """The first filter this candidate fails, or `None` when it survives all five."""
+    """The first filter this candidate fails, or `None` when it survives all six."""
     for hold in inputs.holds:
         if hold_covers_candidate(hold=hold, candidate=candidate):
             return record_skip(
@@ -238,7 +255,16 @@ def _skip_for(
     probed = _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
     if probed is not None:
         return probed
-    return _headroom_skip(candidate=candidate, inputs=inputs, assessments=assessments)
+    # The two headroom filters are joined rather than sequenced, because their
+    # populations are DISJOINT: a candidate's resolved agent id is `claude-acp`
+    # or `codex-acp`, never both, so at most one of them can return a skip and
+    # the order between them decides nothing. Each still returns `None` for a
+    # candidate it does not cover, so the join is the whole of the fall-through.
+    return claude_headroom_skip_for(
+        candidate=candidate, inputs=inputs, assessments=assessments
+    ) or codex_headroom_skip_for(
+        candidate=candidate, policy=inputs.codex_headroom, assessments=codex
+    )
 
 
 def _confirmation_turn(
@@ -314,51 +340,3 @@ def _probe_skip(
     if condition not in PROVIDER_LIMIT_CONDITIONS:
         return None
     return ephemeral_skip(candidate=candidate, reason=PROBE_SKIP, condition=condition)
-
-
-def _headroom_skip(
-    *,
-    candidate: AcpCandidate,
-    inputs: PreflightInputs,
-    assessments: list[SessionHeadroomReading],
-) -> SkippedCandidate | None:
-    """Assess a COVERED candidate's projected credential, and skip only a shortfall.
-
-    The reading is recorded in `assessments` BEFORE the skip is decided, which
-    is what makes an above-floor reading journalable: the clause requires every
-    assessment to be journaled for each affected work-item, not only the ones
-    that refused something.
-
-    TWO SHORTFALLS, ONE SKIP, and that is the clause in as many words: "A
-    projection skip has exactly the semantics of a floor skip". So the LEVEL
-    and the PROJECTION are tested in one condition producing one
-    `SkippedCandidate`, rather than as two arms with two skip reasons -- every
-    surface downstream (the governing-condition precedence, the availability
-    wait, the idle-factory projection) keys on that one reason, and a second
-    token would leave a projection-emptied chain unnamed by all three. WHICH of
-    the two decided it is recoverable from the reading the skip carries, whose
-    projection result says whether a projection skip applied -- so the record
-    surfaces can name a projection skip as a projection skip without a second
-    skip reason that every consumer would have to learn.
-    """
-    policy = inputs.headroom
-    if policy is None or not headroom_covers_candidate(
-        candidate=candidate, builtin_pairs=inputs.builtin_pairs
-    ):
-        return None
-    reading = policy.read()
-    if reading not in assessments:
-        assessments.append(reading)
-    kind = headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
-    if kind is None:
-        return None
-    return ephemeral_skip(
-        candidate=candidate,
-        reason=HEADROOM_SKIP,
-        shortfall=HeadroomShortfall(
-            reading=reading,
-            floor_percent=policy.floor_percent,
-            horizon_minutes=policy.horizon_minutes,
-            kind=kind,
-        ),
-    )

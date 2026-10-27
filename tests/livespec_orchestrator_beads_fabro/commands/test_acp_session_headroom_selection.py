@@ -255,10 +255,12 @@ def test_a_skipped_primary_admits_the_item_on_its_fallback_and_says_why(
                     {
                         "availability_key": _CLAUDE_PAIR[0],
                         "candidate_key": _CLAUDE_PAIR[1],
+                        "provider": "claude",
                         "session_headroom_floor_percent": _FLOOR,
                         "session_headroom_horizon_minutes": _HORIZON,
                         "headroom_skip_kind": "floor",
                         "headroom": _reading_fields(utilization=90.0, remaining=10.0),
+                        "codex_usage": None,
                     }
                 ],
             },
@@ -325,8 +327,15 @@ def test_the_skipped_entry_names_no_hold_identity_of_any_kind(
     assert set(skip) == {
         "availability_key",
         "candidate_key",
+        # The provider the skip is about, and the sibling clause's own reading
+        # block. Both are enumerated HERE rather than merely tolerated, because
+        # this case's whole claim is that the key set is CLOSED: a `hold_key`,
+        # a `cause` or a `scope` must not appear, and a set assertion that
+        # allowed unlisted keys could no longer say so.
+        "provider",
         "session_headroom_floor_percent",
         "session_headroom_horizon_minutes",
         "headroom_skip_kind",
         "headroom",
+        "codex_usage",
     }

@@ -58,7 +58,7 @@ forbids. Carried and uninterpreted is the only honest third answer.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import (
@@ -67,10 +67,17 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     filter_node_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
+    CodexHeadroomPolicy,
+    CodexUsageReading,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
 from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
-from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import SessionHeadroomReading
+from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    SessionHeadroomPolicy,
+    SessionHeadroomReading,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_admission_required,
     derive_success_critical,
@@ -115,6 +122,13 @@ class AcpPreflightVerdict:
     # is zero". A horizon of 0 is a ratified setting that disables projection
     # skips while retaining the computation and its record.
     session_headroom_horizon_minutes: int | None = None
+    # The CODEX usage-window readings this evaluation took, carried BESIDE the
+    # Claude ones rather than merged into them. The two readings have different
+    # shapes and different journal projections, so one tuple holding either
+    # would make the journal writer ask which shape each entry was -- and the
+    # two clauses' records are read by separate baseline reads, each of which
+    # must see only its own provider's history.
+    codex_headroom_assessments: tuple[CodexUsageReading, ...] = ()
 
     @property
     def viable(self) -> bool:
@@ -322,13 +336,61 @@ def _graded(
         unobservable=ledger.unobservable,
         assessed_credentials=dict(assessed),
         headroom_assessments=_headroom_assessments(preflights=preflights),
-        session_headroom_floor_percent=(
-            None if inputs.headroom is None else inputs.headroom.floor_percent
+        codex_headroom_assessments=_codex_headroom_assessments(preflights=preflights),
+        session_headroom_floor_percent=_dial(
+            inputs=inputs, claude=lambda one: one.floor_percent, codex=lambda one: one.floor_percent
         ),
-        session_headroom_horizon_minutes=(
-            None if inputs.headroom is None else inputs.headroom.horizon_minutes
+        session_headroom_horizon_minutes=_dial(
+            inputs=inputs,
+            claude=lambda one: one.horizon_minutes,
+            codex=lambda one: one.horizon_minutes,
         ),
     )
+
+
+def _dial(
+    *,
+    inputs: PreflightInputs,
+    claude: Callable[[SessionHeadroomPolicy], int],
+    codex: Callable[[CodexHeadroomPolicy], int],
+) -> int | None:
+    """One governing dial, from whichever policy this evaluation was given.
+
+    `None` still means NO POLICY AT ALL, which is the distinction every
+    consumer of these two fields already keys on -- a floor of 0 is a ratified
+    setting and must not read as an absent policy. What changes is that a
+    dispatch routed WHOLLY to Codex supplies only the Codex policy, and a field
+    read off the Claude policy alone would report no dial for it: the journal
+    writer's own guard tests the floor for `None`, so the readings that
+    evaluation took would be dropped.
+
+    The CLAUDE policy wins where both are present, which decides nothing: the
+    Codex clause "introduces no configuration key of its own", so both policies
+    are built from the same two committed values and the dials are equal by
+    construction.
+    """
+    if inputs.headroom is not None:
+        return claude(inputs.headroom)
+    if inputs.codex_headroom is not None:
+        return codex(inputs.codex_headroom)
+    return None
+
+
+def _codex_headroom_assessments(
+    *, preflights: tuple[NodePreflight, ...]
+) -> tuple[CodexUsageReading, ...]:
+    """Every distinct Codex credential's reading across every node, in node order.
+
+    Deduplicated BY CREDENTIAL IDENTITY for the reason its Claude sibling is:
+    the clause counts one reading per distinct projected credential per
+    evaluation, so two nodes sharing one credential contribute one journal row
+    rather than one each.
+    """
+    seen: dict[str, CodexUsageReading] = {}
+    for preflight in preflights:
+        for reading in preflight.codex_assessments:
+            _ = seen.setdefault(reading.credential_identity, reading)
+    return tuple(seen.values())
 
 
 def _headroom_assessments(

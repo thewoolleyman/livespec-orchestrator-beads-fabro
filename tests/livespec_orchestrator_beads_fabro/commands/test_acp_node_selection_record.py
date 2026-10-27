@@ -379,6 +379,7 @@ def test_a_headroom_skip_carries_its_assessment_floor_and_horizon(tmp_path: Path
         {
             "availability_key": _CLAUDE_DOMAIN,
             "candidate_key": "claude-opus-5",
+            "provider": "claude",
             "session_headroom_floor_percent": _FLOOR,
             "session_headroom_horizon_minutes": _HORIZON,
             "headroom_skip_kind": "floor",
@@ -397,6 +398,12 @@ def test_a_headroom_skip_carries_its_assessment_floor_and_horizon(tmp_path: Path
                     "unobservable": _module(name="_acp_session_headroom").ABSENT_SEVEN_DAY_READING,
                 },
             },
+            # The Codex usage-window clause of section "Provider spend
+            # containment" reaches this same surface, so every skip names its
+            # PROVIDER and carries both reading blocks with the one that does
+            # not apply written as an explicit null. An omitted key would be
+            # what a record from a build predating that clause looks like.
+            "codex_usage": None,
         }
     ]
 

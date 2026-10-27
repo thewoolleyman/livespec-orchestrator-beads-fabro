@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     NodePreflight,
     SkippedCandidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom_records import (
+    codex_usage_reading_fields,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomProjection,
@@ -140,10 +143,23 @@ def session_headroom_skip_fields(*, skip: SkippedCandidate) -> dict[str, object]
     Both DIALS and the kind are carried from the skip rather than resolved here,
     because a projection that read the repository would report the configuration
     as it stands at WRITE time against a skip taken at READ time.
+
+    THE PROVIDER IS A FIELD, AND THE TWO READING BLOCKS ARE SEPARATE. Two
+    clauses govern this one skip reason -- the Claude session clause and the
+    Codex usage-window clause of section "Provider spend containment" -- through
+    these same surfaces and the same two dials, and each requires its records to
+    "name the provider". A skip entry that named none would show a reader a
+    floor skip beside a horizon with no way to tell which allowance was
+    measured. The two readings keep their own blocks rather than sharing one,
+    because their shapes differ: one utilization against one window, versus a
+    provider verdict plus up to two windows and a projection per window. Exactly
+    one of them is non-null on any real skip, and both are written so an omitted
+    key cannot read as a record that never asked.
     """
     return {
         "availability_key": skip.availability_key,
         "candidate_key": skip.candidate_key,
+        "provider": skip.headroom_provider,
         "session_headroom_floor_percent": skip.headroom_floor_percent,
         "session_headroom_horizon_minutes": skip.headroom_horizon_minutes,
         "headroom_skip_kind": skip.headroom_skip_kind,
@@ -151,6 +167,11 @@ def session_headroom_skip_fields(*, skip: SkippedCandidate) -> dict[str, object]
             None
             if skip.headroom is None
             else session_headroom_reading_fields(reading=skip.headroom)
+        ),
+        "codex_usage": (
+            None
+            if skip.codex_headroom is None
+            else codex_usage_reading_fields(reading=skip.codex_headroom)
         ),
     }
 

@@ -286,18 +286,22 @@ def test_a_headroom_emptied_node_waits_without_a_claim_and_says_what_it_read(
             {
                 "availability_key": _CLAUDE_PAIR[0],
                 "candidate_key": _CLAUDE_PAIR[1],
+                "provider": "claude",
                 "session_headroom_floor_percent": _FLOOR,
                 "session_headroom_horizon_minutes": _HORIZON,
                 "headroom_skip_kind": "floor",
                 "headroom": expected,
+                "codex_usage": None,
             },
             {
                 "availability_key": _SECOND_PAIR[0],
                 "candidate_key": _SECOND_PAIR[1],
+                "provider": "claude",
                 "session_headroom_floor_percent": _FLOOR,
                 "session_headroom_horizon_minutes": _HORIZON,
                 "headroom_skip_kind": "floor",
                 "headroom": expected,
+                "codex_usage": None,
             },
         ]
     }

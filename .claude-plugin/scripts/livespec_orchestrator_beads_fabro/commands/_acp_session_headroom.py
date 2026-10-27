@@ -72,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import Acp
 
 __all__: list[str] = [
     "ABSENT_SEVEN_DAY_READING",
+    "CLAUDE_PROVIDER",
     "DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT",
     "DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES",
     "FULL_ALLOWANCE_PERCENT",
@@ -92,6 +93,13 @@ __all__: list[str] = [
     "seven_day_skips_candidate",
     "unobservable_session_headroom",
 ]
+
+# How every record surface names the provider THIS clause governs. It exists
+# because a sibling clause governs `codex-acp` candidates through the SAME
+# record surfaces and the SAME two dials, so a skip entry that named no provider
+# could not be read at all: a reader would see a floor skip and a horizon and
+# have no way to tell whose allowance ran short.
+CLAUDE_PROVIDER = "claude"
 
 # The ratified default of the committed-only
 # `dispatcher.session_headroom_floor_percent`, in percentage points of the
