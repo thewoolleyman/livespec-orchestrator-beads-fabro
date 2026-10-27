@@ -449,28 +449,33 @@ def test_replay_exhaustion_has_no_routed_terminal_on_this_engine() -> None:
     )
 
 
-def test_a_failed_replay_parks_and_an_unmatched_verdict_retries_once() -> None:
-    """A failed replay parks; an unlabeled replay enters its bounded retry route.
+def test_a_failed_replay_parks_and_only_an_unlabeled_replay_retries_once() -> None:
+    """A failed replay parks; only an unlabeled replay enters its bounded retry route.
 
     A FAILED outcome is the structured needs-human ending every ACP node here
     shares, weighted so it stays deterministic against the label conditions. The
-    UNCONDITIONAL fallback enters `proof_verify_verdict_retry`, which re-enters
-    the same ACP node once and then parks with a stage-specific cause. It remains
-    unconditional because the engine rejects a node whose every outgoing edge
-    carries a condition (`all_conditional_edges`, the defect that took the whole
-    factory down twice), and it neither publishes an unreplayed proof nor reports
-    an unreadable verdict as a converged non-reproduction.
+    retry condition compares `preferred_label` with the empty string, which
+    is how Petri represents an absent label. An unknown, non-empty label misses
+    that condition and reaches the ordinary unmatched fallback instead. Thus the
+    retry never swallows a recorded verdict, while the unconditional fallback
+    keeps the graph valid under the engine's `all_conditional_edges` rule.
     """
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_VERIFY)
     parked = _verify_edges_to(target="needs_human")
 
     fallthrough = [edge for edge in edges if "condition=" not in edge]
     assert len(fallthrough) == 1, f"expected exactly one unconditional edge, got {fallthrough}"
-    assert fallthrough[0].startswith(f"{_VERIFY} -> proof_verify_verdict_retry")
-    assert "missing proof_verify verdict label" in fallthrough[0]
-    assert len(parked) == 1
-    assert 'condition="outcome=failed"' in parked[0]
-    assert "weight=100" in parked[0]
+    assert fallthrough[0] == f'{_VERIFY} -> needs_human [label="unmatched proof_verify outcome"]'
+    failed = [edge for edge in parked if 'condition="outcome=failed"' in edge]
+    assert len(failed) == 1
+    assert "weight=100" in failed[0]
+    assert fallthrough[0] in parked
+    retry = [edge for edge in edges if edge.startswith(f"{_VERIFY} -> proof_verify_verdict_retry")]
+    assert retry == [
+        f"{_VERIFY} -> proof_verify_verdict_retry "
+        '[label="missing proof_verify verdict label", '
+        'condition="outcome=succeeded && preferred_label="]'
+    ]
 
 
 def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
