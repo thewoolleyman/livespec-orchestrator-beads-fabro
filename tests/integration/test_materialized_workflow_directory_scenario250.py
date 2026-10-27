@@ -34,7 +34,7 @@ def _real_fabro() -> str:
     """The CI-installed engine, never pytest's dispatch hermetic stub."""
     binary = shutil.which("fabro")
     if binary is None:
-        pytest.skip("the Fabro binary is absent in this sandbox")
+        pytest.skip("the Fabro binary is absent in this sandbox")  # pragma: no cover
     return binary
 
 

@@ -254,6 +254,11 @@ omit = [
     "*/_vendor/*",
     "*/.venv/*",
     "*/site-packages/*",
+    # livespec_runtime is a dependency, never this repo's source. A fleet clone's
+    # git credential helper runs the sibling livespec-runtime checkout, and a
+    # suite test's https git call inherits subprocess coverage, so without this
+    # entry the helper's files fail per-file coverage on that host only.
+    "*/livespec_runtime/*",
     "*/__pycache__/*",
     "/usr/local/bin/*",
     "tests/e2e/*",
