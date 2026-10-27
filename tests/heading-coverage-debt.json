@@ -1006,5 +1006,12 @@
     "heading": "## Scenario 255 \u2014 A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
     "work_item": "bd-ib-72hvx5",
     "first_seen": "2026-10-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 256 \u2014 A publication that already landed is finished at publish_draft, not a failure",
+    "work_item": "bd-ib-weje2m",
+    "first_seen": "2026-10-26"
   }
 ]
