@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.17...v0.243.18) (2026-10-27)
+
+
+### Bug Fixes
+
+* isolate host judgement candidates ([a0f6307](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a0f6307e9097c969b3f154d849e6151a045de601))
+
 ## [0.243.17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.16...v0.243.17) (2026-10-27)
 
 
