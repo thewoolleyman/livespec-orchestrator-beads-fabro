@@ -18,6 +18,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
     spec_identity_for_governing,
+    subject_digest_for_governing,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import render_goal
@@ -216,6 +217,16 @@ def test_clause_identity_rejects_ambiguous_headings(tmp_path: Path) -> None:
     identity = spec_identity_for_governing(item=_item(), cwd=repo, governing=_STATED)
 
     assert identity.form == "tree"
+
+
+def test_subject_digest_uses_the_recorded_governing_identity(tmp_path: Path) -> None:
+    """The digest wrapper receives the resolved clause identity, not the tree."""
+    digest = subject_digest_for_governing(
+        item=_item(), cwd=_repo(tmp_path), comments=(), governing=_STATED
+    )
+
+    assert isinstance(digest, str)
+    assert digest
 
 
 def test_identity_reader_rejects_partial_clause_provenance() -> None:
