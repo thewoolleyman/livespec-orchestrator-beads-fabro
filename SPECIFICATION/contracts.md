@@ -3363,6 +3363,19 @@ that the repository-declared gate rejects, MUST take the refresh-repair route of
 "Refresh repair" below while its budget lasts, and MUST fail closed with a named
 cause and recovery artifact pointer once that budget is spent. A previously completed refresh may be
 recognized idempotently from durable run provenance and matching remote state.
+A publish head on origin that differs from the run's previously published head
+is neither foreign nor unexpectedly changed when it descends from that head and
+every commit it adds is an engine checkpoint commit of this run that changes no
+tree, its message naming this run's id. `pr_refresh` MUST then take that
+observed head as the recorded remote head of the run's publish branch for every
+lease this section requires, and MUST treat the added commits as the run's own
+empty commits under the unchanged-head rule below. A head that adds any other
+commit, or that does not descend from the run's previously published head,
+remains foreign. Measured 2026-10-27 on run 01M5XFBSKGY0 (bd-ib-qksrl6): after
+`pr_refresh` republished at 7e89feeb and routed back for reproof, the engine
+pushed two empty checkpoint commits of the same run onto origin's publish
+branch, and the next `pr_refresh` failed closed on that head as foreign.
+Scenario 226 in `scenarios.md` exercises this sentence.
 
 **A pull request merged before its refresh.** When `pr_refresh`'s first query
 of the run's own publish branch on origin, made before it rebases, pushes or
@@ -3964,7 +3977,18 @@ session identity MUST then replay those steps verbatim and publish
 not reproduce. Host records MUST be published on the pull request of the
 latest merged run for the item; a host record on an earlier pull
 request, or one naming a build identity that does not contain the latest
-merge, is not evidence. The implementation MUST provide one posting
+merge, is not evidence.
+For an item that no factory run merged, the pull request of its latest merged
+run is, throughout this specification, the pull request of the latest
+`reconcile-merged` that journaled a green janitor against that pull request and
+merge SHA and moved the item into `acceptance`; a refused or failed
+reconciliation MUST NOT replace that pull request. The posting primitive MUST target that
+pull request for such an item and MUST NOT refuse for the missing run, and when
+it drives `reconcile-merged` for such an item it MUST pass that pull request as
+the `--pr` selector. When the item has neither a merged run nor such a
+reconciliation, the primitive MUST refuse before posting anything, naming the
+item.
+The implementation MUST provide one posting
 primitive that renders these records, so that no session hand-formats
 one. The primitive MUST compute the publishing identity itself — the
 invoking agent session's id, or the forge login for a human — and MUST
@@ -4445,9 +4469,10 @@ governed CLI surface is:
   reported reason is sufficient to change the outcome.
 
 The Dispatcher's guarded recovery surface for an already-merged item is
-`reconcile-merged --repo <path> --item <work-item-id> [--json]` and, only after
-an operator has confirmed the original dispatcher process is dead,
-`reconcile-merged --repo <path> --item <work-item-id> --force [--json]`. It MUST
+`reconcile-merged --repo <path> --item <work-item-id> [--pr <number>] [--json]`
+and, only after an operator has confirmed the original dispatcher process is
+dead, `reconcile-merged --repo <path> --item <work-item-id> [--pr <number>]
+--force [--json]`. It MUST
 refuse unless the named item is currently `active`, rests in `acceptance`, or
 rests at `ready` with recovery routing holding its next dispatch because the
 pull request of its latest dispatch is merged (§"Factory-configurable ACP
@@ -4492,10 +4517,17 @@ journaled about the janitor:
   route by which a host-leg record posted after the original pass reaches a
   verdict.
 
-The valve MUST decide which case applies from the dispatch journal's record of
-the janitor, never from the item's status alone. When the journal cannot be
-read, or carries no janitor record for the latest dispatch, it MUST refuse and
-name the missing evidence rather than guess either way.
+The valve MUST decide which case applies from journaled janitor evidence, never
+from the item's status alone. For an item that a factory run merged, that
+evidence is the latest dispatch's janitor record. For an item that no factory
+run merged, it is the janitor record of the reconciliation that established the
+item's current reconciled pull request and merge SHA, which that reconciliation
+MUST journal with the pull request and merge SHA it ran against. For an item
+resting in `acceptance`, that evidence MUST concern the pull request and merge
+SHA this invocation resolves or selects. When the journal cannot be read,
+carries no such janitor record, or carries one for a different pull request or
+merge SHA, the valve MUST refuse before running acceptance, name the missing or
+mismatched evidence, and leave the item's status unchanged.
 It MUST additionally refuse ANY item carrying the `rework:pending` label,
 whatever its status: such an item's dispatch COMPLETED its post-run
 disposition — the disposition's outcome was rework — and the remedy is the
@@ -4537,7 +4569,18 @@ candidate and MUST NOT let a candidate of a lower tier make a higher tier's
 resolution ambiguous. If that highest tier holds more than one candidate, the
 valve MUST refuse with a clear ambiguous-PR error listing that tier's candidates
 rather than silently choosing the first result. Scenario 244 in `scenarios.md`
-exercises this ranking. The
+exercises this ranking.
+The valve MUST also accept an optional `--pr <number>` selector naming one
+merged pull request of the item, for an item that landed through more than one
+merged pull request. With the selector, the valve MUST resolve that pull request
+and its merge SHA from GitHub instead of ranking candidates, and MUST NOT refuse
+because other merged pull requests identify the item. It MUST refuse, naming the
+pull request, when that pull request is not merged onto the default branch or
+does not identify the item by head ref or title. A selected pull request then
+stands in every later step of the valve exactly as a resolved one does, and the
+valve MUST journal the selected pull request's number and merge SHA in the
+reconciliation's journal record. Without the selector the ranking above is
+unchanged. The
 valve MUST NOT require or trust ledger audit metadata for that resolution. After
 a merged PR resolves, the valve MUST NOT launch Fabro and MUST NOT rebuild the
 change; it reruns the same post-merge janitor used by the dispatch engine
