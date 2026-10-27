@@ -51,11 +51,15 @@ counterpart, and every caller already reads any non-zero exit as a failure.
 from __future__ import annotations
 
 import os
+import queue
+import signal
 import subprocess
-from collections.abc import Mapping
+import threading
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TextIO, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -64,6 +68,8 @@ __all__: list[str] = [
     "ShellCommandRunner",
     "child_env",
 ]
+
+IS_POSIX = os.name == "posix"
 
 
 def child_env(*, delta: Mapping[str, str | None]) -> dict[str, str]:
@@ -129,6 +135,185 @@ class ShellCommandRunner:
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
+
+    def run_streaming(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        on_stdout_line: Callable[[str], bool],
+        env: Mapping[str, str | None] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        """Run one host command, ending its session when its live output says to.
+
+        The Definition-of-Done input budget is cumulative across API requests,
+        so learning that a candidate reached it only after ``subprocess.run``
+        returns is too late: the model has already made every later request and
+        may have produced a natural verdict.  This variant delivers each stdout
+        line while the child remains live.  A ``True`` callback result ends the
+        process group, not only the direct child, so a CLI's session and any
+        helper it owns cannot continue consuming input after the host has
+        refused the candidate's verdict.
+
+        ``start_new_session`` is deliberately fixed here.  It makes the child
+        its own process-group leader, which is the boundary ``killpg`` can end
+        without reaching the Dispatcher that is taking the fallback chain.
+        """
+        launched = attempt(
+            action=lambda: subprocess.Popen(  # noqa: S603 - Dispatcher-built argv
+                argv,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=None if env is None else child_env(delta=env),
+                stdin=stdin,
+                start_new_session=True,
+            ),
+            exceptions=(OSError,),
+        )
+        if isinstance(launched, AttemptFailure):
+            return _failure_result(
+                error=launched.error,
+                argv=argv,
+                timeout_seconds=timeout_seconds,
+            )
+        return _stream_process(
+            process=launched,
+            timeout_seconds=timeout_seconds,
+            on_stdout_line=on_stdout_line,
+        )
+
+
+def _stream_process(  # noqa: C901, PLR0915 - timeout and callback exits must each reap readers.
+    *,
+    process: subprocess.Popen[str],
+    timeout_seconds: float,
+    on_stdout_line: Callable[[str], bool],
+) -> CommandResult:
+    """Drain one live child and terminate its process group on callback refusal."""
+    lines: queue.Queue[str | None] = queue.Queue()
+    stderr: list[str] = []
+
+    def read_stdout() -> None:
+        for line in cast(TextIO, process.stdout):
+            lines.put(line)
+        lines.put(None)
+
+    def read_stderr() -> None:
+        stderr.append(cast(TextIO, process.stderr).read())
+
+    stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+    stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+    stdout: list[str] = []
+    deadline = time.monotonic() + timeout_seconds
+    ended_by_callback = False
+    stream_closed = False
+    while not stream_closed:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _terminate_process_group(process=process)
+            _wait_for_termination(process=process)
+            return _stream_timeout_result(
+                stdout=stdout,
+                stderr=stderr,
+                timeout_seconds=timeout_seconds,
+                stdout_thread=stdout_thread,
+                stderr_thread=stderr_thread,
+            )
+        try:
+            line = lines.get(timeout=remaining)
+        except queue.Empty:
+            continue
+        if line is None:
+            stream_closed = True
+            continue
+        stdout.append(line)
+        if on_stdout_line(line):
+            ended_by_callback = True
+            _terminate_process_group(process=process)
+            break
+    if ended_by_callback:
+        _wait_for_termination(process=process)
+    else:
+        try:
+            _ = process.wait(timeout=max(0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(process=process)
+            _wait_for_termination(process=process)
+            return _stream_timeout_result(
+                stdout=stdout,
+                stderr=stderr,
+                timeout_seconds=timeout_seconds,
+                stdout_thread=stdout_thread,
+                stderr_thread=stderr_thread,
+            )
+    stdout_thread.join()
+    stderr_thread.join()
+    return CommandResult(
+        exit_code=process.returncode,
+        stdout="".join(stdout),
+        stderr="".join(stderr),
+    )
+
+
+def _terminate_process_group(*, process: subprocess.Popen[str]) -> None:
+    """End the candidate's own session without signalling the Dispatcher."""
+    try:
+        if IS_POSIX:
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        return
+    except OSError:
+        if process.poll() is None:
+            process.terminate()
+
+
+def _wait_for_termination(*, process: subprocess.Popen[str]) -> None:
+    """Reap a child whose private process group the budget just ended."""
+    try:
+        _ = process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(process=process)
+        _ = process.wait()
+
+
+def _kill_process_group(*, process: subprocess.Popen[str]) -> None:
+    """Escalate an ignored graceful stop without leaving judge helpers alive."""
+    try:
+        if IS_POSIX:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        return
+    except OSError:
+        if process.poll() is None:
+            process.kill()
+
+
+def _stream_timeout_result(
+    *,
+    stdout: list[str],
+    stderr: list[str],
+    timeout_seconds: float,
+    stdout_thread: threading.Thread,
+    stderr_thread: threading.Thread,
+) -> CommandResult:
+    """Join stream readers and preserve the same timeout mapping as ``run``."""
+    stdout_thread.join()
+    stderr_thread.join()
+    return CommandResult(
+        exit_code=124,
+        stdout="".join(stdout),
+        stderr="".join(stderr) + f"\ntimeout after {timeout_seconds}s",
+    )
 
 
 def _failure_result(
