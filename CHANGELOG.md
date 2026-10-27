@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.16...v0.243.17) (2026-10-27)
+
+
+### Bug Fixes
+
+* **dispatcher:** cover dot-safe workflow payload names ([860563f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/860563ff598239c3642a94a598fcd1969e7acdb4))
+
 ## [0.243.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.15...v0.243.16) (2026-10-27)
 
 

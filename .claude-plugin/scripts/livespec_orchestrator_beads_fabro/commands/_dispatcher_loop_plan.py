@@ -97,8 +97,9 @@ def overlay_file_path(*, work_item_id: str) -> Path:
 
 
 def workflow_payload_dir(*, work_item_id: str) -> Path:
-    """The per-dispatch workflow payload (rendered graph plus its prompts)."""
-    return Path(tempfile.gettempdir()) / f"fabro-workflow-{work_item_id}"
+    """The per-dispatch workflow payload with a Fabro-safe, injective name."""
+    encoded_id = work_item_id.encode("utf-8").hex()
+    return Path(tempfile.gettempdir()) / f"fabro-workflow-{encoded_id}"
 
 
 def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each field is an independent caller input.
