@@ -100,6 +100,17 @@ def test_render_order_is_sorted_env_then_command_then_args() -> None:
     assert rendered == "ALPHA=2 MIKE=3 ZULU=1 npx -y some-acp -c model=local"
 
 
+def test_each_agent_adapter_receives_its_workflow_node_as_publication_stage() -> None:
+    """The guard's stage is projected by the workflow resolver, not agent input."""
+    resolution = _resolve()
+
+    assert not isinstance(resolution, str)
+    assert {
+        node: resolved.adapter.env["LIVESPEC_AGENT_STAGE"]
+        for node, resolved in resolution.nodes.items()
+    } == {node: node for node in resolution.nodes}
+
+
 def test_parsing_an_adapter_string_round_trips_through_rendering() -> None:
     """A workflow default survives decomposition and re-rendering unchanged.
 

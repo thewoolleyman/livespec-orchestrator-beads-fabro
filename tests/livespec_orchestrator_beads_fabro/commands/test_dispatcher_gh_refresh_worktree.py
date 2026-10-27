@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     SANDBOX_GH_REFRESH_ROOT_ENV_VAR,
     refreshing_gh_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
 
 _BUNDLE_DIRNAME = ".livespec-gh-refresh"
 _DEFAULT_BRANCH = "master"
@@ -306,6 +307,25 @@ def test_an_agent_stage_cannot_reach_gh_api_pull_request_publication(
     assert result.returncode != 0
     assert f"LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action={action}" in result.stderr
     assert not capture.exists()
+
+
+def test_an_agent_stage_cannot_push_any_ref_to_origin(tmp_path: Path) -> None:
+    """The push helper refuses before even reading the origin remote."""
+    helper = tmp_path / "push_origin"
+    _write_executable(path=helper, source=PUSH_ORIGIN_SOURCE)
+
+    result = subprocess.run(
+        [str(helper), "git", "push", "origin", "HEAD:feature"],
+        env={**os.environ, "LIVESPEC_AGENT_STAGE": "proof_verify"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action=push_origin" in result.stderr
+    )
 
 
 def _rendered_prepare_scripts(
