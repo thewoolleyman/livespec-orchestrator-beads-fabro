@@ -27,6 +27,7 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     ELIDED_BODY_MARKER,
     PROMPT_CHARACTER_CEILING,
+    CondensedClause,
     condensed_spec_tree,
 )
 
@@ -79,10 +80,28 @@ def test_the_condensation_names_the_heading_and_body_of_each_selected_clause() -
     condensed = condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT)
 
     assert [(clause.heading, clause.body) for clause in condensed.clauses] == [
-        ("## First clause", _FIRST_BODY),
-        ("## Second clause", _SECOND_BODY),
-        ("## Only clause", _ONLY_BODY),
+        ("## First clause", "\n\n" + _FIRST_BODY + "\n\n"),
+        ("## Second clause", "\n\n" + _SECOND_BODY + "\n"),
+        ("## Only clause", "\n\n" + _ONLY_BODY + "\n"),
     ]
+
+
+def test_selected_clause_provenance_preserves_boundary_newlines_from_the_prompt() -> None:
+    """A newline-only clause change must invalidate its recorded verdict."""
+    tree = {
+        "contracts.md": "## Selected clause\n\nThe selected clause keeps its boundary newlines.\n\n"
+    }
+    body = tree["contracts.md"].removeprefix("## Selected clause")
+
+    condensed = condensed_spec_tree(spec_tree=tree, statement="selected clause")
+
+    assert condensed["contracts.md"] == tree["contracts.md"]
+    assert condensed.clauses == (
+        CondensedClause(
+            heading="## Selected clause",
+            body=body,
+        ),
+    )
 
 
 def test_named_clause_provenance_uses_heading_and_body_not_its_source_position() -> None:
@@ -91,8 +110,8 @@ def test_named_clause_provenance_uses_heading_and_body_not_its_source_position()
 
     clauses_named = getattr(_spec_tree_condensation, "clauses_named", None)
     expected = [
-        ("## Second clause", _SECOND_BODY),
-        ("## Only clause", _ONLY_BODY),
+        ("## Second clause", "\n\n" + _SECOND_BODY + "\n"),
+        ("## Only clause", "\n\n" + _ONLY_BODY + "\n"),
     ]
     selected = (
         [
