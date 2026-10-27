@@ -31,10 +31,13 @@ from __future__ import annotations
 
 import importlib
 import os
+import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpAdapter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     CAUSE_UNPARSEABLE_VERDICT,
     JUDGEMENT_ADMITTED,
@@ -51,9 +54,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     judgement_prompt,
     resolve_judge_path,
     resolve_judge_timeout_seconds,
+    run_dod_gate_prompt,
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
+    ShellCommandRunner,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _GATE_PROMPT = "# Definition-of-Done gate\n\nWork through all six checks.\n"
@@ -381,6 +388,54 @@ def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decid
     assert verdict.bound_ended_candidates == ("codex-acp:gpt-5.6-terra",)
     assert runner.calls[0][0] == "codex"
     assert runner.calls[1][1:3] == ["-p", "--allowedTools"]
+
+
+def test_a_live_input_bound_candidate_is_terminated_before_its_natural_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host judge is stopped at the cumulative limit, before its final reply."""
+    marker = tmp_path / "first-candidate-returned-naturally"
+    program = "\n".join(
+        (
+            "import json",
+            "import pathlib",
+            "import sys",
+            "import time",
+            "if sys.argv[1] == 'first':",
+            "    print(json.dumps({'request_id': 'one', 'usage': {'input_tokens': 50000}}), flush=True)",
+            "    time.sleep(0.05)",
+            "    print(json.dumps({'request_id': 'two', 'usage': {'input_tokens': 50000}}), flush=True)",
+            "    time.sleep(0.2)",
+            "    pathlib.Path(sys.argv[2]).touch()",
+            "    print(json.dumps({'outcome': 'passed'}), flush=True)",
+            "else:",
+            "    print(json.dumps({'request_id': 'fallback', 'usage': {'input_tokens': 99999}}), flush=True)",
+            "    print(json.dumps({'outcome': 'passed'}), flush=True)",
+        )
+    )
+    first = AcpCandidate(
+        adapter=AcpAdapter(command=sys.executable, args=("-c", program, "first", str(marker))),
+        agent_id="first",
+    )
+    fallback = AcpCandidate(
+        adapter=AcpAdapter(command=sys.executable, args=("-c", program, "fallback", str(marker))),
+        agent_id="fallback",
+    )
+    module = importlib.import_module(_RUN_MODULE)
+    monkeypatch.setattr(module, "dod_gate_candidates", lambda **_: (first, fallback))
+
+    result = run_dod_gate_prompt(
+        prompt="proof",
+        cwd=tmp_path,
+        runner=ShellCommandRunner(),
+        timeout_seconds=2.0,
+        is_verdict=lambda text: '"outcome": "passed"' in text,
+    )
+
+    assert result.deciding_candidate == "fallback"
+    assert result.usage is not None and result.usage.total_tokens == 99999
+    assert result.bound_ended_candidates == ("first",)
+    assert not marker.exists()
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
