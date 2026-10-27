@@ -218,6 +218,16 @@ names a file and the text it carries, read that file out of the delivered
 tree. Reaching for `pytest` because it is nearer to hand is the failure this
 paragraph exists to stop.
 
+### Pre-publication proof refusal
+
+Before posting the record, audit each `factory_captured` assertion's proposed
+proof. If an assertion is evidenced by **test-suite output alone** — including
+a pass count or test-runner output — **DO NOT publish the record**. Name the
+assertion, then capture behaviour evidence for it: directly exercise the
+surface the assertion names and retain the delivered artifact's output and exit
+status. A suite run may accompany that evidence afterwards; it cannot replace
+it.
+
 ### Show the observation, never print the conclusion
 
 A proof must SHOW what was observed. A step whose output is the claim itself
