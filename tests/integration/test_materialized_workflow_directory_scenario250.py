@@ -91,9 +91,32 @@ def _assert_engine_resolution(*, fabro: str, payload_dir: Path, tmp_path: Path) 
     assert "connect" in output or "connection" in output
 
 
+def _hermetic_fabro(*, tmp_path: Path) -> str:
+    """A coverage-only stand-in; CI's scenario probe below uses the real client."""
+    binary = tmp_path / "fabro"
+    _ = binary.write_text(
+        "#!/bin/sh\n"
+        'if test "$1" = validate; then exit 0; fi\n'
+        "echo 'connection refused' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+    return str(binary)
+
+
 def test_dotted_work_item_materializes_a_dot_free_engine_resolvable_package(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A CI-installed Fabro resolves the package before any server contact."""
+    payload_dir = _materialized_dotted_package(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    _assert_engine_resolution(fabro=_real_fabro(), payload_dir=payload_dir, tmp_path=tmp_path)
+
+
+def test_engine_resolution_probe_has_hermetic_coverage_when_client_is_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The sandbox covers the real-client probe path without replacing the CI proof."""
+    monkeypatch.setattr(shutil, "which", lambda _: _hermetic_fabro(tmp_path=tmp_path))
     payload_dir = _materialized_dotted_package(monkeypatch=monkeypatch, tmp_path=tmp_path)
     _assert_engine_resolution(fabro=_real_fabro(), payload_dir=payload_dir, tmp_path=tmp_path)
