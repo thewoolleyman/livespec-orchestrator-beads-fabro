@@ -300,6 +300,8 @@ def test_an_unexecutable_target_wrapper_makes_the_status_read_unobservable(
 ) -> None:
     repository = _repo(tmp_path=tmp_path)
     wrapper = repository.clone / "with-target-tenant-env.sh"
+    _ = wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    wrapper.chmod(0o644)
     config_path = repository.clone / ".beads" / "config.yaml"
     config_path.parent.mkdir()
     _ = config_path.write_text("dolt.mode: server\n", encoding="utf-8")
