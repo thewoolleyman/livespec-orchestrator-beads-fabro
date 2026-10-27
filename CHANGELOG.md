@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.18...v0.243.19) (2026-10-27)
+
+
+### Bug Fixes
+
+* restore Codex-first host judges by reverting bd-ib-w4hqe2's judge isolation ([492f211](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/492f21101f1efaad6cb2756bee019d42d1429334))
+
 ## [0.243.18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.17...v0.243.18) (2026-10-27)
 
 
