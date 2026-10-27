@@ -34,6 +34,11 @@ a commit. The detached commit run and its bounded waits are the one exception
 to the rule against backgrounding a tool call, and every commit run you start
 must be terminal before your final message.
 
+## Red and Green commit discipline
+
+Every Red commit must stage exactly one test file and no product file. Run that
+test first and observe its genuine assertion failure before committing it.
+
 ## What to do
 
 1. Read the disposition record from the prior stage context, including any
