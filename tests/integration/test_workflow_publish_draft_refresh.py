@@ -16,6 +16,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
+    PROOF_HEAD_PROGRAM_FILENAME,
+    proof_head_program_source,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
     _REPO_ROOT
@@ -118,6 +123,10 @@ def _forge_double(*, tmp_path: Path) -> Path:
         "#!/bin/sh\n"
         'for arg in "$@"; do printf \'%s\\n\' "$arg" >> "$GH_CALLS"; done\n'
         f"printf '%s\\n' '{_CALL_END}' >> \"$GH_CALLS\"\n"
+        'if test "$1" = pr && test "$2" = list && test "${LIVESPEC_LANDED_PR:-}" != ""; then\n'
+        '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LANDED_PR" && exit 0; done\n'
+        "fi\n"
+        'if test "$1 $2" = "pr view"; then printf \'%s\\n\' \'{"comments": []}\'; exit 0; fi\n'
         'if test "$1 $2" = "pr create"; then : > "$GH_DRAFT_CREATED"; fi\n'
         "exit 0\n",
         encoding="utf-8",
@@ -140,10 +149,15 @@ def _calls(*, path: Path) -> tuple[tuple[str, ...], ...]:
     return tuple(calls)
 
 
-def _publish(*, tmp_path: Path, run: Path) -> _Published:
+def _publish(*, tmp_path: Path, run: Path, landed_pr: str | None = None) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
     bin_dir = _forge_double(tmp_path=tmp_path)
+    plugins_root = tmp_path / "plugins"
+    plugins_root.mkdir()
+    _ = (plugins_root / PROOF_HEAD_PROGRAM_FILENAME).write_text(
+        proof_head_program_source(), encoding="utf-8"
+    )
     env = {
         key: value
         for key, value in os.environ.items()
@@ -155,6 +169,8 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
             "GH_CALLS": str(calls),
             "GH_DRAFT_CREATED": str(created),
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
+            "LIVESPEC_LANDED_PR": landed_pr or "",
+            "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
     )
     result = subprocess.run(
@@ -226,6 +242,33 @@ def test_reentry_after_master_advances_preserves_the_published_tip(
     assert _git(run, "merge-base", "--is-ancestor", published_tip, "HEAD").returncode == 0
     remote_head = _git(run, "ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}").stdout
     assert remote_head.split()[0] == refreshed_tip
+
+
+def test_a_landed_publication_ends_before_push_or_draft_creation(tmp_path: Path) -> None:
+    """Scenario 256: a merge already in master does not need republication."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=f"73\t{merged_head}\t{merged_head}",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in published.result.stderr
+    assert published.draft_created is False
+    assert not any(call[:2] == ("pr", "create") for call in published.calls)
+    remote = _git(run, "ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}").stdout
+    assert remote == ""
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    marker_text = marker.read_text(encoding="utf-8")
+    assert "pull_request=73" in marker_text
+    assert f"merge_commit={merged_head}" in marker_text
+    assert f"merged_head={merged_head}" in marker_text
+    assert "proof_head=none" in marker_text
+    assert "heads_equal=false" in marker_text
 
 
 def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(

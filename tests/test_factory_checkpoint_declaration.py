@@ -64,6 +64,13 @@ figure plus `CODEX_FRESHNESS_MARGIN_SECONDS` now demands 640635 of a token's
 remaining life, so a ten-day Codex token has to be under about 2.59 days old
 to pass the freshness gate.
 
+The two merged-publication reconciliation classifiers add another pair of
+scripted visits without adding an ACP obligation.  Re-measured against that
+graph, the shipped five-minute allowance is 1188735 seconds and the retired
+fifteen-minute control is 1860135 seconds.  The 1200000-second bound remains
+strictly between them, preserving 11265 seconds of shipped headroom while still
+rejecting the retired checkpoint budget.
+
 Budgeting the two PUBLICATION stages for an hour each (`bd-ib-xi63mq`,
 Scenario 177 -- `publish_draft` and `pr_refresh` run this repository's declared
 check suite inside a push hook) moves both again. This is a RE-MEASUREMENT
@@ -258,8 +265,8 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # would make every unrelated timeout edit fail this case; the control pins the
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
-_ALLOWANCE_BOUND_SECONDS = 1_100_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
+_ALLOWANCE_BOUND_SECONDS = 1_200_000
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_860_135
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -272,7 +279,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_055_565
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_188_735
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 

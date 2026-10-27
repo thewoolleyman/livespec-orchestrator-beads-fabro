@@ -339,7 +339,7 @@ def test_proof_verify_is_entered_only_from_review_or_its_own_grade_route() -> No
     assert {_source_of(edge=edge) for edge in entries} == {"review", "proof_grade_route"}
 
 
-def test_the_verify_node_dominates_every_green_path_so_it_is_success_critical() -> None:
+def test_a_landed_publication_bypasses_replay_so_the_later_acceptance_grades_its_absence() -> None:
     """The fallback-priority clause names the replay node admission-required.
 
     Derived from the committed graph rather than asserted as a literal set: the
@@ -355,7 +355,7 @@ def test_the_verify_node_dominates_every_green_path_so_it_is_success_critical() 
     critical = derive_success_critical(graph=parse_workflow_graph(text=_dot(payload=_BUNDLE)))
 
     assert not isinstance(critical, str), critical
-    assert _VERIFY in critical.nodes
+    assert _VERIFY not in critical.nodes
     assert "non_converged" not in critical.nodes
 
 

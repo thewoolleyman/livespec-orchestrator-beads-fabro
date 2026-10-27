@@ -116,8 +116,10 @@ def test_the_filename_set_is_complete_and_distinct() -> None:
     """
     filenames = publication_state_filenames()
 
+    assert "livespec-merged-reconcile" in filenames
     assert set(filenames) == {
         PUBLISH_HEAD_STATE_FILENAME,
+        "livespec-merged-reconcile",
         REFRESH_COUNT_STATE_FILENAME,
         REFRESH_CHANGED_STATE_FILENAME,
         REFRESH_REPAIR_BRIEF_STATE_FILENAME,

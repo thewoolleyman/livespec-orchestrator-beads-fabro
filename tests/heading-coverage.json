@@ -2300,9 +2300,9 @@
     "heading": "## Scenario 248 \u2014 A pull request merged before its refresh ends the run as a finished publication",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal pr-refresh-merged-publication (v226). Owned by plan epic bd-ib-ku7phe until its implementing child, filed after ratification, teaches pr_refresh the merged-reconcile ending together with the test that binds this entry.",
-    "work_item": "bd-ib-ku7phe"
+    "test": "tests.integration.test_scripted_refresh_execution.test_a_merged_pull_request_with_a_deleted_publish_branch_finishes_refresh",
+    "reason": "Integration-tier Scenario 248 coverage executes the shipped pr_refresh script against a real origin after the publish branch has been deleted and the controlled forge reports a merged pull request. It proves the merged-reconcile marker is recorded without a rebase, push, or auto-merge disarm.",
+    "work_item": "bd-ib-weje2m"
   },
   {
     "heading": "## Scenario 249 \u2014 Implement and review_fix turns run their touched tests green, stage one test per Red, and update pinning tests with prompt edits",
@@ -2364,8 +2364,8 @@
     "heading": "## Scenario 256 \u2014 A publication that already landed is finished at publish_draft, not a failure",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal landed-publication-is-finished-at-publish, and the owning work-item bd-ib-weje2m adds the landed-publication check to publish_draft beside pr_refresh's, together with the test that binds this entry.",
+    "test": "tests.integration.test_workflow_publish_draft_refresh.test_a_landed_publication_ends_before_push_or_draft_creation",
+    "reason": "Integration-tier Scenario 256 coverage executes the shipped publish_draft script against a real origin and a controlled merged-pull-request forge response. It proves a landing already contained in master records merged reconciliation without pushing a branch or creating a draft pull request.",
     "work_item": "bd-ib-weje2m"
   },
   {

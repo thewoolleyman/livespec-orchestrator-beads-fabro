@@ -192,7 +192,9 @@ def test_publish_draft_fails_closed_to_needs_human_and_falls_through_to_capture(
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_PUBLISH)
 
     assert edges, "publish_draft declares no outgoing edges"
-    assert [edge for edge in edges if "condition=" not in edge] == [f"{_PUBLISH} -> {_CAPTURE}"]
+    assert [edge for edge in edges if "condition=" not in edge] == [
+        f"{_PUBLISH} -> publish_merged_reconcile_route"
+    ]
     blocked = [edge for edge in edges if edge.startswith(f"{_PUBLISH} -> refresh_repair")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]
@@ -200,6 +202,10 @@ def test_publish_draft_fails_closed_to_needs_human_and_falls_through_to_capture(
     classifier = _edges_from(text=_dot(payload=_BUNDLE), node="refresh_repair")
     assert [edge for edge in classifier if "condition=" not in edge] == [
         "refresh_repair -> needs_human"
+    ]
+    landed = _edges_from(text=_dot(payload=_BUNDLE), node="publish_merged_reconcile_route")
+    assert [edge for edge in landed if "condition=" not in edge] == [
+        "publish_merged_reconcile_route -> proof_capture"
     ]
 
 
@@ -255,7 +261,7 @@ def test_proof_capture_is_entered_only_from_a_published_draft_or_a_recapture() -
     parsed = parse_workflow_graph(text=_dot(payload=_BUNDLE))
 
     assert set(parsed.predecessors(node=_CAPTURE)) == {
-        _PUBLISH,
+        "publish_merged_reconcile_route",
         "pr_refresh_head",
         "recapture_route",
     }
@@ -366,7 +372,7 @@ def test_proof_capture_is_a_registered_acp_node_with_its_own_input_candidate() -
     assert NODE_INPUT_CANDIDATES[_CAPTURE] == (_CAPTURE_ADAPTER_INPUT,)
 
 
-def test_the_capture_node_dominates_every_green_path_so_it_is_success_critical() -> None:
+def test_a_landed_publication_bypasses_capture_so_the_later_acceptance_grades_its_absence() -> None:
     """The fallback-priority clause names the capture node admission-required.
 
     Derived from the committed graph rather than asserted as a literal set: the
@@ -385,7 +391,7 @@ def test_the_capture_node_dominates_every_green_path_so_it_is_success_critical()
     critical = derive_success_critical(graph=parse_workflow_graph(text=_dot(payload=_BUNDLE)))
 
     assert not isinstance(critical, str), critical
-    assert _CAPTURE in critical.nodes
+    assert _CAPTURE not in critical.nodes
     assert _PUBLISH not in critical.nodes
 
 
