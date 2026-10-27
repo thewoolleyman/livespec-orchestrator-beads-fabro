@@ -204,6 +204,51 @@ def test_the_pre_dispatch_judgement_holds_on_the_same_heading(tmp_path: Path) ->
     assert any(_GOVERNING in finding for finding in decision.findings)
 
 
+def test_an_unrelated_spec_revision_reuses_a_recorded_verdict_without_a_second_judge(
+    tmp_path: Path,
+) -> None:
+    """A recorded governing clause, not the whole tree, identifies the subject."""
+    repo = _repo(tmp_path=tmp_path)
+    ledger = _Ledger()
+    calls = 0
+
+    def reader(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict:
+        nonlocal calls
+        _ = (item, repo)
+        calls += 1
+        return _VERDICT
+
+    first = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+    _ = (repo / "SPECIFICATION" / "unrelated.md").write_text(
+        "# Unrelated\n\n## Scenario 999 — An unrelated clause\n\nBody.\n",
+        encoding="utf-8",
+    )
+    second = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+
+    assert first.reused is False
+    assert second.reused is True
+    assert calls == 1
+    assert len(ledger.bodies) == 1
+
+
 def test_a_judgement_that_could_not_be_taken_leaves_the_rubric_verdict_alone(
     tmp_path: Path,
 ) -> None:
