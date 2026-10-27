@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.20...v0.243.21) (2026-10-27)
+
+
+### Bug Fixes
+
+* preserve proof-mode criteria layout ([43bf679](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/43bf6790e46ae3139da7e4900be4365a50300857))
+
 ## [0.243.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.19...v0.243.20) (2026-10-27)
 
 
