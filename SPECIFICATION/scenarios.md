@@ -10186,3 +10186,30 @@ Feature: A merged item whose proof is missing or record-wide is re-proven withou
     When the operator drives resume for its item parked on its proof leg
     Then the resume refuses naming the two earlier resumes
 ```
+
+## Scenario 258 — A review or proof_verify turn that succeeds without a verdict label is retried once before it reaches needs_human
+
+```gherkin
+Feature: A verdict turn that forgets its verdict gets one more chance before a human is asked
+  Scenario: proof_verify without a verdict label is retried and then routes on its verdict
+    Given a proof_verify turn that ends succeeded and records no verdict label
+    When the run routes that turn
+    Then proof_verify runs once more on the same head with an instruction to emit only its verdict
+    And when the retry records preferred_label approve, the run routes to proof_grade
+
+  Scenario: review without a verdict label is retried once
+    Given a review turn that ends succeeded and records no verdict label
+    When the run routes that turn
+    Then review runs once more with an instruction to emit only its verdict
+    And the retry's verdict label routes it exactly as a first turn's would
+
+  Scenario: A second unlabeled turn reaches needs_human with a named cause
+    Given a proof_verify retry turn that also ends succeeded and records no verdict label
+    When the run routes that turn
+    Then the run routes to needs_human with a cause naming proof_verify and its missing verdict label
+
+  Scenario: A labeled or failed turn routes as before
+    Given a review turn that records preferred_label fix, and another that ends failed
+    When the run routes each turn
+    Then the first routes to disposition and the second to needs_human, with no retry
+```

@@ -1020,5 +1020,12 @@
     "heading": "## Scenario 257 \u2014 A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request",
     "work_item": "bd-ib-opd3hq",
     "first_seen": "2026-10-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 258 \u2014 A review or proof_verify turn that succeeds without a verdict label is retried once before it reaches needs_human",
+    "work_item": "bd-ib-wg5zyt",
+    "first_seen": "2026-10-26"
   }
 ]
