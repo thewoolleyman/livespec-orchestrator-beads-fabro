@@ -77,6 +77,8 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
 )
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    clauses_named,
+    condensed_spec_tree,
     judge_within_ceiling,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -166,10 +168,12 @@ def governing_heading_verdict(
     )
     if isinstance(read, AttemptFailure):
         return None
+    statement = governing_heading_statement(item=item, section=section)
+    condensed = condensed_spec_tree(spec_tree=read, statement=statement)
     judged = attempt(
         action=lambda: judge_within_ceiling(
             spec_tree=read,
-            statement=governing_heading_statement(item=item, section=section),
+            statement=statement,
             run_model=run_model,
         ),
         exceptions=(OSError,),
@@ -181,4 +185,6 @@ def governing_heading_verdict(
         kind=verdict.kind,
         stated_by=verdict.stated_by,
         generalization_target=verdict.generalization_target,
+        selected_clauses=condensed.clauses,
+        named_clauses=clauses_named(spec_tree=read, headings=verdict.stated_by),
     )

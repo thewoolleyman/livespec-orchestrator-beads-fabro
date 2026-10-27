@@ -25,11 +25,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_ADMISSION,
     STAGE_PRE_DISPATCH,
+    GoverningHeadingReceipt,
     did_not_run_comment,
     recorded_did_not_run_causes,
+    reusable_governing_heading,
     reusable_verdict,
     verdict_comment,
 )
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
 _DIGEST = "a" * 64
 _OTHER_DIGEST = "b" * 64
@@ -38,6 +44,14 @@ _OTHER_RUBRIC = "d" * 64
 _FINDINGS = (
     "bd-ib-1: the References line omits the governing scenario; add that heading.",
     "bd-ib-1: assertion 2 asserts a test exists; restate it as the behaviour.",
+)
+_SELECTED = (CondensedClause(heading="## Selected", body="The selected body."),)
+_NAMED = (CondensedClause(heading="## Named", body="The cited body."),)
+_GOVERNING = GoverningHeadingVerdict(
+    kind="stated",
+    stated_by=("## Named",),
+    selected_clauses=_SELECTED,
+    named_clauses=_NAMED,
 )
 
 
@@ -123,6 +137,73 @@ def test_an_item_with_no_judgement_record_at_all_reuses_nothing() -> None:
         )
         is None
     )
+
+
+def _governing_comment(*, subject_digest: str = _DIGEST) -> str:
+    return verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_ADMISSION,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(outcome=JUDGEMENT_ADMITTED),
+        governing=GoverningHeadingReceipt(
+            verdict=_GOVERNING,
+            subject_digest=subject_digest,
+        ),
+    )
+
+
+def test_a_complete_governing_receipt_reuses_the_bodies_the_prompt_carried() -> None:
+    reused = reusable_governing_heading(
+        comments=(_governing_comment(),),
+        subject_digest=_DIGEST,
+        selected_clauses=_SELECTED,
+        named_clauses=_NAMED,
+    )
+
+    assert reused == _GOVERNING
+
+
+def test_a_governing_receipt_reuses_nothing_after_its_subject_or_clause_changes() -> None:
+    subject_changed = reusable_governing_heading(
+        comments=(_governing_comment(),),
+        subject_digest=_OTHER_DIGEST,
+        selected_clauses=_SELECTED,
+        named_clauses=_NAMED,
+    )
+    selected_changed = reusable_governing_heading(
+        comments=(_governing_comment(),),
+        subject_digest=_DIGEST,
+        selected_clauses=(CondensedClause(heading="## Selected", body="Changed."),),
+        named_clauses=_NAMED,
+    )
+
+    assert subject_changed is None
+    assert selected_changed is None
+
+
+def test_an_incomplete_or_malformed_governing_receipt_is_never_reused() -> None:
+    body = _governing_comment()
+    malformed = (
+        body.replace('"body": "The selected body."', '"body":'),
+        body.replace(
+            '{"body": "The selected body.", "heading": "## Selected"}',
+            "[]",
+        ),
+        body.replace('"body": "The selected body."', '"body": 1'),
+        body.replace("governing-heading-kind: stated\n", ""),
+    )
+
+    for record in malformed:
+        assert (
+            reusable_governing_heading(
+                comments=(record,),
+                subject_digest=_DIGEST,
+                selected_clauses=_SELECTED,
+                named_clauses=_NAMED,
+            )
+            is None
+        )
     # A record naming no digest cannot be compared against one, so it is not a
     # reusable verdict however recent it is. The same holds for a record naming
     # no RUBRIC digest, which is what every verdict written before the rubric

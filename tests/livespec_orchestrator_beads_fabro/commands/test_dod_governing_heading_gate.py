@@ -25,6 +25,7 @@ that heading whatever the judgement said.
 from __future__ import annotations
 
 import stat
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -215,6 +216,50 @@ def test_a_judgement_that_could_not_be_taken_leaves_the_rubric_verdict_alone(
 
     assert decision.outcome == JUDGEMENT_ADMITTED
     assert decision.findings == ()
+
+
+def test_the_component_falls_back_to_a_fresh_read_when_reuse_inputs_are_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An absent section or unreadable spec cannot reuse a stale component receipt."""
+    calls = 0
+
+    def reader(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict | None:
+        nonlocal calls
+        _ = (item, repo)
+        calls += 1
+        return None
+
+    repo = _repo(tmp_path=tmp_path)
+    ledger = _Ledger()
+    _ = judge_definition_of_done(
+        item=replace(_item(), description="No Definition of Done is present."),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=(),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse"
+        ".read_current_specification",
+        lambda *, spec_root: (_ for _ in ()).throw(OSError(spec_root)),
+    )
+    _ = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=(),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+
+    assert calls == 2
 
 
 def test_the_recorded_verdict_carries_the_governing_heading_to_the_node(

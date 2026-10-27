@@ -55,10 +55,12 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Iterator, ValuesView
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_runtime.spec_stated import JUDGE_PROMPT, judge
+from typing_extensions import override
 
 from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
     resolving_subsection_citations,
@@ -77,6 +79,9 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "ELIDED_BODY_MARKER",
     "PROMPT_CHARACTER_CEILING",
+    "CondensedClause",
+    "CondensedSpecTree",
+    "clauses_named",
     "condensed_spec_tree",
     "judge_within_ceiling",
 ]
@@ -120,6 +125,39 @@ _TERM = re.compile(r"[a-z0-9_]{3,}")
 
 
 @dataclass(frozen=True, kw_only=True)
+class CondensedClause:
+    """One headed clause whose full body is provenance for a model prompt."""
+
+    heading: str
+    body: str
+
+
+@dataclass(frozen=True, kw_only=True, eq=False)
+class CondensedSpecTree:
+    """The rendered tree and the full clauses selected into it."""
+
+    tree: Mapping[str, str]
+    clauses: tuple[CondensedClause, ...]
+
+    def __getitem__(self, path: str) -> str:
+        return self.tree[path]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.tree)
+
+    def __len__(self) -> int:
+        return len(self.tree)
+
+    def values(self) -> ValuesView[str]:
+        """The rendered file bodies, preserving the mapping-facing contract."""
+        return self.tree.values()
+
+    @override
+    def __eq__(self, other: object) -> bool:
+        return self.tree == other
+
+
+@dataclass(frozen=True, kw_only=True)
 class _Section:
     """One clause of one spec file, in both the forms the condensation may use.
 
@@ -133,11 +171,20 @@ class _Section:
     full: str
     elided: str
     terms: frozenset[str]
+    heading: str | None = None
+    body: str = ""
 
     @property
     def key(self) -> tuple[str, int]:
         """This clause's identity within the tree."""
         return (self.path, self.index)
+
+    @property
+    def clause(self) -> CondensedClause | None:
+        """This section's provenance when it is an H2 clause."""
+        if self.heading is None:
+            return None
+        return CondensedClause(heading=self.heading, body=self.body.strip("\n"))
 
 
 def condensed_spec_tree(
@@ -145,7 +192,7 @@ def condensed_spec_tree(
     spec_tree: Mapping[str, str],
     statement: str,
     ceiling: int = PROMPT_CHARACTER_CEILING,
-) -> dict[str, str]:
+) -> CondensedSpecTree:
     """`spec_tree` reduced to a tree whose rendered prompt fits under `ceiling`.
 
     Every path of `spec_tree` is present in the result and carries every H2
@@ -170,7 +217,30 @@ def condensed_spec_tree(
         if cost <= remaining:
             chosen.add(section.key)
             remaining -= cost
-    return _condensed(sections=sections, chosen=chosen, paths=spec_tree)
+    return CondensedSpecTree(
+        tree=_condensed(sections=sections, chosen=chosen, paths=spec_tree),
+        clauses=tuple(
+            clause
+            for path in spec_tree
+            for section in sections
+            if section.path == path
+            and section.key in chosen
+            and (clause := section.clause) is not None
+        ),
+    )
+
+
+def clauses_named(
+    *, spec_tree: Mapping[str, str], headings: Collection[str]
+) -> tuple[CondensedClause, ...]:
+    """Every full clause named by a verdict, independent of source position."""
+    wanted = frozenset(headings)
+    return tuple(
+        clause
+        for path in spec_tree
+        for section in _sections_of(path=path, text=spec_tree[path])
+        if section.heading in wanted and (clause := section.clause) is not None
+    )
 
 
 def judge_within_ceiling(
@@ -196,7 +266,10 @@ def judge_within_ceiling(
     encloses the subsections the specification states it through.
     """
     return judge(
-        spec_tree=condensed_spec_tree(spec_tree=spec_tree, statement=statement, ceiling=ceiling),
+        spec_tree=cast(
+            "Mapping[str, str]",
+            condensed_spec_tree(spec_tree=spec_tree, statement=statement, ceiling=ceiling),
+        ),
         statement=statement,
         run_model=resolving_subsection_citations(run_model=run_model, spec_tree=spec_tree),
     )
@@ -226,12 +299,22 @@ def _sections_of(*, path: str, text: str) -> list[_Section]:
                 index=ordinal + 1,
                 full=text[match.start() : end],
                 elided=f"{match.group()}\n{ELIDED_BODY_MARKER}\n",
+                heading=match.group(),
+                body=text[match.end() : end],
             )
         )
     return sections
 
 
-def _section(*, path: str, index: int, full: str, elided: str) -> _Section:
+def _section(
+    *,
+    path: str,
+    index: int,
+    full: str,
+    elided: str,
+    heading: str | None = None,
+    body: str = "",
+) -> _Section:
     """One section with its retrieval terms taken from the text it carries."""
     return _Section(
         path=path,
@@ -239,6 +322,8 @@ def _section(*, path: str, index: int, full: str, elided: str) -> _Section:
         full=full,
         elided=elided,
         terms=frozenset(_TERM.findall(full.casefold())),
+        heading=heading,
+        body=body,
     )
 
 
@@ -255,7 +340,7 @@ def _relevance_order(*, sections: list[_Section], statement: str) -> list[_Secti
     decorated = [
         (
             (
-                -sum(1.0 / (1 + frequency[term]) for term in section.terms & wanted),
+                -sum(1.0 / (1 + frequency[term]) for term in sorted(section.terms & wanted)),
                 section.path,
                 section.index,
             ),

@@ -37,8 +37,10 @@ blocks an item whose author has already repaired it.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_UNAVAILABLE,
@@ -53,16 +55,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
 __all__: list[str] = [
     "JUDGEMENT_COMMENT_MARKER",
     "STAGE_PRE_ADMISSION",
     "STAGE_PRE_DISPATCH",
     "UNAVAILABLE_COMMENT_MARKER",
+    "GoverningHeadingReceipt",
     "RecordedJudgement",
     "did_not_run_comment",
     "recorded_did_not_run_causes",
     "recorded_governing_heading",
+    "reusable_governing_heading",
     "reusable_verdict",
     "verdict_comment",
 ]
@@ -98,10 +103,21 @@ _CAUSE_FIELD = "judgement-unavailable-cause"
 # governing clause, exactly as `finding` is.
 _GOVERNING_KIND_FIELD = "governing-heading-kind"
 _GOVERNING_HEADING_FIELD = "governing-heading"
+_GOVERNING_SUBJECT_DIGEST_FIELD = "governing-heading-subject-digest"
+_GOVERNING_PROVENANCE_FIELD = "governing-heading-provenance"
+_GOVERNING_SELECTED_CLAUSE_FIELD = "governing-heading-selected-clause"
+_GOVERNING_NAMED_CLAUSE_FIELD = "governing-heading-named-clause"
 _FIELD_SEPARATOR = ": "
 # Every key a record may carry more than once, which the field map must leave
 # to the repeated-value reader rather than collapsing to its last occurrence.
-_REPEATED_FIELDS = frozenset({_FINDING_FIELD, _GOVERNING_HEADING_FIELD})
+_REPEATED_FIELDS = frozenset(
+    {
+        _FINDING_FIELD,
+        _GOVERNING_HEADING_FIELD,
+        _GOVERNING_SELECTED_CLAUSE_FIELD,
+        _GOVERNING_NAMED_CLAUSE_FIELD,
+    }
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -119,6 +135,14 @@ class RecordedJudgement:
         return first_remedy(findings=self.findings)
 
 
+@dataclass(frozen=True, kw_only=True)
+class GoverningHeadingReceipt:
+    """The component verdict and exact non-spec input its record binds."""
+
+    verdict: GoverningHeadingVerdict
+    subject_digest: str
+
+
 def verdict_comment(
     *,
     item_id: str,
@@ -126,7 +150,7 @@ def verdict_comment(
     digest: str,
     rubric_digest: str,
     judgement: DodJudgement,
-    governing: GoverningHeadingVerdict | None = None,
+    governing: GoverningHeadingReceipt | None = None,
 ) -> str:
     """The ledger comment recording one taken verdict, findings and all.
 
@@ -153,16 +177,70 @@ def verdict_comment(
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
     if governing is not None:
-        lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{governing.kind}")
+        verdict = governing.verdict
+        lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{verdict.kind}")
+        lines.append(
+            f"{_GOVERNING_SUBJECT_DIGEST_FIELD}{_FIELD_SEPARATOR}{governing.subject_digest}"
+        )
+        lines.append(f"{_GOVERNING_PROVENANCE_FIELD}{_FIELD_SEPARATOR}complete")
         lines.extend(
             f"{_GOVERNING_HEADING_FIELD}{_FIELD_SEPARATOR}{heading}"
-            for heading in governing.stated_by
+            for heading in verdict.stated_by
+        )
+        lines.extend(
+            _clause_line(key=_GOVERNING_SELECTED_CLAUSE_FIELD, clause=clause)
+            for clause in verdict.selected_clauses
+        )
+        lines.extend(
+            _clause_line(key=_GOVERNING_NAMED_CLAUSE_FIELD, clause=clause)
+            for clause in verdict.named_clauses
         )
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
     remedy = first_remedy(findings=judgement.findings)
     if remedy is not None:
         lines.append(f"{_REMEDY_FIELD}{_FIELD_SEPARATOR}{remedy}")
     return "\n".join(lines)
+
+
+def reusable_governing_heading(
+    *,
+    comments: Sequence[str],
+    subject_digest: str,
+    selected_clauses: tuple[CondensedClause, ...],
+    named_clauses: tuple[CondensedClause, ...],
+) -> GoverningHeadingVerdict | None:
+    """The earliest component verdict whose input and provenance still match.
+
+    Records without complete provenance are invalidated by every revision.  A
+    visible heading verdict alone cannot establish which clause bodies a model
+    saw, so treating it as a cache key would be reuse earned by missing data.
+    """
+    for body in comments:
+        if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
+            continue
+        fields = _fields_of(body=body)
+        if fields.get(_GOVERNING_PROVENANCE_FIELD) != "complete":
+            continue
+        if fields.get(_GOVERNING_SUBJECT_DIGEST_FIELD) != subject_digest:
+            continue
+        kind = fields.get(_GOVERNING_KIND_FIELD)
+        if kind is None:
+            continue
+        recorded_selected = _clauses_of(body=body, key=_GOVERNING_SELECTED_CLAUSE_FIELD)
+        recorded_named = _clauses_of(body=body, key=_GOVERNING_NAMED_CLAUSE_FIELD)
+        if recorded_selected is None or recorded_named is None:
+            continue
+        if set(recorded_selected) != set(selected_clauses) or set(recorded_named) != set(
+            named_clauses
+        ):
+            continue
+        return GoverningHeadingVerdict(
+            kind=kind,
+            stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
+            selected_clauses=recorded_selected,
+            named_clauses=recorded_named,
+        )
+    return None
 
 
 def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVerdict | None:
@@ -297,6 +375,31 @@ def _fields_of(*, body: str) -> dict[str, str]:
 
 def _findings_of(*, body: str) -> tuple[str, ...]:
     return _repeated(body=body, key=_FINDING_FIELD)
+
+
+def _clause_line(*, key: str, clause: CondensedClause) -> str:
+    """One unambiguous recorded clause value, including a multiline body."""
+    value = json.dumps({"heading": clause.heading, "body": clause.body}, sort_keys=True)
+    return f"{key}{_FIELD_SEPARATOR}{value}"
+
+
+def _clauses_of(*, body: str, key: str) -> tuple[CondensedClause, ...] | None:
+    """The complete typed provenance carried by one record, or no reading."""
+    clauses: list[CondensedClause] = []
+    for raw in _repeated(body=body, key=key):
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(decoded, dict):
+            return None
+        fields = cast("dict[str, object]", decoded)
+        heading = fields.get("heading")
+        clause_body = fields.get("body")
+        if not isinstance(heading, str) or not isinstance(clause_body, str):
+            return None
+        clauses.append(CondensedClause(heading=heading, body=clause_body))
+    return tuple(clauses)
 
 
 def _repeated(*, body: str, key: str) -> tuple[str, ...]:
