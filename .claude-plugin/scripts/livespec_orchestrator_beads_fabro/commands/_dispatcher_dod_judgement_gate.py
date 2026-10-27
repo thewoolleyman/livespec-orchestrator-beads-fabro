@@ -39,13 +39,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
     first_remedy,
-    judgement_subject_digest,
     rubric_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     RecordedJudgement,
     did_not_run_comment,
     recorded_did_not_run_causes,
+    recorded_governing_heading,
     reusable_verdict,
     verdict_comment,
 )
@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     CAUSE_PROMPT_UNREADABLE,
     judgement_rubric,
     run_dod_judgement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    subject_digest_for_governing,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
@@ -160,7 +163,13 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     hygiene listing needs and the one a refusing wall must not have.
     """
     rubric = judgement_rubric(payload_root=payload_root)
-    digest = judgement_subject_digest(item=item, cwd=repo, comments=comments)
+    recorded_governing = recorded_governing_heading(comments=comments)
+    digest = subject_digest_for_governing(
+        item=item,
+        cwd=repo,
+        comments=comments,
+        governing=recorded_governing,
+    )
     rubric_bytes_digest = (
         UNREADABLE_RUBRIC_DIGEST if rubric is None else rubric_digest(rubric=rubric)
     )
@@ -185,6 +194,12 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         else governing_heading
     )
     governing = reader(item=item, repo=repo)
+    digest = subject_digest_for_governing(
+        item=item,
+        cwd=repo,
+        comments=comments,
+        governing=governing,
+    )
     verdict = _with_governing_findings(
         item=item,
         verdict=run_dod_judgement(
@@ -336,7 +351,12 @@ def held_judgement(
         return None
     recorded = reusable_verdict(
         comments=comments,
-        digest=judgement_subject_digest(item=item, cwd=repo, comments=comments),
+        digest=subject_digest_for_governing(
+            item=item,
+            cwd=repo,
+            comments=comments,
+            governing=recorded_governing_heading(comments=comments),
+        ),
         rubric_digest=rubric_digest(rubric=rubric),
     )
     if recorded is None or recorded.outcome != JUDGEMENT_HELD:
