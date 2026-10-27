@@ -7893,6 +7893,18 @@ Feature: An incomplete implement turn is not recorded as a success
     Given an implement turn whose final output's completion field reports the Definition of Done complete
     When the implement stage ends
     Then the stage outcome is succeeded and the run proceeds to implementation_diff as before
+
+  Scenario: A turn that ends while its runner commit is still running waits for that commit's verdict
+    Given an implement turn that, contrary to its end-of-turn obligation, sent its final message while a commit run it started through the detached commit runner was still running
+    When the run decides the implement stage's outcome
+    Then it first waits until that commit run reaches its own terminal state
+    And that wait consumes none of the implement node's retry budget
+
+  Scenario: A commit the runner recorded as failed counts as the turn's refused commit attempt
+    Given an incomplete implement turn whose latest commit run through the detached commit runner reached failed with the commit hook having named a failed target
+    And that target's name appears only in the commit run's full recorded output, not in its terminal report's final lines
+    When the implement stage re-enters while its retry budget remains
+    Then the re-entered brief carries that commit run's failed target names and hook error lines from its full recorded output
 ```
 
 ## Scenario 205 — Gap detection enumerates headings without an exercising test
