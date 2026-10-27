@@ -15,6 +15,7 @@ final, in a daemon thread.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,15 +41,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import
     LessonProposal,
     RecordingLessonsProposer,
     ReflectorFinding,
-    build_mcp_config,
-    claude_reflector_argv,
     fingerprint,
     parse_findings,
-    resolve_claude_path,
-    resolve_claude_timeout_seconds,
     resolve_mode,
     resolve_reflector_budget_seconds,
-    resolve_strict_mcp,
     run_reflector_oob,
     severity_priority,
 )
@@ -70,7 +66,7 @@ def reset_auto_trip_fixture() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _tmp_repo_connection_config(tmp_path: Path) -> None:
+def _tmp_repo_connection_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Give each test's `tmp_path` repo a `.livespec.jsonc` with a `prefix`.
 
     The reflector resolves the tenant connection via
@@ -83,6 +79,15 @@ def _tmp_repo_connection_config(tmp_path: Path) -> None:
         '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
+    candidate = AcpCandidate(
+        adapter=AcpAdapter(command="codex-acp"),
+        agent_id="codex-acp",
+    )
+    monkeypatch.setattr(
+        reflector,
+        "resolve_dod_gate_candidates",
+        lambda *, repo: tuple(candidate for _ in (repo,)),
+    )
 
 
 @dataclass(kw_only=True)
@@ -92,9 +97,16 @@ class _FakeRunner:
     queue: list[CommandResult]
     calls: list[list[str]] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: Mapping[str, str | None] | None = None,
+    ) -> CommandResult:
         assert timeout_seconds > 0
-        _ = cwd
+        _ = (cwd, env)
         self.calls.append(argv)
         return self.queue.pop(0) if self.queue else CommandResult(exit_code=0, stdout="", stderr="")
 
@@ -188,15 +200,6 @@ def test_severity_priority_map() -> None:
     assert severity_priority(severity="info") == 4
 
 
-def test_build_mcp_config_wires_honeycomb_bearer() -> None:
-    config = build_mcp_config(api_key="hcmk-xyz")
-    # Round-trip through JSON so the assertions read scalars, not `object`.
-    rendered = json.loads(json.dumps(config))
-    server = rendered["mcpServers"]["honeycomb"]
-    assert server["url"] == "https://mcp.honeycomb.io/mcp"
-    assert server["headers"]["Authorization"] == "Bearer hcmk-xyz"
-
-
 def test_reflector_oob_decomposition_modules_export_public_entry_points() -> None:
     assert _reflector_findings_parse.__all__ == [
         "ReflectorFinding",
@@ -218,52 +221,6 @@ def test_reflector_oob_decomposition_modules_export_public_entry_points() -> Non
     ]
 
 
-def test_claude_reflector_argv_is_headless_with_mcp_config() -> None:
-    argv = claude_reflector_argv(
-        prompt="review", mcp_config_path=Path("/tmp/mcp.json"), model="claude-x"
-    )
-    assert argv[:2] == ["claude", "-p"]
-    assert "--mcp-config" in argv
-    assert "/tmp/mcp.json" in argv
-    assert "--model" in argv and "claude-x" in argv
-
-
-# ---------------------------------------------------------------------------
-# 29f.8 gap 1 — time-box resolvers (env-overridable; positive-only).
-# ---------------------------------------------------------------------------
-
-
-def test_claude_timeout_default_is_at_least_600s() -> None:
-    # The pre-29f.8 90s ALWAYS timed out (a real review took ~371s); the
-    # default is raised well above that so the judge can actually finish.
-    assert resolve_claude_timeout_seconds(environ={}) >= 600.0
-
-
-def test_claude_timeout_env_override_and_bad_value_fallback() -> None:
-    assert (
-        resolve_claude_timeout_seconds(environ={"LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS": "900"})
-        == 900.0
-    )
-    # Unparseable / non-positive values fall back to the committed default.
-    default = resolve_claude_timeout_seconds(environ={})
-    assert (
-        resolve_claude_timeout_seconds(
-            environ={"LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS": "not-a-number"}
-        )
-        == default
-    )
-    assert (
-        resolve_claude_timeout_seconds(environ={"LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS": "0"})
-        == default
-    )
-
-
-def test_reflector_budget_sits_above_the_claude_timeout() -> None:
-    # The stage budget must exceed the claude subprocess ceiling so the
-    # subprocess timeout (not _check_budget) is the tripwire on a hung judge.
-    assert resolve_reflector_budget_seconds(environ={}) > resolve_claude_timeout_seconds(environ={})
-
-
 def test_reflector_budget_env_override_and_bad_value_fallback() -> None:
     assert (
         resolve_reflector_budget_seconds(environ={"LIVESPEC_REFLECTOR_BUDGET_SECONDS": "1200"})
@@ -276,120 +233,7 @@ def test_reflector_budget_env_override_and_bad_value_fallback() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 29f.8 gap 3 — `claude` PATH resolution under the minimal env-wrapper PATH.
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_claude_path_prefers_explicit_override() -> None:
-    assert (
-        resolve_claude_path(environ={"LIVESPEC_REFLECTOR_CLAUDE_PATH": "/opt/claude/bin/claude"})
-        == "/opt/claude/bin/claude"
-    )
-
-
-def test_resolve_claude_path_uses_which_when_no_override(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(reflector.shutil, "which", lambda _name: "/usr/bin/claude")
-    assert resolve_claude_path(environ={}) == "/usr/bin/claude"
-
-
-def test_resolve_claude_path_falls_back_to_local_bin_then_bare(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(reflector.shutil, "which", lambda _name: None)
-    # local-bin fallback exists → that path is used.
-    local_bin = tmp_path / ".local" / "bin"
-    local_bin.mkdir(parents=True)
-    fake_claude = local_bin / "claude"
-    _ = fake_claude.write_text("#!/bin/sh\n", encoding="utf-8")
-    monkeypatch.setattr(reflector, "_CLAUDE_LOCAL_BIN_FALLBACK", str(fake_claude))
-    assert resolve_claude_path(environ={}) == str(fake_claude)
-    # nothing on PATH and no local-bin file → bare "claude" (lets the runner
-    # surface the FileNotFoundError honestly rather than guessing).
-    monkeypatch.setattr(reflector, "_CLAUDE_LOCAL_BIN_FALLBACK", str(tmp_path / "nope" / "claude"))
-    assert resolve_claude_path(environ={}) == "claude"
-
-
-# ---------------------------------------------------------------------------
-# 29f.8 gap 4 — headless MCP tool permission scoped to the honeycomb server.
-# ---------------------------------------------------------------------------
-
-
-def test_claude_reflector_argv_allows_only_the_honeycomb_mcp_server() -> None:
-    argv = claude_reflector_argv(
-        prompt="review",
-        mcp_config_path=Path("/tmp/mcp.json"),
-        model="claude-x",
-        claude_path="/abs/claude",
-    )
-    assert "--allowedTools" in argv
-    scope = argv[argv.index("--allowedTools") + 1]
-    # Scoped to the configured "honeycomb" MCP server only — the minimal grant.
-    assert scope == "mcp__honeycomb"
-    # NEVER the blanket skip-permissions escape hatch.
-    assert "--dangerously-skip-permissions" not in argv
-    # The resolved claude path is argv[0] (29f.8 gap 3 threaded through).
-    assert argv[0] == "/abs/claude"
-
-
-# ---------------------------------------------------------------------------
-# 29f.8 follow-up — strict-MCP isolation (durable hosted-key path only).
-#
-# Without `--strict-mcp-config` the headless judge can pick up an ambient
-# OAuth honeycomb plugin whose token expires unattended; strict-by-default
-# pins the judge to ONLY the `--mcp-config` hosted server (the durable
-# API-key path). The lever is the explicit opt-out escape hatch.
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_strict_mcp_defaults_on_when_unset() -> None:
-    # Unset → strict ON, so the judge never falls back to an ambient plugin.
-    assert resolve_strict_mcp(environ={}) is True
-
-
-def test_resolve_strict_mcp_stays_on_for_truthy_and_unknown_values() -> None:
-    # Any non-falsey value (incl. an explicit truthy one) keeps strict ON.
-    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "on"}) is True
-    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "1"}) is True
-    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "true"}) is True
-    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "whatever"}) is True
-
-
-def test_resolve_strict_mcp_explicit_falsey_disables_case_insensitively() -> None:
-    # Explicit falsey values are the opt-out escape hatch; case/whitespace tolerant.
-    for falsey in ("off", "OFF", "false", "False", "0", "no", "  off  "):
-        assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": falsey}) is False
-
-
-def test_claude_reflector_argv_appends_strict_mcp_config_by_default() -> None:
-    # Default (strict_mcp omitted) pins the judge to ONLY the --mcp-config server.
-    argv = claude_reflector_argv(
-        prompt="review",
-        mcp_config_path=Path("/tmp/mcp.json"),
-        model="claude-x",
-        claude_path="/abs/claude",
-    )
-    assert "--strict-mcp-config" in argv
-
-
-def test_claude_reflector_argv_omits_strict_mcp_config_when_opted_out() -> None:
-    # strict_mcp=False reproduces the pre-follow-up behavior (ambient plugins allowed).
-    argv = claude_reflector_argv(
-        prompt="review",
-        mcp_config_path=Path("/tmp/mcp.json"),
-        model="claude-x",
-        claude_path="/abs/claude",
-        strict_mcp=False,
-    )
-    assert "--strict-mcp-config" not in argv
-    # The honeycomb --mcp-config wiring is unaffected by the opt-out.
-    assert "--mcp-config" in argv
-    assert argv[argv.index("--allowedTools") + 1] == "mcp__honeycomb"
-
-
-def test_parse_findings_accepts_claude_json_envelope() -> None:
+def test_parse_findings_accepts_agent_json_envelope() -> None:
     findings = parse_findings(raw=_claude_json([_finding()]))
     assert len(findings) == 1
     assert findings[0].category == "stage-timeout"
@@ -491,7 +335,7 @@ def test_reflector_records_did_not_run_when_no_candidate_returns_a_verdict(
     assert [item for item in client.list_issues() if "reflection" in item.get("labels", [])] == []
 
 
-def test_armed_but_no_mcp_key_skips_without_running(
+def test_armed_without_a_honeycomb_env_key_still_uses_the_governed_chain(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(_LEVER_ENV, "file")
@@ -505,11 +349,11 @@ def test_armed_but_no_mcp_key_skips_without_running(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    assert runner.calls == []
-    assert journal.records[-1]["stage"] == "reflector-oob-skipped"
+    assert [call[0] for call in runner.calls] == ["codex-acp"]
+    assert journal.records[-1]["stage"] == "reflector-oob-judgement-did-not-run"
 
 
-def test_observe_mode_runs_claude_emits_spans_files_nothing(
+def test_observe_mode_runs_resolved_candidate_emits_spans_files_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _arm(monkeypatch, mode="observe")
@@ -525,10 +369,8 @@ def test_observe_mode_runs_claude_emits_spans_files_nothing(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    # claude -p ran once; spans were written; NO ledger item was filed.
-    # argv[0] is the RESOLVED claude path (29f.8 gap 3 — may be absolute under
-    # the env wrapper), so match on the basename + the headless `-p` flag.
-    assert any(Path(call[0]).name == "claude" and call[1] == "-p" for call in runner.calls)
+    # The resolved candidate ran once; spans were written; NO ledger item was filed.
+    assert [call[0] for call in runner.calls] == ["codex-acp"]
     assert spans_path.is_file()
     stages = [rec.get("stage") for rec in journal.records]
     assert "reflector-oob" in stages
@@ -544,9 +386,16 @@ def test_reflector_never_raises_on_runner_explosion(
 
     @dataclass(kw_only=True)
     class _Boom:
-        def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-            _ = (argv, cwd, timeout_seconds)
-            raise RuntimeError("claude exploded")
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: Mapping[str, str | None] | None = None,
+        ) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds, env)
+            raise RuntimeError("candidate exploded")
 
     journal = _RecordingJournal()
     # Must NOT raise: the daemon-thread body is fail-open.
@@ -567,8 +416,15 @@ def test_auto_trip_disables_after_three_consecutive_errors(
 
     @dataclass(kw_only=True)
     class _Boom:
-        def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-            _ = (argv, cwd, timeout_seconds)
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: Mapping[str, str | None] | None = None,
+        ) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds, env)
             raise RuntimeError("boom")
 
     journal = _RecordingJournal()

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
-import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._reflector_acp_chain import (
+    resolve_dod_gate_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._reflector_filing import (
     ReflectorReport,
     fingerprint,
@@ -23,13 +25,7 @@ from livespec_orchestrator_beads_fabro.commands._reflector_lessons import (
     LessonsProposer,
     RecordingLessonsProposer,
 )
-from livespec_orchestrator_beads_fabro.commands._reflector_runtime import (
-    build_mcp_config,
-    claude_reflector_argv,
-    resolve_claude_timeout_seconds,
-    resolve_mode,
-    resolve_strict_mcp,
-)
+from livespec_orchestrator_beads_fabro.commands._reflector_runtime import resolve_mode
 from livespec_orchestrator_beads_fabro.commands._reflector_runtime import (
     run_pass as _run_pass,
 )
@@ -51,16 +47,11 @@ __all__: list[str] = [
     "RecordingLessonsProposer",
     "ReflectorFinding",
     "ReflectorReport",
-    "build_mcp_config",
-    "claude_reflector_argv",
     "fingerprint",
     "parse_findings",
     "reset_auto_trip",
-    "resolve_claude_path",
-    "resolve_claude_timeout_seconds",
     "resolve_mode",
     "resolve_reflector_budget_seconds",
-    "resolve_strict_mcp",
     "run_reflector_oob",
     "severity_priority",
 ]
@@ -69,44 +60,18 @@ __all__: list[str] = [
 # Levers + constants (NAMES of env vars, never secrets).
 # ---------------------------------------------------------------------------
 
-# The trigger lever (always wired). Default OFF so a real `claude -p` never
+# The trigger lever (always wired). Default OFF so a real ACP judgement never
 # fires on a plain dispatch; opt-in to `observe` (run + summary + spans, no
 # ledger writes) or `file` (additionally dedup-file items + propose lessons).
 _REFLECTOR_ENV = "LIVESPEC_REFLECTOR_OOB"
 _MODE_OFF = "off"
 
-# The hosted Honeycomb MCP read endpoint + its management/MCP key env var
-# (CONFIRMED present in the host env). Mirrors `_HONEYCOMB_INGEST_KEY_ENV`
-# on the egress side — this is the SEPARATE read key, never the ingest key.
-# The endpoint is the `/mcp` path, NOT the bare host: live probes show
-# `https://mcp.honeycomb.io` → HTTP 404, while `https://mcp.honeycomb.io/mcp`
-# is the served MCP endpoint (the same URL the working honeycomb plugin uses).
-# The EU region variant is `https://mcp.eu1.honeycomb.io/mcp`.
-_HONEYCOMB_MCP_KEY_ENV = "HONEYCOMB_MCP_API_KEY_LIVESPEC"
-
-# The headless `claude -p` tool-permission scope (29f.8 gap 4). A headless
-# `claude -p` defaults to NO tool permission, so without this the reflector's
-# `--mcp-config` honeycomb server is never callable unattended and the review
-# produces nothing. `mcp__<server>` grants every tool on that ONE configured
-# MCP server (the minimal grant — NOT `--dangerously-skip-permissions`, which
-# would also unlock Bash/Edit/etc. the reflector must never touch).
-
-# Default headless model for the reflector. The single-strong-judge review
-# (best-practices §1.1) runs as one `claude -p` call; `LIVESPEC_REFLECTOR_MODEL`
-# overrides the model if a different judge is wanted.
-
 # Mechanical auto-trip + time-box (best-practices §6), mirroring the
 # mechanical stage so a flapping reflector self-disables for the process.
 _AUTO_TRIP_THRESHOLD = 3
 
-# Time-box defaults (29f.8 gap 1). The session-8 live proof clocked a real
-# reference-anchored Honeycomb review at ~371s (17 tool calls); the pre-29f.8
-# 90s ceiling ALWAYS timed out, was reaped as a non-zero result, and fail-softed
-# to 0 findings — the reflector silently did nothing in production. The claude
-# subprocess ceiling is raised to 600s (margin over the observed 371s, and
-# larger telemetry windows take longer), and the stage budget sits ABOVE it so
-# the `claude -p` subprocess timeout (not the budget `_check_budget`) is the
-# tripwire on a hung judge. Both are env-overridable via the resolvers below.
+# Time-box defaults (29f.8 gap 1). The stage budget bounds an entire candidate
+# chain, while each candidate invocation carries its own timeout.
 _DEFAULT_REFLECTOR_BUDGET_SECONDS = 660.0
 _BUDGET_EXCEEDED_MESSAGE = "out-of-band reflector exceeded its scan time budget"
 
@@ -114,29 +79,11 @@ _BUDGET_EXCEEDED_MESSAGE = "out-of-band reflector exceeded its scan time budget"
 # An unset / unparseable value falls back to the committed default rather than
 # crashing the fail-open stage (mirrors `_dispatcher_cost._resolve_cap`).
 _REFLECTOR_BUDGET_ENV = "LIVESPEC_REFLECTOR_BUDGET_SECONDS"
-_CLAUDE_PATH_ENV = "LIVESPEC_REFLECTOR_CLAUDE_PATH"
-_CLAUDE_LOCAL_BIN_FALLBACK = "~/.local/bin/claude"
 
 # Module-level back-compat aliases (the committed defaults). Kept so existing
 # call sites / tests that read the constant still resolve, but the live values
 # now flow through the env resolvers below.
 _REFLECTOR_BUDGET_SECONDS = _DEFAULT_REFLECTOR_BUDGET_SECONDS
-
-# `claude` PATH resolution (29f.8 gap 3). Under `with-livespec-env.sh` the
-# bash PATH is minimal (no `~/.local/bin`, where `claude` lives), so a bare
-# `claude` argv[0] fail-opens with `FileNotFoundError: 'claude'` and the
-# reflector silently does nothing. Resolution order: the explicit absolute-path
-# env override → `shutil.which` → the conventional `~/.local/bin/claude` →
-# bare `"claude"` (last-resort, lets the runner surface the FileNotFoundError).
-
-# Strict-MCP isolation lever (29f.8 follow-up). DEFAULT = strict ON: the
-# headless judge loads ONLY the `--mcp-config` hosted honeycomb server (the
-# durable API-key path proven working in PR #49) and IGNORES any ambient OAuth
-# honeycomb plugin, whose token can expire unattended and silently blind the
-# reflector. An explicit falsey value (`off` / `false` / `0` / `no`, case- and
-# whitespace-insensitive) is the opt-out escape hatch that restores the prior
-# behavior (ambient plugins allowed). Mirrors the always-wired env-lever shape
-# of the other resolvers; NAME only, never a secret.
 
 # Dedup-first filing constants (best-practices §5.2 / decision 6).
 
@@ -190,19 +137,6 @@ def _resolve_positive_float(*, environ: dict[str, str], name: str, default: floa
     return parsed if parsed > 0 else default
 
 
-def resolve_claude_path(*, environ: dict[str, str]) -> str:
-    override = environ.get(_CLAUDE_PATH_ENV, "").strip()
-    if override:
-        return override
-    found = shutil.which("claude")
-    if found is not None:
-        return found
-    local_bin = Path(_CLAUDE_LOCAL_BIN_FALLBACK).expanduser()
-    if local_bin.is_file():
-        return str(local_bin)
-    return "claude"
-
-
 def resolve_reflector_budget_seconds(*, environ: dict[str, str]) -> float:
     return _resolve_positive_float(
         environ=environ, name=_REFLECTOR_BUDGET_ENV, default=_REFLECTOR_BUDGET_SECONDS
@@ -234,15 +168,7 @@ def run_reflector_oob(
     mode = resolve_mode(raw=os.environ.get(_REFLECTOR_ENV))
     if mode == _MODE_OFF or _AUTO_TRIP.tripped:
         return
-    api_key = os.environ.get(_HONEYCOMB_MCP_KEY_ENV, "")
-    if not api_key:
-        journal.append(
-            record={
-                "stage": "reflector-oob-skipped",
-                "reason": f"no {_HONEYCOMB_MCP_KEY_ENV} in env",
-            }
-        )
-        return
+    candidates = resolve_dod_gate_candidates(repo=repo)
     deadline = time.monotonic() + resolve_reflector_budget_seconds(environ=dict(os.environ))
     reflected = attempt(
         action=lambda: _run_pass(
@@ -252,7 +178,7 @@ def run_reflector_oob(
             runner=runner,
             lessons_proposer=lessons_proposer,
             mode=mode,
-            api_key=api_key,
+            candidates=candidates,
             deadline=deadline,
         ),
         exceptions=(OSError, RuntimeError, TimeoutError),
@@ -261,7 +187,8 @@ def run_reflector_oob(
         _record_error(journal=journal, exc=reflected.error)
         return
     report = reflected
-    _emit_summary(report=report)
+    if report is not None:
+        _emit_summary(report=report)
     _AUTO_TRIP.consecutive_errors = 0
 
 
