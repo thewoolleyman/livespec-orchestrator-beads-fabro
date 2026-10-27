@@ -117,8 +117,8 @@ def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
 
     assert reply == "accepted"
     assert cause == ""
-    assert runner.argvs[0][:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
-    assert runner.argvs[1][-2:] == ["--model", "claude-opus-5"]
+    assert runner.argvs[0] == ["/opt/livespec/codex-acp/bin/codex-acp"]
+    assert runner.argvs[1] == ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
     assert runner.stdin_text == ["one prompt", "one prompt"]
 
 
@@ -134,9 +134,7 @@ def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_pat
 
     assert reply == "accepted"
     assert cause == ""
-    assert runner.argvs == [
-        ["codex", "exec", "-m", "gpt-5.6-terra", "-c", 'model_reasoning_effort="high"']
-    ]
+    assert runner.argvs == [["/opt/livespec/codex-acp/bin/codex-acp"]]
 
 
 def test_missing_dod_gate_has_no_host_candidate(tmp_path: Path) -> None:
@@ -209,11 +207,18 @@ def test_no_resolved_candidate_uses_the_did_not_run_cause(tmp_path: Path) -> Non
     assert runner.argvs == []
 
 
-def test_a_codex_candidate_without_effort_does_not_add_a_reasoning_override(
+def test_a_codex_candidate_runs_its_resolved_adapter_command_args_and_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     candidate = AcpCandidate(
-        adapter=AcpAdapter(command="codex-acp", env={"CODEX_CONFIG": '{"model": "gpt"}'}),
+        adapter=AcpAdapter(
+            command="custom-codex --stdio",
+            args=("--judge",),
+            env={
+                "CODEX_CONFIG": '{"model": "gpt", "model_reasoning_effort": "high"}',
+                "CODEX_ENDPOINT": "https://codex.invalid",
+            },
+        ),
         agent_id="codex-acp",
     )
     monkeypatch.setattr(
@@ -228,7 +233,48 @@ def test_a_codex_candidate_without_effort_does_not_add_a_reasoning_override(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", "gpt"]]
+    assert runner.argvs == [["custom-codex", "--stdio", "--judge"]]
+    assert runner.environs[0]["CODEX_CONFIG"] == (
+        '{"model": "gpt", "model_reasoning_effort": "high"}'
+    )
+    assert runner.environs[0]["CODEX_ENDPOINT"] == "https://codex.invalid"
+
+
+def test_a_claude_candidate_preserves_its_resolved_adapter_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = AcpCandidate(
+        adapter=AcpAdapter(
+            command="custom-claude --stdio",
+            args=("--judge",),
+            env={
+                "ANTHROPIC_MODEL": "claude-opus-5",
+                "ANTHROPIC_BASE_URL": "https://anthropic.invalid",
+                "CLAUDE_CODE_EFFORT_LEVEL": "high",
+            },
+        ),
+        agent_id="claude-acp",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "selected-token")
+    monkeypatch.setattr(
+        judgement_module, "dod_gate_candidates", _only_candidate(candidate=candidate)
+    )
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
+
+    reply, _ = run_dod_gate_prompt(
+        prompt="one prompt",
+        cwd=tmp_path,
+        runner=runner,
+        is_verdict=lambda text: text == "accepted",
+    )
+
+    assert reply == "accepted"
+    assert runner.argvs == [["custom-claude", "--stdio", "--judge"]]
+    assert runner.environs[0]["ANTHROPIC_MODEL"] == "claude-opus-5"
+    assert runner.environs[0]["ANTHROPIC_BASE_URL"] == "https://anthropic.invalid"
+    assert runner.environs[0]["CLAUDE_CODE_EFFORT_LEVEL"] == "high"
+    assert runner.environs[0]["CLAUDE_CODE_OAUTH_TOKEN"] == "selected-token"
 
 
 def test_another_catalog_adapter_runs_its_declared_command(
@@ -261,7 +307,7 @@ def test_another_catalog_adapter_runs_its_declared_command(
         pytest.param('{"model": 5, "model_reasoning_effort": 3}'),
     ],
 )
-def test_invalid_codex_settings_do_not_invent_a_model_or_effort(
+def test_a_codex_candidate_does_not_parse_its_adapter_environment_as_command_settings(
     raw: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     candidate = AcpCandidate(
@@ -280,7 +326,8 @@ def test_invalid_codex_settings_do_not_invent_a_model_or_effort(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", ""]]
+    assert runner.argvs == [["codex-acp"]]
+    assert runner.environs[0]["CODEX_CONFIG"] == raw
 
 
 def test_the_red_runner_also_models_a_command_without_standard_input() -> None:
