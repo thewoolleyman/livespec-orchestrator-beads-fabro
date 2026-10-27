@@ -106,14 +106,14 @@ def _judged(
     runner: CommandRunner,
 ) -> str:
     """One prompt through the shared chain, or no reply when every candidate fails."""
-    reply, _cause = run_dod_gate_prompt(
+    result = run_dod_gate_prompt(
         prompt=prompt,
         cwd=cwd,
         runner=runner,
         is_verdict=lambda text: _looks_like_spec_stated_verdict(text=text),
         timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
     )
-    return reply or ""
+    return result.reply or ""
 
 
 def _looks_like_spec_stated_verdict(*, text: str) -> bool:

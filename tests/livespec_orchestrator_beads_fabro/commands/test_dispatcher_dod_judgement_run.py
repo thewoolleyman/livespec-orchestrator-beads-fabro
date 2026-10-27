@@ -117,6 +117,28 @@ class _Runner:
         return self.result
 
 
+@dataclass
+class _SequenceRunner:
+    """A candidate-chain double whose replies stay attributable to their argv."""
+
+    results: list[CommandResult]
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+        start_new_session: bool = False,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin, start_new_session)
+        self.calls.append(argv)
+        return self.results[len(self.calls) - 1]
+
+
 def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="bd-ib-7f66ar",
@@ -315,6 +337,50 @@ def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_clau
     assert verdict.outcome == JUDGEMENT_ADMITTED
     assert runner.argv is not None
     assert runner.argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
+
+
+def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decides(
+    tmp_path: Path,
+) -> None:
+    """Repeated reports for one request count once before the fallback is chosen."""
+    payload = _payload(tmp_path=tmp_path)
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _SequenceRunner(
+        results=[
+            CommandResult(
+                exit_code=0,
+                stdout=(
+                    '{"request_id": "request-one", "usage": {'
+                    '"input_tokens": 50000, "cache_creation_input_tokens": 25000, '
+                    '"cache_read_input_tokens": 25000}}\n'
+                    '{"request_id": "request-one", "usage": {'
+                    '"input_tokens": 50000, "cache_creation_input_tokens": 25000, '
+                    '"cache_read_input_tokens": 25000}}\n'
+                    '{"outcome": "passed"}\n'
+                ),
+                stderr="",
+            ),
+            CommandResult(
+                exit_code=0,
+                stdout=(
+                    '{"request_id": "request-two", "usage": {"input_tokens": 99999}}\n'
+                    '{"outcome": "failed", "failure_reason": "the fallback decided"}\n'
+                ),
+                stderr="",
+            ),
+        ]
+    )
+
+    verdict = run_dod_judgement(item=_item(), cwd=repo, runner=runner, payload_root=payload)
+
+    assert verdict.outcome == JUDGEMENT_HELD
+    assert verdict.findings == ("the fallback decided",)
+    assert verdict.input_tokens == 99999
+    assert verdict.input_usage == "complete"
+    assert verdict.bound_ended_candidates == ("codex-acp:gpt-5.6-terra",)
+    assert runner.calls[0][0] == "codex"
+    assert runner.calls[1][1:3] == ["-p", "--allowedTools"]
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
