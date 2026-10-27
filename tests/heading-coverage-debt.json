@@ -968,13 +968,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 251 \u2014 The out-of-band reflector takes its judgement from the resolved dod_gate chain",
-    "work_item": "bd-ib-c6va2d",
-    "first_seen": "2026-10-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 252 \u2014 The acceptance pass selects each Proof of Done record by the binding the record carries",
     "work_item": "bd-ib-poh6jg",
     "first_seen": "2026-10-26"
