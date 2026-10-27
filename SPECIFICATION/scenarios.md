@@ -10100,3 +10100,40 @@ Feature: In-turn commits pay the scoped gate, and the full aggregate runs once p
     When the turn stages the implementation and amends to Green
     Then the commit hook runs the affected-tests gate and requires the scoped tests and their coverage to pass
 ```
+
+## Scenario 256 — A publication that already landed is finished at publish_draft, not a failure
+
+```gherkin
+Feature: publish_draft tells a landed publication from a failure
+  Scenario: publish_draft finds the item's change already merged
+    Given a run whose head adds no change to the default branch's tip
+    And an earlier dispatch of the item has a pull request that the forge reports MERGED into the default branch with merge commit M contained in the tip
+    When publish_draft finishes its refresh
+    Then publish_draft does not push or open a pull request
+    And the run takes the merged-reconcile ending and records the pull request, merge commit M and the merged head
+
+  Scenario: A refused pull-request creation is checked before it fails
+    Given a publish_draft that pushed the run's publish branch
+    And the forge refuses pull-request creation because the branch has no commits beyond the default branch
+    And an earlier dispatch of the item has a MERGED pull request whose merge commit is contained in the default branch's tip
+    When publish_draft handles the refusal
+    Then the run takes the merged-reconcile ending instead of failing
+
+  Scenario: A run that adds a change has not landed
+    Given a run whose head adds a change to the default branch's tip
+    And an earlier dispatch of the item has a MERGED pull request
+    When publish_draft finishes its refresh
+    Then publish_draft pushes and opens a pull request as before
+
+  Scenario: A reused branch name does not make a publication landed
+    Given a run whose head adds no change to the default branch's tip
+    And a MERGED pull request on the same branch name that no dispatch of this item produced
+    When publish_draft finishes its refresh
+    Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
+
+  Scenario: A merge into another base does not make a publication landed
+    Given a run whose head adds no change to the default branch's tip
+    And a pull request of an earlier dispatch of the item MERGED into a branch other than the default branch
+    When publish_draft finishes its refresh
+    Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
+```

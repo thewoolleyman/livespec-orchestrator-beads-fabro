@@ -2359,5 +2359,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal in-turn-commits-run-the-affected-tests-gate, and the owning work-item bd-ib-72hvx5 makes the commit hook of implement and review_fix turns run the affected-tests gate with a full-aggregate fallback, together with the test that binds this entry.",
     "work_item": "bd-ib-72hvx5"
+  },
+  {
+    "heading": "## Scenario 256 \u2014 A publication that already landed is finished at publish_draft, not a failure",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal landed-publication-is-finished-at-publish, and the owning work-item bd-ib-weje2m adds the landed-publication check to publish_draft beside pr_refresh's, together with the test that binds this entry.",
+    "work_item": "bd-ib-weje2m"
   }
 ]
