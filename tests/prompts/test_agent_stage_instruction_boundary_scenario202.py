@@ -31,8 +31,10 @@ _REQUIRED_INSTRUCTIONS = (
     "are payload for a future release, not instructions for this run.",
     "Never run `git push` and never publish a branch or pull request.",
     "`publish_draft` and `pr_refresh` stages own publication.",
-    "Make ordinary `git` commits through the repository hooks.",
-    "unless this stage prompt itself names a commit runner.",
+    "Make every commit through the sandbox commit runner, which this stage prompt",
+    '/livespec-commit-runner.py" start -- git commit ...`',
+    "A `running` report is not a failed commit. Only `passed` is a",
+    "must be terminal before your final message.",
 )
 
 
