@@ -8154,6 +8154,30 @@ Feature: New behaviour gets new spec before it is built
     When the next intake or drain pass reaches the item
     Then the spec hold is released and the item rests at pending-approval for the approve valve
 
+  Scenario: A human attests an existing clause and releases a misjudged hold
+    Given a feature held as spec-change tier because the judgement reported its asked-for behaviour unstated
+    And an existing H2 heading of the ratified specification states that behaviour
+    When a human drives release-spec-tier for the item naming that heading
+    Then the hold is released and the item routes as its effective admission policy decides
+    And a durable ledger comment and a dispatch-journal entry each record the actor, the heading, its spec file, the spec version and the clause digest
+    And a later classification of the item, the pre-dispatch wall and the dod_gate node treat the citation as stated while that clause is unchanged
+
+  Scenario: An attested release of a held pending-rework item keeps it active for rework
+    Given an active item carrying rework:pending that is held as spec-change tier by a misjudged verdict, with no live run
+    When a human drives release-spec-tier for the item naming the existing governing heading
+    Then the item stays active with rework:pending and becomes eligible for the rework route without fresh approval
+
+  Scenario: An attested release refuses a heading the specification does not carry
+    Given a held feature
+    When a human drives release-spec-tier naming a heading the ratified specification does not carry
+    Then the valve refuses naming the unresolved heading and the item stays held
+
+  Scenario: An attestation survives an unrelated revision and a rejected proposal, and voids on a changed clause or input
+    Given a feature released by a valid attestation whose linked proposal was rejected
+    When a later revision changes no cited clause and the item's attested input is unchanged
+    Then the item is not held again
+    And when a later revision changes the cited clause, or the item's asked-for behaviour changes, the attestation is void and the item is classified afresh
+
   Scenario: A rejected or narrowed proposal does not release the hold
     Given a held spec-change-tier item whose linked topic has a revision record with decision reject
     When the next drain pass reaches the item
