@@ -165,6 +165,27 @@ digraph ImplementWorkItem {
         prompt="@prompts/implement.md"
     ]
 
+    // The implementer owns the rapid Red-Green loop, so its commits use the
+    // affected-tests gate. This is a clone-local setting rather than an ACP
+    // environment value: the repository hook resolves Git configuration, and
+    // each command node runs immediately before the turn it scopes.
+    enable_affected_tests_commit_gate [
+        label="Enable affected-tests commit gate for implement"
+        shape=parallelogram
+        timeout="1800s"
+        script="git config --local livespec.commitCheckScope affected-tests"
+    ]
+
+    // Janitor is the full-suite authority. Clear the turn-local selection
+    // before entering it so any later repair turn starts from the ordinary
+    // full-aggregate hook posture.
+    restore_full_commit_gate [
+        label="Restore full commit gate before janitor"
+        shape=parallelogram
+        timeout="1800s"
+        script="if git config --local --unset-all livespec.commitCheckScope; then exit 0; fi; status=$?; if test \"$status\" -eq 5; then exit 0; fi; exit \"$status\""
+    ]
+
     // Implement-completion gate (SPECIFICATION/contracts.md §"Self-contained
     // plugin dispatch" -> "An implement turn that ends incomplete does not
     // succeed", ratified v165; Scenario 204; work-item bd-ib-ahxcjx). The
@@ -1584,6 +1605,16 @@ digraph ImplementWorkItem {
         prompt="@prompts/review-fix.md"
     ]
 
+    // Review-fix is the other code-authoring turn. Keep its commit hook on
+    // the same scoped inner-loop gate as implement, while leaving ordinary
+    // janitor/fix passes on the full aggregate.
+    enable_review_fix_affected_tests_commit_gate [
+        label="Enable affected-tests commit gate for review fix"
+        shape=parallelogram
+        timeout="1800s"
+        script="git config --local livespec.commitCheckScope affected-tests"
+    ]
+
     // THE RECAPTURE ROUTE (v175 "proof-record findings"; SPECIFICATION/
     // contracts.md "Definition-of-Done and Proof-of-Done stages";
     // scenarios.md Scenario 137; work-item bd-ib-j56cur). A COMMAND node
@@ -1961,7 +1992,8 @@ digraph ImplementWorkItem {
     // the exceptional route with a condition, and let the ordinary route be the
     // unconditional fallback that conditional edges outrank.
     dod_gate -> needs_human [label="Blocked", condition="outcome=failed"]
-    dod_gate -> implement
+    dod_gate -> enable_affected_tests_commit_gate
+    enable_affected_tests_commit_gate -> implement
 
     // An explicit failed implement output first reaches the amendment
     // classifier. A Definition-of-Done amendment still rests at needs_human;
@@ -1988,14 +2020,15 @@ digraph ImplementWorkItem {
     // Incomplete-turn routing (v208, widened v214). An incomplete turn
     // re-enters implement once with its latest failing gate; a turn whose
     // re-entry budget is spent reaches needs_human.
-    implement_hook_route -> implement [label="Incomplete: re-enter", condition="outcome=succeeded"]
+    implement_hook_route -> enable_affected_tests_commit_gate [label="Incomplete: re-enter", condition="outcome=succeeded"]
     implement_hook_route -> needs_human
 
     // Changed-tree routing: exit 0 means `git diff --quiet` found a
     // diff, so the existing janitor -> review path remains intact.
     // Non-zero means either a byte-identical tree or an inability to
     // prove the tree changed; both fail closed before review.
-    implementation_diff -> janitor          [label="changed", condition="outcome=succeeded"]
+    implementation_diff -> restore_full_commit_gate [label="changed", condition="outcome=succeeded"]
+    restore_full_commit_gate -> janitor
     implementation_diff -> dead_implementer [label="unchanged or unprovable"]
 
     // Janitor outcome routing: exit 0 -> Green -> publish_draft; non-zero ->
@@ -2165,7 +2198,8 @@ digraph ImplementWorkItem {
     review -> proof_verify [label="approve", condition="preferred_label=approve"]
     review -> needs_human [label="unmatched review outcome"]
     disposition -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
-    disposition -> review_fix [label="fix accepted", condition="preferred_label=fix"]
+    disposition -> enable_review_fix_affected_tests_commit_gate [label="fix accepted", condition="preferred_label=fix"]
+    enable_review_fix_affected_tests_commit_gate -> review_fix
     disposition -> recapture_route [label="recapture accepted proof record", condition="preferred_label=recapture"]
     disposition -> review     [label="all rejected", condition="preferred_label=all_rejected"]
     disposition -> needs_human [label="unmatched disposition outcome"]
@@ -2182,7 +2216,7 @@ digraph ImplementWorkItem {
     // for the `all_conditional_edges` reason above.
     review_fix -> needs_human [label="Blocked", condition="outcome=failed"]
     review_fix -> recapture_route [label="recapture proof record", condition="preferred_label=recapture"]
-    review_fix -> janitor
+    review_fix -> restore_full_commit_gate
 
     // Recapture routing (v175; Scenario 137; work-item bd-ib-j56cur). The
     // re-capture is the UNCONDITIONAL fallthrough and the exhausted bound is the

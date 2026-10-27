@@ -55,8 +55,9 @@ runner unless this stage prompt itself names a commit runner.
    Green); commit trailer `Co-Authored-By: Claude Fable 5
    <noreply@anthropic.com>`; never create or switch branches, never touch
    `.beads/` or `core.bare`.
-6. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`) yourself until it is green — the
-   janitor re-validates this clone after this stage.
+6. Commit the repair through the affected-tests hook. Do not run the full
+   aggregate in this turn: the janitor runs it once after this stage, on the
+   committed tree that review_fix leaves behind.
 7. In your final reply, summarize each ACCEPTED finding as
    `FIXED — <what you changed>`. Mention rejected findings only to say
    they were intentionally left untouched per the disposition record.

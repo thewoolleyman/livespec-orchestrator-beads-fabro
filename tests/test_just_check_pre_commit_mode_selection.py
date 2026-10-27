@@ -29,10 +29,20 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-pre-commit.sh"
+_CHANGED_SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-changed.sh"
 _INCREMENTAL_GATE = "check-check-coverage-incremental"
 _MASTER_CI_GATE = "check-master-ci-green"
 _SANDBOX_EXEMPT_MARKER = "livespec.sandboxExempt"
 _RED_TRAILER = "TDD-Red-Test-File-Checksum: deadbeef"
+_WORKFLOW = (
+    _REPO_ROOT
+    / ".claude-plugin"
+    / ".fabro"
+    / "workflows"
+    / "implement-work-item"
+    / "workflow.fabro"
+)
+_AFFECTED_TESTS_MARKER = "livespec.commitCheckScope"
 
 
 def _run(
@@ -190,3 +200,48 @@ def test_checkout_without_the_marker_still_runs_the_master_ci_green_gate(*, tmp_
         "check-codex-skill-picker",
     ]
     assert _MASTER_CI_GATE not in invocation
+
+
+def test_factory_implementation_turns_enable_the_affected_tests_hook_and_janitor_resets_it() -> (
+    None
+):
+    """Implement and review-fix commits use the scoped gate before janitor restores full checks."""
+    graph = _WORKFLOW.read_text(encoding="utf-8")
+
+    assert graph.count(f"git config --local {_AFFECTED_TESTS_MARKER} affected-tests") == 2
+    assert "dod_gate -> enable_affected_tests_commit_gate" in graph
+    assert "enable_affected_tests_commit_gate -> implement" in graph
+    assert "disposition -> enable_review_fix_affected_tests_commit_gate" in graph
+    assert "enable_review_fix_affected_tests_commit_gate -> review_fix" in graph
+    assert "git config --local --unset-all livespec.commitCheckScope" in graph
+    assert "restore_full_commit_gate -> janitor" in graph
+
+
+def test_affected_tests_marker_runs_the_scoped_gate_and_red_green_verifier(
+    *, tmp_path: Path
+) -> None:
+    """A code-authoring turn replaces the aggregate with its scoped commit gates."""
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+    result = _run(
+        argv=["git", "config", "--local", _AFFECTED_TESTS_MARKER, "affected-tests"],
+        cwd=repo,
+    )
+    assert result.returncode == 0, result.stderr
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.splitlines() == ["check-changed", "check-red-green-replay"]
+
+
+def test_check_changed_falls_back_to_the_full_aggregate_for_shared_configuration(
+    *, tmp_path: Path
+) -> None:
+    """A shared configuration edit cannot be safely scoped to affected Python tests."""
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(repo=repo, relative_path="lefthook.yml", body="pre-commit: {}\n")
+
+    result = _run(argv=["bash", str(_CHANGED_SCRIPT)], cwd=repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / "just.log").read_text(encoding="utf-8").splitlines() == ["check"]

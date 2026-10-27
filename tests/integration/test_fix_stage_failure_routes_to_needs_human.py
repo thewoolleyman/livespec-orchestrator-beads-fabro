@@ -46,7 +46,7 @@ _SENTINEL = "LIVESPEC_NEEDS_HUMAN"
 _PRESERVED_REF_PREFIX = "refs/heads/needs-human/"
 _FAILURE_CONDITION = 'condition="outcome=failed"'
 # The two nodes the item names, each with the ordinary route it must keep.
-_TIMEOUT_PRONE_STAGES = (("fix", "janitor"), ("review_fix", "janitor"))
+_TIMEOUT_PRONE_STAGES = (("fix", "janitor"), ("review_fix", "restore_full_commit_gate"))
 _EDGE_RE = re.compile(r"^(?P<source>\w+)\s*->\s*(?P<target>\w+)\s*(?:\[(?P<attrs>.*)\])?$")
 
 

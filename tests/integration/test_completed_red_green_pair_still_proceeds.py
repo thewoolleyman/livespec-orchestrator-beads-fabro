@@ -45,7 +45,7 @@ from typing import Any
 _WORKFLOW_DIR = Path(".claude-plugin/.fabro/workflows/implement-work-item")
 _WORKFLOW_DOT = _WORKFLOW_DIR / "workflow.fabro"
 _WORKFLOW_TOML = _WORKFLOW_DIR / "workflow.toml"
-_ORDINARY_ROUTES = (("fix", "janitor"), ("review_fix", "janitor"))
+_ORDINARY_ROUTES = (("fix", "janitor"), ("review_fix", "restore_full_commit_gate"))
 _GENERIC_REASON = "loop cannot auto-resolve this work-item"
 _OPEN_RED_CLAUSE = "open Red commit"
 _GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"
@@ -80,7 +80,7 @@ def _checkpoint() -> dict[str, Any]:
 
 
 def test_a_normally_ended_stage_still_has_an_unconditional_route_onward() -> None:
-    """The ordinary route survives the failure edge, and still targets the janitor."""
+    """The ordinary route survives the failure edge and reaches the janitor path."""
     for source, ordinary in _ORDINARY_ROUTES:
         onward = [
             match.group("target")

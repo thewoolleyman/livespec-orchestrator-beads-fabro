@@ -68,6 +68,8 @@ __all__: list[str] = [
 # this tuple against the committed graph so the set cannot drift away from it.
 COMMAND_NODES: tuple[str, ...] = (
     "dead_implementer",
+    "enable_affected_tests_commit_gate",
+    "enable_review_fix_affected_tests_commit_gate",
     "implement_amendment_route",
     "implement_completion",
     "implement_hook_route",
@@ -84,6 +86,7 @@ COMMAND_NODES: tuple[str, ...] = (
     "publish_draft",
     "recapture_route",
     "refresh_repair",
+    "restore_full_commit_gate",
     "verify_pr",
 )
 
