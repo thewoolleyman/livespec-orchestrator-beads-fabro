@@ -69,6 +69,34 @@ def test_case_and_inline_markup_normalize_for_both_citation_fields() -> None:
     assert verdict.unwrap().generalization_target == _GOVERNING
 
 
+def test_unpaired_inline_markup_is_not_discarded_from_a_heading() -> None:
+    """A literal trailing delimiter does not make a shortened citation valid."""
+    literal_heading = "## A clause*"
+    shortened_citation = "## A clause"
+    tree = {"contracts.md": literal_heading + "\n\nThe clause text.\n"}
+    response = json.dumps(
+        {
+            "kind": "stated",
+            "stated_by": [shortened_citation],
+            "generalization_target": None,
+            "rationale": "still names a different heading",
+        }
+    )
+    model = _Responses(responses=(response, response))
+
+    verdict = judge_within_ceiling(
+        spec_tree=tree,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert not is_successful(verdict)
+    assert len(model.prompts) == 2
+    assert shortened_citation in model.prompts[1]
+    assert literal_heading in model.prompts[1]
+
+
 def test_an_unreadable_citation_is_reasked_with_the_valid_clause_inventory() -> None:
     """The replacement answer supplies the usable verdict after one correction."""
     refused = "## A heading that is nowhere"

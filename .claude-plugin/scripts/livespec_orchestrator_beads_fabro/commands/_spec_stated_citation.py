@@ -80,7 +80,13 @@ _HEADING = re.compile(r"^(#{2,6}[ \t][^\n]*?)[ \t]*$", re.MULTILINE)
 # which therefore travels with the citation. Stripping it is what lets a
 # subsection cited as `## Title` match the `### Title` the tree carries.
 _MARKER = re.compile(r"^#+[ \t]*")
-_INLINE_MARKUP = re.compile(r"`+|\*+|(?<!\w)_{1,3}|_{1,3}(?!\w)")
+# A markup pair is removed only as a PAIR.  The content stays captured so the
+# substitution can preserve it while dropping the delimiters.  The emphasis
+# alternatives require non-whitespace content at both edges; the underscore
+# alternative also keeps Markdown's intraword restriction.
+_PAIRED_INLINE_MARKUP = re.compile(
+    r"(`+)([^`]+?)\1|(\*+)(\S(?:.*?\S)?)\3|(?<!\w)(_+)(\S(?:.*?\S)?)\5(?!\w)"
+)
 
 _GOVERNING_LEVEL = 2
 _STATED_BY = "stated_by"
@@ -326,4 +332,7 @@ def _level_of(*, heading: str) -> int:
 def _citation_key(*, heading: str) -> str:
     """A deterministic heading identity ignoring case and inline markup."""
     title = _MARKER.sub("", heading)
-    return " ".join(_INLINE_MARKUP.sub("", title).casefold().split())
+    unmarked = _PAIRED_INLINE_MARKUP.sub(
+        lambda match: next(filter(None, match.groups()[1::2])), title
+    )
+    return " ".join(unmarked.casefold().split())
