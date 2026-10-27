@@ -80,6 +80,7 @@ from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_ju
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     clauses_named,
     condensed_spec_tree,
+    headings_resolved,
     judge_within_ceiling,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -182,16 +183,19 @@ def governing_heading_verdict(
     if isinstance(judged, AttemptFailure | Failure):
         return None
     verdict = judged.unwrap()
+    target = verdict.generalization_target
+    # The shared parser type-checks the target and nothing more. One spanning
+    # lines would be written into the receipt as extra `key: value` lines, so
+    # it is treated exactly as a response the parser refused.
+    if target is not None and len(target.splitlines()) > 1:
+        return None
+    headings = verdict_named_headings(stated_by=verdict.stated_by, generalization_target=target)
+    named = clauses_named(spec_tree=read, headings=headings)
     return GoverningHeadingVerdict(
         kind=verdict.kind,
         stated_by=verdict.stated_by,
-        generalization_target=verdict.generalization_target,
+        generalization_target=target,
         selected_clauses=condensed.clauses,
-        named_clauses=clauses_named(
-            spec_tree=read,
-            headings=verdict_named_headings(
-                stated_by=verdict.stated_by,
-                generalization_target=verdict.generalization_target,
-            ),
-        ),
+        named_clauses=named,
+        provenance_complete=headings_resolved(headings=headings, clauses=named),
     )

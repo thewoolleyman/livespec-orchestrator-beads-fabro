@@ -55,7 +55,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
-    verdict_named_headings,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
@@ -69,7 +68,6 @@ __all__: list[str] = [
     "did_not_run_comment",
     "recorded_did_not_run_causes",
     "recorded_governing_heading",
-    "recorded_named_headings",
     "reusable_governing_heading",
     "reusable_verdict",
     "verdict_comment",
@@ -186,7 +184,8 @@ def verdict_comment(
         lines.append(
             f"{_GOVERNING_SUBJECT_DIGEST_FIELD}{_FIELD_SEPARATOR}{governing.subject_digest}"
         )
-        lines.append(f"{_GOVERNING_PROVENANCE_FIELD}{_FIELD_SEPARATOR}complete")
+        provenance = "complete" if verdict.provenance_complete else "incomplete"
+        lines.append(f"{_GOVERNING_PROVENANCE_FIELD}{_FIELD_SEPARATOR}{provenance}")
         lines.extend(
             f"{_GOVERNING_HEADING_FIELD}{_FIELD_SEPARATOR}{heading}"
             for heading in verdict.stated_by
@@ -254,18 +253,6 @@ def reusable_governing_heading(
     return None
 
 
-def recorded_named_headings(*, body: str) -> tuple[str, ...]:
-    """Every heading one component receipt records its verdict as naming.
-
-    The reuse side recomputes the named clauses from these against the new
-    revision, so it must read the same set the taking recorded provenance for.
-    """
-    return verdict_named_headings(
-        stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
-        generalization_target=_fields_of(body=body).get(_GOVERNING_GENERALIZATION_FIELD),
-    )
-
-
 def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVerdict | None:
     """The governing-heading verdict the NEWEST taken verdict recorded, or `None`.
 
@@ -283,11 +270,14 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
     for body in reversed(tuple(comments)):
         if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
             continue
-        kind = _fields_of(body=body).get(_GOVERNING_KIND_FIELD)
+        fields = _fields_of(body=body)
+        kind = fields.get(_GOVERNING_KIND_FIELD)
         if kind is None:
             return None
         return GoverningHeadingVerdict(
-            kind=kind, stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD)
+            kind=kind,
+            stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
+            generalization_target=fields.get(_GOVERNING_GENERALIZATION_FIELD),
         )
     return None
 
