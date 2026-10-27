@@ -1013,5 +1013,12 @@
     "heading": "## Scenario 256 \u2014 A publication that already landed is finished at publish_draft, not a failure",
     "work_item": "bd-ib-weje2m",
     "first_seen": "2026-10-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 257 \u2014 A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request",
+    "work_item": "bd-ib-opd3hq",
+    "first_seen": "2026-10-26"
   }
 ]

@@ -2367,5 +2367,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal landed-publication-is-finished-at-publish, and the owning work-item bd-ib-weje2m adds the landed-publication check to publish_draft beside pr_refresh's, together with the test that binds this entry.",
     "work_item": "bd-ib-weje2m"
+  },
+  {
+    "heading": "## Scenario 257 \u2014 A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal proof-only-resume-of-a-merged-pull-request, and the owning work-item bd-ib-opd3hq builds the proof-only resume arm on a merged pull request, together with the test that binds this entry.",
+    "work_item": "bd-ib-opd3hq"
   }
 ]
