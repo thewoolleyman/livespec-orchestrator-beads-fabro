@@ -56,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import REPLAY_VERDICTS
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_payload import (
     Evidence,
+    inherit_governing_scenarios,
     read_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
@@ -65,9 +66,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_subject import (
     NO_CAPTURE_REFUSAL,
     SELF_REPLAY_REFUSAL,
+    captured_governing_scenarios,
     declared_host_modes,
     ledger_item,
-    replay_refusal,
+    replay_capture,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_target import (
     host_record_target,
@@ -241,16 +243,25 @@ def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams:
     if pr_number is None:
         emit(_NO_TARGET_REFUSAL.format(item_id=item.id))
         return _EXIT_REFUSED
-    refusal = replay_refusal(
+    replay = replay_capture(
         repo=post.repo,
         verdict=post.verdict,
         pr_number=pr_number,
         identity=identity.identity,
         runner=runner,
     )
-    if refusal is not None:
-        emit(refusal)
+    if replay.refusal is not None:
+        emit(replay.refusal)
         return _EXIT_REFUSED
+    if replay.record is not None:
+        evidence = inherit_governing_scenarios(
+            evidence=evidence,
+            scenarios=captured_governing_scenarios(
+                capture=replay.record,
+                assertions=tuple(assertion.text for assertion in evidence.assertions),
+            ),
+            scenario_fallback=NO_GOVERNING_SCENARIO,
+        )
     return _render_and_post(
         post=post,
         item=item,

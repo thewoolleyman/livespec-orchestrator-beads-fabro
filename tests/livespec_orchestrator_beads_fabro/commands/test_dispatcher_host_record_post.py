@@ -174,13 +174,17 @@ def _comments(*, records: tuple[dict[str, str], ...] = ()) -> str:
     return json.dumps({"comments": list(records)})
 
 
-def _capture_comment(*, identity: str) -> dict[str, str]:
+def _capture_comment(*, identity: str, governing_scenario: str | None = None) -> dict[str, str]:
+    scenario = (
+        f"Governing scenario: {governing_scenario}\n\n" if governing_scenario is not None else ""
+    )
     return {
         "url": f"https://example.test/c/{identity}",
         "body": (
             f"Proof of Done — {VERDICT_HOST_RECORDED} — session {identity} — t\n\n"
             f"- {RELEASE_TAG_LABEL}: {_RELEASE_TAG}\n\n"
             f"## Assertion 1 — {_HOST_ASSERTION}\n"
+            f"{scenario}"
         ),
     }
 
@@ -392,6 +396,32 @@ def test_the_capture_record_claims_no_reproduction_and_the_replay_claims_one(
         )
         is True
     )
+
+
+def test_a_verified_replay_renders_the_governing_scenario_of_its_capture(
+    tmp_path: Path,
+) -> None:
+    """A replay inherits the capture's scenario when its own payload omits it."""
+    _file_item(repo=tmp_path)
+    scenario = "## Scenario 132 — A factory-captured proof is replayed before publication"
+    runner = _Runner(
+        comments=_comments(
+            records=(_capture_comment(identity=_OTHER_SESSION, governing_scenario=scenario),)
+        )
+    )
+
+    exit_code, _ = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_VERIFIED,
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        reproduced=True,
+    )
+
+    assert exit_code == 0
+    posted = next(call for call in runner.calls if call[:3] == ["gh", "pr", "comment"])
+    body = Path(posted[-1]).read_text(encoding="utf-8")
+    assert f"Governing scenario: {scenario}" in body
 
 
 def test_a_replay_from_the_recording_identity_is_refused_before_anything_is_posted(

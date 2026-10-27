@@ -25,6 +25,8 @@ records rather than about the invocation.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
@@ -32,12 +34,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import REPLAY_VERDICTS
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
+    ASSERTION_HEADING_PREFIX,
+    GOVERNING_SCENARIO_LABEL,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_HOST_RECORDED,
+    ProofRecord,
     latest_proof_record,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -45,9 +52,11 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 __all__: list[str] = [
     "NO_CAPTURE_REFUSAL",
     "SELF_REPLAY_REFUSAL",
+    "ReplayCapture",
+    "captured_governing_scenarios",
     "declared_host_modes",
     "ledger_item",
-    "replay_refusal",
+    "replay_capture",
 ]
 
 SELF_REPLAY_REFUSAL = "the computed identity equals the identity that recorded the capture"
@@ -67,6 +76,14 @@ _SELF_REPLAY_REFUSAL_TEXT = (
     " evidence. The {capture} record it replays is {url}. A DIFFERENT session identity"
     " must replay those steps.\n"
 )
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReplayCapture:
+    """The capture a replay may render from, or the refusal that prevents it."""
+
+    record: ProofRecord | None
+    refusal: str | None
 
 
 def ledger_item(*, repo: Path, work_item_id: str) -> WorkItem | None:
@@ -95,29 +112,62 @@ def declared_host_modes(*, item: WorkItem) -> dict[str, str]:
     }
 
 
-def replay_refusal(
+def replay_capture(
     *, repo: Path, verdict: str, pr_number: int, identity: str, runner: CommandRunner
-) -> str | None:
-    """The refusal a REPLAY earns from the records already on the pull request.
+) -> ReplayCapture:
+    """The prior capture a replay must use, or the refusal that prevents a replay.
 
     A capture earns none: it is the first leg, there is nothing for it to collide with,
     and requiring one would make the first host record of every item unpublishable.
     """
     if verdict not in REPLAY_VERDICTS:
-        return None
+        return ReplayCapture(record=None, refusal=None)
     records = read_pull_request_records(repo=repo, pr_number=pr_number, runner=runner)
     if records is None:
-        return _UNREADABLE_PULL_REQUEST_REFUSAL.format(pr_number=pr_number)
+        return ReplayCapture(
+            record=None,
+            refusal=_UNREADABLE_PULL_REQUEST_REFUSAL.format(pr_number=pr_number),
+        )
     capture = latest_proof_record(records=records, verdict=VERDICT_HOST_RECORDED)
     if capture is None:
-        return _NO_CAPTURE_REFUSAL_TEXT.format(
-            reason=NO_CAPTURE_REFUSAL, pr_number=pr_number, capture=VERDICT_HOST_RECORDED
+        return ReplayCapture(
+            record=None,
+            refusal=_NO_CAPTURE_REFUSAL_TEXT.format(
+                reason=NO_CAPTURE_REFUSAL, pr_number=pr_number, capture=VERDICT_HOST_RECORDED
+            ),
         )
     if capture.run_id != identity:
-        return None
-    return _SELF_REPLAY_REFUSAL_TEXT.format(
-        reason=SELF_REPLAY_REFUSAL,
-        identity=identity,
-        capture=VERDICT_HOST_RECORDED,
-        url=capture.url,
+        return ReplayCapture(record=capture, refusal=None)
+    return ReplayCapture(
+        record=capture,
+        refusal=_SELF_REPLAY_REFUSAL_TEXT.format(
+            reason=SELF_REPLAY_REFUSAL,
+            identity=identity,
+            capture=VERDICT_HOST_RECORDED,
+            url=capture.url,
+        ),
     )
+
+
+def captured_governing_scenarios(
+    *, capture: ProofRecord, assertions: Sequence[str]
+) -> dict[str, str]:
+    """Each named assertion's scenario in the exact capture the replay is verifying."""
+    return {
+        assertion: scenario
+        for assertion in assertions
+        if (scenario := _captured_scenario(body=capture.body, assertion=assertion)) is not None
+    }
+
+
+def _captured_scenario(*, body: str, assertion: str) -> str | None:
+    """One assertion's rendered scenario, or `None` when the capture names none."""
+    heading = f"## {ASSERTION_HEADING_PREFIX} "
+    prefix = f"{GOVERNING_SCENARIO_LABEL}: "
+    in_assertion = False
+    for line in body.splitlines():
+        if line.startswith("## "):
+            in_assertion = line.startswith(heading) and line.endswith(f" — {assertion}")
+        elif in_assertion and line.startswith(prefix):
+            return line[len(prefix) :]
+    return None
