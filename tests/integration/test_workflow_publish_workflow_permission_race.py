@@ -29,6 +29,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
     fabro_run_terminal_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 
 _WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 _PUBLISH_BRANCH = "feat/bd-ib-cvge"
@@ -182,6 +186,11 @@ def _bump_during_push(*, tmp_path: Path, default: Path, times: int) -> None:
 
 
 def _env(*, tmp_path: Path) -> dict[str, str]:
+    plugins_root = tmp_path / "plugins"
+    plugins_root.mkdir()
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     bin_dir = tmp_path / "bin"
     _executable(
         path=bin_dir / "gh",
@@ -203,6 +212,7 @@ def _env(*, tmp_path: Path) -> dict[str, str]:
             "LIVESPEC_GIT_AUTHOR_NAME": "Workflow Race Test",
             "LIVESPEC_GIT_AUTHOR_EMAIL": "workflow-race-test@example.invalid",
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
+            "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
     )
     return env
