@@ -34,6 +34,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout import (
+    FABRO_DUMP_TIMEOUT_SECONDS,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     DIGEST_UNAVAILABLE_PREFIX,
     PRESERVE_POINTER_MARKER,
@@ -58,7 +61,6 @@ POINTER_INTACT = "intact"
 POINTER_DANGLING = "dangling"
 POINTER_UNVERIFIABLE = "unverifiable"
 
-_DUMP_TIMEOUT_SECONDS = 300.0
 _RUN_ID_PREFIX = "run id: "
 _SERVER_URL_PREFIX = "factory server url: "
 _ARTIFACT_PATH_PREFIX = "stage artifact path: "
@@ -155,7 +157,7 @@ def check_preserved_pointer(
         dumped = port.dump(
             run_id=pointer.run_id,
             output_dir=export_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
+            timeout_seconds=FABRO_DUMP_TIMEOUT_SECONDS,
         ).command
         if dumped.exit_code != 0:
             return PointerCheck(

@@ -947,13 +947,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 247 \u2014 Every Dispatcher fabro dump shares one bound sized from the slowest factory",
-    "work_item": "bd-ib-exyiqr",
-    "first_seen": "2026-10-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 248 \u2014 A pull request merged before its refresh ends the run as a finished publication",
     "work_item": "bd-ib-ku7phe",
     "first_seen": "2026-10-26"
