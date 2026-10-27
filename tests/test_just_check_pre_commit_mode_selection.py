@@ -214,3 +214,20 @@ def test_factory_implementation_turns_enable_the_affected_tests_hook_and_janitor
     assert "enable_review_fix_affected_tests_commit_gate -> review_fix" in graph
     assert "git config --local --unset-all livespec.commitCheckScope" in graph
     assert "restore_full_commit_gate -> janitor" in graph
+
+
+def test_affected_tests_marker_runs_the_scoped_gate_and_red_green_verifier(
+    *, tmp_path: Path
+) -> None:
+    """A code-authoring turn replaces the aggregate with its scoped commit gates."""
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+    result = _run(
+        argv=["git", "config", "--local", _AFFECTED_TESTS_MARKER, "affected-tests"],
+        cwd=repo,
+    )
+    assert result.returncode == 0, result.stderr
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.splitlines() == ["check-changed", "check-red-green-replay"]

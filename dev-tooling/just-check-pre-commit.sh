@@ -26,6 +26,19 @@ if [[ "$(git config --get --bool livespec.sandboxExempt || printf 'false')" == t
     sandbox_skips+=(check-master-ci-green)
 fi
 
+# Code-authoring Fabro turns set this clone-local marker in the workflow graph
+# immediately before entering `implement` or `review_fix`. Their commits need
+# the changed-file test gate, while janitor clears the marker before it runs the
+# declared full aggregate. Keep Red-Green-Replay beside the scoped gate: it
+# records the intentionally failing Red test and validates its Green amend
+# without restoring the aggregate's unrelated checks to the inner loop.
+if [[ "$(git config --get livespec.commitCheckScope || true)" == affected-tests ]]; then
+    echo ":: affected-tests commit scope detected: running just check-changed and Red-Green-Replay"
+    just check-changed
+    just check-red-green-replay
+    exit $?
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
