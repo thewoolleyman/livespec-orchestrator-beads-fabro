@@ -179,6 +179,25 @@ concrete, copy-pasteable action or command. The steps must be:
   - A phrase such as "with the program shown in the capture" is a PROMISE this
     bullet makes binding — before you publish, re-read each such step and
     confirm the source it points at is really there.
+- **Record-fidelity preflight.** Before posting, validate every numbered reproduction step against the recorded publish-branch head. A step may invoke
+  a repository-relative program path only when that path is a regular tracked
+  file at that exact commit; establish it with `git cat-file -e
+  <publish-head>:<path>`. Refuse to publish a record when a step invokes a
+  program under `/tmp`, another absolute path, or a relative path absent from
+  the recorded publish-branch head. Name the numbered step and the invoked path
+  in the refusal, for example: `LIVESPEC_PROOF_CAPTURE_UNREPLAYABLE_STEP: step
+  <N> invokes <path>, which is absent from recorded head <sha>`. Inline source
+  is not a path invocation and is replayable from the record; a tracked program
+  is replayable from that commit. Never substitute a capture-created helper for
+  either route.
+- **Resolved observations.** Each step must print the resolved value it proves
+  — the concrete URL, path, mode, count, or other observed value — not merely the variable name, task label, or other name that holds it. Capture that
+  printed value in the step's proof so a fresh replay can compare the same
+  observation without the capturing turn's environment.
+- **Literal shell commands.** No reproduction-step command may contain a dollar sign (`$`) outside single quotes. Resolve values before you write the command,
+  then publish the concrete command you ran. The carry-forward reader's
+  direct-read grammar rejects an unquoted expansion because it cannot enumerate
+  what the shell would read at replay time.
 
 ## Step 3 — execute the steps verbatim
 
@@ -389,8 +408,24 @@ you uploaded fails the assertion as surely as no proof at all.
 
 Post exactly **one NEW comment** on the draft pull request for this item's
 publish branch. Find it with `gh pr list --head <publish branch> --state
-open --json number`, and post with `gh pr comment <number> --body-file
-<file>`.
+open --json number`. Define this posting primitive and must post only through
+`livespec_post_captured_record`; do not call `gh pr comment` directly:
+
+    livespec_post_captured_record() {
+        pr_number="$1"
+        body_file="$2"
+        publish_heads=$(grep -c '^Publish-branch head: [0-9a-f]\{40\}$' "$body_file")
+        if test "$publish_heads" -ne 1; then
+            echo "LIVESPEC_PROOF_CAPTURE_MISSING_PUBLISH_BRANCH_HEAD: captured record names $publish_heads Publish-branch head lines; exactly one is required" >&2
+            return 1
+        fi
+        gh pr comment "$pr_number" --body-file "$body_file"
+    }
+
+This primitive refuses a captured record that declares no
+`Publish-branch head:` line (and also refuses duplicate or malformed lines)
+before any forge call. When it refuses, report its message and do not publish a
+replacement record until the recorded head and every step's preflight are valid.
 
 **MEASURE THE BODY FILE BEFORE YOU POST IT, and refuse to post it over
 budget:**
