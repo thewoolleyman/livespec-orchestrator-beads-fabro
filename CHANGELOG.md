@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.243.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.9...v0.243.10) (2026-10-27)
+
+
+### Bug Fixes
+
+* carry result tenant credential wrapper ([704d27c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/704d27c5e4951a5e91c1c83b9fa5fe0d0fa1d767))
+* execute result reads through target wrapper ([aa5d3e8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aa5d3e8c96b17cdfeeef0cf08bacd5c599d8d50a))
+* name unavailable target wrapper ([ebae152](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ebae1527f13abcce2318e0383c60f679652c8980))
+
 ## [0.243.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.8...v0.243.9) (2026-10-26)
 
 
