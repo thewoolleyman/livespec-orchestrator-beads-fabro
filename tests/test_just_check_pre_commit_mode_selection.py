@@ -245,3 +245,24 @@ def test_check_changed_falls_back_to_the_full_aggregate_for_shared_configuration
 
     assert result.returncode == 0, result.stderr
     assert (repo / "just.log").read_text(encoding="utf-8").splitlines() == ["check"]
+
+
+def test_check_changed_falls_back_to_the_full_aggregate_for_deleted_shared_configuration(
+    *, tmp_path: Path
+) -> None:
+    """Deleting shared configuration is also unscopable and must run the aggregate."""
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    configuration = repo / "lefthook.yml"
+    configuration.write_text("pre-commit: {}\n", encoding="utf-8")
+    baseline = _run(argv=["git", "add", "lefthook.yml"], cwd=repo)
+    assert baseline.returncode == 0, baseline.stderr
+    baseline = _run(argv=["git", "commit", "-m", "add shared configuration"], cwd=repo)
+    assert baseline.returncode == 0, baseline.stderr
+    configuration.unlink()
+    deleted = _run(argv=["git", "add", "--update", "lefthook.yml"], cwd=repo)
+    assert deleted.returncode == 0, deleted.stderr
+
+    result = _run(argv=["bash", str(_CHANGED_SCRIPT)], cwd=repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / "just.log").read_text(encoding="utf-8").splitlines() == ["check"]
