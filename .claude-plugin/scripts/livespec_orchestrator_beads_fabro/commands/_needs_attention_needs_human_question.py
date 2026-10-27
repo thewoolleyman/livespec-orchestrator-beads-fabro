@@ -41,6 +41,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro._store_dispatch_factory import read_dispatch_factories
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
@@ -59,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRu
 from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
     transport_fault_clause,
     transport_fault_from_cause,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_needs_human_comment import (
+    needs_human_comment_summary,
 )
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -189,8 +193,25 @@ def needs_human_question_summary(
     runner: FabroRunner | None = None,
 ) -> str:
     """The valve summary, enriched with the run's account when one is readable."""
+    resolved = attempt(
+        action=lambda: _run_handle(project_root=project_root, item_id=item_id),
+        exceptions=_RECOVERABLE,
+    )
+    if isinstance(resolved, AttemptFailure) or resolved is None:
+        return default_summary
+    comment = attempt(
+        action=lambda: _comment_summary(
+            project_root=project_root,
+            item_id=item_id,
+            handle=resolved,
+            default_summary=default_summary,
+        ),
+        exceptions=_RECOVERABLE,
+    )
+    if not isinstance(comment, AttemptFailure) and comment is not None:
+        return comment
     read = attempt(
-        action=lambda: _question(project_root=project_root, item_id=item_id, runner=runner),
+        action=lambda: _question(project_root=project_root, runner=runner, handle=resolved),
         exceptions=_RECOVERABLE,
     )
     if isinstance(read, AttemptFailure) or read is None:
@@ -207,12 +228,9 @@ def needs_human_question_summary(
 def _question(
     *,
     project_root: Path,
-    item_id: str,
     runner: FabroRunner | None,
+    handle: NeedsHumanRunHandle,
 ) -> tuple[NeedsHumanRunHandle, NeedsHumanQuestion] | None:
-    handle = _run_handle(project_root=project_root, item_id=item_id)
-    if handle is None:
-        return None
     port = FabroPort(
         fabro_bin=resolve_fabro_bin(cwd=project_root),
         target=FabroTarget(server_url=handle.factory_server_url),
@@ -224,6 +242,25 @@ def _question(
     if question is None:
         return None
     return (handle, question)
+
+
+def _comment_summary(
+    *,
+    project_root: Path,
+    item_id: str,
+    handle: NeedsHumanRunHandle,
+    default_summary: str,
+) -> str | None:
+    """The durable account for the already-resolved run, or None for the fallback."""
+    comments = read_work_item_comments(path=store_config(repo=project_root), work_item_id=item_id)
+    return needs_human_comment_summary(
+        comments=comments,
+        default_summary=default_summary,
+        factory_name=handle.factory_name,
+        factory_server_url=handle.factory_server_url,
+        item_id=item_id,
+        run_id=handle.run_id,
+    )
 
 
 def _run_handle(*, project_root: Path, item_id: str) -> NeedsHumanRunHandle | None:
