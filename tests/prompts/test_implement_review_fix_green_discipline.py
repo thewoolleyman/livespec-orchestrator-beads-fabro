@@ -65,3 +65,12 @@ def test_both_prompts_require_touched_tests_to_pass_before_green() -> None:
             "Before every Green commit or Green amend, run every test file the "
             "change touches and see each one pass."
         ) in _prompt_text(stage=stage)
+
+
+def test_both_prompts_require_pinning_tests_with_prompt_or_overlay_edits() -> None:
+    """Prompt and overlay edits carry their pinning tests in the same commit."""
+    for stage in _STAGES:
+        assert (
+            "A change to a stage prompt file or `_dispatcher_overlay.py` must "
+            "update the test that pins it in the same commit."
+        ) in _prompt_text(stage=stage)

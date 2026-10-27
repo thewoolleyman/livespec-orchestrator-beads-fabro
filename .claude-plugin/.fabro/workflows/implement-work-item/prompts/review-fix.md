@@ -41,6 +41,8 @@ test first and observe its genuine assertion failure before committing it.
 
 Before every Green commit or Green amend, run every test file the change touches and see each one pass.
 
+A change to a stage prompt file or `_dispatcher_overlay.py` must update the test that pins it in the same commit.
+
 ## What to do
 
 1. Read the disposition record from the prior stage context, including any
