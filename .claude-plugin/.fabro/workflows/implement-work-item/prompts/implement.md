@@ -17,6 +17,8 @@ loop once for EACH gradeable acceptance assertion, in order:
 
 Before every Green commit or Green amend, run every test file the change touches and see each one pass.
 
+A change to a stage prompt file or `_dispatcher_overlay.py` must update the test that pins it in the same commit.
+
 Product-write order is mechanical: no product file may be created or
 modified before the first Red commit, and every later product write
 requires HEAD to be an open Red. The ONLY carveout is a new-module
