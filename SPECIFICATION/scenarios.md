@@ -9009,6 +9009,18 @@ Feature: Engine checkpoint commits never reach the merged history
     Given a published head that already contains the default branch and carries none of the run's empty commits
     When pr_refresh runs
     Then it republishes nothing and the head proceeds to pr
+
+  Scenario: The run's own empty checkpoint commits on origin are not a foreign head
+    Given pr_refresh republished the run's head and the run routed back for reproof
+    And origin's publish branch now descends from that published head, adding only empty engine checkpoint commits of this run
+    When pr_refresh runs again after the proof loop passes
+    Then it does not fail closed on a foreign publish head
+    And it republishes the head without those commits under an explicit lease naming the observed origin head
+
+  Scenario: Any other addition to origin's publish branch is still foreign
+    Given origin's publish branch adds to the run's published head a commit that is not an empty engine checkpoint commit of this run, or does not descend from that head
+    When pr_refresh runs
+    Then it fails closed on a foreign publish head
 ```
 
 ## Scenario 220 — An exhausted merge-poll budget on an open pull request rests the item for resume

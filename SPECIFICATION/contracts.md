@@ -3363,6 +3363,19 @@ that the repository-declared gate rejects, MUST take the refresh-repair route of
 "Refresh repair" below while its budget lasts, and MUST fail closed with a named
 cause and recovery artifact pointer once that budget is spent. A previously completed refresh may be
 recognized idempotently from durable run provenance and matching remote state.
+A publish head on origin that differs from the run's previously published head
+is neither foreign nor unexpectedly changed when it descends from that head and
+every commit it adds is an engine checkpoint commit of this run that changes no
+tree, its message naming this run's id. `pr_refresh` MUST then take that
+observed head as the recorded remote head of the run's publish branch for every
+lease this section requires, and MUST treat the added commits as the run's own
+empty commits under the unchanged-head rule below. A head that adds any other
+commit, or that does not descend from the run's previously published head,
+remains foreign. Measured 2026-10-27 on run 01M5XFBSKGY0 (bd-ib-qksrl6): after
+`pr_refresh` republished at 7e89feeb and routed back for reproof, the engine
+pushed two empty checkpoint commits of the same run onto origin's publish
+branch, and the next `pr_refresh` failed closed on that head as foreign.
+Scenario 226 in `scenarios.md` exercises this sentence.
 
 **A pull request merged before its refresh.** When `pr_refresh`'s first query
 of the run's own publish branch on origin, made before it rebases, pushes or
