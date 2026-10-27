@@ -108,6 +108,7 @@ _DEFAULT_BRANCH = "master"
 # stage must abort rather than resolve.
 _OWNED_FILE = "owned.txt"
 _SHARED_FILE = "shared.txt"
+_RUN_ID = "run-for-checkpoint-ownership"
 
 
 # The coverage hooks an allowlisted spawn must scrub, so no child of this file
@@ -298,6 +299,14 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
+def _checkpoint(*, cwd: Path, subject: str) -> str:
+    """Create one empty engine checkpoint commit and return its head."""
+    _ = _git("config", "user.email", "t@example.invalid", cwd=cwd)
+    _ = _git("config", "user.name", "Test", cwd=cwd)
+    _ = _git("commit", "--quiet", "--allow-empty", "-m", subject, cwd=cwd)
+    return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
+
+
 def _origin_with_default(*, root: Path) -> Path:
     """A bare origin whose default branch carries the shared file."""
     origin = root / "origin.git"
@@ -387,6 +396,7 @@ def _build(
     _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(
         box.local_head(), encoding="utf-8"
     )
+    _ = _git("config", "livespec.factoryRunId", _RUN_ID, cwd=box.clone)
     _ = subprocess.run(
         ["bash", str(gate_script)],
         check=True,
@@ -750,6 +760,66 @@ def test_an_unchanged_default_owes_no_rebase_and_pushes_nothing(tmp_path: Path) 
     assert box.remote_head(ref=_BRANCH) == before
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
     assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+
+
+def test_own_empty_checkpoint_commits_on_origin_are_leased_and_stripped(
+    tmp_path: Path,
+) -> None:
+    """A re-proof checkpoint is this run's own, not a foreign publish head."""
+    box = _build(root=tmp_path)
+    checkpoint = _checkpoint(
+        cwd=box.clone,
+        subject=f"fabro({_RUN_ID}): proof_verify (success)",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=box.clone)
+    assert box.remote_head(ref=_BRANCH) == checkpoint
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_FOREIGN_HEAD" not in result.stderr
+    republished = box.remote_head(ref=_BRANCH)
+    assert republished == box.local_head()
+    assert republished != checkpoint
+    checkpoint_survived = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", checkpoint, republished],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert checkpoint_survived.returncode == 1
+    assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
+
+
+@pytest.mark.parametrize(
+    ("subject", "path"),
+    [
+        ("fabro(another-run): proof_verify (success)", None),
+        (f"fabro({_RUN_ID}): proof_verify (success)", "checkpoint-output.txt"),
+    ],
+    ids=("another-run-empty-checkpoint", "this-run-tree-changing-checkpoint"),
+)
+def test_only_this_runs_tree_empty_checkpoints_are_accepted(
+    tmp_path: Path,
+    subject: str,
+    path: str | None,
+) -> None:
+    """A foreign or tree-changing checkpoint remains a foreign publish head."""
+    box = _build(root=tmp_path)
+    if path is None:
+        checkpoint = _checkpoint(cwd=box.clone, subject=subject)
+    else:
+        checkpoint = _commit(cwd=box.clone, path=path, text="changed\n", subject=subject)
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=box.clone)
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_FOREIGN_HEAD" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == checkpoint
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
 def test_a_foreign_remote_publish_head_is_refused_before_any_rewrite(tmp_path: Path) -> None:
