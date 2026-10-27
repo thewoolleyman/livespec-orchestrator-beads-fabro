@@ -3,9 +3,10 @@
 The three Dispatcher reads are exercised through their production entry points:
 the preserve-by-reference export writes a real pointer to the fake ledger, its
 read-back check re-exports that pointer, and the worker-exit recovery reads the
-exported log.  The factory double completes only when it receives the seven
-hundred seconds the scenario says the slow export needs, so every successful
-leg proves it received the shared nine-hundred-second bound.
+exported log. The virtual factory double records an explicit dump lifecycle:
+it is still running at 600 seconds and completes at 650 seconds. Every
+successful leg therefore proves it received the shared nine-hundred-second
+bound without turning the integration suite into an eleven-minute wait.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from _scenario247_slow_dump import SlowSuccessfulDumpRunner
 from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
@@ -49,7 +51,6 @@ _SERVER = "https://petri.example.test:32276"
 _ITEM_ID = "bd-ib-exyiqr"
 _RUN_ID = "01M5SLOWDUMP"
 _WORKER_RUN_ID = "01M5WORKERLOG"
-_DIFF = "diff --git a/app.py b/app.py\n+print('kept')\n"
 _ENGINE_FAILURE = "Workflow run failed deterministic failure cycle detected: signature janitor|deterministic|exit 1"
 
 
@@ -59,34 +60,6 @@ class _Journal:
 
     def append(self, *, record: dict[str, object]) -> None:
         self.records.append(record)
-
-
-@dataclass(kw_only=True)
-class _SevenMinuteFactory:
-    timeouts: list[float] = field(default_factory=list)
-
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = (cwd, env, stdin)
-        self.timeouts.append(timeout_seconds)
-        if timeout_seconds < 700:
-            return CommandResult(exit_code=124, stdout="", stderr="dump timed out")
-        output_dir = Path(argv[argv.index("-o") + 1])
-        run_id = argv[2]
-        if run_id == _WORKER_RUN_ID:
-            _ = (output_dir / "run.log").write_text(_ENGINE_FAILURE, encoding="utf-8")
-        else:
-            diff = output_dir / "stages" / "002-implement@1" / "diff.patch"
-            diff.parent.mkdir(parents=True)
-            _ = diff.write_text(_DIFF, encoding="utf-8")
-        return CommandResult(exit_code=0, stdout="", stderr="")
 
 
 @pytest.fixture(autouse=True)
@@ -180,7 +153,10 @@ def test_slow_export_and_all_dispatcher_readers_share_the_nine_hundred_second_bo
     """A 700-second export succeeds, digests its pointer, and serves every reader."""
     append_work_item(path=_config(), item=_item())
     repo = _repo(tmp_path=tmp_path)
-    factory = _SevenMinuteFactory()
+    factory = SlowSuccessfulDumpRunner(
+        worker_run_id=_WORKER_RUN_ID,
+        worker_log=_ENGINE_FAILURE,
+    )
     journal = _Journal()
     preserve_checkpointed_work_reference(
         args=argparse.Namespace(
@@ -196,6 +172,11 @@ def test_slow_export_and_all_dispatcher_readers_share_the_nine_hundred_second_bo
 
     body = str(make_beads_client(config=_config()).list_comments(issue_id=_ITEM_ID)[-1]["text"])
     assert factory.timeouts == [900]
+    assert factory.lifecycle_for(run_id=_RUN_ID) == (
+        "started@0",
+        "running@600",
+        "succeeded@650",
+    )
     assert "sha256: 66cea3fffd55d2674c51819b19f4a7dee70484243ba4ed26408fa70e05b074dd" in body
     pointer = parse_preserved_pointer(body=body)
     assert pointer is not None
