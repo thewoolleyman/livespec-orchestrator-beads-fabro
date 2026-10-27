@@ -72,6 +72,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout import (
+    FABRO_DUMP_TIMEOUT_SECONDS,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure import (
     fabro_failure_outcome_detail,
 )
@@ -127,7 +130,6 @@ _SIGNATURE_FIELDS = 3
 # module guessing at a file nobody has measured, and a verdict recovered from
 # the wrong file is worse than none.
 _MEASURED_LOG_NAME = "run.log"
-_DUMP_TIMEOUT_SECONDS = 300.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -263,7 +265,7 @@ def _exported_log_text(*, plan: DispatchPlan, runner: CommandRunner, run_id: str
         dumped = port.dump(
             run_id=run_id,
             output_dir=output_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
+            timeout_seconds=FABRO_DUMP_TIMEOUT_SECONDS,
         ).command
         if dumped.exit_code != 0:
             return ""
