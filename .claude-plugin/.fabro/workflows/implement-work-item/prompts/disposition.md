@@ -18,20 +18,24 @@ run-context key named below, which Fabro merges whatever the fidelity. So a
 preamble that does not quote the review is NORMAL and is not a reason to fail
 closed; an absent or malformed `review_findings_r<N>` key is.
 
+Fabro renders the run context as the LAST `## Context` block of the preamble,
+immediately before the stage prompt, with one `- <key>: <value>` line per key.
+The work-item goal can contain an earlier `## Context` heading of its own; that
+earlier heading is goal text, not the run context.
+
 ## What to do
 
 1. Read the current review stage findings from the highest-numbered
-   visible run-context key named `review_findings_r<N>`. This key is the
-   review stage's stage-to-stage dataflow; do NOT scrape raw Fabro event
-   logs or infer findings from observability output. Identify every
-   `[BLOCKING]` finding from that context value. Preserve `[ADVISORY]`
-   findings in your reasoning if they clarify the record, but ignore
-   them for routing; they do not gate.
+   `review_findings_r<N>` key in that LAST `## Context` block. This key is the
+   review stage's stage-to-stage dataflow; do NOT scrape raw Fabro event logs
+   or infer findings from observability output. Identify every `[BLOCKING]`
+   finding from that context value. Preserve `[ADVISORY]` findings in your
+   reasoning if they clarify the record, but ignore them for routing; they do
+   not gate.
 2. You MAY read files in the repo to verify a finding's factual claims.
    You MUST NOT edit, create, delete, format, stage, commit, or otherwise
    mutate any file.
-3. If the current round's `review_findings_r<N>` key is absent, fail
-   closed with a machine-readable
+3. Before deciding that the current round's key is absent, search your own prompt for the literal key `review_findings_r<N>:` in that LAST `## Context` block. If it is absent, fail closed with a machine-readable
    `{"outcome": "failed", "failure_reason": "..."}` response that names
    the missing `review_findings_r<N>` key and the producing review stage.
    If the key is present but malformed, fail closed the same way and name

@@ -368,9 +368,7 @@ When at least one `[BLOCKING]` finding is present, post those lines as the
 review record on the pull request per the section above, and also persist the
 complete findings text for this review round in workflow context:
 
-1. Determine the round number N for the context key: count prior visible `review_findings_r*`
-   run-context keys, then use the next
-   integer. If none are visible, use `review_findings_r1`.
+1. Determine the round number N for the context key: Fabro renders run context as the LAST `## Context` block of the preamble, immediately before the stage prompt, with one `- <key>: <value>` line per key, and count prior visible `review_findings_r*` keys only in that block before using the next integer. If none are visible there, use `review_findings_r1`; an earlier `## Context` heading inside the work-item goal is not run context.
 2. The context value MUST be the exact finding lines you listed above —
    the `[BLOCKING]` and `[ADVISORY]` lines, both preserved in their
    original order, and not the coverage enumeration above them. Do not
