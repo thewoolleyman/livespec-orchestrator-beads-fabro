@@ -15,6 +15,8 @@ loop once for EACH gradeable acceptance assertion, in order:
 5. Repeat from step 1 for the next assertion. One assertion gets one
    observable Red-Green cycle.
 
+Before every Green commit or Green amend, run every test file the change touches and see each one pass.
+
 Product-write order is mechanical: no product file may be created or
 modified before the first Red commit, and every later product write
 requires HEAD to be an open Red. The ONLY carveout is a new-module
