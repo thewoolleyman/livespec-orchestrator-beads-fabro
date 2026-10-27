@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.245.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.244.0...v0.245.0) (2026-10-27)
+
+
+### Features
+
+* require pinning tests with prompt edits ([88b4e7a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/88b4e7a8034f9d91da620b9eb165537cdc6a4750))
+* require review-fix single-file Red ([8f5186b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f5186b19c0119ec8bf02ea80386aaeb092db06c))
+* require touched tests before Green ([6661458](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/66614580ca2fad7b8b69da548a8425b8960a4004))
+
 ## [0.244.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.22...v0.244.0) (2026-10-27)
 
 
