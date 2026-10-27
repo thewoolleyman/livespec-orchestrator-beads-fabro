@@ -37,15 +37,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     PROOF_MODE_HUMAN_ATTESTED,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import HostLeg
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_binding import (
+    ProofRecordInventory,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import ProofRecord
 
 __all__: list[str] = [
     "PROOF_RECORD_EVIDENCE_LEG",
+    "PROOF_RECORD_UNBINDABLE",
     "AssertionEvidence",
     "ProofLeg",
 ]
 
 PROOF_RECORD_EVIDENCE_LEG = "proof of done record"
+PROOF_RECORD_UNBINDABLE = "proof record unbindable"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -83,6 +88,7 @@ class ProofLeg:
     records: tuple[ProofRecord, ...]
     reason: str
     host: HostLeg
+    inventory: ProofRecordInventory | None = None
 
     @property
     def checks(self) -> tuple[CriterionCheck, ...]:
@@ -157,7 +163,26 @@ class ProofLeg:
         read the whole record to find out which of five assertions it failed to
         evidence.
         """
+        if self.inventory is not None and self.inventory.unbindable:
+            return (PROOF_RECORD_UNBINDABLE,)
         return tuple(f"{PROOF_RECORD_EVIDENCE_LEG} for {text!r}" for text in self.unevidenced)
+
+    @property
+    def proof_records(self) -> tuple[dict[str, object], ...]:
+        """Every record the pass found, including records it refused to grade."""
+        if self.inventory is not None:
+            return tuple(one.as_record() for one in self.inventory.entries)
+        return tuple(
+            {
+                "kind": one.verdict,
+                "run_or_session_id": one.run_id,
+                "link": one.url,
+                "bind_verdict": "unclassified",
+                "faults": [],
+                "stale_head": False,
+            }
+            for one in self.records
+        )
 
     def as_record(self) -> dict[str, object]:
         """The journal projection naming, per assertion, its leg and record comment."""
@@ -168,5 +193,6 @@ class ProofLeg:
             "record_verdict": None if self.record is None else self.record.verdict,
             "pending_host_captured": list(self.pending_host_captured),
             "pending_human_attested": list(self.pending_human_attested),
+            "records": list(self.proof_records),
             "assertions": [one.as_record() for one in self.assertions],
         }

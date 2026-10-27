@@ -96,6 +96,9 @@ def park_in_acceptance(
             "advisory": policy == "human-only",
             "acceptance_verdict": acceptance_pass.verdict,
             "absent_evidence": list(acceptance_pass.absent_evidence),
+            "proof_records": (
+                [] if acceptance_pass.proof is None else list(acceptance_pass.proof.proof_records)
+            ),
         }
     )
     surface_line = (
@@ -166,6 +169,7 @@ def record_acceptance_park(
                 {"name": leg.name, "observed": leg.observed, "detail": leg.detail}
                 for leg in record.legs
             ],
+            "proof_records": list(record.proof_records),
         }
     )
 

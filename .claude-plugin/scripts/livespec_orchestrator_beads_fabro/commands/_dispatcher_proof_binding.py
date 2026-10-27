@@ -82,6 +82,17 @@ class BoundRecord:
             return self.verdict in (BIND_VERDICT_BOUND, BIND_VERDICT_LEGACY_HOST)
         return self.verdict in (BIND_VERDICT_BOUND, BIND_VERDICT_LEGACY_MATCHED)
 
+    def as_record(self) -> dict[str, object]:
+        """The inventory shape shared by acceptance's journal and parking record."""
+        return {
+            "kind": self.record.verdict,
+            "run_or_session_id": self.record.run_id,
+            "link": self.record.url,
+            "bind_verdict": self.verdict,
+            "faults": [] if self.fault is None else [self.fault],
+            "stale_head": self.stale_head,
+        }
+
 
 @dataclass(frozen=True, kw_only=True)
 class ProofRecordInventory:

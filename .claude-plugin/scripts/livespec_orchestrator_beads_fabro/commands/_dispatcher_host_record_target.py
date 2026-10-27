@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     livespec_config_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    PrView,
     build_plan,
     janitor_reconcile_checkout_path,
 )
@@ -46,8 +47,8 @@ __all__: list[str] = [
 ]
 
 
-def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> int | None:
-    """The pull request of the item's latest merged run, or `None` when none resolves.
+def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> PrView | None:
+    """The latest merged run's PR and merge head, or `None` when none resolves.
 
     Resolved through the reconcile valve's own authority rather than from a flag, so a
     record cannot be published onto an earlier pull request — where the acceptance pass
@@ -81,4 +82,4 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
         runner=runner,
         journal=JournalFile(path=repo / "tmp" / f"host-record-{item.id}.jsonl"),
     )
-    return merged.number if merged is not None and not isinstance(merged, str) else None
+    return merged if isinstance(merged, PrView) else None

@@ -30,6 +30,7 @@ the absent set makes the comment agree with the verdict by construction.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -104,6 +105,7 @@ class ParkingRecord:
     policy: str
     legs: tuple[EvidenceLeg, ...]
     pending: tuple[PendingLeg, ...]
+    proof_records: tuple[dict[str, object], ...]
 
     @property
     def key_line(self) -> str:
@@ -114,7 +116,11 @@ class ParkingRecord:
         the same record, and two differing in either are not.
         """
         names = "; ".join(leg.name for leg in self.pending) or _NOTHING_PENDING
-        return f"{PARKING_RECORD_TITLE} — {self.verdict} — pending: {names}"
+        key = f"{PARKING_RECORD_TITLE} — {self.verdict} — pending: {names}"
+        if not self.proof_records:
+            return key
+        inventory = json.dumps(self.proof_records, sort_keys=True, separators=(",", ":"))
+        return f"{key} — proof-records: {inventory}"
 
     def render(self) -> str:
         """The whole comment body, keyed by `key_line`."""
@@ -122,21 +128,29 @@ class ParkingRecord:
             f"The acceptance pass left work-item {self.item_id} resting in acceptance under"
             f" acceptance_policy {self.policy}; it disposed of nothing."
         )
-        return "\n".join(
-            [
-                self.key_line,
-                "",
-                preamble,
-                "",
-                "Evidence legs:",
-                "",
-                *[leg.render() for leg in self.legs],
-                "",
-                "Pending, and the action that would move the item:",
-                "",
-                *self._pending_lines(),
-            ]
-        )
+        lines = [
+            self.key_line,
+            "",
+            preamble,
+            "",
+            "Evidence legs:",
+            "",
+            *[leg.render() for leg in self.legs],
+            "",
+            "Pending, and the action that would move the item:",
+            "",
+            *self._pending_lines(),
+        ]
+        if self.proof_records:
+            lines.extend(
+                [
+                    "",
+                    "Proof records:",
+                    "",
+                    *["- " + json.dumps(one, sort_keys=True) for one in self.proof_records],
+                ]
+            )
+        return "\n".join(lines)
 
     def _pending_lines(self) -> list[str]:
         """The pending bullets, or the one line naming the valve when none is.
@@ -169,6 +183,7 @@ def parking_record(
         policy=policy,
         legs=_evidence_legs(result=result),
         pending=_pending_legs(result=result, item_id=item_id, pull_request=pull_request),
+        proof_records=() if result.proof is None else result.proof.proof_records,
     )
 
 

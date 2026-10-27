@@ -258,7 +258,7 @@ def test_a_pending_host_leg_names_both_records_and_the_two_identities() -> None:
     # The key line is the (verdict, pending-leg set) identity the idempotence test
     # reads, so the host leg has to reach it: two parks differing in which leg is
     # pending must not be the same record.
-    assert record.key_line == (
+    assert record.key_line.startswith(
         f"{PARKING_RECORD_TITLE} — PASS — pending: host-captured record for {_HOST_ASSERTION!r}"
     )
 

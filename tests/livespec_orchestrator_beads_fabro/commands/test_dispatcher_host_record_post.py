@@ -345,6 +345,9 @@ def test_a_host_recorded_post_renders_the_ratified_record_and_computes_the_ident
     assert len(records) == 1
     assert records[0].verdict == VERDICT_HOST_RECORDED
     assert records[0].run_id == _SESSION
+    assert body.splitlines()[1] == (
+        f"Binds: {_ITEM_ID} — pull request #{_PR_NUMBER} — head {_MERGE_SHA}"
+    )
     assert _RELEASE_TAG in body
     # The MODE is computed from the item's Definition of Done, never supplied.
     assert "host_captured" in body

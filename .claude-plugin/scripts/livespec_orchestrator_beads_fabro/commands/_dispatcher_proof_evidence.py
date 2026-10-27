@@ -100,6 +100,10 @@ from pathlib import Path
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_FACTORY_CAPTURED,
+    PROOF_MODE_HOST_CAPTURED,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     EffectiveCriteria,
 )
@@ -115,6 +119,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_containment imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
     PENDING_HOST_LEG_REASON,
+    HostAssertionGrade,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assertion_evidence import (
     assertion_evidence,
@@ -132,6 +137,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_binding import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
     PROOF_RECORD_EVIDENCE_LEG,
+    PROOF_RECORD_UNBINDABLE,
+    AssertionEvidence,
     ProofLeg,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
@@ -345,14 +352,16 @@ def proof_leg(
         contains_merge=cast(ContainmentReader, contains_merge),
     )
     grades = {one.text: one for one in host.grades}
+    unbindable = inventory is not None and bool(inventory.unbindable)
     return ProofLeg(
         assertions=tuple(
-            assertion_evidence(
+            _evidence_or_unbindable(
                 text=text,
                 proof_mode=mode,
                 record=record,
                 host=grades.get(text),
                 attachment_digest=cast(AttachmentDigestReader, attachment_digest),
+                unbindable=unbindable,
             )
             for text, mode in zip(criteria.assertions, criteria.proof_modes, strict=True)
         ),
@@ -360,6 +369,34 @@ def proof_leg(
         records=tuple(records),
         reason=reason,
         host=host,
+        inventory=inventory,
+    )
+
+
+def _evidence_or_unbindable(
+    *,
+    text: str,
+    proof_mode: str,
+    record: ProofRecord | None,
+    host: HostAssertionGrade | None,
+    attachment_digest: AttachmentDigestReader,
+    unbindable: bool,
+) -> AssertionEvidence:
+    """Refuse factory and host grading when any visible record cannot be bound."""
+    if unbindable and proof_mode in (PROOF_MODE_FACTORY_CAPTURED, PROOF_MODE_HOST_CAPTURED):
+        return AssertionEvidence(
+            text=text,
+            proof_mode=proof_mode,
+            leg=PROOF_RECORD_UNBINDABLE,
+            record_comment=None,
+            check=None,
+        )
+    return assertion_evidence(
+        text=text,
+        proof_mode=proof_mode,
+        record=record,
+        host=host,
+        attachment_digest=attachment_digest,
     )
 
 

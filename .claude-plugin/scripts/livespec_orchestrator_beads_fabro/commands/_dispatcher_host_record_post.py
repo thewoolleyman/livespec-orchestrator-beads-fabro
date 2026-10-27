@@ -72,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_subject 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_target import (
     host_record_target,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import PrView
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
     PROOF_STAGE_HOST_CAPTURE,
     PROOF_STAGE_HOST_VERIFY,
@@ -237,14 +238,14 @@ def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams:
     if identity is None:
         emit(_IDENTITY_REFUSAL_TEXT.format(reason=NO_IDENTITY_REFUSAL))
         return _EXIT_REFUSED
-    pr_number = host_record_target(repo=post.repo, item=item, runner=runner)
-    if pr_number is None:
+    target = host_record_target(repo=post.repo, item=item, runner=runner)
+    if target is None:
         emit(_NO_TARGET_REFUSAL.format(item_id=item.id))
         return _EXIT_REFUSED
     refusal = replay_refusal(
         repo=post.repo,
         verdict=post.verdict,
-        pr_number=pr_number,
+        pr_number=target.number,
         identity=identity.identity,
         runner=runner,
     )
@@ -257,7 +258,7 @@ def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams:
         evidence=evidence,
         seams=seams,
         identity=identity,
-        pr_number=pr_number,
+        target=target,
     )
 
 
@@ -268,7 +269,7 @@ def _render_and_post(
     evidence: Evidence,
     seams: _Seams,
     identity: PublishingIdentity,
-    pr_number: int,
+    target: PrView,
 ) -> int:
     """Render the record, bound it against the budget, post it, drive the reconcile.
 
@@ -301,6 +302,7 @@ def _render_and_post(
         verdict=post.verdict,
         identity=identity.header_field,
         timestamp=_utc_now_iso(),
+        binding=(f"Binds: {item.id} — pull request #{target.number} — head {target.merge_sha}"),
         build=evidence.build,
         assertions=assertions,
     )
@@ -316,8 +318,8 @@ def _render_and_post(
         emit(over_budget)
         return _EXIT_REFUSED
     emit(body)
-    if not _posted(post=post, pr_number=pr_number, body=body, runner=seams.runner):
-        emit(_POST_FAILED_TEXT.format(pr_number=pr_number))
+    if not _posted(post=post, pr_number=target.number, body=body, runner=seams.runner):
+        emit(_POST_FAILED_TEXT.format(pr_number=target.number))
         return _EXIT_FAILED
     if post.verdict not in REPLAY_VERDICTS:
         return 0

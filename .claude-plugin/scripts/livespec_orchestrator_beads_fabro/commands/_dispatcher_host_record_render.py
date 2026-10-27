@@ -173,12 +173,13 @@ class RecordAssertion:
         return [fence, self.proof.rstrip("\n"), fence]
 
 
-def render_proof_record(
+def render_proof_record(  # noqa: PLR0913 - title/header/build are separate record contracts.
     *,
     title: str,
     verdict: str,
     identity: str,
     timestamp: str,
+    binding: str | None = None,
     build: BuildIdentity,
     assertions: Sequence[RecordAssertion],
 ) -> str:
@@ -190,7 +191,11 @@ def render_proof_record(
     visible here.
     """
     header = f"{title} {_HEADER_SEPARATOR} {verdict} {_HEADER_SEPARATOR} {identity}"
-    sections = [f"{header} {_HEADER_SEPARATOR} {timestamp}", build.render()]
+    first_section = f"{header} {_HEADER_SEPARATOR} {timestamp}"
+    if binding is not None:
+        first_section = f"{first_section}\n{binding}"
+    sections = [first_section]
+    sections.append(build.render())
     sections.extend(one.render(index=index) for index, one in enumerate(assertions, start=1))
     return "\n\n".join(sections) + "\n"
 
