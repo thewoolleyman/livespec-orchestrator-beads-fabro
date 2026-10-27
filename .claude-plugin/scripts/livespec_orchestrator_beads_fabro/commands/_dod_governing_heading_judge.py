@@ -74,6 +74,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
     governing_heading_statement,
+    verdict_named_headings,
 )
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
@@ -186,5 +187,11 @@ def governing_heading_verdict(
         stated_by=verdict.stated_by,
         generalization_target=verdict.generalization_target,
         selected_clauses=condensed.clauses,
-        named_clauses=clauses_named(spec_tree=read, headings=verdict.stated_by),
+        named_clauses=clauses_named(
+            spec_tree=read,
+            headings=verdict_named_headings(
+                stated_by=verdict.stated_by,
+                generalization_target=verdict.generalization_target,
+            ),
+        ),
     )

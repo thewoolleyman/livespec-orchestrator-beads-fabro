@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
     GoverningHeadingReceipt,
     did_not_run_comment,
     recorded_did_not_run_causes,
+    recorded_named_headings,
     reusable_governing_heading,
     reusable_verdict,
     verdict_comment,
@@ -290,3 +291,31 @@ def test_a_verdict_taken_under_a_different_rubric_is_not_reused() -> None:
         reusable_verdict(comments=(_held_comment(),), digest=_DIGEST, rubric_digest=_OTHER_RUBRIC)
         is None
     )
+
+
+def test_a_partial_receipt_keeps_its_generalization_target_and_names_it() -> None:
+    """The target is recorded, read back for reuse, and counted as a named heading."""
+    partial = GoverningHeadingVerdict(
+        kind="partial",
+        generalization_target="## Broader",
+        selected_clauses=_SELECTED,
+        named_clauses=(CondensedClause(heading="## Broader", body="The broader body."),),
+    )
+    body = verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_ADMISSION,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(outcome=JUDGEMENT_ADMITTED),
+        governing=GoverningHeadingReceipt(verdict=partial, subject_digest=_DIGEST),
+    )
+
+    reused = reusable_governing_heading(
+        comments=(body,),
+        subject_digest=_DIGEST,
+        selected_clauses=_SELECTED,
+        named_clauses=partial.named_clauses,
+    )
+
+    assert reused == partial
+    assert recorded_named_headings(body=body) == ("## Broader",)
