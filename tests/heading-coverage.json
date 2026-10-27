@@ -2247,16 +2247,16 @@
     "heading": "## Provisional fleet launch scripts",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
+    "test": "tests.integration.test_fleet_launch_check_scenario242.test_scenario242_the_committed_check_lints_every_shell_script_and_runs_the_harness",
+    "reason": "Integration-tier acceptance for this clause's enforcement obligation, delivered by plan provisional-fleet-launch child bd-ib-nz4av6: the bound node drives the shipped check-fleet-launch driver over the real committed tree, asserting that the slug is in the target list just check actually executes, that the shellcheck leg covered every tracked shell script under fleet-launch/, and that the hermetic harness ran a case for each of the five launch gates the clause names. The sibling broken-launcher node proves that a launcher defect makes the harness red.",
     "work_item": "bd-ib-nz4av6"
   },
   {
     "heading": "## Scenario 242 \u2014 The provisional fleet launch check fails the build on a broken launcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
+    "test": "tests.integration.test_fleet_launch_check_scenario242.test_scenario242_a_launcher_that_reads_an_idle_board_as_unknown_turns_the_check_red",
+    "reason": "Integration-tier acceptance for Scenario 242, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. The bound node copies the committed fleet-launch/ tree, mutates the launcher to read a retired factory's idle board as unknown, proves the mutation landed, and asserts the committed harness exits non-zero naming the failing case.",
     "work_item": "bd-ib-nz4av6"
   },
   {
