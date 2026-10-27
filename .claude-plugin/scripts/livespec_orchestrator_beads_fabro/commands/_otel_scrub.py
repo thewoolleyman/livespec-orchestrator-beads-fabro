@@ -302,6 +302,7 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "tdd.assertion_count",
         "tdd.size_justified",
         "livespec.implement.adapter",
+        "livespec.implement.selected_index",
     }
 )
 
