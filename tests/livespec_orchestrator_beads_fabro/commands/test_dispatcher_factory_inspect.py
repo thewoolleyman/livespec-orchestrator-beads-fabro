@@ -70,6 +70,13 @@ def _repo(*, tmp_path: Path) -> Path:
     return tmp_path
 
 
+def test_diagnostic_note_requires_a_fresh_invocation_log_before_export() -> None:
+    """Sequential captures cannot mistake an earlier inspect for a dump."""
+    diagnosis = (_REPO_ROOT / ".ai" / "fabro-dispatch-diagnosis.md").read_text(encoding="utf-8")
+
+    assert "Start every export capture with a fresh invocation log" in diagnosis
+
+
 def test_factory_inspect_reads_a_run_with_the_factory_client_and_server(tmp_path: Path) -> None:
     """A Petri run never falls through to the host PATH client or its server."""
     module = _module()
