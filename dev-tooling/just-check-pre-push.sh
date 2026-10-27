@@ -63,8 +63,13 @@ if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; the
     exit 0
 fi
 
-if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
-    echo ":: pre-push: green token matched - tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
+sandbox_skips=()
+if [[ "$(git config --get --bool livespec.sandboxExempt || printf 'false')" == true ]]; then
+    sandbox_skips+=(check-master-ci-green)
+fi
+
+if uv run bash dev-tooling/green-token-scope.sh check "${sandbox_skips[@]}" 2>&1; then
+    echo ":: pre-push: green token matched - tree byte-identical to last green check with excluded targets: ${sandbox_skips[*]:-none}; skipping full aggregate (CI is authoritative)"
     exit 0
 fi
 
