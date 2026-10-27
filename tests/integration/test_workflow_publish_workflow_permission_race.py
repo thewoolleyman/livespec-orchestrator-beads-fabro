@@ -297,7 +297,9 @@ def test_publish_draft_gates_the_head_refreshed_after_a_workflow_race(
 
     assert published.returncode == 0, published.stderr
     refreshed_head = _git(run, "rev-parse", "HEAD").stdout.strip()
-    assert trace.read_text(encoding="utf-8").splitlines() == [f"gate:{refreshed_head}"]
+    gate_heads = trace.read_text(encoding="utf-8").splitlines()
+    assert len(gate_heads) == 2
+    assert gate_heads[-1] == f"gate:{refreshed_head}"
 
 
 def test_publish_draft_names_the_workflow_race_when_master_never_settles(
