@@ -7,7 +7,7 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
-__all__: list[str] = ["ReflectorFinding", "parse_findings"]
+__all__: list[str] = ["ReflectorFinding", "parse_findings", "parse_findings_verdict"]
 
 
 @dataclass(frozen=True, kw_only=True)
