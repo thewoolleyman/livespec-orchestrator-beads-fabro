@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.15...v0.243.16) (2026-10-27)
+
+
+### Bug Fixes
+
+* accept partial governing-heading verdicts ([62a2632](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/62a263267c6d0f924409230cfaadee29763d25ac))
+
 ## [0.243.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.14...v0.243.15) (2026-10-27)
 
 
