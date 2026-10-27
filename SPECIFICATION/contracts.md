@@ -3782,6 +3782,7 @@ latest captured record alongside the code; because `review_fix`
 re-enters `janitor`, every accepted fix round re-enters `publish_draft`
 and `proof_capture` before `review`, so the record `review` reads is
 normally current.
+`review` is read-only on the run branch. The sandbox, not the prompt alone, MUST refuse within seconds, before any repository hook starts, every command a `review` turn runs that moves or edits the run branch, such as `git rebase`, `git commit`, `git push` or `git reset`, so the run branch's head after the turn equals its head before it. It MUST likewise refuse a `review` turn's invocation of the whole declared check suite, whether `just check` or the sandbox check-suite runner, with a message telling the reviewer to run named test ids only. The `review` prompt MUST state that the reviewer grades the published diff and the latest captured record, makes no branch edits, runs no whole-suite check, and ends with its verdict label within its turn allowance, and each refusal MUST be returned to the turn as a refusal, so that a turn that attempted a refused command can still record its verdict label within that allowance.
 
 A blocking review finding whose subject is the latest captured record
 rather than the tree is a PROOF-RECORD finding. Each of these is one: a
