@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reflector_oob as reflector
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpAdapter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
@@ -39,6 +41,17 @@ _LEVER_ENV = "LIVESPEC_REFLECTOR_OOB"
 @pytest.fixture(autouse=True)
 def reset_auto_trip_fixture() -> None:
     reflector.reset_auto_trip()
+
+
+@pytest.fixture(autouse=True)
+def governed_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep wiring tests hermetic while exercising the governed ACP seam."""
+    candidate = AcpCandidate(adapter=AcpAdapter(command="codex-acp"), agent_id="codex-acp")
+    monkeypatch.setattr(
+        reflector,
+        "resolve_dod_gate_candidates",
+        lambda *, repo: tuple(candidate for _ in (repo,)),
+    )
 
 
 @dataclass(kw_only=True)
@@ -113,10 +126,9 @@ def test_armed_runs_the_reflector_through_the_injected_seams(
         lessons_proposer=RecordingLessonsProposer(),
         spawn=_sync_spawn(),
     )
-    # The reflector ran the claude -p reflector through the injected runner.
-    # argv[0] is the RESOLVED claude path (29f.8 gap 3 — may be absolute under
-    # the env wrapper), so match on the basename + the headless `-p` flag.
-    assert any(Path(call[0]).name == "claude" and call[1] == "-p" for call in runner.calls)
+    # The reflector runs the resolved dod_gate ACP candidate through the
+    # injected runner; no direct Claude executable is selected here.
+    assert any(call[0] == "codex-acp" and call[1] == "-p" for call in runner.calls)
 
 
 def test_reflector_after_verdict_refreshes_github_token_before_subprocess(
