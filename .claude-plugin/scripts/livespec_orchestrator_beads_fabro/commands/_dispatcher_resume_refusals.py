@@ -162,6 +162,7 @@ class ResumeObservation:
     changed_assertions: tuple[str, ...] = ()
     earlier_resumes: tuple[str, ...] = field(default=())
     unanchoring_cancel_stage: str | None = None
+    proof_only_resume: bool | None = None
 
 
 def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
@@ -193,7 +194,7 @@ def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     a CLAIM whose run has ended, which is what `reconcile-runs` releases. Naming
     either remedy for the other sends the operator to a valve that will refuse.
     """
-    if observation.status == _READY_STATUS:
+    if observation.status == _READY_STATUS or _is_proof_only_resume(observation=observation):
         return ()
     if observation.status == _ACTIVE_STATUS:
         stranded = (
@@ -209,6 +210,21 @@ def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
         f" `resolve-blocked:{observation.work_item_id}:ready` first"
     )
     return (parked,)
+
+
+def _is_proof_only_resume(*, observation: ResumeObservation) -> bool:
+    """Whether the merged-proof arm is exempt from the ordinary ready requirement.
+
+    `None` preserves the pre-arm direct callers until the gatherer can establish
+    the parking-record predicate.  The command path always supplies a definite
+    value, so an unreadable or non-proof parking record never receives this
+    exemption in a real resume.
+    """
+    return (
+        observation.status == "acceptance"
+        and observation.pull_request_state == PR_STATE_MERGED
+        and observation.proof_only_resume is not False
+    )
 
 
 def anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
@@ -403,6 +419,8 @@ def pull_request_state_refusals(*, observation: ResumeObservation) -> tuple[str,
     if observation.pull_request is None or observation.pull_request_state is None:
         return ()
     if observation.pull_request_state == PR_STATE_MERGED:
+        if _is_proof_only_resume(observation=observation):
+            return ()
         merged = (
             f"pull request #{observation.pull_request} is already merged, so there is"
             " no unmerged publication left to finish; close the item out with"
