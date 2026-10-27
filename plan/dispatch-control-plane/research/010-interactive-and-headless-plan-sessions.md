@@ -6,8 +6,10 @@ Plan: **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`).
 
 ## Recommendation
 
-Keep Herdr as a useful place to discuss a plan, inspect work and take over a
-session. Make routine plan execution possible through headless workers. In both
+Keep interactive terminals—including Herdr—as useful places to discuss a plan,
+inspect work and take over a session. Herdr is optional: all three agents also
+accept questions and answers as bare interactive processes. Make routine plan
+execution possible through headless workers. In both
 cases, save outstanding decisions outside the worker so they can be answered
 from another host and survive losing the original process.
 
@@ -28,7 +30,7 @@ There are three materially different approaches:
 
 | Approach | What happens while the person decides | What resumes it | Main limitation |
 | --- | --- | --- | --- |
-| Interactive session in Herdr | The agent process waits at its normal prompt. | Input through its terminal. | Native prompt and process state remain tied to that session. |
+| Interactive session, bare or in Herdr | The agent process waits at its normal prompt. | Input through its terminal. | Native prompt and process state remain tied to that session. |
 | Headless session with a live adapter | A tool callback, promise or protocol request waits. | The adapter sends a structured response carrying the request ID. | The waiting call may exist only in process memory. |
 | Durable pause with a replaceable worker | The application saves the pending decision and continuation; execution stops at a safe boundary. | A saved answer makes the work eligible for a worker to resume. | Requires explicit recovery, context and side-effect rules. |
 
@@ -269,35 +271,150 @@ Cross-host recovery requires making the needed history/artifacts available, or
 reconstructing a bounded prompt from authoritative records. Switching between
 Claude, Codex and pi cannot assume their internal transcripts are interchangeable.
 
-## A small live check
+## Live checks: three agents, two modes, no Herdr
 
-A protocol-only probe on this host used installed pi **0.84.4**, Node **24.20.0**,
-an isolated temporary config directory, `--mode rpc --no-session`, disabled
-resource discovery, and one explicit test extension. No production pane or
-model conversation was involved.
+The original report verified only pi RPC. On 27 October 2026 we expanded that
+into **six successful input-transport checks** on this host. No test used Herdr,
+tmux, an existing pane, or a production plan session. Interactive tests launched
+the actual CLIs directly under fresh pseudo-terminals, with a small controller
+sending keystrokes and recording their screens. A pseudo-terminal provides the
+ordinary terminal interface; it does not provide session persistence or question
+routing. Headless tests used pipes and each agent's structured interface.
 
-The extension registered `/research-input-probe`; its handler called
-`ctx.ui.confirm()` and then emitted a notification containing the returned value.
-The controller first confirmed the command was registered, then invoked it.
-Observed sequence:
+| Agent and installed version | Bare interactive process | Headless process |
+| --- | --- | --- |
+| Claude Code 2.1.311 | Native `AskUserQuestion` picker appeared; we selected the second option, Violet; Claude returned `RECEIVED_COLOR=Violet`. | Agent SDK 0.3.311 launched that same installed CLI. Its `canUseTool` callback received the question, held the answer for three seconds, returned Violet, and received the same final result. |
+| Codex CLI 0.164.0 | Native question picker appeared in Plan mode; we selected Violet; Codex displayed the accepted answer and returned `RECEIVED_COLOR=Violet`. | App-server emitted `item/tool/requestUserInput` with `isBlocking: true`; after a three-second hold, the matching JSON-RPC response supplied Violet; the turn completed with the same final result. |
+| pi 0.84.4, Node 24.20.0 | The explicitly loaded test extension displayed a native Yes/No picker; Enter selected Yes; the handler continued with `probe-result:true`. | The same extension emitted an identified `extension_ui_request`; after a three-second hold, the matching response supplied `confirmed: true`; the handler continued with `probe-result:true`. |
+
+Claude and Codex used real model-issued tool calls. Claude's interactive banner
+identified Opus 5.5; Codex used the configured GPT-6-Astra model in both paths.
+Pi's two checks deliberately exercised its extension dialog without calling a
+model. They prove the extension input path in both modes, not that a model will
+choose an appropriate question or that a Livespec package is installed correctly.
+The isolated pi config had no provider login, which did not prevent its dialog.
+
+For each interactive check we first observed the unanswered picker, then sent
+input, then observed the returned answer. Claude's displayed question remained
+unanswered for about eleven seconds between screen inspection and selection;
+Codex's for about nine seconds. Pi was answered within its explicit ten-second
+test timeout. Each process was then terminated by its own test controller.
+
+A [compact evidence receipt](input-verification-receipt.json) preserves request
+identities, selected answers, timestamps where recorded, and terminal excerpts.
+The temporary controllers also captured raw terminal logs locally; those noisy
+logs are not the published report or a durable coordination store.
+
+### What was actually sent
+
+Claude's callback received `AskUserQuestion` with tool-use ID
+`toolu_0185GmA1HgKpkNSL2tic1Zyc`. It returned:
+
+```json
+{
+  "behavior": "allow",
+  "updatedInput": {
+    "questions": "<the original questions array, preserved unchanged>",
+    "answers": {"Which probe color?": "Violet"}
+  }
+}
+```
+
+The placeholder above abbreviates the original array; the receipt carries the
+real question. The SDK result was `success`, `is_error: false`, with the selected
+color in the final response. Only `AskUserQuestion` was exposed as a built-in
+tool. The CLI ran in safe mode, with customizations disabled and manual/default
+permission handling rather than bypass permissions.
+
+Codex's app-server request had JSON-RPC ID `0`, question ID `probe_color`,
+thread ID `01a17ebb-1ca0-7f90-933c-ecd5d53c2d8c`, and a separate turn and item ID.
+The controller answered:
+
+```json
+{"id":0,"result":{"answers":{"probe_color":{"answers":["Violet"]}}}}
+```
+
+This was an app-server process, not `codex exec` with an open stdin. The
+controller initialized the protocol with `experimentalApi: true`, started an
+ephemeral read-only thread, and started the turn in Plan mode. Both Codex tests
+used `approvalPolicy: never` / `-a never` for command permissions, yet the
+clarification question still worked. **Command approval and conversational
+input are separate mechanisms.** This does not establish behavior in every
+collaboration mode or permission configuration.
+
+Pi registered this minimal extension command:
+
+```ts
+pi.registerCommand("research-input-probe", {
+  handler: async (_args, ctx) => {
+    const answer = await ctx.ui.confirm(
+      "Research probe", "Use the synthetic answer?", { timeout: 10000 });
+    ctx.ui.notify("probe-result:" + String(answer), "info");
+  }
+});
+```
+
+The repeated RPC check recorded:
 
 ```text
-stdout: extension_ui_request, method=confirm, id=49a4f485-4af5-4d8d-8696-86967c915d55
+stdout: extension_ui_request, method=confirm, id=4784ead9-915c-471a-8f4b-6542c9db526f
+        [controller withholds answer for three seconds]
 stdin:  extension_ui_response, same id, confirmed=true
 stdout: extension_ui_request, method=notify, message=probe-result:true
 ```
 
-The probe passed, observed no model-message start, and terminated its own process.
-It establishes that a headless process can receive an answer without a terminal.
-It does not prove a Livespec plan flow, interactive pi package discovery,
-cross-host persistence or recovery after worker loss.
+Both pi launches used `--no-session --no-extensions --no-skills
+--no-prompt-templates -e <probe.ts>` and an isolated configuration directory.
+The headless launch additionally used `--mode rpc`. The controller checked command
+registration before invoking it and observed no model-message start in RPC mode.
 
-The first attempt to invoke the default pi executable encountered Node 20.19.4
-lacking the required `node:fs` export `globSync`. Using the already installed
-Node 24 runtime resolved startup. No global installation was changed. This is a
-concrete reason to pin and test the complete container runtime, not only the agent
-package. Installed pi source also keeps pending dialog resolvers in memory; the
-successful callback is not a durable pause.
+### Startup findings and limits
+
+The initial pi launcher used Node 20.19.4, which lacked the required `node:fs`
+export `globSync`. Using the already installed Node 24.20.0 resolved startup.
+Pin and test the complete worker runtime, not just the agent package.
+
+Codex's bare terminal showed a changed-hook trust prompt. We selected **continue
+without trusting**, and the subsequent turn reported that the unapproved hook did
+not run. The native question still succeeded. This is evidence about Codex's own
+input path, not a successful test of the host's installed Livespec hooks. Existing
+MCP servers and apps were disabled for the Codex probes; global configuration was
+not rewritten. Claude safe mode likewise excluded customizations. No agent was
+authorized to modify a repository or execute an external action during the probe.
+
+The six checks establish that these versions can wait for and consume input in
+the tested configurations, without Herdr. They do **not** establish cross-host
+answer delivery, stale-answer rejection, concurrent-answer handling, process-loss
+recovery, container/Kubernetes deployment, Livespec plugin operation, or an entire
+plan's completion. Those remain separate acceptance tests.
+
+There is also a useful qualification to the earlier durability discussion:
+Claude's current SDK documentation describes a `PreToolUse` **defer** decision
+that lets a process exit and later resume the pending tool from its saved session.
+That deserves evaluation before inventing a replacement native-resume mechanism.
+We did not test defer here, and it does not by itself establish shared answer
+ownership, evidence freshness, or portability across all three harnesses.
+[Claude input and deferred-tool guidance](https://code.claude.com/docs/en/agent-sdk/user-input).
+
+## Bare interactive processes are a real third option
+
+Interactive versus headless and managed versus bare are different choices. A
+bare Claude, Codex or pi process can ask a question directly in an ordinary
+terminal; the tests above establish that. Herdr is not required to make planning
+interactive, and removing it does not require moving immediately to headless jobs.
+
+| Setup | Where a person answers | What keeps a waiting process available |
+| --- | --- | --- |
+| Bare interactive CLI | The agent's own terminal picker or conversation | The terminal/host arrangement; the probe supplied no detach or restart service. |
+| Interactive CLI in Herdr | The same agent UI, presented in a managed pane | Herdr's background session management, subject to the restart limits above. |
+| Headless CLI/SDK worker | A client that translates structured requests and replies | A live process, or an explicitly saved continuation with a recovery mechanism. |
+
+A plain terminal can be the simplest choice for attended planning. Herdr adds
+convenient supervision and reconnection when those matter. A container can run an
+interactive process if it has a terminal attached; containerization alone does
+not imply headless operation. For unattended or disposable workers, prefer the
+structured input path and saved coordination state. All three frontends should
+ultimately show and answer the same durable question when shared routing is added.
 
 ## Proposed first delivery and its limits
 

@@ -175,6 +175,13 @@ class DefinitionOfDone:
     present one whose body carries no bullet, so a caller cannot accidentally
     read an empty section as gradeable.
 
+    `criteria_layout` is the rendered section body with its `References:` line
+    removed. Unlike `criteria_text`, it deliberately keeps bullet markers,
+    proof-mode sub-headings and their `Reason:` lines so a judgement subject can
+    show a judge the same proof-mode boundaries the item author declared. The
+    referenced headings render separately in that subject, so retaining the
+    reference line here would make it look like an assertion beside its source.
+
     `assertions` carries the same segmentation in the section's own order, each
     one paired with the mode its POSITION declared. Document order is preserved
     rather than grouped by mode, because the proof record is published "per
@@ -210,6 +217,7 @@ class DefinitionOfDone:
 
     present: bool
     criteria_text: str | None
+    criteria_layout: str | None
     assertions: tuple[DefinitionOfDoneAssertion, ...]
     references: tuple[str, ...]
     malformed_proof_modes: tuple[str, ...]
@@ -252,6 +260,7 @@ def definition_of_done(*, description: str, subject: str = SUBJECT_WORK_ITEM) ->
     return DefinitionOfDone(
         present=True,
         criteria_text=text or None,
+        criteria_layout=_criteria_layout(body=body),
         assertions=assertions,
         references=_references(body=body),
         malformed_proof_modes=_malformed_proof_modes(body=body, subject=subject),
@@ -279,10 +288,23 @@ def _absent() -> DefinitionOfDone:
     return DefinitionOfDone(
         present=False,
         criteria_text=None,
+        criteria_layout=None,
         assertions=(),
         references=(),
         malformed_proof_modes=(),
     )
+
+
+def _criteria_layout(*, body: list[str]) -> str | None:
+    """The proof-mode-aware rendering, without the standalone reference line.
+
+    Indentation is semantic in a Definition-of-Done body: an indented line is a
+    continuation of its open bullet.  In particular, a continuation may begin
+    with ``References:`` and must stay in the rendered assertion rather than
+    being mistaken for the section's own, flush-left reference line.
+    """
+    layout = "\n".join(line for line in body if not line.startswith(REFERENCES_PREFIX)).strip()
+    return layout or None
 
 
 def _parse_body(

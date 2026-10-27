@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.243.21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.20...v0.243.21) (2026-10-27)
+
+
+### Bug Fixes
+
+* preserve proof-mode criteria layout ([43bf679](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/43bf6790e46ae3139da7e4900be4365a50300857))
+
+## [0.243.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.19...v0.243.20) (2026-10-27)
+
+
+### Bug Fixes
+
+* avoid inspect for recorded needs-human accounts ([f6e42fa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f6e42faabeddb0020d9e0d9b83ddb9bc0233911f))
+* **proof:** clarify direct evidence and publication pass-through ([5c07c4e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c07c4ef8c4ee4b8e7039b3ba661564a3d29aa8d))
+* **proof:** reject suite-only evidence before publication ([ab447db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab447dbd7d0fe68c3f18dbcbb8ed2f96634c954f))
+
 ## [0.243.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.18...v0.243.19) (2026-10-27)
 
 

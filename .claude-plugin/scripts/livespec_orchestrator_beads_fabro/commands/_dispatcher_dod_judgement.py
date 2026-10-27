@@ -44,12 +44,15 @@ from pathlib import Path
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    DefinitionOfDone,
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_judgement_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
+    DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
+    EffectiveCriteria,
     effective_criteria,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import read_ratified_lessons
@@ -167,7 +170,7 @@ def judgement_subject(
         *_goal_fields(item=item, lessons=read_ratified_lessons(lessons_root=cwd)),
         "",
         "## Effective acceptance criteria",
-        criteria.text if criteria.text else _ABSENT_CRITERIA_BODY,
+        _effective_criteria_body(criteria=criteria, section=section),
     ]
     for reference in section.references:
         blocks.extend(
@@ -180,6 +183,13 @@ def judgement_subject(
     blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
     blocks.extend(("", governing_heading_block(verdict=governing)))
     return "\n".join(blocks)
+
+
+def _effective_criteria_body(*, criteria: EffectiveCriteria, section: DefinitionOfDone) -> str:
+    """Render the parsed Definition of Done layout beside the criteria it resolves."""
+    if criteria.source == DESCRIPTION_DEFINITION_OF_DONE_SOURCE and section.criteria_layout:
+        return section.criteria_layout
+    return criteria.text if criteria.text else _ABSENT_CRITERIA_BODY
 
 
 def _goal_fields(*, item: WorkItem, lessons: str) -> list[str]:
