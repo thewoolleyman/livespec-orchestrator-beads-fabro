@@ -4923,7 +4923,7 @@ Feature: A resume never continues from a state the records do not describe
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists, naming the pull request state and a plain dispatch as the remedy
   Scenario: The pull request is merged
-    Given an item whose earlier run's pull request is merged
+    Given an item whose earlier run's pull request is merged, and that is not parked in acceptance on its proof evidence leg
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists, naming the pull request state and reconcile-merged as the remedy
     And reconcile-merged for the item still requires that real merge
@@ -10136,4 +10136,53 @@ Feature: publish_draft tells a landed publication from a failure
     And a pull request of an earlier dispatch of the item MERGED into a branch other than the default branch
     When publish_draft finishes its refresh
     Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
+```
+
+## Scenario 257 — A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request
+
+```gherkin
+Feature: A merged item whose proof is missing or record-wide is re-proven without republishing
+  Scenario: A merged item with no verified record is re-proven on its merged head
+    Given an item whose pull request merged with no Proof of Done record on its merged head
+    And the item rests in acceptance parked NEEDS_ATTENTION by the proof evidence leg
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm and runs only proof_capture, proof_verify and proof_grade against the merged head
+    And it pushes nothing and opens no branch or pull request
+    And its records are posted on the merged pull request bound to the item, that pull request and the merged head
+    And the acceptance pass then reads the new verified record and grades each factory_captured assertion from it
+
+  Scenario: The proof-only arm visits its three stages in order and nothing else
+    Given a proof-only arm whose capture succeeds and whose verification returns verified
+    When the run executes
+    Then it visits proof_capture, then proof_verify, then proof_grade, and then ends
+    And it visits no other stage
+
+  Scenario: A merged item parked on a record-wide verdict is re-proven per assertion
+    Given an item whose pull request is merged and whose only verified record carries no per-assertion Reproduced lines
+    And the item rests in acceptance parked NEEDS_ATTENTION by the proof evidence leg
+    When the operator drives resume for the item
+    Then the proof-only arm publishes a verified record with a Reproduced line in each factory_captured assertion's section
+
+  Scenario: A merged item not parked on its proof leg still refuses
+    Given an item whose pull request is merged and that is not parked in acceptance on its proof evidence leg
+    When the operator drives resume for the item
+    Then the resume refuses with exit code 3, naming the pull request state and reconcile-merged as the remedy
+
+  Scenario: An assertion the arm does not reproduce leaves the item parked under every policy
+    Given a proof-only arm whose proof_verify lists one factory_captured assertion as not reproduced
+    And the item's acceptance policy is ai-only, ai-then-human or human-only
+    When the acceptance pass re-runs
+    Then the item stays in acceptance with a parking record naming that assertion and the arm's record
+    And no rework is stamped, the rework cap is unchanged, and no fix stage runs
+
+  Scenario: The proof-only arm needs no proof record and no open pull request
+    Given a merged item parked on its proof leg whose publish branch was deleted and which has no Proof of Done record at all
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm, anchored on the merged pull request, its head commit at merge and the parking record
+    And the item stays in acceptance
+
+  Scenario: A third resume of the same pull request is refused
+    Given a merged pull request that has already anchored two resumes
+    When the operator drives resume for its item parked on its proof leg
+    Then the resume refuses naming the two earlier resumes
 ```

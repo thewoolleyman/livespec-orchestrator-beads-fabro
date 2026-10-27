@@ -3936,7 +3936,11 @@ this rule; the human-attested leg of the acceptance pass governs it. A
 correction is a new record: a record the primitive posts MAY carry, on the
 line after its binding, `Supersedes: <comment link>` naming one earlier record
 on the same pull request, and only a record that itself carries a well-formed
-binding to that pull request resolves the fault of the record it names. The
+binding to that pull request resolves the fault of the record it names. A
+proof-only resume of a merged pull request (§"Dispatcher loop invocation
+surface" → "A proof-only resume of a merged pull request") MAY also post new
+factory records after merge on that pull request, each carrying the resumed
+run's identifier and binding the pull request's head commit at merge. The
 acceptance pass selects records by binding (§"Dispatcher admission, WIP cap,
 and post-merge acceptance" → "The proof evidence leg"). Measured 2026-10-26:
 the acceptance pass on bd-ib-tixpma, pull request 3164, resolved four run ids
@@ -4816,7 +4820,9 @@ remedy, when:
   bullet together;
 - the item's dispatch-scoped ownership lock exists and its process is
   alive, naming the lock age, as `reconcile-merged` refuses;
-- the pull request is closed or merged, naming the state. For a merged
+- the pull request is closed, or it is merged and the item is not in the
+  case of "A proof-only resume of a merged pull request" below, naming the
+  state. For a merged
   pull request the remedy is `reconcile-merged --item`, which requires a
   real merge and stays the only valve for one, and the refusal names it
   only when that command's own preconditions hold for the item; while one
@@ -4832,6 +4838,8 @@ factory cannot report the earlier run's liveness, the resume MUST refuse
 with the same exit code naming the measurement it could not take; it
 MUST NOT proceed on an unobservable answer. A refusal leaves the item,
 the branch and the pull request exactly as they stood.
+
+**A proof-only resume of a merged pull request.** When the item's pull request is merged and the item rests in `acceptance` parked NEEDS_ATTENTION by the proof evidence leg of the acceptance pass because no applicable counted `proof_verify` record grades each of its `factory_captured` assertions on the merged head, whether no such record exists or the record it was graded on carries no per-assertion verdict, `resume --item` MUST take the proof-only arm instead of refusing on the merged pull request. An item parked for an `unbindable` record is not in this case; its clearing action is a superseding record. The arm is exempt from the refusals that assume an unmerged item resting in `ready`: the item rests in `acceptance` and stays there throughout, it needs no open pull request, no anchoring proof record and no published-head match, and it makes no claim through admission. Its anchor is the confirmed merged pull request, that pull request's head commit at merge, and the parking record that names the proof leg, and the dispatch journal MUST record those three as the resume's provenance. The refusals for a live earlier run, a live ownership lock, a measurement the resume cannot take, and the two-resume limit still apply. The arm MUST check out the pull request's head commit at merge, never the default-branch merge commit, read-only, and MUST run only `proof_capture`, `proof_verify` and `proof_grade` against it: a successful capture routes to `proof_verify`, a `verified` outcome routes to `proof_grade`, and every outcome of `proof_grade` and every other outcome of capture or verification ends the run. The arm's graph MUST carry no edge to any stage outside those three, apart from ending the run. It MUST run no implement, review, janitor, publication or merge stage, MUST push nothing and MUST open no branch or pull request. The run is associated with the existing pull request, so that the proof broker of "Publication is mechanically confined to the scripted publication stages" posts its records there. Every record the arm publishes MUST be posted as a new comment on the existing merged pull request through the posting primitive, bound by "Proof of Done record" → "The binding" to the item, that pull request and its head commit at merge, and carrying the resumed run's identifier. A `proof_verify` record the arm publishes MUST carry each `factory_captured` assertion's own `Reproduced:` line, graded by the same `proof_grade` node the implement workflow uses. When the arm ends, the Dispatcher MUST re-run the acceptance pass for the item, as `reconcile-merged` does, and that pass reads the new records by their binding through the same Proof of Done record reader that grades them. The acceptance pass that follows the arm is a re-run of a parked item. When it fails an assertion the arm did not reproduce, the item MUST stay in `acceptance` with a parking record naming each such assertion and the arm's record. That pass MUST NOT stamp rework, move the item to `blocked`, or count toward the rework cap, whatever the item's acceptance policy, and the arm never routes to `fix`. The arm counts toward the pull request's two-resume limit. Measured 2026-10-26: bd-ib-svm3fe's pull request 3731 merged with no Proof of Done record, reconcile-merged parked it NEEDS_ATTENTION on its proof leg, and it had to be accepted by hand; the merged-reconcile ending of "A pull request merged before its refresh" writes no proof record by design, so every item it ends leaves its merged head unproven unless this arm exists. Scenario 257 in `scenarios.md` exercises this paragraph.
 
 **Unchanged.** `publish_draft` still pushes a plain fast-forward and MUST
 rewrite no ref except, on the visit that follows a refresh-repair round, the
