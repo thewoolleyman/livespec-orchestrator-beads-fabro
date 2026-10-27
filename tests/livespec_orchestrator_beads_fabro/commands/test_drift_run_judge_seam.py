@@ -24,6 +24,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
@@ -34,6 +35,7 @@ from livespec_orchestrator_beads_fabro.commands._drift_run_judge import (
     drift_judge,
     resolve_drift_judge_timeout_seconds,
 )
+from livespec_runtime import spec_stated
 
 # The kernel's own single-argv-entry ceiling, which is what makes the stdin
 # route a correctness requirement rather than a preference.
@@ -151,6 +153,11 @@ def test_a_non_zero_exit_answers_the_empty_string(tmp_path: Path) -> None:
 )
 def test_only_a_mapping_with_a_text_spec_kind_is_a_drift_verdict(reply: str) -> None:
     assert not _looks_like_spec_stated_verdict(text=reply)
+
+
+@pytest.mark.parametrize("kind", get_args(spec_stated.StatedKind))
+def test_every_shared_spec_stated_kind_is_a_drift_verdict(kind: str) -> None:
+    assert _looks_like_spec_stated_verdict(text=f'{{"kind": "{kind}"}}')
 
 
 def test_the_prompt_file_does_not_outlive_the_call(tmp_path: Path) -> None:
