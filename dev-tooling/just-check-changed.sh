@@ -10,7 +10,7 @@ set -euo pipefail
 mapfile -t all_changed < <(
     {
         git diff --name-only origin/master...HEAD 2>/dev/null || true
-        git diff --cached --name-only --diff-filter=AM
+        git diff --cached --name-only --diff-filter=ADM
     } | sort -u
 )
 
