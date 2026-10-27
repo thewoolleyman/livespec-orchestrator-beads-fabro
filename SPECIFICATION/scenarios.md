@@ -9449,6 +9449,13 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     When the pre-dispatch Definition-of-Done judgement is taken
     Then the taking follows its did-not-run route
     And its record names no deciding candidate and lists each candidate the bound ended
+
+  Scenario: The subject's effective criteria keep each assertion's proof-mode position
+    Given an item whose Definition of Done lists one assertion above every proof-mode sub-heading and one under a Host-captured sub-heading with its Reason line
+    When any taking renders the item's judgement subject
+    Then the effective criteria render each assertion as its own bullet in Definition-of-Done order
+    And the first assertion renders above every proof-mode sub-heading
+    And the second renders under the Host-captured sub-heading with its Reason line
 ```
 
 ## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
