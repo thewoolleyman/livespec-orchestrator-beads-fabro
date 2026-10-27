@@ -57,13 +57,13 @@ chain is what failed.
 
 from __future__ import annotations
 
-import json
 import os
+import shlex
 import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     CLAUDE_OAUTH_TOKEN_ENV,
@@ -140,7 +140,6 @@ _ALLOWED_TOOLS = "Read,Grep,Glob"
 # two numbers come from rather than from any convention restated here.
 _EXIT_TIMED_OUT = 124
 _EXIT_EXECUTABLE_ABSENT = 127
-_CODEX_AGENT = "codex-acp"
 _CLAUDE_AGENT = "claude-acp"
 _PROMPT_FILE_PREFIX = "livespec-dod-gate-"
 
@@ -383,45 +382,17 @@ def _run_candidate(
 def _candidate_command(
     *, candidate: AcpCandidate, environ: dict[str, str]
 ) -> tuple[list[str], dict[str, str]]:
-    """The direct host command for one catalog-resolved ACP candidate."""
-    if candidate.agent_id == _CODEX_AGENT:
-        settings = _codex_settings(candidate=candidate)
-        model = settings.get("model", "")
-        effort = settings.get("model_reasoning_effort", "")
-        argv = ["codex", "exec", "-m", model]
-        if effort:
-            argv.extend(("-c", f"model_reasoning_effort={json.dumps(effort)}"))
-        return argv, dict(environ)
+    """The resolved adapter command and environment for one host candidate."""
+    argv = [*shlex.split(candidate.adapter.command), *candidate.adapter.args]
+    judge_environ = {**environ, **candidate.adapter.env}
     if candidate.agent_id == _CLAUDE_AGENT:
-        model = candidate.adapter.env.get("ANTHROPIC_MODEL", "")
         credential = select_factory_credential(
             environ=environ,
             home=Path.home(),
             warn=lambda message: sys.stderr.write(f"{message}\n"),
         )
-        judge_environ = dict(environ)
         judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
-        argv = judgement_argv(judge_path=resolve_judge_path(environ=environ), model=model)
-        return argv, judge_environ
-    return [candidate.adapter.command, *candidate.adapter.args], dict(environ)
-
-
-def _codex_settings(*, candidate: AcpCandidate) -> dict[str, str]:
-    """The model and effort rendered into this candidate's catalog adapter."""
-    raw = candidate.adapter.env.get("CODEX_CONFIG", "")
-    try:
-        decoded: object = json.loads(raw)
-    except ValueError:
-        return {}
-    if not isinstance(decoded, dict):
-        return {}
-    payload = cast("dict[str, object]", decoded)
-    settings: dict[str, str] = {}
-    for key in ("model", "model_reasoning_effort"):
-        value = payload.get(key)
-        if isinstance(value, str):
-            settings[key] = value
-    return settings
+    return argv, judge_environ
 
 
 def _invocation_cause(*, exit_code: int) -> str:

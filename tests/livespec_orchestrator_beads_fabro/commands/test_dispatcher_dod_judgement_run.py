@@ -314,7 +314,7 @@ def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_clau
 
     assert verdict.outcome == JUDGEMENT_ADMITTED
     assert runner.argv is not None
-    assert runner.argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
+    assert runner.argv == ["/opt/livespec/codex-acp/bin/codex-acp"]
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
