@@ -33,6 +33,15 @@ _INCREMENTAL_GATE = "check-check-coverage-incremental"
 _MASTER_CI_GATE = "check-master-ci-green"
 _SANDBOX_EXEMPT_MARKER = "livespec.sandboxExempt"
 _RED_TRAILER = "TDD-Red-Test-File-Checksum: deadbeef"
+_WORKFLOW = (
+    _REPO_ROOT
+    / ".claude-plugin"
+    / ".fabro"
+    / "workflows"
+    / "implement-work-item"
+    / "workflow.fabro"
+)
+_AFFECTED_TESTS_MARKER = "livespec.commitCheckScope"
 
 
 def _run(
@@ -190,3 +199,18 @@ def test_checkout_without_the_marker_still_runs_the_master_ci_green_gate(*, tmp_
         "check-codex-skill-picker",
     ]
     assert _MASTER_CI_GATE not in invocation
+
+
+def test_factory_implementation_turns_enable_the_affected_tests_hook_and_janitor_resets_it() -> (
+    None
+):
+    """Implement and review-fix commits use the scoped gate before janitor restores full checks."""
+    graph = _WORKFLOW.read_text(encoding="utf-8")
+
+    assert graph.count(f"git config --local {_AFFECTED_TESTS_MARKER} affected-tests") == 2
+    assert "dod_gate -> enable_affected_tests_commit_gate" in graph
+    assert "enable_affected_tests_commit_gate -> implement" in graph
+    assert "disposition -> enable_review_fix_affected_tests_commit_gate" in graph
+    assert "enable_review_fix_affected_tests_commit_gate -> review_fix" in graph
+    assert "git config --local --unset-all livespec.commitCheckScope" in graph
+    assert "restore_full_commit_gate -> janitor" in graph
