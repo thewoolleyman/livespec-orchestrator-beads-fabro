@@ -75,11 +75,12 @@ def test_a_tree_that_already_fits_comes_back_unchanged() -> None:
     assert condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT) == _TREE
 
 
-def test_the_condensation_names_the_heading_and_body_of_each_selected_clause() -> None:
-    """The governing-verdict cache records the clauses its prompt actually carried."""
+def test_the_condensation_records_each_selected_prompt_section() -> None:
+    """The governing-verdict cache records every prompt section it carried."""
     condensed = condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT)
 
     assert [(clause.heading, clause.body) for clause in condensed.clauses] == [
+        ("", "A preamble the file opens with, before any clause.\n\n"),
         ("## First clause", "\n\n" + _FIRST_BODY + "\n\n"),
         ("## Second clause", "\n\n" + _SECOND_BODY + "\n"),
         ("## Only clause", "\n\n" + _ONLY_BODY + "\n"),
@@ -102,6 +103,17 @@ def test_selected_clause_provenance_preserves_boundary_newlines_from_the_prompt(
             body=body,
         ),
     )
+
+
+def test_selected_preamble_is_recorded_as_prompt_provenance() -> None:
+    """A selected preamble must invalidate reuse when its prompt bytes change."""
+    preamble = "A selected file preamble without an H2 heading.\n"
+
+    condensed = condensed_spec_tree(
+        spec_tree={"preamble.md": preamble}, statement="selected preamble"
+    )
+
+    assert condensed.clauses == (CondensedClause(heading="", body=preamble),)
 
 
 def test_named_clause_provenance_uses_heading_and_body_not_its_source_position() -> None:
