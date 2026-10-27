@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.22](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.21...v0.243.22) (2026-10-27)
+
+
+### Bug Fixes
+
+* require H2 markers in Definition-of-Done references ([4b242f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4b242f140e5598f131ac50e374025ac2e7ce7a12))
+
 ## [0.243.21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.20...v0.243.21) (2026-10-27)
 
 
