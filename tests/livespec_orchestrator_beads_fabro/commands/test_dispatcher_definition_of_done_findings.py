@@ -86,16 +86,14 @@ def _description(*, references: str) -> str:
     )
 
 
-def test_the_h2_set_is_read_from_the_spec_tree_in_both_the_prefixed_and_bare_forms(
+def test_the_h2_set_is_read_from_the_spec_tree_in_the_prefixed_form(
     tmp_path: Path,
 ) -> None:
     headings = spec_h2_headings(repo=_spec_tree(tmp_path=tmp_path))
 
     assert _PLAIN_HEADING in headings
     assert _COMMA_HEADING in headings
-    # The bare title resolves too, so a reference that omits the `## ` marker is
-    # matched against the same real heading rather than refused on punctuation.
-    assert "Effective acceptance criteria" in headings
+    assert "Effective acceptance criteria" not in headings
     # A level-1 heading is NOT an H2 and must not enter the set.
     assert "# Contracts" not in headings
     assert "Contracts" not in headings
@@ -123,6 +121,19 @@ def test_a_reference_to_a_heading_the_spec_tree_carries_produces_no_finding(
     item = _item(description=_description(references=_PLAIN_HEADING))
 
     assert definition_of_done_findings(item=item, cwd=repo) == ()
+
+
+def test_a_reference_without_its_h2_marker_is_a_mechanical_finding(
+    tmp_path: Path,
+) -> None:
+    repo = _spec_tree(tmp_path=tmp_path)
+    reference = _PLAIN_HEADING.removeprefix("## ")
+    item = _item(description=_description(references=reference))
+
+    findings = definition_of_done_findings(item=item, cwd=repo)
+
+    assert len(findings) == 1
+    assert reference in findings[0]
 
 
 def test_a_multi_reference_line_of_comma_carrying_headings_resolves_whole(

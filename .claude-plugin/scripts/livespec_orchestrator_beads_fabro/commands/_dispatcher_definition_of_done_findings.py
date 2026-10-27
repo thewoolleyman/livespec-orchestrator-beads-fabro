@@ -80,10 +80,10 @@ _REASON_SUBJECTS = {
 def spec_h2_headings(*, repo: Path) -> frozenset[str]:
     """The H2 headings of the governed spec tree's own top-level files.
 
-    Each heading enters the set twice, as the verbatim `## <title>` line and as
-    the bare `<title>`, so a reference that omits the marker resolves against the
-    same real heading. That is not a loosened check: both forms still have to
-    name a heading the tree actually carries.
+    Each heading enters the set as its verbatim `## <title>` line. A reference
+    must carry that marker as well as the heading text, so the filing-time wall
+    agrees with the Definition-of-Done rubric before an item can consume a
+    dispatch slot.
 
     An empty set means the tree could not be read (absent directory, unreadable
     file), NOT that the tree carries no heading — see this module's docstring for
@@ -100,9 +100,7 @@ def spec_h2_headings(*, repo: Path) -> frozenset[str]:
         for raw in read.splitlines():
             match = _H2.match(raw)
             if match is not None:
-                title = match.group(1)
-                headings.add(title)
-                headings.add(f"## {title}")
+                headings.add(f"## {match.group(1)}")
     return frozenset(headings)
 
 
@@ -161,7 +159,7 @@ def _unresolved_reference_finding(*, item: WorkItem, reference: str) -> str:
     return (
         f"work-item {item.id}: the Definition of Done reference {reference!r} does not"
         " resolve to an H2 heading of the governed spec tree; correct the heading"
-        " text to match the spec tree verbatim"
+        " text and its `## ` marker to match the spec tree verbatim"
     )
 
 
