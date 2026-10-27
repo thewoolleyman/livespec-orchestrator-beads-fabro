@@ -774,6 +774,25 @@ digraph ImplementWorkItem {
         prompt="@prompts/proof-verify.md"
     ]
 
+    // Scenario 258 needs the retry to re-enter THIS ACP node rather than a
+    // look-alike node: the retry is the same proof_verify stage, on the same
+    // tree and inputs.  Every ordinary entry clears the last visit's retry
+    // marker first; only the missing-label route below bypasses this gateway.
+    proof_verify_verdict_entry [
+        label="Start a fresh proof_verify verdict visit"
+        shape=parallelogram
+        timeout="600s"
+        script="state=$(git rev-parse --git-path livespec-publication); cause_path=$(git rev-parse --git-path livespec-stage-cause); if test -z \"$state\"; then message='LIVESPEC_PROOF_VERIFY_VERDICT_RETRY_STATE_UNREADABLE: proof_verify could not start a fresh verdict visit because this run state directory could not be resolved'; printf 'stage: %s\\ncause: %s\\n' proof_verify \"$message\" > \"$cause_path\"; echo \"$message\" >&2; exit 1; fi; mkdir -p \"$state\"; rm -f \"$state/livespec-proof-verify-verdict-retry\"; exit 0"
+    ]
+
+    proof_verify_verdict_retry [
+        label="Retry proof_verify once when its verdict label was absent"
+        shape=parallelogram
+        timeout="600s"
+        max_visits=9
+        script="state=$(git rev-parse --git-path livespec-publication); cause_path=$(git rev-parse --git-path livespec-stage-cause); if test -z \"$state\"; then message='LIVESPEC_PROOF_VERIFY_VERDICT_RETRY_STATE_UNREADABLE: proof_verify recorded no verdict label and its bounded retry state could not be resolved'; printf 'stage: %s\\ncause: %s\\n' proof_verify \"$message\" > \"$cause_path\"; echo \"$message\" >&2; exit 1; fi; mkdir -p \"$state\"; counter=\"$state/livespec-proof-verify-verdict-retry\"; count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then count=1; fi; if test \"$count\" -ge 1; then message='LIVESPEC_PROOF_VERIFY_VERDICT_LABEL_MISSING: proof_verify retry ended succeeded but recorded no verdict label, so the single retry for this stage visit is exhausted'; printf 'stage: %s\\ncause: %s\\n' proof_verify \"$message\" > \"$cause_path\"; echo \"$message\" >&2; exit 1; fi; printf '%s\\n' 1 > \"$counter\"; echo 'LIVESPEC_VERDICT_RETRY: proof_verify ended succeeded with no verdict label, so re-entering the same stage once on the same head with its verdict-only instruction' >&2; exit 0"
+    ]
+
     // PER-ASSERTION GRADE OF THE VERIFIED RECORD (SPECIFICATION/contracts.md
     // "Self-contained plugin dispatch" -> "The stages", ratified v156;
     // scenarios.md Scenario 195; work-item bd-ib-kcq6pu). A COMMAND node, entered
@@ -1493,6 +1512,23 @@ digraph ImplementWorkItem {
         prompt="@prompts/review.md"
     ]
 
+    // See proof_verify_verdict_entry: this reset is the visit boundary.  The
+    // retry route alone returns directly to review, preserving its one retry.
+    review_verdict_entry [
+        label="Start a fresh review verdict visit"
+        shape=parallelogram
+        timeout="600s"
+        script="state=$(git rev-parse --git-path livespec-publication); cause_path=$(git rev-parse --git-path livespec-stage-cause); if test -z \"$state\"; then message='LIVESPEC_REVIEW_VERDICT_RETRY_STATE_UNREADABLE: review could not start a fresh verdict visit because this run state directory could not be resolved'; printf 'stage: %s\\ncause: %s\\n' review \"$message\" > \"$cause_path\"; echo \"$message\" >&2; exit 1; fi; mkdir -p \"$state\"; rm -f \"$state/livespec-review-verdict-retry\"; exit 0"
+    ]
+
+    review_verdict_retry [
+        label="Retry review once when its verdict label was absent"
+        shape=parallelogram
+        timeout="600s"
+        max_visits=7
+        script="state=$(git rev-parse --git-path livespec-publication); cause_path=$(git rev-parse --git-path livespec-stage-cause); if test -z \"$state\"; then message='LIVESPEC_REVIEW_VERDICT_RETRY_STATE_UNREADABLE: review recorded no verdict label and its bounded retry state could not be resolved'; printf 'stage: %s\\ncause: %s\\n' review \"$message\" > \"$cause_path\"; echo \"$message\" >&2; exit 1; fi; mkdir -p \"$state\"; counter=\"$state/livespec-review-verdict-retry\"; count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then count=1; fi; if test \"$count\" -ge 1; then message='LIVESPEC_REVIEW_VERDICT_LABEL_MISSING: review retry ended succeeded but recorded no verdict label, so the single retry for this stage visit is exhausted'; printf 'stage: %s\\ncause: %s\\n' review \"$message\" > \"$cause_path\"; echo \"$message\" >&2; exit 1; fi; printf '%s\\n' 1 > \"$counter\"; echo 'LIVESPEC_VERDICT_RETRY: review ended succeeded with no verdict label, so re-entering the same stage once on the same head with its verdict-only instruction' >&2; exit 0"
+    ]
+
     // Disposition (S2 / bd-ib-fe574e): read-only implementation-side
     // triage of the reviewer's BLOCKING findings before any fix work. It
     // accepts in-scope correct findings and rejects out-of-scope,
@@ -2100,7 +2136,7 @@ digraph ImplementWorkItem {
     // `fix`, and exhausting it fails the run rather than reaching `non_converged`.
     proof_capture -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     proof_capture -> fix [label="capture needs a code change", condition="preferred_label=fix"]
-    proof_capture -> review
+    proof_capture -> review_verdict_entry
 
     // Review gate routing (Slice A / bd-ib-egms32, blocking-by-default
     // revision bd-ib-6ytmik). The review node emits a routing verdict
@@ -2157,17 +2193,21 @@ digraph ImplementWorkItem {
     //                      round (v175; see that node's comment).
     //   - node failure  -> needs_human; weight=100 keeps that deterministic
     //                      against other conditions.
-    //   - anything else -> needs_human, the unconditional fallthrough that keeps
-    //                      `all_conditional_edges` from rejecting this node.
+    //   - no verdict label -> review_verdict_retry. It re-enters this same node
+    //                      once, then records a named needs-human cause.
     review -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     review -> disposition [label="fix", condition="preferred_label=fix"]
     review -> recapture_route [label="recapture", condition="preferred_label=recapture"]
-    review -> proof_verify [label="approve", condition="preferred_label=approve"]
-    review -> needs_human [label="unmatched review outcome"]
+    review -> proof_verify_verdict_entry [label="approve", condition="preferred_label=approve"]
+    review -> review_verdict_retry [label="missing review verdict label"]
+    review_verdict_entry -> needs_human [label="Blocked", condition="outcome=failed"]
+    review_verdict_entry -> review
+    review_verdict_retry -> needs_human [label="second missing review verdict", condition="outcome=failed"]
+    review_verdict_retry -> review
     disposition -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     disposition -> review_fix [label="fix accepted", condition="preferred_label=fix"]
     disposition -> recapture_route [label="recapture accepted proof record", condition="preferred_label=recapture"]
-    disposition -> review     [label="all rejected", condition="preferred_label=all_rejected"]
+    disposition -> review_verdict_entry [label="all rejected", condition="preferred_label=all_rejected"]
     disposition -> needs_human [label="unmatched disposition outcome"]
     // `review_fix` carries the same failure edge `fix` does, and for the same
     // measured reason (work-item bd-ib-qhv7qs): both measured incidents were
@@ -2212,9 +2252,10 @@ digraph ImplementWorkItem {
     // `verified`, so publication cannot be the unconditional fallthrough — a
     // fallthrough to `pr` would ship every unreadable verdict and every
     // non-reproduction, which is exactly what this stage exists to stop. The
-    // fallthrough position therefore goes to `needs_human`, which also satisfies
-    // `all_conditional_edges` (a node whose every outgoing edge is conditional is
-    // rejected outright by the engine, before any node runs).
+    // fallthrough position therefore goes to `proof_verify_verdict_retry`: it
+    // retries this same stage once and its failed arm reaches needs_human with a
+    // stage-specific missing-label cause. It remains unconditional, so
+    // `all_conditional_edges` cannot reject the graph before any node runs.
     //
     // THE REPLAY LOOP'S BOUND IS `fix.max_visits`, not a visit guard on this edge
     // (plan `fabro-currency` P4, bd-ib-hti4zf). S6 bounded it with a
@@ -2233,7 +2274,11 @@ digraph ImplementWorkItem {
     proof_verify -> needs_human   [label="Blocked", condition="outcome=failed", weight=100]
     proof_verify -> proof_grade   [label="verified", condition="preferred_label=approve"]
     proof_verify -> fix           [label="not reproduced", condition="preferred_label=fix"]
-    proof_verify -> needs_human   [label="unmatched proof_verify outcome"]
+    proof_verify -> proof_verify_verdict_retry [label="missing proof_verify verdict label"]
+    proof_verify_verdict_entry -> needs_human [label="Blocked", condition="outcome=failed"]
+    proof_verify_verdict_entry -> proof_verify
+    proof_verify_verdict_retry -> needs_human [label="second missing proof_verify verdict", condition="outcome=failed"]
+    proof_verify_verdict_retry -> proof_verify
 
     // Per-assertion grade routing (v156; work-item bd-ib-kcq6pu). The clause is
     // explicit that "No edge MAY route from `proof_verify` to `pr_refresh` or
@@ -2250,7 +2295,7 @@ digraph ImplementWorkItem {
     proof_grade -> proof_grade_route [label="ungradeable verified record", condition="outcome=failed"]
     proof_grade -> pr_refresh
     proof_grade_route -> non_converged [label="third ungradeable record", condition="outcome=failed"]
-    proof_grade_route -> proof_verify
+    proof_grade_route -> proof_verify_verdict_entry
 
     // Scripted-publication routing (SPECIFICATION/contracts.md
     // "Scripted publication and proof-head integrity", ratified v121).

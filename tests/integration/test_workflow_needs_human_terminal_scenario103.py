@@ -149,7 +149,11 @@ def test_every_other_former_gate_edge_targets_needs_human() -> None:
         'implement_amendment_route -> needs_human [label="Definition-of-Done amendment", condition="outcome=failed"]'
         in lines
     )
-    assert 'review -> needs_human [label="unmatched review outcome"]' in lines
+    assert 'review -> review_verdict_retry [label="missing review verdict label"]' in lines
+    assert (
+        'review_verdict_retry -> needs_human [label="second missing review verdict", '
+        'condition="outcome=failed"]'
+    ) in lines
     assert 'disposition -> needs_human [label="unmatched disposition outcome"]' in lines
 
 

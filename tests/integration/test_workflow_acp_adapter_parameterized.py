@@ -174,15 +174,17 @@ def _review_edge_lines(*, to_node: str) -> list[str]:
 def test_scenario20_review_approve_edge_is_conditioned() -> None:
     """Scenario 20: approve leaves review only through an explicit condition.
 
-    S6 / bd-ib-msnlnv retargeted this edge from `pr` to `proof_verify`, so what
-    approve now reaches is the replay and not publication. The CONDITION is what
-    Scenario 20 is about and it is unchanged; the target moved because the
-    contract forbids any route to `pr` that has not replayed the proof.
+    S6 / bd-ib-msnlnv retargeted this edge from `pr` to `proof_verify`, and
+    bd-ib-wg5zyt now enters that stage through its verdict-visit gateway. What
+    approve reaches is still replay, not publication. The CONDITION is what
+    Scenario 20 is about and it is unchanged; the gateway gives an unlabeled
+    replay a fresh, bounded retry without allowing any route to `pr` that has
+    not replayed the proof.
     """
-    verify_edges = _review_edge_lines(to_node="proof_verify")
+    verify_edges = _review_edge_lines(to_node="proof_verify_verdict_entry")
     approve_edges = [line for line in verify_edges if 'label="approve"' in line]
     assert approve_edges == [
-        'review -> proof_verify [label="approve", condition="preferred_label=approve"]'
+        'review -> proof_verify_verdict_entry [label="approve", condition="preferred_label=approve"]'
     ]
     assert all("condition=" in line for line in verify_edges)
     # The retarget is total: nothing leaves review for `pr` any more. Tokenized
@@ -237,10 +239,10 @@ def test_scenario20_review_routes_on_the_label_alone_with_no_cap_edges() -> None
     assert "SHIP-ON-CAP" not in dot
 
 
-def test_scenario20_review_has_unconditional_fallback_to_needs_human() -> None:
-    """Fabro requires a fallback when a node has conditional custom routing."""
-    fallback_edges = _review_edge_lines(to_node="needs_human")
-    assert 'review -> needs_human [label="unmatched review outcome"]' in fallback_edges
+def test_scenario20_review_has_an_unconditional_missing_verdict_retry() -> None:
+    """Fabro requires a fallback, and Scenario 258 makes it one bounded retry."""
+    fallback_edges = _review_edge_lines(to_node="review_verdict_retry")
+    assert 'review -> review_verdict_retry [label="missing review verdict label"]' in fallback_edges
 
 
 def test_scenario20_the_review_fix_loop_is_bounded_on_its_own_nodes() -> None:

@@ -60,7 +60,9 @@ _SUCCESSFUL_NODES = (
     "janitor",
     "publish_draft",
     "proof_capture",
+    "review_verdict_entry",
     "review",
+    "proof_verify_verdict_entry",
     "proof_verify",
     # The per-assertion grade of the verified record (v156; bd-ib-kcq6pu). It is
     # on the success route because it is the ONLY route out of a `verified`
