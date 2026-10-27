@@ -311,8 +311,13 @@ def test_payload_renders_each_acp_node_command_as_a_literal(tmp_path: Path) -> N
         adapters={"implement_adapter": "npx -y claude-agent-acp"},
     )
     assert isinstance(payload, WorkflowPayload)
-    assert payload.node_commands == {"implement": "npx -y claude-agent-acp"}
-    assert 'acp.command="npx -y claude-agent-acp"' in payload.graph.read_text(encoding="utf-8")
+    assert payload.node_commands == {
+        "implement": "LIVESPEC_AGENT_STAGE=implement npx -y claude-agent-acp"
+    }
+    assert (
+        'acp.command="LIVESPEC_AGENT_STAGE=implement npx -y claude-agent-acp"'
+        in payload.graph.read_text(encoding="utf-8")
+    )
 
 
 def test_payload_refuses_an_acp_node_whose_adapter_did_not_resolve(tmp_path: Path) -> None:

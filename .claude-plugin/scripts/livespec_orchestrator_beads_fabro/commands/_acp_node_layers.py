@@ -76,8 +76,6 @@ _CREDENTIAL_USE_ENV_VARS = frozenset(
         CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     }
 )
-
-
 WORKFLOW_LAYER = "workflow"
 REPOSITORY_LAYER = "repository"
 DISPATCH_LAYER = "dispatch"
@@ -99,7 +97,7 @@ class ResolvedAcpNode:
 
     @property
     def rendered(self) -> str:
-        """The exact string this node's `acp.command` receives."""
+        """Render the configured adapter in the form the workflow input takes."""
         return render_adapter(adapter=self.adapter)
 
 
@@ -204,7 +202,7 @@ def resolution_with_adapters(
     a reader compares is the very one the layer merge produced.
     """
     nodes = {
-        node: replace(resolved, adapter=adapters[node]) if node in adapters else resolved
+        node: (replace(resolved, adapter=adapters[node]) if node in adapters else resolved)
         for node, resolved in resolution.nodes.items()
     }
     run_inputs = _run_inputs(nodes=nodes, inputs=resolution.inputs)
@@ -284,7 +282,7 @@ def _run_inputs(
             )
     by_input: dict[str, dict[str, str]] = {}
     for node, name in inputs.items():
-        by_input.setdefault(name, {})[node] = nodes[node].rendered
+        by_input.setdefault(name, {})[node] = render_adapter(adapter=nodes[node].adapter)
     pairs: list[str] = []
     for name in sorted(by_input):
         rendered_by_node = by_input[name]

@@ -165,7 +165,14 @@ livespec_agent_api_publication_action() {
     esac
 }
 
-if test -n "${LIVESPEC_AGENT_STAGE:-}" \
+livespec_agent_publication_guard_is_active() {
+    case "${LIVESPEC_AGENT_STAGE:-}" in
+        ''|publish_draft|pr_refresh|pr) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+if livespec_agent_publication_guard_is_active \
     && action="$(livespec_agent_publication_action "$@")"; then
     printf 'LIVESPEC_AGENT_PUBLICATION_DENIED: stage=%s action=%s\n' \
         "$LIVESPEC_AGENT_STAGE" "$action" >&2
@@ -210,7 +217,8 @@ def refreshing_gh_prepare_steps_block() -> str:
     lines = ["", "# --- Dispatcher-materialized livespec-refreshing-gh-wrapper ---"]
     for script in scripts:
         _assert_step_within_limit(script=script)
-        lines.extend(["[[run.prepare.steps]]", f"script = '''\n{script}\n'''"])
+        step = "script = '''\n" + script + "\n'''"
+        lines.extend(["[[run.prepare.steps]]", step])
     return "\n".join(lines) + "\n"
 
 

@@ -309,6 +309,44 @@ def test_an_agent_stage_cannot_reach_gh_api_pull_request_publication(
     assert not capture.exists()
 
 
+@pytest.mark.parametrize("stage", [("publish_draft",), ("pr_refresh",), ("pr",)])
+def test_scripted_publication_stages_can_still_use_the_gh_wrapper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: tuple[str],
+) -> None:
+    """Publication stages mint a token and reach `gh`; agent stages cannot."""
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    capture = tmp_path / "gh-calls.txt"
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=capture)
+    _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+    _write_executable(
+        path=bin_dir / "python3",
+        source="#!/usr/bin/env bash\nset -eu\nprintf minted-token\n",
+    )
+
+    result = subprocess.run(
+        ["gh", "pr", "create"],
+        cwd=repo,
+        env={
+            **_chain_env(bin_dir=bin_dir, capture=capture, mint_log=tmp_path / "mint-args.txt"),
+            "LIVESPEC_AGENT_STAGE": stage[0],
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text(encoding="utf-8").splitlines() == [
+        "args=pr create",
+        "GH_TOKEN=minted-token",
+        "GITHUB_TOKEN=minted-token",
+    ]
+
+
 def test_an_agent_stage_cannot_push_any_ref_to_origin(tmp_path: Path) -> None:
     """The push helper refuses before even reading the origin remote."""
     helper = tmp_path / "push_origin"
@@ -326,6 +364,52 @@ def test_an_agent_stage_cannot_push_any_ref_to_origin(tmp_path: Path) -> None:
     assert (
         "LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action=push_origin" in result.stderr
     )
+
+
+@pytest.mark.parametrize("stage", [("publish_draft",), ("pr_refresh",), ("pr",)])
+def test_scripted_publication_stages_can_still_push_origin(
+    tmp_path: Path, stage: tuple[str]
+) -> None:
+    """The push helper reaches the requested origin push only in publication stages."""
+    helper = tmp_path / "push_origin"
+    capture = tmp_path / "git-calls.txt"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_executable(path=helper, source=PUSH_ORIGIN_SOURCE)
+    _write_executable(
+        path=tmp_path / "mint_app_token.py",
+        source="#!/usr/bin/env bash\nset -eu\nprintf minted-token\n",
+    )
+    _write_executable(
+        path=bin_dir / "python3",
+        source="#!/usr/bin/env bash\nset -eu\nprintf minted-token\n",
+    )
+    _write_executable(
+        path=bin_dir / "git",
+        source="#!/usr/bin/env bash\n"
+        "set -eu\n"
+        'if test "$1 $2 $3" = "remote get-url --push"; then\n'
+        "  printf 'https://github.com/acme/widget.git\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        'printf "%s\\n" "$*" >> "$GIT_CAPTURE"\n',
+    )
+
+    result = subprocess.run(
+        [str(helper), "git", "push", "origin", "HEAD:feature"],
+        env={
+            **os.environ,
+            "GIT_CAPTURE": str(capture),
+            "LIVESPEC_AGENT_STAGE": stage[0],
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text(encoding="utf-8").splitlines() == ["push origin HEAD:feature"]
 
 
 def _rendered_prepare_scripts(

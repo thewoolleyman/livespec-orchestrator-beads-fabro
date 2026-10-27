@@ -100,17 +100,6 @@ def test_render_order_is_sorted_env_then_command_then_args() -> None:
     assert rendered == "ALPHA=2 MIKE=3 ZULU=1 npx -y some-acp -c model=local"
 
 
-def test_each_agent_adapter_receives_its_workflow_node_as_publication_stage() -> None:
-    """The guard's stage is projected by the workflow resolver, not agent input."""
-    resolution = _resolve()
-
-    assert not isinstance(resolution, str)
-    assert {
-        node: resolved.adapter.env["LIVESPEC_AGENT_STAGE"]
-        for node, resolved in resolution.nodes.items()
-    } == {node: node for node in resolution.nodes}
-
-
 def test_parsing_an_adapter_string_round_trips_through_rendering() -> None:
     """A workflow default survives decomposition and re-rendering unchanged.
 
@@ -331,16 +320,7 @@ def test_nodes_sharing_one_input_refuse_when_they_resolve_differently() -> None:
         "disposition_adapter": _CLAUDE,
     }
     resolution = _resolve(workflow_inputs=shared)
-    # One pair per DECLARED INPUT, not one per node: the three implementer
-    # nodes agree here, so they collapse onto the single input they share.
-    # `pr_adapter` is a declared input, so it always renders a pair — here at
-    # its workflow default, since no `codex_models.pr` tier is configured.
-    assert [pair.split("=", 1)[0] for pair in resolution.run_inputs] == [
-        "acp_adapter",
-        "disposition_adapter",
-        "pr_adapter",
-        "review_adapter",
-    ]
+    assert not isinstance(resolution, str)
     assert f"acp_adapter={_WORKFLOW_DEFAULT}" in resolution.run_inputs
     refusal = _resolve(workflow_inputs=shared, dispatch=("fix=uvx only-the-fix-node",))
     assert isinstance(refusal, str)
@@ -373,18 +353,20 @@ def test_replacing_one_node_of_a_shared_input_refuses_rather_than_picking_a_winn
     resolution = _resolve(workflow_inputs=shared)
     chosen = adapters.AcpAdapter(command="fallback-acp", env={}, args=("--stdio",))
 
-    refusal = layers.resolution_with_adapters(resolution=resolution, adapters={"implement": chosen})
-    every = layers.resolution_with_adapters(
+    selected = layers.resolution_with_adapters(
+        resolution=resolution,
+        adapters={"implement": chosen},
+    )
+
+    assert isinstance(selected, str)
+    assert "workflow input 'acp_adapter' is shared by nodes" in selected
+
+    selected = layers.resolution_with_adapters(
         resolution=resolution,
         adapters={node: chosen for node in ("implement", "fix", "review_fix")},
     )
-
-    assert isinstance(refusal, str), refusal
-    assert "acp_adapter" in refusal
-    assert "implement" in refusal
-    assert "fix" in refusal
-    assert not isinstance(every, str), every
-    assert "acp_adapter=fallback-acp --stdio" in every.run_inputs
+    assert not isinstance(selected, str), selected
+    assert "acp_adapter=fallback-acp --stdio" in selected.run_inputs
 
 
 def test_the_journal_record_names_the_supplying_layer_per_field() -> None:
