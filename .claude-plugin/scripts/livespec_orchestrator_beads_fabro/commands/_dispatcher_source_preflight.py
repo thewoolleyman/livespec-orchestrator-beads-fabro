@@ -90,6 +90,12 @@ def _is_git_worktree(*, repo: Path, runner: CommandRunner) -> bool:
     return result.exit_code == 0 and result.stdout.strip() == "true"
 
 
+# `refs/remotes/origin/HEAD` is a symbolic pointer, not a branch. Its short form
+# is `origin/HEAD` on older git and bare `origin` on git 2.51 (measured on vps,
+# 2026-10-27), so both spellings are dropped from the inventory.
+_ORIGIN_HEAD_SHORT_FORMS = frozenset({"origin/HEAD", "origin"})
+
+
 def _origin_refs(*, repo: Path, runner: CommandRunner) -> tuple[str, ...]:
     result = _git(
         repo=repo,
@@ -101,7 +107,7 @@ def _origin_refs(*, repo: Path, runner: CommandRunner) -> tuple[str, ...]:
     return tuple(
         line.strip()
         for line in result.stdout.splitlines()
-        if line.strip() and line.strip() != "origin/HEAD"
+        if line.strip() and line.strip() not in _ORIGIN_HEAD_SHORT_FORMS
     )
 
 
