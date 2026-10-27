@@ -7,6 +7,8 @@ would only learn about an invalid record after it was published.
 
 from __future__ import annotations
 
+import subprocess
+import textwrap
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -64,3 +66,37 @@ def test_capture_posts_only_through_the_head_validating_primitive() -> None:
         "Publish-branch head:",
     ):
         assert required in text, required
+
+
+def test_posting_primitive_names_the_missing_head_under_errexit(tmp_path: Path) -> None:
+    """The missing-head refusal survives the capture script's ``set -e`` mode."""
+    text = _text()
+    start = text.index("    livespec_post_captured_record() {")
+    end = text.index("\n    }", start) + len("\n    }")
+    primitive = textwrap.dedent(text[start:end])
+    body = tmp_path / "record.md"
+    marker = tmp_path / "gh-called"
+    body.write_text("Proof of Done — captured — run r\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "\n".join(
+                (
+                    "set -e",
+                    primitive,
+                    'gh() { touch "$GH_MARKER"; }',
+                    'livespec_post_captured_record 1 "$BODY_FILE"',
+                )
+            ),
+        ],
+        capture_output=True,
+        env={"BODY_FILE": str(body), "GH_MARKER": str(marker)},
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "LIVESPEC_PROOF_CAPTURE_MISSING_PUBLISH_BRANCH_HEAD" in result.stderr
+    assert not marker.exists()
