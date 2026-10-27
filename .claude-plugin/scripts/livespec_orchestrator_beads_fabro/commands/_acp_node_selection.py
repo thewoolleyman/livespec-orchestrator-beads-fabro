@@ -280,6 +280,7 @@ def _selection_fields(*, one: SelectedAcpCandidate) -> dict[str, object]:
     return {
         "selection_identity": one.selection_identity,
         "selected_index": one.index,
+        "selected_agent_id": one.candidate.agent_id,
         "selected_availability_key": None if identity is None else identity.availability_key,
         "selected_candidate_key": None if identity is None else identity.candidate_key,
         "primary_generation_digest": one.primary_generation,
