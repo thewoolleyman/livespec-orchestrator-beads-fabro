@@ -487,6 +487,23 @@ def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
     move the ref to the same sha, so nothing in the final refs tells them apart;
     with no helper materialized, a stage that tried to lease fails closed before
     pushing anything.
+
+    AND THE ADVANCED DEFAULT IS ASSERTED CONTAINED, which is the control the
+    drop above cannot supply and the one this case was missing. The merge arm
+    exists to bring the moved default branch IN, and every assertion about
+    dropped empties, a preserved tip and a reviewer's fix is satisfied just as
+    well by a stage that merged the wrong target: the drop ran, the published
+    tip is still an ancestor, the fix is still in the tree, the push still
+    reports `LIVESPEC_PUBLISH_DRAFT_REFRESH` success, and the pull request
+    quietly stops tracking master. Measured on the bytes this case guards: the
+    drop rebase assigned its target to the same `refresh_target` the enclosing
+    script owns — POSIX sh gives a function no scope — so the merge that follows
+    it received the already-published tip, an ancestor of HEAD, and merged
+    nothing. `base_before` equalled `base_after` and the advanced default was
+    absent from the republished head, at exit 0. Reading containment off git
+    rather than off the base pair is what keeps the assertion about the
+    published object: a stage that moved its own base without pushing would
+    satisfy a base-pair comparison.
     """
     world = _petri_run(root=tmp_path)
     _ = _advance_default(world=world)
@@ -506,7 +523,7 @@ def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
     assert (
         len(_commits_that_started_empty(world=world, base=published_first, head="HEAD")) == 2
     ), "the fixture carries no empty commits above the published tip"
-    _ = _advance_default(world=world, path="second.txt", text="moved again\n")
+    advanced = _advance_default(world=world, path="second.txt", text="moved again\n")
 
     result = _run_publish_draft(world=world)
 
@@ -518,6 +535,9 @@ def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
     assert _ancestor_of(
         world=world, earlier=published_first, later=republished
     ), "the already-published tip was rewritten rather than preserved"
+    assert _ancestor_of(
+        world=world, earlier=advanced, later=republished
+    ), "the merge arm did not bring the advanced default branch into the republished head"
     assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
     assert (
         _git("show", f"{republished}:{_OWNED_FILE}", cwd=world.clone).stdout
