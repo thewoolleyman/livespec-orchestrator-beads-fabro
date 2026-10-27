@@ -14,13 +14,13 @@ if [ "${#shell_scripts[@]}" -eq 0 ]; then
     exit 1
 fi
 
-if command -v shellcheck >/dev/null 2>&1; then
-    shellcheck --severity=warning "${shell_scripts[@]}"
-    printf 'check-fleet-launch: shellcheck clean over %d shell scripts under fleet-launch/\n' \
-        "${#shell_scripts[@]}"
-else
-    echo "WARNING: shellcheck not found; skipping shell lint over" \
-        "${#shell_scripts[@]} fleet-launch/ scripts (the hermetic harness still runs)" >&2
+if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "check-fleet-launch: shellcheck is required to lint ${#shell_scripts[@]} fleet-launch/ scripts" >&2
+    exit 1
 fi
+
+shellcheck --severity=warning "${shell_scripts[@]}"
+printf 'check-fleet-launch: shellcheck clean over %d shell scripts under fleet-launch/\n' \
+    "${#shell_scripts[@]}"
 
 bash fleet-launch/test/run-tests.sh
