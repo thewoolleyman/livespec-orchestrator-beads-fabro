@@ -83,6 +83,9 @@ _DIGEST_FIELD = "subject-digest"
 # because the two change for unrelated reasons and a reader of the record has to
 # be able to say which one retired a verdict: an item edit, or a plugin release.
 _RUBRIC_DIGEST_FIELD = "rubric-digest"
+_DECIDING_CANDIDATE_FIELD = "deciding-candidate"
+_DECIDING_INPUT_TOKENS_FIELD = "deciding-candidate-input-tokens"
+_DECIDING_INPUT_USAGE_FIELD = "deciding-candidate-input-usage"
 _FINDING_FIELD = "finding"
 _REMEDY_FIELD = "first-remedy"
 # Deliberately NOT the bare `cause`. The did-not-run scan below walks back over
@@ -152,6 +155,11 @@ def verdict_comment(
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
+    if judgement.deciding_candidate is not None:
+        lines.append(f"{_DECIDING_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{judgement.deciding_candidate}")
+    if judgement.input_tokens is not None:
+        lines.append(f"{_DECIDING_INPUT_TOKENS_FIELD}{_FIELD_SEPARATOR}{judgement.input_tokens}")
+    lines.append(f"{_DECIDING_INPUT_USAGE_FIELD}{_FIELD_SEPARATOR}{judgement.input_usage}")
     if governing is not None:
         lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{governing.kind}")
         lines.extend(
