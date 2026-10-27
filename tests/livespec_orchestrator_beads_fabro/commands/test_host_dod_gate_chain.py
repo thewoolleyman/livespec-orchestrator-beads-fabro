@@ -137,11 +137,10 @@ def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
 
 def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_path: Path) -> None:
     runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
-    repo = _configured_repo(tmp_path=tmp_path)
 
     reply, cause = run_dod_gate_prompt(
         prompt="one prompt",
-        cwd=repo,
+        cwd=_configured_repo(tmp_path=tmp_path),
         runner=runner,
         is_verdict=lambda text: text == "accepted",
     )
@@ -157,7 +156,7 @@ def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_pat
             "-c",
             'model_reasoning_effort="high"',
             "--add-dir",
-            str(repo),
+            str(_configured_repo(tmp_path=tmp_path)),
             "-c",
             "project_doc_max_bytes=0",
             "-c",
