@@ -296,10 +296,14 @@ def _absent() -> DefinitionOfDone:
 
 
 def _criteria_layout(*, body: list[str]) -> str | None:
-    """The proof-mode-aware criteria rendering, without its separate references."""
-    layout = "\n".join(
-        line for line in body if not line.strip().startswith(REFERENCES_PREFIX)
-    ).strip()
+    """The proof-mode-aware rendering, without the standalone reference line.
+
+    Indentation is semantic in a Definition-of-Done body: an indented line is a
+    continuation of its open bullet.  In particular, a continuation may begin
+    with ``References:`` and must stay in the rendered assertion rather than
+    being mistaken for the section's own, flush-left reference line.
+    """
+    layout = "\n".join(line for line in body if not line.startswith(REFERENCES_PREFIX)).strip()
     return layout or None
 
 
