@@ -251,6 +251,63 @@ def test_an_agent_stage_cannot_reach_gh_pull_request_publication(
     assert not capture.exists()
 
 
+@pytest.mark.parametrize(
+    ("command", "action"),
+    [
+        (("api", "repos/acme/widget/pulls", "--method", "POST"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls/4", "--method", "PATCH"), "gh_api_edit"),
+        (("api", "repos/acme/widget/pulls/4/merge", "--method", "PUT"), "gh_api_merge"),
+        (
+            (
+                "api",
+                "graphql",
+                "-f",
+                "query=mutation { markPullRequestReadyForReview(input: {}) { pullRequest { id } } }",
+            ),
+            "gh_api_graphql_ready",
+        ),
+        (
+            (
+                "api",
+                "graphql",
+                "-f",
+                "query=mutation { enablePullRequestAutoMerge(input: {}) { pullRequest { id } } }",
+            ),
+            "gh_api_graphql_auto_merge",
+        ),
+    ],
+)
+def test_an_agent_stage_cannot_reach_gh_api_pull_request_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, ...],
+    action: str,
+) -> None:
+    """REST and GraphQL PR mutations stop before token minting or the forge."""
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    capture = tmp_path / "gh-calls.txt"
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=capture)
+    _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+
+    result = subprocess.run(
+        ["gh", *command],
+        cwd=repo,
+        env={
+            **_chain_env(bin_dir=bin_dir, capture=capture, mint_log=tmp_path / "mint-args.txt"),
+            "LIVESPEC_AGENT_STAGE": "proof_verify",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert f"LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action={action}" in result.stderr
+    assert not capture.exists()
+
+
 def _rendered_prepare_scripts(
     *,
     monkeypatch: pytest.MonkeyPatch,

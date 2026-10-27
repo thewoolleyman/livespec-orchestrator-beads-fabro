@@ -111,6 +111,56 @@ _AGENT_PUBLICATION_GUARD_SOURCE = r"""livespec_agent_publication_action() {
         "pr ready") printf '%s' gh_pr_ready ;;
         "pr merge") printf '%s' gh_pr_merge ;;
         "pr edit") printf '%s' gh_pr_edit ;;
+        "api "*) livespec_agent_api_publication_action "$@" ;;
+        *) return 1 ;;
+    esac
+}
+
+livespec_agent_api_publication_action() {
+    shift
+    endpoint=''
+    method=GET
+    query=''
+    value_for=''
+    for argument in "$@"; do
+        case "$value_for" in
+            method) method="$argument"; value_for='' ;;
+            field) query="$query $argument"; value_for='' ;;
+            *)
+                case "$argument" in
+                    --method|-X) value_for=method ;;
+                    --method=*) method="${argument#*=}" ;;
+                    -X?*) method="${argument#-X}" ;;
+                    -f|-F|--field|--raw-field) value_for=field ;;
+                    query=*|mutation=*) query="$query $argument" ;;
+                    graphql|/repos/*|repos/*) endpoint="$argument" ;;
+                esac
+                ;;
+        esac
+    done
+    method=$(printf '%s' "$method" | tr '[:lower:]' '[:upper:]')
+    case "$endpoint" in
+        graphql)
+            query=$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')
+            case "$query" in
+                *mergepullrequest*) printf '%s' gh_api_graphql_merge ;;
+                *createpullrequest*) printf '%s' gh_api_graphql_create ;;
+                *markpullrequestreadyforreview*) printf '%s' gh_api_graphql_ready ;;
+                *updatepullrequest*) printf '%s' gh_api_graphql_edit ;;
+                *enablepullrequestautomerge*|*disablepullrequestautomerge*)
+                    printf '%s' gh_api_graphql_auto_merge ;;
+                *) return 1 ;;
+            esac
+            ;;
+        /repos/*/pulls/*/merge|repos/*/pulls/*/merge)
+            test "$method" = PUT && printf '%s' gh_api_merge
+            ;;
+        /repos/*/pulls|repos/*/pulls)
+            test "$method" = POST && printf '%s' gh_api_create
+            ;;
+        /repos/*/pulls/*|repos/*/pulls/*)
+            test "$method" = PATCH && printf '%s' gh_api_edit
+            ;;
         *) return 1 ;;
     esac
 }
