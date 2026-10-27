@@ -184,7 +184,7 @@ class _Section:
         """This section's provenance when it is an H2 clause."""
         if self.heading is None:
             return None
-        return CondensedClause(heading=self.heading, body=self.body.strip("\n"))
+        return CondensedClause(heading=self.heading, body=self.body)
 
 
 def condensed_spec_tree(
