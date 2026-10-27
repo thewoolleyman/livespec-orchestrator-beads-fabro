@@ -285,11 +285,17 @@ def _run_publish_draft(
     no helper, so every case takes the inline push fallback identically here and
     on a CI runner.
     """
+    plugins_root = world.clone.parent / "plugins"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env = {
         "PATH": f"{world.forge_bin}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(world.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
     }
     return subprocess.run(
         ["bash", "-c", _node_script(node="publish_draft", check_suite="true")],
