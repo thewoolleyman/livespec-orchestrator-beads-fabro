@@ -333,6 +333,47 @@ def test_an_unexecutable_target_wrapper_makes_the_status_read_unobservable(
     assert str(wrapper) in observation.detail
 
 
+def test_an_executable_target_wrapper_preserves_the_status_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runnable declared wrapper leaves the normal status observation intact."""
+    repository = _repo(tmp_path=tmp_path)
+    wrapper = repository.clone / "with-target-tenant-env.sh"
+    _ = wrapper.write_text('#!/bin/sh\nshift\nexec "$@"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    fake_bd = repository.clone / "fake-bd"
+    _ = fake_bd.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' \'[{"id":"bd-ib-ledger","status":"ready"}]\'\n',
+        encoding="utf-8",
+    )
+    fake_bd.chmod(0o755)
+    config_path = repository.clone / ".beads" / "config.yaml"
+    config_path.parent.mkdir()
+    _ = config_path.write_text("dolt.mode: embedded\n", encoding="utf-8")
+    config = StoreConfig(
+        tenant="target",
+        prefix="target",
+        server_user="target",
+        database="target",
+        bd_path=str(fake_bd),
+        repo_root=repository.clone,
+        credential_wrapper=(str(wrapper), "--"),
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._plan_result_ledger.result_store_config",
+        lambda **_kwargs: config,
+    )
+
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id=_ITEM_ID, status="ready"),
+        now=_NOW,
+    )
+
+    assert observation.status == OBSERVATION_SATISFIED
+    assert observation.evidence == f"ledger record {_ITEM_ID} at status ready"
+
+
 def test_an_item_absent_from_the_tenant_makes_the_status_read_unobservable(
     tmp_path: Path,
 ) -> None:
