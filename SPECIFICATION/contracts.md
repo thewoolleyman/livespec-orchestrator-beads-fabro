@@ -7442,6 +7442,24 @@ and are ratified here.
   The enrichment MUST fail soft: an unreadable config or an unreachable factory
   costs the ENRICHMENT and never the valve — the valve item is surfaced regardless,
   and each factory is addressed by its declared server target.
+  When the item carries the needs-human cause comment its termination wrote
+  (§"Dispatcher policy settings" → "A factory run never awaits a human"), the
+  summary MUST render the run account from that comment, take the preserved
+  reference from the item's preserve-by-reference comment for the same run,
+  resolve the factory name and its server from the item's recorded factory and
+  the committed configuration as before, and list the available valve actions
+  as before, and the surface MUST run no `fabro inspect`, and no other factory
+  read, for that item.
+  When the item carries more than one such comment, the newest one written for
+  the item's latest run governs. When the item carries no such comment, or none
+  for its latest run, the summary MUST fall back to reading the run from its
+  factory exactly as before, so an item whose run was terminated before that
+  comment existed renders as it did. A run-reported detail that the governing
+  comment does not carry, such as what the run reported, is omitted from the
+  summary rather than read from the factory.
+  Measured 2026-10-26: `needs-attention` ran `fabro inspect` on every blocked
+  needs-human item's run on every pass, although each carried the comment that
+  already held that account.
 - **Write-before-transition ordering.** The answer comment MUST be written BEFORE
   the item's status transition. A comment write that is refused or fails MUST NOT
   transition the item, so a delivered answer always precedes the unblock and no
