@@ -52,6 +52,10 @@ gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=""
 mkdir -p "$OUT"
 
 drop_ticket() { [ -n "$ticket" ] && rm -f "$ticket"; ticket=""; }
+give_up() {
+  echo "no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up item=$ITEM queue-ticket=${ticket:-none}"
+  exit 75
+}
 release_lock() {
   if [ -n "$lock" ] && grep -q "pid=$$ " "$lock/holder" 2>/dev/null; then rm -f "$lock/holder"; rmdir "$lock" 2>/dev/null; fi
   lock=""
@@ -210,11 +214,11 @@ while [ -z "$target" ]; do
   if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
     ahead=$(oldest_live_ticket "$GMK_Q")
     if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
-      [ "$(date +%s)" -lt "$deadline" ] || { echo "no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up"; exit 75; }
+      [ "$(date +%s)" -lt "$deadline" ] || give_up
       echo "$(date -u +%T) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
     fi
   fi
-  [ "$(date +%s)" -lt "$deadline" ] || { echo "no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up"; exit 75; }
+  [ "$(date +%s)" -lt "$deadline" ] || give_up
   gmk_idle=
   if ! fleet_green; then echo "$(date -u +%T) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
   if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%T) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
