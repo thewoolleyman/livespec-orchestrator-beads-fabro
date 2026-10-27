@@ -122,12 +122,58 @@ def _seed_repo(*, tmp_path: Path, slugs: tuple[str, ...]) -> Path:
 
 
 def _install_fakes(*, repo: Path) -> dict[str, str]:
-    """Put a recording `just` and a no-op `uv` on PATH so the runner can be driven."""
+    """Put recording check tools on PATH so the runner can be driven.
+
+    The real aggregate delegates execution to the shared parallel dispatcher.
+    This fake records the dispatcher's argv, records its non-skipped targets,
+    and can fail after receiving every target. The shared package owns the
+    concurrent subprocess implementation.
+    """
     bin_dir = repo / "fake-bin"
     bin_dir.mkdir()
     for name, body in (
         ("just", 'printf "%s\\n" "$*" >> just.log\n'),
-        ("uv", "exit 0\n"),
+        (
+            "uv",
+            """case "$1" in
+sync)
+    exit 0
+    ;;
+run)
+    shift
+    if [[ "$1" != "python" || "$2" != "-m" || "$3" != "livespec_dev_tooling.parallel_check_dispatcher" ]]; then
+        exit 1
+    fi
+    printf '<%s>\\n' "$@" >> dispatcher.log
+    printf '<parallelism:%s>\\n' "${LIVESPEC_TEST_PARALLELISM:-}" >> dispatcher.log
+    shift 3
+    if [[ "$1" == "--workers" ]]; then
+        shift 2
+    fi
+    skip_targets=""
+    if [[ "$1" == "--skip" ]]; then
+        skip_targets="$2"
+        shift 2
+    fi
+    [[ "$1" == "--" ]] || exit 1
+    shift
+    passed=0
+    for target in "$@"; do
+        case " ${skip_targets} " in
+            *" ${target} "*) continue ;;
+        esac
+        printf '%s\\n' "$target" >> just.log
+        passed=$((passed + 1))
+    done
+    printf 'All %d targets passed.\\n' "$passed"
+    exit "${DISPATCH_EXIT:-0}"
+    ;;
+*)
+    exit 1
+    ;;
+esac
+""",
+        ),
     ):
         tool = bin_dir / name
         _ = tool.write_text(f"#!/usr/bin/env bash\nset -uo pipefail\n{body}", encoding="utf-8")
@@ -232,6 +278,21 @@ def test_the_runner_reports_the_count_it_actually_executed(*, tmp_path: Path) ->
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"All {len(slugs)} targets passed." in result.stdout
+    dispatched = (repo / "dispatcher.log").read_text(encoding="utf-8").splitlines()
+    assert dispatched[:-1] == [
+        "<python>",
+        "<-m>",
+        "<livespec_dev_tooling.parallel_check_dispatcher>",
+        "<--workers>",
+        "<4>",
+        "<--skip>",
+        "<>",
+        "<-->",
+        "<check-first>",
+        "<check-second>",
+        "<check-newly-declared>",
+    ]
+    assert dispatched[-1].startswith("<parallelism:")
     assert (repo / "just.log").read_text(encoding="utf-8").split() == list(slugs)
 
 
@@ -252,10 +313,60 @@ def test_the_count_excludes_skipped_targets_and_says_how_many_were_skipped(
     result = _run(argv=["bash", str(repo / _RUNNER), "check-second"], cwd=repo, env=env)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "All 2 targets passed (1 of 3 declared skipped)." in result.stdout
+    assert "All 2 targets passed." in result.stdout
+    dispatched = (repo / "dispatcher.log").read_text(encoding="utf-8").splitlines()
+    assert dispatched[:-1] == [
+        "<python>",
+        "<-m>",
+        "<livespec_dev_tooling.parallel_check_dispatcher>",
+        "<--workers>",
+        "<4>",
+        "<--skip>",
+        "<check-second>",
+        "<-->",
+        "<check-first>",
+        "<check-second>",
+        "<check-third>",
+    ]
+    assert dispatched[-1].startswith("<parallelism:")
     assert (repo / "just.log").read_text(encoding="utf-8").split() == [
         "check-first",
         "check-third",
+    ]
+
+
+def test_the_runner_preserves_pytest_parallelism_for_the_single_pytest_lane(
+    *, tmp_path: Path
+) -> None:
+    """The pytest worker setting is not repurposed as aggregate-worker count."""
+    repo = _seed_repo(tmp_path=tmp_path, slugs=("check-coverage", "check-lint"))
+    env = _install_fakes(repo=repo)
+    env["LIVESPEC_TEST_PARALLELISM"] = "4"
+
+    result = _run(argv=["bash", str(repo / _RUNNER)], cwd=repo, env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    dispatched = (repo / "dispatcher.log").read_text(encoding="utf-8")
+    assert "<--workers>" in dispatched
+    assert "<4>" in dispatched
+    assert "<parallelism:4>" in dispatched
+    assert "<check-coverage>" in dispatched
+    assert "<check-lint>" in dispatched
+
+
+def test_the_runner_fails_when_the_dispatcher_reports_failed_targets(*, tmp_path: Path) -> None:
+    """The aggregate cannot turn the dispatcher's all-target failure into a pass."""
+    repo = _seed_repo(tmp_path=tmp_path, slugs=("check-first", "check-second"))
+    env = _install_fakes(repo=repo)
+    env["DISPATCH_EXIT"] = "1"
+
+    result = _run(argv=["bash", str(repo / _RUNNER)], cwd=repo, env=env)
+
+    assert result.returncode != 0
+    assert (repo / "dispatcher.log").is_file()
+    assert (repo / "just.log").read_text(encoding="utf-8").split() == [
+        "check-first",
+        "check-second",
     ]
 
 

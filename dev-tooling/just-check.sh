@@ -25,45 +25,11 @@ if ! uv sync --all-groups; then
 fi
 export UV_NO_SYNC=1
 
-failed=()
-executed=0
-skipped=0
-for target in "${targets[@]}"; do
-    skip_this=0
-    for skip_target in "${skip_targets[@]}"; do
-        if [[ "$target" == "$skip_target" ]]; then
-            skip_this=1
-            break
-        fi
-    done
-    if [[ "$skip_this" -eq 1 ]]; then
-        printf '\n::: just %s (skipped)\n' "$target"
-        skipped=$((skipped + 1))
-        continue
-    fi
-    printf '\n::: just %s\n' "$target"
-    executed=$((executed + 1))
-    if ! just "$target"; then
-        failed+=("$target")
-    fi
-done
-
-if [[ ${#failed[@]} -gt 0 ]]; then
-    printf '\nFailed targets (%d):\n' "${#failed[@]}"
-    printf '  - %s\n' "${failed[@]}"
+# Four aggregate lanes leave room for the single pytest lane's configured
+# LIVESPEC_TEST_PARALLELISM workers while still running static targets beside it.
+if ! uv run python -m livespec_dev_tooling.parallel_check_dispatcher \
+    --workers 4 --skip "${skip_targets[*]}" -- "${targets[@]}"; then
     exit 1
-fi
-# The count is what RAN, never the declared length: a summary that counts
-# targets it skipped — or ones a stale hardcoded list named and never
-# invoked — reads as broader assurance than the run earned, which is the
-# false green this script's derivation removes (work-item bd-ib-mxqrr4). The
-# skipped tally is printed rather than merely subtracted, so a short count is
-# legible instead of mysterious.
-if [[ "$skipped" -gt 0 ]]; then
-    printf '\nAll %d targets passed (%d of %d declared skipped).\n' \
-        "$executed" "$skipped" "${#targets[@]}"
-else
-    printf '\nAll %d targets passed.\n' "$executed"
 fi
 if [[ ${#skip_targets[@]} -eq 0 ]]; then
     uv run python -m livespec_dev_tooling.green_token write || true
