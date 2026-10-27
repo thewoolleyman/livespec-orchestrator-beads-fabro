@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.243.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.13...v0.243.14) (2026-10-27)
+
+
+### Bug Fixes
+
+* host judges carry the resolved adapter settings (bd-ib-mfzvdl) ([d065685](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d0656857d1904622c5af15584f01edfd4aebeb28))
+* route host DoD judge through configured ACP chain ([d3cad57](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d3cad57d017c86b395bfd1f26ffe6ee5d4c1dbc4))
+
 ## [0.243.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.12...v0.243.13) (2026-10-27)
 
 
