@@ -6934,6 +6934,28 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
     And the latest verified or carried_forward record of the item's latest run names H1, not H2
     When the operator releases the hold
     Then the release refuses, naming the head comparison that failed, and the pull request stays unarmed
+  Scenario: A rejected refresh push that landed on origin is reported as a landed-but-errored write
+    Given a run whose pr_refresh rebased its series onto the default branch as pushed head P and pushed it with a lease against leased head L
+    And the forge rejects the push with the error text "fatal error in commit_refs"
+    And origin's publish branch afterwards points at P while the pull request ref's head is still L
+    When pr_refresh names the cause of the rejected push
+    Then it fails closed with LIVESPEC_PR_REFRESH_PUSH_LANDED_ERRORED, and its detail names the forge's error text, the pushed head P and the pull request ref's head L
+    And it does not report LIVESPEC_PR_REFRESH_LEASE_FAILED and does not state that the remote moved
+
+  Scenario: A rejected refresh push with origin at neither head is still a lease failure
+    Given a run whose pr_refresh pushed head P with a lease against leased head L
+    And the forge rejects the push
+    And origin's publish branch afterwards points at a head that is neither L nor P
+    When pr_refresh names the cause of the rejected push
+    Then it reports LIVESPEC_PR_REFRESH_LEASE_FAILED and the run routes to needs_human as it does today
+
+  Scenario: A rejected refresh push whose outcome cannot be read is reported as unobservable
+    Given a run whose pr_refresh pushed head P with a lease against leased head L
+    And the forge rejects the push
+    And origin's publish branch cannot be read afterwards
+    When pr_refresh names the cause of the rejected push
+    Then it fails closed with LIVESPEC_PR_REFRESH_PUSH_OUTCOME_UNOBSERVABLE, stating that whether the write landed cannot be established
+    And it does not report LIVESPEC_PR_REFRESH_LEASE_FAILED
 ```
 
 ## Scenario 185 — A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch
