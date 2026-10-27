@@ -127,7 +127,7 @@ def _install_fakes(*, repo: Path) -> dict[str, str]:
     bin_dir.mkdir()
     for name, body in (
         ("just", 'printf "%s\\n" "$*" >> just.log\n'),
-        ("uv", "exit 0\n"),
+        ("uv", 'printf "%s\\n" "$*" >> uv.log\n'),
     ):
         tool = bin_dir / name
         _ = tool.write_text(f"#!/usr/bin/env bash\nset -uo pipefail\n{body}", encoding="utf-8")
@@ -256,6 +256,23 @@ def test_the_count_excludes_skipped_targets_and_says_how_many_were_skipped(
     assert (repo / "just.log").read_text(encoding="utf-8").split() == [
         "check-first",
         "check-third",
+    ]
+
+
+def test_a_successful_skipping_aggregate_records_its_skipped_target_in_the_green_token(
+    *, tmp_path: Path
+) -> None:
+    """A skipped aggregate is reusable only with its reduced scope recorded."""
+    slugs = ("check-first", "check-second", "check-third")
+    repo = _seed_repo(tmp_path=tmp_path, slugs=slugs)
+    env = _install_fakes(repo=repo)
+
+    result = _run(argv=["bash", str(repo / _RUNNER), "check-second"], cwd=repo, env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (repo / "uv.log").read_text(encoding="utf-8").splitlines() == [
+        "sync --all-groups",
+        "run python -m livespec_dev_tooling.green_token write check-second",
     ]
 
 

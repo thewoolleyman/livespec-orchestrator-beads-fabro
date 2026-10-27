@@ -475,8 +475,8 @@ check:
     # that read authority held outside the tree into it, so the gate Job leaves
     # them to the pushing host; since livespec-dev-tooling v1.134.2 the client
     # refuses to submit a Job for a recipe that reads no recognised skip
-    # variable (livespec-dev-tooling-ebtm6t). Unset, the full aggregate runs,
-    # and `just-check.sh` writes no green token for a run that skipped anything.
+    # variable (livespec-dev-tooling-ebtm6t). Unset, the full aggregate runs;
+    # either way `just-check.sh` records the green token's skipped-target scope.
     read -ra skip_targets <<< "${SKIP_TARGETS:-}"
     bash dev-tooling/just-check.sh "${skip_targets[@]}"
 
