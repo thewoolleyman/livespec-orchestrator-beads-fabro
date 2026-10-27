@@ -414,7 +414,9 @@ open --json number`. Define this posting primitive and must post only through
     livespec_post_captured_record() {
         pr_number="$1"
         body_file="$2"
-        publish_heads=$(grep -c '^Publish-branch head: [0-9a-f]\{40\}$' "$body_file")
+        # grep returns 1 for zero matching lines.  That is the refusal case
+        # below, not a shell failure: keep `set -e` from bypassing its sentinel.
+        publish_heads=$(grep -c '^Publish-branch head: [0-9a-f]\{40\}$' "$body_file" || :)
         if test "$publish_heads" -ne 1; then
             echo "LIVESPEC_PROOF_CAPTURE_MISSING_PUBLISH_BRANCH_HEAD: captured record names $publish_heads Publish-branch head lines; exactly one is required" >&2
             return 1
