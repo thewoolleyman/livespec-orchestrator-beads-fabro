@@ -71,6 +71,7 @@ _PASS_REPLY = '{"outcome": "passed"}'
 _REMEDY = "add that heading to the reference line"
 
 _VERDICT = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,))
+_PARTIAL_VERDICT = GoverningHeadingVerdict(kind="partial", stated_by=(_GOVERNING,))
 
 
 def _item() -> WorkItem:
@@ -229,6 +230,22 @@ def test_the_recorded_verdict_carries_the_governing_heading_to_the_node(
     assert recorded is not None
     assert recorded.kind == "stated"
     assert recorded.stated_by == (_GOVERNING,)
+
+
+def test_a_partial_verdict_is_recorded_as_partial(tmp_path: Path) -> None:
+    ledger = _Ledger()
+
+    _ = _judge(
+        tmp_path=tmp_path,
+        ledger=ledger,
+        stage=STAGE_PRE_DISPATCH,
+        verdict=_PARTIAL_VERDICT,
+    )
+
+    recorded = recorded_governing_heading(comments=tuple(ledger.bodies))
+
+    assert recorded is not None
+    assert recorded.kind == "partial"
 
 
 def test_the_rendered_goal_carries_the_recorded_verdict_block(tmp_path: Path) -> None:
