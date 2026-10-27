@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.11...v0.243.12) (2026-10-27)
+
+
+### Bug Fixes
+
+* **dispatcher:** drop origin/HEAD from the source preflight's origin-ref inventory in git's bare short form ([d1d9800](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d1d98004d2a798603dc844b708d98b56a9b1c468))
+
 ## [0.243.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.10...v0.243.11) (2026-10-27)
 
 
