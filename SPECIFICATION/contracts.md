@@ -6481,7 +6481,13 @@ not have seen. A wall finding the judgement did not grade stays
 ADVISORY as above. `needs-attention` MUST list, as hygiene facts, each
 item held by the pre-admission judgement with its verdict's first
 remedy; the ready-item advisory hygiene fact above still applies to
-items the judgement admitted or could not judge. Scenario 174 in
+items the judgement admitted or could not judge.
+To find each held item's recorded verdict, that listing MUST read the ledger a
+bounded number of times per snapshot, independent of how many items are
+heldable, for example from markers already on the loaded records or from one
+snapshot-wide read, and MUST NOT issue a ledger read per heldable item; the
+facts it lists, held items with their recorded remedy and no fact for an item
+with no recorded verdict, are unchanged by that read shape. Scenario 174 in
 `scenarios.md` exercises this paragraph.
 
 **Judged again before dispatch.** Admission is not the only route to

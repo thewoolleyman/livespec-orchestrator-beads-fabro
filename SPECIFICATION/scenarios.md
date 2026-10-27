@@ -6173,6 +6173,12 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
       | pre-dispatch  | no account selection is published                                               |
       | pre-admission | a selected account is published but its credential is absent from the environment |
       | pre-dispatch  | a selected account is published but its credential is absent from the environment |
+
+  Scenario: The held-items listing reads the ledger a bounded number of times per snapshot
+    Given a snapshot holding many heldable items, some held by a recorded pre-admission verdict and some with no recorded verdict
+    When needs-attention lists the items the pre-admission judgement held
+    Then the number of ledger reads it issues does not grow with the number of heldable items
+    And each held item is listed with its recorded verdict's first remedy, and no item without a recorded verdict is listed
 ```
 
 ## Scenario 175 — A run past the whole-run wall budget is exported, cancelled and rested for a human

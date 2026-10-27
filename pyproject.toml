@@ -65,7 +65,7 @@ dev = [
 # module uses its types module for the canonical cross-repo manifest shape.
 # Pin matches livespec's pin (>=0.2.0; ~/livespec).
 [tool.uv.sources]
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.135.0" }
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.136.2" }
 livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.28.0" }
 
 # ---------------------------------------------------------------------------
@@ -254,6 +254,11 @@ omit = [
     "*/_vendor/*",
     "*/.venv/*",
     "*/site-packages/*",
+    # livespec_runtime is a dependency, never this repo's source. A fleet clone's
+    # git credential helper runs the sibling livespec-runtime checkout, and a
+    # suite test's https git call inherits subprocess coverage, so without this
+    # entry the helper's files fail per-file coverage on that host only.
+    "*/livespec_runtime/*",
     "*/__pycache__/*",
     "/usr/local/bin/*",
     "tests/e2e/*",

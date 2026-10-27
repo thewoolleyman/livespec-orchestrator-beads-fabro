@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -78,13 +79,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_isolation import (
-    CLAUDE_AGENT_ID,
-    CODEX_AGENT_ID,
-    CODEX_ISOLATION_SETTINGS,
-    isolated_judge_environ,
-    resolve_judge_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import executing_payload_root
@@ -131,8 +125,11 @@ CAUSE_JUDGEMENT_TIMED_OUT = "judgement-timed-out"
 CAUSE_JUDGE_COMMAND_FAILED = "judge-command-failed"
 CAUSE_PROMPT_UNREADABLE = "dod-gate-prompt-unreadable"
 
+_JUDGE_PATH_ENV = "LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH"
 _TIMEOUT_ENV = "LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS"
 _DEFAULT_TIMEOUT_SECONDS = 600.0
+_JUDGE_EXECUTABLE = "claude"
+_CONVENTIONAL_JUDGE_PATH = "~/.local/bin/claude"
 # The read-only grant check 6 needs to search `scenarios.md` for a governing
 # scenario before concluding none does. A headless call grants no tool at all by
 # default, so without this the judge can only report what it was handed — and
@@ -143,7 +140,9 @@ _ALLOWED_TOOLS = "Read,Grep,Glob"
 # two numbers come from rather than from any convention restated here.
 _EXIT_TIMED_OUT = 124
 _EXIT_EXECUTABLE_ABSENT = 127
+_CODEX_AGENT = "codex-acp"
 _CODEX_SANDBOX_SETTINGS = frozenset({"sandbox_mode", "approval_policy"})
+_CLAUDE_AGENT = "claude-acp"
 _PROMPT_FILE_PREFIX = "livespec-dod-gate-"
 
 # The ONE thing a host taking appends, and the whole of it: the verdict form.
@@ -218,6 +217,33 @@ def judgement_argv(*, judge_path: str, model: str) -> list[str]:
         "--model",
         model,
     ]
+
+
+def resolve_judge_path(
+    *,
+    environ: dict[str, str],
+    which: Callable[[str], str | None] = shutil.which,
+    conventional: Path | None = None,
+) -> str:
+    """The judge executable: override, then PATH, then the conventional install.
+
+    The last resort is the BARE NAME rather than a verdict of our own that no
+    model is eligible. Letting the runner fail to exec it reports the absence as
+    the measurement it is — exit 127 — instead of as a guess this resolver made
+    without trying.
+    """
+    override = environ.get(_JUDGE_PATH_ENV, "").strip()
+    if override:
+        return override
+    found = which(_JUDGE_EXECUTABLE)
+    if found is not None:
+        return found
+    local_bin = (
+        Path(_CONVENTIONAL_JUDGE_PATH).expanduser() if conventional is None else conventional
+    )
+    if local_bin.is_file():
+        return str(local_bin)
+    return _JUDGE_EXECUTABLE
 
 
 def resolve_judge_timeout_seconds(*, environ: dict[str, str]) -> float:
@@ -341,24 +367,14 @@ def _run_candidate(
     timeout_seconds: float,
 ):
     """Run one configured host candidate with a prompt file as its only stdin."""
+    argv, judge_environ = _candidate_command(candidate=candidate, environ=environ)
     with tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX) as scratch:
-        scratch_path = Path(scratch)
-        argv, judge_environ = _candidate_command(
-            candidate=candidate,
-            environ=environ,
-            allowed_directory=cwd,
-        )
-        judge_environ = isolated_judge_environ(
-            candidate=candidate,
-            environ=judge_environ,
-            scratch=scratch_path,
-        )
-        prompt_path = scratch_path / "prompt.txt"
+        prompt_path = Path(scratch) / "prompt.txt"
         _ = prompt_path.write_text(prompt, encoding="utf-8")
         with prompt_path.open("rb") as handle:
             return runner.run(
                 argv=argv,
-                cwd=scratch_path,
+                cwd=cwd,
                 timeout_seconds=timeout_seconds,
                 env=judge_environ,
                 stdin=handle.fileno(),
@@ -366,7 +382,7 @@ def _run_candidate(
 
 
 def _candidate_command(
-    *, candidate: AcpCandidate, environ: dict[str, str], allowed_directory: Path
+    *, candidate: AcpCandidate, environ: dict[str, str]
 ) -> tuple[list[str], dict[str, str]]:
     """The direct host command for one catalog-resolved ACP candidate.
 
@@ -380,18 +396,15 @@ def _candidate_command(
     `-s read-only`, the counterpart of the Claude judge's read-only tool list.
     """
     judge_environ = {**environ, **candidate.adapter.env}
-    if candidate.agent_id == CODEX_AGENT_ID:
+    if candidate.agent_id == _CODEX_AGENT:
         settings = _codex_settings(candidate=candidate)
         model = settings.pop("model", "")
         argv = ["codex", "exec", "-m", model]
         for key, value in settings.items():
             argv.extend(("-c", f"{key}={json.dumps(value)}"))
-        argv.extend(("--add-dir", str(allowed_directory)))
-        for setting in CODEX_ISOLATION_SETTINGS:
-            argv.extend(("-c", setting))
         argv.extend(("-s", "read-only"))
         return argv, judge_environ
-    if candidate.agent_id == CLAUDE_AGENT_ID:
+    if candidate.agent_id == _CLAUDE_AGENT:
         model = candidate.adapter.env.get("ANTHROPIC_MODEL", "")
         credential = select_factory_credential(
             environ=environ,
@@ -400,19 +413,6 @@ def _candidate_command(
         )
         judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
         argv = judgement_argv(judge_path=resolve_judge_path(environ=environ), model=model)
-        argv.extend(
-            (
-                "--add-dir",
-                str(allowed_directory),
-                "--setting-sources",
-                "",
-                "--managed-settings",
-                "{}",
-                "--disable-slash-commands",
-                "--strict-mcp-config",
-                "--no-session-persistence",
-            )
-        )
         return argv, judge_environ
     return [candidate.adapter.command, *candidate.adapter.args], judge_environ
 
