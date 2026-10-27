@@ -68,7 +68,14 @@ def test_scenario_258_retries_an_unlabeled_review_or_replay_once_per_stage_visit
 
         assert f"livespec-{stage.replace('_', '-')}-verdict-retry" in entry_body
         assert "rm -f" in entry_body
-        assert any(edge.startswith(f"{stage} -> {retry}") for edge in _edges(source=stage))
+        retry_edge = next(
+            edge for edge in _edges(source=stage) if edge.startswith(f"{stage} -> {retry}")
+        )
+        assert 'condition="outcome=succeeded && preferred_label="' in retry_edge
+        assert any(
+            edge == f'{stage} -> needs_human [label="unmatched {stage} outcome"]'
+            for edge in _edges(source=stage)
+        )
         assert any(edge.startswith(f"{retry} -> {stage}") for edge in retry_edges)
         assert any(edge.startswith(f"{retry} -> needs_human") for edge in retry_edges)
         assert r"stage: %s\\n" in retry_body

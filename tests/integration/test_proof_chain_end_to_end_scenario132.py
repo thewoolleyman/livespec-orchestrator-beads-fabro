@@ -475,6 +475,8 @@ def _resolve(*, term: str, state: _State, inputs: dict[str, str]) -> str:
         return state.outcome
     if resolved == _PREFERRED_LABEL_TERM:
         return "" if state.preferred_label is None else state.preferred_label
+    if resolved == "":
+        return resolved
     if _LITERAL.fullmatch(resolved) is not None:
         return resolved
     raise _DriveRefusedError(f"no term this drive resolves: {term!r}")

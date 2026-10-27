@@ -239,10 +239,13 @@ def test_scenario20_review_routes_on_the_label_alone_with_no_cap_edges() -> None
     assert "SHIP-ON-CAP" not in dot
 
 
-def test_scenario20_review_has_an_unconditional_missing_verdict_retry() -> None:
-    """Fabro requires a fallback, and Scenario 258 makes it one bounded retry."""
-    fallback_edges = _review_edge_lines(to_node="review_verdict_retry")
-    assert 'review -> review_verdict_retry [label="missing review verdict label"]' in fallback_edges
+def test_scenario20_review_retries_only_a_successful_missing_verdict() -> None:
+    """Scenario 258 retries just the successful, unlabeled review outcome."""
+    retry_edges = _review_edge_lines(to_node="review_verdict_retry")
+    assert (
+        'review -> review_verdict_retry [label="missing review verdict label", '
+        'condition="outcome=succeeded && preferred_label="]'
+    ) in retry_edges
 
 
 def test_scenario20_the_review_fix_loop_is_bounded_on_its_own_nodes() -> None:
