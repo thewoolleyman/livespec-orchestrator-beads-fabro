@@ -34,6 +34,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
+    BuildIdentity,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
+    RecordAssertion,
+    render_proof_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
+    PROOF_RECORD_TITLE,
+    VERDICT_HOST_RECORDED,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _ASSERTION = "The projection carries the parent field."
@@ -94,6 +105,13 @@ def _record_body(*, verdict: str, reproduced: str) -> str:
 
 def _comments_json(*, verdict: str, reproduced: str, run_id: str = _RUN_ID) -> str:
     body = _record_body(verdict=verdict, reproduced=reproduced).replace(_RUN_ID, run_id)
+    return json.dumps({"comments": [{"url": _RECORD_URL, "body": body}]})
+
+
+def _malformed_bound_comments_json() -> str:
+    body = _record_body(verdict="verified", reproduced="yes.").replace(
+        "\n\n## Assertion", "\nBinds: incomplete\n\n## Assertion", 1
+    )
     return json.dumps({"comments": [{"url": _RECORD_URL, "body": body}]})
 
 
@@ -181,6 +199,53 @@ def test_a_record_listing_the_assertion_as_not_reproduced_fails_the_pass(
     assert [check.passed for check in result.criteria] == [False]
     assert [check.reason for check in result.criteria] == [
         f"Proof of Done verified record {_RECORD_URL} lists the assertion as not reproduced"
+    ]
+
+
+def test_scenario252_records_bind_and_unbindable_evidence_refuses_the_pass(
+    tmp_path: Path,
+) -> None:
+    """Scenario 252 — binding is emitted and malformed records stay visible."""
+    binding = "Binds: bd-ib-proof — pull request #7 — head " + "a" * 40
+    rendered = render_proof_record(
+        title=PROOF_RECORD_TITLE,
+        verdict=VERDICT_HOST_RECORDED,
+        identity="session 01M3HOSTSESSION",
+        timestamp="2026-10-27T01:00:00Z",
+        binding=binding,
+        build=BuildIdentity(release_tag="v0.243.8", installed_build="test", commit=None),
+        assertions=(
+            RecordAssertion(
+                text=_ASSERTION,
+                proof_mode="host_captured",
+                governing_scenario=None,
+                steps=("Run the check.",),
+                proof="observed\n",
+                reproduced=None,
+            ),
+        ),
+    )
+    result = run_acceptance_pass(
+        repo=tmp_path,
+        item=_item(description=_definition_of_done()),
+        outcome=_outcome(),
+        runner=_ForgeRunner(comments=_malformed_bound_comments_json()),
+    )
+
+    assert rendered.splitlines()[1] == binding
+    assert result.verdict == "NEEDS_ATTENTION"
+    assert result.criteria == ()
+    assert result.absent_evidence == ("proof record unbindable",)
+    assert result.proof is not None
+    assert result.proof.as_record()["records"] == [
+        {
+            "kind": "verified",
+            "run_or_session_id": _RUN_ID,
+            "link": _RECORD_URL,
+            "bind_verdict": "unbindable",
+            "faults": ["Binds line is malformed or incomplete"],
+            "stale_head": False,
+        }
     ]
 
 
