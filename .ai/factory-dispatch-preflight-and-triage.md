@@ -229,3 +229,25 @@ The CI-wait hooks deny `gh` polling loops and a bare-backgrounded
 `gh pr checks --watch`. The sanctioned form is
 `just gate-start -- gh run watch <run-id> --exit-status --interval 30`, then a
 backgrounded `just gate-wait`.
+
+## A host judge that swaps HOME breaks the `codex` wrapper
+
+Measured 2026-10-27 on v0.243.18 (bd-ib-w4hqe2, PR #3793, reverted by PR #3803).
+Isolating a host judgement candidate by pointing `HOME` at an empty scratch
+directory makes EVERY Codex leg fail on this host, so every host judgement
+falls back to its Claude candidate (claude-opus-5 here). That spends more
+Anthropic money than the isolation saves. There are two independent causes:
+
+- `/home/ubuntu/.local/bin/codex` is a wrapper that runs
+  `exec ~/.bun/bin/bun ~/.bun/bin/codex`, so with `HOME` swapped it exits 127
+  (`.../home/.bun/bin/bun: No such file or directory`). The chain reads 127 as
+  "no eligible model" and runs the next candidate.
+- `codex exec` refuses a working directory that is not a git repository unless
+  `--skip-git-repo-check` is passed ("Not inside a trusted directory"), so a
+  judge launched from a scratch directory exits 1 even with `HOME` intact.
+
+Also, a judge given its own `CODEX_HOME` writes its rollouts there, not under
+`~/.codex/sessions`, so a rollout search on the host can no longer see host
+judgements. Absence of a rollout is then not evidence that Codex never ran.
+Verify an isolation change with a REAL Codex leg on the host, not only with a
+mocked runner.
