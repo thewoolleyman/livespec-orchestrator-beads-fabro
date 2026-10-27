@@ -859,6 +859,44 @@ def test_a_non_own_empty_checkpoint_still_fails_closed(
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
+def test_a_merged_pull_request_with_a_deleted_publish_branch_finishes_refresh(
+    tmp_path: Path,
+) -> None:
+    """Scenario 248: a landed publication is not an unobservable origin.
+
+    The branch is removed exactly as GitHub does after merge.  The stage must
+    read the pull request before it performs any refresh mutation, persist the
+    merged-reconcile evidence, and leave the published work alone for the
+    normal terminal merge observation.
+    """
+    box = _build(root=tmp_path, armed=True)
+    published = box.local_head()
+    _ = _git("push", "--quiet", "origin", "--delete", f"refs/heads/{_BRANCH}", cwd=box.clone)
+    box.forge_state.write_text(
+        json.dumps(
+            {
+                "armed": True,
+                "arming_unreadable": False,
+                "disarm_fails": False,
+                "state": "MERGED",
+                "number": 73,
+                "merge_commit": published,
+                "head": published,
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in result.stderr
+    assert box.disarm_heads() == []
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == ""
+
+
 def test_an_absent_remote_publish_ref_is_refused(tmp_path: Path) -> None:
     """A branch origin no longer carries is not recreated from a local tree.
 
