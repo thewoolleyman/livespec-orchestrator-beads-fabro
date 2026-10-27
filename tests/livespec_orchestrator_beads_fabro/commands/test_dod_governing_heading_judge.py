@@ -39,6 +39,11 @@ _VERDICT_REPLY = (
     ' "generalization_target": null, "rationale": "The scenario states it."}'
 )
 
+_PARTIAL_VERDICT_REPLY = (
+    '{"kind": "partial", "stated_by": ["' + _GOVERNING + '"],'
+    ' "generalization_target": null, "rationale": "The scenario states part of it."}'
+)
+
 
 def _item(*, description: str | None = None) -> WorkItem:
     return WorkItem(
@@ -67,7 +72,7 @@ def _item(*, description: str | None = None) -> WorkItem:
     )
 
 
-def _repo(*, tmp_path: Path) -> Path:
+def _repo(*, tmp_path: Path, fallback: bool = False) -> Path:
     """A repository whose governed tree carries both headings and nothing else."""
     repo = tmp_path / "repo"
     spec = repo / "SPECIFICATION"
@@ -76,22 +81,31 @@ def _repo(*, tmp_path: Path) -> Path:
         f"# Scenarios\n\n{_GOVERNING}\n\nIt states the behaviour.\n\n{_CITED}\n\nOther text.\n",
         encoding="utf-8",
     )
-    _ = (repo / ".livespec.jsonc").write_text(
-        """{
+    fallbacks = (
+        ',\n          "fallbacks": [{\n'
+        '            "agent": "claude-acp",\n'
+        '            "model": "claude-opus-5",\n'
+        '            "effort": "high"\n'
+        "          }]"
+        if fallback
+        else ""
+    )
+    config = """{
   "livespec-orchestrator-beads-fabro": {
     "dispatcher": {
       "acp_nodes": {
         "dod_gate": {
           "agent": "codex-acp",
           "model": "gpt-5.6-terra",
-          "effort": "high"
+          "effort": "high"__FALLBACKS__
         }
       }
     }
   }
 }
-""",
-        encoding="utf-8",
+"""
+    _ = (repo / ".livespec.jsonc").write_text(
+        config.replace("__FALLBACKS__", fallbacks), encoding="utf-8"
     )
     return repo
 
@@ -236,3 +250,16 @@ def test_the_host_reader_puts_the_prompt_to_the_injected_runner(tmp_path: Path) 
     assert runner.calls == 1
     assert verdict is not None
     assert verdict.stated_by == (_GOVERNING,)
+
+
+def test_a_partial_host_verdict_stops_at_the_primary_candidate(tmp_path: Path) -> None:
+    """A shared-runtime partial verdict is a successful host-chain reply."""
+    runner = _Runner(stdout=_PARTIAL_VERDICT_REPLY)
+
+    verdict = host_governing_heading_reader(runner=runner)(
+        item=_item(), repo=_repo(tmp_path=tmp_path, fallback=True)
+    )
+
+    assert runner.calls == 1
+    assert verdict is not None
+    assert verdict.kind == "partial"

@@ -53,11 +53,16 @@ must be terminal before your final message.
    replays it. This is a defensive fallback for a proof-record finding that
    reached `review_fix`; disposition normally routes the same accepted finding
    directly to recapture.
-3. Otherwise, fix each ACCEPTED finding in this clone, strictly within the work-item
-   scope. Do NOT implement rejected findings, advisories, unrelated cleanup,
-   new features, broad refactors, or speculative abstractions.
-4. If an ACCEPTED finding cannot be implemented honestly within scope, that
-   is a needs-human `failed` outcome. Do not silently skip it and do not
+3. Otherwise, fix each ACCEPTED `(tree)` finding in this clone, strictly within
+   the work-item scope. Leave every ACCEPTED `(proof-record)` finding to the
+   `proof_capture` visit this fix round reaches: its published record is
+   immutable here and is replaced after `janitor` and `publish_draft`. Once
+   every ACCEPTED `(tree)` finding is fixed, end succeeded; do not end
+   needs-human solely over the proof-record finding. Do NOT implement rejected
+   findings, advisories, unrelated cleanup, new features, broad refactors, or
+   speculative abstractions.
+4. If an ACCEPTED `(tree)` finding cannot be implemented honestly within scope,
+   that is a needs-human `failed` outcome. Do not silently skip it and do not
    reclassify it as rejected here.
 5. Honor every rule from the implement stage: no `--no-verify` (if a hook
    fails, fix the cause or end with the needs-human protocol below,

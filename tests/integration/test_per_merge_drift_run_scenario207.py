@@ -244,7 +244,7 @@ def test_merges_after_the_frontier_still_surface_the_fact_naming_them(tmp_path: 
 
     # A third merge lands after the frontier: the fact fires again, naming the
     # merges after THAT frontier rather than every merge on the branch, and it
-    # invokes no detector — the reconcile pass is what runs the drift pass.
+    # invokes no detector — the separately scheduled drift job runs the drift pass.
     rendered = _drift_fact(
         root=tmp_path, runner=_GitRunner(history=(_BASELINE, _OLDER, _NEWER, "ccccccc3"))
     )

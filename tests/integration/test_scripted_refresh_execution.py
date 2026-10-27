@@ -107,6 +107,7 @@ _IMPLEMENT_GRAPH = (
 
 _BRANCH = "feat/bd-ib-c3txja"
 _DEFAULT_BRANCH = "master"
+_FACTORY_RUN_ID = "01HXQXQ4JBSAME-RUN-CHECKPOINT"
 # The file the publish branch owns. A conflict is arranged by moving the DEFAULT
 # branch's copy of this same path, which is the real shape of the conflict the
 # stage must abort rather than resolve.
@@ -391,6 +392,7 @@ def _build(
         cwd=clone, path=_OWNED_FILE, text="this run's work\n", subject="feat: this run's work"
     )
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=clone)
+    _ = _git("config", "livespec.factoryRunId", _FACTORY_RUN_ID, cwd=clone)
     gate_script = root / "install-plugin-gate.sh"
     bin_dir = root / "bin"
     _ = bin_dir.mkdir()
@@ -469,6 +471,14 @@ def _branch_clone(*, box: _Refresh, name: str) -> Path:
     _ = _git("clone", "--quiet", str(box.origin), str(other), cwd=box.clone.parent)
     _ = _git("checkout", "--quiet", "-B", _BRANCH, f"origin/{_BRANCH}", cwd=other)
     return other
+
+
+def _checkpoint(*, cwd: Path, subject: str) -> str:
+    """Create one empty engine-shaped checkpoint commit and return its head."""
+    _ = _git("config", "user.email", "t@example.invalid", cwd=cwd)
+    _ = _git("config", "user.name", "Test", cwd=cwd)
+    _ = _git("commit", "--quiet", "--allow-empty", "-m", subject, cwd=cwd)
+    return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
 _PASSING_GATE = "true"
@@ -785,6 +795,38 @@ def test_an_unchanged_default_owes_no_rebase_and_pushes_nothing(tmp_path: Path) 
     assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
 
 
+@pytest.mark.parametrize("petri", _RENDERINGS)
+def test_an_empty_checkpoint_of_this_run_is_leased_away_from_the_publish_branch(
+    *,
+    petri: bool,
+    tmp_path: Path,
+) -> None:
+    """A checkpoint-only remote advance is this run's, but does not stay published.
+
+    This uses an unchanged default deliberately: that is the reproof-loop shape
+    in which the old identity check failed before the refresh could lease the
+    observed checkpoint head back to the run's last published tree.
+    """
+    box = _build(root=tmp_path)
+    published = box.remote_head(ref=_BRANCH)
+    checkpoint_clone = _branch_clone(box=box, name="same-run-checkpoint")
+    checkpoint = _checkpoint(
+        cwd=checkpoint_clone,
+        subject=f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=checkpoint_clone)
+
+    result = _run(box=box, petri=petri)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == published
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) != checkpoint
+    assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{published}\n"
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) == ""
+
+
 def test_a_foreign_remote_publish_head_is_refused_before_any_rewrite(tmp_path: Path) -> None:
     """A publish branch someone else moved is not this run's to lease over.
 
@@ -793,9 +835,12 @@ def test_a_foreign_remote_publish_head_is_refused_before_any_rewrite(tmp_path: P
     on the unchanged arm and look identical to one that refused.
     """
     box = _build(root=tmp_path)
-    foreign = _branch_clone(box=box, name="foreign")
+    foreign = _branch_clone(box=box, name="tree-changing-checkpoint")
     _ = _commit(
-        cwd=foreign, path="foreign.txt", text="not this run\n", subject="feat: a foreign change"
+        cwd=foreign,
+        path="foreign.txt",
+        text="not this run\n",
+        subject=f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)",
     )
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=foreign)
     _ = _advance_default(box=box)
@@ -806,6 +851,44 @@ def test_a_foreign_remote_publish_head_is_refused_before_any_rewrite(tmp_path: P
     assert result.returncode == 1, result.stdout
     assert "LIVESPEC_PR_REFRESH_FOREIGN_HEAD" in result.stderr
     assert box.remote_head(ref=_BRANCH) == foreign_head, "the foreign head was overwritten"
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["other-run", "non-descendant"],
+)
+def test_a_non_own_empty_checkpoint_still_fails_closed(
+    *,
+    shape: str,
+    tmp_path: Path,
+) -> None:
+    """An empty checkpoint is owned only when its run and ancestry both match."""
+    box = _build(root=tmp_path)
+    checkpoint_clone = _branch_clone(box=box, name=shape)
+    subject = "fabro(other-run): pr_refresh_head (failure)"
+    push_flags: tuple[str, ...] = ()
+    if shape == "non-descendant":
+        _ = _git(
+            "checkout", "--quiet", "-B", _BRANCH, f"origin/{_DEFAULT_BRANCH}", cwd=checkpoint_clone
+        )
+        subject = f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)"
+        push_flags = ("--force",)
+    checkpoint = _checkpoint(cwd=checkpoint_clone, subject=subject)
+    _ = _git(
+        "push",
+        "--quiet",
+        *push_flags,
+        "origin",
+        f"HEAD:refs/heads/{_BRANCH}",
+        cwd=checkpoint_clone,
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_FOREIGN_HEAD" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == checkpoint
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
