@@ -29,8 +29,13 @@ WorkingDirectory=@PRIMARY_REPO@
 ExecStart=/usr/local/bin/with-livespec-env.sh -- /usr/bin/python3 @PLUGIN_ROOT@/scripts/bin/dispatcher.py reconcile-runs --repo @PRIMARY_REPO@ --invoker timer:reconcile-runs --json
 # One pass surveys every declared factory over the network; the reconciler's own
 # per-factory `fabro ps` timeout is 60s, so this bounds the whole pass rather
-# than any single call.
-TimeoutStartSec=600
+# than any single call. 1800s, not 600s: measured 2026-10-27 on v0.243.15, a live
+# pass over petri's inventory took 24m50s, almost all of it 159 sequential
+# `fabro inspect` calls at about 9s each, so a 600s bound killed every pass. A
+# pass longer than the 10-minute interval is safe: systemd does not start a
+# second instance of a oneshot unit while one is active. The real fix cuts the
+# inspect work itself; this bound only stops the kills meanwhile.
+TimeoutStartSec=1800
 # A failed pass is not an incident: the next tick asks the same question again,
 # and a restart storm against an unreachable factory would be pure noise.
 Restart=no
