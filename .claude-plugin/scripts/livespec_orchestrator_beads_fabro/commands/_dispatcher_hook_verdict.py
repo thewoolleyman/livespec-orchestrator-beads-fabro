@@ -45,6 +45,11 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import (
+    CommitRunResult,
+    DetachedCommitRunner,
+)
+
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroInspectResult
 
@@ -122,7 +127,7 @@ def hook_verdict_from_events(
         return None
     node = _node_id(stage=stage)
     commands: dict[str, str] = {}
-    latest: tuple[int, str] | None = None
+    latest: CommitRunResult | None = None
     for raw in cast("list[object]", events_payload):
         if not isinstance(raw, dict):
             continue
@@ -139,11 +144,9 @@ def hook_verdict_from_events(
             completion = _completed_commit(update=update, command=commands.get(call_id, ""))
             if completion is not None:
                 latest = completion
-    if latest is None or latest[0] == 0:
+    if latest is None or latest.state != "failed" or latest.exit_code is None:
         return None
-    return HookVerdict(
-        node=node, exit_code=latest[0], failed_targets=_failed_targets(output=latest[1])
-    )
+    return HookVerdict(node=node, exit_code=latest.exit_code, failed_targets=latest.failed_targets)
 
 
 def hook_verdict_cause_lines(
@@ -189,8 +192,8 @@ def _contradicted(*, verdict: HookVerdict | None, agent_cause: str | None) -> bo
     )
 
 
-def _completed_commit(*, update: dict[str, object], command: str) -> tuple[int, str] | None:
-    """(exit status, output) when this completion ends a hook-running commit, else None."""
+def _completed_commit(*, update: dict[str, object], command: str) -> CommitRunResult | None:
+    """The runner's terminal result when this completion ends a hook-running commit."""
     raw_output = _mapping(value=update.get("rawOutput"))
     exit_code = raw_output.get("exit_code")
     output = raw_output.get("formatted_output")
@@ -200,20 +203,7 @@ def _completed_commit(*, update: dict[str, object], command: str) -> tuple[int, 
         return None
     if _GIT_COMMIT.search(command) is None or _HOOK_BANNER.search(output) is None:
         return None
-    return exit_code, output
-
-
-def _failed_targets(*, output: str) -> tuple[str, ...]:
-    header = _FAILED_TARGETS_HEADER.search(output)
-    if header is None:
-        return ()
-    targets: list[str] = []
-    for line in output[header.end() :].splitlines()[1:]:
-        match = _FAILED_TARGET_LINE.match(line)
-        if match is None:
-            break
-        targets.append(match.group(1))
-    return tuple(targets)
+    return DetachedCommitRunner.result_from_observation(exit_code=exit_code, output=output)
 
 
 def _command(*, update: dict[str, object]) -> str:

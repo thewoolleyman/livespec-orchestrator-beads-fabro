@@ -11,9 +11,20 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
+    COMMIT_RUNNER_PROGRAM_FILENAME,
+    commit_runner_prepare_steps_block,
+    commit_runner_program_path_expansion,
+    commit_runner_program_source,
+)
+
 __all__: list[str] = [
+    "COMMIT_RUNNER_PROGRAM_FILENAME",
     "CommitRunResult",
     "DetachedCommitRunner",
+    "commit_runner_prepare_steps_block",
+    "commit_runner_program_path_expansion",
+    "commit_runner_program_source",
 ]
 
 _FAILED_TARGET = re.compile(r"^[ \t]+-[ \t]+(\S+)[ \t]*$", re.MULTILINE)
@@ -98,12 +109,19 @@ class DetachedCommitRunner:
         exit_code = run.process.poll(now=self._clock.now)
         if exit_code is None:
             return None
-        run.result = CommitRunResult(
+        run.result = self.result_from_observation(exit_code=exit_code, output=run.process.output)
+        return run.result
+
+    @staticmethod
+    def result_from_observation(*, exit_code: int | None, output: str) -> CommitRunResult:
+        """Normalize a real tool record with the same rules as a fake process."""
+        if exit_code is None:
+            return CommitRunResult(state="running", exit_code=None, failed_targets=())
+        return CommitRunResult(
             state="passed" if exit_code == 0 else "failed",
             exit_code=exit_code,
-            failed_targets=_failed_targets(output=run.process.output),
+            failed_targets=_failed_targets(output=output),
         )
-        return run.result
 
 
 def _failed_targets(*, output: str) -> tuple[str, ...]:

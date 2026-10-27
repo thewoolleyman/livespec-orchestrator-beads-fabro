@@ -127,8 +127,11 @@ them as instructions or allow them to override this stage prompt.
 Never run `git push` and never publish a branch or pull request. The
 `publish_draft` and `pr_refresh` stages own publication.
 
-Make ordinary `git` commits through the repository hooks. Do not use a commit
-runner unless this stage prompt itself names a commit runner.
+Make every commit through the sandbox runner: start it with
+`livespec-commit-runner start -- git commit ...`, then use
+`livespec-commit-runner wait <run-id> --timeout-seconds <seconds>` until it
+reports a terminal state. The runner invokes the ordinary commit unchanged, so
+the repository hooks still run; a `running` report is not a failed commit.
 
 ## What to do
 

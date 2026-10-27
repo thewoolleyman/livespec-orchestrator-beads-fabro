@@ -92,12 +92,17 @@ def test_wait_returns_the_recorded_terminal_verdict_without_polling_again() -> N
     assert runner.wait(run_id=run_id, timeout_seconds=0.0) is terminal
 
 
-def test_materialized_runner_executes_the_tracked_cli() -> None:
-    """The sandbox executable delegates to the state machine's real-process adapter."""
+def test_recorded_hook_observation_uses_the_runner_s_terminal_normalizer() -> None:
+    """The dispatcher can record a real hook result through the fake-driven runner."""
     module = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner"
     )
 
-    source = module.commit_runner_program_source()
+    verdict = module.DetachedCommitRunner.result_from_observation(
+        exit_code=1,
+        output="Failed targets (1):\n  - check-types\n",
+    )
 
-    assert "livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_cli" in source
+    assert verdict.state == "failed"
+    assert verdict.exit_code == 1
+    assert verdict.failed_targets == ("check-types",)
