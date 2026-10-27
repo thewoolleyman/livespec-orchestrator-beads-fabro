@@ -105,6 +105,24 @@ sys.stderr.write("github-token source: github-app-installation-token\\n")
 sys.stdout.write(token)
 """
 
+_AGENT_PUBLICATION_GUARD_SOURCE = r"""livespec_agent_publication_action() {
+    case "${1:-} ${2:-}" in
+        "pr create") printf '%s' gh_pr_create ;;
+        "pr ready") printf '%s' gh_pr_ready ;;
+        "pr merge") printf '%s' gh_pr_merge ;;
+        "pr edit") printf '%s' gh_pr_edit ;;
+        *) return 1 ;;
+    esac
+}
+
+if test -n "${LIVESPEC_AGENT_STAGE:-}" \
+    && action="$(livespec_agent_publication_action "$@")"; then
+    printf 'LIVESPEC_AGENT_PUBLICATION_DENIED: stage=%s action=%s\n' \
+        "$LIVESPEC_AGENT_STAGE" "$action" >&2
+    exit 1
+fi
+"""
+
 
 def refreshing_gh_prepare_steps_block() -> str:
     """Install a sandbox-local refreshing `gh` wrapper when App inputs exist.
@@ -191,6 +209,15 @@ def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> 
     """Unpack the streamed bundle and install the refreshing `gh` wrapper."""
     helper_source_literal = json.dumps(_MINT_HELPER_SOURCE)
     push_helper = f"{bundle_root}/bin/push_origin"
+    wrapper_source = "".join(
+        (
+            _AGENT_PUBLICATION_GUARD_SOURCE,
+            'token="$(python3 "$mint")"\n',
+            'export GH_TOKEN="$token"\n',
+            'export GITHUB_TOKEN="$token"\n',
+            'exec "$real_gh" "$@"\n',
+        )
+    )
     return (
         "set -eu\n"
         f'bundle_root="{bundle_root}"\n'
@@ -232,11 +259,7 @@ def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> 
         'real_gh="$wrapped_gh"\n'
         "EOF\n"
         "cat >> \"$real_gh\" <<'EOF'\n"
-        'token="$(python3 "$mint")"\n'
-        'export GH_TOKEN="$token"\n'
-        'export GITHUB_TOKEN="$token"\n'
-        'exec "$real_gh" "$@"\n'
-        "EOF\n"
+        f"{wrapper_source}EOF\n"
         'chmod 755 "$real_gh"'
     )
 

@@ -211,6 +211,46 @@ def test_the_installed_gh_wrapper_still_runs_the_bundles_mint_helper(
     ]
 
 
+@pytest.mark.parametrize(
+    ("command", "action"),
+    [
+        (("pr", "create"), "gh_pr_create"),
+        (("pr", "ready"), "gh_pr_ready"),
+        (("pr", "merge"), "gh_pr_merge"),
+        (("pr", "edit"), "gh_pr_edit"),
+    ],
+)
+def test_an_agent_stage_cannot_reach_gh_pull_request_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, str],
+    action: str,
+) -> None:
+    """The wrapper rejects direct PR publication before minting a token."""
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    capture = tmp_path / "gh-calls.txt"
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=capture)
+    _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+
+    result = subprocess.run(
+        ["gh", *command],
+        cwd=repo,
+        env={
+            **_chain_env(bin_dir=bin_dir, capture=capture, mint_log=tmp_path / "mint-args.txt"),
+            "LIVESPEC_AGENT_STAGE": "proof_verify",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert f"LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action={action}" in result.stderr
+    assert not capture.exists()
+
+
 def _rendered_prepare_scripts(
     *,
     monkeypatch: pytest.MonkeyPatch,
