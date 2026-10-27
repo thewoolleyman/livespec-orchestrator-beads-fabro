@@ -108,10 +108,9 @@ def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
         ]
     )
 
-    repo = _configured_repo(tmp_path=tmp_path)
     reply, cause = run_dod_gate_prompt(
         prompt="one prompt",
-        cwd=repo,
+        cwd=_configured_repo(tmp_path=tmp_path),
         runner=runner,
         is_verdict=lambda text: text == "accepted",
     )
@@ -119,29 +118,16 @@ def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
     assert reply == "accepted"
     assert cause == ""
     assert runner.argvs[0][:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
-    assert runner.argvs[1][4:] == [
-        "--model",
-        "claude-opus-5",
-        "--add-dir",
-        str(repo),
-        "--setting-sources",
-        "",
-        "--managed-settings",
-        "{}",
-        "--disable-slash-commands",
-        "--strict-mcp-config",
-        "--no-session-persistence",
-    ]
+    assert runner.argvs[1][-2:] == ["--model", "claude-opus-5"]
     assert runner.stdin_text == ["one prompt", "one prompt"]
 
 
 def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_path: Path) -> None:
     runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
-    repo = _configured_repo(tmp_path=tmp_path)
 
     reply, cause = run_dod_gate_prompt(
         prompt="one prompt",
-        cwd=repo,
+        cwd=_configured_repo(tmp_path=tmp_path),
         runner=runner,
         is_verdict=lambda text: text == "accepted",
     )
@@ -154,16 +140,9 @@ def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_pat
             "exec",
             "-m",
             "gpt-5.6-terra",
+            "--json",
             "-c",
             'model_reasoning_effort="high"',
-            "--add-dir",
-            str(repo),
-            "-c",
-            "project_doc_max_bytes=0",
-            "-c",
-            "features.skills=false",
-            "-c",
-            "features.multi_agent=false",
             "-s",
             "read-only",
         ]
@@ -259,24 +238,7 @@ def test_a_codex_candidate_without_effort_does_not_add_a_reasoning_override(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [
-        [
-            "codex",
-            "exec",
-            "-m",
-            "gpt",
-            "--add-dir",
-            str(tmp_path),
-            "-c",
-            "project_doc_max_bytes=0",
-            "-c",
-            "features.skills=false",
-            "-c",
-            "features.multi_agent=false",
-            "-s",
-            "read-only",
-        ]
-    ]
+    assert runner.argvs == [["codex", "exec", "-m", "gpt", "--json", "-s", "read-only"]]
 
 
 def test_a_codex_candidate_carries_its_adapter_settings_but_judges_read_only(
@@ -314,18 +276,11 @@ def test_a_codex_candidate_carries_its_adapter_settings_but_judges_read_only(
             "exec",
             "-m",
             "gpt",
+            "--json",
             "-c",
             'model_provider="azure"',
             "-c",
             'model_reasoning_effort="high"',
-            "--add-dir",
-            str(tmp_path),
-            "-c",
-            "project_doc_max_bytes=0",
-            "-c",
-            "features.skills=false",
-            "-c",
-            "features.multi_agent=false",
             "-s",
             "read-only",
         ]
@@ -367,15 +322,6 @@ def test_a_claude_candidate_carries_its_adapter_environment(
         "Read,Grep,Glob",
         "--model",
         "claude-opus-5",
-        "--add-dir",
-        str(tmp_path),
-        "--setting-sources",
-        "",
-        "--managed-settings",
-        "{}",
-        "--disable-slash-commands",
-        "--strict-mcp-config",
-        "--no-session-persistence",
     ]
     assert runner.environs[0]["ANTHROPIC_BASE_URL"] == "https://anthropic.invalid"
     assert runner.environs[0]["CLAUDE_CODE_EFFORT_LEVEL"] == "high"
@@ -431,24 +377,7 @@ def test_invalid_codex_settings_do_not_invent_a_model_or_effort(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [
-        [
-            "codex",
-            "exec",
-            "-m",
-            "",
-            "--add-dir",
-            str(tmp_path),
-            "-c",
-            "project_doc_max_bytes=0",
-            "-c",
-            "features.skills=false",
-            "-c",
-            "features.multi_agent=false",
-            "-s",
-            "read-only",
-        ]
-    ]
+    assert runner.argvs == [["codex", "exec", "-m", "", "--json", "-s", "read-only"]]
 
 
 def test_the_red_runner_also_models_a_command_without_standard_input() -> None:

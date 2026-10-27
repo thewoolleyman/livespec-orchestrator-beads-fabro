@@ -66,7 +66,7 @@ def test_streaming_runner_maps_an_unfinished_stream_to_the_timeout_result(
         argv=[sys.executable, "-c", "import time; time.sleep(10)"],
         cwd=tmp_path,
         timeout_seconds=0.05,
-        on_stdout_line=lambda _line: False,
+        on_stdout_line=lambda line: line == "",
     )
 
     assert result.exit_code == 124
@@ -81,7 +81,7 @@ def test_streaming_runner_maps_an_absent_executable_without_starting_a_stream(
         argv=["livespec-no-such-streaming-binary-xyz"],
         cwd=tmp_path,
         timeout_seconds=2.0,
-        on_stdout_line=lambda _line: False,
+        on_stdout_line=lambda line: line == "",
     )
 
     assert result.exit_code == 127
@@ -171,7 +171,7 @@ def test_streaming_runner_covers_closed_pipes_and_timeout_cleanup(
         argv=["judge"],
         cwd=Path.cwd(),
         timeout_seconds=1.0,
-        on_stdout_line=lambda _line: False,
+        on_stdout_line=lambda line: line == "",
     )
 
     assert result.exit_code == 124
@@ -191,7 +191,7 @@ def test_streaming_runner_covers_windows_and_posix_cleanup_races(
         argv=["judge"],
         cwd=Path.cwd(),
         timeout_seconds=1.0,
-        on_stdout_line=lambda _line: True,
+        on_stdout_line=lambda line: line != "",
     )
 
     assert result.exit_code == 0
@@ -207,7 +207,7 @@ def test_streaming_runner_covers_windows_and_posix_cleanup_races(
         argv=["judge"],
         cwd=Path.cwd(),
         timeout_seconds=1.0,
-        on_stdout_line=lambda _line: True,
+        on_stdout_line=lambda line: line != "",
     )
 
     assert result.exit_code == 0
@@ -227,7 +227,7 @@ def test_streaming_runner_falls_back_after_a_process_group_os_error(
         argv=["judge"],
         cwd=Path.cwd(),
         timeout_seconds=1.0,
-        on_stdout_line=lambda _line: True,
+        on_stdout_line=lambda line: line != "",
     )
 
     assert result.exit_code == 0

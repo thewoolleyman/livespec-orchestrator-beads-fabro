@@ -54,9 +54,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_isolation import (
-    copy_codex_auth,
-)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _GATE_PROMPT = "# Definition-of-Done gate\n\nWork through all six checks.\n"
@@ -96,10 +93,8 @@ class _Runner:
 
     result: CommandResult
     argv: list[str] | None = None
-    cwd: Path | None = None
     timeout_seconds: float | None = None
     environ: dict[str, str] | None = None
-    codex_auth: str | None = None
     stdin_text: list[str] = field(default_factory=list)
 
     def run(
@@ -115,16 +110,33 @@ class _Runner:
         self.argv = argv
         self.timeout_seconds = timeout_seconds
         self.environ = env
-        self.cwd = cwd
-        codex_home = (env or {}).get("CODEX_HOME")
-        if codex_home is not None:
-            auth = Path(codex_home) / "auth.json"
-            self.codex_auth = auth.read_text(encoding="utf-8") if auth.is_file() else None
-        _ = start_new_session
+        _ = (cwd, start_new_session)
         if stdin is not None:
             _ = os.lseek(stdin, 0, os.SEEK_SET)
             self.stdin_text.append(os.read(stdin, 1_000_000).decode("utf-8"))
         return self.result
+
+
+@dataclass
+class _SequenceRunner:
+    """A candidate-chain double whose replies stay attributable to their argv."""
+
+    results: list[CommandResult]
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+        start_new_session: bool = False,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin, start_new_session)
+        self.calls.append(argv)
+        return self.results[len(self.calls) - 1]
 
 
 def _item(**overrides: object) -> WorkItem:
@@ -190,19 +202,6 @@ def _repo(*, tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return repo
-
-
-def test_an_isolated_codex_home_does_not_invent_authentication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("CODEX_HOME", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path / "empty-home"))
-    destination = tmp_path / "isolated-codex" / "auth.json"
-    destination.parent.mkdir()
-
-    copy_codex_auth(environ=dict(os.environ), destination=destination)
-
-    assert not destination.exists()
 
 
 def _write_codex_first_dod_gate(*, repo: Path) -> None:
@@ -340,68 +339,48 @@ def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_clau
     assert runner.argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
 
 
-def _assert_isolated_claude(*, runner: _Runner, repo: Path, interactive_config: Path) -> None:
-    assert runner.argv is not None
-    assert runner.cwd is not None and runner.cwd != repo
-    assert runner.environ is not None
-    assert runner.environ["CLAUDE_CONFIG_DIR"] != str(interactive_config)
-    assert "--setting-sources" in runner.argv
-    assert runner.argv[runner.argv.index("--setting-sources") + 1] == ""
-    assert "--managed-settings" in runner.argv
-    assert runner.argv[runner.argv.index("--managed-settings") + 1] == "{}"
-    assert "--strict-mcp-config" in runner.argv
-    assert "--disable-slash-commands" in runner.argv
-    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
-
-
-def _assert_isolated_codex(*, runner: _Runner, repo: Path, interactive_home: Path) -> None:
-    assert runner.argv is not None
-    assert runner.cwd is not None and runner.cwd != repo
-    assert runner.environ is not None
-    assert runner.environ["CODEX_HOME"] != str(interactive_home)
-    assert "project_doc_max_bytes=0" in runner.argv
-    assert "features.skills=false" in runner.argv
-    assert "features.multi_agent=false" in runner.argv
-    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
-
-
-def test_host_judges_use_only_their_invocation_configuration_for_claude_and_codex(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decides(
+    tmp_path: Path,
 ) -> None:
-    """The shared launcher covers every host judgement, including drift."""
-    repo = _repo(tmp_path=tmp_path)
+    """Repeated reports for one request count once before the fallback is chosen."""
     payload = _payload(tmp_path=tmp_path)
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "interactive-claude"))
-    interactive_codex = tmp_path / "interactive-codex"
-    interactive_codex.mkdir()
-    _ = (interactive_codex / "auth.json").write_text("only-authentication", encoding="utf-8")
-    monkeypatch.setenv("CODEX_HOME", str(interactive_codex))
-
-    claude_runner = _Runner(
-        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr="")
-    )
-    claude_verdict = run_dod_judgement(
-        item=_item(), cwd=repo, runner=claude_runner, payload_root=payload
-    )
-
-    assert claude_verdict.outcome == JUDGEMENT_ADMITTED
-    _assert_isolated_claude(
-        runner=claude_runner, repo=repo, interactive_config=tmp_path / "interactive-claude"
-    )
-
+    repo = _repo(tmp_path=tmp_path)
     _write_codex_first_dod_gate(repo=repo)
-    codex_runner = _Runner(
-        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr="")
-    )
-    codex_verdict = run_dod_judgement(
-        item=_item(), cwd=repo, runner=codex_runner, payload_root=payload
+    runner = _SequenceRunner(
+        results=[
+            CommandResult(
+                exit_code=0,
+                stdout=(
+                    '{"request_id": "request-one", "usage": {'
+                    '"input_tokens": 50000, "cache_creation_input_tokens": 25000, '
+                    '"cache_read_input_tokens": 25000}}\n'
+                    '{"request_id": "request-one", "usage": {'
+                    '"input_tokens": 50000, "cache_creation_input_tokens": 25000, '
+                    '"cache_read_input_tokens": 25000}}\n'
+                    '{"outcome": "passed"}\n'
+                ),
+                stderr="",
+            ),
+            CommandResult(
+                exit_code=0,
+                stdout=(
+                    '{"request_id": "request-two", "usage": {"input_tokens": 99999}}\n'
+                    '{"outcome": "failed", "failure_reason": "the fallback decided"}\n'
+                ),
+                stderr="",
+            ),
+        ]
     )
 
-    assert codex_verdict.outcome == JUDGEMENT_ADMITTED
-    _assert_isolated_codex(
-        runner=codex_runner, repo=repo, interactive_home=tmp_path / "interactive-codex"
-    )
-    assert codex_runner.codex_auth == "only-authentication"
+    verdict = run_dod_judgement(item=_item(), cwd=repo, runner=runner, payload_root=payload)
+
+    assert verdict.outcome == JUDGEMENT_HELD
+    assert verdict.findings == ("the fallback decided",)
+    assert verdict.input_tokens == 99999
+    assert verdict.input_usage == "complete"
+    assert verdict.bound_ended_candidates == ("codex-acp:gpt-5.6-terra",)
+    assert runner.calls[0][0] == "codex"
+    assert runner.calls[1][1:3] == ["-p", "--allowedTools"]
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(

@@ -89,6 +89,33 @@ def test_an_admitted_verdict_round_trips_and_carries_no_finding() -> None:
     assert reused.first_remedy is None
 
 
+def test_a_verdict_comment_names_the_deciding_candidates_reported_input_usage() -> None:
+    unreported = verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_DISPATCH,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(outcome=JUDGEMENT_ADMITTED),
+    )
+    reported = verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_DISPATCH,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(
+            outcome=JUDGEMENT_ADMITTED,
+            deciding_candidate="claude-acp:claude-opus-5",
+            input_tokens=99_999,
+            input_usage="complete",
+        ),
+    )
+
+    assert "deciding-candidate-input-usage: unreported" in unreported
+    assert "deciding-candidate: claude-acp:claude-opus-5" in reported
+    assert "deciding-candidate-input-tokens: 99999" in reported
+    assert "deciding-candidate-input-usage: complete" in reported
+
+
 def test_a_verdict_taken_against_different_bytes_is_not_reused() -> None:
     assert (
         reusable_verdict(comments=(_held_comment(),), digest=_OTHER_DIGEST, rubric_digest=_RUBRIC)
