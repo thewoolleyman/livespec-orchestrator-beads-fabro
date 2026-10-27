@@ -402,6 +402,15 @@ def test_parse_findings_skips_malformed_and_unparseable_failsoft() -> None:
     assert parse_findings(raw="") == ()
 
 
+def test_parse_findings_verdict_distinguishes_empty_from_malformed_reply() -> None:
+    """An empty structured reply is a verdict; malformed output is not."""
+    parser = getattr(_reflector_findings_parse, "parse_findings_verdict", None)
+
+    assert callable(parser)
+    assert parser(raw='{"findings": []}') == ()
+    assert parser(raw="not json at all") is None
+
+
 # ---------------------------------------------------------------------------
 # Trigger / fail-open / off paths.
 # ---------------------------------------------------------------------------
