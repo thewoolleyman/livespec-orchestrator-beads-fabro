@@ -12,7 +12,7 @@ targets=("$@")
 for target in "${targets[@]}"; do
     [[ "$target" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 2
 done
-if [[ $(printf '%s\n' "${targets[@]}" | sort -u | wc -l) -ne ${#targets[@]} ]]; then
+if [[ ${#targets[@]} -gt 0 ]] && [[ $(printf '%s\n' "${targets[@]}" | LC_ALL=C sort -u | wc -l) -ne ${#targets[@]} ]]; then
     exit 2
 fi
 
@@ -45,6 +45,10 @@ except (OSError, ValueError):
 stored = token.get("skipped_targets") if isinstance(token, dict) else None
 if not isinstance(stored, list) or not all(isinstance(one, str) for one in stored):
     raise SystemExit(1)
-if token.get("tree_hash") != sys.argv[2] or set(stored) != set(sys.argv[3:]):
+if (
+    token.get("tree_hash") != sys.argv[2]
+    or len(stored) != len(set(stored))
+    or set(stored) != set(sys.argv[3:])
+):
     raise SystemExit(1)
 PY

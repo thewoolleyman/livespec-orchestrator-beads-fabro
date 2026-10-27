@@ -146,6 +146,22 @@ def test_a_skipped_janitor_verdict_persists_its_tree_and_excluded_targets(
     assert unscoped.returncode != 0, unscoped.stdout + unscoped.stderr
 
 
+def test_an_unskipped_janitor_verdict_can_be_reused_with_empty_scope(*, tmp_path: Path) -> None:
+    """An empty exclusion list is valid and remains distinct from a skipped pass."""
+    repo = _fixture_repo(tmp_path=tmp_path)
+
+    _write_scope(repo=repo, skipped=[])
+
+    token = json.loads(_token_path(repo=repo).read_text(encoding="utf-8"))
+    assert token["skipped_targets"] == []
+    result = _run(
+        repo=repo,
+        argv=["bash", str(repo / _SCOPE_TOKEN), "check"],
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_pre_push_reuses_only_a_byte_identical_token_with_its_current_skip_scope(
     *, tmp_path: Path
 ) -> None:
