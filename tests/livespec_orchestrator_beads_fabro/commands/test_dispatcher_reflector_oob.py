@@ -30,6 +30,8 @@ from livespec_orchestrator_beads_fabro.commands import (
     _reflector_lessons,
     _reflector_spans,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpAdapter
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import (
@@ -196,7 +198,11 @@ def test_build_mcp_config_wires_honeycomb_bearer() -> None:
 
 
 def test_reflector_oob_decomposition_modules_export_public_entry_points() -> None:
-    assert _reflector_findings_parse.__all__ == ["ReflectorFinding", "parse_findings"]
+    assert _reflector_findings_parse.__all__ == [
+        "ReflectorFinding",
+        "parse_findings",
+        "parse_findings_verdict",
+    ]
     assert _reflector_spans.__all__ == [
         "build_span",
         "emit_spans",
@@ -420,6 +426,69 @@ def test_off_by_default_runs_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyP
     )
     assert runner.calls == []  # NO claude -p when the lever is off.
     assert journal.records == []
+
+
+def test_reflector_uses_the_resolved_dod_gate_chain_and_stops_at_an_empty_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed reply falls through, while an empty findings verdict decides."""
+    _arm(monkeypatch, mode="observe")
+    monkeypatch.setenv("LIVESPEC_REFLECTOR_MODEL", "ignored-host-model")
+    primary = AcpCandidate(
+        adapter=AcpAdapter(command="codex-acp"),
+        agent_id="codex-acp",
+    )
+    fallback = AcpCandidate(
+        adapter=AcpAdapter(command="claude-acp"),
+        agent_id="claude-acp",
+    )
+    monkeypatch.setattr(
+        reflector, "resolve_dod_gate_candidates", lambda **_kwargs: (primary, fallback)
+    )
+    runner = _FakeRunner(
+        queue=[
+            CommandResult(exit_code=0, stdout="not findings", stderr=""),
+            CommandResult(exit_code=0, stdout='{"findings": []}', stderr=""),
+        ]
+    )
+    journal = _RecordingJournal()
+
+    run_reflector_oob(
+        repo=tmp_path,
+        journal=journal,
+        spans_path=tmp_path / "spans.jsonl",
+        runner=runner,
+        lessons_proposer=RecordingLessonsProposer(),
+    )
+
+    assert [call[0] for call in runner.calls] == ["codex-acp", "claude-acp"]
+    assert any(record.get("stage") == "reflector-oob" for record in journal.records)
+
+
+def test_reflector_records_did_not_run_when_no_candidate_returns_a_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exhausted chain produces no filing or lesson proposal."""
+    _arm(monkeypatch, mode="file")
+    candidate = AcpCandidate(adapter=AcpAdapter(command="codex-acp"), agent_id="codex-acp")
+    monkeypatch.setattr(reflector, "resolve_dod_gate_candidates", lambda **_kwargs: (candidate,))
+    runner = _FakeRunner(queue=[CommandResult(exit_code=124, stdout="", stderr="timed out")])
+    journal = _RecordingJournal()
+    proposer = RecordingLessonsProposer()
+
+    run_reflector_oob(
+        repo=tmp_path,
+        journal=journal,
+        spans_path=tmp_path / "spans.jsonl",
+        runner=runner,
+        lessons_proposer=proposer,
+    )
+
+    assert journal.records[-1]["stage"] == "reflector-oob-judgement-did-not-run"
+    assert proposer.proposals == []
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
+    client = make_beads_client(config=config)
+    assert [item for item in client.list_issues() if "reflection" in item.get("labels", [])] == []
 
 
 def test_armed_but_no_mcp_key_skips_without_running(

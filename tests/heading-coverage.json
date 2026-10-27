@@ -2324,8 +2324,8 @@
     "heading": "## Scenario 251 \u2014 The out-of-band reflector takes its judgement from the resolved dod_gate chain",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal reflector-takes-dod-gate-chain (v229), and the owning work-item bd-ib-c6va2d routes the out-of-band reflector through the resolved dod_gate chain, retires LIVESPEC_REFLECTOR_MODEL and its default, and records did-not-run, together with the test that binds this entry.",
+    "test": "tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_reflector_oob.py::test_reflector_uses_the_resolved_dod_gate_chain_and_stops_at_an_empty_verdict",
+    "reason": "The integration test resolves the reflector through the dod_gate candidate chain, confirms malformed replies fall through while an empty structured reply decides, and pairs with its did-not-run test for exhausted chains.",
     "work_item": "bd-ib-c6va2d"
   },
   {
