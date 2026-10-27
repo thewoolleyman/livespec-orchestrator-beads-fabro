@@ -490,3 +490,57 @@ def test_an_unrelated_spec_revision_reuses_the_governing_heading_verdict(
     assert second.reused is False
     assert runner.calls == 2
     assert governing_calls == 1
+
+
+def test_a_changed_generalization_target_retakes_a_partial_governing_heading_verdict(
+    tmp_path: Path,
+) -> None:
+    """A partial verdict's generalization target is a clause the verdict names.
+
+    The target's body is too large for the condensed prompt, so the selection
+    never carries it and only the named-clause provenance can notice the edit.
+    """
+    ledger = _Ledger()
+    repo = _repo(tmp_path=tmp_path)
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout=_PASS_REPLY, stderr="")])
+    target = "## A broader heading"
+    target_file = repo / "SPECIFICATION" / "broader.md"
+    _ = target_file.write_text(
+        f"{target}\n\n" + "The first wording of the broader clause. " * 10_000,
+        encoding="utf-8",
+    )
+    governing_calls = 0
+
+    def governing(*, item: WorkItem, repo: Path):
+        nonlocal governing_calls
+        governing_calls += 1
+        return governing_heading_verdict(
+            item=item,
+            repo=repo,
+            run_model=lambda _prompt: (
+                '{"kind": "partial", "stated_by": [], "generalization_target": "'
+                + target
+                + '", "rationale": "The broader heading would state it."}'
+            ),
+        )
+
+    def judge() -> None:
+        _ = judge_definition_of_done(
+            item=_item(),
+            repo=repo,
+            stage=STAGE_PRE_DISPATCH,
+            comments=tuple(ledger.bodies),
+            append=ledger.append,
+            runner=runner,
+            payload_root=_payload(tmp_path=tmp_path),
+            governing_heading=governing,
+        )
+
+    judge()
+    _ = target_file.write_text(
+        f"{target}\n\n" + "The second wording of the broader clause. " * 10_000,
+        encoding="utf-8",
+    )
+    judge()
+
+    assert governing_calls == 2

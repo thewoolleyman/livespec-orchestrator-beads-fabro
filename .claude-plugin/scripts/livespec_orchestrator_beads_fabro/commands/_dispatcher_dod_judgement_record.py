@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
+    verdict_named_headings,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
@@ -68,6 +69,7 @@ __all__: list[str] = [
     "did_not_run_comment",
     "recorded_did_not_run_causes",
     "recorded_governing_heading",
+    "recorded_named_headings",
     "reusable_governing_heading",
     "reusable_verdict",
     "verdict_comment",
@@ -108,6 +110,7 @@ _GOVERNING_SUBJECT_DIGEST_FIELD = "governing-heading-subject-digest"
 _GOVERNING_PROVENANCE_FIELD = "governing-heading-provenance"
 _GOVERNING_SELECTED_CLAUSE_FIELD = "governing-heading-selected-clause"
 _GOVERNING_NAMED_CLAUSE_FIELD = "governing-heading-named-clause"
+_GOVERNING_GENERALIZATION_FIELD = "governing-heading-generalization-target"
 _FIELD_SEPARATOR = ": "
 # Every key a record may carry more than once, which the field map must leave
 # to the repeated-value reader rather than collapsing to its last occurrence.
@@ -188,6 +191,9 @@ def verdict_comment(
             f"{_GOVERNING_HEADING_FIELD}{_FIELD_SEPARATOR}{heading}"
             for heading in verdict.stated_by
         )
+        if verdict.generalization_target is not None:
+            target = verdict.generalization_target
+            lines.append(f"{_GOVERNING_GENERALIZATION_FIELD}{_FIELD_SEPARATOR}{target}")
         lines.extend(
             _clause_line(key=_GOVERNING_SELECTED_CLAUSE_FIELD, clause=clause)
             for clause in verdict.selected_clauses
@@ -241,10 +247,23 @@ def reusable_governing_heading(
         return GoverningHeadingVerdict(
             kind=kind,
             stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
+            generalization_target=fields.get(_GOVERNING_GENERALIZATION_FIELD),
             selected_clauses=recorded_selected,
             named_clauses=recorded_named,
         )
     return None
+
+
+def recorded_named_headings(*, body: str) -> tuple[str, ...]:
+    """Every heading one component receipt records its verdict as naming.
+
+    The reuse side recomputes the named clauses from these against the new
+    revision, so it must read the same set the taking recorded provenance for.
+    """
+    return verdict_named_headings(
+        stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
+        generalization_target=_fields_of(body=body).get(_GOVERNING_GENERALIZATION_FIELD),
+    )
 
 
 def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVerdict | None:

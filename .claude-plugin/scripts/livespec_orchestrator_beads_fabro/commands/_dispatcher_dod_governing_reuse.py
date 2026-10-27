@@ -21,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     DodJudgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    recorded_named_headings,
     reusable_governing_heading,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
@@ -79,7 +80,7 @@ def reusable_governing_heading_verdict(
             selected_clauses=condensed.clauses,
             named_clauses=clauses_named(
                 spec_tree=spec_tree,
-                headings=_recorded_governing_headings(body=body),
+                headings=recorded_named_headings(body=body),
             ),
         )
         if verdict is not None:
@@ -107,11 +108,3 @@ def with_governing_findings(
         else verdict.outcome
     )
     return DodJudgement(outcome=outcome, findings=verdict.findings + findings, cause=verdict.cause)
-
-
-def _recorded_governing_headings(*, body: str) -> tuple[str, ...]:
-    """The heading values a component receipt records, in its written order."""
-    prefix = "governing-heading: "
-    return tuple(
-        line.strip()[len(prefix) :] for line in body.splitlines() if line.strip().startswith(prefix)
-    )

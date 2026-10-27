@@ -79,6 +79,7 @@ __all__: list[str] = [
     "governing_heading_findings",
     "governing_heading_holds",
     "governing_heading_statement",
+    "verdict_named_headings",
 ]
 
 # The subject block's own heading. PUBLIC because the `dod_gate` prompt names it
@@ -121,6 +122,22 @@ class GoverningHeadingVerdict:
     generalization_target: str | None = None
     selected_clauses: tuple[CondensedClause, ...] = ()
     named_clauses: tuple[CondensedClause, ...] = ()
+
+
+def verdict_named_headings(
+    *, stated_by: tuple[str, ...], generalization_target: str | None
+) -> tuple[str, ...]:
+    """Every heading a verdict names: its governing clauses, then its target.
+
+    A `partial` or `unstated` verdict names the existing heading whose
+    generalization would state the assertion, and reuse compares every clause a
+    verdict names, so that target is named-clause provenance exactly as a
+    `stated` verdict's governing headings are. One rule for the taking and the
+    reuse side, so the two cannot compare different sets.
+    """
+    if generalization_target is None:
+        return stated_by
+    return (*stated_by, generalization_target)
 
 
 def governing_heading_statement(*, item: WorkItem, section: DefinitionOfDone) -> str:
