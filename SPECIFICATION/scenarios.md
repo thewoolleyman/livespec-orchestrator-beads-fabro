@@ -3702,10 +3702,27 @@ Feature: The resolve-blocked valve item carries the terminated run's account, ab
     Then the summary carries the run id, the factory name and its server, that a needs_human termination routed the decision to this valve, why it terminated, what the run reported, the preserved reference, and the available actions
 
   Scenario: An unreachable factory costs the enrichment and never the valve
-    Given a blocked needs-human work-item whose factory is unreachable
+    Given a blocked needs-human work-item whose factory is unreachable and that carries no needs-human cause comment for its latest run
     When needs-attention renders the item's resolve-blocked valve item
     Then the run account enrichment is omitted
     And the valve item is still surfaced
+
+  Scenario: The valve summary renders from the needs-human cause comment without a factory read
+    Given a blocked needs-human work-item carrying the livespec-needs-human-cause comment its termination wrote for its latest run
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account from that comment and the preserved reference from the item's preserve-by-reference comment
+    And no fabro inspect or other factory read is run for the item
+
+  Scenario: An item without the cause comment falls back to the factory read
+    Given a blocked needs-human work-item whose run was terminated before the needs-human cause comment existed
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account read from the factory exactly as before
+
+  Scenario: A cause comment keeps the run account when the factory is unreachable
+    Given a blocked needs-human work-item carrying the needs-human cause comment for its latest run, whose factory is unreachable
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account from that comment
+    And no factory read is attempted for the item
 ```
 
 ## Scenario 126 — Ledger normalization adopts a beads-native `open` row and assigns it a real rank
@@ -4468,6 +4485,14 @@ Feature: Proof that needs the released build is captured by an agent on a host, 
     Given an item whose pointer names the latest verified record and whose pull request later gains a host_recorded record
     When needs-attention composes hygiene facts
     Then no stale proof pointer fact is reported for the item
+  Scenario: A host-routed item with no factory run posts on its reconciled pull request
+    Given a host-routed item with a host-captured assertion that no factory run merged
+    And the item has never had a factory dispatch
+    And reconcile-merged reconciled the item with --pr naming one of its merged pull requests, journaled a green janitor, and parked it in acceptance
+    When a session drives the posting primitive to publish host_recorded for the item
+    Then the record is posted on the selected pull request and the primitive does not refuse for the missing run
+    And when a different session publishes host_verified, the primitive drives reconcile-merged for the item with that same --pr selector
+    And reconcile-merged reads that reconciliation's green janitor record and re-runs only the acceptance pass, without refusing for the missing dispatch
   Scenario: A host-routed item keeps its declared modes
     Given an item carrying factory_safety needs-host-secrets whose assertions are declared with no sub-heading
     When the effective-criteria primitive parses it
@@ -8984,6 +9009,18 @@ Feature: Engine checkpoint commits never reach the merged history
     Given a published head that already contains the default branch and carries none of the run's empty commits
     When pr_refresh runs
     Then it republishes nothing and the head proceeds to pr
+
+  Scenario: The run's own empty checkpoint commits on origin are not a foreign head
+    Given pr_refresh republished the run's head and the run routed back for reproof
+    And origin's publish branch now descends from that published head, adding only empty engine checkpoint commits of this run
+    When pr_refresh runs again after the proof loop passes
+    Then it does not fail closed on a foreign publish head
+    And it republishes the head without those commits under an explicit lease naming the observed origin head
+
+  Scenario: Any other addition to origin's publish branch is still foreign
+    Given origin's publish branch adds to the run's published head a commit that is not an empty engine checkpoint commit of this run, or does not descend from that head
+    When pr_refresh runs
+    Then it fails closed on a foreign publish head
 ```
 
 ## Scenario 220 — An exhausted merge-poll budget on an open pull request rests the item for resume
@@ -9757,6 +9794,24 @@ Feature: Merged pull request resolution ranks how a candidate names the item
     When reconcile-merged resolves the item's merged pull request
     Then it refuses with an ambiguous-PR error listing every candidate of that tier
     And the item's status is unchanged
+  Scenario: An explicit pull-request selector reconciles one of several merged pull requests
+    Given an item that landed through two merged pull requests on the default branch, both carrying the work-item id in their titles
+    When reconcile-merged runs for the item with --pr naming one of them
+    Then it reconciles against that pull request's merge commit without an ambiguous-PR refusal
+    And its journal record names the selected pull request and its merge SHA
+
+  Scenario: A selector naming a pull request that is unmerged or does not identify the item refuses
+    Given an item and a pull request that is not merged onto the default branch, or that carries the work-item id in neither its head ref nor its title
+    When reconcile-merged runs for the item with --pr naming that pull request
+    Then it refuses with a message naming the pull request
+    And the item's status is unchanged
+
+  Scenario: A selector naming a different pull request than the journaled janitor ran against refuses
+    Given an item resting in acceptance whose journaled green janitor ran against one merged pull request of the item
+    When reconcile-merged runs for the item with --pr naming another of its merged pull requests
+    Then it refuses before running acceptance, naming the mismatched janitor evidence
+    And the item's status is unchanged
+    And the host-record posting target remains the pull request its journaled green janitor ran against
 ```
 
 ## Scenario 245 — reconcile-merged closes a merged, locally built item resting at pending-approval or ready
@@ -10185,4 +10240,31 @@ Feature: A merged item whose proof is missing or record-wide is re-proven withou
     Given a merged pull request that has already anchored two resumes
     When the operator drives resume for its item parked on its proof leg
     Then the resume refuses naming the two earlier resumes
+```
+
+## Scenario 258 — A review or proof_verify turn that succeeds without a verdict label is retried once before it reaches needs_human
+
+```gherkin
+Feature: A verdict turn that forgets its verdict gets one more chance before a human is asked
+  Scenario: proof_verify without a verdict label is retried and then routes on its verdict
+    Given a proof_verify turn that ends succeeded and records no verdict label
+    When the run routes that turn
+    Then proof_verify runs once more on the same head with an instruction to emit only its verdict
+    And when the retry records preferred_label approve, the run routes to proof_grade
+
+  Scenario: review without a verdict label is retried once
+    Given a review turn that ends succeeded and records no verdict label
+    When the run routes that turn
+    Then review runs once more with an instruction to emit only its verdict
+    And the retry's verdict label routes it exactly as a first turn's would
+
+  Scenario: A second unlabeled turn reaches needs_human with a named cause
+    Given a proof_verify retry turn that also ends succeeded and records no verdict label
+    When the run routes that turn
+    Then the run routes to needs_human with a cause naming proof_verify and its missing verdict label
+
+  Scenario: A labeled or failed turn routes as before
+    Given a review turn that records preferred_label fix, and another that ends failed
+    When the run routes each turn
+    Then the first routes to disposition and the second to needs_human, with no retry
 ```

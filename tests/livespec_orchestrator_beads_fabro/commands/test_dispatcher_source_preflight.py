@@ -318,3 +318,35 @@ def test_unreadable_head_cannot_produce_an_unpinned_containment_witness(*, tmp_p
     assert outcome.refusal is not None
     assert not any(call[0] == "merge-base" for call in runner.calls)
     assert "HEAD: <unknown>" in outcome.refusal.detail
+
+
+def test_source_preflight_drops_origin_head_in_the_short_form_newer_git_prints(
+    tmp_path: Path,
+) -> None:
+    """`refs/remotes/origin/HEAD` shortens to bare `origin` on git 2.51, and is not a branch.
+
+    Measured 2026-10-27 on vps (git 2.51.0): after a `git fetch` creates the
+    symbolic `refs/remotes/origin/HEAD`, `for-each-ref --format=%(refname:short)`
+    prints it as `origin`, so a filter naming only `origin/HEAD` let it into the
+    inventory and every origin-ref count read one high.
+    """
+    results = _base_results() | {
+        ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
+            stdout="origin\norigin/master\n"
+        ),
+        ("merge-base", "--is-ancestor", "abc123", "origin"): _result(exit_code=1),
+        ("merge-base", "--is-ancestor", "abc123", "origin/master"): _result(exit_code=1),
+        (
+            "log",
+            "--oneline",
+            "--decorate",
+            "--max-count=20",
+            "HEAD",
+            "--not",
+            "--remotes=origin",
+        ): _result(stdout="abc123 local commit\n"),
+    }
+
+    outcome = source_checkout_preflight(repo=tmp_path, runner=_Runner(results=results))
+
+    assert outcome.record["origin_refs"] == ["origin/master"]

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.243.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.10...v0.243.11) (2026-10-27)
+
+
+### Bug Fixes
+
+* bound spec judgement prompts ([7a1148c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7a1148cca366a1c46f86e73e9a8a32d8bfcef1e9))
+
 ## [0.243.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.9...v0.243.10) (2026-10-27)
 
 
