@@ -33,6 +33,7 @@ serving both sends half its readers to the wrong question.
 from __future__ import annotations
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _plan_supersession as supersession_module
 from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
     CAUSE_DISPOSED,
     CAUSE_MISDERIVED,
@@ -42,6 +43,8 @@ from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
     CarrierEvidence,
     CausalSupersession,
     DerivingTransition,
+    DisposedEvidence,
+    ImplementationEvidence,
     SupersessionEvidence,
     SupersessionRefusal,
     validate_causal_supersession,
@@ -144,7 +147,7 @@ def test_the_ratified_cause_set_is_closed_and_holds_the_three_the_clause_names()
     assert SUPERSESSION_CAUSES == (CAUSE_MISDERIVED, CAUSE_DISPOSED, CAUSE_SUBSUMED)
 
 
-@pytest.mark.parametrize("cause", [CAUSE_DISPOSED, CAUSE_SUBSUMED])
+@pytest.mark.parametrize("cause", [CAUSE_SUBSUMED])
 def test_a_ratified_cause_this_build_cannot_verify_is_refused_naming_itself(cause: str) -> None:
     """A cause whose evidence does not verify is refused, as the clause requires.
 
@@ -163,6 +166,129 @@ def test_a_ratified_cause_this_build_cannot_verify_is_refused_naming_itself(caus
 
     assert cause in verdict.detail
     assert CAUSE_MISDERIVED in verdict.detail
+
+
+def test_a_disposed_cause_names_the_closed_as_superseded_prior_target() -> None:
+    """A disposed target is verified separately from derivation evidence."""
+    verdict = validate_causal_supersession(
+        supersession=_supersession(cause=CAUSE_DISPOSED, disposed_target_id="bd-ib-old"),
+        evidence=SupersessionEvidence(
+            deriving=None,
+            carrier=None,
+            plan_level=False,
+            disposed=DisposedEvidence(
+                target_id="bd-ib-old", status="closed", resolution="superseded"
+            ),
+        ),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert verdict is None
+
+
+@pytest.mark.parametrize(
+    ("target_id", "status", "resolution"),
+    [
+        ("bd-ib-other", "closed", "superseded"),
+        ("bd-ib-old", "ready", "superseded"),
+        ("bd-ib-old", "closed", "fixed"),
+    ],
+)
+def test_a_disposed_cause_refuses_a_target_not_closed_as_superseded(
+    target_id: str, status: str, resolution: str
+) -> None:
+    """A `disposed` label alone cannot replace an unmet obligation."""
+    verdict = _refusal(
+        supersession=_supersession(cause=CAUSE_DISPOSED, disposed_target_id="bd-ib-old"),
+        evidence=SupersessionEvidence(
+            deriving=None,
+            carrier=None,
+            plan_level=False,
+            disposed=DisposedEvidence(target_id=target_id, status=status, resolution=resolution),
+        ),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "disposed" in verdict.detail
+
+
+def test_a_disposed_cause_without_a_named_target_is_refused() -> None:
+    """A disposal claim cannot substitute an unnamed record for evidence."""
+    verdict = _refusal(
+        supersession=_supersession(cause=CAUSE_DISPOSED),
+        evidence=SupersessionEvidence(deriving=None, carrier=None, plan_level=False),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "must name its target" in verdict.detail
+
+
+def test_a_misderived_cause_without_its_derivation_identity_is_refused() -> None:
+    """The operation and carrier names are causal evidence, not optional prose."""
+    verdict = _refusal(
+        supersession=_supersession(deriving_operation_id=None, open_carrier_id=None),
+        evidence=_evidence(),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "deriving operation" in verdict.detail
+
+
+def test_factory_safety_with_no_recorded_instant_is_refused() -> None:
+    """A label without a timestamp cannot prove it existed at derivation."""
+    verdict = _refusal(
+        supersession=_supersession(),
+        evidence=SupersessionEvidence(
+            deriving=_deriving(),
+            carrier=None,
+            plan_level=False,
+            implementation=ImplementationEvidence(factory_safe=True, recorded_at=None),
+        ),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "not recorded" in verdict.detail
+
+
+def test_factory_safety_added_after_derivation_is_refused() -> None:
+    """Post-derivation labelling cannot rewrite the causal record."""
+    verdict = _refusal(
+        supersession=_supersession(),
+        evidence=SupersessionEvidence(
+            deriving=_deriving(),
+            carrier=None,
+            plan_level=False,
+            implementation=ImplementationEvidence(factory_safe=True, recorded_at=_AFTER),
+        ),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "not recorded when" in verdict.detail
+
+
+def test_the_carrier_reader_refuses_an_absent_carrier_identity() -> None:
+    """The carrier-specific guard remains fail-closed when called by its seam."""
+    verdict = supersession_module._carrier_refusal(
+        supersession=_supersession(open_carrier_id=None),
+        evidence=_evidence(),
+        deriving=_deriving(),
+        replacement=_REPLACEMENT,
+    )
+
+    assert isinstance(verdict, SupersessionRefusal)
+    assert "must name an open carrier" in verdict.detail
 
 
 def test_a_supersession_naming_another_obligation_is_refused() -> None:
@@ -191,6 +317,41 @@ def test_a_supersession_naming_another_epoch_is_refused() -> None:
     assert str(_EPOCH) in verdict.detail
 
 
+def test_an_unknown_supersession_cause_is_refused() -> None:
+    """Only the ratified cause vocabulary can select a verification arm."""
+    verdict = _refusal(
+        supersession=_supersession(cause="because"),
+        evidence=_evidence(),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "not one of" in verdict.detail
+
+
+def test_a_derivation_that_did_not_write_the_retained_obligation_is_refused() -> None:
+    """A named operation is insufficient unless its written result is still the prior one."""
+    verdict = _refusal(
+        supersession=_supersession(),
+        evidence=SupersessionEvidence(
+            deriving=DerivingTransition(
+                author=DERIVATION_ACTORS[0],
+                recorded_at=_DERIVED_AT,
+                required_result=_REPLACEMENT,
+                later_results=(),
+            ),
+            carrier=None,
+            plan_level=False,
+        ),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "not the retained obligation" in verdict.detail
+
+
 def test_evidence_that_could_not_be_read_at_all_is_refused() -> None:
     """A reading nobody took establishes nothing, so it cannot admit a rename."""
     verdict = _refusal(
@@ -205,12 +366,13 @@ def test_evidence_that_could_not_be_read_at_all_is_refused() -> None:
 
 
 def test_an_obligation_whose_target_is_not_the_plan_epic_is_not_plan_level() -> None:
-    """The plan-level arm is the only `misderived` arm this build verifies.
+    """A non-plan obligation needs the implementation evidence arm.
 
     The cause's other arm — an `impl` step whose target already carried a
     `factory-safety` label — takes a different reading entirely, so an
-    obligation that is not plan-level is refused rather than graded against
-    carrier evidence that says nothing about it.
+    obligation that is not plan-level is refused when its implementation
+    evidence is absent rather than graded against carrier evidence that says
+    nothing about it.
     """
     verdict = _refusal(
         supersession=_supersession(),
@@ -220,7 +382,7 @@ def test_an_obligation_whose_target_is_not_the_plan_epic_is_not_plan_level() -> 
         replacement=_REPLACEMENT,
     )
 
-    assert "plan epic" in verdict.detail
+    assert "factory-safety" in verdict.detail
 
 
 def test_a_deriving_operation_that_resolves_to_no_transition_is_refused() -> None:

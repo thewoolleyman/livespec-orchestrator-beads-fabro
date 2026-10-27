@@ -217,6 +217,7 @@ def _tracked_write(
         now=request.now,
         is_handoff=request.is_handoff,
         observation=_prior_observation(request=request, head=head),
+        replacement_observation=_replacement_observation(request=request),
         recovery=request.recovery,
         supersession=request.supersession,
         evidence=supersession_evidence(
@@ -250,6 +251,24 @@ def _tracked_write(
     if isinstance(committed, ChainFinding):
         return NextActionRefusal(detail=f"{committed.code}: {committed.detail}")
     return _persist(request=request, decision=decision, committed=committed)
+
+
+def _replacement_observation(*, request: TrackedWriteRequest) -> ResultObservation | None:
+    """Read a claimed replacement only for a supersession, before it can rename.
+
+    A direct advance is entitled to replace a satisfied prior result.  A
+    supersession is not: its named replacement must still be work the plan owes.
+    Keeping this read at the sanctioned writer prevents an API caller from
+    asserting that fact while supplying a result already satisfied in its tenant.
+    """
+    if request.supersession is None or request.action.required_result is None:
+        return None
+    return read_plan_owned_result(
+        config=request.config,
+        epic_id=request.epic_id,
+        required_result=request.action.required_result,
+        now=request.now,
+    )
 
 
 def _persist(

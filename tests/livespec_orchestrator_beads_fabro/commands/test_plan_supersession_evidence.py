@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_SCOPE_PREFIX,
     plan_comment_body,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _NOW = "2026-10-22T07:00:00Z"
@@ -496,3 +498,175 @@ def test_an_epic_whose_chain_tracks_no_obligation_is_not_plan_level(tmp_path: Pa
 
     assert evidence is not None
     assert evidence.plan_level is False
+
+
+@pytest.mark.parametrize(
+    ("record", "factory_safe", "recorded_at"),
+    [
+        (None, None, None),
+        ({"labels": "not-a-list"}, None, None),
+        ({"labels": ["factory-safety:eligible"], "created_at": _NOW}, True, _NOW),
+        (
+            {
+                "labels": ["factory-safety:eligible"],
+                "created_at": "",
+                "metadata": {"factory_safety_recorded_at": _NOW},
+            },
+            True,
+            _NOW,
+        ),
+    ],
+)
+def test_implementation_evidence_refuses_unreadable_records_and_reads_its_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    record: dict[str, object] | None,
+    factory_safe: bool | None,
+    recorded_at: str | None,
+) -> None:
+    """The label and its transition-time timestamp are both ledger facts."""
+    monkeypatch.setattr(evidence_module, "_implementation_record", lambda **_: record)
+
+    observed = evidence_module._implementation_from_reference(
+        config=_config(repo=tmp_path), repository_name=_OWN, item_id="bd-ib-target"
+    )
+
+    if factory_safe is None:
+        assert observed is None
+    else:
+        assert observed is not None
+        assert observed.factory_safe is factory_safe
+        assert observed.recorded_at == recorded_at
+
+
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        (None, None),
+        ({"labels": [], "status": "closed"}, ""),
+        ({"labels": [], "status": 7}, None),
+        ({"labels": ["resolution:superseded"], "status": "closed"}, "superseded"),
+    ],
+)
+def test_disposed_evidence_requires_a_readable_status_and_labels(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    record: dict[str, object] | None,
+    expected: str | None,
+) -> None:
+    """A closed target verifies disposal only through its persisted resolution label."""
+    monkeypatch.setattr(evidence_module, "_implementation_record", lambda **_: record)
+    required: dict[str, object] = {
+        "repo": _OWN,
+        "item_status": {"item_id": "bd-ib-target", "status": "acceptance"},
+    }
+
+    observed = evidence_module._disposed(config=_config(repo=tmp_path), required_result=required)
+
+    if expected is None:
+        assert observed is None
+    else:
+        assert observed is not None
+        assert observed.resolution == (expected or None)
+
+
+def test_result_record_reader_refuses_each_unreadable_resolution_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No absent repository, tenant or ledger read is invented into evidence."""
+    config = _config(repo=tmp_path)
+    assert (
+        evidence_module._implementation_record(
+            config=replace(config, repo_root=None),
+            repository_name=_OWN,
+            item_id="bd-ib-target",
+        )
+        is None
+    )
+    monkeypatch.setattr(evidence_module, "resolve_result_repository", lambda **_: None)
+    assert (
+        evidence_module._implementation_record(
+            config=config, repository_name=_OWN, item_id="bd-ib-target"
+        )
+        is None
+    )
+    monkeypatch.setattr(
+        evidence_module,
+        "resolve_result_repository",
+        lambda **_: ResultRepository(name=_OWN, clone=tmp_path),
+    )
+    monkeypatch.setattr(evidence_module, "result_store_config", lambda **_: None)
+    assert (
+        evidence_module._implementation_record(
+            config=config, repository_name=_OWN, item_id="bd-ib-target"
+        )
+        is None
+    )
+    monkeypatch.setattr(evidence_module, "result_store_config", lambda **_: config)
+    monkeypatch.setattr(
+        evidence_module,
+        "attempt",
+        lambda **_: AttemptFailure(error=RuntimeError("unreadable")),
+    )
+    assert (
+        evidence_module._implementation_record(
+            config=config, repository_name=_OWN, item_id="bd-ib-target"
+        )
+        is None
+    )
+
+
+def test_evidence_reader_rejects_an_incomplete_claim_and_malformed_disposed_result(
+    tmp_path: Path,
+) -> None:
+    """The cause-specific readers do not infer missing identity or target structure."""
+    repo = _project(tmp_path=tmp_path, configure_carrier=True)
+    _seed(repo=repo, transitions=(_FIRST_OPERATION,))
+    head = _head(repo=repo)
+    incomplete = CausalSupersession(
+        superseded_result_identity="repo item_comment bd-ib-plan marker 'Plan Proof of Done'",
+        previous_epoch=head.epoch,
+        cause="misderived",
+        deriving_operation_id=None,
+        open_carrier_id=None,
+        writer="plan-session",
+    )
+    disposed = CausalSupersession(
+        superseded_result_identity="repo item_comment bd-ib-plan marker 'Plan Proof of Done'",
+        previous_epoch=head.epoch,
+        cause="disposed",
+        disposed_target_id="bd-ib-target",
+        writer="plan-session",
+    )
+
+    missing = supersession_evidence(
+        config=_config(repo=repo), epic_id=_EPIC, supersession=incomplete, head=head
+    )
+    malformed = evidence_module._disposed(config=_config(repo=repo), required_result={})
+    disposed_evidence = supersession_evidence(
+        config=_config(repo=repo), epic_id=_EPIC, supersession=disposed, head=head
+    )
+
+    assert missing is not None
+    assert missing.deriving is None
+    assert malformed is None
+    assert disposed_evidence is not None
+    assert disposed_evidence.disposed is None
+
+
+def test_labels_with_non_string_values_are_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sparse ledger JSON must not turn arbitrary label values into evidence."""
+    monkeypatch.setattr(
+        evidence_module,
+        "_implementation_record",
+        lambda **_: {"labels": ["factory-safety:eligible", 1]},
+    )
+
+    assert (
+        evidence_module._implementation_from_reference(
+            config=_config(repo=tmp_path), repository_name=_OWN, item_id="bd-ib-target"
+        )
+        is None
+    )
