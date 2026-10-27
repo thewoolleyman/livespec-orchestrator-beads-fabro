@@ -182,6 +182,20 @@ def test_a_governing_receipt_reuses_nothing_after_its_subject_or_clause_changes(
     assert selected_changed is None
 
 
+def test_a_governing_receipt_is_not_reused_when_clause_multiplicity_changes() -> None:
+    """A duplicate body changes the prompt even when its text does not."""
+    duplicate_selected = _SELECTED + _SELECTED
+
+    reused = reusable_governing_heading(
+        comments=(_governing_comment(),),
+        subject_digest=_DIGEST,
+        selected_clauses=duplicate_selected,
+        named_clauses=_NAMED,
+    )
+
+    assert reused is None
+
+
 def test_an_incomplete_or_malformed_governing_receipt_is_never_reused() -> None:
     body = _governing_comment()
     malformed = (
