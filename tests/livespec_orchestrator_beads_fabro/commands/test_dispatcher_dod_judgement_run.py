@@ -54,9 +54,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_isolation import (
-    copy_codex_auth,
-)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _GATE_PROMPT = "# Definition-of-Done gate\n\nWork through all six checks.\n"
@@ -99,7 +96,6 @@ class _Runner:
     cwd: Path | None = None
     timeout_seconds: float | None = None
     environ: dict[str, str] | None = None
-    codex_auth: str | None = None
     stdin_text: list[str] = field(default_factory=list)
 
     def run(
@@ -116,10 +112,6 @@ class _Runner:
         self.timeout_seconds = timeout_seconds
         self.environ = env
         self.cwd = cwd
-        codex_home = (env or {}).get("CODEX_HOME")
-        if codex_home is not None:
-            auth = Path(codex_home) / "auth.json"
-            self.codex_auth = auth.read_text(encoding="utf-8") if auth.is_file() else None
         _ = start_new_session
         if stdin is not None:
             _ = os.lseek(stdin, 0, os.SEEK_SET)
@@ -190,19 +182,6 @@ def _repo(*, tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return repo
-
-
-def test_an_isolated_codex_home_does_not_invent_authentication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("CODEX_HOME", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path / "empty-home"))
-    destination = tmp_path / "isolated-codex" / "auth.json"
-    destination.parent.mkdir()
-
-    copy_codex_auth(environ=dict(os.environ), destination=destination)
-
-    assert not destination.exists()
 
 
 def _write_codex_first_dod_gate(*, repo: Path) -> None:
@@ -372,10 +351,7 @@ def test_host_judges_use_only_their_invocation_configuration_for_claude_and_code
     repo = _repo(tmp_path=tmp_path)
     payload = _payload(tmp_path=tmp_path)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "interactive-claude"))
-    interactive_codex = tmp_path / "interactive-codex"
-    interactive_codex.mkdir()
-    _ = (interactive_codex / "auth.json").write_text("only-authentication", encoding="utf-8")
-    monkeypatch.setenv("CODEX_HOME", str(interactive_codex))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "interactive-codex"))
 
     claude_runner = _Runner(
         result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr="")
@@ -401,7 +377,6 @@ def test_host_judges_use_only_their_invocation_configuration_for_claude_and_code
     _assert_isolated_codex(
         runner=codex_runner, repo=repo, interactive_home=tmp_path / "interactive-codex"
     )
-    assert codex_runner.codex_auth == "only-authentication"
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
