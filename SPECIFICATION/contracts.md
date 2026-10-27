@@ -1894,6 +1894,23 @@ null in the journal and omitted numeric attributes on the span, with an
 accompanying reason. No new always-on service or Fabro platform modification is
 permitted by this contract.
 
+The terminal calibration journal row and span MUST attribute the implement node
+to the candidate the dispatch executed, not to the chain primary.
+`livespec.implement.adapter` MUST be the agent id of the implement candidate
+that the dispatch's per-node selection record (§"Factory-configurable ACP
+fallback priority" → "Per-node selection") selected, so a dispatch that
+selected a fallback candidate reports that fallback's agent id.
+`livespec.implement.selected_index` MUST be that record's selected candidate
+index for the implement node. The per-node selection record MUST additionally
+carry the selected candidate's resolved agent id, or null when unavailable.
+Both calibration fields MUST be read from that record for the same dispatch. An
+unavailable selected agent id MUST remain null in the calibration journal and
+be omitted on the span. When the dispatch has no selection record for
+the implement node, `livespec.implement.adapter` MUST be the agent id of the
+resolved `acp_nodes` primary for that node, and
+`livespec.implement.selected_index` MUST be null in the journal and omitted on
+the span. An agent id MUST NOT be inferred from a model name.
+
 ### Gate type determines hard versus advisory
 
 Resolve the hard-versus-advisory question by gate TYPE. The STRUCTURAL

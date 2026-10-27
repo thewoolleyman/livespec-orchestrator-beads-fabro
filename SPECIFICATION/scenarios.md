@@ -3999,6 +3999,12 @@ Feature: Factory-configurable ACP fallback priority
     When the Dispatcher evaluates adapter launch release
     Then it surfaces unavailable evidence and schedules another observation
     And it neither journals adapter-launch-release nor creates a needs-human decision from the missing evidence
+
+  Scenario: Calibration attributes the implement node to the candidate the dispatch selected
+    Given a dispatch whose implement selection record selected candidate one, a codex-acp fallback, after the claude-acp primary was skipped for session headroom
+    When the Dispatcher writes the terminal calibration journal row and span
+    Then livespec.implement.adapter is codex-acp and livespec.implement.selected_index is 1
+    And a dispatch with no selection record for the implement node reports the resolved acp_nodes primary's agent id, with selected_index null in the journal and omitted on the span
 ```
 
 ## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch
