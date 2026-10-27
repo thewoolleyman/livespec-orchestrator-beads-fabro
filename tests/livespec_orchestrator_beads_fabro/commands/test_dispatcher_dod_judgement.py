@@ -238,6 +238,44 @@ def test_subject_carries_the_goal_fields_the_rubric_grades(tmp_path: Path) -> No
     assert judgement.judgement_subject(item=item, cwd=tmp_path, comments=(rider,)) == subject
 
 
+def test_effective_criteria_preserve_the_definition_of_done_proof_mode_layout(
+    tmp_path: Path,
+) -> None:
+    """Judges must see proof-mode boundaries beside the criteria they grade."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n"
+            "- A factory assertion remains above every proof-mode heading.\n\n"
+            "### Host-captured\n\n"
+            "Reason: the released build must be observed on an operator host.\n\n"
+            "- A host assertion is captured from the released build.\n\n"
+            "### Human-attested\n\n"
+            "Reason: a human must attest the external outcome.\n\n"
+            "- A human assertion is attested by the operator.\n\n"
+            "References: ## Scenario 174 — The judgement runs before admission\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(item=item, cwd=tmp_path)
+    effective = subject.split("## Effective acceptance criteria\n", maxsplit=1)[1].split(
+        "\n\n## Referenced heading:", maxsplit=1
+    )[0]
+
+    assert effective == (
+        "- A factory assertion remains above every proof-mode heading.\n\n"
+        "### Host-captured\n\n"
+        "Reason: the released build must be observed on an operator host.\n\n"
+        "- A host assertion is captured from the released build.\n\n"
+        "### Human-attested\n\n"
+        "Reason: a human must attest the external outcome.\n\n"
+        "- A human assertion is attested by the operator."
+    )
+
+
 def test_the_ratified_spec_identity_moves_with_the_tree_and_names_an_unreadable_one(
     tmp_path: Path,
 ) -> None:
