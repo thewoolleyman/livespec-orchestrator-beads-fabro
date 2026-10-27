@@ -7615,6 +7615,44 @@ Feature: An agent stage does not act on instructions its stage prompt never gave
     Given the implement, fix and review_fix prompts of the released implement-work-item workflow
     When each prompt is read
     Then each states that the stage prompt is the turn's only instruction, that the turn never pushes or publishes, and that commits are ordinary git commits through the repository hooks unless the stage prompt names another mechanism
+
+  Scenario: An agent stage's publication attempt is refused mechanically
+    Given an agent stage of a run, whichever node it is
+    When its agent runs git push to origin, gh pr create, gh pr ready, gh pr merge, gh pr edit or a merge through gh api
+    Then the action exits non-zero printing LIVESPEC_AGENT_PUBLICATION_DENIED with the stage and the action
+    And nothing reaches origin or the forge
+
+  Scenario: An agent stage holds no credential that can publish
+    Given an agent stage of a run, whichever node it is
+    When its agent searches its environment, files and processes for a forge token or App key and attempts a push or a merge with a raw git command or a direct API request
+    Then it finds no publication-capable credential and no key that mints one
+    And the attempt fails without changing origin or the run's pull request
+
+  Scenario: The broker cannot be steered into publishing
+    Given an agent stage that asks the proof broker to merge, ready or edit the run's pull request, or claims to be the pr stage
+    When the broker handles the request
+    Then the broker refuses it, because it performs only the new comments the stage's contract requires on the run's pull request and proof asset uploads, for the stage the workflow launched
+
+  Scenario: A planted hook cannot publish with a publication stage's credential
+    Given an agent stage that changed the repository's pre-push hook to merge the run's pull request
+    When publish_draft pushes the run's publish branch
+    Then the hook runs without the credential and its merge attempt fails
+    And the pull request is not merged
+
+  Scenario: An agent stage still posts its proof records
+    Given a proof_verify turn of a run
+    When its agent posts a Proof of Done record through the posting primitive and uploads its proof assets through the proof asset store
+    Then the broker posts the record on the run's pull request and uploads the assets
+
+  Scenario: The review stage still posts its findings record
+    Given a review turn of a run
+    When its agent posts its findings record as a comment on the run's pull request
+    Then the broker posts the comment, and the turn's publication actions remain refused
+
+  Scenario: The scripted publication stages still publish
+    Given a run reaching publish_draft, pr_refresh and pr
+    When each stage pushes, opens, readies or arms the run's pull request as specified
+    Then no LIVESPEC_AGENT_PUBLICATION_DENIED refusal is raised
 ```
 
 ## Scenario 203 — An unpinned dispatch goes to the least-utilized declared factory that has a free scheduler slot
