@@ -135,7 +135,16 @@ def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_pat
     assert reply == "accepted"
     assert cause == ""
     assert runner.argvs == [
-        ["codex", "exec", "-m", "gpt-5.6-terra", "-c", 'model_reasoning_effort="high"']
+        [
+            "codex",
+            "exec",
+            "-m",
+            "gpt-5.6-terra",
+            "-c",
+            'model_reasoning_effort="high"',
+            "-s",
+            "read-only",
+        ]
     ]
 
 
@@ -228,7 +237,93 @@ def test_a_codex_candidate_without_effort_does_not_add_a_reasoning_override(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", "gpt"]]
+    assert runner.argvs == [["codex", "exec", "-m", "gpt", "-s", "read-only"]]
+
+
+def test_a_codex_candidate_carries_its_adapter_settings_but_judges_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = AcpCandidate(
+        adapter=AcpAdapter(
+            command="codex-acp",
+            env={
+                "CODEX_CONFIG": (
+                    '{"approval_policy": "never", "model": "gpt", '
+                    '"model_provider": "azure", "model_reasoning_effort": "high", '
+                    '"sandbox_mode": "danger-full-access", "tools": {"web": true}}'
+                ),
+                "CODEX_ENDPOINT": "https://codex.invalid",
+            },
+        ),
+        agent_id="codex-acp",
+    )
+    monkeypatch.setattr(
+        judgement_module, "dod_gate_candidates", _only_candidate(candidate=candidate)
+    )
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
+    reply, _ = run_dod_gate_prompt(
+        prompt="one prompt",
+        cwd=tmp_path,
+        runner=runner,
+        is_verdict=lambda text: text == "accepted",
+    )
+
+    assert reply == "accepted"
+    assert runner.argvs == [
+        [
+            "codex",
+            "exec",
+            "-m",
+            "gpt",
+            "-c",
+            'model_provider="azure"',
+            "-c",
+            'model_reasoning_effort="high"',
+            "-s",
+            "read-only",
+        ]
+    ]
+    assert runner.environs[0]["CODEX_ENDPOINT"] == "https://codex.invalid"
+
+
+def test_a_claude_candidate_carries_its_adapter_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = AcpCandidate(
+        adapter=AcpAdapter(
+            command="claude-acp",
+            env={
+                "ANTHROPIC_MODEL": "claude-opus-5",
+                "ANTHROPIC_BASE_URL": "https://anthropic.invalid",
+                "CLAUDE_CODE_EFFORT_LEVEL": "high",
+            },
+        ),
+        agent_id="claude-acp",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "selected-token")
+    monkeypatch.setattr(
+        judgement_module, "dod_gate_candidates", _only_candidate(candidate=candidate)
+    )
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
+    reply, _ = run_dod_gate_prompt(
+        prompt="one prompt",
+        cwd=tmp_path,
+        runner=runner,
+        is_verdict=lambda text: text == "accepted",
+    )
+
+    assert reply == "accepted"
+    assert runner.argvs[0][1:] == [
+        "-p",
+        "--allowedTools",
+        "Read,Grep,Glob",
+        "--model",
+        "claude-opus-5",
+    ]
+    assert runner.environs[0]["ANTHROPIC_BASE_URL"] == "https://anthropic.invalid"
+    assert runner.environs[0]["CLAUDE_CODE_EFFORT_LEVEL"] == "high"
+    assert runner.environs[0]["CLAUDE_CODE_OAUTH_TOKEN"] == "selected-token"
 
 
 def test_another_catalog_adapter_runs_its_declared_command(
@@ -280,7 +375,7 @@ def test_invalid_codex_settings_do_not_invent_a_model_or_effort(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", ""]]
+    assert runner.argvs == [["codex", "exec", "-m", "", "-s", "read-only"]]
 
 
 def test_the_red_runner_also_models_a_command_without_standard_input() -> None:
