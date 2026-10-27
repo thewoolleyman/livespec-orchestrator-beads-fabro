@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, get_args
 
 from livespec_runtime import spec_stated
 
@@ -125,4 +125,4 @@ def _looks_like_spec_stated_verdict(*, text: str) -> bool:
     if not isinstance(decoded, dict):
         return False
     kind = cast("dict[str, object]", decoded).get("kind")
-    return isinstance(kind, str) and kind in {"stated", "unstated"}
+    return isinstance(kind, str) and kind in get_args(spec_stated.StatedKind)
