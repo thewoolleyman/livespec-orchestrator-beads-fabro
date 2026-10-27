@@ -567,10 +567,20 @@ def test_admission_supplies_a_policy_resolved_from_the_target_repository(
     )
 
     [kwargs] = resolved
-    policy = kwargs["headroom"]
+    # Both providers' policies ride ONE carrier, because the Codex
+    # usage-window clause of section "Provider spend containment" is governed
+    # by this clause's own two committed dials and "introduces no
+    # configuration key of its own" -- so one caller builds both from one read
+    # of one repository, and this case reads the Claude half off that carrier.
+    policies = kwargs["headroom_policies"]
+    policy = policies.claude
     assert isinstance(policy, headroom.SessionHeadroomPolicy)
     assert policy.floor_percent == 45
     assert policy.read is not headroom_gate.read_projected_session_headroom
+    # The SAME committed floor reaches the sibling clause's policy, which is
+    # what makes "one dial governs both" a reading rather than a claim.
+    assert policies.codex is not None
+    assert policies.codex.floor_percent == 45
 
 
 def _stub_admission(

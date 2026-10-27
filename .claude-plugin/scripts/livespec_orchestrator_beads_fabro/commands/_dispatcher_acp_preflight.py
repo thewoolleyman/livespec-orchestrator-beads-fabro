@@ -99,6 +99,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_wait import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import PreflightInputs
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexHeadroomPolicy
 from livespec_orchestrator_beads_fabro.commands._acp_dispatch_coverage import (
     RenderedCandidate,
     rendered_dispatch_candidates,
@@ -140,6 +141,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion 
 
 __all__: list[str] = [
     "ACP_PREFLIGHT_REFUSAL_STAGE",
+    "AdmissionHeadroomPolicies",
     "acp_preflight_refusal",
     "credential_reprobe_wait_applies",
     "resolve_acp_preflight",
@@ -156,6 +158,30 @@ class JournalWriter(Protocol):
     def append(self, *, record: dict[str, object]) -> None:
         """Persist one journal record."""
         ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class AdmissionHeadroomPolicies:
+    """BOTH providers' admission headroom policies for ONE evaluation.
+
+    One carrier rather than two parameters, and the grouping is a statement
+    about the clauses rather than a way to shorten a signature. The Codex
+    usage-window clause of `SPECIFICATION/contracts.md` section "Provider spend
+    containment" says it "introduces no configuration key of its own": the same
+    committed `dispatcher.session_headroom_floor_percent` and
+    `dispatcher.session_headroom_horizon_minutes` govern both, one caller builds
+    both from one read of one repository at one instant, and the verdict's own
+    dial resolution asks "whichever policy was supplied" -- one question of one
+    value rather than two questions whose answers could disagree.
+
+    Each field defaults to ABSENT, which is the posture every snapshot composer
+    keeps: wait attention and idle-factory resolve a verdict with no policy at
+    all, so neither clause's filter issues a request and both become total
+    no-ops. Only the admission pass supplies either.
+    """
+
+    claude: SessionHeadroomPolicy | None = None
+    codex: CodexHeadroomPolicy | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -184,7 +210,7 @@ def resolve_acp_preflight(
     journal_path: Path | None,
     now_iso: str,
     probe: Callable[[str], str] | None = None,
-    headroom: SessionHeadroomPolicy | None = None,
+    headroom_policies: AdmissionHeadroomPolicies | None = None,
     factory_runs: FactoryRunReader | None = None,
 ) -> AcpPreflightVerdict:
     """Grade every ACP node's candidate chain for this repository, once.
@@ -197,14 +223,18 @@ def resolve_acp_preflight(
     leave it absent by the same default, which is what makes their verdict
     free of any external call.
 
-    `headroom` is the admission session-headroom policy, and it defaults to
-    ABSENT for exactly the same reason one clause over: "Snapshot composition
-    MUST NOT issue a live usage request", so wait attention and idle-factory
-    resolve a verdict with no policy and the filter becomes a total no-op. Only
-    the admission pass supplies one. Its presence is ALSO what decides whether
-    a repository declaring no fallback-enabled chain is graded at all, per the
-    module docstring above -- which is why the no-fallback test below reads it
-    rather than short-circuiting on the chain table alone.
+    `headroom_policies` carries BOTH clauses' admission headroom policies --
+    the Claude session clause's and the Codex usage-window clause's -- and it
+    defaults to ABSENT for the reason either would on its own: "Snapshot
+    composition MUST NOT issue a live usage request", so wait attention and
+    idle-factory resolve a verdict with no policy and both filters become total
+    no-ops. Only the admission pass supplies one. Its presence is ALSO what
+    decides whether a repository declaring no fallback-enabled chain is graded
+    at all, per the module docstring above -- which is why the no-fallback test
+    below reads it rather than short-circuiting on the chain table alone, and
+    why EITHER provider's policy is enough to earn that grading: the headroom
+    clauses cover "built-in single-candidate nodes without fallback metadata",
+    and a repository routed wholly to one provider supplies only that one.
 
     `factory_runs` is the host-wide availability-evidence seam, and it defaults
     to ABSENT on the same reasoning: it is the only input here that reaches a
@@ -222,7 +252,8 @@ def resolve_acp_preflight(
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=declared)
-    if not any(chain.enabled for chain in declared.values()) and headroom is None:
+    policies = headroom_policies or AdmissionHeadroomPolicies()
+    if not any(chain.enabled for chain in declared.values()) and _grades_nothing(policies=policies):
         return no_fallback_verdict()
     resolved = repository_acp_chain_sources(
         repo=repo, block=block, declared=declared, catalogs=catalogs
@@ -247,11 +278,25 @@ def resolve_acp_preflight(
             legacy_providers=_legacy_providers(journal_path=journal_path, now_iso=now_iso),
             builtin_pairs=builtin_pairs,
             probe=probe,
-            headroom=headroom,
+            headroom=policies.claude,
+            codex_headroom=policies.codex,
             unconfirmed_keys=ledger.unconfirmed_keys,
             confirmations=host_wide.confirmations,
         ),
     )
+
+
+def _grades_nothing(*, policies: AdmissionHeadroomPolicies) -> bool:
+    """Whether NEITHER headroom clause has a reading to take for this dispatch.
+
+    A repository declaring no fallback-enabled chain is graded whenever EITHER
+    policy arrived, because both clauses cover "built-in single-candidate nodes
+    without fallback metadata" -- so a test keyed on the Claude policy alone
+    would leave a repository routed wholly to Codex with no brake at all, which
+    is the shape of the gap `_acp_preflight_verdict._no_fallback_graded`
+    records for the Claude half.
+    """
+    return policies.claude is None and policies.codex is None
 
 
 def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:

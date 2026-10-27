@@ -114,8 +114,10 @@ def test_a_no_fallback_repository_with_no_covered_candidate_reads_and_records_no
         repo=repo,
         journal_path=journal_path,
         now_iso=_NOW,
-        headroom=headroom_gate.session_headroom_policy(
-            repo=repo, now_iso=_NOW, journal_path=journal_path, read=counting_read
+        headroom_policies=preflight.AdmissionHeadroomPolicies(
+            claude=headroom_gate.session_headroom_policy(
+                repo=repo, now_iso=_NOW, journal_path=journal_path, read=counting_read
+            ),
         ),
     )
     headroom_gate.journal_session_headroom(
@@ -174,8 +176,10 @@ def test_a_no_fallback_repository_with_no_policy_resolves_no_chain_sources(
         repo=repo,
         journal_path=journal_path,
         now_iso=_NOW,
-        headroom=headroom_gate.session_headroom_policy(
-            repo=repo, now_iso=_NOW, journal_path=journal_path, read=counting_read
+        headroom_policies=preflight.AdmissionHeadroomPolicies(
+            claude=headroom_gate.session_headroom_policy(
+                repo=repo, now_iso=_NOW, journal_path=journal_path, read=counting_read
+            ),
         ),
     )
     assert (resolutions, reads) == ([repo], [_TOKEN])

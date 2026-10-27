@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records im
     SESSION_HEADROOM_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    AdmissionHeadroomPolicies,
     resolve_acp_preflight,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
@@ -108,8 +109,10 @@ def test_a_repository_with_no_fallback_chain_journals_one_headroom_assessment(
         repo=repo,
         journal_path=journal_path,
         now_iso=_NOW,
-        headroom=headroom_gate.session_headroom_policy(
-            repo=repo, now_iso=_NOW, journal_path=journal_path, read=counting_read
+        headroom_policies=AdmissionHeadroomPolicies(
+            claude=headroom_gate.session_headroom_policy(
+                repo=repo, now_iso=_NOW, journal_path=journal_path, read=counting_read
+            ),
         ),
     )
     headroom_gate.journal_session_headroom(

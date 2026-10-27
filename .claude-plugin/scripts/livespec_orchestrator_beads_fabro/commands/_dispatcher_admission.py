@@ -38,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    AdmissionHeadroomPolicies,
     resolve_acp_preflight,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibility import (
@@ -53,6 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
     stamp_pending_claim,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_headroom_gate import (
+    codex_headroom_policy,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
     auto_disposition_journal_record,
@@ -319,10 +323,16 @@ def _eligible_legs(
     does it: a policy built here is built once per admission evaluation, which
     is what makes its memo the "one assessment per distinct projected
     credential per admission evaluation" guarantee rather than a convention.
-    The policy shares the pass's own `now_iso`, so the observation time the
-    journal reports is the instant this evaluation is dated by -- and it shares
-    the ONE journal path the verdict is resolved against, which is also the
-    history its drain rate is measured from. Both readers take it from the
+    The TWO policies -- the Claude session clause's and the Codex
+    usage-window clause's -- are built the same way and from the same inputs,
+    because the Codex clause "introduces no configuration key of its own": one
+    committed floor and one committed horizon govern both, and each policy
+    carries its own memoized reading of its own provider's credential.
+
+    Each policy shares the pass's own `now_iso`, so the observation time the
+    journal reports is the instant this evaluation is dated by -- and each
+    shares the ONE journal path the verdict is resolved against, which is also
+    the history its drain rates are measured from. Both readers take it from the
     journal this pass actually appends to rather than re-deriving it, because
     `dispatcher.py` accepts a `--journal` override and a second derivation
     cannot be proven to name the same file.
@@ -333,7 +343,10 @@ def _eligible_legs(
         repo=repo,
         journal_path=journal_path,
         now_iso=now_iso,
-        headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
+        headroom_policies=AdmissionHeadroomPolicies(
+            claude=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
+            codex=codex_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
+        ),
         factory_runs=FactoryRunReader(repo=repo),
     )
     rework_admittable, refused = filter_eligible_candidates(

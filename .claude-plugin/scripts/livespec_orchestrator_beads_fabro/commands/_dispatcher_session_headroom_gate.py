@@ -332,9 +332,20 @@ def journal_session_headroom(
     A floor of ZERO is neither of those: the reading is still attempted and
     still journaled, which is why the guard tests the floor for `None` rather
     than for falsity.
+
+    THE CODEX READINGS COUNT TOWARDS THE SECOND GUARD, which is a correctness
+    requirement rather than symmetry. A repository routed WHOLLY to Codex
+    assesses no Claude candidate at all, so a guard testing the Claude list
+    alone would return before writing anything and drop every reading that
+    evaluation took -- which reads downstream as a credential nobody assessed,
+    leaving the next evaluation's per-window drain rates with no baseline to
+    measure against. The two lists are tested together and either one alone is
+    enough to produce a record.
     """
     floor = verdict.session_headroom_floor_percent
-    if floor is None or not verdict.headroom_assessments:
+    if floor is None:
+        return
+    if not verdict.headroom_assessments and not verdict.codex_headroom_assessments:
         return
     journal.append(
         record=session_headroom_assessment_record(
@@ -342,5 +353,6 @@ def journal_session_headroom(
             floor_percent=floor,
             assessments=verdict.headroom_assessments,
             nodes=verdict.nodes,
+            codex_assessments=verdict.codex_headroom_assessments,
         )
     )

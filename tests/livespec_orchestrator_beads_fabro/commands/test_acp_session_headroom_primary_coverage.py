@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     ResolvedAcpNode,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    AdmissionHeadroomPolicies,
     resolve_acp_preflight,
 )
 
@@ -169,8 +170,10 @@ def test_a_claude_routed_repository_is_assessed_by_the_filter(
         repo=repo,
         journal_path=None,
         now_iso=_NOW,
-        headroom=headroom_gate.session_headroom_policy(
-            repo=tmp_path, now_iso=_NOW, journal_path=None, read=counting_read
+        headroom_policies=AdmissionHeadroomPolicies(
+            claude=headroom_gate.session_headroom_policy(
+                repo=tmp_path, now_iso=_NOW, journal_path=None, read=counting_read
+            ),
         ),
     )
 
@@ -207,10 +210,12 @@ def test_an_above_floor_reading_leaves_a_claude_routed_repository_admissible(
         repo=_claude_routed_repo(root=tmp_path),
         journal_path=None,
         now_iso=_NOW,
-        headroom=headroom.SessionHeadroomPolicy(
-            floor_percent=_FLOOR,
-            horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
-            read=lambda: reading,
+        headroom_policies=AdmissionHeadroomPolicies(
+            claude=headroom.SessionHeadroomPolicy(
+                floor_percent=_FLOOR,
+                horizon_minutes=headroom.DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES,
+                read=lambda: reading,
+            ),
         ),
     )
 

@@ -44,7 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     NodePreflight,
     SkippedCandidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexUsageReading
 from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom_records import (
+    CODEX_ASSESSMENTS_KEY,
     codex_usage_reading_fields,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
@@ -55,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
 )
 
 __all__: list[str] = [
+    "CODEX_ASSESSMENTS_KEY",
     "SESSION_HEADROOM_STAGE",
     "headroom_refusal_fields",
     "session_headroom_assessment_record",
@@ -78,6 +81,7 @@ def session_headroom_assessment_record(
     floor_percent: int,
     assessments: tuple[SessionHeadroomReading, ...],
     nodes: tuple[NodePreflight, ...] = (),
+    codex_assessments: tuple[CodexUsageReading, ...] = (),
 ) -> dict[str, object]:
     """The per-work-item record one admission evaluation's readings produce.
 
@@ -85,6 +89,16 @@ def session_headroom_assessment_record(
     without it: the same 35 percent remaining is ample under a floor of 20 and
     short under a floor of 50, and the dial is committed configuration a reader
     of an old journal line cannot recover from the repository as it stands now.
+
+    THE CODEX READINGS RIDE IN THE SAME RECORD, under their own key, which is
+    what the sibling clause's "beside the five-hour figures" asks for one level
+    up: a reader sees every provider this evaluation assessed at one instant
+    without a join, and the two baseline reads recognise ONE stage and differ
+    only in which key they walk. `codex_assessments` DEFAULTS to empty so every
+    existing caller is unaffected, and the key is written even when it is --
+    an omitted key is what a record from a build predating that clause looks
+    like, so a reader could not tell "no Codex candidate was assessed" from
+    "this record was never asked".
     """
     return {
         "stage": SESSION_HEADROOM_STAGE,
@@ -92,6 +106,9 @@ def session_headroom_assessment_record(
         "session_headroom_floor_percent": floor_percent,
         "assessments": [
             session_headroom_reading_fields(reading=reading) for reading in assessments
+        ],
+        CODEX_ASSESSMENTS_KEY: [
+            codex_usage_reading_fields(reading=reading) for reading in codex_assessments
         ],
         "node_selections": {
             node.node: session_headroom_selection_fields(node=node) for node in nodes

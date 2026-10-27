@@ -48,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     build_acp_preflight_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
+    CODEX_ASSESSMENTS_KEY,
     SESSION_HEADROOM_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
@@ -247,6 +248,13 @@ def test_a_skipped_primary_admits_the_item_on_its_fallback_and_says_why(
         "work_item_id": "bd-ib-ready",
         "session_headroom_floor_percent": _FLOOR,
         "assessments": [_reading_fields(utilization=90.0, remaining=10.0)],
+        # The sibling Codex usage-window clause of section "Provider spend
+        # containment" records its own readings under its own key in this SAME
+        # record. This evaluation assessed no `codex-acp` candidate, so the key
+        # is present and EMPTY -- written rather than omitted, because an
+        # omitted key is what a record from a build predating that clause looks
+        # like and a reader could not tell the two apart.
+        CODEX_ASSESSMENTS_KEY: [],
         "node_selections": {
             "implement": {
                 "selected_availability_key": "codex",
