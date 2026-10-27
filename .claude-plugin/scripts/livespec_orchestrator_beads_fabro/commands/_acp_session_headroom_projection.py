@@ -76,10 +76,13 @@ __all__: list[str] = [
     "UNOBSERVABLE_READING_REASON",
     "UNREADABLE_OBSERVATION_REASON",
     "UTILIZATION_NOT_HIGHER_REASON",
+    "exhausts_inside_horizon",
     "headroom_skip_kind",
     "projection_skips_candidate",
     "reading_with_projection",
+    "render_session_headroom_instant",
     "session_headroom_projection",
+    "unavailable_projection_reason",
 ]
 
 # The three reasons NO projection was attempted, one per condition the clause
@@ -220,7 +223,9 @@ def _attempted_projection(
     if baseline is None or rate is None or remaining is None or observed is None:
         return SessionHeadroomProjection(
             result=UNAVAILABLE_RESULT,
-            reason=_unavailable_reason(baseline=baseline, observed=observed),
+            reason=unavailable_projection_reason(
+                baseline_present=baseline is not None, observed=observed
+            ),
             five_hour_drain_percent_per_hour=rate,
             baseline_observed_at=None if baseline is None else baseline.observed_at,
             horizon_minutes=horizon_minutes,
@@ -230,15 +235,27 @@ def _attempted_projection(
         result=PROJECTED_RESULT,
         five_hour_drain_percent_per_hour=rate,
         baseline_observed_at=baseline.observed_at,
-        projected_exhaustion_at=exhaustion.strftime(_INSTANT_FORMAT),
+        projected_exhaustion_at=render_session_headroom_instant(instant=exhaustion),
         horizon_minutes=horizon_minutes,
-        skip_applied=_exhausts_inside_horizon(
+        skip_applied=exhausts_inside_horizon(
             observed=observed, exhaustion=exhaustion, horizon_minutes=horizon_minutes
         ),
     )
 
 
-def _exhausts_inside_horizon(
+def render_session_headroom_instant(*, instant: datetime) -> str:
+    """One computed instant in the SAME spelling every journaled instant uses.
+
+    PUBLIC because the Codex usage-window clause renders a projected exhaustion
+    of its own and `parse_session_headroom_instant` reads both back. Two
+    renderers of one format is how a projection this build writes becomes one a
+    later pass of the same build cannot parse -- an `unreadable-observation-
+    instant` reason pointing at a record defect nobody introduced.
+    """
+    return instant.strftime(_INSTANT_FORMAT)
+
+
+def exhausts_inside_horizon(
     *, observed: datetime, exhaustion: datetime, horizon_minutes: int
 ) -> bool:
     """Whether the exhaustion is STRICTLY earlier than the observation plus horizon.
@@ -282,9 +299,7 @@ def projection_skips_candidate(*, reading: SessionHeadroomReading) -> bool:
     return projection.skip_applied
 
 
-def _unavailable_reason(
-    *, baseline: SessionHeadroomBaseline | None, observed: datetime | None
-) -> str:
+def unavailable_projection_reason(*, baseline_present: bool, observed: datetime | None) -> str:
     """Which input an attempted projection could not measure.
 
     The OBSERVATION is reported first because it is the input whose failure
@@ -292,9 +307,17 @@ def _unavailable_reason(
     was computed are both perfectly good, and the thing that stopped the
     projection is a journaled instant nothing can read -- a defect in the
     record rather than a fact about the window.
+
+    PUBLIC and keyed on the baseline's PRESENCE rather than on the baseline
+    itself, because the Codex usage-window clause applies "exactly the
+    baseline, drain-rate, unavailable-projection, and horizon rules of the
+    Claude clause" per window, and its own rate is measured against a window's
+    `used_percent` rather than against a five-hour utilization. A second
+    account of this ladder is how the two clauses come to report a missing
+    history and an unmoved window under one another's reason.
     """
     if observed is None:
         return UNREADABLE_OBSERVATION_REASON
-    if baseline is None:
+    if not baseline_present:
         return NO_BASELINE_REASON
     return UTILIZATION_NOT_HIGHER_REASON
