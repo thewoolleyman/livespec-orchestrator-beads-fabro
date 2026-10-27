@@ -40,6 +40,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     HOOK_OVER_LIMIT_SENTINEL,
     hook_over_limit_from_text,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
@@ -79,7 +83,12 @@ def _publish_script() -> str:
     assert block is not None
     attr = _SCRIPT.search(block.group("body"))
     assert attr is not None
-    return attr.group("value").replace(r"\"", '"').replace("{{ inputs.default_branch }}", "master")
+    return (
+        attr.group("value")
+        .replace(r"\"", '"')
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", "true")
+    )
 
 
 def _run_clone(*, tmp_path: Path) -> tuple[Path, Path]:
@@ -138,6 +147,9 @@ def _sandbox_helpers(*, tmp_path: Path, limit_seconds: int | None) -> Path:
     root.mkdir()
     _ = (root / HOOK_LIMIT_PROGRAM_FILENAME).write_text(
         hook_limit_program_source(), encoding="utf-8"
+    )
+    _ = (root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
     )
     if limit_seconds is not None:
         budget = push_observation_budget_seconds(limit_seconds=limit_seconds)

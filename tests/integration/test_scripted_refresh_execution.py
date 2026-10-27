@@ -82,6 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     REFRESH_COUNT_STATE_FILENAME,
     publication_state_filenames,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
     RECORD_FILE_PROGRAM_FILENAME,
     record_file_program_source,
@@ -108,6 +112,23 @@ _DEFAULT_BRANCH = "master"
 # stage must abort rather than resolve.
 _OWNED_FILE = "owned.txt"
 _SHARED_FILE = "shared.txt"
+_RECORD_JSON = "record.json"
+_RECORD_MARKDOWN = "notes.md"
+_DECLARATION_FILE = ".livespec.jsonc"
+_RECORD_JSON_WITH_REMOVABLE_ENTRIES = (
+    '[{"id": "seed"}, {"id": "removed-by-run"}, {"id": "removed-by-default"}]\n'
+)
+_DECLARATION = """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "record_files": [
+        {"path": "record.json", "format": "json-array", "key": ["id"]},
+        {"path": "notes.md", "format": "markdown-insertions"}
+      ]
+    }
+  }
+}
+"""
 
 
 # The coverage hooks an allowlisted spawn must scrub, so no child of this file
@@ -298,7 +319,7 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
-def _origin_with_default(*, root: Path) -> Path:
+def _origin_with_default(*, root: Path, record_json: str = '[{"id": "seed"}]\n') -> Path:
     """A bare origin whose default branch carries the shared file."""
     origin = root / "origin.git"
     _ = origin.mkdir(parents=True)
@@ -306,6 +327,13 @@ def _origin_with_default(*, root: Path) -> Path:
     seed = root / "seed"
     _ = seed.mkdir()
     _ = _git("init", "--quiet", f"--initial-branch={_DEFAULT_BRANCH}", cwd=seed)
+    _ = (seed / _DECLARATION_FILE).write_text(_DECLARATION, encoding="utf-8")
+    _ = (seed / ".gitattributes").write_text(
+        "record.json merge=record-conflict\n", encoding="utf-8"
+    )
+    _ = (seed / _RECORD_JSON).write_text(record_json, encoding="utf-8")
+    _ = (seed / _RECORD_MARKDOWN).write_text("- seed entry\n", encoding="utf-8")
+    _ = _git("add", ".gitattributes", _DECLARATION_FILE, _RECORD_JSON, _RECORD_MARKDOWN, cwd=seed)
     _ = _commit(cwd=seed, path=_SHARED_FILE, text="base\n", subject="chore: seed")
     _ = _git("push", "--quiet", str(origin), f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=seed)
     return origin
@@ -329,6 +357,9 @@ def _materialized_plugins_root(*, root: Path) -> Path:
     _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
         record_file_program_source(), encoding="utf-8"
     )
+    merge_program = plugins_root / RECORD_FILE_MERGE_PROGRAM_FILENAME
+    _ = merge_program.write_text(record_file_merge_program_source(), encoding="utf-8")
+    merge_program.chmod(0o700)
     gate_script = root / "install-plugin-gate.sh"
     _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
     return plugins_root
@@ -340,6 +371,7 @@ def _build(
     armed: bool = False,
     arming_unreadable: bool = False,
     disarm_fails: bool = False,
+    record_json: str = '[{"id": "seed"}]\n',
 ) -> _Refresh:
     """An origin carrying `master` and the publish branch, and a clone on the branch.
 
@@ -351,9 +383,10 @@ def _build(
     which is what makes the stage's later re-entry the ENFORCEMENT arm rather
     than a first recording.
     """
-    origin = _origin_with_default(root=root)
+    origin = _origin_with_default(root=root, record_json=record_json)
     clone = root / "clone"
     _ = _git("clone", "--quiet", str(origin), str(clone), cwd=root)
+    _ = _git("config", "merge.record-conflict.driver", "false", cwd=clone)
     _ = _commit(
         cwd=clone, path=_OWNED_FILE, text="this run's work\n", subject="feat: this run's work"
     )
@@ -872,6 +905,111 @@ def test_a_validated_resume_head_supplies_the_provenance_the_record_lacks(
     assert f"LIVESPEC_PR_REFRESH_{outcome}" in result.stderr
     assert "LIVESPEC_PR_REFRESH_NO_PROVENANCE" not in result.stderr
     assert box.remote_head(ref=_BRANCH) == box.local_head()
+
+
+def _published_record_conflict(
+    *,
+    box: _Refresh,
+    path: str,
+    run_text: str,
+    default_text: str,
+    extra: tuple[str, str] | None = None,
+) -> str:
+    """Publish one record edit, then advance the default branch into it."""
+    if extra is not None:
+        extra_path, extra_text = extra
+        _ = (box.clone / extra_path).write_text(extra_text, encoding="utf-8")
+        _ = _git("add", extra_path, cwd=box.clone)
+    published = _commit(cwd=box.clone, path=path, text=run_text, subject="feat: record edit")
+    _ = _git("push", "--quiet", "--force", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=box.clone)
+    _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    if extra is not None:
+        _ = _advance_default(box=box, path=extra[0], text="default conflicting edit\n")
+    _ = _advance_default(box=box, path=path, text=default_text)
+    return published
+
+
+@pytest.mark.parametrize(
+    ("path", "run_text", "default_text", "expected"),
+    [
+        (
+            _RECORD_JSON,
+            '[{"id": "seed"}, {"id": "removed-by-default"}]\n',
+            '[{"id": "seed"}, {"id": "removed-by-run"}]\n',
+            '[\n  {\n    "id": "seed"\n  }\n]\n',
+        ),
+        (
+            _RECORD_MARKDOWN,
+            "- seed entry\n- run entry\n",
+            "- seed entry\n- default entry\n",
+            "- seed entry\n- default entry\n- run entry\n",
+        ),
+    ],
+)
+def test_declared_record_conflicts_complete_refresh_without_repair(
+    tmp_path: Path,
+    path: str,
+    run_text: str,
+    default_text: str,
+    expected: str,
+) -> None:
+    """Scenario 200 preserves independent JSON removals and Markdown insertions."""
+    box = _build(root=tmp_path, record_json=_RECORD_JSON_WITH_REMOVABLE_ENTRIES)
+    _ = _published_record_conflict(box=box, path=path, run_text=run_text, default_text=default_text)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    diagnostic = (
+        "LIVESPEC_RECORD_FILE_MERGED: "
+        f"path={path} "
+        f"format={'json-array' if path == _RECORD_JSON else 'markdown-insertions'} "
+        f"default-count={1} run-count={0 if path == _RECORD_JSON else 1}"
+    )
+    assert diagnostic in result.stderr
+    assert (box.clone / path).read_text(encoding="utf-8") == expected
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+
+
+def test_unsafe_record_conflicts_and_a_rejected_merged_head_take_repair(tmp_path: Path) -> None:
+    """Scenario 200 preserves repair for foreign paths, divergent keys, and gates."""
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+        extra=(_SHARED_FILE, "run conflicting edit\n"),
+    )
+    result = _run(box=box)
+    assert result.returncode == 1, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert box.local_head() == published
+
+    box = _build(root=tmp_path / "divergent")
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed", "side": "run"}]\n',
+        default_text='[{"id": "seed", "side": "default"}]\n',
+    )
+    result = _run(box=box)
+    assert result.returncode == 1, result.stderr
+    assert "LIVESPEC_RECORD_FILE_MERGE_REFUSED" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+
+    box = _build(root=tmp_path / "gate")
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+    result = _run(box=box, check_suite=_FAILING_GATE)
+    assert result.returncode == 1, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
 
 
 def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> None:
