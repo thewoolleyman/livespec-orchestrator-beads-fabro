@@ -125,4 +125,4 @@ def _looks_like_spec_stated_verdict(*, text: str) -> bool:
     if not isinstance(decoded, dict):
         return False
     kind = cast("dict[str, object]", decoded).get("kind")
-    return isinstance(kind, str) and kind in {"stated", "partial", "unstated"}
+    return isinstance(kind, str) and kind in {"stated", "unstated"}

@@ -57,9 +57,17 @@ chain is what failed.
 
 from __future__ import annotations
 
+import json
+import os
+import sys
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
+    CLAUDE_OAUTH_TOKEN_ENV,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
     dod_gate_candidates,
 )
@@ -68,14 +76,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     DodJudgement,
     judgement_subject,
     parse_judgement_reply,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
-    CAUSE_INPUT_LIMIT,
-    CAUSE_JUDGE_COMMAND_FAILED,
-    CAUSE_JUDGEMENT_TIMED_OUT,
-    CAUSE_NO_ELIGIBLE_MODEL,
-    CandidateChainResult,
-    run_candidate_chain,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt import (
     HOST_ENDING_CONTRACT,
@@ -86,14 +86,23 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt
     resolve_judge_path,
     resolve_judge_timeout_seconds,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage import (
+    CandidateInputUsage,
+    candidate_input_usage,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    select_factory_credential,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
+    from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -114,7 +123,49 @@ __all__: list[str] = [
     "run_dod_judgement",
 ]
 
+# The three conditions the clause names as "cannot be run" that are properties
+# of the INVOCATION, plus the one property of the payload. Each is one stable
+# string, because the did-not-run record is capped per distinct cause and a
+# cause carrying a varying detail would make every attempt distinct.
+CAUSE_NO_ELIGIBLE_MODEL = "no-eligible-model"
+CAUSE_JUDGEMENT_TIMED_OUT = "judgement-timed-out"
+CAUSE_JUDGE_COMMAND_FAILED = "judge-command-failed"
+CAUSE_INPUT_LIMIT = "input-limit-reached"
 CAUSE_PROMPT_UNREADABLE = "dod-gate-prompt-unreadable"
+
+# The runner's own mapping of a caught invocation failure, which is where these
+# two numbers come from rather than from any convention restated here.
+_EXIT_TIMED_OUT = 124
+_EXIT_EXECUTABLE_ABSENT = 127
+_CODEX_AGENT = "codex-acp"
+_CODEX_SANDBOX_SETTINGS = frozenset({"sandbox_mode", "approval_policy"})
+_CLAUDE_AGENT = "claude-acp"
+_PROMPT_FILE_PREFIX = "livespec-dod-gate-"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _CandidateChainResult:
+    """The candidate result whose verdict remains eligible to decide."""
+
+    reply: str | None
+    cause: str
+    deciding_candidate: str | None = None
+    usage: CandidateInputUsage | None = None
+    bound_ended_candidates: tuple[str, ...] = ()
+
+    def __iter__(self) -> Iterator[str | None]:
+        """Yield the established reply/cause pair for existing host consumers."""
+        yield self.reply
+        yield self.cause
+
+
+@dataclass(frozen=True, kw_only=True)
+class _CandidateRun:
+    """One candidate's result, its live usage total, and its budget disposition."""
+
+    result: CommandResult
+    usage: CandidateInputUsage
+    ended_by_input_limit: bool
 
 
 def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam input.
@@ -193,18 +244,189 @@ def run_dod_gate_prompt(
     runner: CommandRunner,
     is_verdict: Callable[[str], bool],
     timeout_seconds: float | None = None,
-) -> CandidateChainResult:
+) -> _CandidateChainResult:
     """Run the resolved `dod_gate` candidates in order, closing stdin for each.
 
     A candidate that cannot run or produces a reply the caller cannot parse
     advances the ordered fallback chain. The first parseable verdict returns
     immediately, so no later candidate can run after a judgement is decided.
     """
-    return run_candidate_chain(
-        prompt=prompt,
-        cwd=cwd,
-        runner=runner,
-        is_verdict=is_verdict,
-        timeout_seconds=timeout_seconds,
-        candidate_resolver=dod_gate_candidates,
+    resolved = dod_gate_candidates(cwd=cwd)
+    if resolved is None:
+        return _CandidateChainResult(reply=None, cause=CAUSE_NO_ELIGIBLE_MODEL)
+    environ = dict(os.environ)
+    resolved_timeout = (
+        resolve_judge_timeout_seconds(environ=environ)
+        if timeout_seconds is None
+        else timeout_seconds
     )
+    last_cause = CAUSE_NO_ELIGIBLE_MODEL
+    bound_ended: list[str] = []
+    for candidate in resolved:
+        result = _run_candidate(
+            candidate=candidate,
+            prompt=prompt,
+            cwd=cwd,
+            runner=runner,
+            environ=environ,
+            timeout_seconds=resolved_timeout,
+        )
+        if result.ended_by_input_limit:
+            bound_ended.append(_candidate_label(candidate=candidate))
+            last_cause = CAUSE_INPUT_LIMIT
+            continue
+        if result.result.exit_code != 0:
+            last_cause = _invocation_cause(exit_code=result.result.exit_code)
+            continue
+        if result.usage.reached_limit:
+            bound_ended.append(_candidate_label(candidate=candidate))
+            last_cause = CAUSE_INPUT_LIMIT
+            continue
+        if is_verdict(result.result.stdout):
+            return _CandidateChainResult(
+                reply=result.result.stdout,
+                cause="",
+                deciding_candidate=_candidate_label(candidate=candidate),
+                usage=result.usage,
+                bound_ended_candidates=tuple(bound_ended),
+            )
+        last_cause = "unparseable-verdict"
+    return _CandidateChainResult(
+        reply=None,
+        cause=last_cause,
+        bound_ended_candidates=tuple(bound_ended),
+    )
+
+
+def _run_candidate(
+    *,
+    candidate: AcpCandidate,
+    prompt: str,
+    cwd: Path,
+    runner: CommandRunner,
+    environ: dict[str, str],
+    timeout_seconds: float,
+) -> _CandidateRun:
+    """Run one configured host candidate with a prompt file as its only stdin."""
+    argv, judge_environ = _candidate_command(candidate=candidate, environ=environ)
+    with tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX) as scratch:
+        prompt_path = Path(scratch) / "prompt.txt"
+        _ = prompt_path.write_text(prompt, encoding="utf-8")
+        with prompt_path.open("rb") as handle:
+            streaming = cast(
+                "Callable[..., CommandResult] | None",
+                getattr(runner, "run_streaming", None),
+            )
+            if callable(streaming):
+                output: list[str] = []
+                ended_by_input_limit = False
+
+                def stop_at_input_limit(line: str) -> bool:
+                    nonlocal ended_by_input_limit
+                    output.append(line)
+                    usage = candidate_input_usage(output="".join(output))
+                    ended_by_input_limit = usage.reached_limit
+                    return ended_by_input_limit
+
+                result = streaming(
+                    argv=argv,
+                    cwd=cwd,
+                    timeout_seconds=timeout_seconds,
+                    on_stdout_line=stop_at_input_limit,
+                    env=judge_environ,
+                    stdin=handle.fileno(),
+                )
+                return _CandidateRun(
+                    result=result,
+                    usage=candidate_input_usage(output=result.stdout),
+                    ended_by_input_limit=ended_by_input_limit,
+                )
+            result = runner.run(
+                argv=argv,
+                cwd=cwd,
+                timeout_seconds=timeout_seconds,
+                env=judge_environ,
+                stdin=handle.fileno(),
+            )
+            usage = candidate_input_usage(output=result.stdout)
+            return _CandidateRun(
+                result=result,
+                usage=usage,
+                ended_by_input_limit=False,
+            )
+
+
+def _candidate_command(
+    *, candidate: AcpCandidate, environ: dict[str, str]
+) -> tuple[list[str], dict[str, str]]:
+    """The direct host command for one catalog-resolved ACP candidate.
+
+    The host runs the one-shot CLIs, never the ACP adapter command itself: an
+    adapter is a JSON-RPC stdio server that does not grade a prompt on standard
+    input, and the Codex adapter path is baked into the factory sandbox image.
+    What the candidate resolved still reaches the CLI: its adapter environment
+    (effort, endpoint and auth overrides) and, for Codex, every string
+    `CODEX_CONFIG` setting as a `-c` override. The factory's sandbox and
+    approval settings do not carry over; a host judge only reads, so Codex runs
+    `-s read-only`, the counterpart of the Claude judge's read-only tool list.
+    """
+    judge_environ = {**environ, **candidate.adapter.env}
+    if candidate.agent_id == _CODEX_AGENT:
+        settings = _codex_settings(candidate=candidate)
+        model = settings.pop("model", "")
+        argv = ["codex", "exec", "-m", model, "--json"]
+        for key, value in settings.items():
+            argv.extend(("-c", f"{key}={json.dumps(value)}"))
+        argv.extend(("-s", "read-only"))
+        return argv, judge_environ
+    if candidate.agent_id == _CLAUDE_AGENT:
+        model = candidate.adapter.env.get("ANTHROPIC_MODEL", "")
+        credential = select_factory_credential(
+            environ=environ,
+            home=Path.home(),
+            warn=lambda message: sys.stderr.write(f"{message}\n"),
+        )
+        judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
+        argv = judgement_argv(judge_path=resolve_judge_path(environ=environ), model=model)
+        return argv, judge_environ
+    return [candidate.adapter.command, *candidate.adapter.args], judge_environ
+
+
+def _candidate_label(*, candidate: AcpCandidate) -> str:
+    """The candidate identity a durable record can name without host-local paths."""
+    if candidate.agent_id == _CODEX_AGENT:
+        model = _codex_settings(candidate=candidate).get("model")
+        return f"{candidate.agent_id}:{model if model is not None else ''}"
+    if candidate.agent_id == _CLAUDE_AGENT:
+        return f"{candidate.agent_id}:{candidate.adapter.env.get('ANTHROPIC_MODEL', '')}"
+    return candidate.agent_id or ""
+
+
+def _codex_settings(*, candidate: AcpCandidate) -> dict[str, str]:
+    """The string settings rendered into this candidate's catalog adapter.
+
+    Only a string is carried, so a malformed value is dropped rather than
+    rendered, and the sandbox and approval settings belong to the factory
+    sandbox, so they are not carried either.
+    """
+    raw = candidate.adapter.env.get("CODEX_CONFIG", "")
+    try:
+        decoded: object = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    payload = cast("dict[str, object]", decoded)
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in _CODEX_SANDBOX_SETTINGS and isinstance(value, str)
+    }
+
+
+def _invocation_cause(*, exit_code: int) -> str:
+    if exit_code == _EXIT_EXECUTABLE_ABSENT:
+        return CAUSE_NO_ELIGIBLE_MODEL
+    if exit_code == _EXIT_TIMED_OUT:
+        return CAUSE_JUDGEMENT_TIMED_OUT
+    return CAUSE_JUDGE_COMMAND_FAILED

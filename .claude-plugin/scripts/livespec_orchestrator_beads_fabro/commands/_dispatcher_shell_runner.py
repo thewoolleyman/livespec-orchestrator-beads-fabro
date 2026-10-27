@@ -59,7 +59,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO, cast
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -68,8 +68,6 @@ __all__: list[str] = [
     "ShellCommandRunner",
     "child_env",
 ]
-
-IS_POSIX = os.name == "posix"
 
 
 def child_env(*, delta: Mapping[str, str | None]) -> dict[str, str]:
@@ -198,12 +196,16 @@ def _stream_process(  # noqa: C901, PLR0915 - timeout and callback exits must ea
     stderr: list[str] = []
 
     def read_stdout() -> None:
-        for line in cast(TextIO, process.stdout):
-            lines.put(line)
+        stream = process.stdout
+        if stream is not None:
+            for line in stream:
+                lines.put(line)
         lines.put(None)
 
     def read_stderr() -> None:
-        stderr.append(cast(TextIO, process.stderr).read())
+        stream = process.stderr
+        if stream is not None:
+            stderr.append(stream.read())
 
     stdout_thread = threading.Thread(target=read_stdout, daemon=True)
     stderr_thread = threading.Thread(target=read_stderr, daemon=True)
@@ -264,7 +266,7 @@ def _stream_process(  # noqa: C901, PLR0915 - timeout and callback exits must ea
 def _terminate_process_group(*, process: subprocess.Popen[str]) -> None:
     """End the candidate's own session without signalling the Dispatcher."""
     try:
-        if IS_POSIX:
+        if os.name == "posix":
             os.killpg(process.pid, signal.SIGTERM)
         else:
             process.terminate()
@@ -287,7 +289,7 @@ def _wait_for_termination(*, process: subprocess.Popen[str]) -> None:
 def _kill_process_group(*, process: subprocess.Popen[str]) -> None:
     """Escalate an ignored graceful stop without leaving judge helpers alive."""
     try:
-        if IS_POSIX:
+        if os.name == "posix":
             os.killpg(process.pid, signal.SIGKILL)
         else:
             process.kill()
