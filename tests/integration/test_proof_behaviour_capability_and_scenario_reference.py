@@ -299,6 +299,21 @@ def test_the_capture_prompt_refuses_suite_only_evidence_before_publication() -> 
     assert "output and exit status" in refusal
 
 
+def test_the_capture_prompt_makes_the_positive_and_pass_through_paths_explicit() -> None:
+    """Capture names both the direct exercise and the unchanged success path.
+
+    A suite-only refusal that does not say what counts as the replacement left
+    capture to prove prompt prose, while a refusal that does not say what
+    happens after every assertion clears it invites a second publication path.
+    """
+    step = _step(name="proof-capture.md", number=4)
+
+    assert "running the code under test on a fixture" in step
+    assert "showing its output and exit status" in step
+    assert "every assertion carries behaviour evidence" in step
+    assert "continue to Step 5 exactly as written" in step
+
+
 def test_the_capture_prompt_ends_needs_human_on_a_surface_it_cannot_reach() -> None:
     """An unreachable surface ENDS the run; it never gets a stand-in.
 
