@@ -3419,7 +3419,34 @@ rebase, run the existing repository-declared `sandbox_check_suite` as a
 foreground command with its own timeout, and push only after that gate passes. Before it rebases, `pr_refresh` MUST read whether the run's pull request carries an auto-merge request and, when it does, MUST disarm it. When the request cannot be read or cannot be disarmed, `pr_refresh` MUST fail closed naming that measurement or action, before any rebase or push. Within a run, only `pr` arms auto-merge, and only for a head named by the latest `verified` or `carried_forward` record of this run, so a disarmed pull request stays unarmed until `pr` re-arms it. The one arming outside a run is the host-side hold release of §"The per-item merge hold". That release MUST NOT arm while a run of the item is live, and it MUST arm only a pull request whose current head is named by the latest `verified` or `carried_forward` record of the item's latest run; otherwise it MUST refuse, naming the measurement that failed, and leave the pull request unarmed.
 A rewrite MUST use an explicit lease against the recorded remote head of this
 run's own publish branch. Hooks MUST run normally. It MUST NOT use bare force,
-`--no-verify`, or rewrite another ref. A changed head MUST take the decision of
+`--no-verify`, or rewrite another ref.
+When the forge rejects that leased push, `pr_refresh` MUST read origin's
+publish branch once more before it names a cause, because a rejection is the
+forge's report about the write and not a measurement of where the ref now
+points. Here the leased head is the recorded remote head the lease was taken
+against, and the pushed head is the refreshed head the push carried. When
+origin's publish branch then points at the exact pushed head, the write
+landed although the forge reported an error, and `pr_refresh` MUST fail
+closed with the named cause `LIVESPEC_PR_REFRESH_PUSH_LANDED_ERRORED`, whose
+detail MUST name the forge's error text, the pushed head, and the head of the
+run's pull request ref (`refs/pull/<number>/head`) as origin reports it, and
+MUST state that the publish branch and the pull request may disagree. In that
+case `pr_refresh` MUST NOT report `LIVESPEC_PR_REFRESH_LEASE_FAILED` and MUST
+NOT state that the remote moved or that another writer pushed. When origin's
+publish branch then points at neither the leased head nor the pushed head,
+`pr_refresh` MUST report `LIVESPEC_PR_REFRESH_LEASE_FAILED` and route to
+`needs_human` exactly as it does for a lease failure today. When origin's
+publish branch points at the leased head, the write did not land, and
+`pr_refresh` MUST keep its existing lease-failure cause and routing; this
+paragraph does not change that case. When origin's publish branch cannot be
+read after the rejection, `pr_refresh` MUST fail closed with the named cause
+`LIVESPEC_PR_REFRESH_PUSH_OUTCOME_UNOBSERVABLE`, stating that whether the
+write landed cannot be established, and MUST NOT report
+`LIVESPEC_PR_REFRESH_LEASE_FAILED`. A head of the pull request ref that
+cannot be read MUST be named as unobservable in the landed-but-errored detail
+and MUST NOT change which of these causes is reported. Each of these causes
+MUST carry the recovery artifact pointer this paragraph already requires.
+Scenario 184 in `scenarios.md` exercises these sentences. A changed head MUST take the decision of
 "Proof carry-forward across a refresh" below: on `reproof_required` the run
 MUST return to `proof_capture`, then `review` and `proof_verify`, and on
 `carried_forward` it MUST proceed to `pr`; in either case only a proof record
