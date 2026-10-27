@@ -3702,10 +3702,27 @@ Feature: The resolve-blocked valve item carries the terminated run's account, ab
     Then the summary carries the run id, the factory name and its server, that a needs_human termination routed the decision to this valve, why it terminated, what the run reported, the preserved reference, and the available actions
 
   Scenario: An unreachable factory costs the enrichment and never the valve
-    Given a blocked needs-human work-item whose factory is unreachable
+    Given a blocked needs-human work-item whose factory is unreachable and that carries no needs-human cause comment for its latest run
     When needs-attention renders the item's resolve-blocked valve item
     Then the run account enrichment is omitted
     And the valve item is still surfaced
+
+  Scenario: The valve summary renders from the needs-human cause comment without a factory read
+    Given a blocked needs-human work-item carrying the livespec-needs-human-cause comment its termination wrote for its latest run
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account from that comment and the preserved reference from the item's preserve-by-reference comment
+    And no fabro inspect or other factory read is run for the item
+
+  Scenario: An item without the cause comment falls back to the factory read
+    Given a blocked needs-human work-item whose run was terminated before the needs-human cause comment existed
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account read from the factory exactly as before
+
+  Scenario: A cause comment keeps the run account when the factory is unreachable
+    Given a blocked needs-human work-item carrying the needs-human cause comment for its latest run, whose factory is unreachable
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account from that comment
+    And no factory read is attempted for the item
 ```
 
 ## Scenario 126 — Ledger normalization adopts a beads-native `open` row and assigns it a real rank
