@@ -215,15 +215,15 @@ def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
 def _is_proof_only_resume(*, observation: ResumeObservation) -> bool:
     """Whether the merged-proof arm is exempt from the ordinary ready requirement.
 
-    `None` preserves the pre-arm direct callers until the gatherer can establish
-    the parking-record predicate.  The command path always supplies a definite
-    value, so an unreadable or non-proof parking record never receives this
-    exemption in a real resume.
+    The exemption requires an affirmative measurement.  An absent value is not
+    a compatibility default: it means the caller did not establish that the
+    acceptance park belongs to the proof leg, and must retain the ordinary
+    refusal rather than resuming a merged item on an invented route.
     """
     return (
         observation.status == "acceptance"
         and observation.pull_request_state == PR_STATE_MERGED
-        and observation.proof_only_resume is not False
+        and observation.proof_only_resume is True
     )
 
 

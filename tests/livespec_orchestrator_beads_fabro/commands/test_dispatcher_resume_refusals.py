@@ -200,10 +200,42 @@ def test_an_acceptance_item_may_resume_its_merged_pull_request() -> None:
         observation=_observation(
             status="acceptance",
             pull_request_state=module.PR_STATE_MERGED,
+            proof_only_resume=True,
         )
     )
 
     assert refusals == ()
+
+
+def test_an_acceptance_item_off_the_proof_leg_still_refuses_a_merged_pull_request() -> None:
+    """Only a measured proof park may take the merged proof-only arm."""
+    module = _refusals_module()
+    refusals = module.resume_refusals(
+        observation=_observation(
+            status="acceptance",
+            pull_request_state=module.PR_STATE_MERGED,
+            proof_only_resume=False,
+        )
+    )
+
+    assert len(refusals) == 2
+    assert "resolve-blocked" in refusals[0]
+    assert "reconcile-merged" in refusals[1]
+
+
+def test_an_unmeasured_acceptance_item_cannot_take_the_merged_proof_arm() -> None:
+    """An absent parking measurement must not silently authorize a resume."""
+    module = _refusals_module()
+    refusals = module.resume_refusals(
+        observation=_observation(
+            status="acceptance",
+            pull_request_state=module.PR_STATE_MERGED,
+        )
+    )
+
+    assert len(refusals) == 2
+    assert "resolve-blocked" in refusals[0]
+    assert "reconcile-merged" in refusals[1]
 
 
 def test_a_third_resume_is_refused_naming_both_earlier_resumes() -> None:
