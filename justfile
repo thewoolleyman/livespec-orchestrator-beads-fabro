@@ -477,7 +477,24 @@ check:
     # refuses to submit a Job for a recipe that reads no recognised skip
     # variable (livespec-dev-tooling-ebtm6t). Unset, the full aggregate runs;
     # either way `just-check.sh` records the green token's skipped-target scope.
-    read -ra skip_targets <<< "${SKIP_TARGETS:-}"
+    # Scope the janitor token to the same omitted targets pre-push checks. The
+    # adapter owns that declaration so an environmental sandbox omission cannot
+    # persist a scope the same-tree push will reject (or vice versa).
+    mapfile -t reusable_scope < <(bash dev-tooling/green-token-scope.sh scope)
+    read -ra requested_skip_targets <<< "${SKIP_TARGETS:-}"
+    skip_targets=()
+    for skip_target in "${reusable_scope[@]}" "${requested_skip_targets[@]}"; do
+        duplicate=false
+        for existing_target in "${skip_targets[@]}"; do
+            if [[ "$existing_target" == "$skip_target" ]]; then
+                duplicate=true
+                break
+            fi
+        done
+        if [[ "$duplicate" == false ]]; then
+            skip_targets+=("$skip_target")
+        fi
+    done
     bash dev-tooling/just-check.sh "${skip_targets[@]}"
 
 [positional-arguments]

@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
 # A green token is a tree verdict, not an unconditional cache entry. The shared
 # utility records only `tree_hash`; this adapter stores the excluded targets too.
+# Its `scope` operation is the one declaration both the janitor and pre-push use
+# for targets their respective aggregate paths intentionally omit.
 set -euo pipefail
 
 operation=${1:-}
-if [[ "$operation" != write && "$operation" != check ]]; then
+if [[ "$operation" != write && "$operation" != check && "$operation" != scope ]]; then
     exit 2
 fi
 shift
+
+if [[ "$operation" == scope ]]; then
+    [[ "$#" -eq 0 ]] || exit 2
+    # Pre-push always omits the same-repository live picker acceptance. A
+    # sandbox additionally omits the environmental master-CI check.
+    printf '%s\n' check-codex-skill-picker
+    if [[ "$(git config --get --bool livespec.sandboxExempt || printf 'false')" == true ]]; then
+        printf '%s\n' check-master-ci-green
+    fi
+    exit 0
+fi
+
 targets=("$@")
 for target in "${targets[@]}"; do
     [[ "$target" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 2
