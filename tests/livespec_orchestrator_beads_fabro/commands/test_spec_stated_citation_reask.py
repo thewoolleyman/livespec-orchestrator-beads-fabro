@@ -97,6 +97,34 @@ def test_unpaired_inline_markup_is_not_discarded_from_a_heading() -> None:
     assert literal_heading in model.prompts[1]
 
 
+def test_an_unmatched_emphasis_run_is_not_partially_discarded() -> None:
+    """An unmatched run cannot make a shortened citation valid."""
+    literal_heading = "## Foo***"
+    shortened_citation = "## Foo*"
+    tree = {"contracts.md": literal_heading + "\n\nThe clause text.\n"}
+    response = json.dumps(
+        {
+            "kind": "stated",
+            "stated_by": [shortened_citation],
+            "generalization_target": None,
+            "rationale": "still names a different heading",
+        }
+    )
+    model = _Responses(responses=(response, response))
+
+    verdict = judge_within_ceiling(
+        spec_tree=tree,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert not is_successful(verdict)
+    assert len(model.prompts) == 2
+    assert shortened_citation in model.prompts[1]
+    assert literal_heading in model.prompts[1]
+
+
 def test_an_exact_h2_wins_over_an_ambiguous_normalized_heading() -> None:
     """An existing exact H2 does not spend the correction prompt."""
     exact_heading = "## Foo"

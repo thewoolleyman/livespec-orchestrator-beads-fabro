@@ -85,7 +85,13 @@ _MARKER = re.compile(r"^#+[ \t]*")
 # alternatives require non-whitespace content at both edges; the underscore
 # alternative also keeps Markdown's intraword restriction.
 _PAIRED_INLINE_MARKUP = re.compile(
-    r"(`+)([^`]+?)\1|(\*+)(\S(?:.*?\S)?)\3|(?<!\w)(_+)(\S(?:.*?\S)?)\5(?!\w)"
+    "".join(
+        (
+            r"(?<!`)(`+)(?!`)([^`]+?)\1(?!`)|",
+            r"(?<!\*)(\*+)(?!\*)(\S(?:.*?\S)?)\3(?!\*)|",
+            r"(?<!\w)(?<!_)(_+)(?!_)(\S(?:.*?\S)?)\5(?!_)(?!\w)",
+        )
+    )
 )
 
 _GOVERNING_LEVEL = 2
