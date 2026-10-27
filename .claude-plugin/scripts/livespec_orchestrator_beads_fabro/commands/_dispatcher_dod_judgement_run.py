@@ -90,6 +90,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage 
     CandidateInputUsage,
     candidate_input_usage,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
@@ -156,6 +157,15 @@ class _CandidateChainResult:
         """Yield the established reply/cause pair for existing host consumers."""
         yield self.reply
         yield self.cause
+
+
+@dataclass(frozen=True, kw_only=True)
+class _CandidateRun:
+    """One candidate's result, its live usage total, and its budget disposition."""
+
+    result: CommandResult
+    usage: CandidateInputUsage
+    ended_by_input_limit: bool
 
 
 def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam input.
@@ -261,20 +271,23 @@ def run_dod_gate_prompt(
             environ=environ,
             timeout_seconds=resolved_timeout,
         )
-        if result.exit_code != 0:
-            last_cause = _invocation_cause(exit_code=result.exit_code)
-            continue
-        usage = candidate_input_usage(output=result.stdout)
-        if usage.reached_limit:
+        if result.ended_by_input_limit:
             bound_ended.append(_candidate_label(candidate=candidate))
             last_cause = CAUSE_INPUT_LIMIT
             continue
-        if is_verdict(result.stdout):
+        if result.result.exit_code != 0:
+            last_cause = _invocation_cause(exit_code=result.result.exit_code)
+            continue
+        if result.usage.reached_limit:
+            bound_ended.append(_candidate_label(candidate=candidate))
+            last_cause = CAUSE_INPUT_LIMIT
+            continue
+        if is_verdict(result.result.stdout):
             return _CandidateChainResult(
-                reply=result.stdout,
+                reply=result.result.stdout,
                 cause="",
                 deciding_candidate=_candidate_label(candidate=candidate),
-                usage=usage,
+                usage=result.usage,
                 bound_ended_candidates=tuple(bound_ended),
             )
         last_cause = "unparseable-verdict"
@@ -293,19 +306,53 @@ def _run_candidate(
     runner: CommandRunner,
     environ: dict[str, str],
     timeout_seconds: float,
-):
+) -> _CandidateRun:
     """Run one configured host candidate with a prompt file as its only stdin."""
     argv, judge_environ = _candidate_command(candidate=candidate, environ=environ)
     with tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX) as scratch:
         prompt_path = Path(scratch) / "prompt.txt"
         _ = prompt_path.write_text(prompt, encoding="utf-8")
         with prompt_path.open("rb") as handle:
-            return runner.run(
+            streaming = cast(
+                "Callable[..., CommandResult] | None",
+                getattr(runner, "run_streaming", None),
+            )
+            if callable(streaming):
+                output: list[str] = []
+                ended_by_input_limit = False
+
+                def stop_at_input_limit(line: str) -> bool:
+                    nonlocal ended_by_input_limit
+                    output.append(line)
+                    usage = candidate_input_usage(output="".join(output))
+                    ended_by_input_limit = usage.reached_limit
+                    return ended_by_input_limit
+
+                result = streaming(
+                    argv=argv,
+                    cwd=cwd,
+                    timeout_seconds=timeout_seconds,
+                    on_stdout_line=stop_at_input_limit,
+                    env=judge_environ,
+                    stdin=handle.fileno(),
+                )
+                return _CandidateRun(
+                    result=result,
+                    usage=candidate_input_usage(output=result.stdout),
+                    ended_by_input_limit=ended_by_input_limit,
+                )
+            result = runner.run(
                 argv=argv,
                 cwd=cwd,
                 timeout_seconds=timeout_seconds,
                 env=judge_environ,
                 stdin=handle.fileno(),
+            )
+            usage = candidate_input_usage(output=result.stdout)
+            return _CandidateRun(
+                result=result,
+                usage=usage,
+                ended_by_input_limit=False,
             )
 
 
