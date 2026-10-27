@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -114,12 +115,17 @@ def _stale_run(*, tmp_path: Path) -> tuple[Path, str, str]:
     return run, base, current
 
 
-def _publish_script() -> str:
+def _publish_script(*, check_suite: str = "true") -> str:
     block = _NODE.search(_WORKFLOW.read_text(encoding="utf-8"))
     assert block is not None
     attr = _SCRIPT.search(block.group("body"))
     assert attr is not None
-    return attr.group("value").replace(r"\"", '"').replace("{{ inputs.default_branch }}", "master")
+    return (
+        attr.group("value")
+        .replace(r"\"", '"')
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
+    )
 
 
 def _forge_double(*, tmp_path: Path) -> Path:
@@ -152,7 +158,7 @@ def _calls(*, path: Path) -> tuple[tuple[str, ...], ...]:
     return tuple(calls)
 
 
-def _publish(*, tmp_path: Path, run: Path) -> _Published:
+def _publish(*, tmp_path: Path, run: Path, check_suite: str = "true") -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
     bin_dir = _forge_double(tmp_path=tmp_path)
@@ -179,7 +185,7 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
         }
     )
     result = subprocess.run(
-        ["sh", "-c", _publish_script()],
+        ["sh", "-c", _publish_script(check_suite=check_suite)],
         cwd=str(run),
         env=env,
         text=True,
@@ -279,8 +285,23 @@ def test_stale_base_is_refreshed_before_a_workflow_clean_branch_is_published(
 def test_declared_record_conflict_is_merged_before_draft_publication(tmp_path: Path) -> None:
     """Scenario 200 preserves independent removals before draft publication."""
     run = _record_conflicted_run(tmp_path=tmp_path)
+    trace = tmp_path / "publication-trace"
+    gate = tmp_path / "gate"
+    gate.write_text(
+        "#!/bin/sh\n"
+        f"printf 'gate:%s\\n' \"$(git rev-parse HEAD)\" >> {shlex.quote(str(trace))}\n",
+        encoding="utf-8",
+    )
+    gate.chmod(gate.stat().st_mode | stat.S_IXUSR)
+    pre_push = run / ".git" / "hooks" / "pre-push"
+    pre_push.write_text(
+        "#!/bin/sh\n"
+        f"printf 'push:%s\\n' \"$(git rev-parse HEAD)\" >> {shlex.quote(str(trace))}\n",
+        encoding="utf-8",
+    )
+    pre_push.chmod(pre_push.stat().st_mode | stat.S_IXUSR)
 
-    published = _publish(tmp_path=tmp_path, run=run)
+    published = _publish(tmp_path=tmp_path, run=run, check_suite=f"sh {shlex.quote(str(gate))}")
 
     assert published.result.returncode == 0, published.result.stderr
     assert (
@@ -289,6 +310,11 @@ def test_declared_record_conflict_is_merged_before_draft_publication(tmp_path: P
     assert (run / "record.json").read_text(encoding="utf-8") == (
         "[\n" "  {\n" '    "id": "seed"\n' "  }\n" "]\n"
     )
+    refreshed_head = _git(run, "rev-parse", "HEAD").stdout.strip()
+    assert trace.read_text(encoding="utf-8").splitlines() == [
+        f"gate:{refreshed_head}",
+        f"push:{refreshed_head}",
+    ]
     assert published.draft_created is True
 
 
