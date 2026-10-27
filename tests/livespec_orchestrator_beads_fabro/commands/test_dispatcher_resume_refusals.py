@@ -193,6 +193,19 @@ def test_a_merged_pull_request_is_refused_naming_reconcile_merged() -> None:
     assert "reconcile-merged" in refusals[0]
 
 
+def test_an_acceptance_item_may_resume_its_merged_pull_request() -> None:
+    """The merged proof route begins from an acceptance item rather than `ready`."""
+    module = _refusals_module()
+    refusals = module.resume_refusals(
+        observation=_observation(
+            status="acceptance",
+            pull_request_state=module.PR_STATE_MERGED,
+        )
+    )
+
+    assert refusals == ()
+
+
 def test_a_third_resume_is_refused_naming_both_earlier_resumes() -> None:
     """The per-run proof-loop caps are bounded on the host by this refusal."""
     module = _refusals_module()
