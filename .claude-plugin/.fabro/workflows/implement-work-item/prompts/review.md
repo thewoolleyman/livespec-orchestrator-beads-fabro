@@ -330,6 +330,17 @@ disposition, distrust the disposition record and treat that as BLOCKING
 or use the needs-human protocol rather than assuming the tree is still
 green.
 
+## Missing-verdict retry (conditional)
+
+If this turn's immediate stage preamble contains `LIVESPEC_VERDICT_RETRY`, this
+is the one bounded retry because the preceding review turn succeeded without a
+recorded verdict label. The route records that retry at
+`livespec-review-verdict-retry`. Stay on the same head and do not change the
+review's substantive duties. The retry instruction is stage-scoped: end by
+emitting only its verdict — the one routing JSON object from the output contract
+below, with no prose after it. A second missing label routes to needs_human with
+the review stage named as its cause.
+
 ## Output (required, exact)
 
 FIRST, emit the factory proof coverage enumeration — the shown comparison

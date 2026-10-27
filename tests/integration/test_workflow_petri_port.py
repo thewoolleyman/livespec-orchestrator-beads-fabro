@@ -127,6 +127,19 @@ _IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
     "implement",
     "implement_completion",
 }
+
+# The bounded retry routes for verdict stages (v?; work-item bd-ib-wg5zyt).
+# Each route returns to its ACP stage once when a successful turn emitted no
+# verdict label; the separate entry gateways clear that one-visit state before
+# every ordinary re-entry. They are executable graph nodes, so their time is
+# part of the credential allowance rather than an unaccounted retry.
+_VERDICT_RETRY_ADDED = {
+    "review_verdict_entry",
+    "review_verdict_retry",
+    "proof_verify_verdict_entry",
+    "proof_verify_verdict_retry",
+}
+_VERDICT_RETRY_LOOP = _VERDICT_RETRY_ADDED | {"review", "proof_verify"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -580,7 +593,7 @@ def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_vis
     text = _graph_text()
     conditions = _conditions(text=text)
     assert conditions["review", "disposition"] == "preferred_label=fix"
-    assert conditions["review", "proof_verify"] == "preferred_label=approve"
+    assert conditions["review", "proof_verify_verdict_entry"] == "preferred_label=approve"
     bodies = _node_bodies(text=text)
     assert "max_visits=" in bodies["review_fix"]
     assert "max_visits=" in bodies["disposition"]
@@ -674,7 +687,8 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
 
     # The two new stages, the v134 refresh-repair classifier, the v145 refresh
     # route, the v156 per-assertion grade, the v165 completion gate, the v175
-    # recapture route and the v208 hook-refusal route are the ONLY nodes added,
+    # recapture route, the v208 hook-refusal route and the v? verdict retries
+    # are the ONLY nodes added,
     # and nothing was dropped: a node
     # the ported graph lost would be an executable path missing from a figure
     # still presented as an allowance.
@@ -687,6 +701,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_ADDED
         | _HOOK_ROUTE_ADDED
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
+        | _VERDICT_RETRY_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -710,6 +725,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_LOOP
         | _HOOK_ROUTE_LOOP
         | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
+        | _VERDICT_RETRY_LOOP
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

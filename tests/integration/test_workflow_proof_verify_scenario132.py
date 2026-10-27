@@ -314,11 +314,11 @@ def test_no_review_edge_reaches_pr_and_the_ship_on_cap_hatch_is_gone() -> None:
     assert "merge_on_review_cap_outcome" not in "".join(review)
     approve = [edge for edge in review if 'label="approve"' in edge]
     assert len(approve) == 1
-    assert _target_of(edge=approve[0]) == _VERIFY
+    assert _target_of(edge=approve[0]) == "proof_verify_verdict_entry"
 
 
-def test_proof_verify_is_entered_only_from_review_or_its_own_grade_route() -> None:
-    """Nothing but `review` and the grade's own retry route reaches the replay node.
+def test_proof_verify_is_entered_only_from_its_verdict_gateway_or_retry_route() -> None:
+    """Only the verdict gateway and its missing-label retry route reach replay.
 
     The contract says "entered from `review` or from `proof_grade_route`", and
     the reason the set is CLOSED is the record: the replay reads the capture that
@@ -336,7 +336,10 @@ def test_proof_verify_is_entered_only_from_review_or_its_own_grade_route() -> No
     ]
 
     assert entries, "the reserved workflow routes nothing into proof_verify"
-    assert {_source_of(edge=edge) for edge in entries} == {"review", "proof_grade_route"}
+    assert {_source_of(edge=edge) for edge in entries} == {
+        "proof_verify_verdict_entry",
+        "proof_verify_verdict_retry",
+    }
 
 
 def test_the_verify_node_dominates_every_green_path_so_it_is_success_critical() -> None:
@@ -446,30 +449,28 @@ def test_replay_exhaustion_has_no_routed_terminal_on_this_engine() -> None:
     )
 
 
-def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_human() -> None:
-    """The node's two `needs_human` routes, and why the fallthrough is one of them.
+def test_a_failed_replay_parks_and_an_unmatched_verdict_retries_once() -> None:
+    """A failed replay parks; an unlabeled replay enters its bounded retry route.
 
     A FAILED outcome is the structured needs-human ending every ACP node here
     shares, weighted so it stays deterministic against the label conditions. The
-    UNCONDITIONAL fallback also lands at `needs_human`, and that choice is
-    load-bearing twice over: the engine rejects a node whose every outgoing edge
+    UNCONDITIONAL fallback enters `proof_verify_verdict_retry`, which re-enters
+    the same ACP node once and then parks with a stage-specific cause. It remains
+    unconditional because the engine rejects a node whose every outgoing edge
     carries a condition (`all_conditional_edges`, the defect that took the whole
-    factory down twice), and of the four possible fallthrough targets it is the
-    only one that neither publishes an unreplayed proof nor reports an unreadable
-    verdict as a converged non-reproduction.
+    factory down twice), and it neither publishes an unreplayed proof nor reports
+    an unreadable verdict as a converged non-reproduction.
     """
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_VERIFY)
     parked = _verify_edges_to(target="needs_human")
 
     fallthrough = [edge for edge in edges if "condition=" not in edge]
     assert len(fallthrough) == 1, f"expected exactly one unconditional edge, got {fallthrough}"
-    assert fallthrough[0].startswith(f"{_VERIFY} -> needs_human")
-    assert "unmatched proof_verify outcome" in fallthrough[0]
-    assert len(parked) == 2
-    blocked = [edge for edge in parked if "condition=" in edge]
-    assert len(blocked) == 1
-    assert 'condition="outcome=failed"' in blocked[0]
-    assert "weight=100" in blocked[0]
+    assert fallthrough[0].startswith(f"{_VERIFY} -> proof_verify_verdict_retry")
+    assert "missing proof_verify verdict label" in fallthrough[0]
+    assert len(parked) == 1
+    assert 'condition="outcome=failed"' in parked[0]
+    assert "weight=100" in parked[0]
 
 
 def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:

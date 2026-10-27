@@ -154,6 +154,13 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # entry plus three routed re-entries is the whole of it. `verify_pr` is ONE: it
 # is reached only from `pr_route`'s unconditional edge and `verify_pr -> exit` is
 # the only path out, so nothing re-enters it.
+#
+# The verdict entry and retry routes (bd-ib-wg5zyt) are command nodes on the
+# review and proof-verify paths. Each entry gateway occurs once per ordinary
+# visit and each retry route at most once per such visit; their matching stage
+# visit counts therefore bound them. They touch only a run-state file and are
+# declared downward by the repository, but omitting them here would still make
+# the subprocess ceiling shorter than a path the graph can execute.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
     "implement": 4,
@@ -168,8 +175,12 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "proof_verify": 9,
     "proof_grade": 9,
     "proof_grade_route": 3,
+    "proof_verify_verdict_entry": 9,
+    "proof_verify_verdict_retry": 9,
     "disposition": 3,
     "review_fix": 3,
+    "review_verdict_entry": 7,
+    "review_verdict_retry": 7,
     "pr_refresh": 8,
     "pr_refresh_head": 7,
     "pr": 4,
