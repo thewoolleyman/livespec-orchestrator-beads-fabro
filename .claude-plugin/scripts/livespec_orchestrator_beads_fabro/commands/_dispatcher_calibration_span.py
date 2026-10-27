@@ -9,7 +9,10 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     CalibrationRecord,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import tdd_span_fields
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
+    IMPLEMENT_SELECTED_INDEX_KEY,
+    tdd_span_fields,
+)
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
 
 __all__: list[str] = [
@@ -110,6 +113,11 @@ def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
         ),
         **record.bounce_cap.as_record(),
         **tdd_span_fields(signals=record.tdd),
+        **(
+            {IMPLEMENT_SELECTED_INDEX_KEY: record.tdd.selected_index}
+            if record.tdd.selected_index is not None
+            else {}
+        ),
     }
 
 

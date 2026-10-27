@@ -46,7 +46,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate im
     size_justified_at_admission,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_implement_adapter import (
-    implement_adapter_label,
+    implement_adapter_selection,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_commits import (
     TddCommitSignals,
@@ -94,13 +94,19 @@ def gather_tdd_signals(
     """Assemble this dispatch's TDD signals from every available source.
 
     `records` are the per-dispatch journal records calibration already read
-    back; they supply both the dispatch id and the implement node's resolved
-    adapter. The order aggregate is looked up MOST-SPECIFIC-FIRST — the
+    back; they supply both the dispatch id and the implement node's selected
+    candidate (or its resolved primary when no selection was recorded). The
+    order aggregate is looked up MOST-SPECIFIC-FIRST — the
     dispatch id before the work-item id — so a re-dispatched item reads its
     own run's refusals; the work-item key is the fallback for a dispatch whose
     id never reached the journal.
     """
     dispatch_id = dispatch_id_for(records=records, work_item_id=item.id)
+    implement = implement_adapter_selection(
+        records=records,
+        work_item_id=item.id,
+        dispatch_id=dispatch_id,
+    )
     return tdd_signals(
         item=item,
         commits=commit_signals_for_dispatch(
@@ -109,7 +115,8 @@ def gather_tdd_signals(
         order=sink.signals_for(
             keys=(dispatch_id, item.id) if dispatch_id is not None else (item.id,)
         ),
-        adapter=implement_adapter_label(records=records, work_item_id=item.id),
+        adapter=implement.adapter,
+        selected_index=implement.selected_index,
         size_justified=_size_justified_signal(
             records=records,
             item=item,

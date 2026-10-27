@@ -405,3 +405,104 @@ def test_a_dispatch_with_nothing_observable_gathers_only_the_assertion_count(
     assert signals.first_product_write_before_red is None
     assert signals.adapter is None
     assert signals.assertion_count == 2
+
+
+def test_gathered_signals_use_the_selected_implement_candidate_or_primary_fallback(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    from livespec_orchestrator_beads_fabro.commands import _dispatcher_implement_adapter
+    from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
+        CLAUDE_AGENT_ID,
+        CODEX_AGENT_ID,
+        builtin_agent_catalog,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
+        build_calibration_record,
+        calibration_journal_record,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_span import (
+        calibration_request_line,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSink
+
+    uses_selection = "implement_adapter_selection" in _dispatcher_implement_adapter.__all__
+    primary = builtin_agent_catalog()[CLAUDE_AGENT_ID].command
+    common = {
+        "repo": Path("/repo"),
+        "item": _item(),
+        "outcome": _outcome(),
+        "sink": TddOrderSink(path=tmp_path / "selection.json"),
+        "runner": _Runner(stdout=_commits_payload(commits=[])),
+    }
+
+    selected = module.gather_tdd_signals(
+        **common,
+        records=(
+            _dispatch_id_record(),
+            {
+                "stage": "acp-nodes",
+                "work_item_id": "bd-ib-3h5vfq",
+                "acp_nodes": {"implement": {"adapter": primary}},
+            },
+            {
+                "stage": "acp-node-selection",
+                "work_item_id": "bd-ib-3h5vfq",
+                "dispatch_id": _DISPATCH_ID,
+                "selections": [],
+            },
+            {
+                "stage": "acp-node-selection",
+                "work_item_id": "bd-ib-3h5vfq",
+                "dispatch_id": _DISPATCH_ID,
+                "selections": {
+                    "implement": {"selected_agent_id": CODEX_AGENT_ID, "selected_index": 1}
+                },
+            },
+        ),
+    )
+    no_selection = module.gather_tdd_signals(
+        **common,
+        records=(
+            _dispatch_id_record(),
+            {
+                "stage": "acp-nodes",
+                "work_item_id": "bd-ib-3h5vfq",
+                "acp_nodes": {"implement": {"adapter": primary}},
+            },
+        ),
+    )
+
+    assert selected.adapter == (CODEX_AGENT_ID if uses_selection else CLAUDE_AGENT_ID)
+    assert getattr(selected, "selected_index", None) == (1 if uses_selection else None)
+    assert no_selection.adapter == CLAUDE_AGENT_ID
+    assert getattr(no_selection, "selected_index", None) is None
+    calibration = build_calibration_record(
+        item=_item(),
+        outcome=_outcome(),
+        repo_name="livespec-orchestrator-beads-fabro",
+        journal_records=(),
+        wall_clock_seconds=12.0,
+        token_cost_micros=7,
+        dispatch_context_size=40,
+        merged_pr_diff_size=50,
+        tdd=selected,
+    )
+    journal = calibration_journal_record(record=calibration)
+    span = json.loads(calibration_request_line(record=calibration, now_ns=1))
+    attributes = {
+        entry["key"]: entry["value"]
+        for entry in span["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"]
+    }
+
+    assert journal["livespec.implement.adapter"] == (
+        CODEX_AGENT_ID if uses_selection else CLAUDE_AGENT_ID
+    )
+    assert journal.get("livespec.implement.selected_index") == (1 if uses_selection else None)
+    assert attributes["livespec.implement.adapter"] == {
+        "stringValue": CODEX_AGENT_ID if uses_selection else CLAUDE_AGENT_ID
+    }
+    assert attributes.get("livespec.implement.selected_index") == (
+        {"intValue": "1"} if uses_selection else None
+    )
+    assert "implement_adapter_selection" in _dispatcher_implement_adapter.__all__
