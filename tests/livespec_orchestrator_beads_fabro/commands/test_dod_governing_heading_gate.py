@@ -25,6 +25,7 @@ that heading whatever the judgement said.
 from __future__ import annotations
 
 import stat
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -41,9 +42,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
     judge_definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    SPEC_IDENTITY_BLOCK_HEADING,
     STAGE_PRE_ADMISSION,
     STAGE_PRE_DISPATCH,
     recorded_governing_heading,
+    recorded_spec_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     dod_gate_prompt_path,
@@ -71,7 +74,6 @@ _PASS_REPLY = '{"outcome": "passed"}'
 _REMEDY = "add that heading to the reference line"
 
 _VERDICT = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,))
-_PARTIAL_VERDICT = GoverningHeadingVerdict(kind="partial", stated_by=(_GOVERNING,))
 
 
 def _item() -> WorkItem:
@@ -205,6 +207,116 @@ def test_the_pre_dispatch_judgement_holds_on_the_same_heading(tmp_path: Path) ->
     assert any(_GOVERNING in finding for finding in decision.findings)
 
 
+def test_an_unrelated_spec_revision_reuses_a_recorded_verdict_without_a_second_judge(
+    tmp_path: Path,
+) -> None:
+    """A recorded governing clause, not the whole tree, identifies the subject."""
+    repo = _repo(tmp_path=tmp_path)
+    ledger = _Ledger()
+    calls = 0
+
+    def reader(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict:
+        nonlocal calls
+        _ = (item, repo)
+        calls += 1
+        return _VERDICT
+
+    first = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+    _ = (repo / "SPECIFICATION" / "unrelated.md").write_text(
+        "# Unrelated\n\n## Scenario 999 — An unrelated clause\n\nBody.\n",
+        encoding="utf-8",
+    )
+    second = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+
+    assert first.reused is False
+    assert second.reused is True
+    assert calls == 1
+    assert len(ledger.bodies) == 1
+
+
+def test_a_selected_clause_revision_runs_the_host_judge_again(tmp_path: Path) -> None:
+    """Changing selected provenance retires the earlier clause-form verdict."""
+    repo = _repo(tmp_path=tmp_path)
+    ledger = _Ledger()
+    calls = 0
+
+    def reader(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict:
+        nonlocal calls
+        _ = (item, repo)
+        calls += 1
+        return _VERDICT
+
+    first = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+    _ = (repo / "SPECIFICATION" / "scenarios.md").write_text(
+        f"# Scenarios\n\n{_GOVERNING}\n\nThe changed governing behaviour.\n\n"
+        f"{_CITED}\n\nOther.\n",
+        encoding="utf-8",
+    )
+    second = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=reader,
+    )
+
+    assert first.reused is False
+    assert second.reused is False
+    assert calls == 2
+    assert len(ledger.bodies) == 2
+
+
+def test_a_spec_change_tier_release_uses_the_whole_tree_identity(tmp_path: Path) -> None:
+    """An approval taking for a real spec commitment must not reuse clauses."""
+    ledger = _Ledger()
+    item = replace(_item(), spec_commitment_hint="ratified-spec-change")
+
+    decision = judge_definition_of_done(
+        item=item,
+        repo=_repo(tmp_path=tmp_path),
+        stage=STAGE_PRE_ADMISSION,
+        comments=(),
+        append=ledger.append,
+        runner=_Runner(),
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=_reader(verdict=_VERDICT),
+    )
+
+    assert decision.spec_identity is not None
+    assert decision.spec_identity.form == "tree"
+    assert decision.spec_identity.value.startswith("tree:")
+
+
 def test_a_judgement_that_could_not_be_taken_leaves_the_rubric_verdict_alone(
     tmp_path: Path,
 ) -> None:
@@ -232,22 +344,6 @@ def test_the_recorded_verdict_carries_the_governing_heading_to_the_node(
     assert recorded.stated_by == (_GOVERNING,)
 
 
-def test_a_partial_verdict_is_recorded_as_partial(tmp_path: Path) -> None:
-    ledger = _Ledger()
-
-    _ = _judge(
-        tmp_path=tmp_path,
-        ledger=ledger,
-        stage=STAGE_PRE_DISPATCH,
-        verdict=_PARTIAL_VERDICT,
-    )
-
-    recorded = recorded_governing_heading(comments=tuple(ledger.bodies))
-
-    assert recorded is not None
-    assert recorded.kind == "partial"
-
-
 def test_the_rendered_goal_carries_the_recorded_verdict_block(tmp_path: Path) -> None:
     ledger = _Ledger()
     _ = _judge(tmp_path=tmp_path, ledger=ledger, stage=STAGE_PRE_DISPATCH, verdict=_VERDICT)
@@ -262,6 +358,44 @@ def test_the_rendered_goal_carries_the_recorded_verdict_block(tmp_path: Path) ->
 
     assert GOVERNING_HEADING_BLOCK_HEADING in goal
     assert _GOVERNING in goal
+    assert SPEC_IDENTITY_BLOCK_HEADING in goal
+    assert "form: clauses" in goal
+    assert "clause provenance: scenarios.md" in goal
+
+
+def test_the_judgement_record_preserves_the_identity_the_run_receives(tmp_path: Path) -> None:
+    """The dispatched node receives the same form and clause bytes the host used."""
+    ledger = _Ledger()
+
+    decision = _judge(tmp_path=tmp_path, ledger=ledger, stage=STAGE_PRE_DISPATCH, verdict=_VERDICT)
+    recorded = recorded_spec_identity(comments=tuple(ledger.bodies))
+
+    assert decision.spec_identity is not None
+    assert recorded is not None
+    assert recorded.form == decision.spec_identity.form == "clauses"
+    assert recorded.value == decision.spec_identity.value
+    assert recorded.provenance[0][:2] == ("scenarios.md", _GOVERNING.removeprefix("## "))
+
+
+def test_the_identity_reader_accepts_tree_receipts_and_refuses_partial_clause_receipts() -> None:
+    """A malformed clause receipt cannot silently give a run a partial rubric."""
+    tree = recorded_spec_identity(
+        comments=(
+            "livespec-dod-judgement\n" "spec-identity-form: tree\n" "spec-identity: tree:abc\n",
+        )
+    )
+    partial = recorded_spec_identity(
+        comments=(
+            "livespec-dod-judgement\n"
+            "spec-identity-form: clauses\n"
+            "spec-identity: clauses:abc\n"
+            "spec-clause-path: scenarios.md\n",
+        )
+    )
+
+    assert tree is not None
+    assert tree.form == "tree"
+    assert partial is None
 
 
 def test_a_goal_for_an_item_with_no_record_names_the_absence_rather_than_omitting_it(

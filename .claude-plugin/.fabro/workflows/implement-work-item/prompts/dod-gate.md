@@ -273,10 +273,23 @@ question of fact — the spec tree above all.
      give the same remedy; the same rule applies, so it is a finding only when
      the reference line names no heading that governs any assertion.
 
-   A non-scenario H2 remains a perfectly **valid reference for an assertion no
-   scenario states**, and a reference the verdict did not return is not a
-   finding on its own — the judgement answers which clauses govern, not which
-   citations are surplus.
+  A non-scenario H2 remains a perfectly **valid reference for an assertion no
+  scenario states**, and a reference the verdict did not return is not a
+  finding on its own — the judgement answers which clauses govern, not which
+  citations are surplus.
+
+## The Definition-of-Done subject identity — reuse the host taking's identity
+
+The brief also carries a `## Definition-of-Done spec identity (from the
+pre-dispatch taking)` block. It is the identity the host used for this very
+subject. When it is present, compute this node's Definition-of-Done subject
+digest from the supplied `identity:` value, not by hashing the whole
+`SPECIFICATION/` tree again. A `form: clauses` identity includes the selected
+clause provenance so an unrelated ratified revision does not change the
+subject; a `form: tree` identity intentionally binds the whole tree. When the
+block says no identity was recorded, use the whole-tree identity. Do not take a
+governing-heading judgement merely to construct this digest: the supplied
+record is the authority for this run.
 
 ## What you must not do
 

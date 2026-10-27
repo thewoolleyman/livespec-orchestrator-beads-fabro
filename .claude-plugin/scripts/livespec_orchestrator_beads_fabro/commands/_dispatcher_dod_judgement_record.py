@@ -50,20 +50,33 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
     UNAVAILABLE_COMMENT_MARKER,
     comment_marker,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import SpecIdentity
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity_record import (
+    SPEC_IDENTITY_BLOCK_HEADING,
+    RecordedSpecIdentity,
+    identity_record_lines,
+    recorded_spec_identity,
+    spec_identity_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
 )
 
 __all__: list[str] = [
     "JUDGEMENT_COMMENT_MARKER",
+    "SPEC_IDENTITY_BLOCK_HEADING",
     "STAGE_PRE_ADMISSION",
     "STAGE_PRE_DISPATCH",
     "UNAVAILABLE_COMMENT_MARKER",
+    "JudgementProvenance",
     "RecordedJudgement",
+    "RecordedSpecIdentity",
     "did_not_run_comment",
     "recorded_did_not_run_causes",
     "recorded_governing_heading",
+    "recorded_spec_identity",
     "reusable_verdict",
+    "spec_identity_block",
     "verdict_comment",
 ]
 
@@ -101,7 +114,12 @@ _GOVERNING_HEADING_FIELD = "governing-heading"
 _FIELD_SEPARATOR = ": "
 # Every key a record may carry more than once, which the field map must leave
 # to the repeated-value reader rather than collapsing to its last occurrence.
-_REPEATED_FIELDS = frozenset({_FINDING_FIELD, _GOVERNING_HEADING_FIELD})
+_REPEATED_FIELDS = frozenset(
+    {
+        _FINDING_FIELD,
+        _GOVERNING_HEADING_FIELD,
+    }
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -112,11 +130,20 @@ class RecordedJudgement:
     digest: str
     rubric_digest: str
     findings: tuple[str, ...] = ()
+    spec_identity: RecordedSpecIdentity | None = None
 
     @property
     def first_remedy(self) -> str | None:
         """The remedy the hygiene listing names, derived as the verdict's own."""
         return first_remedy(findings=self.findings)
+
+
+@dataclass(frozen=True, kw_only=True)
+class JudgementProvenance:
+    """The governing answer and identity one host taking records together."""
+
+    governing: GoverningHeadingVerdict | None = None
+    spec_identity: SpecIdentity | None = None
 
 
 def verdict_comment(
@@ -126,7 +153,7 @@ def verdict_comment(
     digest: str,
     rubric_digest: str,
     judgement: DodJudgement,
-    governing: GoverningHeadingVerdict | None = None,
+    provenance: JudgementProvenance | None = None,
 ) -> str:
     """The ledger comment recording one taken verdict, findings and all.
 
@@ -152,12 +179,16 @@ def verdict_comment(
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
-    if governing is not None:
+    if provenance is not None and provenance.governing is not None:
+        governing = provenance.governing
         lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{governing.kind}")
         lines.extend(
             f"{_GOVERNING_HEADING_FIELD}{_FIELD_SEPARATOR}{heading}"
             for heading in governing.stated_by
         )
+    if provenance is not None and provenance.spec_identity is not None:
+        spec_identity = provenance.spec_identity
+        lines.extend(identity_record_lines(identity=spec_identity))
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
     remedy = first_remedy(findings=judgement.findings)
     if remedy is not None:
@@ -192,23 +223,30 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
 
 
 def did_not_run_comment(
-    *, item_id: str, stage: str, digest: str, rubric_digest: str, cause: str
+    *,
+    item_id: str,
+    stage: str,
+    digest: str,
+    rubric_digest: str,
+    cause: str,
+    spec_identity: SpecIdentity | None = None,
 ) -> str:
     """The ledger comment recording that the judgement did not run, and why."""
-    return "\n".join(
-        (
-            UNAVAILABLE_COMMENT_MARKER,
-            "",
-            f"The {stage} Definition-of-Done judgement did not run for this item.",
-            "",
-            f"{_WORK_ITEM_FIELD}{_FIELD_SEPARATOR}{item_id}",
-            f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
-            f"{_OUTCOME_FIELD}{_FIELD_SEPARATOR}{JUDGEMENT_UNAVAILABLE}",
-            f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
-            f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
-            f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
-        )
-    )
+    lines = [
+        UNAVAILABLE_COMMENT_MARKER,
+        "",
+        f"The {stage} Definition-of-Done judgement did not run for this item.",
+        "",
+        f"{_WORK_ITEM_FIELD}{_FIELD_SEPARATOR}{item_id}",
+        f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
+        f"{_OUTCOME_FIELD}{_FIELD_SEPARATOR}{JUDGEMENT_UNAVAILABLE}",
+        f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
+        f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
+        f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
+    ]
+    if spec_identity is not None:
+        lines.extend(identity_record_lines(identity=spec_identity))
+    return "\n".join(lines)
 
 
 def reusable_verdict(

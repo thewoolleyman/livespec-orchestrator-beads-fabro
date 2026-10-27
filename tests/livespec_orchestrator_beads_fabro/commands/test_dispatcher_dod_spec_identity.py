@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
@@ -20,13 +21,13 @@ _MODULE_PATH = (
 _GOVERNING = "## Scenario 206 — The clause that governs this assertion"
 
 
-def _item(*, description: str = "## Definition of Done\n\n- The governed assertion.\n") -> WorkItem:
+def _item() -> WorkItem:
     return WorkItem(
         id="bd-ib-onrjh3",
         type="feature",
         status="ready",
         title="Clause identity",
-        description=description,
+        description="## Definition of Done\n\n- The governed assertion.\n",
         origin="freeform",
         gap_id=None,
         rank="a0",
@@ -93,18 +94,15 @@ def test_clause_identity_falls_back_to_the_tree_when_provenance_cannot_be_resolv
     module = _module()
     repo = _repo(tmp_path=tmp_path)
     missing = GoverningHeadingVerdict(kind="stated", stated_by=("## Missing",))
-    duplicate = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING, _GOVERNING))
 
     absent = module.spec_identity_for_governing(item=_item(), cwd=repo, governing=None)
     unresolved = module.spec_identity_for_governing(item=_item(), cwd=repo, governing=missing)
-    repeated = module.spec_identity_for_governing(item=_item(), cwd=repo, governing=duplicate)
     no_tree = module.spec_identity_for_governing(
         item=_item(), cwd=tmp_path / "missing", governing=missing
     )
 
     assert absent.form == "tree"
     assert unresolved.form == "tree"
-    assert repeated.form == "tree"
     assert no_tree.value == "tree:unreadable"
 
 
@@ -115,10 +113,8 @@ def test_clause_identity_falls_back_when_a_clause_file_cannot_be_read(
     assert _MODULE_PATH.is_file()
     module = _module()
     repo = _repo(tmp_path=tmp_path)
-    _ = (repo / "SPECIFICATION" / "before.md").write_text(
-        "# Earlier\n\n## Scenario 998 — Other clause\n\nOther body.\n", encoding="utf-8"
-    )
     clause = repo / "SPECIFICATION" / "clauses.md"
+    _ = (repo / "SPECIFICATION" / "before.md").write_text("# Before\n", encoding="utf-8")
     original_read_text = Path.read_text
 
     def unreadable(path: Path, *args: object, **kwargs: object) -> str:
@@ -137,16 +133,68 @@ def test_clause_identity_falls_back_when_a_clause_file_cannot_be_read(
     assert identity.form == "tree"
 
 
-def test_clause_identity_falls_back_when_definition_of_done_has_no_assertions(
+def test_clause_identity_falls_back_for_empty_assertions_and_duplicate_selection(
     tmp_path: Path,
 ) -> None:
-    """Clause provenance cannot name a subject that contains no assertions."""
-    assert _MODULE_PATH.is_file()
+    """Neither a criterion-free item nor duplicate verdict address is complete provenance."""
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    stated = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,))
+
+    empty = module.spec_identity_for_governing(
+        item=replace(_item(), description="No Definition of Done assertions."),
+        cwd=repo,
+        governing=stated,
+    )
+    duplicate = module.spec_identity_for_governing(
+        item=_item(),
+        cwd=repo,
+        governing=GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING, _GOVERNING)),
+    )
+
+    assert empty.form == duplicate.form == "tree"
+
+
+def test_subject_digest_for_governing_uses_the_selected_identity(tmp_path: Path) -> None:
+    """The public helper carries clause form into the reusable judgement subject."""
     module = _module()
 
-    identity = module.spec_identity_for_governing(
-        item=_item(description="No Definition-of-Done section."),
+    digest = module.subject_digest_for_governing(
+        item=_item(),
         cwd=_repo(tmp_path=tmp_path),
+        comments=(),
+        governing=GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,)),
+    )
+
+    assert len(digest) == 64
+
+
+def test_clause_identity_falls_back_when_the_verdict_does_not_cover_every_assertion(
+    tmp_path: Path,
+) -> None:
+    """Only a fully stated governing verdict may select the clause form."""
+    module = _module()
+    identity = module.spec_identity_for_governing(
+        item=_item(),
+        cwd=_repo(tmp_path=tmp_path),
+        governing=GoverningHeadingVerdict(kind="partial", stated_by=(_GOVERNING,)),
+    )
+
+    assert identity.form == "tree"
+    assert identity.value.startswith("tree:")
+
+
+def test_clause_identity_falls_back_when_a_selected_heading_is_ambiguous(tmp_path: Path) -> None:
+    """A repeated H2 title cannot be reduced to whichever clause appears last."""
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / "SPECIFICATION" / "second.md").write_text(
+        f"# More clauses\n\n{_GOVERNING}\n\nA different body.\n", encoding="utf-8"
+    )
+
+    identity = module.spec_identity_for_governing(
+        item=_item(),
+        cwd=repo,
         governing=GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,)),
     )
 

@@ -39,6 +39,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     recorded_governing_heading,
+    recorded_spec_identity,
+    spec_identity_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import (
     InterruptedAttempt,
@@ -248,15 +250,17 @@ def render_goal(
     # this block and must be able to tell a verdict of "nothing governs" from a
     # judgement nobody took — the first forecloses its finding and the second
     # leaves it its own search.
+    receipt_bodies = tuple(comment.text for comment in comments)
     verdict_block = (
         "\n"
-        + governing_heading_block(
-            verdict=recorded_governing_heading(comments=tuple(comment.text for comment in comments))
-        )
+        + governing_heading_block(verdict=recorded_governing_heading(comments=receipt_bodies))
         + "\n"
     )
+    identity_block = (
+        "\n" + spec_identity_block(identity=recorded_spec_identity(comments=receipt_bodies)) + "\n"
+    )
     if not riders:
-        return escape_minijinja_literal(text=body + verdict_block)
+        return escape_minijinja_literal(text=body + verdict_block + identity_block)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
@@ -266,7 +270,9 @@ def render_goal(
     # renderer lost rather than one it deliberately omitted.
     for index, comment in enumerate(riders, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
-    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n" + verdict_block)
+    return escape_minijinja_literal(
+        text=body + "\n".join(lines) + "\n" + verdict_block + identity_block
+    )
 
 
 def _comment_entry(*, comment: WorkItemComment) -> str:

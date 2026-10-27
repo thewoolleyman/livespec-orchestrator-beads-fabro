@@ -216,11 +216,6 @@ def judgement_subject_digest(
     forward unchanged.
     """
     subject = judgement_subject(item=item, cwd=cwd, comments=comments)
-    # A direct caller has no governing-heading verdict to supply, so its subject
-    # is necessarily the complete specification tree.  Keep that form explicit
-    # here as well as at the dispatch boundary: older callers which construct a
-    # digest directly must compare the same `tree:` identity as a run that was
-    # handed no clause provenance.
     identity = "tree:" + spec_tree_identity(cwd=cwd) if spec_identity is None else spec_identity
     return hashlib.sha256(f"{subject}\n{_SPEC_IDENTITY_LABEL}{identity}".encode()).hexdigest()
 

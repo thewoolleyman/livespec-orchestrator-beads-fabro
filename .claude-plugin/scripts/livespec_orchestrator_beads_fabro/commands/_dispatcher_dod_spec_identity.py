@@ -65,7 +65,11 @@ class SpecIdentity:
 
 
 def spec_identity_for_governing(
-    *, item: WorkItem, cwd: Path, governing: GoverningHeadingVerdict | None
+    *,
+    item: WorkItem,
+    cwd: Path,
+    governing: GoverningHeadingVerdict | None,
+    force_tree: bool = False,
 ) -> SpecIdentity:
     """Resolve a recorded verdict to clauses, falling back to the whole tree.
 
@@ -74,7 +78,12 @@ def spec_identity_for_governing(
     whole-tree identity.  This function never takes a governing-heading
     judgement; callers use the recorded verdict they already have.
     """
-    if governing is None or not governing.stated_by:
+    # `stated` is the shared judgement's assertion-coverage answer.  A
+    # `partial` verdict may still name clauses that explain *some* assertions,
+    # but it has not established provenance for all of them and therefore must
+    # not retire a whole-item taking.  Likewise, an `unstated` answer names no
+    # governing clauses for this purpose.
+    if force_tree or governing is None or governing.kind != "stated" or not governing.stated_by:
         return _tree_identity(cwd=cwd)
     clauses = _selected_clauses(cwd=cwd, headings=governing.stated_by)
     if clauses is None:
@@ -134,11 +143,16 @@ def _selected_clauses(
     found = _clauses_in(cwd=cwd)
     if found is None:
         return None
-    by_heading = {clause.heading: clause for clause in found}
-    selected = tuple(by_heading.get(heading) for heading in requested)
-    if any(clause is None for clause in selected):
+    by_heading: dict[str, list[ClauseProvenance]] = {}
+    for clause in found:
+        by_heading.setdefault(clause.heading, []).append(clause)
+    selected = tuple(by_heading.get(heading, []) for heading in requested)
+    # A heading title is not a stable address when the tree carries it more
+    # than once.  Selecting the last occurrence would leave the other clause
+    # outside the identity, allowing its edit to reuse a stale verdict.
+    if any(len(matches) != 1 for matches in selected):
         return None
-    return tuple(clause for clause in selected if clause is not None)
+    return tuple(matches[0] for matches in selected)
 
 
 def _clauses_in(*, cwd: Path) -> tuple[ClauseProvenance, ...] | None:
