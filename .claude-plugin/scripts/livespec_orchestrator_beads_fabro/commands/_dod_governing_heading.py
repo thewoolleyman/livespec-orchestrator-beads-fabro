@@ -61,6 +61,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    CondensedClause,
+)
+
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
         DefinitionOfDone,
@@ -115,6 +119,8 @@ class GoverningHeadingVerdict:
     kind: str
     stated_by: tuple[str, ...] = ()
     generalization_target: str | None = None
+    selected_clauses: tuple[CondensedClause, ...] = ()
+    named_clauses: tuple[CondensedClause, ...] = ()
 
 
 def governing_heading_statement(*, item: WorkItem, section: DefinitionOfDone) -> str:

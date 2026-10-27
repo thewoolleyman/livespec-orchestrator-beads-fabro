@@ -65,7 +65,11 @@ class _FakeSubprocess:
 def _program(tmp_path: Path, fake: _FakeSubprocess | None = None) -> dict[str, Any]:
     """The runner's exact source, loaded with its git and process access faked."""
     namespace: dict[str, Any] = {"__name__": "livespec_commit_runner_under_test"}
-    code = compile(commit_runner_program_source(), COMMIT_RUNNER_PROGRAM_FILENAME, "exec")
+    code = compile(
+        commit_runner_program_source(),
+        str(tmp_path / COMMIT_RUNNER_PROGRAM_FILENAME),
+        "exec",
+    )
     exec(code, namespace)  # noqa: S102 — the materialized program's exact source, in-process
     runs = tmp_path / "runs"
     answers: dict[tuple[str, ...], str] = {

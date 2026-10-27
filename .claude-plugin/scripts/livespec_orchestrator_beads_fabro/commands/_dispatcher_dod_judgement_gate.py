@@ -31,18 +31,20 @@ from livespec_orchestrator_beads_fabro._store_comments import (
     append_work_item_comment,
     read_work_item_comments,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
-    definition_of_done,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
+    governing_heading_subject_digest,
+    reusable_governing_heading_verdict,
+    with_governing_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
-    DodJudgement,
     first_remedy,
     judgement_subject_digest,
     rubric_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    GoverningHeadingReceipt,
     RecordedJudgement,
     did_not_run_comment,
     recorded_did_not_run_causes,
@@ -55,11 +57,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
-from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
-    GoverningHeadingVerdict,
-    governing_heading_findings,
-    governing_heading_holds,
-)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     GoverningHeadingReader,
     host_governing_heading_reader,
@@ -179,13 +176,15 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         return DodJudgementDecision(
             work_item_id=item.id, outcome=reused.outcome, findings=reused.findings, reused=True
         )
+    governing = reusable_governing_heading_verdict(item=item, repo=repo, comments=comments)
     reader = (
         host_governing_heading_reader(runner=ShellCommandRunner() if runner is None else runner)
         if governing_heading is None
         else governing_heading
     )
-    governing = reader(item=item, repo=repo)
-    verdict = _with_governing_findings(
+    if governing is None:
+        governing = reader(item=item, repo=repo)
+    verdict = with_governing_findings(
         item=item,
         verdict=run_dod_judgement(
             item=item,
@@ -215,44 +214,19 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             digest=digest,
             rubric_digest=rubric_bytes_digest,
             judgement=verdict,
-            governing=governing,
+            governing=(
+                GoverningHeadingReceipt(
+                    verdict=governing,
+                    subject_digest=governing_heading_subject_digest(item=item, comments=comments),
+                )
+                if governing is not None
+                else None
+            ),
         )
     )
     return DodJudgementDecision(
         work_item_id=item.id, outcome=verdict.outcome, findings=verdict.findings
     )
-
-
-def _with_governing_findings(
-    *, item: WorkItem, verdict: DodJudgement, governing: GoverningHeadingVerdict | None
-) -> DodJudgement:
-    """The rubric's verdict, with the governing-heading verdict's findings folded in.
-
-    The spec-stated judgement is a COMPONENT rather than a replacement, so the
-    rubric's own findings are kept in full and the mechanical ones are APPENDED:
-    an item whose citation does not govern is held whatever the rubric made of
-    the rest, and an item the rubric already holds keeps every remedy it named.
-
-    A judgement that DID NOT RUN is returned untouched, and that is the one arm
-    worth reading twice. Such a verdict records that nothing was decided, so
-    attaching a finding to it would publish a hold the gate is about to report
-    as an outage — a did-not-run record carrying remedies an operator would act
-    on while the judgement that was supposed to produce them never happened.
-    """
-    if verdict.outcome == JUDGEMENT_UNAVAILABLE:
-        return verdict
-    section = definition_of_done(description=item.description)
-    findings = governing_heading_findings(item=item, section=section, verdict=governing)
-    if not findings:
-        return verdict
-    # An omission beside a governing citation is ADVISORY: its findings ride in
-    # the record with their remedy, and the rubric's own outcome stands.
-    outcome = (
-        JUDGEMENT_HELD
-        if governing_heading_holds(section=section, verdict=governing)
-        else verdict.outcome
-    )
-    return DodJudgement(outcome=outcome, findings=verdict.findings + findings, cause=verdict.cause)
 
 
 def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an independent seam input.
