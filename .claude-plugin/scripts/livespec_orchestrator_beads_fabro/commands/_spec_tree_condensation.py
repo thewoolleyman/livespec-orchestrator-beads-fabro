@@ -180,10 +180,16 @@ class _Section:
         return (self.path, self.index)
 
     @property
-    def clause(self) -> CondensedClause | None:
-        """This section's provenance when it is an H2 clause."""
+    def prompt_provenance(self) -> CondensedClause:
+        """This selected prompt section's provenance, including a preamble.
+
+        A file preamble has no H2 heading but can be selected lexically and sent
+        verbatim in the condensed prompt. Its empty heading distinguishes that
+        prompt section from a headed clause while retaining its full bytes as
+        the reuse key.
+        """
         if self.heading is None:
-            return None
+            return CondensedClause(heading="", body=self.full)
         return CondensedClause(heading=self.heading, body=self.body)
 
 
@@ -220,12 +226,10 @@ def condensed_spec_tree(
     return CondensedSpecTree(
         tree=_condensed(sections=sections, chosen=chosen, paths=spec_tree),
         clauses=tuple(
-            clause
+            section.prompt_provenance
             for path in spec_tree
             for section in sections
-            if section.path == path
-            and section.key in chosen
-            and (clause := section.clause) is not None
+            if section.path == path and section.key in chosen
         ),
     )
 
@@ -236,10 +240,10 @@ def clauses_named(
     """Every full clause named by a verdict, independent of source position."""
     wanted = frozenset(headings)
     return tuple(
-        clause
+        section.prompt_provenance
         for path in spec_tree
         for section in _sections_of(path=path, text=spec_tree[path])
-        if section.heading in wanted and (clause := section.clause) is not None
+        if section.heading in wanted
     )
 
 
