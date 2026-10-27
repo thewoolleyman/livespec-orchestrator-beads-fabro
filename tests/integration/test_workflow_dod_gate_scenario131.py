@@ -164,7 +164,8 @@ def test_the_gate_falls_through_to_implement_and_routes_a_failure_to_needs_human
 
     assert edges, "the gate declares no outgoing edges"
     fallthrough = [edge for edge in edges if "condition=" not in edge]
-    assert fallthrough == [f"{_GATE} -> implement"]
+    assert fallthrough == [f"{_GATE} -> enable_affected_tests_commit_gate"]
+    assert "enable_affected_tests_commit_gate -> implement" in _edges(text=_dot(payload=_BUNDLE))
     blocked = [edge for edge in edges if edge.startswith(f"{_GATE} -> needs_human")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]

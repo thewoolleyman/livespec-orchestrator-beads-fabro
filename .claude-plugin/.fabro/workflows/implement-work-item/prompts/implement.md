@@ -420,11 +420,11 @@ question, which is the cheap ending.
 
 After every acceptance assertion has completed its own loop:
 
-1. Run the repo's check suite yourself through `livespec-implement-check-suite` and
-   fix what it surfaces — a later janitor stage re-runs it as a hard
-   gate, so hand it a green tree. Green must be earned honestly — see
-   the HONEST checks rule above; a check-vs-legitimate-pattern conflict
-   is a needs-human `failed` outcome, not something to evade.
+1. Let each commit run the affected-tests hook and fix what it surfaces. The
+   janitor runs the full aggregate once on the committed tree after this turn.
+   Green must be earned honestly — see the HONEST checks rule above; a
+   check-vs-legitimate-pattern conflict is a needs-human `failed` outcome,
+   not something to evade.
 2. In your final reply, summarize what you changed, list the commits
    (`git log --oneline origin/{{ inputs.default_branch }}..HEAD`), and report any deviation
    or hook output verbatim.

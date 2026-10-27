@@ -50,6 +50,7 @@ _NATIVE_INSPECT = _REPO_ROOT / "tests/fixtures/fabro_native_inspect/background.j
 _SUCCESSFUL_NODES = (
     "start",
     "dod_gate",
+    "enable_affected_tests_commit_gate",
     "implement",
     # The implement stage's completion gate (v165, Scenario 204;
     # bd-ib-ahxcjx). It is on the success route because it sits on
@@ -57,6 +58,7 @@ _SUCCESSFUL_NODES = (
     # THROUGH it, having stated its Definition of Done complete.
     "implement_completion",
     "implementation_diff",
+    "restore_full_commit_gate",
     "janitor",
     "publish_draft",
     "proof_capture",

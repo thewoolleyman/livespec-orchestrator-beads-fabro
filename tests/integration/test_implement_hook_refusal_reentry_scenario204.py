@@ -173,7 +173,7 @@ def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_imp
     assert (_ROUTE, "outcome=failed") in _targets(source=_GATE)
     assert (_NEEDS_HUMAN, "outcome=failed") not in _targets(source=_GATE)
     route = _targets(source=_ROUTE)
-    assert (_IMPLEMENT, "outcome=succeeded") in route, route
+    assert ("enable_affected_tests_commit_gate", "outcome=succeeded") in route, route
     assert (_NEEDS_HUMAN, "") in route, route
     assert _route_attributes().get("max_visits") == str(_ROUTE_VISITS)
 

@@ -230,6 +230,14 @@ revert: 976415 shipped and 1518215 at the retired `"15m"`, up from 902955 and
 1415955. The bound of 1000000 still sits between them with 23585 seconds of
 headroom, so it is unchanged. The freshness gate still demands
 111600 seconds, because the window governs it, not the graph.
+
+Scenario 255 adds the two short-lived commit-gate transition nodes that bracket
+implement and review-fix turns (work-item bd-ib-72hvx5). Their 1800-second
+timeouts are counted wherever their paths are reachable, so this is another
+measurement rather than a figure inherited from v208: 1093200 seconds shipped
+and 1705200 at the retired `"15m"`. The existing 1100000-second bound still
+sits between those readings, with 6800 seconds of headroom; the freshness
+requirement remains 111600 because the credential-use window still governs it.
 """
 
 from __future__ import annotations
@@ -259,7 +267,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
 _ALLOWANCE_BOUND_SECONDS = 1_100_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_705_200
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -272,7 +280,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_055_565
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_093_200
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 

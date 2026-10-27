@@ -127,6 +127,12 @@ _IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
     "implement",
     "implement_completion",
 }
+_COMMIT_GATE_ADDED = {
+    "enable_affected_tests_commit_gate",
+    "enable_review_fix_affected_tests_commit_gate",
+    "restore_full_commit_gate",
+}
+_COMMIT_GATE_LOOP = _COMMIT_GATE_ADDED | {"implement", "review_fix", "janitor"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -687,6 +693,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_ADDED
         | _HOOK_ROUTE_ADDED
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
+        | _COMMIT_GATE_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -710,6 +717,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_LOOP
         | _HOOK_ROUTE_LOOP
         | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
+        | _COMMIT_GATE_LOOP
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

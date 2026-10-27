@@ -878,6 +878,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
     assert run.visited == [
         _START,
         "dod_gate",
+        "enable_affected_tests_commit_gate",
         "implement",
         # Scenario 204's completion gate (v165) sits on `implement`'s own
         # fallthrough, so every run passes through it on the way to the diff
@@ -885,12 +886,15 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         # only one that proceeds, which is what this green journey is.
         "implement_completion",
         "implementation_diff",
+        "restore_full_commit_gate",
         "janitor",
         _PUBLISH_DRAFT,
         _PROOF_CAPTURE,
         _REVIEW,
         _DISPOSITION,
+        "enable_review_fix_affected_tests_commit_gate",
         "review_fix",
+        "restore_full_commit_gate",
         "janitor",
         _PUBLISH_DRAFT,
         _PROOF_CAPTURE,

@@ -29,6 +29,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-pre-commit.sh"
+_CHANGED_SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-changed.sh"
 _INCREMENTAL_GATE = "check-check-coverage-incremental"
 _MASTER_CI_GATE = "check-master-ci-green"
 _SANDBOX_EXEMPT_MARKER = "livespec.sandboxExempt"
@@ -231,3 +232,16 @@ def test_affected_tests_marker_runs_the_scoped_gate_and_red_green_verifier(
     invocation = _invoke_pre_commit(repo=repo, env=env)
 
     assert invocation.splitlines() == ["check-changed", "check-red-green-replay"]
+
+
+def test_check_changed_falls_back_to_the_full_aggregate_for_shared_configuration(
+    *, tmp_path: Path
+) -> None:
+    """A shared configuration edit cannot be safely scoped to affected Python tests."""
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(repo=repo, relative_path="lefthook.yml", body="pre-commit: {}\n")
+
+    result = _run(argv=["bash", str(_CHANGED_SCRIPT)], cwd=repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / "just.log").read_text(encoding="utf-8").splitlines() == ["check"]

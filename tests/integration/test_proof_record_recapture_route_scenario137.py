@@ -216,7 +216,8 @@ def test_review_fix_recaptures_a_proof_record_finding_that_reaches_it() -> None:
     edges = _edges()
 
     assert (_REVIEW_FIX, _ROUTE, _RECAPTURE_CONDITION) in edges, edges
-    assert (_REVIEW_FIX, _JANITOR, "") in edges, edges
+    assert (_REVIEW_FIX, "restore_full_commit_gate", "") in edges, edges
+    assert ("restore_full_commit_gate", _JANITOR, "") in edges, edges
     assert [
         destination
         for source, destination, condition in edges
@@ -492,8 +493,13 @@ def test_a_mixed_verdict_fixes_the_tree_and_still_carries_its_record_findings() 
     """
     edges = _edges()
     assert (_REVIEW, _DISPOSITION, "preferred_label=fix") in edges
-    assert (_DISPOSITION, _REVIEW_FIX, "preferred_label=fix") in edges
-    assert (_REVIEW_FIX, "janitor", "") in edges
+    assert (
+        _DISPOSITION,
+        "enable_review_fix_affected_tests_commit_gate",
+        "preferred_label=fix",
+    ) in edges
+    assert ("enable_review_fix_affected_tests_commit_gate", _REVIEW_FIX, "") in edges
+    assert (_REVIEW_FIX, "restore_full_commit_gate", "") in edges
     assert ("publish_draft", _CAPTURE, "") in edges
 
     review = _prompt(name="review.md")
