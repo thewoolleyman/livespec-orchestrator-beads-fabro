@@ -3990,7 +3990,14 @@ reconciliation, the primitive MUST refuse before posting anything, naming the
 item.
 The implementation MUST provide one posting
 primitive that renders these records, so that no session hand-formats
-one. The primitive MUST compute the publishing identity itself — the
+one. The primitive MUST post only on the pull request of the latest merged run
+for the named work item, as defined above, and MUST NOT post a host record onto
+any other pull request or fall back to any other merged pull request in the
+repository, however that pull request was found. Its refusal when no such pull
+request exists MUST state that the item has no merged pull request of its own.
+A host record already posted on any other pull request is not evidence for the
+item, and it is not evidence for the pull request it was posted on. The
+primitive MUST compute the publishing identity itself — the
 invoking agent session's id, or the forge login for a human — and MUST
 NOT accept it as a caller-supplied string; it MUST refuse a
 `host_verified` or `host_not_reproduced` post whose computed identity

@@ -4469,6 +4469,19 @@ Feature: Proof that needs the released build is captured by an agent on a host, 
     When the same session drives the posting primitive to publish host_verified
     Then the posting primitive refuses the post because the computed identity equals the recording identity
     And a host_verified record with that same identity posted by any other route leaves the assertion pending and is reported as not independent
+  Scenario: The posting primitive refuses an item that has no merged pull request of its own
+    Given a work item carrying a host-captured assertion whose only dispatch ended without a pull request and that no reconcile-merged reconciled
+    And the repository holds other merged pull requests that no dispatch of that item produced
+    When a session drives the posting primitive to publish host_recorded for the item
+    Then the posting primitive refuses before posting anything
+    And the refusal names the work item and states that it has no merged pull request of its own
+    And no host record is posted on any pull request in the repository
+  Scenario: The posting primitive posts on the pull request the item's own dispatch merged
+    Given a work item carrying a host-captured assertion whose latest dispatch merged a pull request
+    And the repository holds a more recently merged pull request that no dispatch of that item produced
+    When a session drives the posting primitive to publish host_recorded for the item
+    Then the host_recorded record is posted on the pull request that the item's own dispatch merged
+    And no record is posted on the more recently merged pull request
   Scenario: A host replay that does not reproduce is rework input
     Given a host_not_reproduced record from a different session identity naming the host-captured assertion
     When the acceptance pass runs under an AI-dispositive policy
