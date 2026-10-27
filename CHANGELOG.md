@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.244.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.22...v0.244.0) (2026-10-27)
+
+
+### Features
+
+* preserve governing clause multiplicity ([b1bfb67](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b1bfb6712e7d3a43316a69877e8a510ced2dc420))
+* reuse governing heading verdicts ([58493c0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/58493c0012e538c418fde5db036c75ef764cca35))
+
+
+### Bug Fixes
+
+* preserve exact selected clause provenance ([077e460](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/077e460e4faf617b0440511182918df58fa7babc))
+* record a partial verdict's generalization target as a named clause (bd-ib-k5qp5z) ([ddba368](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ddba368754985a9fae724a63e810af323c08352b))
+* reuse a governing-heading verdict only on provenance it can compare (bd-ib-k5qp5z) ([ff59d17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ff59d174f5ec17e9c846fed9df5a8441cecf523c))
+
 ## [0.243.22](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.243.21...v0.243.22) (2026-10-27)
 
 
