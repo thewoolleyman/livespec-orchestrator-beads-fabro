@@ -283,6 +283,31 @@ def test_one_record_names_the_selected_position_identity_and_both_digests(
     assert chosen["primary_generation_digest"] != chosen["full_chain_digest"]
 
 
+def test_the_record_carries_the_selected_candidates_resolved_agent_id(
+    tmp_path: Path,
+) -> None:
+    """A fallback selection names its resolved agent, not the held primary's."""
+    _assert_record_surface()
+    repo = _repo(
+        tmp_path=tmp_path,
+        acp_nodes={
+            _NODE: {
+                **_claude_primary(),
+                "fallbacks": [{"agent": "codex-acp", "model": "gpt-5.5", "effort": "high"}],
+            },
+            "review": _manual_primary(),
+        },
+    )
+    verdict = _verdict(repo=repo, holds=(_domain_hold(hold_key=_CLAUDE_DOMAIN),))
+
+    record = _selection_record(repo=repo, verdict=verdict)
+
+    selections: Any = record["selections"]
+    chosen = selections[_NODE]
+    assert "selected_agent_id" in chosen
+    assert chosen["selected_agent_id"] == "codex-acp"
+
+
 def test_the_record_names_the_hold_that_skipped_the_earlier_candidate(
     tmp_path: Path,
 ) -> None:
