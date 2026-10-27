@@ -47,8 +47,10 @@ def test_scenario_258_retries_an_unlabeled_review_or_replay_once_per_stage_visit
     A reset gateway begins every ordinary stage visit and clears only that
     stage's retry state.  The fallback route then re-enters the same ACP node on
     its first miss; its second miss writes a stage-specific cause for
-    ``needs_human``.  Thus a label and a failed turn keep their established
-    routing while a later re-entry receives a fresh one-retry allowance.
+    ``needs_human``.  The retry guard matches only the empty preferred label,
+    leaving every recorded label -- including an unknown one -- on its
+    established route while a later re-entry receives a fresh one-retry
+    allowance.
     """
     graph = parse_workflow_graph(text=_dot())
 
@@ -68,7 +70,11 @@ def test_scenario_258_retries_an_unlabeled_review_or_replay_once_per_stage_visit
 
         assert f"livespec-{stage.replace('_', '-')}-verdict-retry" in entry_body
         assert "rm -f" in entry_body
-        assert any(edge.startswith(f"{stage} -> {retry}") for edge in _edges(source=stage))
+        assert (
+            f'{stage} -> {retry} [label="missing {stage} verdict label", '
+            'condition="preferred_label="]' in _edges(source=stage)
+        )
+        assert f'{stage} -> needs_human [label="unmatched {stage} outcome"]' in _edges(source=stage)
         assert any(edge.startswith(f"{retry} -> {stage}") for edge in retry_edges)
         assert any(edge.startswith(f"{retry} -> needs_human") for edge in retry_edges)
         assert r"stage: %s\\n" in retry_body

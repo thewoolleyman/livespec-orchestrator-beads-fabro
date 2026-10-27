@@ -2193,13 +2193,16 @@ digraph ImplementWorkItem {
     //                      round (v175; see that node's comment).
     //   - node failure  -> needs_human; weight=100 keeps that deterministic
     //                      against other conditions.
-    //   - no verdict label -> review_verdict_retry. It re-enters this same node
-    //                      once, then records a named needs-human cause.
+    //   - an absent verdict label -> review_verdict_retry. It re-enters this
+    //                      same node once, then records a named needs-human
+    //                      cause. A recorded but unknown label still takes the
+    //                      unmatched needs-human fallthrough below.
     review -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     review -> disposition [label="fix", condition="preferred_label=fix"]
     review -> recapture_route [label="recapture", condition="preferred_label=recapture"]
     review -> proof_verify_verdict_entry [label="approve", condition="preferred_label=approve"]
-    review -> review_verdict_retry [label="missing review verdict label"]
+    review -> review_verdict_retry [label="missing review verdict label", condition="preferred_label="]
+    review -> needs_human [label="unmatched review outcome"]
     review_verdict_entry -> needs_human [label="Blocked", condition="outcome=failed"]
     review_verdict_entry -> review
     review_verdict_retry -> needs_human [label="second missing review verdict", condition="outcome=failed"]
@@ -2274,7 +2277,8 @@ digraph ImplementWorkItem {
     proof_verify -> needs_human   [label="Blocked", condition="outcome=failed", weight=100]
     proof_verify -> proof_grade   [label="verified", condition="preferred_label=approve"]
     proof_verify -> fix           [label="not reproduced", condition="preferred_label=fix"]
-    proof_verify -> proof_verify_verdict_retry [label="missing proof_verify verdict label"]
+    proof_verify -> proof_verify_verdict_retry [label="missing proof_verify verdict label", condition="preferred_label="]
+    proof_verify -> needs_human [label="unmatched proof_verify outcome"]
     proof_verify_verdict_entry -> needs_human [label="Blocked", condition="outcome=failed"]
     proof_verify_verdict_entry -> proof_verify
     proof_verify_verdict_retry -> needs_human [label="second missing proof_verify verdict", condition="outcome=failed"]
