@@ -59,6 +59,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    governing_heading_verdict,
     unjudged_governing_heading,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -436,3 +437,56 @@ def test_every_appended_judgement_record_names_the_subject_and_rubric_digests(
     for body in (held.bodies[0], unavailable.bodies[0]):
         assert f"subject-digest: {expected_subject}" in body
         assert f"rubric-digest: {expected_rubric}" in body
+
+
+def test_an_unrelated_spec_revision_reuses_the_governing_heading_verdict(
+    tmp_path: Path,
+) -> None:
+    """The enclosing judgement reruns, while its governing component does not."""
+    ledger = _Ledger()
+    repo = _repo(tmp_path=tmp_path)
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout=_PASS_REPLY, stderr="")])
+    governing_calls = 0
+
+    def governing(*, item: WorkItem, repo: Path):
+        nonlocal governing_calls
+        governing_calls += 1
+        return governing_heading_verdict(
+            item=item,
+            repo=repo,
+            run_model=lambda _prompt: (
+                '{"kind": "stated", "stated_by": ["'
+                + _HEADING
+                + '"], "generalization_target": null, "rationale": "The scenario states it."}'
+            ),
+        )
+
+    first = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=runner,
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=governing,
+    )
+    _ = (repo / "SPECIFICATION" / "unrelated.md").write_text(
+        "## An unrelated heading\n\n" + "A body the assertion does not select. " * 10_000,
+        encoding="utf-8",
+    )
+    second = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=runner,
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=governing,
+    )
+
+    assert first.reused is False
+    assert second.reused is False
+    assert runner.calls == 2
+    assert governing_calls == 1
