@@ -194,7 +194,9 @@ def _goal_fields(*, item: WorkItem, lessons: str) -> list[str]:
     return fields
 
 
-def judgement_subject_digest(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
+def judgement_subject_digest(
+    *, item: WorkItem, cwd: Path, comments: Sequence[str] = (), spec_identity: str | None = None
+) -> str:
     """Return the stable byte digest used to determine verdict reuse.
 
     Taken over the subject AS IT STANDS BEFORE THE JUDGEMENT IS TAKEN — with no
@@ -214,9 +216,8 @@ def judgement_subject_digest(*, item: WorkItem, cwd: Path, comments: Sequence[st
     forward unchanged.
     """
     subject = judgement_subject(item=item, cwd=cwd, comments=comments)
-    return hashlib.sha256(
-        f"{subject}\n{_SPEC_IDENTITY_LABEL}{spec_tree_identity(cwd=cwd)}".encode()
-    ).hexdigest()
+    identity = spec_tree_identity(cwd=cwd) if spec_identity is None else spec_identity
+    return hashlib.sha256(f"{subject}\n{_SPEC_IDENTITY_LABEL}{identity}".encode()).hexdigest()
 
 
 def spec_tree_identity(*, cwd: Path) -> str:

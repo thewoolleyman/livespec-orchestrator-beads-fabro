@@ -24,6 +24,7 @@ a listing into a fleet of model calls.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -46,6 +47,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
     RecordedJudgement,
     did_not_run_comment,
     recorded_did_not_run_causes,
+    recorded_governing_heading,
     reusable_verdict,
     verdict_comment,
 )
@@ -160,7 +162,13 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     hygiene listing needs and the one a refusing wall must not have.
     """
     rubric = judgement_rubric(payload_root=payload_root)
-    digest = judgement_subject_digest(item=item, cwd=repo, comments=comments)
+    recorded_governing = recorded_governing_heading(comments=comments)
+    digest = judgement_subject_digest(
+        item=item,
+        cwd=repo,
+        comments=comments,
+        spec_identity=_governing_identity(governing=recorded_governing),
+    )
     rubric_bytes_digest = (
         UNREADABLE_RUBRIC_DIGEST if rubric is None else rubric_digest(rubric=rubric)
     )
@@ -185,6 +193,12 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         else governing_heading
     )
     governing = reader(item=item, repo=repo)
+    digest = judgement_subject_digest(
+        item=item,
+        cwd=repo,
+        comments=comments,
+        spec_identity=_governing_identity(governing=governing),
+    )
     verdict = _with_governing_findings(
         item=item,
         verdict=run_dod_judgement(
@@ -221,6 +235,14 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     return DodJudgementDecision(
         work_item_id=item.id, outcome=verdict.outcome, findings=verdict.findings
     )
+
+
+def _governing_identity(*, governing: GoverningHeadingVerdict | None) -> str | None:
+    """The temporary stable identity for a recorded governing-heading verdict."""
+    if governing is None or not governing.stated_by:
+        return None
+    headings = "\n".join(sorted(governing.stated_by))
+    return "clauses:" + hashlib.sha256(headings.encode("utf-8")).hexdigest()
 
 
 def _with_governing_findings(
