@@ -7,7 +7,7 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
-__all__: list[str] = ["ReflectorFinding", "parse_findings"]
+__all__: list[str] = ["ReflectorFinding", "parse_findings", "parse_findings_verdict"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -27,7 +27,22 @@ class ReflectorFinding:
 
 def parse_findings(*, raw: str) -> tuple[ReflectorFinding, ...]:
     """Parse the reflector's structured-JSON output into findings."""
+    payload = parse_findings_verdict(raw=raw)
+    if payload is None:
+        return ()
+    return payload
+
+
+def parse_findings_verdict(*, raw: str) -> tuple[ReflectorFinding, ...] | None:
+    """Parse a structured verdict, preserving malformed replies as ``None``."""
     payload = _coerce_findings_payload(raw=raw)
+    if payload is None:
+        return None
+    return _findings_from_payload(payload=payload)
+
+
+def _findings_from_payload(*, payload: list[object]) -> tuple[ReflectorFinding, ...]:
+    """Parse the valid findings list, discarding malformed individual findings."""
     findings: list[ReflectorFinding] = []
     for entry in payload:
         parsed = _parse_one_finding(entry=entry)
@@ -36,17 +51,17 @@ def parse_findings(*, raw: str) -> tuple[ReflectorFinding, ...]:
     return tuple(findings)
 
 
-def _coerce_findings_payload(*, raw: str) -> list[object]:
+def _coerce_findings_payload(*, raw: str) -> list[object] | None:
     text = raw.strip()
     if not text:
-        return []
+        return None
     top = parse_json(text=text)
     if isinstance(top, JsonParseFailure):
-        return []
+        return None
     return _extract_findings_list(top=top)
 
 
-def _extract_findings_list(*, top: object) -> list[object]:
+def _extract_findings_list(*, top: object) -> list[object] | None:
     if isinstance(top, list):
         return list(cast("list[object]", top))
     if isinstance(top, dict):
@@ -57,7 +72,7 @@ def _extract_findings_list(*, top: object) -> list[object]:
         result = obj.get("result")
         if isinstance(result, str):
             return _coerce_findings_payload(raw=result)
-    return []
+    return None
 
 
 def _parse_one_finding(*, entry: object) -> ReflectorFinding | None:
