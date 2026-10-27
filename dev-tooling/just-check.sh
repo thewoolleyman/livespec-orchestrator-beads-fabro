@@ -65,4 +65,4 @@ if [[ "$skipped" -gt 0 ]]; then
 else
     printf '\nAll %d targets passed.\n' "$executed"
 fi
-uv run python -m livespec_dev_tooling.green_token write "${skip_targets[@]}" || true
+uv run bash dev-tooling/green-token-scope.sh write "${skip_targets[@]}" || true

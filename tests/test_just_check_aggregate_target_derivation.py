@@ -272,7 +272,7 @@ def test_a_successful_skipping_aggregate_records_its_skipped_target_in_the_green
     assert result.returncode == 0, result.stdout + result.stderr
     assert (repo / "uv.log").read_text(encoding="utf-8").splitlines() == [
         "sync --all-groups",
-        "run python -m livespec_dev_tooling.green_token write check-second",
+        "run bash dev-tooling/green-token-scope.sh write check-second",
     ]
 
 
