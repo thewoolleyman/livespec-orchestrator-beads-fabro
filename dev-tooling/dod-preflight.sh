@@ -94,7 +94,7 @@ PY
 # (bd-ib-tka3wb). The verdict and any check 6 findings go to a side file, because
 # stdout here is the prompt.
 judgement_input=$(mktemp)
-trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings"' EXIT
+trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings"' EXIT
 python3 - "$install_root" "$repo_root" "$item" "$override" "$judgement_input" > "$judgement_input" <<'PROMPT_PY'
 import sys
 from dataclasses import replace
@@ -106,6 +106,9 @@ sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
+    definition_of_done_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     judgement_subject,
@@ -135,6 +138,16 @@ item = items[item_id]
 # rendered subject, so the same ratified parse reads the candidate edit.
 if override:
     item = replace(item, description=Path(override).read_text(encoding="utf-8"))
+# The Dispatcher refuses malformed section structure before it asks either
+# judgement.  Take that same pure reading before even the governing-heading
+# host taking, so a malformed candidate spends no model legs here either.
+section_findings = definition_of_done_findings(item=item, cwd=repo)
+if section_findings:
+    Path(f"{side}.section_findings").write_text(
+        "".join(f"{finding}\n" for finding in section_findings), encoding="utf-8"
+    )
+    raise SystemExit(0)
+Path(f"{side}.section_findings").write_text("", encoding="utf-8")
 comments = tuple(
     comment.text for comment in read_work_item_comments(path=config, work_item_id=item_id)
 )
@@ -173,6 +186,10 @@ sys.stdout.write(
     )
 )
 PROMPT_PY
+if [ -s "$judgement_input.section_findings" ]; then
+  cat "$judgement_input.section_findings"
+  exit 1
+fi
 [ -s "$judgement_input" ] || exit 2
 [ -f "$judgement_input.governing" ] || exit 2
 cat "$judgement_input.governing"
