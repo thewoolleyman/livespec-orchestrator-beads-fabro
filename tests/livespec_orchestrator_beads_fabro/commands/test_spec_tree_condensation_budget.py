@@ -74,6 +74,17 @@ def test_a_tree_that_already_fits_comes_back_unchanged() -> None:
     assert condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT) == _TREE
 
 
+def test_the_condensation_names_the_heading_and_body_of_each_selected_clause() -> None:
+    """The governing-verdict cache records the clauses its prompt actually carried."""
+    condensed = condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT)
+
+    assert [(clause.heading, clause.body) for clause in condensed.clauses] == [
+        ("## First clause", _FIRST_BODY),
+        ("## Second clause", _SECOND_BODY),
+        ("## Only clause", _ONLY_BODY),
+    ]
+
+
 def test_a_file_opening_on_a_heading_carries_no_invented_preamble() -> None:
     """A file whose first byte is a heading gains nothing before it."""
     condensed = condensed_spec_tree(spec_tree=_TREE, statement="only clause")
