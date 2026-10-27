@@ -88,6 +88,7 @@ __all__: list[str] = [
     "DefinitionOfDoneAssertion",
     "declared_proof_mode",
     "definition_of_done",
+    "definition_of_done_source",
 ]
 
 DEFINITION_OF_DONE_TITLE = "definition of done"
@@ -266,6 +267,31 @@ def definition_of_done(*, description: str, subject: str = SUBJECT_WORK_ITEM) ->
         malformed_proof_modes=_malformed_proof_modes(body=body, subject=subject),
         stray_lines=stray,
     )
+
+
+def definition_of_done_source(*, description: str) -> str:
+    """The Definition of Done section's own text, or empty when there is none.
+
+    The heading line and every line under it, exactly as written, so a
+    consumer that must notice ANY change to the section — a `Reason:` line, a
+    sub-heading, the reference line, the heading's own level — reads one value
+    rather than a list of the parts it happened to think of. It is a verbatim
+    slice of the description, line endings included. Only trailing BLANK lines
+    are dropped: they separate the section from the next heading and state
+    nothing, while trailing blanks inside a line are kept.
+    """
+    lines = description.splitlines()
+    opening = _opening_heading(lines=lines)
+    if opening is None or opening[2] != DEFINITION_OF_DONE_TITLE:
+        return ""
+    index, level, _title = opening
+    extent = 1 + len(_section_body(lines=lines, start=index + 1, level=level))
+    # The same lines, each with its own line ending, so a changed separator is
+    # a changed section too: `splitlines` yields one entry per line either way.
+    section = description.splitlines(keepends=True)[index : index + extent]
+    while not section[-1].strip():
+        _ = section.pop()
+    return "".join(section)
 
 
 def declared_proof_mode(*, sub_heading: str, subject: str = SUBJECT_WORK_ITEM) -> str:

@@ -14,14 +14,18 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
+    definition_of_done_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
+    is_judgement_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
-    recorded_named_headings,
+    recorded_governing_heading,
     reusable_governing_heading,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
@@ -29,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     governing_heading_findings,
     governing_heading_holds,
     governing_heading_statement,
+    verdict_named_headings,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     clauses_named,
@@ -45,18 +50,21 @@ __all__: list[str] = [
 
 
 def governing_heading_subject_digest(*, item: WorkItem, comments: Sequence[str]) -> str:
-    """The component input: its statement plus every operator rider.
+    """The component input: its statement, its Definition of Done, every rider.
 
     The full spec identity is deliberately absent. The component compares the
     full clause bodies its condensed prompt carried instead, while an appended
-    rider remains a new input and therefore forces a fresh taking.
+    rider remains a new input and therefore forces a fresh taking. The
+    Definition of Done section rides beside the statement as its own text,
+    because ANY change to it invalidates the verdict — a `Reason:` line or a
+    sub-heading as much as an assertion. Only an EXACT judgement-record marker
+    is dropped, so an operator comment opening with the marker word is a rider.
     """
     section = definition_of_done(description=item.description)
     statement = governing_heading_statement(item=item, section=section)
-    riders = "\n".join(
-        comment for comment in comments if not comment.startswith("livespec-dod-judgement")
-    )
-    return hashlib.sha256(f"{statement}\n{riders}".encode()).hexdigest()
+    source = definition_of_done_source(description=item.description)
+    riders = "\n".join(comment for comment in comments if not is_judgement_record(body=comment))
+    return hashlib.sha256(f"{statement}\n{source}\n{riders}".encode()).hexdigest()
 
 
 def reusable_governing_heading_verdict(
@@ -80,7 +88,7 @@ def reusable_governing_heading_verdict(
             selected_clauses=condensed.clauses,
             named_clauses=clauses_named(
                 spec_tree=spec_tree,
-                headings=recorded_named_headings(body=body),
+                headings=_recorded_named_headings(body=body),
             ),
         )
         if verdict is not None:
@@ -108,3 +116,18 @@ def with_governing_findings(
         else verdict.outcome
     )
     return DodJudgement(outcome=outcome, findings=verdict.findings + findings, cause=verdict.cause)
+
+
+def _recorded_named_headings(*, body: str) -> tuple[str, ...]:
+    """Every heading one receipt records its verdict as naming.
+
+    The reuse side recomputes the named clauses from these against the new
+    revision, so it reads the same set the taking recorded provenance for:
+    the governing headings and, for a partial or unstated verdict, its target.
+    """
+    recorded = recorded_governing_heading(comments=(body,))
+    if recorded is None:
+        return ()
+    return verdict_named_headings(
+        stated_by=recorded.stated_by, generalization_target=recorded.generalization_target
+    )

@@ -122,6 +122,7 @@ class GoverningHeadingVerdict:
     generalization_target: str | None = None
     selected_clauses: tuple[CondensedClause, ...] = ()
     named_clauses: tuple[CondensedClause, ...] = ()
+    provenance_complete: bool = True
 
 
 def verdict_named_headings(

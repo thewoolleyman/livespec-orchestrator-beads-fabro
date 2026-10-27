@@ -83,6 +83,7 @@ __all__: list[str] = [
     "CondensedSpecTree",
     "clauses_named",
     "condensed_spec_tree",
+    "headings_resolved",
     "judge_within_ceiling",
 ]
 
@@ -237,14 +238,34 @@ def condensed_spec_tree(
 def clauses_named(
     *, spec_tree: Mapping[str, str], headings: Collection[str]
 ) -> tuple[CondensedClause, ...]:
-    """Every full clause named by a verdict, independent of source position."""
+    """Every full clause named by a verdict, independent of source position.
+
+    A heading is matched as the shared judgement validates it, without the
+    trailing blanks its source line may carry, so a verdict naming `## X` for a
+    `## X  ` line still resolves the clause it named.
+    """
     wanted = frozenset(headings)
     return tuple(
         section.prompt_provenance
         for path in spec_tree
         for section in _sections_of(path=path, text=spec_tree[path])
-        if section.heading in wanted
+        if section.heading is not None and _named_form(heading=section.heading) in wanted
     )
+
+
+def headings_resolved(*, headings: Collection[str], clauses: Collection[CondensedClause]) -> bool:
+    """Whether every named heading resolved to at least one of `clauses`.
+
+    A heading resolving to nothing leaves provenance nobody can compare, so a
+    receipt carrying it must never be reused: comparing two empty sets would
+    be reuse earned by missing data.
+    """
+    resolved = {_named_form(heading=clause.heading) for clause in clauses}
+    return all(heading in resolved for heading in headings)
+
+
+def _named_form(*, heading: str) -> str:
+    return heading.rstrip(" \t")
 
 
 def judge_within_ceiling(

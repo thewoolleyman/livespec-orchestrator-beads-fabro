@@ -28,7 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
     GoverningHeadingReceipt,
     did_not_run_comment,
     recorded_did_not_run_causes,
-    recorded_named_headings,
+    recorded_governing_heading,
     reusable_governing_heading,
     reusable_verdict,
     verdict_comment,
@@ -318,4 +318,6 @@ def test_a_partial_receipt_keeps_its_generalization_target_and_names_it() -> Non
     )
 
     assert reused == partial
-    assert recorded_named_headings(body=body) == ("## Broader",)
+    recorded = recorded_governing_heading(comments=(body,))
+    assert recorded is not None
+    assert recorded.generalization_target == "## Broader"
