@@ -53,7 +53,7 @@
 : "${FLEET_LAUNCH_HL_CLI:=/home/ubuntu/.nix-profile/bin/hl}"
 
 # Timing.
-: "${FLEET_LAUNCH_MAX_WAIT_S:=21600}"
+: "${FLEET_LAUNCH_MAX_WAIT_S:=86400}"
 : "${FLEET_LAUNCH_ABANDON_S:=1200}"
 : "${FLEET_LAUNCH_POLL_S:=30}"
 : "${FLEET_LAUNCH_PREFLIGHT_REUSE_S:=600}"
