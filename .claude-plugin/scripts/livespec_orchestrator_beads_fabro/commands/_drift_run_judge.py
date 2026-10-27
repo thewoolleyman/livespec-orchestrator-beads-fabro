@@ -106,14 +106,14 @@ def _judged(
     runner: CommandRunner,
 ) -> str:
     """One prompt through the shared chain, or no reply when every candidate fails."""
-    reply, _cause = run_dod_gate_prompt(
+    result = run_dod_gate_prompt(
         prompt=prompt,
         cwd=cwd,
         runner=runner,
         is_verdict=lambda text: _looks_like_spec_stated_verdict(text=text),
         timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
     )
-    return reply or ""
+    return result.reply or ""
 
 
 def _looks_like_spec_stated_verdict(*, text: str) -> bool:
@@ -125,4 +125,10 @@ def _looks_like_spec_stated_verdict(*, text: str) -> bool:
     if not isinstance(decoded, dict):
         return False
     kind = cast("dict[str, object]", decoded).get("kind")
+    # DERIVED from the shared kind union rather than listed here, because a
+    # literal set silently drops whichever kinds it omits: a reply the shared
+    # judgement considers well-formed then reads as unparseable, the chain moves
+    # on to the next candidate, and the only observable difference is one more
+    # candidate having spent an allowance. A hand-written
+    # `{"stated", "unstated"}` omitted `partial` for exactly that reason.
     return isinstance(kind, str) and kind in get_args(spec_stated.StatedKind)
