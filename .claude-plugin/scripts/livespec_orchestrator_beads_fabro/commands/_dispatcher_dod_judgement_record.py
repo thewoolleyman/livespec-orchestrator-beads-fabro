@@ -38,6 +38,7 @@ blocks an item whose author has already repaired it.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -214,6 +215,9 @@ def reusable_governing_heading(
     Records without complete provenance are invalidated by every revision.  A
     visible heading verdict alone cannot establish which clause bodies a model
     saw, so treating it as a cache key would be reuse earned by missing data.
+    Clause provenance compares heading/body pairs without source positions, so
+    a moved clause remains reusable, while preserving multiplicity because each
+    duplicate body is another body in the condensed prompt.
     """
     for body in comments:
         if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
@@ -230,9 +234,9 @@ def reusable_governing_heading(
         recorded_named = _clauses_of(body=body, key=_GOVERNING_NAMED_CLAUSE_FIELD)
         if recorded_selected is None or recorded_named is None:
             continue
-        if set(recorded_selected) != set(selected_clauses) or set(recorded_named) != set(
-            named_clauses
-        ):
+        if Counter(recorded_selected) != Counter(selected_clauses) or Counter(
+            recorded_named
+        ) != Counter(named_clauses):
             continue
         return GoverningHeadingVerdict(
             kind=kind,
