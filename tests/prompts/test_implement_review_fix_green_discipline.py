@@ -56,3 +56,12 @@ def test_review_fix_requires_one_test_file_and_no_product_file_at_red() -> None:
     prompt = _prompt_text(stage="review_fix")
 
     assert "stage exactly one test file and no product file" in prompt
+
+
+def test_both_prompts_require_touched_tests_to_pass_before_green() -> None:
+    """A Green commit is gated on every test file the change touches."""
+    for stage in _STAGES:
+        assert (
+            "Before every Green commit or Green amend, run every test file the "
+            "change touches and see each one pass."
+        ) in _prompt_text(stage=stage)

@@ -39,6 +39,8 @@ must be terminal before your final message.
 Every Red commit must stage exactly one test file and no product file. Run that
 test first and observe its genuine assertion failure before committing it.
 
+Before every Green commit or Green amend, run every test file the change touches and see each one pass.
+
 ## What to do
 
 1. Read the disposition record from the prior stage context, including any
