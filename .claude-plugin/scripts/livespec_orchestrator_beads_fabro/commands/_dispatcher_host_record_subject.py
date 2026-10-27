@@ -25,6 +25,7 @@ records rather than about the invocation.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +77,7 @@ _SELF_REPLAY_REFUSAL_TEXT = (
     " evidence. The {capture} record it replays is {url}. A DIFFERENT session identity"
     " must replay those steps.\n"
 )
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -161,13 +163,29 @@ def captured_governing_scenarios(
 
 
 def _captured_scenario(*, body: str, assertion: str) -> str | None:
-    """One assertion's rendered scenario, or `None` when the capture names none."""
+    """One assertion's prose scenario, or `None` when the capture names none."""
     heading = f"## {ASSERTION_HEADING_PREFIX} "
     prefix = f"{GOVERNING_SCENARIO_LABEL}: "
     in_assertion = False
+    fence: str | None = None
     for line in body.splitlines():
+        delimiter = _FENCE.match(line)
+        if delimiter is not None:
+            fence = _fence_after(fence=fence, delimiter=delimiter.group(1))
+            continue
+        if fence is not None:
+            continue
         if line.startswith("## "):
             in_assertion = line.startswith(heading) and line.endswith(f" — {assertion}")
         elif in_assertion and line.startswith(prefix):
             return line[len(prefix) :]
     return None
+
+
+def _fence_after(*, fence: str | None, delimiter: str) -> str | None:
+    """The open fence after a Markdown delimiter, or `None` after its close."""
+    if fence is None:
+        return delimiter
+    if delimiter[0] == fence[0] and len(delimiter) >= len(fence):
+        return None
+    return fence

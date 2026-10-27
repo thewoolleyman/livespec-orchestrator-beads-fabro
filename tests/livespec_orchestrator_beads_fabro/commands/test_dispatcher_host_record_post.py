@@ -438,7 +438,7 @@ def test_a_verified_replay_ignores_a_scenario_line_printed_by_the_capture_proof(
             records=(
                 _capture_comment(
                     identity=_OTHER_SESSION,
-                    proof=f"Governing scenario: {printed_scenario}",
+                    proof=f"~~~\nGoverning scenario: {printed_scenario}\n~~~",
                 ),
             )
         )
