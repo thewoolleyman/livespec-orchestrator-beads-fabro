@@ -138,6 +138,7 @@ class _ResolvingRunner:
             text=response,
             governing=self.governing,
             enclosing=self.enclosing,
+            headings=self.headings,
         )
         if refused:
             response = self.run_model(
@@ -151,6 +152,7 @@ class _ResolvingRunner:
             text=response,
             governing=self.governing,
             enclosing=self.enclosing,
+            headings=self.headings,
         )
 
 
@@ -198,7 +200,11 @@ def _enclosing_clauses(*, spec_tree: Mapping[str, str]) -> dict[str, str]:
 
 
 def _resolved_response(
-    *, text: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
+    *,
+    text: str,
+    governing: Mapping[str, str],
+    enclosing: Mapping[str, str],
+    headings: tuple[str, ...],
 ) -> str:
     """One response's citations resolved, or the response returned verbatim.
 
@@ -217,7 +223,12 @@ def _resolved_response(
     cited = payload.get(_STATED_BY)
     if isinstance(cited, list):
         payload[_STATED_BY] = [
-            _resolved(citation=entry, governing=governing, enclosing=enclosing)
+            _resolved(
+                citation=entry,
+                governing=governing,
+                enclosing=enclosing,
+                headings=headings,
+            )
             if isinstance(entry, str)
             else entry
             for entry in cast("list[object]", cited)
@@ -228,19 +239,25 @@ def _resolved_response(
             citation=target,
             governing=governing,
             enclosing=enclosing,
+            headings=headings,
         )
         payload[_GENERALIZATION_TARGET] = resolved_target
         if _is_unresolvable(
             citation=resolved_target,
             governing=governing,
             enclosing=enclosing,
+            headings=headings,
         ):
             _refuse_target_through_stated_by(payload=payload, target=resolved_target)
     return json.dumps(payload)
 
 
 def _refused_headings(
-    *, text: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
+    *,
+    text: str,
+    governing: Mapping[str, str],
+    enclosing: Mapping[str, str],
+    headings: tuple[str, ...],
 ) -> tuple[str, ...]:
     """The first response's unresolvable citation fields, if readable."""
     try:
@@ -261,6 +278,7 @@ def _refused_headings(
             citation=citation,
             governing=governing,
             enclosing=enclosing,
+            headings=headings,
         )
     ]
     target = payload.get(_GENERALIZATION_TARGET)
@@ -268,6 +286,7 @@ def _refused_headings(
         citation=target,
         governing=governing,
         enclosing=enclosing,
+        headings=headings,
     ):
         refused.append(target)
     return tuple(dict.fromkeys(refused))
@@ -296,19 +315,36 @@ def _correction_prompt(*, prompt: str, refused: tuple[str, ...], headings: tuple
     )
 
 
-def _resolved(*, citation: str, governing: Mapping[str, str], enclosing: Mapping[str, str]) -> str:
+def _resolved(
+    *,
+    citation: str,
+    governing: Mapping[str, str],
+    enclosing: Mapping[str, str],
+    headings: tuple[str, ...],
+) -> str:
     """One citation read at the level that governs, or carried through as it is."""
+    if citation in headings:
+        return citation
     key = _citation_key(heading=citation)
     return governing.get(key, enclosing.get(key, citation))
 
 
 def _is_unresolvable(
-    *, citation: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
+    *,
+    citation: str,
+    governing: Mapping[str, str],
+    enclosing: Mapping[str, str],
+    headings: tuple[str, ...],
 ) -> bool:
     """Whether a citation cannot name one governing H2 after resolution."""
     return (
-        _resolved(citation=citation, governing=governing, enclosing=enclosing)
-        not in governing.values()
+        _resolved(
+            citation=citation,
+            governing=governing,
+            enclosing=enclosing,
+            headings=headings,
+        )
+        not in headings
     )
 
 

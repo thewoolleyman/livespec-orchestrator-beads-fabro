@@ -97,6 +97,24 @@ def test_unpaired_inline_markup_is_not_discarded_from_a_heading() -> None:
     assert literal_heading in model.prompts[1]
 
 
+def test_an_exact_h2_wins_over_an_ambiguous_normalized_heading() -> None:
+    """An existing exact H2 does not spend the correction prompt."""
+    exact_heading = "## Foo"
+    tree = {"contracts.md": "\n".join((exact_heading, "", "## foo", "", "The clause text."))}
+    model = _Citing(stated_by=(exact_heading,), generalization_target=None)
+
+    verdict = judge_within_ceiling(
+        spec_tree=tree,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert is_successful(verdict)
+    assert verdict.unwrap().stated_by == (exact_heading,)
+    assert len(model.prompts) == 1
+
+
 def test_an_unreadable_citation_is_reasked_with_the_valid_clause_inventory() -> None:
     """The replacement answer supplies the usable verdict after one correction."""
     refused = "## A heading that is nowhere"
