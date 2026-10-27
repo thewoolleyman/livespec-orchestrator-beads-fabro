@@ -406,6 +406,18 @@ Feature: A senior-engineer review gate reviews a green build before the PR stage
     Then it queries the structured Fabro event stream for that run
     And it emits a `livespec-dispatcher` span carrying `review.verdict`, `review.fix_rounds`, `review.hit_cap`, and `pr.shipped_on_cap`
     And a review-to-PR fallthrough at the review cap is queryable as `pr.shipped_on_cap=true`
+
+  Scenario: A review turn cannot move the run branch or run the whole check suite
+    Given a review turn in the implement-work-item workflow
+    When the turn runs git rebase, git commit or git push, or invokes the whole declared check suite
+    Then the sandbox refuses the command within seconds, before any repository hook starts
+    And the suite refusal tells the reviewer to run named test ids only
+    And the run branch's head after the turn equals its head before it
+
+  Scenario: A review turn that attempted a refused command still records its verdict
+    Given a review turn that attempted a refused command
+    When the turn continues after the refusal
+    Then it records its verdict label within its turn allowance rather than ending on the turn timeout
 ```
 
 ## Scenario 21 — Codex plugin discovery and full-access posture
