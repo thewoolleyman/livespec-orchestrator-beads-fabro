@@ -230,6 +230,16 @@ revert: 976415 shipped and 1518215 at the retired `"15m"`, up from 902955 and
 1415955. The bound of 1000000 still sits between them with 23585 seconds of
 headroom, so it is unchanged. The freshness gate still demands
 111600 seconds, because the window governs it, not the graph.
+
+THE VERDICT RETRY GATEWAYS (bd-ib-wg5zyt) WIDEN IT AGAIN. A fresh review or
+proof-verify visit passes through a small command entry node, and a successful
+turn that omitted its label can visit its matching retry node once before that
+route fails closed. The entries and retries are declared downward at 600 seconds
+because they only update this run's state files, but their reachable visits are
+still part of the honest allowance. Re-measured against this tree: 1356540
+seconds shipped and 2206140 at the retired `"15m"`; the bound moves to 1500000
+between them. The credential requirement remains 111600 seconds because the
+bounded credential-use window, not the graph allowance, still governs it.
 """
 
 from __future__ import annotations
@@ -258,8 +268,8 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # would make every unrelated timeout edit fail this case; the control pins the
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
-_ALLOWANCE_BOUND_SECONDS = 1_100_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
+_ALLOWANCE_BOUND_SECONDS = 1_500_000
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 2_206_140
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -272,7 +282,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_055_565
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_356_540
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 

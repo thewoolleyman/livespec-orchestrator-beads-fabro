@@ -142,7 +142,7 @@ def test_the_configured_value_lands_as_the_literal_timeout_of_the_proof_grade_no
 
 
 def test_a_grade_failure_re_enters_proof_verify_through_its_own_route_node() -> None:
-    """The retry path is `proof_grade_route -> proof_verify`, and nothing else.
+    """The retry path is `proof_grade_route -> proof_verify`'s verdict gateway.
 
     The clause is explicit that "A retry through `proof_grade_route` re-enters
     `proof_verify` DIRECTLY, visits neither `review` nor `fix`, and is charged to
@@ -161,7 +161,7 @@ def test_a_grade_failure_re_enters_proof_verify_through_its_own_route_node() -> 
     """
     onward = _targets(source=_ROUTE)
 
-    assert (_VERIFY, "") in onward, onward
+    assert ("proof_verify_verdict_entry", "") in onward, onward
     assert [target for target, _ in onward if target in (_REVIEW, _FIX)] == []
     assert [target for target, _ in _targets(source=_GRADE) if target == _ROUTE] == [_ROUTE]
 

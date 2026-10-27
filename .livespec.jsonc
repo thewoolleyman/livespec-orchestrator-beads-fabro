@@ -870,6 +870,13 @@
       // the derivation bills it at that loop's own visit count and every
       // inherited second would land in the Codex credential-lifetime floor
       // tests/test_factory_checkpoint_declaration.py guards.
+      //
+      // The two verdict-entry gateways and their retry routes are likewise
+      // declared downward (bd-ib-wg5zyt): each removes or writes one marker in
+      // this run's `$GIT_DIR` and routes the second missing review or
+      // proof_verify verdict to needs-human. Their graph positions make their
+      // bounded visits part of the execution allowance, but they do no agent
+      // work or external I/O.
       "node_timeouts": {
         "implement": 14400,
         "implement_completion": 600,
@@ -880,7 +887,11 @@
         "pr_refresh": 3600,
         "proof_grade": 600,
         "proof_grade_route": 600,
-        "recapture_route": 600
+        "proof_verify_verdict_entry": 600,
+        "proof_verify_verdict_retry": 600,
+        "recapture_route": 600,
+        "review_verdict_entry": 600,
+        "review_verdict_retry": 600
       },
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories

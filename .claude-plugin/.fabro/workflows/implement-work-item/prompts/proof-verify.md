@@ -514,6 +514,18 @@ not:
     Reproduced: NO. Step 2 renders the runs page with no capacity banner;
     the captured proof 02 shows one.
 
+## Missing-verdict retry (conditional)
+
+If this turn's immediate stage preamble contains `LIVESPEC_VERDICT_RETRY`, this
+is the one bounded retry because the preceding proof_verify turn succeeded
+without a recorded verdict label. The route records that retry at
+`livespec-proof-verify-verdict-retry`. Stay on the same head, preserve every
+read-only replay duty above, and do not publish or modify anything outside this
+stage. The retry instruction is stage-scoped: end by emitting only its verdict
+— the one routing JSON object from Step 6, with no prose after it. A second
+missing label routes to needs_human with the proof_verify stage named as its
+cause.
+
 ## Step 6 — route the verdict
 
 Report, in your final reply: the pull request number, the comment id or URL

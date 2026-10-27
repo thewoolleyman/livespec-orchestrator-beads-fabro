@@ -2380,8 +2380,7 @@
     "heading": "## Scenario 258 \u2014 A review or proof_verify turn that succeeds without a verdict label is retried once before it reaches needs_human",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal unlabeled-verdict-turn-retries-once, and the owning work-item bd-ib-wg5zyt adds the single unlabeled-verdict retry to the review and proof_verify routing, together with the test that binds this entry.",
+    "test": "tests.integration.test_workflow_unlabeled_verdict_retry_scenario258.test_scenario_258_retries_an_unlabeled_review_or_replay_once_per_stage_visit",
     "work_item": "bd-ib-wg5zyt"
   }
 ]

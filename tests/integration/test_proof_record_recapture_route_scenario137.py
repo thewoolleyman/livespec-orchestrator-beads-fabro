@@ -234,15 +234,15 @@ def test_a_recaptured_record_can_continue_to_proof_verify_while_budget_remains()
 
     The first two entries to `recapture_route` reach `proof_capture`; capture
     posts a new immutable record, returns to review, and an approval reaches
-    `proof_verify`. Together these edges prove the corrected proof is replayed
+    `proof_verify`'s verdict gateway. Together these edges prove the corrected proof is replayed
     instead of treating re-capture as a terminal repair.
     """
     edges = _edges()
 
     assert (_DISPOSITION, _ROUTE, _RECAPTURE_CONDITION) in edges, edges
     assert (_ROUTE, _CAPTURE, "") in edges, edges
-    assert (_CAPTURE, _REVIEW, "") in edges, edges
-    assert (_REVIEW, _VERIFY, "preferred_label=approve") in edges, edges
+    assert (_CAPTURE, "review_verdict_entry", "") in edges, edges
+    assert (_REVIEW, "proof_verify_verdict_entry", "preferred_label=approve") in edges, edges
 
     capture_prompt = _prompt(name="proof-capture.md")
     assert "posting ONE new Proof of Done record comment" in capture_prompt

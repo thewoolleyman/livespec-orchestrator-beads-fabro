@@ -257,22 +257,24 @@ def test_the_two_proof_fix_routes_are_one_bound_rather_than_two_literals() -> No
     assert bound is not None
 
 
-def test_review_remains_the_capture_nodes_only_unconditional_route() -> None:
+def test_review_verdict_entry_remains_the_capture_nodes_only_unconditional_route() -> None:
     """Adding the exhaustion edge did not take the fallthrough position.
 
     The engine REJECTS a node whose every outgoing edge carries a condition
     (`all_conditional_edges`) before any node runs — the defect that took this
-    factory down twice — so the fallthrough is load-bearing. It must also still
-    be `review`: the ordinary path is a successful capture, and moving the
-    fallthrough to a terminal would strand every clean run.
+    factory down twice — so the fallthrough is load-bearing. It now enters the
+    review verdict gateway: the ordinary path is a successful capture, and the
+    gateway begins a fresh one-retry verdict visit before invoking review.
     """
     edges = _edges_from(node=_CAPTURE)
 
-    assert [edge for edge in edges if "condition=" not in edge] == [f"{_CAPTURE} -> review"]
+    assert [edge for edge in edges if "condition=" not in edge] == [
+        f"{_CAPTURE} -> review_verdict_entry"
+    ]
     assert {_target_of(edge=edge) for edge in edges} == {
         "needs_human",
         "fix",
-        "review",
+        "review_verdict_entry",
     }
 
 

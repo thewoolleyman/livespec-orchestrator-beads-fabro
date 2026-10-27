@@ -267,12 +267,14 @@ def test_proof_capture_routes_a_defect_to_fix_and_a_failure_to_needs_human() -> 
     The contract splits the two outcomes deliberately: `preferred_label=fix` routes
     to `fix` because the tree is wrong and the loop can still converge, while a
     failed outcome routes to `needs_human` exactly as every other ACP node's does.
-    `review` is the unconditional fallthrough, which is also what keeps
+    `review_verdict_entry` is the unconditional fallthrough, which is also what keeps
     `all_conditional_edges` from firing on this node.
     """
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_CAPTURE)
 
-    assert [edge for edge in edges if "condition=" not in edge] == [f"{_CAPTURE} -> review"]
+    assert [edge for edge in edges if "condition=" not in edge] == [
+        f"{_CAPTURE} -> review_verdict_entry"
+    ]
     blocked = [edge for edge in edges if edge.startswith(f"{_CAPTURE} -> needs_human")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]
