@@ -968,13 +968,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 253 \u2014 A green aggregate on a tree carries to a push of the same tree, and a push of any other tree runs the gate",
-    "work_item": "bd-ib-n4twqd",
-    "first_seen": "2026-10-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 254 \u2014 The check aggregate runs its independent targets beside the pytest lane and still reports and fails as the serial loop did",
     "work_item": "bd-ib-6zy3zd",
     "first_seen": "2026-10-26"

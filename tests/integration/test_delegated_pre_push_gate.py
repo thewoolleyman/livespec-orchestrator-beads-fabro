@@ -58,7 +58,7 @@ _GATES_KUBECONFIG_ENV = "GATES_KUBECONFIG"
 
 _ENABLED_PROBE = "gate_remote_delegate enabled"
 _DELEGATED_RUN = "gate_remote_delegate run"
-_GREEN_TOKEN_PROBE = "green_token check"
+_GREEN_TOKEN_PROBE = "green-token-scope.sh check"
 _AGGREGATE = "just check-skipping check-codex-skill-picker"
 
 _LIVE_OID = "b3d4f1a90c7e25486fd1c0b8a7e6554321098765"

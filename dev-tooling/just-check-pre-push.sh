@@ -63,8 +63,19 @@ if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; the
     exit 0
 fi
 
-if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
-    echo ":: pre-push: green token matched - tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
+mapfile -t skipped_targets < <(bash dev-tooling/green-token-scope.sh scope)
+
+if uv run bash dev-tooling/green-token-scope.sh check "${skipped_targets[@]}" 2>&1; then
+    echo ":: pre-push: green token matched - tree byte-identical to last green check with excluded targets: ${skipped_targets[*]:-none}; skipping full aggregate (CI is authoritative)"
+    # check-master-ci-green reads forge state outside the tree, which a tree
+    # verdict cannot vouch for; it runs here unless this host omits it by design.
+    master_ci_omitted=false
+    for skipped_target in "${skipped_targets[@]}"; do
+        [ "${skipped_target}" = check-master-ci-green ] && master_ci_omitted=true
+    done
+    if [ "${master_ci_omitted}" = false ]; then
+        exec just check-master-ci-green
+    fi
     exit 0
 fi
 
