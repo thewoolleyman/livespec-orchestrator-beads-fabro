@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.247.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.247.0...v0.247.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* pass every ledger comment body to bd through a file, not the argv (bd-ib-jiwoij) ([68cb3d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/68cb3d610e4cd63fe21ee0d93b34027866d79e6b))
+
 ## [0.247.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.246.0...v0.247.0) (2026-10-28)
 
 
