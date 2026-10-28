@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_DISPATCH,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    spec_identity_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -81,7 +84,11 @@ __all__: list[str] = [
 
 
 def dod_judgement_refusal(
-    *, repo: Path, items: Sequence[WorkItem], workflow_name: str | None = None
+    *,
+    repo: Path,
+    items: Sequence[WorkItem],
+    workflow_name: str | None = None,
+    journal: object | None = None,
 ) -> str | None:
     """The wall's refusal for the FIRST held item of this selection, or `None`.
 
@@ -94,6 +101,11 @@ def dod_judgement_refusal(
     one, threaded exactly as the acceptance-criteria row threads it: the rest of
     the variant precedence comes from the ONE resolution the launch itself uses,
     so this row cannot exempt a different variant than the one that would run.
+
+    EVERY TAKING JOURNALS THE SPEC IDENTITY IT USED, whether it reused a record or
+    appended one and whether it admitted or refused, because the run is supplied
+    that identity and the journal row is the dispatch's own account of which one.
+    A taking that produced none — the judgement did not run — writes no row.
     """
     if not items:
         return None
@@ -106,6 +118,15 @@ def dod_judgement_refusal(
         decision = judge_item_definition_of_done(
             item=item, repo=repo, path=config, stage=STAGE_PRE_DISPATCH
         )
+        append = getattr(journal, "append", None)
+        if append is not None and decision.spec_identity is not None:
+            append(
+                record=spec_identity_journal_record(
+                    work_item_id=item.id,
+                    stage=STAGE_PRE_DISPATCH,
+                    identity=decision.spec_identity,
+                )
+            )
         if decision.holds:
             findings = "\n".join(decision.findings)
             return (

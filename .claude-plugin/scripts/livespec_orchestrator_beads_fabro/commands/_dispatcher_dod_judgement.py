@@ -112,6 +112,7 @@ _ABSENT_RIDERS_BODY = "(this item carries no operator rider)"
 _SPEC_DIRNAME = "SPECIFICATION"
 _SPEC_IDENTITY_LABEL = "ratified-spec-identity: "
 _UNREADABLE_SPEC_IDENTITY = "unreadable"
+_EXCLUDED_SPEC_DIRECTORIES = frozenset({"proposed_changes", "history"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -204,51 +205,56 @@ def _goal_fields(*, item: WorkItem, lessons: str) -> list[str]:
     return fields
 
 
-def judgement_subject_digest(*, item: WorkItem, cwd: Path, comments: Sequence[str] = ()) -> str:
+def judgement_subject_digest(
+    *, item: WorkItem, cwd: Path, comments: Sequence[str] = (), spec_identity: str | None = None
+) -> str:
     """Return the stable byte digest used to determine verdict reuse.
 
     Taken over the subject AS IT STANDS BEFORE THE JUDGEMENT IS TAKEN — with no
-    governing-heading verdict in it — together with the identity of the ratified
-    tree that verdict would be taken against. The asymmetry is the point: the
-    block is the OUTPUT of a judgement this digest decides whether to spend,
-    so folding it in would make the digest depend on the answer and no recorded
-    verdict could ever be reused.
+    governing-heading verdict in it — together with the SPEC IDENTITY the caller
+    supplies. The asymmetry is the point: the block is the OUTPUT of a judgement
+    this digest decides whether to spend, so folding it in would make the digest
+    depend on the answer and no recorded verdict could ever be reused.
 
-    THE SPEC IDENTITY IS WHAT A RATIFIED CHANGE MOVES. The subject already
-    carries the BODY of each heading the reference line names, so an edit to a
-    cited clause retires a verdict on its own; what it cannot see is a clause
-    the item does not cite, and since `bd-ib-m76p2n` the governing-heading
-    verdict is a reading of the WHOLE tree. A scenario added before dispatch can
-    therefore become the governing one for an item that cites it nowhere, which
-    is exactly the verdict a reuse keyed on the item's own text would carry
-    forward unchanged.
+    `spec_identity` is the labelled identity of `_dispatcher_dod_spec_identity`:
+    `clauses:` plus the clause-provenance digest of the governing-heading
+    verdicts, or `tree:` plus the whole-tree digest. A caller that has no
+    verdict to supply names none, and its subject is then necessarily the
+    complete specification tree, in the same `tree:` form a run handed no clause
+    provenance compares.
     """
     subject = judgement_subject(item=item, cwd=cwd, comments=comments)
-    return hashlib.sha256(
-        f"{subject}\n{_SPEC_IDENTITY_LABEL}{spec_tree_identity(cwd=cwd)}".encode()
-    ).hexdigest()
+    identity = "tree:" + spec_tree_identity(cwd=cwd) if spec_identity is None else spec_identity
+    return hashlib.sha256(f"{subject}\n{_SPEC_IDENTITY_LABEL}{identity}".encode()).hexdigest()
 
 
 def spec_tree_identity(*, cwd: Path) -> str:
-    """The digest of the governed spec tree, or a word naming an unreadable one.
+    """The WHOLE-TREE DIGEST of the governed spec root, or a word naming an unreadable one.
+
+    A SHA-256 over every file under the spec root except `proposed_changes/` and
+    `history/`, sorted by path relative to the root, each contributing its path,
+    a NUL byte, its byte length in ASCII decimal, a NUL byte and its bytes.
 
     A SELF-DESCRIBING word rather than the digest of nothing, for the reason
     `UNREADABLE_RUBRIC_DIGEST` is one: an empty or zero-length digest reads as a
     tree that exists and is empty, which would make every unreadable read agree
     with every other one and reuse a verdict across a change nobody could see.
-    The files are read through the same glob `_heading_body` resolves a
-    reference against, so the identity watches the tree the subject quotes from.
     """
     spec_root = cwd / _SPEC_DIRNAME
     if not spec_root.is_dir():
         return _UNREADABLE_SPEC_IDENTITY
     digest = hashlib.sha256()
-    for path in sorted(spec_root.glob("*.md")):
+    included = sorted(
+        (path.relative_to(spec_root).as_posix(), path)
+        for path in spec_root.rglob("*")
+        if path.is_file() and path.relative_to(spec_root).parts[0] not in _EXCLUDED_SPEC_DIRECTORIES
+    )
+    for relative, path in included:
         read = attempt(action=lambda p=path: p.read_bytes(), exceptions=(OSError,))
         if isinstance(read, AttemptFailure):
             return _UNREADABLE_SPEC_IDENTITY
-        digest.update(path.name.encode("utf-8"))
-        digest.update(read)
+        digest.update(relative.encode("utf-8") + b"\x00" + str(len(read)).encode("ascii"))
+        digest.update(b"\x00" + read)
     return digest.hexdigest()
 
 
