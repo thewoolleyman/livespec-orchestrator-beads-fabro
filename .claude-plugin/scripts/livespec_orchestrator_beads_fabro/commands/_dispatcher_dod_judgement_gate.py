@@ -28,6 +28,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro._store_dod_judgement_marker import (
+    mark_work_item_dod_judgement_recorded,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
     governing_heading_subject_digest,
     reusable_governing_heading_verdict,
@@ -277,6 +280,7 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
 
     def append(*, body: str) -> None:
         append_work_item_comment(path=path, work_item_id=item.id, body=body)
+        mark_work_item_dod_judgement_recorded(path=path, item_id=item.id)
 
     bodies = item_comment_bodies(path=path, work_item_id=item.id)
     if bodies is None:
