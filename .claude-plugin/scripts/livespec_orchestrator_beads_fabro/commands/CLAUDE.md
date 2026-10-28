@@ -1945,6 +1945,90 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   forbids from skipping anything, so a wrong spelling degrades to the
   five-hour-only behaviour rather than to a wrong refusal — which is why the
   fail-open direction is load-bearing here and not merely conservative.
+  THE FILTER BODY NO LONGER LIVES IN `_acp_candidate_preflight`. Both providers'
+  headroom filters moved to `_acp_headroom_filters` by cohesion when the Codex
+  sibling clause below landed: that module owns the ORDER of the six filters,
+  which IS the precedence rule, so a reader following it should find one line
+  per filter rather than two filter BODIES for the last two. The pair moved
+  together rather than the Codex one alone, because they are one concern read
+  twice — same shape, same memo discipline, same clause sentence — and
+  splitting them across two modules is how the two come to disagree about when
+  a reading is recorded.
+- The ADMISSION CODEX USAGE-WINDOW FILTER of `contracts.md`'s "Admission filters
+  Codex candidates by projected usage-window headroom" paragraph
+  (`bd-ib-4jdgcw`, Scenario 243) is the sibling of the clause above, and it
+  exists because that clause's coverage stops at `claude-acp`: once this
+  repository made `codex-acp` the primary for implement, fix, review,
+  proof_capture, proof_verify and disposition, the only route onto a
+  Codex-primary chain's Claude fallback was REACTIVE — a run met the Codex
+  limit mid-turn, was released under the provider-limit release, and the hold
+  minted from that failure made the NEXT selection skip Codex. One dispatch per
+  exhaustion window lost its in-flight work before the fallback engaged. Six
+  cohesive modules, split pure-from-impure the usual way, and the dependency
+  direction reads bottom-up: `_acp_codex_headroom` (PURE: the reading value, the
+  whole-reading validity rule, the coverage predicate and the per-evaluation
+  policy type) → `_acp_codex_headroom_projection` (PURE: the three skip kinds,
+  the per-window projection and the four closed `not-projected` reasons) →
+  `_acp_codex_headroom_records` (PURE: the journal projections) and
+  `_dispatcher_codex_headroom_io` (the ONE bounded `GET` to the ratified account
+  usage endpoint plus the opaque credential fingerprint) and
+  `_dispatcher_codex_headroom_baseline` (the dispatch-journal read, scoped per
+  credential AND per window length) → `_dispatcher_codex_headroom_gate` (the two
+  dials, the per-evaluation memo its reading and baselines live in).
+  Seven properties an editor must not invert. It introduces NO configuration key
+  of its own and resolves the Claude clause's two committed dials through that
+  clause's OWN resolvers, which the clause states outright — a second reader of
+  one committed integer is how two clauses governed by one dial come to disagree
+  about an out-of-range value, after which an operator who switched the brake off
+  still has dispatches refused by the provider they had not configured. VALIDITY
+  IS DECIDED FOR THE WHOLE READING, never window by window: a per-window grade is
+  the natural shape and it produces a well-formed reading with a plausible
+  governing headroom while silently discarding half the response, so a reading
+  carrying any malformed present window is unobservable AND carries no window at
+  all. The governing headroom is the SMALLEST remaining among the windows, and a
+  credit balance, an overage allowance or any field outside `rate_limit` is
+  neither read nor reachable — work served from credits beyond the usage window
+  is spend the operator did not schedule. The baseline is scoped per window
+  LENGTH as well as per credential, because the two windows drain at completely
+  different rates and a baseline matched on the credential alone subtracts a
+  weekly window's spend from a five-hour window's and reports the difference as
+  the five-hour rate, with nothing in the record looking wrong. All three skip
+  kinds share the single `HEADROOM_SKIP` reason, because the clause gives each
+  of them "exactly the semantics of a Claude floor skip" — every surface
+  downstream keys on that reason, so a second token would leave a Codex-emptied
+  chain unnamed by the governing-condition precedence, the availability wait and
+  the idle-factory projection alike. The dial is tested FIRST in every ladder, so
+  a floor of 0 disables every skip this clause defines while retaining the
+  bounded read and its journal record. And the read spends no model allowance
+  STRUCTURALLY rather than carefully: the ratified endpoint is an account usage
+  `GET` with no body, so there is no prompt, no model and no turn — the one way
+  it differs in kind from the Claude read beside it, which has no usage endpoint
+  available to the projected token and must ride a one-output-token Messages
+  request.
+  THE RECORD SURFACES ARE SHARED WITH THE CLAUDE CLAUSE, which is why
+  `session_headroom_skip_fields` now names a `provider` and carries BOTH
+  reading blocks with the one that does not apply written as an explicit null:
+  one surface serves two clauses, so a skip entry naming no provider would show
+  a reader a floor skip beside a horizon with no way to tell whose allowance ran
+  short. The per-item assessment record carries `codex_assessments` BESIDE
+  `assessments` under the one `acp-session-headroom` stage, so a reader sees
+  every provider one evaluation assessed at one instant without a join and the
+  two baseline reads recognise ONE stage, differing only in which key they walk.
+  That key is written even when empty, for the reason every null in these records
+  is: an omitted key is what a record from a build predating the clause looks
+  like.
+  AND BOTH POLICIES RIDE ONE CARRIER INTO `resolve_acp_preflight`.
+  `AdmissionHeadroomPolicies` (`_dispatcher_acp_preflight`) holds the two, and
+  the grouping is a statement about the clauses rather than a way to shorten a
+  signature: one caller builds both from one read of one repository at one
+  instant, and the verdict's dial resolution asks "whichever policy was
+  supplied" — one question of one value rather than two whose answers could
+  disagree. EITHER policy is enough to earn the no-fallback grading, because both
+  clauses cover "built-in single-candidate nodes without fallback metadata" and a
+  repository routed wholly to one provider supplies only that one; a test keyed
+  on the Claude policy alone would leave such a repository with no brake at all,
+  which is the shape of the gap `_acp_preflight_verdict._no_fallback_graded`
+  records for the Claude half.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory
