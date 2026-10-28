@@ -230,6 +230,18 @@ revert: 976415 shipped and 1518215 at the retired `"15m"`, up from 902955 and
 1415955. The bound of 1000000 still sits between them with 23585 seconds of
 headroom, so it is unchanged. The freshness gate still demands
 111600 seconds, because the window governs it, not the graph.
+
+v253'S CLEAN-ONCE REFRESH (work-item bd-ib-6sugaf) WIDENS THE REFRESH ROUTE'S
+VISIT CAPS, and the bound is re-chosen for it. A run now refreshes cleanly once
+without spending the three-refresh bound, so the worst case the bound admits
+gains the clean refresh, the uncounted visit that returns from the proof loop to
+find it done, and the `pr` visit that routes it: `pr_refresh` 8 to 10,
+`pr_refresh_head` 7 to 9, `pr` and `pr_route` 4 to 5. The derivation then
+propagates those visits through the proof loop, as it did at v145. Re-measured
+against this tree: 1123350 shipped and 1753350 at the retired `"15m"`, up from
+1055565 and 1644165, so the bound moves from 1100000 to 1150000 with 26650
+seconds of headroom. The freshness gate still demands 111600 seconds, because
+the window governs it and not the graph.
 """
 
 from __future__ import annotations
@@ -258,8 +270,8 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # would make every unrelated timeout edit fail this case; the control pins the
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
-_ALLOWANCE_BOUND_SECONDS = 1_100_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
+_ALLOWANCE_BOUND_SECONDS = 1_150_000
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_753_350
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -272,7 +284,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_644_165
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_055_565
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_123_350
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 

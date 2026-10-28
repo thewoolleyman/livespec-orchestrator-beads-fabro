@@ -50,6 +50,8 @@ __all__: list[str] = [
     "PUBLICATION_STATE_GIT_PATH",
     "PUBLISH_HEAD_STATE_FILENAME",
     "REFRESH_CHANGED_STATE_FILENAME",
+    "REFRESH_CLEAN_STATE_FILENAME",
+    "REFRESH_CONFLICT_ENTRY_STATE_FILENAME",
     "REFRESH_COUNT_STATE_FILENAME",
     "REFRESH_REPAIR_BRIEF_STATE_FILENAME",
     "REFRESH_REPAIR_COUNT_STATE_FILENAME",
@@ -107,6 +109,25 @@ REFRESH_REPAIR_COUNT_STATE_FILENAME = "livespec-refresh-repair-count"
 PR_VISIT_COUNT_STATE_FILENAME = "livespec-pr-visit-count"
 REFRESH_ROUTE_MARKER_STATE_FILENAME = "livespec-pr-refresh-route"
 
+# The two CLEAN-ONCE facts (v253): a run refreshes cleanly onto an advanced
+# default branch at most once, and leaves later movement to the merge path.
+#
+# The CLEAN fact is written by `pr_refresh` when it completes a refresh onto an
+# advanced default (applied without conflict, gate passed, push succeeded), and
+# read by `pr_refresh` itself, to skip a later refresh, and by `pr`, to decide
+# whether a rejected arming is retried or routed back. Its presence is the whole
+# signal. It is deliberately NOT the refresh counter: a clean refresh spends none
+# of the three-refresh bound, so a counter could not carry it.
+#
+# The CONFLICT-ENTRY fact is written by `pr_route` when it routes a refresh on a
+# marker `pr` recorded because the forge reported the pull request in conflict,
+# and consumed by the `pr_refresh` visit it routes to. That visit is the one
+# door back into a refresh after the clean one, and it counts once even when it
+# applies cleanly. It is deleted by its reader for the reason the route marker
+# is: the reader is the node whose whole job is the one-visit decision.
+REFRESH_CLEAN_STATE_FILENAME = "livespec-pr-refresh-clean"
+REFRESH_CONFLICT_ENTRY_STATE_FILENAME = "livespec-pr-refresh-conflict-entry"
+
 
 def publication_state_root_command() -> str:
     """The command every publication stage resolves the state directory through.
@@ -136,4 +157,6 @@ def publication_state_filenames() -> tuple[str, ...]:
         REFRESH_REPAIR_COUNT_STATE_FILENAME,
         PR_VISIT_COUNT_STATE_FILENAME,
         REFRESH_ROUTE_MARKER_STATE_FILENAME,
+        REFRESH_CLEAN_STATE_FILENAME,
+        REFRESH_CONFLICT_ENTRY_STATE_FILENAME,
     )
