@@ -45,6 +45,9 @@ from typing import TYPE_CHECKING
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro._store_dod_judgement_marker import (
+    read_dod_judged_work_item_ids,
+)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
@@ -60,6 +63,10 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance imp
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
     ConnectionPrefixMissingError,
     LivespecConfigUnreadableError,
 )
@@ -108,9 +115,23 @@ def held_definition_of_done_items(
         # rather than raising out of a snapshot composed from many lanes.
         return []
     config = resolved
+    # ONE listing names every item a judgement was ever recorded against, so the
+    # comment reads below do not grow with the heldable items: an item nothing was
+    # recorded against has no verdict to find.
+    judged = attempt(
+        action=lambda: read_dod_judged_work_item_ids(path=config),
+        exceptions=(
+            BeadsCommandError,
+            BeadsConnectionError,
+            BeadsMappingError,
+            BeadsTenantMissingError,
+        ),
+    )
+    if isinstance(judged, AttemptFailure):
+        return []
     facts: list[AttentionItem] = []
     for item in items:
-        if item.status not in _HELDABLE_STATUSES:
+        if item.status not in _HELDABLE_STATUSES or item.id not in judged:
             continue
         bodies = item_comment_bodies(path=config, work_item_id=item.id)
         recorded = (
