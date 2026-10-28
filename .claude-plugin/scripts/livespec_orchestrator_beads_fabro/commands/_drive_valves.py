@@ -43,6 +43,10 @@ from livespec_orchestrator_beads_fabro.commands._drive_reject_valve import (
     journal_rework_return,
     reject_item,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_release_spec_tier_valve import (
+    RELEASE_SPEC_TIER_ACTION,
+    release_spec_tier,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import (
     parse_human_valve_action,
 )
@@ -126,6 +130,16 @@ class _ValveCall:
 def _route(*, call: _ValveCall, answer: str | None) -> dict[str, Any]:
     """Dispatch one parsed action onto its valve."""
     edit = _policy_edit(call=call)
+    if edit is None and call.action == RELEASE_SPEC_TIER_ACTION:
+        edit = release_spec_tier(
+            repo=call.repo,
+            config=call.config,
+            item=call.item,
+            aid=call.action_id,
+            heading=call.value,
+            identity=call.identity,
+            runner=call.runner,
+        )
     if edit is not None:
         return edit
     if call.action == "resolve-blocked":

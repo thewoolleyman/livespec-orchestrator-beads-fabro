@@ -3065,6 +3065,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   COMMENT DECIDES, and a malformed newest one means nothing is attested. THE
   LEDGER IS CHECKED BEFORE THE DISK in `attested_governing_heading`, which runs
   on every taking and every goal render.
+  THE VALVE ITSELF (`_drive_release_spec_tier_valve`, routed from
+  `_drive_valves` and recognised by `_drive_valve_grammar`) WRITES NO STATUS:
+  it appends the attestation, journals it, asks the same classification gate
+  every cadence point asks (which now records a `none` tier), and then either
+  leaves an `active` `rework:pending` item exactly where it is or sends every
+  other item back through `apply_intake_dor`, whose admission policy, findings,
+  dependencies and size gate all still apply. Every refusal precedes the first
+  write (lane, standing hold, live run, dispatch lock, then the heading),
+  because beads comments are append-only and a refusal after the attestation
+  would leave a standing override on an item the valve reported unreleased. A
+  run inventory that cannot be MEASURED refuses like a live run
+  (`observe_item_run_liveness`, shared with the merge-hold arming guard). The
+  heading is the REST of the action id, since a specification title may carry a
+  colon.
 
 Rules an agent editing this tree must follow:
 
