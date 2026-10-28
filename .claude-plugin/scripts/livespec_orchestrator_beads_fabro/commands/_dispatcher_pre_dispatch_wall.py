@@ -42,6 +42,9 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_override_wall import (
+    acp_node_override_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     implementation_pr_override_refusal,
 )
@@ -135,6 +138,12 @@ def pre_dispatch_wall_exit(
     and an explicit implementation `pr` override cannot apply now that
     publication is scripted. A groom selection stays eligible because its `pr`
     node still publishes a filing plan through ACP.
+
+    The ACP-NODE OVERRIDE check follows it, and it is free for the same reason: it
+    resolves this dispatch's own `--acp-node` arguments against the committed
+    configuration and asks no factory and no provider. It sits before the claim
+    because its refusal used to land at stage `acp-nodes`, after `ledger-admit`,
+    and each refused dispatch stranded an `active` claim with no run behind it.
 
     The APP-REACH preflight is next, and it precedes the currency gate for a
     RELEVANCE reason rather than a cost one — the two spend comparably. Its
@@ -322,6 +331,11 @@ def _refusing_sequence(
             lambda: implementation_pr_override_refusal(
                 args=args, repo=repo, items=items, journal=journal
             ),
+            EXIT_PRECONDITION_ERROR,
+            True,
+        ),
+        (
+            lambda: acp_node_override_refusal(args=args, repo=repo, items=items, journal=journal),
             EXIT_PRECONDITION_ERROR,
             True,
         ),
