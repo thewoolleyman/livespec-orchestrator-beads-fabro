@@ -41,14 +41,14 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
+    clause_line,
+    clauses_from,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
     first_remedy,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_clause_record import (
-    clause_line,
-    clauses_from,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_input_record import (
     BOUND_ENDED_CANDIDATE_FIELD,
@@ -59,6 +59,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
     JUDGEMENT_COMMENT_MARKER,
     UNAVAILABLE_COMMENT_MARKER,
     comment_marker,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    SpecIdentity,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity_record import (
+    spec_identity_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
@@ -153,7 +159,7 @@ class GoverningHeadingReceipt:
     subject_digest: str
 
 
-def verdict_comment(
+def verdict_comment(  # noqa: PLR0913 - each argument is one field of the record it writes.
     *,
     item_id: str,
     stage: str,
@@ -161,6 +167,7 @@ def verdict_comment(
     rubric_digest: str,
     judgement: DodJudgement,
     governing: GoverningHeadingReceipt | None = None,
+    spec_identity: SpecIdentity | None = None,
 ) -> str:
     """The ledger comment recording one taken verdict, findings and all.
 
@@ -187,6 +194,8 @@ def verdict_comment(
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
     lines.extend(input_usage_lines(judgement=judgement))
+    if spec_identity is not None:
+        lines.extend(spec_identity_lines(identity=spec_identity))
     if governing is not None:
         verdict = governing.verdict
         lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{verdict.kind}")
@@ -206,10 +215,7 @@ def verdict_comment(
             (_GOVERNING_SELECTED_CLAUSE_FIELD, verdict.selected_clauses),
             (_GOVERNING_NAMED_CLAUSE_FIELD, verdict.named_clauses),
         ):
-            lines.extend(
-                clause_line(separator=_FIELD_SEPARATOR, key=key, clause=clause)
-                for clause in clauses
-            )
+            lines.extend(clause_line(key=key, clause=clause) for clause in clauses)
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
     remedy = first_remedy(findings=judgement.findings)
     if remedy is not None:
@@ -231,7 +237,10 @@ def reusable_governing_heading(
     saw, so treating it as a cache key would be reuse earned by missing data.
     Clause provenance compares heading/body pairs without source positions, so
     a moved clause remains reusable, while preserving multiplicity because each
-    duplicate body is another body in the condensed prompt.
+    duplicate body is another body in the condensed prompt. The verdict returned
+    carries the clauses selected against THIS revision rather than the recorded
+    ones: they compare equal, but only the current ones carry the spec file each
+    clause lives in now, which the Definition-of-Done SPEC IDENTITY digests.
     """
     for body in comments:
         if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
@@ -260,8 +269,8 @@ def reusable_governing_heading(
             kind=kind,
             stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
             generalization_target=fields.get(_GOVERNING_GENERALIZATION_FIELD),
-            selected_clauses=recorded_selected,
-            named_clauses=recorded_named,
+            selected_clauses=selected_clauses,
+            named_clauses=named_clauses,
         )
     return None
 

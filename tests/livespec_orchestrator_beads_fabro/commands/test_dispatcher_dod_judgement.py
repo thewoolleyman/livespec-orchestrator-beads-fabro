@@ -6,6 +6,7 @@ import importlib
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -277,7 +278,7 @@ def test_effective_criteria_preserve_the_definition_of_done_proof_mode_layout(
 
 
 def test_the_ratified_spec_identity_moves_with_the_tree_and_names_an_unreadable_one(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The half of the reuse digest an item's own text cannot see.
 
@@ -290,11 +291,12 @@ def test_the_ratified_spec_identity_moves_with_the_tree_and_names_an_unreadable_
     The unreadable arm answers a SELF-DESCRIBING word rather than the digest of
     nothing, because an empty digest reads as a tree that exists and is empty —
     which would make every unreadable reading agree with every other one and
-    reuse a verdict across a change nobody could see. It is reached with a
-    DIRECTORY named like a spec file rather than by clearing mode bits: this
-    suite runs as root, which bypasses them, so a `chmod` fixture reads
-    successfully and the case passes against an implementation with no
-    read-failure arm at all.
+    reuse a verdict across a change nobody could see. It is reached by making
+    the file read itself fail rather than by clearing mode bits: this suite runs
+    as root, which bypasses them, so a `chmod` fixture reads successfully and the
+    case passes against an implementation with no read-failure arm at all. A
+    directory named like a spec file is not reached either, since the identity
+    covers FILES: it is no read failure, only an entry that is not part of the tree.
     """
     module_path = (
         Path(__file__).parents[3]
@@ -319,6 +321,9 @@ def test_the_ratified_spec_identity_moves_with_the_tree_and_names_an_unreadable_
     assert before != after
     assert judgement.spec_tree_identity(cwd=tmp_path / "absent") == "unreadable"
 
-    (spec / "unreadable.md").mkdir()
+    def _refuse(self: Path) -> bytes:
+        raise OSError(self.name)
+
+    monkeypatch.setattr(Path, "read_bytes", _refuse)
 
     assert judgement.spec_tree_identity(cwd=tmp_path) == "unreadable"

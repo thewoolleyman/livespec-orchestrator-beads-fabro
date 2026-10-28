@@ -478,7 +478,12 @@ def test_every_appended_judgement_record_names_the_subject_and_rubric_digests(
 def test_an_unrelated_spec_revision_reuses_the_governing_heading_verdict(
     tmp_path: Path,
 ) -> None:
-    """The enclosing judgement reruns, while its governing component does not."""
+    """Neither the enclosing judgement nor its governing component runs again.
+
+    The enclosing judgement's SPEC IDENTITY is the clause provenance of the
+    governing verdict, so a revision that leaves every selected and named clause
+    alone leaves its subject digest alone and the recorded verdict is reused.
+    """
     ledger = _Ledger()
     repo = _repo(tmp_path=tmp_path)
     runner = _Runner(results=[CommandResult(exit_code=0, stdout=_PASS_REPLY, stderr="")])
@@ -523,8 +528,8 @@ def test_an_unrelated_spec_revision_reuses_the_governing_heading_verdict(
     )
 
     assert first.reused is False
-    assert second.reused is False
-    assert runner.calls == 2
+    assert second.reused is True
+    assert runner.calls == 1
     assert governing_calls == 1
 
 

@@ -49,9 +49,11 @@ from livespec_orchestrator_beads_fabro.commands._config import resolve_store_con
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
+    item_comment_bodies,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     held_judgement,
-    item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,

@@ -40,6 +40,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     recorded_governing_heading,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    spec_identity_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity_record import (
+    recorded_spec_identity,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import (
     InterruptedAttempt,
     interrupted_attempt_section,
@@ -248,13 +254,17 @@ def render_goal(
     # this block and must be able to tell a verdict of "nothing governs" from a
     # judgement nobody took — the first forecloses its finding and the second
     # leaves it its own search.
+    bodies = tuple(comment.text for comment in comments)
     verdict_block = (
-        "\n"
-        + governing_heading_block(
-            verdict=recorded_governing_heading(comments=tuple(comment.text for comment in comments))
-        )
-        + "\n"
+        "\n" + governing_heading_block(verdict=recorded_governing_heading(comments=bodies)) + "\n"
     )
+    # The SPEC IDENTITY the pre-dispatch taking used rides beside the verdict it
+    # was derived from, so the run's `dod_gate` node compares on the taking's own
+    # digest. A run whose item records none is supplied none and falls back on the
+    # whole-tree digest, so no block stands in for the absent identity.
+    supplied = recorded_spec_identity(comments=bodies)
+    if supplied is not None:
+        verdict_block += "\n" + spec_identity_block(identity=supplied) + "\n"
     if not riders:
         return escape_minijinja_literal(text=body + verdict_block)
     lines = [
