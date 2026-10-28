@@ -51,11 +51,16 @@ counterpart, and every caller already reads any non-zero exit as a failure.
 from __future__ import annotations
 
 import os
+import queue
+import signal
 import subprocess
+import threading
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import cast
+from typing import IO, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -64,6 +69,14 @@ __all__: list[str] = [
     "ShellCommandRunner",
     "child_env",
 ]
+
+IS_POSIX = os.name == "posix"
+
+
+class _StdoutLineObserver(Protocol):
+    """The stateful decision seam that consumes each live standard-output line."""
+
+    def __call__(self, *, line: str) -> bool: ...
 
 
 def child_env(*, delta: Mapping[str, str | None]) -> dict[str, str]:
@@ -129,6 +142,176 @@ class ShellCommandRunner:
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
+
+    def run_streaming(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        on_stdout_line: _StdoutLineObserver,
+        env: Mapping[str, str | None] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        """Run a command and end its private session when live output refuses it."""
+        launched = attempt(
+            action=lambda: subprocess.Popen(  # noqa: S603 - Dispatcher-built argv
+                argv,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=None if env is None else child_env(delta=env),
+                stdin=stdin,
+                start_new_session=True,
+            ),
+            exceptions=(OSError,),
+        )
+        if isinstance(launched, AttemptFailure):
+            return _failure_result(
+                error=launched.error,
+                argv=argv,
+                timeout_seconds=timeout_seconds,
+            )
+        return _stream_process(
+            process=launched,
+            timeout_seconds=timeout_seconds,
+            on_stdout_line=on_stdout_line,
+        )
+
+
+def _stream_process(  # noqa: PLR0915 - each exit reaps both stream readers.
+    *,
+    process: subprocess.Popen[str],
+    timeout_seconds: float,
+    on_stdout_line: _StdoutLineObserver,
+) -> CommandResult:
+    """Drain one child, terminating its group when a line refuses it."""
+    lines: queue.Queue[str | None] = queue.Queue()
+    stderr: list[str] = []
+    stdout: list[str] = []
+    stdout_thread = threading.Thread(
+        target=partial(_read_stdout, stream=process.stdout, lines=lines),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=partial(_read_stderr, stream=process.stderr, output=stderr),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _terminate_process_group(process=process)
+            _wait_for_termination(process=process)
+            return _stream_timeout_result(
+                stdout=stdout,
+                stderr=stderr,
+                timeout_seconds=timeout_seconds,
+                stdout_thread=stdout_thread,
+                stderr_thread=stderr_thread,
+            )
+        try:
+            line = lines.get(timeout=remaining)
+        except queue.Empty:
+            continue
+        if line is None:
+            break
+        stdout.append(line)
+        if on_stdout_line(line=line):
+            _terminate_process_group(process=process)
+            _wait_for_termination(process=process)
+            break
+    try:
+        _ = process.wait(timeout=max(0, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(process=process)
+        _wait_for_termination(process=process)
+        return _stream_timeout_result(
+            stdout=stdout,
+            stderr=stderr,
+            timeout_seconds=timeout_seconds,
+            stdout_thread=stdout_thread,
+            stderr_thread=stderr_thread,
+        )
+    stdout_thread.join()
+    stderr_thread.join()
+    return CommandResult(
+        exit_code=process.returncode,
+        stdout="".join(stdout),
+        stderr="".join(stderr),
+    )
+
+
+def _read_stdout(*, stream: IO[str] | None, lines: queue.Queue[str | None]) -> None:
+    """Send every live standard-output line, then the terminal marker."""
+    if stream is not None:
+        for line in stream:
+            lines.put(line)
+    lines.put(None)
+
+
+def _read_stderr(*, stream: IO[str] | None, output: list[str]) -> None:
+    """Collect standard error without blocking the main stream deadline."""
+    if stream is not None:
+        output.append(stream.read())
+
+
+def _terminate_process_group(*, process: subprocess.Popen[str]) -> None:
+    """End the candidate session without signalling the Dispatcher itself."""
+    try:
+        if IS_POSIX:
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        return
+    except OSError:
+        if process.poll() is None:
+            process.terminate()
+
+
+def _wait_for_termination(*, process: subprocess.Popen[str]) -> None:
+    """Reap a candidate, escalating when it ignored its graceful stop."""
+    try:
+        _ = process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(process=process)
+        _ = process.wait()
+
+
+def _kill_process_group(*, process: subprocess.Popen[str]) -> None:
+    """Force the private candidate session down without touching the Dispatcher."""
+    try:
+        if IS_POSIX:
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        return
+    except OSError:
+        if process.poll() is None:
+            process.kill()
+
+
+def _stream_timeout_result(
+    *,
+    stdout: list[str],
+    stderr: list[str],
+    timeout_seconds: float,
+    stdout_thread: threading.Thread,
+    stderr_thread: threading.Thread,
+) -> CommandResult:
+    """Join live readers and retain the standard timeout result contract."""
+    stdout_thread.join()
+    stderr_thread.join()
+    return CommandResult(
+        exit_code=124,
+        stdout="".join(stdout),
+        stderr="".join(stderr) + f"\ntimeout after {timeout_seconds}s",
+    )
 
 
 def _failure_result(

@@ -20,7 +20,11 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_ADMITTED,
     JUDGEMENT_HELD,
+    JUDGEMENT_UNAVAILABLE,
     DodJudgement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
+    CAUSE_INPUT_LIMIT,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_ADMISSION,
@@ -102,6 +106,64 @@ def test_an_admitted_verdict_round_trips_and_carries_no_finding() -> None:
     assert reused.outcome == JUDGEMENT_ADMITTED
     assert reused.findings == ()
     assert reused.first_remedy is None
+
+
+def test_a_verdict_comment_names_the_deciding_candidates_reported_input_usage() -> None:
+    unreported = verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_DISPATCH,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(outcome=JUDGEMENT_ADMITTED),
+    )
+    reported = verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_DISPATCH,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(
+            outcome=JUDGEMENT_ADMITTED,
+            deciding_candidate="claude-acp:claude-opus-5",
+            input_tokens=99_999,
+            input_usage="complete",
+        ),
+    )
+
+    assert "deciding-candidate-input-usage: unreported" in unreported
+    assert "deciding-candidate: claude-acp:claude-opus-5" in reported
+    assert "deciding-candidate-input-tokens: 99999" in reported
+    assert "deciding-candidate-input-usage: complete" in reported
+
+
+def test_a_chainless_verdict_comment_lists_every_bound_ended_candidate() -> None:
+    """A taking the bound exhausted names no decider and lists each ended candidate.
+
+    Both halves are one claim and neither is evidence alone: the absence says
+    nobody's verdict was accepted, and the list says which candidates spent an
+    allowance reaching that state. A record carrying only the absence reads
+    exactly like a taking that never ran a candidate at all, which sends an
+    operator looking for an outage rather than at the input the bound measured.
+    """
+    comment = verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_DISPATCH,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(
+            outcome=JUDGEMENT_UNAVAILABLE,
+            cause=CAUSE_INPUT_LIMIT,
+            bound_ended_candidates=(
+                "claude-acp:claude-opus-5",
+                "codex-acp:gpt-5.6-terra",
+            ),
+        ),
+    )
+
+    assert "bound-ended-candidate: claude-acp:claude-opus-5" in comment
+    assert "bound-ended-candidate: codex-acp:gpt-5.6-terra" in comment
+    # No candidate decided it, so the record must claim none.
+    assert "deciding-candidate: " not in comment
+    assert "deciding-candidate-input-tokens: " not in comment
 
 
 def test_a_verdict_taken_against_different_bytes_is_not_reused() -> None:

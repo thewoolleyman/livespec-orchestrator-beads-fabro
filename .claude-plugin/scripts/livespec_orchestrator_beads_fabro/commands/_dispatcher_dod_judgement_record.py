@@ -37,16 +37,22 @@ blocks an item whose author has already repaired it.
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
     first_remedy,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_clause_record import (
+    clause_line,
+    clauses_from,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_input_record import (
+    BOUND_ENDED_CANDIDATE_FIELD,
+    input_usage_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     JUDGEMENT_COMMENT_MARKER,
@@ -118,6 +124,7 @@ _REPEATED_FIELDS = frozenset(
         _GOVERNING_HEADING_FIELD,
         _GOVERNING_SELECTED_CLAUSE_FIELD,
         _GOVERNING_NAMED_CLAUSE_FIELD,
+        BOUND_ENDED_CANDIDATE_FIELD,
     }
 )
 
@@ -178,6 +185,7 @@ def verdict_comment(
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
+    lines.extend(input_usage_lines(judgement=judgement))
     if governing is not None:
         verdict = governing.verdict
         lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{verdict.kind}")
@@ -194,11 +202,19 @@ def verdict_comment(
             target = verdict.generalization_target
             lines.append(f"{_GOVERNING_GENERALIZATION_FIELD}{_FIELD_SEPARATOR}{target}")
         lines.extend(
-            _clause_line(key=_GOVERNING_SELECTED_CLAUSE_FIELD, clause=clause)
+            clause_line(
+                separator=_FIELD_SEPARATOR,
+                key=_GOVERNING_SELECTED_CLAUSE_FIELD,
+                clause=clause,
+            )
             for clause in verdict.selected_clauses
         )
         lines.extend(
-            _clause_line(key=_GOVERNING_NAMED_CLAUSE_FIELD, clause=clause)
+            clause_line(
+                separator=_FIELD_SEPARATOR,
+                key=_GOVERNING_NAMED_CLAUSE_FIELD,
+                clause=clause,
+            )
             for clause in verdict.named_clauses
         )
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
@@ -235,8 +251,12 @@ def reusable_governing_heading(
         kind = fields.get(_GOVERNING_KIND_FIELD)
         if kind is None:
             continue
-        recorded_selected = _clauses_of(body=body, key=_GOVERNING_SELECTED_CLAUSE_FIELD)
-        recorded_named = _clauses_of(body=body, key=_GOVERNING_NAMED_CLAUSE_FIELD)
+        recorded_selected = clauses_from(
+            values=_repeated(body=body, key=_GOVERNING_SELECTED_CLAUSE_FIELD)
+        )
+        recorded_named = clauses_from(
+            values=_repeated(body=body, key=_GOVERNING_NAMED_CLAUSE_FIELD)
+        )
         if recorded_selected is None or recorded_named is None:
             continue
         if Counter(recorded_selected) != Counter(selected_clauses) or Counter(
@@ -388,31 +408,6 @@ def _fields_of(*, body: str) -> dict[str, str]:
 
 def _findings_of(*, body: str) -> tuple[str, ...]:
     return _repeated(body=body, key=_FINDING_FIELD)
-
-
-def _clause_line(*, key: str, clause: CondensedClause) -> str:
-    """One unambiguous recorded clause value, including a multiline body."""
-    value = json.dumps({"heading": clause.heading, "body": clause.body}, sort_keys=True)
-    return f"{key}{_FIELD_SEPARATOR}{value}"
-
-
-def _clauses_of(*, body: str, key: str) -> tuple[CondensedClause, ...] | None:
-    """The complete typed provenance carried by one record, or no reading."""
-    clauses: list[CondensedClause] = []
-    for raw in _repeated(body=body, key=key):
-        try:
-            decoded = json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-        if not isinstance(decoded, dict):
-            return None
-        fields = cast("dict[str, object]", decoded)
-        heading = fields.get("heading")
-        clause_body = fields.get("body")
-        if not isinstance(heading, str) or not isinstance(clause_body, str):
-            return None
-        clauses.append(CondensedClause(heading=heading, body=clause_body))
-    return tuple(clauses)
 
 
 def _repeated(*, body: str, key: str) -> tuple[str, ...]:
