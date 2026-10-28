@@ -218,6 +218,21 @@ def required_verdicts(argv):
             if token == "--require" and index + 1 < len(argv)]
 
 
+def latest_anchor_or_none(number, records):
+    """The latest verified or carried-forward head, or ``none`` when neither exists.
+
+    A merged-reconcile ending does not establish a new proof; it only records
+    what a previous proof leg established.  Unlike ordinary publication, that
+    makes the absence of an anchor an observable answer rather than a refusal.
+    A malformed anchor still refuses through ``anchoring_record``: a record that
+    claims to be an anchor but names no whole head is not evidence of absence.
+    """
+    if not [one for one in records if one[1] in ANCHOR_VERDICTS]:
+        return "none"
+    _, _, head = anchoring_record(number, records)
+    return head
+
+
 def factory_records(bodies):
     """Each factory record as (position, verdict, declared head), in order."""
     records = []
@@ -322,14 +337,19 @@ def main(argv):
     carry-forward decision that nothing in an ordinary run ever writes.
     """
     if len(argv) < 2 or argv[0] != "--pull-request":
-        fail("usage: --pull-request <number> [--require <verdict> ...]")
+        fail("usage: --pull-request <number> [--require <verdict> ...]"
+             " [--latest-anchor-or-none]")
     number = argv[1]
+    latest_anchor = argv[2:] == ["--latest-anchor-or-none"]
     required = required_verdicts(argv)
-    if not required:
+    if not latest_anchor and not required:
         fail("no --require <verdict> was named, so nothing would be established")
     comments = pull_request_comments(number)
-    refuse_unattributable(number, named_comments(comments), required)
     records = factory_records([body for body, _ in comments])
+    if latest_anchor:
+        sys.stdout.write(latest_anchor_or_none(number, records) + "\\n")
+        return 0
+    refuse_unattributable(number, named_comments(comments), required)
     agreed_head(number, records, required)
     anchor_index, _, head = anchoring_record(number, records)
     refuse_superseded_anchor(number, records, anchor_index)

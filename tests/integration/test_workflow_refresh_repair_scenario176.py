@@ -536,7 +536,7 @@ def test_pr_refresh_declares_exactly_one_failed_arm_and_it_is_the_classifier() -
     assert failed == [_REPAIR_NODE], arms
     assert "needs_human" not in {destination for destination, _ in arms}, arms
     assert [destination for destination, attributes in arms if "condition" not in attributes] == [
-        "pr_refresh_head"
+        "pr_refresh_merged_reconcile_route"
     ]
 
 
@@ -567,7 +567,7 @@ def test_both_refreshing_stages_declare_the_same_failed_outcome_arm() -> None:
     assert entries["pr_refresh"][0] == entries["publish_draft"][0]
     assert draft == [
         (_REPAIR_NODE, {"label": "Blocked", "condition": _FAILED}),
-        ("proof_capture", {}),
+        ("publish_merged_reconcile_route", {}),
     ]
 
 
@@ -1309,7 +1309,8 @@ def test_a_repaired_refresh_republishes_over_this_run_s_own_published_head(
     assert world.head() == repaired.repaired_head
     assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{repaired.repaired_head}\n"
     assert world.state(name=_BRIEF_FILENAME) is None
-    assert _routed(source="publish_draft", outcome="succeeded") == "proof_capture"
+    assert _routed(source="publish_draft", outcome="succeeded") == "publish_merged_reconcile_route"
+    assert _routed(source="publish_merged_reconcile_route", outcome="failed") == "proof_capture"
 
 
 def test_a_repair_round_may_establish_its_published_head_from_resume_provenance(

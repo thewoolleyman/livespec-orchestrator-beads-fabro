@@ -364,6 +364,11 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # explicit null would read as "this run's latest commit passed its hook",
     # a positive finding about an observation only a needs-human ending takes.
     "hook_verdict",
+    # The merged-reconcile ending, dropped on the ATTRIBUTION terms again: an
+    # explicit null would read as "this run was examined for a publication that
+    # had already landed and none was found", a positive finding about an
+    # observation only a run that reached the ending carries.
+    "merged_reconcile",
     "needs_human_preservation",
     # The provider-limit release, dropped on the same terms and for the
     # ATTRIBUTION reason in its strongest form: an explicit null here would

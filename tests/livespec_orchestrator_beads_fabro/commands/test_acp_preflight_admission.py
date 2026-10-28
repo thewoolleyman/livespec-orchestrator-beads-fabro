@@ -217,12 +217,10 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
     strand every run at its first node, which is exactly the condition
     the preflight exists to refuse before claim.
 
-    `proof_capture` joins it on the same ground (S5 / bd-ib-b4u6b7): it is the
-    only route from a green janitor to `review`, so no green path avoids it
-    either. Its `script` sibling `publish_draft` dominates every green path just
-    as hard and is deliberately ABSENT, because this set is the ACP nodes --
-    what it gates is per-node adapter fallback, and a script node has no adapter
-    to fall back along.
+    A merged publication may reach final verification without a fresh proof
+    cycle, so `proof_capture`, `proof_verify`, and `review` no longer dominate
+    every green path. Their script sibling `publish_draft` is likewise absent:
+    this set is ACP nodes only, and a script node has no adapter fallback.
     """
     modules = _modules()
     graph = modules["_acp_workflow_graph"].parse_workflow_graph(
@@ -233,9 +231,6 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
     assert set(critical.nodes) == {
         "dod_gate",
         "implement",
-        "proof_capture",
-        "review",
-        "proof_verify",
     }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
@@ -1350,9 +1345,6 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
     assert set(verdict.success_critical) == {
         "dod_gate",
         "implement",
-        "proof_capture",
-        "review",
-        "proof_verify",
     }
     assert verdict.viable is True
 

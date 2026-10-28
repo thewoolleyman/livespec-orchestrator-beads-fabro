@@ -12,6 +12,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import HookVerdict
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import MergedReconcile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     ProviderLimitRelease,
 )
@@ -190,6 +191,11 @@ class DispatchOutcome:
     # candidate identity, neither of which the post-run disposition holds, so a
     # second derivation there could only re-read the rendered detail prose.
     provider_limit_release: ProviderLimitRelease | None = None
+    # The merged-reconcile ending this run took, if it took one. Carried on the
+    # outcome because the sandbox that printed it is gone by the time the
+    # acceptance pass needs the merged head, and a record of what the ending
+    # proved cannot be recovered from the pull request alone.
+    merged_reconcile: MergedReconcile | None = None
 
 
 SleepFn = Callable[[float], None]

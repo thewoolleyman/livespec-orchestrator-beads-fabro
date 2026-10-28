@@ -124,6 +124,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
     PENDING_HOST_LEG_REASON,
     HostAssertionGrade,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import (
+    records_proving_head,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment_verify import (
     AttachmentDigestReader,
     attachment_digest_reader,
@@ -199,6 +202,7 @@ def read_proof_leg(
     outcome: DispatchOutcome,
     runner: CommandRunner,
     dispatch: MergingDispatch,
+    merged_head: str | None = None,
 ) -> ProofLeg:
     """Read the merging dispatch's record off the pull request and grade against it.
 
@@ -225,6 +229,11 @@ def read_proof_leg(
             reason=f"pull request #{pr_number} comments unreadable",
         )
     run_ids = dispatch.run_ids
+    # After a merged-reconcile ending the run wrote no record for the merged head, so
+    # only a record naming it may grade the factory assertions; see the module that
+    # owns the rule.
+    if merged_head is not None:
+        records = records_proving_head(records=records, run_ids=run_ids, merged_head=merged_head)
     # Resolved BEFORE the identifier arm splits, because the HOST leg does not
     # depend on the factory identifiers at all: a host replay carries a session
     # identity, `proof_leg` deliberately does not filter host records by
