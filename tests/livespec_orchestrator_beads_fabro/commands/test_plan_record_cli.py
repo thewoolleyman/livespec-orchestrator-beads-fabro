@@ -155,6 +155,8 @@ def test_the_dispatcher_subcommand_publishes_the_record_on_the_epic(
 ) -> None:
     _govern(repo=tmp_path)
     epic_id = _plan(repo=tmp_path)
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
+    monkeypatch.delenv("PI_SESSION_ID", raising=False)
     monkeypatch.setenv(_SESSION_ENV, _CAPTURING)
     record = _payload(repo=tmp_path)
 

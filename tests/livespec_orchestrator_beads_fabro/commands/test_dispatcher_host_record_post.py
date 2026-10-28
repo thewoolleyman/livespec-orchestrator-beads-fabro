@@ -489,6 +489,47 @@ def test_a_replay_from_the_recording_identity_is_refused_before_anything_is_post
     assert reconciled.driven == []
 
 
+def test_a_nested_codex_replay_uses_its_own_identity_before_the_parent_can_refuse_it(
+    tmp_path: Path,
+) -> None:
+    """A nested verifier replays as Codex, while the inherited-only replay is refused.
+
+    The host-leg guard must run against an actual host-captured assertion.  That keeps
+    this regression test on the same refusal path an operator's replay reaches instead
+    of stopping at the earlier "no host_captured assertion" fixture guard.
+    """
+    _file_item(repo=tmp_path)
+    capture = _capture_comment(identity=_SESSION)
+
+    nested_runner = _Runner(comments=_comments(records=(capture,)))
+    nested_exit, nested_emitted = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_VERIFIED,
+        runner=nested_runner,
+        env={
+            "CODEX_SESSION_ID": _OTHER_SESSION,
+            "CLAUDE_CODE_SESSION_ID": _SESSION,
+        },
+        reproduced=True,
+    )
+
+    inherited_runner = _Runner(comments=_comments(records=(capture,)))
+    inherited_exit, inherited_emitted = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_NOT_REPRODUCED,
+        runner=inherited_runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        reproduced=False,
+    )
+
+    assert nested_exit == 0
+    assert SELF_REPLAY_REFUSAL not in nested_emitted
+    assert [call for call in nested_runner.calls if call[:3] == ["gh", "pr", "comment"]]
+    assert inherited_exit != 0
+    assert SELF_REPLAY_REFUSAL in inherited_emitted
+    assert [call for call in inherited_runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
+
+
 def test_a_not_reproduced_replay_from_the_recording_identity_is_refused_too(
     tmp_path: Path,
 ) -> None:

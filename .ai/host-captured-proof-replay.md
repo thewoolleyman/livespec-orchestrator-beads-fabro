@@ -127,7 +127,8 @@ re-runs only the acceptance pass, with no post-merge janitor.
 
 **"Separately started" is the whole requirement, and it is not satisfiable from
 inside the recording session.** `computed_publishing_identity` reads
-`CLAUDE_CODE_SESSION_ID`, then `CODEX_SESSION_ID`, then `PI_SESSION_ID`, and
+`CODEX_SESSION_ID`, then `CLAUDE_CODE_SESSION_ID`, then `PI_SESSION_ID` (a
+nested Codex verifier inherits Claude's variable, so its own id comes first), and
 falls through to the forge login only when none is set. Every one of those is
 INHERITED — by a subshell, a background job, a sub-agent, a `codex exec`, a
 second pane of the same session — so any process launched from the recording
