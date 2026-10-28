@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.246.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.245.0...v0.246.0) (2026-10-28)
+
+
+### Features
+
+* **reflector:** use governed ACP candidates ([1e8da4a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1e8da4a1dde8a187cc5f7bff1efa5a68d90f9318))
+
 ## [0.245.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.244.0...v0.245.0) (2026-10-27)
 
 
