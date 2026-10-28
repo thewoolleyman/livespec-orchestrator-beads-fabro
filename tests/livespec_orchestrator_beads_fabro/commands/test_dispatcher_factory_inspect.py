@@ -299,3 +299,36 @@ def test_factory_inspect_relays_the_selected_clients_failure(tmp_path: Path) -> 
         == 23
     )
     assert failed_stderr.getvalue() == "unknown variant `kubernetes`\n"
+
+
+def test_factory_inspect_gives_an_export_a_longer_timeout_than_an_inspect_read(
+    tmp_path: Path,
+) -> None:
+    """A full run export is far slower than one inspect read, so it gets its own bound."""
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    inspect_runner = _Runner(results=[CommandResult(exit_code=0, stdout="record\n", stderr="")])
+    dump_runner = _Runner(results=[CommandResult(exit_code=0, stdout="exported\n", stderr="")])
+
+    _ = module.run_factory_inspect_command(
+        args=argparse.Namespace(
+            factory="petri", run_id="01MFACTORY", output_dir=None, repo=str(repo)
+        ),
+        runner=inspect_runner,
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+    _ = module.run_factory_inspect_command(
+        args=argparse.Namespace(
+            factory="petri",
+            run_id="01MFACTORY",
+            output_dir=tmp_path / "export",
+            repo=str(repo),
+        ),
+        runner=dump_runner,
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+
+    assert inspect_runner.calls[0]["timeout_seconds"] == 60.0
+    assert dump_runner.calls[0]["timeout_seconds"] == 300.0

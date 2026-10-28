@@ -40,7 +40,8 @@ __all__: list[str] = [
 ]
 
 FACTORY_INSPECT_REFUSAL_EXIT = 2
-_READ_TIMEOUT_SECONDS = 60.0
+_INSPECT_TIMEOUT_SECONDS = 60.0
+_EXPORT_TIMEOUT_SECONDS = 300.0
 
 
 def add_factory_inspect_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -79,10 +80,10 @@ def run_factory_inspect_command(
         result = port.dump(
             run_id=args.run_id,
             output_dir=args.output_dir,
-            timeout_seconds=_READ_TIMEOUT_SECONDS,
+            timeout_seconds=_EXPORT_TIMEOUT_SECONDS,
         )
         return _report_command(command=result.command, stdout=stdout, stderr=stderr)
-    result = port.inspect(run_id=args.run_id, timeout_seconds=_READ_TIMEOUT_SECONDS)
+    result = port.inspect(run_id=args.run_id, timeout_seconds=_INSPECT_TIMEOUT_SECONDS)
     return _report_command(command=result.command, stdout=stdout, stderr=stderr)
 
 
