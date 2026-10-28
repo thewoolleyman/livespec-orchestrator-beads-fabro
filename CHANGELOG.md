@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.253.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.1...v0.253.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* carry prepare-step payloads in step env, not the compact-preamble script ([3790b0d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3790b0d9f3f99ae9d2614e3ff82a952431da4afc))
+
 ## [0.253.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.0...v0.253.1) (2026-10-28)
 
 
