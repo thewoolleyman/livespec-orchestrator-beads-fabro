@@ -1643,6 +1643,20 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `test_skipped_green_token_scope.py` sets `SKIP_TARGETS` in its own janitor
   case so the leak is exercised on every venue.
 
+- `test_spec_tier_release_valve_scenario206.py` — binds the HUMAN-WAY-THROUGH
+  gherkin scenarios of `SPECIFICATION/scenarios.md` Scenario 206 (the attested
+  release, the pending-rework release, the unresolved-heading refusal, and the
+  attestation that survives an unrelated revision and a rejected proposal but
+  voids on a changed clause). Every case drives the real `release-spec-tier`
+  valve through `run_human_valve_action` over the real intake route, the real
+  pre-dispatch wall, a real spec tree and the real store/client seam; the judge
+  is stood in at the executable and the Definition-of-Done rubric is stood down
+  so the reply sequence lines up with the classification alone. Every refusal is
+  asserted together with the hold STANDING (the wall still refuses, the ledger
+  carries no attestation), and the wall is driven rather than the gate because
+  "the wall treats the citation as stated" is a claim about what it does NOT
+  refuse.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

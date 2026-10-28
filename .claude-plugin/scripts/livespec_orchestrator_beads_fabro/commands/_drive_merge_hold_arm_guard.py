@@ -88,6 +88,7 @@ __all__: list[str] = [
     "ArmRefusal",
     "MergeHoldCommandRun",
     "arm_refusal_for_release",
+    "observe_item_run_liveness",
 ]
 
 # The two valve error codes a guarded release can return. Each NAMES the
@@ -192,6 +193,25 @@ def arm_refusal_for_release(
         pr_number=pr_number,
         pr_head=pr_head,
         runner=command_runner,
+    )
+
+
+def observe_item_run_liveness(
+    *, repo: Path, work_item_id: str, runner: HumanValveRunner | None
+) -> ItemRunLiveness:
+    """Which runs of one item are still non-terminal on the configured factory.
+
+    The SAME reading the arming guard above takes, offered to the other host-side
+    valve that must not act beside a live run: the `release-spec-tier` release
+    re-routes an item, and a run alive on it would be racing that routing. The
+    factory is resolved here, once, and handed down, for the reason the arming
+    guard resolves it once.
+    """
+    return _item_run_liveness(
+        repo=repo,
+        factory=resolve_fabro_factory(cwd=repo, factory=None),
+        work_item_id=work_item_id,
+        runner=_ValveCommandRunner(runner=runner, cwd=repo),
     )
 
 
