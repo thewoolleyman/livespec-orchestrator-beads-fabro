@@ -151,7 +151,7 @@ def supersession_evidence(
                 required_result=None if obligation is None else obligation.required_result,
             ),
         )
-    if supersession.deriving_operation_id is None or supersession.open_carrier_id is None:
+    if supersession.deriving_operation_id is None:
         return SupersessionEvidence(
             deriving=None,
             carrier=None,
@@ -163,7 +163,9 @@ def supersession_evidence(
             epic_id=epic_id,
             operation_id=supersession.deriving_operation_id,
         ),
-        carrier=_carrier(config=config, epic_id=epic_id, carrier_id=supersession.open_carrier_id),
+        carrier=None
+        if supersession.open_carrier_id is None
+        else _carrier(config=config, epic_id=epic_id, carrier_id=supersession.open_carrier_id),
         plan_level=obligation is not None
         and names_plan_epic(required_result=obligation.required_result, epic_id=epic_id),
         implementation=None

@@ -299,9 +299,9 @@ def _misderived_refusal(
     replacement: object,
 ) -> SupersessionRefusal | None:
     """Grade either ratified arm of the `misderived` cause."""
-    if supersession.deriving_operation_id is None or supersession.open_carrier_id is None:
+    if supersession.deriving_operation_id is None:
         return SupersessionRefusal(
-            detail="a misderived supersession must name its deriving operation and open carrier"
+            detail="a misderived supersession must name its deriving operation"
         )
     if evidence.deriving is None:
         return SupersessionRefusal(

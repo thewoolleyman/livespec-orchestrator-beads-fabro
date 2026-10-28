@@ -304,6 +304,26 @@ def test_the_deriving_identity_resolves_from_a_chain_that_has_moved_past_it(
     assert latest.deriving.author == _PLAN_RESUME_ACTOR
 
 
+def test_a_supersession_naming_no_open_carrier_still_resolves_its_derivation(
+    tmp_path: Path,
+) -> None:
+    """The implementation arm names no carrier, so none is read and none is required."""
+    repo = _project(tmp_path=tmp_path, configure_carrier=True)
+    _seed(repo=repo, transitions=(_FIRST_OPERATION,))
+    head = _head(repo=repo)
+    claim = replace(
+        _supersession(epoch=head.epoch, operation_id=_FIRST_OPERATION), open_carrier_id=None
+    )
+
+    evidence = supersession_evidence(
+        config=_config(repo=repo), epic_id=_EPIC, supersession=claim, head=head
+    )
+
+    assert evidence is not None
+    assert evidence.deriving is not None
+    assert evidence.carrier is None
+
+
 def _unparseable_event(*, repo: Path, operation_id: str) -> None:
     """One progress-event comment whose canonical payload line is not JSON.
 
