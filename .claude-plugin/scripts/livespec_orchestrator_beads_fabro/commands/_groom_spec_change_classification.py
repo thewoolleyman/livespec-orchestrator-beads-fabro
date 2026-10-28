@@ -101,15 +101,23 @@ def classified_candidate_slices(
     tree = _spec_tree(repo=repo)
     if tree is None:
         return list(slices)
-    run_model = drift_judge(project_root=repo, runner=runner or ShellCommandRunner())
-    return [_classified(candidate=one, tree=tree, run_model=run_model) for one in slices]
+    judge_runner = runner or ShellCommandRunner()
+    classify_model = drift_judge(project_root=repo, runner=judge_runner, reply="item_class")
+    judge_model = drift_judge(project_root=repo, runner=judge_runner)
+    return [
+        _classified(
+            candidate=one, tree=tree, classify_model=classify_model, judge_model=judge_model
+        )
+        for one in slices
+    ]
 
 
 def _classified(
     *,
     candidate: CandidateSlice,
     tree: Mapping[str, str],
-    run_model: spec_stated.ModelRunner,
+    classify_model: spec_stated.ModelRunner,
+    judge_model: spec_stated.ModelRunner,
 ) -> CandidateSlice:
     """One candidate's tier, or the candidate unchanged when nothing decided it.
 
@@ -127,14 +135,14 @@ def _classified(
         item_type=(
             _DRAFT_DECLARED_SPEC_CHANGE if candidate.is_spec_change else _DRAFT_DECLARED_FACTORY
         ),
-        run_model=run_model,
+        run_model=classify_model,
     )
     if not is_successful(classification):
         return candidate
     if classification.unwrap() != FEATURE_CLASS:
         return replace(candidate, is_spec_change=False)
     verdict = judge_within_ceiling(
-        spec_tree=tree, statement=_behaviour(candidate=candidate), run_model=run_model
+        spec_tree=tree, statement=_behaviour(candidate=candidate), run_model=judge_model
     )
     if not is_successful(verdict):
         return candidate

@@ -107,7 +107,8 @@ def _repo(*, tmp_path: Path) -> Path:
     (spec / "history" / "v001" / "proposed_changes").mkdir(parents=True, exist_ok=True)
     _ = (repo / ".livespec.jsonc").write_text(
         '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
-        ' "dispatcher": {"auto_approve_ready": true}}}',
+        ' "dispatcher": {"auto_approve_ready": true,'
+        ' "acp_nodes": {"dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}}}}}',
         encoding="utf-8",
     )
     _ = (spec / "contracts.md").write_text(

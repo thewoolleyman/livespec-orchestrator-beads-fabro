@@ -188,13 +188,13 @@ def classify_spec_change_tier(
     reused = reusable_spec_change_tier(comments=comments, spec_version=spec_version, digest=digest)
     if reused is not None:
         return SpecChangeTierOutcome(work_item_id=item.id, recorded=reused, reused=True)
-    run_model = drift_judge(project_root=repo, runner=runner or ShellCommandRunner())
+    judge_runner = runner or ShellCommandRunner()
     statement = asked_for_behaviour(item=item)
     classification = spec_stated.classify(
         title=item.title,
         description=item.description,
         item_type=item.type,
-        run_model=run_model,
+        run_model=drift_judge(project_root=repo, runner=judge_runner, reply="item_class"),
     )
     if not is_successful(classification):
         return _did_not_run(
@@ -217,7 +217,9 @@ def classify_spec_change_tier(
             append=append,
         )
     verdict = judge_within_ceiling(
-        spec_tree=snapshot.files, statement=statement, run_model=run_model
+        spec_tree=snapshot.files,
+        statement=statement,
+        run_model=drift_judge(project_root=repo, runner=judge_runner),
     )
     if not is_successful(verdict):
         return _did_not_run(
