@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import base64
 import os
-import re
 import subprocess
 import threading
 from collections.abc import Callable, Iterator
@@ -30,6 +29,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regenera
     RECORD_FILE_PROGRAM_FILENAME,
     record_file_program_source,
 )
+
+from tests.prepare_step_support import env_of, steps_in
 
 WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 BRANCH = "feat/push-time-test"
@@ -241,9 +242,14 @@ def provision_auth(
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "fixture-key")
     monkeypatch.setenv("LIVESPEC_SANDBOX_GH_REFRESH_ROOT", str(bundle))
     prepare = refreshing_gh_prepare_steps_block()
-    for script in re.findall(r"script = '''\n(.*?)\n'''", prepare, re.DOTALL):
+    for step in steps_in(block=prepare):
         subprocess.run(
-            ["bash", "-c", script], cwd=clone, env=env, check=True, capture_output=True, text=True
+            ["bash", "-c", step.script],
+            cwd=clone,
+            env=env_of(step=step, base=env),
+            check=True,
+            capture_output=True,
+            text=True,
         )
     minted = root / "minted"
     executable(

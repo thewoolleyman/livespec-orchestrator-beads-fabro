@@ -45,6 +45,8 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     node_timeouts_from_block,
 )
 
+from tests.prepare_step_support import steps_in
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _GRAPH = _PAYLOAD / "workflow.fabro"
@@ -319,14 +321,12 @@ def _materialized_sandbox(*, tmp_path: Path, comments: list[dict[str, str]]) -> 
     )
     root = tmp_path / "plugins"
     root.mkdir(parents=True)
-    block = proof_grade_program_prepare_steps_block()
-    step = json.loads(block.split("script = ", 1)[1])
-    assert isinstance(step, str)
+    [step] = steps_in(block=proof_grade_program_prepare_steps_block())
     _ = subprocess.run(
-        ["sh", "-c", step],
+        ["sh", "-c", step.script],
         cwd=repo,
         check=True,
-        env={**os.environ, "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(root)},
+        env={**os.environ, **step.env, "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(root)},
     )
     forge = tmp_path / "bin"
     forge.mkdir()

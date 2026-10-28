@@ -98,7 +98,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     DEFAULT_SANDBOX_GH_REFRESH_ROOT,
-    MAX_PREPARE_STEP_BYTES,
     SANDBOX_GH_REFRESH_ROOT_ENV_VAR,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe import (
@@ -145,6 +144,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import (
     release_pre_run_claim_if_needed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    MAX_PAYLOAD_VALUE_BYTES,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
@@ -208,6 +210,8 @@ from livespec_orchestrator_beads_fabro.store import (
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.cross_repo.types import CrossRepoManifest
 from livespec_runtime.github_auth.errors import GithubAppAuthError
+
+from tests.prepare_step_support import runnable_script, steps_in
 
 _GITHUB_APP_ENV_KEYS = (
     "GITHUB_APP_ID",
@@ -1876,9 +1880,13 @@ def test_render_run_config_overlay_prepares_refreshing_gh_wrapper(
     env_table_at = rendered.index("[environments.livespec-ci.env]")
     assert "livespec-refreshing-gh-wrapper" in rendered[:env_table_at]
     assert "mint_app_token.py" in rendered[:env_table_at]
-    assert 'token="$(python3 ' in rendered[:env_table_at]
-    assert 'real_gh="$(command -v gh)"' in rendered[:env_table_at]
-    assert 'mv "$real_gh" "$wrapped_gh"' in rendered[:env_table_at]
+    prepared = "\n".join(
+        "\n".join([step.script, *step.env.values()])
+        for step in steps_in(block=rendered[:env_table_at])
+    )
+    assert 'token="$(python3 ' in prepared
+    assert 'real_gh="$(command -v gh)"' in prepared
+    assert 'mv "$real_gh" "$wrapped_gh"' in prepared
     env_table = rendered[env_table_at:]
     assert "\nPATH = " not in env_table
     assert "{{ env.PATH }}" not in rendered
@@ -1908,8 +1916,11 @@ def test_render_run_config_overlay_projects_gh_mint_helper_for_target_without_sc
     prepare_steps = rendered[:env_table_at]
     assert "/workspace/.livespec-gh-refresh/bin/mint_app_token.py" in prepare_steps
     assert "$PWD/.claude-plugin/scripts/bin/mint_app_token.py" not in prepare_steps
-    assert 'token="$(python3 "$mint")"' in prepare_steps
-    assert 'tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz")' in prepare_steps
+    steps = steps_in(block=rendered)
+    # The wrapper's fixed tail is a helper source, so it rides a step's env; the
+    # unpack program is a short command and stays in the script.
+    assert any('token="$(python3 "$mint")"' in v for s in steps for v in s.env.values())
+    assert any('tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz")' in s.script for s in steps)
 
 
 def test_render_run_config_overlay_ignores_target_repo_mint_helper_when_present(
@@ -1999,12 +2010,14 @@ def _assert_projected_gh_wrapper_publishes(
     # production path must not appear in any emitted step.
     for script in scripts:
         assert DEFAULT_SANDBOX_GH_REFRESH_ROOT not in script
-    # The payload must never ride in one argv slot again (bd-ib-gnli): fabro
-    # runs each step as `bash -c <script>`, and Linux caps a SINGLE argument at
+    # The payload must never ride in one exec slot above the cap again
+    # (bd-ib-gnli): Linux caps a SINGLE argument or environment string at
     # MAX_ARG_STRLEN (131072), not the total. One 186KB step killed every
-    # dispatch at exec with "argument list too long".
-    for script in scripts:
-        assert len(script.encode()) <= MAX_PREPARE_STEP_BYTES
+    # dispatch at exec with "argument list too long". The payload now rides each
+    # step's env, and `render_prepare_step` enforces the cap per value.
+    for step in steps_in(block=rendered):
+        for value in step.env.values():
+            assert len(value.encode()) <= MAX_PAYLOAD_VALUE_BYTES
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     capture = tmp_path / "gh-calls.txt"
@@ -2105,9 +2118,9 @@ def _gh_refresh_prepare_scripts(*, rendered: str) -> list[str]:
         if offset != -1
     ]
     end = min(boundaries) if boundaries else len(tail)
-    found = re.findall(r"script = '''\n(.*?)\n'''", tail[:end], re.DOTALL)
+    found = [runnable_script(step=step) for step in steps_in(block=tail[:end])]
     assert found
-    return list(found)
+    return found
 
 
 def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> None:

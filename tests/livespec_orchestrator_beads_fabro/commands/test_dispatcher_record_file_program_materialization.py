@@ -18,7 +18,6 @@ reads the assembled string alone.
 from __future__ import annotations
 
 import importlib.util
-import re
 import subprocess
 from pathlib import Path
 
@@ -34,7 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
 
-_SCRIPT = re.compile(r'^script = "(.*)"$', re.MULTILINE)
+from tests.prepare_step_support import env_of, steps_in
 
 
 def test_the_resolution_program_rides_the_one_prepare_block() -> None:
@@ -46,22 +45,23 @@ def test_the_prepare_step_lands_bytes_a_sandbox_can_import(tmp_path: Path) -> No
     """The step's own shell is run, because only that can observe an expansion.
 
     The program's source carries `${...}`, a literal dollar and shell-looking
-    text of its own. An assertion over the assembled string cannot tell a heredoc
-    the shell expands nothing inside from one it substitutes into, and the
+    text of its own. An assertion over the assembled string cannot tell a write
+    that expands nothing from one that substitutes into the program, and the
     substituted bytes still look like a program.
     """
     root = tmp_path / "plugins"
     block = record_file_program_prepare_steps_block()
-    matched = _SCRIPT.search(block)
-    assert matched is not None
-    script = matched.group(1).encode("utf-8").decode("unicode_escape")
+    [step] = steps_in(block=block)
     completed = subprocess.run(
-        ["sh", "-c", script],
-        env={
-            "PATH": "/usr/bin:/bin",
-            "HOME": str(tmp_path / "home"),
-            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(root),
-        },
+        ["sh", "-c", step.script],
+        env=env_of(
+            step=step,
+            base={
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(tmp_path / "home"),
+                SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(root),
+            },
+        ),
         capture_output=True,
         text=True,
         check=False,

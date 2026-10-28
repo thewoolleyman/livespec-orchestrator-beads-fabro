@@ -41,14 +41,13 @@ node attributes and "leaves `run.prepare` commands verbatim". A `{{` in a
 work-item title is therefore inert in this table, and escaping it would corrupt
 the title the maintainer reads on the pull request.
 
-WHY THE BODY TRAVELS BASE64 RATHER THAN IN A HEREDOC. The prepare step is one
-shell command and the body is arbitrary ledger prose. A quoted heredoc expands
-nothing, but a body line equal to the delimiter closes it early and the tail
-becomes shell -- a content-dependent hazard with no safe delimiter, since the
-delimiter would itself be the thing to avoid writing about. The base64 alphabet
-is `A-Za-z0-9+/=` and nothing else, so an encoded payload is single-quotable
-with no escaping at all and no property of the body can reach the shell.
-`_assert_shell_safe` HOLDS that invariant rather than trusting it.
+WHY THE BODY TRAVELS IN THE STEP'S ENV RATHER THAN IN ITS SCRIPT. The body is
+arbitrary ledger prose, so no quoting of it into a shell command line is safe:
+a quoted heredoc expands nothing, but a body line equal to the delimiter closes
+it early and the tail becomes shell. An env value is data by construction --
+the shell reads it with `printf %s "$VAR"` and no property of the body can reach
+the shell as syntax -- and, unlike a script, the engine's compact preamble never
+re-sends it on every agent request (`_dispatcher_prepare_payload`).
 
 BOTH VALUES ARE BOUNDED, and neither bound is cosmetic. The forge REJECTS an
 over-long title, which would fail the stage closed on a value that changes
@@ -61,10 +60,15 @@ stops mid-criterion otherwise reads as a ledger record that was itself truncated
 
 from __future__ import annotations
 
-import base64
 import json
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -92,10 +96,9 @@ PUBLICATION_BODY_FILENAME = "livespec-pr-body.md"
 # The forge's own pull-request title ceiling.
 PUBLICATION_TITLE_MAX_CHARS = 256
 
-# Well under both the forge's body ceiling and the per-prepare-step `execve`
-# bound: base64 inflates by 4/3, so 30000 bytes of body is a ~40000-character
-# payload inside a ~96000-byte step limit. Generous for a title plus a
-# Definition of Done, and nowhere near the limit that destroys a run.
+# Well under both the forge's body ceiling and the per-env-value `execve`
+# bound (`_dispatcher_prepare_payload.MAX_PAYLOAD_VALUE_BYTES`). Generous for a
+# title plus a Definition of Done, and nowhere near the limit that destroys a run.
 PUBLICATION_BODY_MAX_BYTES = 30000
 
 # Emitted on stdout by the step, so a run's setup log says the body landed. A
@@ -112,8 +115,6 @@ _NO_CRITERIA = (
     "This work-item records no acceptance criteria. Its Definition of Done is "
     "the work-item record itself."
 )
-
-_B64_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -207,13 +208,6 @@ def publication_body_path_expansion() -> str:
     return f"{sandbox_plugins_root_expansion()}/{PUBLICATION_BODY_FILENAME}"
 
 
-def _assert_shell_safe(*, payload: str) -> None:
-    """Refuse a payload that could break out of its single-quoted shell literal."""
-    if not set(payload) <= _B64_ALPHABET:
-        msg = "publication body payload carries characters outside the base64 alphabet"
-        raise ValueError(msg)
-
-
 def publication_metadata_env_lines(*, metadata: PublicationMetadata | None) -> str:
     """The `[environments.<id>.env]` line carrying the rendered title.
 
@@ -238,34 +232,27 @@ def publication_metadata_env_lines(*, metadata: PublicationMetadata | None) -> s
 def publication_metadata_prepare_steps_block(*, metadata: PublicationMetadata | None) -> str:
     """A prepare step that materializes the rendered body inside the sandbox.
 
-    The decode runs under `python3` rather than `base64 -d`: `python3` is already
-    a hard dependency of this prepare chain -- the plugin-cache gate executes
-    under it -- while `base64` is a coreutils program whose presence in an
-    arbitrary sandbox image is one more thing to be wrong about.
-
-    The root is resolved by the SHELL and handed to the interpreter as argv, so
-    the expansion has one spelling rather than a shell copy and a Python copy
-    that could disagree.
+    The body rides the step's `env` and `printf %s` writes it, so the bytes the
+    sandbox holds are exactly the rendered body and nothing about it is encoded
+    or decoded on the way.
     """
     if metadata is None:
         return ""
-    payload = base64.b64encode(metadata.body.encode()).decode("ascii")
-    _assert_shell_safe(payload=payload)
     root = sandbox_plugins_root_expansion()
-    decode = (
-        "import base64, pathlib, sys; "
-        "pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(sys.argv[2]))"
+    step = PrepareStep(
+        script="\n".join(
+            [
+                "set -eu",
+                f'root="{root}"',
+                'mkdir -p "$root"',
+                payload_write_command(path_word=f'"$root/{PUBLICATION_BODY_FILENAME}"'),
+                f'echo "{PUBLICATION_BODY_MARKER}: $root/{PUBLICATION_BODY_FILENAME}"',
+            ]
+        ),
+        env={PAYLOAD_ENV_VAR: metadata.body},
     )
-    script = (
-        "set -eu\n"
-        f'root="{root}"\n'
-        'mkdir -p "$root"\n'
-        f"python3 -c '{decode}' \"$root/{PUBLICATION_BODY_FILENAME}\" '{payload}'\n"
-        f'echo "{PUBLICATION_BODY_MARKER}: $root/{PUBLICATION_BODY_FILENAME}"'
-    )
-    return (
+    header = (
         "\n# --- Dispatcher-materialized pull-request body: the `pr` stage applies\n"
         "# --- it with `gh pr edit --body-file`, as DATA rather than shell ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(script)}\n"
     )
+    return header + render_prepare_step(step=step)

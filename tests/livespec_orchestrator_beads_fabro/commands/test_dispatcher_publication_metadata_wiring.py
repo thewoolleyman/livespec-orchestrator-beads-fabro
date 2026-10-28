@@ -46,6 +46,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
 
+from tests.prepare_step_support import env_of, steps_in
+
 _ENVIRONMENT_ID = "sandbox"
 _WORKFLOW_TOML = (
     f'[workflow]\ngraph = "workflow.fabro"\n\n[run.environment]\nid = "{_ENVIRONMENT_ID}"\n'
@@ -92,26 +94,28 @@ def test_the_rendered_body_rides_a_prepare_step_that_actually_writes_it(
 ) -> None:
     """The body's step is EXECUTED, because its only job is to leave a file.
 
-    A substring assertion on the script cannot tell a correct decode from one
-    that writes the base64 payload, and the stage reads the file rather than the
+    A substring assertion on the script cannot tell a correct write from one
+    that writes nothing, and the stage reads the file rather than the
     script. The step is run with the plugins root pointed at a throwaway
     directory, which is the same expansion the `pr` stage resolves, so the path
     agreement is covered by the same execution.
     """
-    parsed = tomli.loads(_overlay(tmp_path=tmp_path, metadata=_metadata()))
-    scripts = [step["script"] for step in parsed["run"]["prepare"]["steps"]]
-    [body_step] = [script for script in scripts if PUBLICATION_BODY_FILENAME in script]
+    steps = steps_in(block=_overlay(tmp_path=tmp_path, metadata=_metadata()))
+    [body_step] = [step for step in steps if PUBLICATION_BODY_FILENAME in step.script]
 
     completed = subprocess.run(
-        ["bash", "-c", body_step],
+        ["bash", "-c", body_step.script],
         check=False,
         capture_output=True,
         text=True,
-        env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": str(tmp_path / "home"),
-            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(tmp_path / "plugins"),
-        },
+        env=env_of(
+            step=body_step,
+            base={
+                "PATH": "/usr/local/bin:/usr/bin:/bin",
+                "HOME": str(tmp_path / "home"),
+                SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(tmp_path / "plugins"),
+            },
+        ),
     )
 
     assert completed.returncode == 0, completed.stderr

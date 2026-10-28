@@ -95,6 +95,12 @@ import shlex
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_program import (
     carry_forward_program_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
     proof_grade_program_prepare_steps_block,
 )
@@ -122,8 +128,8 @@ __all__: list[str] = [
     "PLUGIN_GATE_HOOK_UNREPAIRED_MARKER",
     "PLUGIN_GATE_PROGRAM_FILENAME",
     "SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR",
+    "plugin_cache_gate_prepare_step",
     "plugin_cache_gate_prepare_steps_block",
-    "plugin_cache_gate_script",
     "plugin_gate_session_hook_declaration",
     "plugin_pin_gate_command",
 ]
@@ -423,8 +429,12 @@ def _gate_program() -> str:
     return program.strip()
 
 
-def plugin_cache_gate_script() -> str:
-    """The bash prepare-step body: materialize the program, verify, then pin.
+def plugin_cache_gate_prepare_step() -> PrepareStep:
+    """The prepare step: materialize the program, verify, then pin.
+
+    The program rides the step's `env` and the script writes it with
+    `printf %s`, so the engine's compact preamble carries a few lines rather
+    than the whole gate on every agent request.
 
     `set -eu` plus the `exec` means the gate's own exit code IS the step's, so
     an incomplete cache that could not be repaired aborts the run in setup —
@@ -435,14 +445,17 @@ def plugin_cache_gate_script() -> str:
     because the refresh stage has to re-enter the same verification and a pipe
     leaves nothing behind to re-enter.
     """
-    return (
-        "set -eu\n"
-        f'root="{sandbox_plugins_root_expansion()}"\n'
-        'mkdir -p "$root"\n'
-        f"cat > \"$root/{PLUGIN_GATE_PROGRAM_FILENAME}\" <<'PY'\n"
-        f"{_gate_program()}\n"
-        "PY\n"
-        f'exec python3 "$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'
+    return PrepareStep(
+        script="\n".join(
+            [
+                "set -eu",
+                f'root="{sandbox_plugins_root_expansion()}"',
+                'mkdir -p "$root"',
+                payload_write_command(path_word=f'"$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'),
+                f'exec python3 "$root/{PLUGIN_GATE_PROGRAM_FILENAME}"',
+            ]
+        ),
+        env={PAYLOAD_ENV_VAR: f"{_gate_program()}\n"},
     )
 
 
@@ -528,12 +541,11 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         "# --- verify every registered build against its cache-manifest.json",
         "# --- required_paths, re-materialize an incomplete one, and pin the",
         "# --- build for the whole run (bd-ib-dbqb, bd-ib-bb41.9) ---",
-        "[[run.prepare.steps]]",
-        f"script = '''\n{plugin_cache_gate_script()}\n'''",
     ]
     return (
         "\n".join(lines)
         + "\n"
+        + render_prepare_step(step=plugin_cache_gate_prepare_step())
         + proof_head_program_prepare_steps_block()
         + publication_push_program_prepare_steps_block()
         + carry_forward_program_prepare_steps_block()

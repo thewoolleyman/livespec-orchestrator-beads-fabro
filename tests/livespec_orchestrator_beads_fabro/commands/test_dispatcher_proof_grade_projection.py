@@ -13,6 +13,7 @@ import base64
 import json
 from dataclasses import replace
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
     PROOF_GRADE_ASSERTIONS_ENV_VAR,
     PROOF_GRADE_PROGRAM_FILENAME,
@@ -28,6 +29,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
     sandbox_plugins_root_expansion,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
+
+from tests.prepare_step_support import steps_in
 
 _MIXED_DEFINITION_OF_DONE = """## Definition of Done
 
@@ -152,23 +155,23 @@ def test_the_node_and_the_prepare_step_resolve_one_root() -> None:
 def test_the_reader_travels_as_the_packages_own_bytes_with_no_package_import_left() -> None:
     """The shipped sources ARE the reader, minus the one qualifier a sandbox lacks.
 
-    Each source is asserted PRESENT IN THE STEP whole, rather than by a needle,
-    because the claim is that nothing but the package prefix changed — a fragment
-    that happened to carry the same function names would satisfy any containment
-    check on a needle. The prefix's ABSENCE is asserted too, since a source still
-    naming the package would raise `ModuleNotFoundError` inside the sandbox, and
-    each heredoc delimiter is asserted QUOTED, since an unquoted one would have
-    the shell substitute into a source whose regular expressions carry `$` and
-    backticks.
+    Each source is asserted CARRIED BY THE STEP'S ENV whole, rather than by a
+    needle, because the claim is that nothing but the package prefix changed — a
+    fragment that happened to carry the same function names would satisfy any
+    containment check on a needle. The prefix's ABSENCE is asserted too, since a
+    source still naming the package would raise `ModuleNotFoundError` inside the
+    sandbox, and each write is asserted free of shell expansion, since an
+    expanding one would substitute into a source whose regular expressions carry
+    `$` and backticks.
     """
     sources = proof_record_reader_sources()
-    block = proof_grade_program_prepare_steps_block()
+    [step] = steps_in(block=proof_grade_program_prepare_steps_block())
 
     assert [name for name, _ in sources] == list(PROOF_GRADE_READER_MODULES)
     for index, (name, source) in enumerate(sources):
         assert "livespec_orchestrator_beads_fabro" not in source, name
         assert source.strip() != "", name
-        assert f"<<'LIVESPEC_PROOF_RECORD_READER_{index}'" in json.loads(
-            block.split("script = ", 1)[1]
-        )
-        assert source in json.loads(block.split("script = ", 1)[1]), name
+        var = f"{PAYLOAD_ENV_VAR}_{index}"
+        assert step.env[var] == source, name
+        assert f'printf %s "${var}" > "' in step.script
+        assert source not in step.script, name
