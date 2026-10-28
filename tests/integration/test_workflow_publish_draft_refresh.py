@@ -409,3 +409,50 @@ def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
     assert remote.split()[0] == prior_tip
     assert refused.calls == ()
     assert refused.draft_created is False
+
+
+def test_a_landed_publication_whose_pr_head_is_not_the_tip_still_ends_as_landed(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: containment and emptiness are judged against the tip, not the PR head."""
+    run, _, tip = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+    absent_pr_head = "b" * 40
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=f"73\t{tip}\t{absent_pr_head}",
+        dispatch_pull_requests="73",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in published.result.stderr
+    assert published.draft_created is False
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert f"merged_head={absent_pr_head}" in marker.read_text(encoding="utf-8")
+
+
+def test_verify_pr_accepts_a_recorded_merged_reconcile_ending(tmp_path: Path) -> None:
+    """A recorded merged-reconcile ending passes verify_pr without a head ancestry test."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    state = run / ".git" / "livespec-publication"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "livespec-merged-reconcile").write_text("pull_request=73\n", encoding="utf-8")
+    block = re.search(
+        r"^\s*verify_pr\s*\[(?P<body>.*?)^\s*\]",
+        _WORKFLOW.read_text(encoding="utf-8"),
+        re.DOTALL | re.MULTILINE,
+    )
+    assert block is not None
+    attr = _SCRIPT.search(block.group("body"))
+    assert attr is not None
+    script = attr.group("value").replace(r"\"", '"')
+
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=str(run), text=True, capture_output=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_MERGED_BEFORE_VERIFY" in result.stderr
