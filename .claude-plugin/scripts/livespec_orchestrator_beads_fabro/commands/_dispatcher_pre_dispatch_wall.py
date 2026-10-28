@@ -343,7 +343,9 @@ def _refusing_sequence(
             False,
         ),
         (
-            lambda: dod_judgement_refusal(repo=repo, items=items, workflow_name=args.workflow_name),
+            lambda: dod_judgement_refusal(
+                repo=repo, items=items, workflow_name=args.workflow_name, journal=journal
+            ),
             EXIT_UNGRADEABLE_CRITERIA,
             False,
         ),

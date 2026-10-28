@@ -186,7 +186,7 @@ def _run_wall(*, repo: Path, tmp_path: Path, item: WorkItem | None = None) -> in
         args=_args(),
         repo=repo,
         items=[_item() if item is None else item],
-        journal=JournalFile(path=tmp_path / "journal.jsonl", identity="role:test"),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
     )
 
 
@@ -228,7 +228,11 @@ def test_scenario174_an_unchanged_refused_item_is_neither_rejudged_nor_recomment
     # A reused refusing verdict still refuses, and spends nothing doing it.
     assert second == EXIT_UNGRADEABLE_CRITERIA
     assert len(_comments(repo=repo)) == after_first
-    assert _judge_calls(ledger=ledger) == _TAKEN_JUDGE_CALLS
+    # The rubric judgement is not taken again, but the governing-heading verdict
+    # never produced a reusable record here (the stub judge answers it with the
+    # rubric reply), so the second taking attempts it once more BEFORE it can
+    # compute the digest it looks the record up by: one further call, not two.
+    assert _judge_calls(ledger=ledger) == _TAKEN_JUDGE_CALLS + 1
 
 
 def test_scenario174_a_refused_item_leaves_and_re_enters_drain_enumeration(
@@ -300,7 +304,7 @@ def test_scenario174_an_empty_selection_spends_no_judgement_at_all(
         args=_args(),
         repo=repo,
         items=[],
-        journal=JournalFile(path=tmp_path / "journal.jsonl", identity="role:test"),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
     )
 
     # The drain reaches this wall on every pass that finds no ready work, so an

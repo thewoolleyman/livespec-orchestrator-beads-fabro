@@ -56,7 +56,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Iterator, ValuesView
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 from livespec_runtime.spec_stated import JUDGE_PROMPT, judge
@@ -127,10 +127,17 @@ _TERM = re.compile(r"[a-z0-9_]{3,}")
 
 @dataclass(frozen=True, kw_only=True)
 class CondensedClause:
-    """One headed clause whose full body is provenance for a model prompt."""
+    """One headed clause whose full body is provenance for a model prompt.
+
+    `path` is the clause's file relative to the spec root. It rides OUTSIDE the
+    equality the verdict-reuse comparison uses, because a clause moved between
+    files is still the clause a verdict was judged against; the Definition-of-Done
+    SPEC IDENTITY reads it, so the same move still changes that identity.
+    """
 
     heading: str
     body: str
+    path: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True, kw_only=True, eq=False)
@@ -190,8 +197,8 @@ class _Section:
         the reuse key.
         """
         if self.heading is None:
-            return CondensedClause(heading="", body=self.full)
-        return CondensedClause(heading=self.heading, body=self.body)
+            return CondensedClause(heading="", body=self.full, path=self.path)
+        return CondensedClause(heading=self.heading, body=self.body, path=self.path)
 
 
 def condensed_spec_tree(

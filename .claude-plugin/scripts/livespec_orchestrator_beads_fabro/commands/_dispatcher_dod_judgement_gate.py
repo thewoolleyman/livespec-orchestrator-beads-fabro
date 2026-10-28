@@ -56,6 +56,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     judgement_rubric,
     run_dod_judgement,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    SpecIdentity,
+    spec_identity_for_governing,
+    whole_tree_identity,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     GoverningHeadingReader,
@@ -107,6 +112,7 @@ class DodJudgementDecision:
     outcome: str
     findings: tuple[str, ...] = ()
     reused: bool = False
+    spec_identity: SpecIdentity | None = None
 
     @property
     def holds(self) -> bool:
@@ -129,6 +135,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
     governing_heading: GoverningHeadingReader | None = None,
+    release_of_held_spec_tier: bool = False,
 ) -> DodJudgementDecision:
     """Reuse the recorded verdict, else take the judgement and record it.
 
@@ -146,18 +153,23 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     judgement, which is the behaviour this module had when it read the file one
     layer down.
 
-    THE SPEC-STATED JUDGEMENT IS TAKEN ONLY AFTER THE REUSE READ HAS FAILED,
-    which is the same cheap-first order the rubric call sits in and matters for
-    the same reason: it is a second model call over a prompt carrying the whole
-    ratified tree, so taking it before the reuse read would spend it on every
-    item of every pass that changed nothing. `governing_heading` defaults to
-    this host's own reader rather than to the absent one, because a gate that
-    silently took no spec-stated judgement would report a clean citation for an
-    item whose reference line governs nothing — the fail-open direction the
-    hygiene listing needs and the one a refusing wall must not have.
+    THE GOVERNING-HEADING VERDICT IS ESTABLISHED BEFORE THE SUBJECT DIGEST, because
+    the digest's SPEC IDENTITY is the clause provenance of that verdict. A recorded
+    verdict the component's own reuse rule still allows is read off the ledger and
+    spends no model; only the verdicts that rule rejects are taken. The enclosing
+    judgement's record is then looked up against the digest the identity produced,
+    so a revision that leaves every governing clause unchanged reuses it with no
+    judge run at all. `governing_heading` defaults to this host's own reader
+    rather than to the absent one, because a gate that silently took no
+    spec-stated judgement would report a clean citation for an item whose
+    reference line governs nothing.
+
+    `release_of_held_spec_tier` is the judgement that decides whether a held
+    spec-change-tier item is released: it always keys on the whole-tree identity,
+    because that judgement never reuses a verdict taken before the latest
+    revision.
     """
     rubric = judgement_rubric(payload_root=payload_root)
-    digest = judgement_subject_digest(item=item, cwd=repo, comments=comments)
     rubric_bytes_digest = (
         UNREADABLE_RUBRIC_DIGEST if rubric is None else rubric_digest(rubric=rubric)
     )
@@ -165,25 +177,37 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         return _unavailable(
             item=item,
             stage=stage,
-            digest=digest,
+            digest=judgement_subject_digest(item=item, cwd=repo, comments=comments),
             rubric=rubric_bytes_digest,
             cause=CAUSE_PROMPT_UNREADABLE,
             comments=comments,
             append=append,
         )
+    governing = reusable_governing_heading_verdict(item=item, repo=repo, comments=comments)
+    if governing is None:
+        reader = (
+            host_governing_heading_reader(runner=ShellCommandRunner() if runner is None else runner)
+            if governing_heading is None
+            else governing_heading
+        )
+        governing = reader(item=item, repo=repo)
+    identity = (
+        whole_tree_identity(cwd=repo)
+        if release_of_held_spec_tier
+        else spec_identity_for_governing(item=item, cwd=repo, governing=governing)
+    )
+    digest = judgement_subject_digest(
+        item=item, cwd=repo, comments=comments, spec_identity=identity.value
+    )
     reused = reusable_verdict(comments=comments, digest=digest, rubric_digest=rubric_bytes_digest)
     if reused is not None:
         return DodJudgementDecision(
-            work_item_id=item.id, outcome=reused.outcome, findings=reused.findings, reused=True
+            work_item_id=item.id,
+            outcome=reused.outcome,
+            findings=reused.findings,
+            reused=True,
+            spec_identity=identity,
         )
-    governing = reusable_governing_heading_verdict(item=item, repo=repo, comments=comments)
-    reader = (
-        host_governing_heading_reader(runner=ShellCommandRunner() if runner is None else runner)
-        if governing_heading is None
-        else governing_heading
-    )
-    if governing is None:
-        governing = reader(item=item, repo=repo)
     verdict = with_governing_findings(
         item=item,
         verdict=run_dod_judgement(
@@ -214,6 +238,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             digest=digest,
             rubric_digest=rubric_bytes_digest,
             judgement=verdict,
+            spec_identity=identity,
             governing=(
                 GoverningHeadingReceipt(
                     verdict=governing,
@@ -225,7 +250,10 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         )
     )
     return DodJudgementDecision(
-        work_item_id=item.id, outcome=verdict.outcome, findings=verdict.findings
+        work_item_id=item.id,
+        outcome=verdict.outcome,
+        findings=verdict.findings,
+        spec_identity=identity,
     )
 
 
@@ -304,13 +332,24 @@ def held_judgement(
     of evidence, and the pre-dispatch wall is where a refusal is made. Holding an
     item on a rubric nobody could read would empty the queue on an environment
     fault, and the emptiness reads exactly like a factory with no work.
+
+    THIS READ IS NOT A TAKING, so it takes no governing-heading verdict. It uses
+    only a recorded verdict the component's reuse rule still allows. When none
+    exists the identity it compares is the whole-tree one, which differs from every
+    clause-form record and from every tree-form record taken against another
+    revision, so after a revision the item reads as not held and nothing here ever
+    spends a model.
     """
     rubric = judgement_rubric(payload_root=payload_root)
     if rubric is None:
         return None
+    governing = reusable_governing_heading_verdict(item=item, repo=repo, comments=comments)
+    identity = spec_identity_for_governing(item=item, cwd=repo, governing=governing)
     recorded = reusable_verdict(
         comments=comments,
-        digest=judgement_subject_digest(item=item, cwd=repo, comments=comments),
+        digest=judgement_subject_digest(
+            item=item, cwd=repo, comments=comments, spec_identity=identity.value
+        ),
         rubric_digest=rubric_digest(rubric=rubric),
     )
     if recorded is None or recorded.outcome != JUDGEMENT_HELD:
