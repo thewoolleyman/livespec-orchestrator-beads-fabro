@@ -16,6 +16,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
     PROOF_HEAD_PROGRAM_FILENAME,
     proof_head_program_source,
@@ -269,6 +270,26 @@ def test_a_landed_publication_ends_before_push_or_draft_creation(tmp_path: Path)
     assert f"merged_head={merged_head}" in marker_text
     assert "proof_head=none" in marker_text
     assert "heads_equal=false" in marker_text
+
+
+@pytest.mark.parametrize("rendered_merge_commit", ["", "null"])
+def test_a_merged_pull_request_with_no_merge_commit_is_not_a_landed_publication(
+    tmp_path: Path, rendered_merge_commit: str
+) -> None:
+    """Scenario 256: a merged pull request without a full merge commit name is not landed."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=f"73\t{rendered_merge_commit}\t{merged_head}",
+    )
+
+    assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert not marker.exists()
 
 
 def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
