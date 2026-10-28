@@ -42,7 +42,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, cast, get_args
+from typing import TYPE_CHECKING, Literal, cast, get_args
 
 from livespec_runtime import spec_stated
 
@@ -64,6 +64,8 @@ __all__: list[str] = [
     "resolve_drift_judge_timeout_seconds",
 ]
 
+ReplyShape = Literal["verdict", "item_class"]
+
 DRIFT_JUDGE_TIMEOUT_ENV = "LIVESPEC_DRIFT_JUDGE_TIMEOUT_SECONDS"
 DEFAULT_DRIFT_JUDGE_TIMEOUT_SECONDS = 600.0
 
@@ -82,9 +84,19 @@ def resolve_drift_judge_timeout_seconds(*, environ: dict[str, str]) -> float:
 
 
 def drift_judge(
-    *, project_root: Path, runner: CommandRunner, payload_root: Path | None = None
+    *,
+    project_root: Path,
+    runner: CommandRunner,
+    payload_root: Path | None = None,
+    reply: ReplyShape = "verdict",
 ) -> spec_stated.ModelRunner:
     """A `ModelRunner` that puts one rendered prompt to the headless judge.
+
+    `reply` names the SHAPE the caller's prompt is answered in, because the
+    shared chain advances to its next candidate on any reply its shape check
+    does not recognise. The judgement answers with a JSON verdict object and the
+    classification with one bare item-class word, so a runner built for one
+    shape discards every reply of the other as unparseable.
 
     Returned as a closure rather than a class so that the model, the time box
     and the credential are resolved ONCE per pass: a pass over ten merges must
@@ -100,6 +112,7 @@ def drift_judge(
         prompt=prompt,
         cwd=project_root,
         runner=runner,
+        reply=reply,
     )
 
 
@@ -108,22 +121,29 @@ def _judged(
     prompt: str,
     cwd: Path,
     runner: CommandRunner,
+    reply: ReplyShape,
 ) -> str:
     """One prompt through the shared chain, or no reply when every candidate fails.
 
     Each candidate the chain ran is reported on standard error, because a drift
     pass and a governing-heading read write no ledger record of their own.
     """
+    is_reply = _looks_like_item_class if reply == "item_class" else _looks_like_spec_stated_verdict
     chain = run_dod_gate_prompt(
         prompt=prompt,
         cwd=cwd,
         runner=runner,
-        is_verdict=lambda text: _looks_like_spec_stated_verdict(text=text),
+        is_verdict=lambda text: is_reply(text=text),
         timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
     )
     for ran in chain.attempts:
         _ = sys.stderr.write(f"{candidate_report(attempt=ran)}\n")
     return chain.reply or ""
+
+
+def _looks_like_item_class(*, text: str) -> bool:
+    """Whether a reply is exactly one member of the classification vocabulary."""
+    return text.strip() in get_args(spec_stated.ItemClass)
 
 
 def _looks_like_spec_stated_verdict(*, text: str) -> bool:

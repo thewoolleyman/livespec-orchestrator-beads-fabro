@@ -83,6 +83,12 @@ def _config(*, repo: Path) -> StoreConfig:
 def _repo(*, tmp_path: Path, with_spec: bool = True) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
+        ' "dispatcher": {"acp_nodes": {"dod_gate": {"agent": "claude-acp",'
+        ' "model": "claude-opus-5"}}}}}',
+        encoding="utf-8",
+    )
     if with_spec:
         spec = repo / "SPECIFICATION"
         (spec / "history" / "v001").mkdir(parents=True, exist_ok=True)

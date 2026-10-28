@@ -206,7 +206,7 @@ def test_an_intake_route_that_fails_names_the_minted_id(*, monkeypatch: Any) -> 
     assert "bd-ib-" in refused.detail
 
 
-def test_an_intake_route_that_parks_the_canary_is_refused(tmp_path: Path) -> None:
+def test_an_intake_route_that_parks_the_canary_is_refused(tmp_path: Path, monkeypatch: Any) -> None:
     """A canary intake did not route to `ready` must not reach the dispatch.
 
     This is the fault that refused canaries 5 and 6 — a `References:` line
@@ -226,6 +226,12 @@ def test_an_intake_route_that_parks_the_canary_is_refused(tmp_path: Path) -> Non
     """
     canary = _canary()
     reset_fake_singleton()
+    # The spec-change tier is out of this case's subject, and the store's repo
+    # root is this repository's own tree, so classifying would read the committed
+    # routing; the mechanical wall is what parks the canary here.
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.intake_dor.classify_and_hold", lambda **_kw: None
+    )
     config = _fake_config()
     repo = _repo_whose_fixture_references(
         tmp_path=tmp_path,
