@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.251.0...v0.251.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* bound a host Definition-of-Done judgement's total model input ([ca2a704](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca2a70404cad951800041de8a754c3c5d41796ab))
+
 ## [0.251.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.250.0...v0.251.0) (2026-10-28)
 
 
