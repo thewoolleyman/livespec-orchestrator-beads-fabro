@@ -132,15 +132,25 @@ _STAGE_VERDICT_REASON_KEY = "failure_reason"
 _BLOB_REFERENCE_PREFIX = "blob://"
 
 
-def terminal_event_output(*, payload: object | None) -> str:
-    """The latest terminal stage's emitted sentinel lines, or no observation."""
-    failures = _stage_failures(payload=payload, node=ESCALATION_NODE_ID)
+def terminal_event_output(
+    *,
+    payload: object | None,
+    node: str = ESCALATION_NODE_ID,
+    marker: str = NEEDS_HUMAN_MARKER,
+) -> str:
+    """The latest terminal stage's emitted sentinel lines, or no observation.
+
+    `node` and `marker` default to the needs-human terminal. The `non_converged`
+    terminal is read with its own pair, because it ends two caps and the line it
+    prints names the one that fired.
+    """
+    failures = _stage_failures(payload=payload, node=node)
     if not failures:
         return ""
     message = failures[-1].get("message")
     if not isinstance(message, str):
         return ""
-    return "\n".join(line for line in message.splitlines() if line.startswith(NEEDS_HUMAN_MARKER))
+    return "\n".join(line for line in message.splitlines() if line.startswith(marker))
 
 
 def routing_stage_failure(
