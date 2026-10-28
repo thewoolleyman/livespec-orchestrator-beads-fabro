@@ -1383,8 +1383,8 @@ COMPUTES from the recording agent session's OWN ENVIRONMENT, so any process
 launched from that session recomputes the SAME identity and is refused as a
 self-replay.** `computed_publishing_identity` in
 `commands/_dispatcher_proof_identity.py` reads `AGENT_SESSION_ENV_VARS` —
-`CLAUDE_CODE_SESSION_ID` first, then `CODEX_SESSION_ID`, then
-`PI_SESSION_ID` — and falls through to the forge login (`gh api user --jq
+`CODEX_SESSION_ID` first, then `CLAUDE_CODE_SESSION_ID`, then
+`PI_SESSION_ID` (a nested Codex verifier inherits Claude's variable, so its own id wins) — and falls through to the forge login (`gh api user --jq
 .login`) only when none of them is set. There is deliberately NO parameter a
 caller can put an identity in: an identity a caller could NAME is one a
 caller could RENAME, which would reduce the independence guarantee to a
