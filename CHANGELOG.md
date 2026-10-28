@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.254.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.2...v0.254.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **needs-attention:** read DoD verdict comments only for items a judgement was recorded against ([b0667e2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b0667e2ceb4b5f32dc705b77aac175d75fe6005c))
+* **needs-attention:** stamp the judgement marker on a reused verdict and fail soft on its write ([017b858](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/017b858ab21b0d7ecb43621763b9fdd179b55b6e))
+
+## [0.254.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.1...v0.254.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* run the session-headroom admission screen before the expensive pre-dispatch rows ([145339b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/145339bc8ce649ee61f50d2bdc1c92e7fc9288ec))
+
 ## [0.254.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.0...v0.254.1) (2026-10-28)
 
 

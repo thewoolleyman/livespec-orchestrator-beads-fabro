@@ -55,6 +55,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing imp
     route_recovery,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
+from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
+    screened_verdict_of,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     args_with_dispatch_workflow_name,
 )
@@ -148,6 +151,8 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
         # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
         # stand in for.
         explicit_factory=explicit_dispatch_factory(args=args),
+        # The pre-dispatch session-headroom screen's reading, reused while fresh.
+        screened=screened_verdict_of(args=args),
         # The route recovery routing assigned each candidate above, which the
         # pending claim stamp's own factory precedence reads. A SET, because one
         # wave may carry a resume beside fresh dispatches and the item's

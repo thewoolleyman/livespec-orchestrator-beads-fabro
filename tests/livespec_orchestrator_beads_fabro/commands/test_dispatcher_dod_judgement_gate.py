@@ -36,6 +36,9 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._store_dod_judgement_marker import (
+    read_dod_judged_work_item_ids,
+)
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_dod_judgement_gate as gate_module,
 )
@@ -69,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge imp
     governing_heading_verdict,
     unjudged_governing_heading,
 )
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -409,6 +413,64 @@ def test_the_store_bound_entry_reads_and_appends_through_the_ledger(tmp_path: Pa
         governing_heading=unjudged_governing_heading,
     )
     assert reused.reused is True
+    assert runner.calls == 1
+
+
+def _store_bound_judge(*, tmp_path: Path, item: WorkItem, runner: _Runner) -> DodJudgementDecision:
+    return judge_item_definition_of_done(
+        item=item,
+        repo=_repo(tmp_path=tmp_path),
+        path=_config(),
+        stage=STAGE_PRE_ADMISSION,
+        runner=runner,
+        payload_root=_payload(tmp_path=tmp_path),
+        governing_heading=unjudged_governing_heading,
+    )
+
+
+def test_a_reused_verdict_stamps_the_marker_a_record_older_than_the_marker_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The held lane finds an item by its marker, so a legacy record must gain one.
+
+    A refusing verdict recorded before the marker existed is a comment with no
+    label. Reading it back is not a writing, so without a stamp on reuse no later
+    pass would ever label it and the lane would drop an item that is still held.
+    """
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout=_HELD_REPLY, stderr="")])
+    with monkeypatch.context() as legacy:
+        legacy.setattr(gate_module, "mark_work_item_dod_judgement_recorded", lambda **_: None)
+        first = _store_bound_judge(tmp_path=tmp_path, item=item, runner=runner)
+    assert first.outcome == JUDGEMENT_HELD
+    assert item.id not in read_dod_judged_work_item_ids(path=_config())
+
+    reused = _store_bound_judge(tmp_path=tmp_path, item=item, runner=runner)
+
+    assert reused.reused is True
+    assert runner.calls == 1
+    assert item.id in read_dod_judged_work_item_ids(path=_config())
+
+
+def test_a_marker_write_that_fails_does_not_undo_the_recorded_judgement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The verdict comment is the record; the marker is only an index onto it."""
+
+    def refused(**_: object) -> None:
+        raise BeadsCommandError(command="bd update", exit_code=1, stderr="refused")
+
+    monkeypatch.setattr(gate_module, "mark_work_item_dod_judgement_recorded", refused)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout=_HELD_REPLY, stderr="")])
+
+    first = _store_bound_judge(tmp_path=tmp_path, item=item, runner=runner)
+    second = _store_bound_judge(tmp_path=tmp_path, item=item, runner=runner)
+
+    assert first.outcome == JUDGEMENT_HELD
+    assert second.reused is True
     assert runner.calls == 1
 
 

@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import
     codex_routing_for_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
+    EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
     EXIT_UNGRADEABLE_CRITERIA,
 )
@@ -103,6 +104,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
     reclaim_stale_publish_branches,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_screen import (
+    session_headroom_screen_refusal,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     ConnectionPrefixMissingError,
@@ -145,7 +149,20 @@ def pre_dispatch_wall_exit(
     because its refusal used to land at stage `acp-nodes`, after `ledger-admit`,
     and each refused dispatch stranded an `active` claim with no run behind it.
 
-    The APP-REACH preflight is next, and it precedes the currency gate for a
+    The SESSION-HEADROOM screen follows it, ahead of every row that spends anything
+    (`bd-ib-tsrkqf`). The admission valve's headroom assessment used to be the
+    only place a dispatch learned the provider's five-hour window could not carry
+    it, which is AFTER the App reach probe, the Definition-of-Done judgement's
+    model call, the proof-asset store and the Codex credential gate had all been
+    paid for -- about 14 minutes per refused attempt, each holding a launcher in
+    the factory queue. The screen asks the same question first and refuses with
+    the valve's own journal rows. It is the one row here that exits `EXIT_FAILURE`
+    rather than a precondition code, because that is the code the valve's refusal
+    produced and a caller reading the exit must not see the move. A dispatch it
+    passes is unchanged: the valve reuses the reading while it is fresh and repeats it
+    otherwise.
+
+    The APP-REACH preflight follows, and it precedes the currency gate for a
     RELEVANCE reason rather than a cost one — the two spend comparably. Its
     answer is a property of the (serving App, target repository) PAIR, so like
     the currency gate nothing about the selection has to be read before it can be
@@ -337,6 +354,13 @@ def _refusing_sequence(
         (
             lambda: acp_node_override_refusal(args=args, repo=repo, items=items, journal=journal),
             EXIT_PRECONDITION_ERROR,
+            True,
+        ),
+        (
+            lambda: session_headroom_screen_refusal(
+                args=args, repo=repo, items=items, journal=journal
+            ),
+            EXIT_FAILURE,
             True,
         ),
         (

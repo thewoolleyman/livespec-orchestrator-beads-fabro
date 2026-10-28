@@ -68,6 +68,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission imp
     admit_rework,
     rework_pending_candidates,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
+    ScreenedVerdict,
+    reusable_verdict,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gate import (
     session_headroom_policy,
 )
@@ -85,6 +89,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "Admission",
+    "admission_acp_verdict",
     "admission_held_outcome",
     "admit_and_select",
 ]
@@ -137,6 +142,7 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     rework: ReworkPass | None = None,
     explicit_factory: str | None = None,
     resume_ids: frozenset[str] = frozenset(),
+    screened: ScreenedVerdict | None = None,
 ) -> Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
@@ -161,11 +167,13 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     what makes "marked rows before any new `ready` item" a property of the
     valve rather than of one caller's ordering.
 
-    The pass's ACP candidate-chain verdict is resolved HERE, once, and is
-    deliberately not a parameter: a caller able to supply its own verdict is a
-    caller able to supply a stale one, and "both paths consume the same pure
-    preflight verdict" would then hold only by convention. It is RETURNED on the
-    result, because the dispatch of each admitted item has to select its per-node
+    The pass's ACP candidate-chain verdict is resolved HERE, once. The one thing
+    a caller may hand in is the pre-dispatch screen's own `ScreenedVerdict`, and
+    it is honoured only while it is younger than
+    `SCREENED_VERDICT_REUSE_SECONDS`: a caller able to supply any verdict is a
+    caller able to supply a stale one, so an older screen is ignored and the
+    assessment repeated before claim. The verdict is RETURNED on the result,
+    because the dispatch of each admitted item has to select its per-node
     candidate from this same evaluation.
 
     `explicit_factory` IS a parameter, and for the opposite reason: it is the
@@ -196,6 +204,7 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
         journal=journal,
         accounting=accounting,
         rework=rework_pass,
+        screened=screened,
     )
     wip_cap = (
         # An unreadable `.livespec.jsonc` falls back to the documented cap,
@@ -291,7 +300,7 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     )
 
 
-def _eligible_legs(
+def _eligible_legs(  # noqa: PLR0913 — kw-only; `screened` is the pre-dispatch screen's hand-over, not a variant of the candidate set.
     *,
     repo: Path,
     items: list[WorkItem],
@@ -299,6 +308,7 @@ def _eligible_legs(
     journal: JournalFile,
     accounting: ActiveClaimAccounting,
     rework: ReworkPass,
+    screened: ScreenedVerdict | None,
 ) -> tuple[AcpPreflightVerdict, list[WorkItem], list[WorkItem], list[DispatchOutcome]]:
     """Both legs' eligible rows, and every refusal, against ONE shared verdict.
 
@@ -327,15 +337,8 @@ def _eligible_legs(
     `dispatcher.py` accepts a `--journal` override and a second derivation
     cannot be proven to name the same file.
     """
-    now_iso = utc_now_iso()
-    journal_path = getattr(journal, "path", None)
-    verdict = resolve_acp_preflight(
-        repo=repo,
-        journal_path=journal_path,
-        now_iso=now_iso,
-        headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
-        factory_runs=FactoryRunReader(repo=repo),
-    )
+    reused = reusable_verdict(screened=screened)
+    verdict = reused if reused is not None else admission_acp_verdict(repo=repo, journal=journal)
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,
         preflight=verdict,
@@ -359,6 +362,32 @@ def _eligible_legs(
     )
     refused.extend(ready_refused)
     return verdict, rework_admittable, admittable, refused
+
+
+def admission_acp_verdict(*, repo: Path, journal: JournalFile) -> AcpPreflightVerdict:
+    """One admission evaluation's ACP verdict, session-headroom assessment included.
+
+    The policy is built here, once per call, which is what makes its memo the "one
+    assessment per distinct projected credential per admission evaluation"
+    guarantee. It shares the pass's own observation instant and the ONE journal
+    path the drain rate is measured from, which is the journal this pass actually
+    appends to rather than a re-derivation of it: `dispatcher.py` accepts a
+    `--journal` override, and a second derivation cannot be proven to name the
+    same file.
+
+    The pre-dispatch session-headroom screen calls this too, so the screen and the
+    valve resolve the verdict through ONE builder and cannot disagree about what
+    an evaluation assesses.
+    """
+    now_iso = utc_now_iso()
+    journal_path = getattr(journal, "path", None)
+    return resolve_acp_preflight(
+        repo=repo,
+        journal_path=journal_path,
+        now_iso=now_iso,
+        headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
+        factory_runs=FactoryRunReader(repo=repo),
+    )
 
 
 def _budget_left(*, rework: ReworkPass, taken: int) -> int | None:

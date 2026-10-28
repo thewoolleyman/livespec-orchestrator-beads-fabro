@@ -30,7 +30,12 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._beads_client import (
+    BeadsRecord,
+    make_beads_client,
+    reset_fake_singleton,
+)
+from livespec_orchestrator_beads_fabro._beads_client_fake import FakeBeadsClient
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
@@ -233,6 +238,93 @@ def _executing_rubric_digest() -> str:
     return rubric_digest(rubric=rubric)
 
 
+_JUDGED_LABEL = "dod-judgement:recorded"
+
+
+def _config_for(*, root: Path) -> StoreConfig:
+    return StoreConfig(
+        tenant="livespec-impl-beads",
+        prefix="bd-ib",
+        server_user="livespec-impl-beads",
+        database="livespec-impl-beads",
+        bd_path="bd",
+        fake=True,
+        repo_root=root,
+    )
+
+
+def _mark_judged(*, config: StoreConfig, item_id: str) -> None:
+    """Stamp the persisted marker the sanctioned verdict writer leaves on an item."""
+    make_beads_client(config=config).update_issue(issue_id=item_id, add_labels=[_JUDGED_LABEL])
+
+
+def test_the_held_lane_reads_comments_only_for_items_a_judgement_was_recorded_against(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ledger reads the lane issues must not grow with the heldable items.
+
+    Measured 2026-10-25 on the live tenant, the lane issued one `bd comments` per
+    backlog, ready or pending-approval item (282 in one snapshot, 1.4 s each) to
+    find a verdict most of them never had. The marker rides the item record the
+    tenant listing already returns, so the answer is one listing plus a comment
+    read for each item that was ever judged.
+
+    THE CONTROL IS THE JUDGED ITEM: it is still reported held with its recorded
+    remedy, and an unjudged item beside it is still not reported, so a lane that
+    read nothing at all would not satisfy this case.
+    """
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    reset_fake_singleton()
+    module = importlib.import_module(_MODULE)
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+    config = _config_for(root=repo)
+    judged = _item(
+        id="bd-ib-judged", description=_section(references=_SCENARIO_HEADING), status="backlog"
+    )
+    unjudged = [
+        _item(id=f"bd-ib-unjudged-{n}", description=_section(references=_SCENARIO_HEADING))
+        for n in range(5)
+    ]
+    for item in (judged, *unjudged):
+        append_work_item(path=config, item=item)
+    append_work_item_comment(
+        path=config,
+        work_item_id=judged.id,
+        body=verdict_comment(
+            item_id=judged.id,
+            stage=STAGE_PRE_DISPATCH,
+            digest=judgement_subject_digest(item=judged, cwd=repo),
+            rubric_digest=_executing_rubric_digest(),
+            judgement=DodJudgement(
+                outcome=JUDGEMENT_HELD,
+                findings=("bd-ib-judged: restate assertion 1 as behaviour.",),
+            ),
+        ),
+    )
+    _mark_judged(config=config, item_id=judged.id)
+    reads: list[str] = []
+    original = FakeBeadsClient.list_comments
+
+    def counting(self: FakeBeadsClient, *, issue_id: str) -> list[BeadsRecord]:
+        reads.append(issue_id)
+        return original(self, issue_id=issue_id)
+
+    monkeypatch.setattr(FakeBeadsClient, "list_comments", counting)
+
+    held = module.held_definition_of_done_items(
+        project_root=repo, repo=_REPO_NAME, items=[judged, *unjudged]
+    )
+    reset_fake_singleton()
+
+    assert [str(fact.id) for fact in held] == ["hygiene:held-definition-of-done:bd-ib-judged"]
+    assert "restate assertion 1 as behaviour." in str(held[0].summary)
+    assert reads == ["bd-ib-judged"]
+
+
 def test_the_held_lane_reports_nothing_when_no_ledger_connection_resolves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -283,6 +375,8 @@ def test_the_held_lane_reports_nothing_when_no_ledger_connection_resolves(
             ),
         ),
     )
+
+    _mark_judged(config=config, item_id=item.id)
 
     held = module.held_definition_of_done_items(
         project_root=connected, repo=_REPO_NAME, items=[item]
