@@ -436,8 +436,8 @@ def test_host_judge_scratch_refuses_when_no_candidate_directory_can_be_created(
     monkeypatch.setattr(module.tempfile, "TemporaryDirectory", unavailable)
     scratch_directory = vars(module)["_non_repository_scratch_directory"]
 
-    with pytest.raises(RuntimeError, match="non-repository scratch directory"), scratch_directory():
-        pytest.fail("an unavailable scratch directory must not be yielded")
+    with pytest.raises(RuntimeError, match="non-repository scratch directory"):
+        scratch_directory().__enter__()
 
 
 def test_host_judge_treats_an_unavailable_git_command_as_not_a_worktree(
