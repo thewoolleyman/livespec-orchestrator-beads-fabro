@@ -389,3 +389,146 @@ def test_a_commit_that_passed_while_the_wait_looked_is_reported_passed(
     assert report[REPORT_STATE_KEY] == "passed"
     assert report[REPORT_HEAD_KEY] == "0123abc"
     assert report[REPORT_HOOK_RAN_KEY] is True
+
+
+_OTHER_RUN_ID = "commit-00000000000000000000000000000002"
+_HOOK_REFUSAL_OUTPUT = (
+    "│ lefthook v1.13.6  hook: pre-commit │\r\n"
+    "::: just check-types\r\n"
+    "module.py:3:1 - error: Type of x is partially unknown\r\n"
+    "Failed targets (2):\r\n"
+    "  - check-types\r\n"
+    "  - check-lint\r\n"
+    "error: Recipe check-pre-commit failed with exit code 1\r\n"
+)
+
+
+def _settle_program(tmp_path: Path) -> dict[str, Any]:
+    program = _program(tmp_path)
+    assert "settle" in program
+    return program
+
+
+def _alive_once_then(path: Path, verdict: dict[str, object]) -> Any:
+    """A liveness probe that sees the run live at entry, then records `verdict` and exits."""
+    calls: list[int] = []
+
+    def probe(group: int) -> bool:
+        del group
+        calls.append(1)
+        if len(calls) == 1:
+            return True
+        _ = path.write_text(json.dumps(verdict), encoding="utf-8")
+        return False
+
+    return probe
+
+
+def test_settle_with_no_live_commit_run_removes_a_stale_brief_and_prints_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A turn that ended with every commit run terminal leaves no live-commit brief."""
+    program = _settle_program(tmp_path)
+    brief = tmp_path / "brief"
+    _ = brief.write_text("passed\nstale\n", encoding="utf-8")
+    _ = _record(tmp_path, _RUN_ID, {"state": "passed", "exit_code": 0, "head": "0123abc"}, None)
+
+    assert program["settle"](30, str(brief)) == 0
+
+    assert not brief.exists()
+    assert capsys.readouterr().out == ""
+
+
+def test_settle_waits_for_the_live_run_and_a_passed_verdict_is_briefed_with_its_head(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The turn ended mid-commit; the run waits, and the commit it finds PASSED is named."""
+    program = _settle_program(tmp_path)
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    program["group_alive"] = _alive_once_then(
+        path, {"state": "passed", "exit_code": 0, "head": "0123abc", "hook_ran": True}
+    )
+    brief = tmp_path / "brief"
+
+    assert program["settle"](30, str(brief)) == 0
+
+    lines = brief.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "passed"
+    assert _RUN_ID in "\n".join(lines[1:])
+    assert "0123abc" in "\n".join(lines[1:])
+    assert json.loads(capsys.readouterr().out) == {
+        "settled": [{REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "passed"}]
+    }
+
+
+def test_settle_briefs_a_failed_run_with_its_failed_targets_and_error_lines(
+    tmp_path: Path,
+) -> None:
+    """A failed commit run is named, with the hook's failed targets from its FULL output."""
+    program = _settle_program(tmp_path)
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    _ = path.with_suffix(".output").write_text(
+        "scrolled-off first line\n" * 100 + _HOOK_REFUSAL_OUTPUT, encoding="utf-8"
+    )
+    program["group_alive"] = _alive_once_then(
+        path, {"state": "failed", "exit_code": 1, "hook_ran": True}
+    )
+    brief = tmp_path / "brief"
+
+    assert program["settle"](30, str(brief)) == 0
+
+    lines = brief.read_text(encoding="utf-8").splitlines()
+    body = "\n".join(lines[1:])
+    assert lines[0] == "failed"
+    assert _RUN_ID in body
+    assert "failed targets: check-types check-lint" in body
+    assert "module.py:3:1 - error: Type of x is partially unknown" in body
+
+
+def test_settle_briefs_a_run_that_ended_without_a_verdict_as_having_made_no_commit(
+    tmp_path: Path,
+) -> None:
+    """A run whose processes are gone with no recorded status made no commit."""
+    program = _settle_program(tmp_path)
+    program["group_alive"] = _gone
+    _ = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    brief = tmp_path / "brief"
+
+    assert program["settle"](30, str(brief)) == 0
+
+    lines = brief.read_text(encoding="utf-8").splitlines()
+    body = "\n".join(lines[1:])
+    assert lines[0] == "no-verdict"
+    assert _RUN_ID in body
+    assert "ended without a verdict" in body
+    assert "no commit was made" in body
+
+
+def test_settle_reports_running_when_the_bound_expires_and_the_worst_run_leads(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run still live at the bound is `running`, and it outranks a passed sibling."""
+    program = _settle_program(tmp_path)
+    program["group_alive"] = _alive
+    _ = _record(tmp_path, _OTHER_RUN_ID, {"state": "running"}, 4242)
+    brief = tmp_path / "brief"
+
+    assert program["settle"](0, str(brief)) == 0
+
+    lines = brief.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "running"
+    assert _OTHER_RUN_ID in "\n".join(lines[1:])
+    assert json.loads(capsys.readouterr().out)["settled"][0][REPORT_STATE_KEY] == "running"
+
+
+def test_main_routes_the_settle_operation_with_its_bound_and_brief_file(
+    tmp_path: Path,
+) -> None:
+    """`settle --timeout-seconds N --brief-file F` is a parseable operation of the runner."""
+    program = _settle_program(tmp_path)
+    brief = tmp_path / "brief"
+
+    assert (
+        program["main"](["settle", "--timeout-seconds", "0", "--brief-file", str(brief)], "/r.py")
+        == 0
+    )

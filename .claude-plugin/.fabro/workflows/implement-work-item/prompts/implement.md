@@ -38,6 +38,14 @@ incomplete, and the run re-entered this stage so you can finish it:
 It carries the previous turn's latest failing gate, taken from what the
 run itself recorded rather than from that turn's reply, in this order:
 
+- When the previous turn ended while a commit run it had started through
+  the commit runner was still running, the run waited for that commit
+  run's own verdict, and the brief names the commit run. A `failed` run's
+  brief carries the hook's failed targets and its own error lines from the
+  run's full recorded output; a run that ended without a verdict made no
+  commit, and the brief says so, so redo that commit through the runner.
+  A run that PASSED is not a failure: its commit exists, the brief says
+  so, and you continue from it.
 - When the turn left changes staged that the repository's commit hook
   refused, the hook's failed targets and its own error lines.
 - Otherwise, when the previous turn's recorded repository check-suite run
@@ -48,10 +56,11 @@ run itself recorded rather than from that turn's reply, in this order:
 
 Fix any failures it names first, then commit the work through the hooks
 as the protocol below requires, and continue the loop until the
-Definition of Done is complete. This is the run's only re-entry: a
-second incomplete turn ends the stage at `needs_human`, naming the
-hook's failed targets when it refused a commit and partial progress
-otherwise. If the file does not exist, this is the run's first implement
+Definition of Done is complete. This is the run's only counted re-entry
+(a re-entry because a commit run you started had PASSED after your turn
+ended is not counted, and is given once): a second incomplete turn ends
+the stage at `needs_human`, naming the hook's failed targets when it
+refused a commit and partial progress otherwise. If the file does not exist, this is the run's first implement
 turn; carry on below.
 
 ## Record declared check-suite failures

@@ -348,11 +348,11 @@ def test_an_implement_amendment_rests_the_item_at_blocked_needs_human_and_publis
     # edge cannot silently reclaim the amendment or bypass the retry path.
     assert _edge_conditions(source="implement") == {
         "implement_amendment_route": "outcome=failed",
-        "implement_completion": "",
+        "implement_commit_settle": "",
     }
     assert _edge_conditions(source="implement_amendment_route") == {
         "needs_human": "outcome=failed",
-        "implement_completion": "",
+        "implement_commit_settle": "",
     }
     # Nothing is downstream of the terminal, so nothing it reaches can publish.
     assert _reachable(graph=graph, start="needs_human") == frozenset()
