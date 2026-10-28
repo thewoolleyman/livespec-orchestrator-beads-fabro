@@ -108,6 +108,10 @@ def test_set_factory_safety_records_the_opt_out_reason_on_a_backlog_item(
     assert stored.factory_safety == "needs-host-secrets"
     assert stored.status == "backlog"
     assert stored.admission_policy == "auto"
+    record = fake_singleton().show_issue(issue_id="bd-ib-123")
+    metadata = record["metadata"]
+    assert isinstance(metadata, dict)
+    assert isinstance(metadata["factory_safety_recorded_at"], str)
     journal = (repo / _JOURNAL).read_text(encoding="utf-8")
     assert "needs-host-secrets" in journal
     assert '"invoker": "human:cw"' in journal

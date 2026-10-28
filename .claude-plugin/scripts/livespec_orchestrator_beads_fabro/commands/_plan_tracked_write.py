@@ -101,15 +101,18 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
     TrackedRefusal,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
-from livespec_orchestrator_beads_fabro.commands._plan_result_plan_owned import (
-    read_plan_owned_result,
-)
 from livespec_orchestrator_beads_fabro.commands._plan_supersession_evidence import (
     supersession_evidence,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_supersession_replacement import (
+    supersession_replacement_observation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
     plan_comment_body,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_tracked_observation import (
+    prior_observation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_write_identity import derived_operation_id
 
@@ -217,6 +220,13 @@ def _tracked_write(
         now=request.now,
         is_handoff=request.is_handoff,
         observation=_prior_observation(request=request, head=head),
+        replacement_observation=supersession_replacement_observation(
+            config=request.config,
+            epic_id=request.epic_id,
+            required_result=request.action.required_result,
+            supersession=request.supersession,
+            now=request.now,
+        ),
         recovery=request.recovery,
         supersession=request.supersession,
         evidence=supersession_evidence(
@@ -250,6 +260,20 @@ def _tracked_write(
     if isinstance(committed, ChainFinding):
         return NextActionRefusal(detail=f"{committed.code}: {committed.detail}")
     return _persist(request=request, decision=decision, committed=committed)
+
+
+def _prior_observation(
+    *,
+    request: TrackedWriteRequest,
+    head: ChainHead,
+) -> ResultObservation | None:
+    """Keep the tracked-write observation seam while delegating its one concern."""
+    return prior_observation(
+        config=request.config,
+        epic_id=request.epic_id,
+        authority=head.authority,
+        now=request.now,
+    )
 
 
 def _persist(
@@ -354,39 +378,4 @@ def _legacy_write(*, request: TrackedWriteRequest) -> TrackedWrite:
         consumed_handoffs=0,
         idempotent=False,
         tracked=False,
-    )
-
-
-def _prior_observation(
-    *,
-    request: TrackedWriteRequest,
-    head: ChainHead,
-) -> ResultObservation | None:
-    """Read the PRIOR obligation's target, which is what continuity turns on.
-
-    The clause says "All sanctioned pointer writers MUST read the prior
-    obligation and its target before accepting continuation", and the target read
-    is the PRIOR one rather than the candidate's: reading the candidate's target
-    would let a writer rename the obligation to something already satisfied and
-    have the rename grade itself.
-
-    IT IS THE THIRD READ OF THAT ONE OBLIGATION AND TAKES THE SAME PLAN-OWNED
-    REDIRECT the two resume reads do, so an obligation naming THE PLAN EPIC
-    ITSELF resolves against the plan's own tenant whatever repository the record
-    names (`_plan_result_plan_owned`, which carries the measurement). The
-    consequence of omitting it here is worse than at either read, because this
-    reading does not report — it DECIDES: an unobservable prior obligation cannot
-    be replaced, so the write is refused and the resume that had just observed
-    the plan's step satisfied answers with no further step at all. A plan is
-    silently stopped rather than diagnosably locked, which under an unattended
-    resume is the one outcome nothing downstream surfaces.
-    """
-    obligation = obligation_of(authority=head.authority)
-    if obligation is None:
-        return None
-    return read_plan_owned_result(
-        config=request.config,
-        epic_id=request.epic_id,
-        required_result=obligation.required_result,
-        now=request.now,
     )

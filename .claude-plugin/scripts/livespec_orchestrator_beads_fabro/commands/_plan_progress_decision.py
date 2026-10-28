@@ -41,6 +41,7 @@ pointing somewhere else.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import AuthorityState
@@ -64,6 +65,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_unmet import (
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
     OBSERVATION_UNOBSERVABLE,
+    OBSERVATION_UNSATISFIED,
 )
 
 if TYPE_CHECKING:
@@ -92,6 +94,7 @@ def decide_tracked_write(  # noqa: PLR0911, PLR0913 -- one refusal ladder; a mer
     now: str,
     is_handoff: bool,
     observation: ResultObservation | None,
+    replacement_observation: ResultObservation | None = None,
     recovery: CausalRecovery | None = None,
     supersession: CausalSupersession | None = None,
     evidence: SupersessionEvidence | None = None,
@@ -127,14 +130,25 @@ def decide_tracked_write(  # noqa: PLR0911, PLR0913 -- one refusal ladder; a mer
             return settled
         return _fresh_decision(candidate=candidate, proposed=proposed, consumed=consumed)
     if supersession is not None:
-        return superseded_decision(
+        decision = superseded_decision(
             head=head,
             candidate=candidate,
             prior=prior,
             supersession=supersession,
-            evidence=evidence,
+            evidence=_supersession_evidence(
+                evidence=evidence, replacement_observation=replacement_observation
+            ),
             now=now,
         )
+        if isinstance(decision, TrackedDecision) and consumed:
+            return replace(
+                decision,
+                authority=replace(
+                    decision.authority,
+                    consumed_handoffs=decision.authority.consumed_handoffs + consumed,
+                ),
+            )
+        return decision
     return continuation_decision(
         epic_id=epic_id,
         head=head,
@@ -145,6 +159,21 @@ def decide_tracked_write(  # noqa: PLR0911, PLR0913 -- one refusal ladder; a mer
         is_handoff=is_handoff,
         recovery=recovery,
         now=now,
+    )
+
+
+def _supersession_evidence(
+    *, evidence: SupersessionEvidence | None, replacement_observation: ResultObservation | None
+) -> SupersessionEvidence | None:
+    """Carry the writer's replacement reading with the cause evidence."""
+    if evidence is None:
+        return None
+    return replace(
+        evidence,
+        replacement_unmet=(
+            replacement_observation is not None
+            and replacement_observation.status == OBSERVATION_UNSATISFIED
+        ),
     )
 
 

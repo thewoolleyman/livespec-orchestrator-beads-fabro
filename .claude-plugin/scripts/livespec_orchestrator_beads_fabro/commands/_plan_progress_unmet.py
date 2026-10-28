@@ -210,6 +210,13 @@ def superseded_decision(
         return TrackedRefusal(
             detail="the prior obligation's required_result is unreadable; reconcile it first"
         )
+    if not (evidence is not None and evidence.replacement_unmet):
+        return TrackedRefusal(
+            detail=(
+                "the replacement result is already satisfied or cannot be shown unmet, so a"
+                " supersession cannot trade an unmet obligation for advancement"
+            )
+        )
     refusal = validate_causal_supersession(
         supersession=supersession,
         evidence=evidence,
