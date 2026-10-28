@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import importlib
 import os
+import subprocess
+import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -96,6 +98,7 @@ class _Runner:
     cwd: Path | None = None
     timeout_seconds: float | None = None
     environ: dict[str, str] | None = None
+    cwd_git_returncode: int | None = None
     codex_auth: str | None = None
     stdin_text: list[str] = field(default_factory=list)
 
@@ -113,6 +116,12 @@ class _Runner:
         self.timeout_seconds = timeout_seconds
         self.environ = env
         self.cwd = cwd
+        self.cwd_git_returncode = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            check=False,
+            text=True,
+        ).returncode
         if env is not None and "CODEX_HOME" in env:
             auth = Path(env["CODEX_HOME"]) / "auth.json"
             self.codex_auth = auth.read_text(encoding="utf-8") if auth.is_file() else None
@@ -335,6 +344,11 @@ def test_a_host_codex_judge_resolves_before_isolation_and_reads_only_its_grant(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("PATH", f"{wrapper.parent}:{os.environ.get('PATH', '')}")
     repo = _repo(tmp_path=tmp_path)
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    # A caller can point TMPDIR into the governed repository.  Merely checking
+    # for a `.git` entry in the scratch directory misses Git's parent walk.
+    monkeypatch.setenv("TMPDIR", str(repo))
+    monkeypatch.setattr(tempfile, "tempdir", None)
     _write_codex_first_dod_gate(repo=repo)
     runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
 
@@ -353,7 +367,8 @@ def test_a_host_codex_judge_resolves_before_isolation_and_reads_only_its_grant(
     assert "features.multi_agent=false" in runner.argv
     assert runner.cwd is not None
     assert runner.cwd != repo
-    assert not (runner.cwd / ".git").exists()
+    assert runner.cwd_git_returncode is not None
+    assert runner.cwd_git_returncode != 0
     assert runner.environ is not None
     assert runner.environ["HOME"] == str(home)
 
