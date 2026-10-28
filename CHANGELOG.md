@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.253.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.2...v0.253.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* refuse branch edits and whole-suite checks in the review turn ([06ba51e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/06ba51e087a505052693779541033f5ab2ce48cc))
+
 ## [0.253.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.1...v0.253.2) (2026-10-28)
 
 
