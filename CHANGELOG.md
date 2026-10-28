@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.249.1...v0.249.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* a nested agent session publishes under its own session id ([f1d37e0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f1d37e0c22fc2d180c46558d90f3d9cc4c79ad6c))
+
 ## [0.249.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.249.0...v0.249.1) (2026-10-28)
 
 
