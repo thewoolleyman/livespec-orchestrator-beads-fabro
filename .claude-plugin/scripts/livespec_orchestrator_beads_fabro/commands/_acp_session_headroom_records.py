@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     NodePreflight,
     SkippedCandidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom_records import (
+    codex_headroom_skip_fields,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomProjection,
@@ -141,6 +144,8 @@ def session_headroom_skip_fields(*, skip: SkippedCandidate) -> dict[str, object]
     because a projection that read the repository would report the configuration
     as it stands at WRITE time against a skip taken at READ time.
     """
+    if skip.codex_headroom is not None:
+        return codex_headroom_skip_fields(skip=skip, reading=skip.codex_headroom)
     return {
         "availability_key": skip.availability_key,
         "candidate_key": skip.candidate_key,
