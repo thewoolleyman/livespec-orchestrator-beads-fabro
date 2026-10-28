@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     ReworkPass,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
+    screened_verdict_of,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     args_with_dispatch_workflow_name,
 )
@@ -86,6 +89,8 @@ def admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; `
         # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
         # stand in for.
         explicit_factory=explicit_dispatch_factory(args=args),
+        # The pre-dispatch session-headroom screen's reading, reused while fresh.
+        screened=screened_verdict_of(args=args),
         # The route recovery routing assigned each candidate before this valve,
         # which the pending claim stamp's own factory precedence reads: the
         # item's recorded factory is a resume-only pin, so a fresh dispatch must
