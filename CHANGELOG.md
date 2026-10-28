@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.247.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.246.0...v0.247.0) (2026-10-28)
+
+
+### Features
+
+* project selected implement adapter ([ae9a80b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ae9a80b1b9af17fb329f2e55ca945538693d1dd6))
+* record selected ACP agent ([c6438d0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6438d0cbafd3330e3c7b50391ed4db553e28c58))
+
 ## [0.246.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.245.0...v0.246.0) (2026-10-28)
 
 
