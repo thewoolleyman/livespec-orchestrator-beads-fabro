@@ -249,6 +249,18 @@ against this tree: 1123350 shipped and 1753350 at the retired `"15m"`, up from
 1055565 and 1644165, so the bound moves from 1100000 to 1150000 with 26650
 seconds of headroom. The freshness gate still demands 111600 seconds, because
 the window governs it and not the graph.
+
+THE COMMIT-RUN SETTLE (work-item bd-ib-xj3qqb) WIDENS THE IMPLEMENT CYCLE, and
+the bound is unchanged. A turn that ends while a commit run it started is still
+running now waits for that run's verdict in `implement_commit_settle`, and a run
+that passed earns one re-entry that does not spend the incomplete-turn budget.
+`implement` and `implement_hook_route` therefore carry `max_visits=3`, which the
+derivation propagates through the completion gate and the diff breaker, and the
+two settle nodes join the budget. Re-measured against this tree: 1279780
+shipped and 1992580 at the retired `"15m"`, up from 1268100 and 1988100. The
+bound of 1300000 still sits above both shipped figures with 20220 seconds of
+headroom, so it is unchanged, and the freshness gate still demands 111600
+seconds because the window governs it and not the graph.
 """
 
 from __future__ import annotations
@@ -278,7 +290,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # 15m figure exactly, because that one is the thing being moved away from and a
 # drifting comparand would hide the move.
 _ALLOWANCE_BOUND_SECONDS = 1_300_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_988_100
+_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_992_580
 
 # The execution ALLOWANCE the shipped payload resolves, the lifetime the
 # freshness gate actually demands of a credential, and the lifetime of a FRESH
@@ -291,7 +303,7 @@ _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_988_100
 # comparand is what let v175's widened graph cross the credential ceiling while
 # every case here still passed, and an exact pin forces the re-measurement that
 # was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_268_100
+_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_279_780
 _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 

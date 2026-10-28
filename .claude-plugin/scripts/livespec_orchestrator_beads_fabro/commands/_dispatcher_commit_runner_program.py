@@ -93,6 +93,12 @@ from pathlib import Path
 RUNNING = "running"
 NO_VERDICT = "no-verdict"
 TAIL_LINES = 60
+BRIEF_TAIL_LINES = 80
+# Worst first: a settled set is described by its least settled run.
+SETTLE_ORDER = (RUNNING, "failed", NO_VERDICT, "passed")
+# The gate aggregate's own list of failed recipes, ended by the first line that is not one.
+FAILED_TARGETS_HEADER = re.compile(r"^Failed targets \(\d+\):\s*$", re.MULTILINE)
+FAILED_TARGET_LINE = re.compile(r"^\s+-\s+(\S+)\s*$")
 # git commit short options whose value follows them, so a bundle ends there.
 VALUE_SHORT_OPTIONS = "mFCct"
 # Short options whose OPTIONAL value is attached (`-uno`), so a bundle ends there too.
@@ -308,6 +314,96 @@ def wait(run_id, timeout_seconds):
         time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
 
+def full_output(path):
+    try:
+        text = path.with_suffix(".output").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return text.replace("\r", "")
+
+
+def failed_targets(text):
+    header = FAILED_TARGETS_HEADER.search(text)
+    if header is None:
+        return []
+    targets = []
+    for line in text[header.end() :].splitlines()[1:]:
+        match = FAILED_TARGET_LINE.match(line)
+        if match is None:
+            break
+        targets.append(match.group(1))
+    return targets
+
+
+def brief_text(run_id, path, record, state, timeout_seconds):
+    """The re-entry brief for the least settled commit run: what it is and what it showed."""
+    named = "Commit run " + run_id + ", which the previous turn started through the commit runner"
+    named += " and which was still running when that turn ended, "
+    if state == "passed":
+        return (
+            named + "has since PASSED, so its commit exists; HEAD is "
+            + str(record.get("head")) + ". Continue from that commit.\n"
+        )
+    if state == NO_VERDICT:
+        return (
+            named + "ended without a verdict (its processes are gone with no recorded exit"
+            " status), so no commit was made and HEAD is unchanged. Redo that commit"
+            " through the runner.\n"
+        )
+    if state == RUNNING:
+        return (
+            named + "was STILL RUNNING when the bounded wait of " + str(int(timeout_seconds))
+            + " seconds expired, so it has no verdict yet and no commit is known to exist.\n"
+        )
+    output = full_output(path)
+    targets = failed_targets(output)
+    tail = "\n".join(output.splitlines()[-BRIEF_TAIL_LINES:])
+    return (
+        "failed targets: " + (" ".join(targets) if targets else "none") + "\n\n"
+        + named + "ended FAILED with exit status " + str(record.get("exit_code"))
+        + "; the repository commit hook "
+        + ("ran" if record.get("hook_ran") is True else "did not run")
+        + ", and no commit was made. Its own error lines (the tail of its recorded output at "
+        + str(path.with_suffix(".output")) + "):\n\n" + tail + "\n"
+    )
+
+
+def settle(timeout_seconds, brief_file):
+    """Wait out every commit run recorded as running, then brief on the least settled one."""
+    directory = runs_directory()
+    brief = Path(brief_file)
+    live = []
+    for path in sorted(directory.glob("*.json")):
+        record = read_record(path)
+        if record is not None and recorded_state(record) == RUNNING:
+            live.append(path)
+    if not live:
+        brief.unlink(missing_ok=True)
+        return 0
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    outcomes = []
+    for path in live:
+        while True:
+            record = read_record(path) or {}
+            record, state = settled(path, record)
+            if state != RUNNING or time.monotonic() >= deadline:
+                break
+            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+        if state == NO_VERDICT:
+            # Recorded, so a later settle does not brief this dead run a second time.
+            write_record(path, {"state": NO_VERDICT})
+        outcomes.append((path, record, state))
+    path, record, state = min(outcomes, key=lambda one: SETTLE_ORDER.index(one[2]))
+    brief.parent.mkdir(parents=True, exist_ok=True)
+    brief.write_text(
+        state + "\n" + brief_text(path.stem, path, record, state, timeout_seconds),
+        encoding="utf-8",
+    )
+    settled_runs = [{"run_id": one.stem, "state": status} for one, _, status in outcomes]
+    print(json.dumps({"settled": settled_runs}, sort_keys=True))
+    return 0
+
+
 def main(argv, program):
     parser = argparse.ArgumentParser(prog="livespec-commit-runner")
     operations = parser.add_subparsers(dest="operation", required=True)
@@ -316,6 +412,9 @@ def main(argv, program):
     wait_parser = operations.add_parser("wait")
     wait_parser.add_argument("run_id")
     wait_parser.add_argument("--timeout-seconds", required=True, type=float)
+    settle_parser = operations.add_parser("settle")
+    settle_parser.add_argument("--timeout-seconds", required=True, type=float)
+    settle_parser.add_argument("--brief-file", required=True)
     worker_parser = operations.add_parser("worker")
     worker_parser.add_argument("run_id")
     args = parser.parse_args(argv)
@@ -325,6 +424,8 @@ def main(argv, program):
             return start(command, program)
         if args.operation == "wait":
             return wait(args.run_id, args.timeout_seconds)
+        if args.operation == "settle":
+            return settle(args.timeout_seconds, args.brief_file)
         return worker(args.run_id)
     except RunnerRefusal as refusal:
         print("livespec commit runner: " + str(refusal), file=sys.stderr)

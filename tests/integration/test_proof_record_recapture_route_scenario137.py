@@ -216,7 +216,8 @@ def test_review_fix_recaptures_a_proof_record_finding_that_reaches_it() -> None:
     edges = _edges()
 
     assert (_REVIEW_FIX, _ROUTE, _RECAPTURE_CONDITION) in edges, edges
-    assert (_REVIEW_FIX, _JANITOR, "") in edges, edges
+    assert (_REVIEW_FIX, "review_fix_commit_settle", "") in edges, edges
+    assert ("review_fix_commit_settle", _JANITOR, "") in edges, edges
     assert [
         destination
         for source, destination, condition in edges
@@ -493,7 +494,8 @@ def test_a_mixed_verdict_fixes_the_tree_and_still_carries_its_record_findings() 
     edges = _edges()
     assert (_REVIEW, _DISPOSITION, "preferred_label=fix") in edges
     assert (_DISPOSITION, _REVIEW_FIX, "preferred_label=fix") in edges
-    assert (_REVIEW_FIX, "janitor", "") in edges
+    assert (_REVIEW_FIX, "review_fix_commit_settle", "") in edges
+    assert ("review_fix_commit_settle", "janitor", "") in edges
     assert ("publish_draft", "publish_merged_reconcile_route", "") in edges
     assert ("publish_merged_reconcile_route", _CAPTURE, "") in edges
 

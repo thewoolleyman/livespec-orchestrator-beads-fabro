@@ -888,6 +888,9 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _START,
         "dod_gate",
         "implement",
+        # The commit-run settle (bd-ib-xj3qqb) precedes the completion gate on
+        # `implement`'s fallthrough.
+        "implement_commit_settle",
         # Scenario 204's completion gate (v165) sits on `implement`'s own
         # fallthrough, so every run passes through it on the way to the diff
         # breaker; a turn that stated its Definition of Done complete is the
@@ -901,6 +904,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _REVIEW,
         _DISPOSITION,
         "review_fix",
+        "review_fix_commit_settle",
         "janitor",
         _PUBLISH_DRAFT,
         _PUBLISH_MERGED_RECONCILE_ROUTE,

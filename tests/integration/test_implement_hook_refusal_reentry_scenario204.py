@@ -99,9 +99,10 @@ exit 0
 # The cause `implement_completion` leaves behind when it fails the stage.
 _PARTIAL_CAUSE = f"stage: implement\ncause: {_PARTIAL_PROGRESS}: the turn stated incomplete\n"
 # Fabro's node-retry budget for `implement` is one retry; the re-entry budget
-# matches it, and a single re-entry doubles the turn's worst-case visits.
-_ROUTE_VISITS = 2
-_IMPLEMENT_VISITS = 4
+# matches it, and the settled-commit re-entry that does not spend it adds one
+# more, so the turn's worst case is three visits.
+_ROUTE_VISITS = 3
+_IMPLEMENT_VISITS = 6
 _CONFIGURED_DELTA = 137
 
 
@@ -340,7 +341,7 @@ def test_the_route_never_reruns_the_declared_suite() -> None:
 
 
 def test_the_route_and_the_reentered_turn_are_billed_into_the_subprocess_ceiling() -> None:
-    """The route runs the hook, so it is billed; one re-entry doubles implement's attempts."""
+    """The route runs the hook, so it is billed; the two re-entries triple implement's visits."""
     defaulted = node_timeouts_from_block(block={})
     assert not isinstance(defaulted, str), defaulted
     base = derive_fabro_timeout_seconds(timeouts=defaulted)

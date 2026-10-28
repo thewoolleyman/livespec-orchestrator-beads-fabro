@@ -58,6 +58,8 @@ _NEEDS_HUMAN = "needs_human"
 _HOOK_ROUTE = "implement_hook_route"
 _AMENDMENT_ROUTE = "implement_amendment_route"
 _JANITOR = "janitor"
+# The commit-run settle (bd-ib-xj3qqb) now sits between the turn and the gate.
+_SETTLE = "implement_commit_settle"
 
 # The per-clone record the prompt directs the turn to write and this gate reads,
 # resolved through `git rev-parse --git-path` so it lands in the clone's own
@@ -84,7 +86,7 @@ _INCOMPLETE_FIELD = (
 # at EXACTLY this count — a node absent from the subprocess-ceiling table is
 # billed at ZERO, which is a node the Dispatcher can kill the engine out from
 # under, and "greater than zero" would pass for a budget of one.
-_GATE_VISITS = 2
+_GATE_VISITS = 3
 # A delta over the fully-defaulted resolution, chosen small and non-round so the
 # arithmetic below cannot coincide with any literal the committed graph carries.
 _CONFIGURED_DELTA = 137
@@ -179,8 +181,9 @@ def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_sp
     onward = _targets(source=_IMPLEMENT)
     gate_onward = _targets(source=_GATE)
 
-    assert (_GATE, "") in onward, onward
-    assert [target for target, _ in onward if target in (_DIFF, _JANITOR)] == []
+    assert (_SETTLE, "") in onward, onward
+    assert (_GATE, "") in _targets(source=_SETTLE)
+    assert [target for target, _ in onward if target in (_GATE, _DIFF, _JANITOR)] == []
     assert (_DIFF, "") in gate_onward, gate_onward
     assert [condition for _, condition in gate_onward if condition == ""] == [""]
 
@@ -199,9 +202,9 @@ def test_an_explicit_failed_outcome_reaches_the_completion_gate_unless_it_is_an_
     assert (_HOOK_ROUTE, "outcome=failed") in _targets(source=_GATE)
     assert (_NEEDS_HUMAN, "") in _targets(source=_HOOK_ROUTE)
     assert (_AMENDMENT_ROUTE, "outcome=failed") in implement
-    assert (_GATE, "") in implement
+    assert (_SETTLE, "") in implement
     assert (_NEEDS_HUMAN, "outcome=failed") in amendment
-    assert (_GATE, "") in amendment
+    assert (_SETTLE, "") in amendment
 
 
 def test_a_target_naming_the_completion_gate_in_node_timeouts_is_not_refused() -> None:

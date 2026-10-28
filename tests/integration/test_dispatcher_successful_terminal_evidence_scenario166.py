@@ -51,6 +51,9 @@ _SUCCESSFUL_NODES = (
     "start",
     "dod_gate",
     "implement",
+    # The commit-run settle (bd-ib-xj3qqb) sits on `implement`'s fallthrough
+    # ahead of the completion gate, so every green run passes through it.
+    "implement_commit_settle",
     # The implement stage's completion gate (v165, Scenario 204;
     # bd-ib-ahxcjx). It is on the success route because it sits on
     # `implement`'s single fallthrough: a green run reached the diff breaker
