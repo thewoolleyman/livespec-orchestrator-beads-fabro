@@ -2324,8 +2324,8 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     # push program, v138's carry-forward decision, v156's per-assertion
     # proof grade, and the generated-record-file resolution of bd-ib-ze7xxj),
     # the repository-hook limit observer (bd-ib-xi63mq), and the detached
-    # commit runner (bd-ib-atyefi).
-    assert rendered.count("[[run.prepare.steps]]") == 15
+    # commit runner (bd-ib-atyefi), and the review-turn guard (bd-ib-azxvoo).
+    assert rendered.count("[[run.prepare.steps]]") == 16
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
@@ -2456,8 +2456,9 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
     # publication helpers the gate's block materializes beside it (v121, v138,
     # v156's per-assertion proof grade and bd-ib-ze7xxj's generated-record-file
     # resolution), the repository-hook limit observer (bd-ib-xi63mq), and the
-    # detached commit runner (bd-ib-atyefi) — no clone step among them.
-    assert rendered.count("[[run.prepare.steps]]") == 13
+    # detached commit runner (bd-ib-atyefi) and the review-turn guard
+    # (bd-ib-azxvoo) — no clone step among them.
+    assert rendered.count("[[run.prepare.steps]]") == 14
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 

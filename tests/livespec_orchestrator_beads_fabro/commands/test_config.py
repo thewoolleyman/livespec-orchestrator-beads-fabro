@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_hook_limit_program,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
+    _dispatcher_review_guard,
     _dispatcher_tmux_socket_root,
 )
 from livespec_orchestrator_beads_fabro.commands._config import (
@@ -799,6 +800,7 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         # WITHHELD and only the observer is materialized.
         + _dispatcher_hook_limit_program.hook_limit_prepare_steps_block(limit_seconds=None)
         + _dispatcher_commit_runner.commit_runner_prepare_steps_block()
+        + _dispatcher_review_guard.review_guard_prepare_steps_block()
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + "[environments.livespec-ci.env]\n"
@@ -847,7 +849,7 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     # bd-ib-ze7xxj: the generated-record-file resolution), plus the
     # repository-hook limit observer (bd-ib-xi63mq) — the hostile value
     # smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 14
+    assert rendered.count("[[run.prepare.steps]]") == 15
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

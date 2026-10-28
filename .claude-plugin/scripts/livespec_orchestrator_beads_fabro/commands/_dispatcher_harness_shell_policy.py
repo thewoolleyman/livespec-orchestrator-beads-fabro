@@ -94,6 +94,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload impo
     payload_guard_command,
     render_prepare_step,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
+    review_guard_hook_declaration,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
     worktree_exclude_script,
 )
@@ -263,6 +266,20 @@ def harness_shell_env_lines() -> str:
     return "".join(f"{name} = {json.dumps(value)}\n" for name, value in _HARNESS_SHELL_ENV)
 
 
+def _session_hook_declaration() -> dict[str, list[dict[str, object]]]:
+    """Every in-session hook this projection installs, grouped by event.
+
+    The plugin-cache gate's REPAIR and the review turn's GUARD are two hooks on
+    one event; the merge program's own-group recognition keys on each command,
+    so both are replaced in place on a re-run rather than stacked.
+    """
+    merged: dict[str, list[dict[str, object]]] = {}
+    for declaration in (plugin_gate_session_hook_declaration(), review_guard_hook_declaration()):
+        for event, groups in declaration.items():
+            merged.setdefault(event, []).extend(groups)
+    return merged
+
+
 def harness_settings_merge_program() -> str:
     """The merge program, carrying the policy keys as the members it will write.
 
@@ -278,7 +295,7 @@ def harness_settings_merge_program() -> str:
     substituted text cannot close the TOML string that carries it.
     """
     declared = json.dumps(dict(_HARNESS_SHELL_ENV), indent=4)
-    hooks = json.dumps(plugin_gate_session_hook_declaration(), indent=4)
+    hooks = json.dumps(_session_hook_declaration(), indent=4)
     return (
         _MERGE_PROGRAM.replace(_ENV_PLACEHOLDER, declared)
         .replace(_HOOKS_PLACEHOLDER, hooks)
