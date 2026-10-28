@@ -15,9 +15,12 @@ MCP configuration, slash commands, and session persistence.
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -30,7 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_sele
 from livespec_orchestrator_beads_fabro.effects import attempt
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -58,6 +61,8 @@ _JUDGE_PATH_ENV = "LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH"
 _CONVENTIONAL_JUDGE_PATH = "~/.local/bin/claude"
 _ALLOWED_TOOLS = "Read,Grep,Glob"
 _PROMPT_FILE_PREFIX = "livespec-dod-gate-"
+_SCRATCH_PARENT_NAMES = ("tmp", "var/tmp")
+_NO_SCRATCH_DIRECTORY = "no non-repository scratch directory is available for host judgement"
 
 
 def judgement_argv(*, judge_path: str, model: str) -> list[str]:
@@ -108,8 +113,7 @@ def run_host_judge_candidate(
         environ=environ,
         allowed_directory=allowed_directory,
     )
-    with tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX) as scratch:
-        scratch_path = Path(scratch)
+    with _non_repository_scratch_directory() as scratch_path:
         judge_environ = _isolated_judge_environ(
             candidate=candidate,
             environ=candidate_environ,
@@ -126,6 +130,46 @@ def run_host_judge_candidate(
                 env=judge_environ,
                 stdin=handle.fileno(),
             )
+
+
+@contextmanager
+def _non_repository_scratch_directory() -> Iterator[Path]:
+    """Yield scratch storage outside every Git worktree, despite an ambient TMPDIR."""
+    for parent in _scratch_parent_candidates():
+        try:
+            scratch = tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX, dir=parent)
+        except OSError:
+            continue
+        try:
+            scratch_path = Path(scratch.name)
+            if _inside_git_worktree(directory=scratch_path):
+                continue
+            yield scratch_path
+            return
+        finally:
+            scratch.cleanup()
+    raise RuntimeError(_NO_SCRATCH_DIRECTORY)
+
+
+def _scratch_parent_candidates() -> tuple[Path, ...]:
+    """Return distinct usable standard temporary parents before the ambient one."""
+    standard = tuple(Path(os.sep) / name for name in _SCRATCH_PARENT_NAMES)
+    candidates = (*standard, Path(tempfile.gettempdir()))
+    return tuple(dict.fromkeys(parent for parent in candidates if parent.is_dir()))
+
+
+def _inside_git_worktree(*, directory: Path) -> bool:
+    """Whether Git finds a worktree at or above ``directory`` by parent traversal."""
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["git", "-C", str(directory), "rev-parse", "--is-inside-work-tree"],  # noqa: S607
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "true"
 
 
 def _candidate_command(
