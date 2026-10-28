@@ -50,6 +50,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     DodJudgement,
     first_remedy,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_input_record import (
+    BOUND_ENDED_CANDIDATE_FIELD,
+    bound_ended_lines,
+    input_usage_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     JUDGEMENT_COMMENT_MARKER,
     UNAVAILABLE_COMMENT_MARKER,
@@ -126,6 +131,7 @@ _REPEATED_FIELDS = frozenset(
         _GOVERNING_HEADING_FIELD,
         _GOVERNING_SELECTED_CLAUSE_FIELD,
         _GOVERNING_NAMED_CLAUSE_FIELD,
+        BOUND_ENDED_CANDIDATE_FIELD,
     }
 )
 
@@ -187,6 +193,7 @@ def verdict_comment(  # noqa: PLR0913 - each argument is one field of the record
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
     ]
+    lines.extend(input_usage_lines(judgement=judgement))
     if spec_identity is not None:
         lines.extend(spec_identity_lines(identity=spec_identity))
     if governing is not None:
@@ -204,14 +211,11 @@ def verdict_comment(  # noqa: PLR0913 - each argument is one field of the record
         if verdict.generalization_target is not None:
             target = verdict.generalization_target
             lines.append(f"{_GOVERNING_GENERALIZATION_FIELD}{_FIELD_SEPARATOR}{target}")
-        lines.extend(
-            clause_line(key=_GOVERNING_SELECTED_CLAUSE_FIELD, clause=clause)
-            for clause in verdict.selected_clauses
-        )
-        lines.extend(
-            clause_line(key=_GOVERNING_NAMED_CLAUSE_FIELD, clause=clause)
-            for clause in verdict.named_clauses
-        )
+        for key, clauses in (
+            (_GOVERNING_SELECTED_CLAUSE_FIELD, verdict.selected_clauses),
+            (_GOVERNING_NAMED_CLAUSE_FIELD, verdict.named_clauses),
+        ):
+            lines.extend(clause_line(key=key, clause=clause) for clause in clauses)
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
     remedy = first_remedy(findings=judgement.findings)
     if remedy is not None:
@@ -301,9 +305,20 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
 
 
 def did_not_run_comment(
-    *, item_id: str, stage: str, digest: str, rubric_digest: str, cause: str
+    *,
+    item_id: str,
+    stage: str,
+    digest: str,
+    rubric_digest: str,
+    cause: str,
+    bound_ended_candidates: Sequence[str] = (),
 ) -> str:
-    """The ledger comment recording that the judgement did not run, and why."""
+    """The ledger comment recording that the judgement did not run, and why.
+
+    It names each candidate the input bound ended, because an exhausted chain and
+    a chain that never ran a candidate send an operator to opposite places and the
+    cause alone does not say which this was.
+    """
     return "\n".join(
         (
             UNAVAILABLE_COMMENT_MARKER,
@@ -316,6 +331,7 @@ def did_not_run_comment(
             f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
             f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
             f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
+            *bound_ended_lines(candidates=bound_ended_candidates),
         )
     )
 
@@ -366,7 +382,7 @@ def reusable_verdict(
             outcome=outcome,
             digest=recorded,
             rubric_digest=recorded_rubric,
-            findings=_findings_of(body=body),
+            findings=_repeated(body=body, key=_FINDING_FIELD),
         )
     return None
 
@@ -402,10 +418,6 @@ def _fields_of(*, body: str) -> dict[str, str]:
         if separator and key not in _REPEATED_FIELDS:
             fields[key] = value
     return fields
-
-
-def _findings_of(*, body: str) -> tuple[str, ...]:
-    return _repeated(body=body, key=_FINDING_FIELD)
 
 
 def _repeated(*, body: str, key: str) -> tuple[str, ...]:

@@ -36,11 +36,18 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_dod_judgement_gate as gate_module,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_ADMITTED,
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
+    DodJudgement,
     judgement_subject_digest,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
+    CAUSE_INPUT_LIMIT,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     DodJudgementDecision,
@@ -324,6 +331,35 @@ def test_a_did_not_run_record_is_written_once_per_distinct_cause(tmp_path: Path)
     # A DIFFERENT cause is its own record: without this the first assertion is
     # also satisfied by a gate that records nothing at all.
     assert len(ledger.bodies) == 2
+
+
+def test_a_did_not_run_record_lists_each_candidate_the_input_bound_ended(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ended = ("claude-acp:claude-opus-5", "codex-acp:gpt-5.6-terra")
+
+    def exhausted(**_: object) -> DodJudgement:
+        return DodJudgement(
+            outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_INPUT_LIMIT, bound_ended_candidates=ended
+        )
+
+    monkeypatch.setattr(gate_module, "run_dod_judgement", exhausted)
+    ledger = _Ledger()
+
+    decision = _judge(
+        tmp_path=tmp_path,
+        ledger=ledger,
+        runner=_Runner(results=[CommandResult(exit_code=0, stdout="", stderr="")]),
+    )
+
+    assert decision.outcome == JUDGEMENT_UNAVAILABLE
+    assert len(ledger.bodies) == 1
+    body = ledger.bodies[0]
+    assert UNAVAILABLE_COMMENT_MARKER in body
+    assert "judgement-unavailable-cause: input-limit-reached" in body
+    for candidate in ended:
+        assert f"bound-ended-candidate: {candidate}" in body
+    assert "deciding-candidate: " not in body
 
 
 def test_only_a_recorded_hold_against_the_current_bytes_reads_as_held(tmp_path: Path) -> None:

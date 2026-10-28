@@ -27,10 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro._store_comments import (
-    append_work_item_comment,
-    read_work_item_comments,
-)
+from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
     governing_heading_subject_digest,
     reusable_governing_heading_verdict,
@@ -42,6 +39,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     first_remedy,
     judgement_subject_digest,
     rubric_digest,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
+    item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     GoverningHeadingReceipt,
@@ -66,13 +66,6 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge imp
     GoverningHeadingReader,
     host_governing_heading_reader,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -85,7 +78,6 @@ __all__: list[str] = [
     "UNREADABLE_RUBRIC_DIGEST",
     "DodJudgementDecision",
     "held_judgement",
-    "item_comment_bodies",
     "judge_definition_of_done",
     "judge_item_definition_of_done",
 ]
@@ -230,6 +222,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             cause=verdict.cause,
             comments=comments,
             append=append,
+            bound_ended_candidates=verdict.bound_ended_candidates,
         )
     append(
         body=verdict_comment(
@@ -296,27 +289,6 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
     )
 
 
-def item_comment_bodies(*, path: StoreConfig, work_item_id: str) -> tuple[str, ...] | None:
-    """One item's comment bodies oldest-first, or `None` when they cannot be read.
-
-    `None` and the empty tuple are deliberately different answers: an item with
-    no comments has no recorded verdict and must be judged, while an item whose
-    sidecar could not be read is one nothing can be concluded about.
-    """
-    read = attempt(
-        action=lambda: read_work_item_comments(path=path, work_item_id=work_item_id),
-        exceptions=(
-            BeadsCommandError,
-            BeadsConnectionError,
-            BeadsMappingError,
-            BeadsTenantMissingError,
-        ),
-    )
-    if isinstance(read, AttemptFailure):
-        return None
-    return tuple(comment.text for comment in read)
-
-
 def held_judgement(
     *, item: WorkItem, repo: Path, comments: Sequence[str], payload_root: Path | None = None
 ) -> RecordedJudgement | None:
@@ -366,6 +338,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     cause: str | None,
     comments: Sequence[str],
     append: Callable[..., None],
+    bound_ended_candidates: Sequence[str] = (),
 ) -> DodJudgementDecision:
     """Record that the judgement did not run, unless this cause already stands.
 
@@ -382,7 +355,12 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     if cause is not None and cause not in recorded_did_not_run_causes(comments=comments):
         append(
             body=did_not_run_comment(
-                item_id=item.id, stage=stage, digest=digest, rubric_digest=rubric, cause=cause
+                item_id=item.id,
+                stage=stage,
+                digest=digest,
+                rubric_digest=rubric,
+                cause=cause,
+                bound_ended_candidates=bound_ended_candidates,
             )
         )
     return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
