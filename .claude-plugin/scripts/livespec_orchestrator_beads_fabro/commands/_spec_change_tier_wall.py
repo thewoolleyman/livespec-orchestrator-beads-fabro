@@ -61,7 +61,10 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier import SPEC_DI
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
     classify_item_spec_change_tier,
 )
-from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import spec_change_hold
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import (
+    REASON_AWAITING_REJUDGEMENT,
+    spec_change_hold,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
     STAGE_DISPATCH,
     recorded_spec_change_tier,
@@ -71,6 +74,7 @@ from livespec_orchestrator_beads_fabro.errors import (
     ConnectionPrefixMissingError,
     LivespecConfigUnreadableError,
 )
+from livespec_orchestrator_beads_fabro.spec_reader import current_specification_version
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
@@ -177,7 +181,16 @@ def spec_change_tier_refusal(
 def spec_change_unrefused_candidates(
     *, items: Sequence[WorkItem], repo: Path, workflow_name: str | None = None
 ) -> list[WorkItem]:
-    """This enumeration's candidates, with every held row dropped.
+    """This enumeration's candidates, with every row the hold still stands on dropped.
+
+    A row held ONLY because its judgement has not been re-run against the
+    ratified specification (`awaiting-rejudgement`) is KEPT while its record
+    names an older specification version than the current one. The wall row
+    classifies the selection, so that is the only way an unnamed drain ever
+    re-judges such an item and releases it with no human valve; dropping it here
+    would leave no pass that does. The re-judgement writes a record at the
+    current version, so the row is kept once per specification version and
+    dropped again after.
 
     The caller's ORDER is preserved rather than re-sorted, exactly as the two
     filters beside this one preserve it and for the same reason: the canonical
@@ -190,11 +203,12 @@ def spec_change_unrefused_candidates(
     if config is None:
         return list(items)
     ratified = ratified_proposal_topics(spec_root=repo / SPEC_DIRNAME)
+    current = _current_version(repo=repo)
     return [
         item
         for item in items
         if _exempt(repo=repo, item=item, workflow_name=workflow_name)
-        or _held(item=item, config=config, ratified_topics=ratified) is None
+        or not _drain_drops(item=item, config=config, ratified_topics=ratified, current=current)
     ]
 
 
@@ -242,6 +256,44 @@ def _connection(*, repo: Path) -> StoreConfig | None:
         exceptions=(ConnectionPrefixMissingError, LivespecConfigUnreadableError),
     )
     return None if isinstance(resolved, AttemptFailure) else resolved
+
+
+def _current_version(*, repo: Path) -> str | None:
+    """The specification version a re-judgement would record, or `None` if unreadable."""
+    read = attempt(
+        action=lambda: current_specification_version(spec_root=repo / SPEC_DIRNAME),
+        exceptions=(OSError,),
+    )
+    return None if isinstance(read, AttemptFailure) else str(read)
+
+
+def _drain_drops(
+    *,
+    item: WorkItem,
+    config: StoreConfig,
+    ratified_topics: Collection[str],
+    current: str | None,
+) -> bool:
+    """Whether the drain drops this row: held, and not due a re-judgement.
+
+    An unreadable current version keeps the hold standing, which is the
+    fail-closed side: the re-judgement could not be tied to a version, so the row
+    stays out rather than being re-classified on every pass.
+    """
+    bodies = item_comment_bodies(path=config, work_item_id=item.id)
+    recorded = recorded_spec_change_tier(comments=bodies or ())
+    hold = spec_change_hold(
+        work_item_id=item.id, recorded=recorded, ratified_topics=ratified_topics
+    )
+    if hold is None:
+        return False
+    due = (
+        hold.reason == REASON_AWAITING_REJUDGEMENT
+        and recorded is not None
+        and current is not None
+        and recorded.spec_version != current
+    )
+    return not due
 
 
 def _held(
