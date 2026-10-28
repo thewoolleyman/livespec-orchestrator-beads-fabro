@@ -25,7 +25,7 @@ it is a computation, not a courtesy.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_js
 
 __all__: list[str] = [
     "Evidence",
+    "inherit_governing_scenarios",
     "read_evidence",
 ]
 
@@ -114,6 +115,27 @@ def read_evidence(  # noqa: PLR0913 — one read shared by the item and plan sur
         emit(_NO_ASSERTION_REFUSAL.format(surface=surface))
         return None
     return Evidence(build=build, assertions=tuple(assertions))
+
+
+def inherit_governing_scenarios(
+    *, evidence: Evidence, scenarios: Mapping[str, str], scenario_fallback: str | None
+) -> Evidence:
+    """Replace a replay payload's scenario claims with the capture it replays.
+
+    A replay proves the capture's assertion rather than a new scenario claim, so its
+    record inherits the capture's rendered scenario. A capture that names no scenario
+    receives the caller's required no-scenario fallback.
+    """
+    return Evidence(
+        build=evidence.build,
+        assertions=tuple(
+            replace(
+                assertion,
+                governing_scenario=scenarios.get(assertion.text, scenario_fallback),
+            )
+            for assertion in evidence.assertions
+        ),
+    )
 
 
 def _assertion(
