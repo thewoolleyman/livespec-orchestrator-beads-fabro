@@ -108,7 +108,13 @@ def judgement_prompt(*, gate_prompt: str, subject: str) -> str:
     return f"{gate_prompt}{HOST_ENDING_CONTRACT}{subject}\n"
 
 
-def judgement_argv(*, judge_path: str, model: str, stream_usage: bool = False) -> list[str]:
+def judgement_argv(
+    *,
+    judge_path: str,
+    model: str,
+    allowed_directory: Path,
+    stream_usage: bool = False,
+) -> list[str]:
     """The Claude host-judge invocation, with its prompt supplied on standard input.
 
     `stream_usage` asks Claude for its streaming JSON transcript, the only output
@@ -116,6 +122,11 @@ def judgement_argv(*, judge_path: str, model: str, stream_usage: bool = False) -
     taking that bounds a candidate's input needs that report; a taking that does
     not bound it keeps the plain-text reply, so the flag is opt-in rather than a
     new default every caller inherits.
+
+    `allowed_directory` is the one directory the invocation may read besides its
+    own working directory. The call is also isolated from the invoking profile:
+    no setting source, no managed settings, no slash commands, a strict empty MCP
+    configuration and no session persistence.
     """
     argv = [
         judge_path,
@@ -125,6 +136,19 @@ def judgement_argv(*, judge_path: str, model: str, stream_usage: bool = False) -
         "--model",
         model,
     ]
+    argv.extend(
+        (
+            "--add-dir",
+            str(allowed_directory),
+            "--setting-sources",
+            "",
+            "--managed-settings",
+            "{}",
+            "--disable-slash-commands",
+            "--strict-mcp-config",
+            "--no-session-persistence",
+        )
+    )
     if stream_usage:
         argv.extend(("--output-format", _STREAM_OUTPUT_FORMAT, "--verbose"))
     return argv

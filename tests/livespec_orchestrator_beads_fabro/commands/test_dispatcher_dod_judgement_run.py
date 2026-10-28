@@ -32,6 +32,8 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import subprocess
+import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -95,8 +97,11 @@ class _Runner:
 
     result: CommandResult
     argv: list[str] | None = None
+    cwd: Path | None = None
     timeout_seconds: float | None = None
     environ: dict[str, str] | None = None
+    cwd_git_returncode: int | None = None
+    codex_auth: str | None = None
     stdin_text: list[str] = field(default_factory=list)
 
     def run(
@@ -112,7 +117,17 @@ class _Runner:
         self.argv = argv
         self.timeout_seconds = timeout_seconds
         self.environ = env
-        _ = (cwd, start_new_session)
+        self.cwd = cwd
+        self.cwd_git_returncode = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            check=False,
+            text=True,
+        ).returncode
+        if env is not None and "CODEX_HOME" in env:
+            auth = Path(env["CODEX_HOME"]) / "auth.json"
+            self.codex_auth = auth.read_text(encoding="utf-8") if auth.is_file() else None
+        _ = start_new_session
         if stdin is not None:
             _ = os.lseek(stdin, 0, os.SEEK_SET)
             self.stdin_text.append(os.read(stdin, 1_000_000).decode("utf-8"))
@@ -450,6 +465,162 @@ def test_a_codex_candidate_is_asked_for_json_events_only_when_its_input_is_bound
     assert "--json" not in unbounded.argv
     assert bounded.argv is not None
     assert "--json" in bounded.argv
+
+
+def test_a_host_codex_judge_resolves_before_isolation_and_reads_only_its_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A home-directory wrapper survives while the invocation itself is isolated."""
+    home = tmp_path / "operator-home"
+    wrapper = home / ".local" / "bin" / "codex"
+    wrapper.parent.mkdir(parents=True)
+    _ = wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    wrapper.chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", f"{wrapper.parent}:{os.environ.get('PATH', '')}")
+    repo = _repo(tmp_path=tmp_path)
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    # A caller can point TMPDIR into the governed repository.  Merely checking
+    # for a `.git` entry in the scratch directory misses Git's parent walk.
+    monkeypatch.setenv("TMPDIR", str(repo))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+
+    verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=runner, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.argv is not None
+    assert runner.argv[0] == str(wrapper)
+    assert "--skip-git-repo-check" in runner.argv
+    assert runner.argv.count("--add-dir") == 1
+    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
+    assert "project_doc_max_bytes=0" in runner.argv
+    assert "features.skills=false" in runner.argv
+    assert "features.multi_agent=false" in runner.argv
+    assert runner.cwd is not None
+    assert runner.cwd != repo
+    assert runner.cwd_git_returncode is not None
+    assert runner.cwd_git_returncode != 0
+    assert runner.environ is not None
+    assert runner.environ["HOME"] == str(home)
+
+
+def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex receives credentials, but none of the invoking profile's setup."""
+    codex_home = tmp_path / "interactive-codex"
+    codex_home.mkdir()
+    _ = (codex_home / "auth.json").write_text("host-auth", encoding="utf-8")
+    _ = (codex_home / "config.toml").write_text("interactive = true", encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+
+    verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=runner, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.environ is not None
+    assert runner.environ["CODEX_HOME"] != str(codex_home)
+    assert runner.codex_auth == "host-auth"
+
+
+def test_host_judge_scratch_retries_after_a_git_worktree_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scratch candidate nested below a repository must be discarded."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+    worktree_parent = tmp_path / "worktree-parent"
+    safe_parent = tmp_path / "safe-parent"
+    worktree_parent.mkdir()
+    safe_parent.mkdir()
+
+    def is_inside_worktree(*, directory: Path) -> bool:
+        return directory.parent == worktree_parent
+
+    monkeypatch.setattr(
+        module, "_scratch_parent_candidates", lambda: (worktree_parent, safe_parent)
+    )
+    monkeypatch.setattr(module, "_inside_git_worktree", is_inside_worktree)
+    scratch_directory = vars(module)["_non_repository_scratch_directory"]
+
+    with scratch_directory() as scratch:
+        assert scratch.parent == safe_parent
+
+
+def test_host_judge_scratch_refuses_when_no_candidate_directory_can_be_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A launch must not fall back into an unverified temporary directory."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+
+    def unavailable(**_kwargs: object) -> None:
+        raise OSError("unavailable")
+
+    monkeypatch.setattr(module, "_scratch_parent_candidates", lambda: (tmp_path,))
+    monkeypatch.setattr(module.tempfile, "TemporaryDirectory", unavailable)
+    scratch_directory = vars(module)["_non_repository_scratch_directory"]
+
+    with pytest.raises(RuntimeError, match="non-repository scratch directory"):
+        scratch_directory().__enter__()
+
+
+def test_host_judge_treats_an_unavailable_git_command_as_not_a_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing Git executable does not prevent a non-Git candidate launch."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+
+    def unavailable_git(*_args: object, **_kwargs: object) -> None:
+        raise OSError("git unavailable")
+
+    monkeypatch.setattr(module.subprocess, "run", unavailable_git)
+    inside_git_worktree = vars(module)["_inside_git_worktree"]
+
+    assert not inside_git_worktree(directory=tmp_path)
+
+
+def test_a_host_claude_judge_has_no_interactive_settings_or_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Claude's host invocation explicitly declines every interactive input."""
+    claude = tmp_path / "operator-home" / ".local" / "bin" / "claude"
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(claude))
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+    repo = _repo(tmp_path=tmp_path)
+
+    verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=runner, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.argv is not None
+    assert runner.argv[0] == str(claude)
+    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
+    assert "--setting-sources" in runner.argv
+    assert runner.argv[runner.argv.index("--setting-sources") + 1] == ""
+    assert "--managed-settings" in runner.argv
+    assert runner.argv[runner.argv.index("--managed-settings") + 1] == "{}"
+    assert {
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+    } <= set(runner.argv)
+    assert runner.cwd is not None
+    assert runner.cwd != repo
+    assert not (runner.cwd / ".git").exists()
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(

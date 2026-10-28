@@ -98,6 +98,28 @@ def _only_candidate(*, candidate: AcpCandidate):
     return resolve
 
 
+def _codex_argv(*, model: str, cwd: Path, settings: list[str] | None = None) -> list[str]:
+    """The isolated Codex command, after any catalog-derived settings."""
+    return [
+        "codex",
+        "exec",
+        "-m",
+        model,
+        *(settings or []),
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "features.skills=false",
+        "-c",
+        "features.multi_agent=false",
+        "--add-dir",
+        str(cwd),
+        "-s",
+        "read-only",
+        "--skip-git-repo-check",
+    ]
+
+
 def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
     tmp_path: Path,
 ) -> None:
@@ -108,26 +130,44 @@ def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
         ]
     )
 
+    repo = _configured_repo(tmp_path=tmp_path)
     reply, cause = run_dod_gate_prompt(
         prompt="one prompt",
-        cwd=_configured_repo(tmp_path=tmp_path),
+        cwd=repo,
         runner=runner,
         is_verdict=lambda text: text == "accepted",
     )
 
     assert reply == "accepted"
     assert cause == ""
-    assert runner.argvs[0][:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
-    assert runner.argvs[1][-2:] == ["--model", "claude-opus-5"]
+    assert runner.argvs[0] == _codex_argv(
+        model="gpt-5.6-terra",
+        cwd=repo,
+        settings=["-c", 'model_reasoning_effort="high"'],
+    )
+    assert runner.argvs[1][runner.argvs[1].index("--model") :] == [
+        "--model",
+        "claude-opus-5",
+        "--add-dir",
+        str(repo),
+        "--setting-sources",
+        "",
+        "--managed-settings",
+        "{}",
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+    ]
     assert runner.stdin_text == ["one prompt", "one prompt"]
 
 
 def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_path: Path) -> None:
     runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
 
+    repo = _configured_repo(tmp_path=tmp_path)
     reply, cause = run_dod_gate_prompt(
         prompt="one prompt",
-        cwd=_configured_repo(tmp_path=tmp_path),
+        cwd=repo,
         runner=runner,
         is_verdict=lambda text: text == "accepted",
     )
@@ -135,16 +175,11 @@ def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_pat
     assert reply == "accepted"
     assert cause == ""
     assert runner.argvs == [
-        [
-            "codex",
-            "exec",
-            "-m",
-            "gpt-5.6-terra",
-            "-c",
-            'model_reasoning_effort="high"',
-            "-s",
-            "read-only",
-        ]
+        _codex_argv(
+            model="gpt-5.6-terra",
+            cwd=repo,
+            settings=["-c", 'model_reasoning_effort="high"'],
+        )
     ]
 
 
@@ -237,7 +272,33 @@ def test_a_codex_candidate_without_effort_does_not_add_a_reasoning_override(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", "gpt", "-s", "read-only"]]
+    assert runner.argvs == [_codex_argv(model="gpt", cwd=tmp_path)]
+
+
+def test_a_codex_candidate_without_host_auth_still_receives_a_private_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent interactive auth file is not an invocation failure."""
+    candidate = AcpCandidate(
+        adapter=AcpAdapter(command="codex-acp", env={"CODEX_CONFIG": '{"model": "gpt"}'}),
+        agent_id="codex-acp",
+    )
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home-without-codex-auth"))
+    monkeypatch.setattr(
+        judgement_module, "dod_gate_candidates", _only_candidate(candidate=candidate)
+    )
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
+
+    reply, _ = run_dod_gate_prompt(
+        prompt="one prompt",
+        cwd=tmp_path,
+        runner=runner,
+        is_verdict=lambda text: text == "accepted",
+    )
+
+    assert reply == "accepted"
+    assert runner.argvs == [_codex_argv(model="gpt", cwd=tmp_path)]
 
 
 def test_a_codex_candidate_carries_its_adapter_settings_but_judges_read_only(
@@ -270,18 +331,16 @@ def test_a_codex_candidate_carries_its_adapter_settings_but_judges_read_only(
 
     assert reply == "accepted"
     assert runner.argvs == [
-        [
-            "codex",
-            "exec",
-            "-m",
-            "gpt",
-            "-c",
-            'model_provider="azure"',
-            "-c",
-            'model_reasoning_effort="high"',
-            "-s",
-            "read-only",
-        ]
+        _codex_argv(
+            model="gpt",
+            cwd=tmp_path,
+            settings=[
+                "-c",
+                'model_provider="azure"',
+                "-c",
+                'model_reasoning_effort="high"',
+            ],
+        )
     ]
     assert runner.environs[0]["CODEX_ENDPOINT"] == "https://codex.invalid"
 
@@ -320,6 +379,15 @@ def test_a_claude_candidate_carries_its_adapter_environment(
         "Read,Grep,Glob",
         "--model",
         "claude-opus-5",
+        "--add-dir",
+        str(tmp_path),
+        "--setting-sources",
+        "",
+        "--managed-settings",
+        "{}",
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--no-session-persistence",
     ]
     assert runner.environs[0]["ANTHROPIC_BASE_URL"] == "https://anthropic.invalid"
     assert runner.environs[0]["CLAUDE_CODE_EFFORT_LEVEL"] == "high"
@@ -375,7 +443,7 @@ def test_invalid_codex_settings_do_not_invent_a_model_or_effort(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", "", "-s", "read-only"]]
+    assert runner.argvs == [_codex_argv(model="", cwd=tmp_path)]
 
 
 def test_the_red_runner_also_models_a_command_without_standard_input() -> None:
