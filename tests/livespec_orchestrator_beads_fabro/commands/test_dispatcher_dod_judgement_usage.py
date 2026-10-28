@@ -7,6 +7,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage 
     INPUT_USAGE_PARTIAL,
     INPUT_USAGE_UNREPORTED,
     candidate_input_usage,
+    candidate_reply,
 )
 
 
@@ -87,3 +88,39 @@ def test_a_request_reporting_input_on_any_of_its_records_is_counted_whole() -> N
 
     assert usage.total_tokens == 40
     assert usage.status == INPUT_USAGE_COMPLETE
+
+
+def test_a_claude_stream_s_result_record_is_the_reply() -> None:
+    output = "\n".join(
+        (
+            '{"type": "assistant", "message": {"id": "m", "usage": {"input_tokens": 1}}}',
+            '{"type": "result", "result": "first"}',
+            '{"type": "result", "result": "the last result wins"}',
+        )
+    )
+
+    assert candidate_reply(output=output) == "the last result wins"
+
+
+def test_a_codex_event_stream_s_last_agent_message_is_the_reply() -> None:
+    output = "\n".join(
+        (
+            '{"type": "item.completed", "item": {"type": "reasoning", "text": "thinking"}}',
+            '{"type": "item.completed", "item": {"type": "agent_message", "text": "answer"}}',
+            '{"type": "turn.completed", "usage": {"input_tokens": 3}}',
+        )
+    )
+
+    assert candidate_reply(output=output) == "answer"
+
+
+def test_output_that_carries_no_reply_record_is_returned_unchanged() -> None:
+    for output in (
+        '{"outcome": "passed"}\n',
+        "plain text, not json",
+        '{"type": "result", "subtype": "error_max_turns"}',
+        '{"type": "item.completed", "item": "not-a-mapping"}',
+        '{"type": "item.completed", "item": {"type": "agent_message", "text": 7}}',
+        '{"type": "turn.started"}',
+    ):
+        assert candidate_reply(output=output) == output

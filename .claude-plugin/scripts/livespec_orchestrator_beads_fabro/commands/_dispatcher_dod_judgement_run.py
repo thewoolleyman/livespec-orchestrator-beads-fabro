@@ -166,6 +166,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
         cwd=cwd,
         runner=active_runner,
         is_verdict=lambda text: parse_judgement_reply(reply=text).outcome != JUDGEMENT_UNAVAILABLE,
+        bound_input=True,
     )
     if result.reply is not None:
         parsed = parse_judgement_reply(reply=result.reply)
@@ -193,12 +194,17 @@ def run_dod_gate_prompt(
     runner: CommandRunner,
     is_verdict: Callable[[str], bool],
     timeout_seconds: float | None = None,
+    bound_input: bool = False,
 ) -> CandidateChainResult:
     """Run the resolved `dod_gate` candidates in order, closing stdin for each.
 
     A candidate that cannot run or produces a reply the caller cannot parse
     advances the ordered fallback chain. The first parseable verdict returns
     immediately, so no later candidate can run after a judgement is decided.
+
+    `bound_input` is off unless the caller turns it on: the input bound belongs
+    to the pre-admission and pre-dispatch takings alone, so only
+    `run_dod_judgement` enables it.
     """
     return run_candidate_chain(
         prompt=prompt,
@@ -207,4 +213,5 @@ def run_dod_gate_prompt(
         is_verdict=is_verdict,
         timeout_seconds=timeout_seconds,
         candidate_resolver=dod_gate_candidates,
+        bound_input=bound_input,
     )

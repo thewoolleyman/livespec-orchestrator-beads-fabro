@@ -20,6 +20,7 @@ __all__: list[str] = [
     "INPUT_USAGE_UNREPORTED",
     "CandidateInputUsage",
     "candidate_input_usage",
+    "candidate_reply",
 ]
 
 HOST_JUDGEMENT_INPUT_LIMIT = 100_000
@@ -99,6 +100,39 @@ def candidate_input_usage(*, output: str) -> CandidateInputUsage:
         # partial, which retires the marking by making it mean nothing.
         status=(INPUT_USAGE_PARTIAL if unaccounted - requests.keys() else INPUT_USAGE_COMPLETE),
     )
+
+
+def candidate_reply(*, output: str) -> str:
+    """The reply a candidate's usage-reporting transcript carries.
+
+    A candidate asked to report usage emits a JSON-line transcript instead of the
+    bare reply: Claude's streaming JSON ends in a `result` record holding the
+    reply text, and Codex's JSON events carry it in the last completed
+    `agent_message`. The LAST such record wins, because a transcript may carry an
+    earlier message that a later one supersedes. Output with no such record is
+    returned unchanged, which is what keeps a candidate that was not asked to
+    stream reading exactly as it did.
+    """
+    reply: str | None = None
+    for line in output.splitlines():
+        report = _json_object(line=line)
+        text = None if report is None else _reply_in(report=report)
+        if text is not None:
+            reply = text
+    return output if reply is None else reply
+
+
+def _reply_in(*, report: Mapping[str, object]) -> str | None:
+    kind = report.get("type")
+    if kind == "result":
+        result = report.get("result")
+        return result if isinstance(result, str) else None
+    item = report.get("item")
+    if kind != "item.completed" or not isinstance(item, Mapping):
+        return None
+    message = cast("Mapping[str, object]", item)
+    text = message.get("text")
+    return text if message.get("type") == "agent_message" and isinstance(text, str) else None
 
 
 def _json_object(*, line: str) -> Mapping[str, object] | None:

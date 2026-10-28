@@ -30,6 +30,7 @@ already took, not from a probe of our own that could disagree with it.
 from __future__ import annotations
 
 import importlib
+import json
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -51,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     judgement_prompt,
     resolve_judge_path,
     resolve_judge_timeout_seconds,
+    run_dod_gate_prompt,
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
@@ -381,6 +383,73 @@ def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decid
     assert verdict.bound_ended_candidates == ("codex-acp:gpt-5.6-terra",)
     assert runner.calls[0][0] == "codex"
     assert runner.calls[1][1:3] == ["-p", "--allowedTools"]
+
+
+def test_the_claude_judge_reports_usage_and_its_reply_is_read_from_the_stream(
+    tmp_path: Path,
+) -> None:
+    stream = "\n".join(
+        (
+            json.dumps(
+                {"type": "assistant", "message": {"id": "msg-1", "usage": {"input_tokens": 40000}}}
+            ),
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "result": 'Clean.\n{"outcome": "passed"}',
+                    "usage": {"input_tokens": 40000},
+                }
+            ),
+        )
+    )
+
+    verdict, runner = _take(
+        tmp_path=tmp_path, result=CommandResult(exit_code=0, stdout=stream + "\n", stderr="")
+    )
+
+    assert runner.argv is not None
+    assert runner.argv[-3:] == ["--output-format", "stream-json", "--verbose"]
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert verdict.input_tokens == 40000
+    assert verdict.input_usage == "complete"
+
+
+def test_a_chain_run_without_the_bound_asks_for_no_usage_and_ends_no_candidate_on_it(
+    tmp_path: Path,
+) -> None:
+    heavy = '{"request_id": "request-one", "usage": {"input_tokens": 500000}}\n{"outcome": "x"}\n'
+    runner = _Runner(result=CommandResult(exit_code=0, stdout=heavy, stderr=""))
+
+    result = run_dod_gate_prompt(
+        prompt="p", cwd=_repo(tmp_path=tmp_path), runner=runner, is_verdict=lambda _text: True
+    )
+
+    assert result.reply == heavy
+    assert result.usage is not None
+    assert result.usage.total_tokens is None
+    assert result.bound_ended_candidates == ()
+    assert runner.argv is not None
+    assert "--output-format" not in runner.argv
+
+
+def test_a_codex_candidate_is_asked_for_json_events_only_when_its_input_is_bounded(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    unbounded = _Runner(result=CommandResult(exit_code=0, stdout="x", stderr=""))
+    bounded = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}', stderr=""))
+
+    _ = run_dod_gate_prompt(prompt="p", cwd=repo, runner=unbounded, is_verdict=lambda _text: True)
+    _ = run_dod_judgement(
+        item=_item(), cwd=repo, runner=bounded, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert unbounded.argv is not None
+    assert "--json" not in unbounded.argv
+    assert bounded.argv is not None
+    assert "--json" in bounded.argv
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(

@@ -140,7 +140,6 @@ def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_pat
             "exec",
             "-m",
             "gpt-5.6-terra",
-            "--json",
             "-c",
             'model_reasoning_effort="high"',
             "-s",
@@ -238,7 +237,7 @@ def test_a_codex_candidate_without_effort_does_not_add_a_reasoning_override(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", "gpt", "--json", "-s", "read-only"]]
+    assert runner.argvs == [["codex", "exec", "-m", "gpt", "-s", "read-only"]]
 
 
 def test_a_codex_candidate_carries_its_adapter_settings_but_judges_read_only(
@@ -276,7 +275,6 @@ def test_a_codex_candidate_carries_its_adapter_settings_but_judges_read_only(
             "exec",
             "-m",
             "gpt",
-            "--json",
             "-c",
             'model_provider="azure"',
             "-c",
@@ -377,7 +375,7 @@ def test_invalid_codex_settings_do_not_invent_a_model_or_effort(
     )
 
     assert reply == "accepted"
-    assert runner.argvs == [["codex", "exec", "-m", "", "--json", "-s", "read-only"]]
+    assert runner.argvs == [["codex", "exec", "-m", "", "-s", "read-only"]]
 
 
 def test_the_red_runner_also_models_a_command_without_standard_input() -> None:
