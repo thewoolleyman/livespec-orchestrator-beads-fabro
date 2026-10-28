@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.254.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.4...v0.254.0) (2026-10-28)
+
+
+### Features
+
+* commit runner settle operation waits out every live commit run ([2b2c55a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2b2c55a9dc05e3a60eebd825bf8f3ab5a57eb329))
+
 ## [0.253.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.3...v0.253.4) (2026-10-28)
 
 
