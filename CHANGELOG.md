@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.255.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.3...v0.255.0) (2026-10-28)
+
+
+### Features
+
+* **dispatcher:** classify the tier once per cadence point, and record a miss ([d60fac6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d60fac66449769a0e3e8da06ac01d4f7798509f9))
+* **dispatcher:** decide the spec-change tier by the spec-stated judgement ([70c89ca](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/70c89ca391541ffd60630102946d87ec63d461c4))
+* **dispatcher:** hold a filed spec-change-tier item out of ready ([1a5ebb3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1a5ebb3a88452bfbc9b45682b2a4410fccae1ec3))
+* **dispatcher:** hold a spec-change-tier item until its topic ratifies ([94ce6b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/94ce6b4878b62dabf510a1655b95d2d4236223a0))
+* **dispatcher:** record a human attestation of the clause that states a held item ([2b5bcd4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2b5bcd4679c69a38e4ec9691d586b5b75350fa7c))
+* **dispatcher:** refuse a held spec-change-tier dispatch with exit 5 ([54ccfce](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/54ccfce8279e22558d78130130e682ed90b7dbd9))
+* **dispatcher:** release a misjudged spec-change-tier hold through a human valve ([da19947](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da199477856e43f0f0666b023f1cd91c60eab6f9))
+* **groom:** decide a drafted slice's tier by the judgement, not the draft ([6755e2f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6755e2f202a4998e3563c9483c5aae5644e0c1dd))
+
+
+### Bug Fixes
+
+* **dispatcher:** accept a bare-word classification reply from the shared judge chain ([e446051](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e44605109604e5bb5b0f965ff1d23d54eb61b53f))
+* **dispatcher:** correct the wall's account of the spec-change-tier row ([81dab6d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/81dab6d0fc93dfb853b2d0cbc09e86325424618d))
+* **dispatcher:** dispose a plan child by the recorded tier, failing closed ([85c8615](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/85c86154f4ef1da5af87ef9ed7bb7d766585a281))
+* **dispatcher:** stop reading the spec-change tier off spec_commitment_hint ([29a0e82](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/29a0e826e244031bfab62f34dbfaee9d42290a9b))
+* **dispatcher:** the drain re-judges a ratified spec-change hold recorded against an older spec ([208463f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/208463fb54a04913e096ba2644eacb9b675630f2))
+* **tests:** reconcile Scenario 206 coverage debt ([03a28cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/03a28cf6dc25bf1c631ee3772f3250ce0c39f889))
+
 ## [0.254.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.2...v0.254.3) (2026-10-28)
 
 
