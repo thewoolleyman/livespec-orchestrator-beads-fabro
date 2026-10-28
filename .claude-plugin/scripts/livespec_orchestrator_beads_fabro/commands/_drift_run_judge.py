@@ -40,11 +40,15 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_args
 
 from livespec_runtime import spec_stated
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    candidate_report,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     run_dod_gate_prompt,
 )
@@ -105,15 +109,21 @@ def _judged(
     cwd: Path,
     runner: CommandRunner,
 ) -> str:
-    """One prompt through the shared chain, or no reply when every candidate fails."""
-    reply, _cause = run_dod_gate_prompt(
+    """One prompt through the shared chain, or no reply when every candidate fails.
+
+    Each candidate the chain ran is reported on standard error, because a drift
+    pass and a governing-heading read write no ledger record of their own.
+    """
+    chain = run_dod_gate_prompt(
         prompt=prompt,
         cwd=cwd,
         runner=runner,
         is_verdict=lambda text: _looks_like_spec_stated_verdict(text=text),
         timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
     )
-    return reply or ""
+    for ran in chain.attempts:
+        _ = sys.stderr.write(f"{candidate_report(attempt=ran)}\n")
+    return chain.reply or ""
 
 
 def _looks_like_spec_stated_verdict(*, text: str) -> bool:

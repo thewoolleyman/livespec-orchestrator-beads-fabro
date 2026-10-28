@@ -71,6 +71,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+        CandidateAttempt,
+    )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -223,6 +226,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             comments=comments,
             append=append,
             bound_ended_candidates=verdict.bound_ended_candidates,
+            attempts=verdict.attempts,
         )
     append(
         body=verdict_comment(
@@ -339,6 +343,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     comments: Sequence[str],
     append: Callable[..., None],
     bound_ended_candidates: Sequence[str] = (),
+    attempts: Sequence[CandidateAttempt] = (),
 ) -> DodJudgementDecision:
     """Record that the judgement did not run, unless this cause already stands.
 
@@ -361,6 +366,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
                 rubric_digest=rubric,
                 cause=cause,
                 bound_ended_candidates=bound_ended_candidates,
+                attempts=attempts,
             )
         )
     return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
