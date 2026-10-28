@@ -66,6 +66,14 @@ _PUBLICATION_STAGES_ADDED = {"pr_refresh", "pr_refresh_head"}
 _PUBLICATION_STAGES = _PUBLICATION_STAGES_ADDED | {"pr", "verify_pr"}
 _REFRESH_LOOP = _PUBLICATION_STAGES_ADDED | {"proof_capture", "review", "proof_verify"}
 
+# The landed-publication routes (v226) are deliberately outside the refresh
+# loop: each only decides whether a stage takes its ordinary successor or the
+# final verification ending, and closes no cycle of its own.
+_MERGED_RECONCILE_ROUTES_ADDED = {
+    "publish_merged_reconcile_route",
+    "pr_refresh_merged_reconcile_route",
+}
+
 # The refresh-repair classifier (v134), kept as its own constant rather than
 # folded into the port-era set above. The subject of this module is the PORT, so
 # "which nodes the port added" has to stay the port's own answer; a later
@@ -680,6 +688,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     # still presented as an allowance.
     assert set(ported.node_visits) - set(pre_port.node_visits) == (
         _PUBLICATION_STAGES_ADDED
+        | _MERGED_RECONCILE_ROUTES_ADDED
         | _REFRESH_REPAIR_ADDED
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
@@ -702,6 +711,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     }
     reachable = (
         _PUBLICATION_STAGES
+        | _MERGED_RECONCILE_ROUTES_ADDED
         | _REFRESH_LOOP
         | _REFRESH_REPAIR_LOOP
         | _PR_ROUTE_ADDED

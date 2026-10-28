@@ -173,6 +173,9 @@ def run_acceptance_pass(
             outcome=outcome,
             runner=active_runner,
             dispatch=_merging_dispatch(outcome=outcome, journal_path=journal_path),
+            merged_head=(
+                None if outcome.merged_reconcile is None else outcome.merged_reconcile.merged_head
+            ),
         )
         if criteria.proof_modes
         else None

@@ -171,5 +171,6 @@ def test_changed_implementation_still_reaches_review_normally() -> None:
         re.search(r'janitor\s*->\s*publish_draft\b[^\n]*condition="outcome=succeeded"', text)
         is not None
     )
-    assert re.search(r"publish_draft\s*->\s*proof_capture\b", text) is not None
+    assert re.search(r"publish_draft\s*->\s*publish_merged_reconcile_route\b", text) is not None
+    assert re.search(r"publish_merged_reconcile_route\s*->\s*proof_capture\b", text) is not None
     assert re.search(r"proof_capture\s*->\s*review\b", text) is not None

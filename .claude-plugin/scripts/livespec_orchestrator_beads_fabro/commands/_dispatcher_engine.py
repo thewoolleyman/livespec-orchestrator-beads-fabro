@@ -89,6 +89,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import (
+    MergedReconcile,
+    merged_reconcile_detail,
+    merged_reconcile_from_text,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
@@ -233,10 +238,9 @@ def run_dispatch(
     # hook-over-limit row is written there unconditionally of how the run ended
     # (see `journal_run_output_markers`). The event comes back so the terminal
     # outcome can carry it to the cause writer.
+    run_output = f"{fabro.stdout}\n{fabro.stderr}\n{inspect_stdout}\n{inspect_stderr}"
     hook_over_limit = journal_run_output_markers(
-        journal=journal,
-        work_item_id=plan.work_item_id,
-        text=f"{fabro.stdout}\n{fabro.stderr}\n{inspect_stdout}\n{inspect_stderr}",
+        journal=journal, work_item_id=plan.work_item_id, text=run_output
     )
     terminal = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
@@ -337,7 +341,19 @@ def run_dispatch(
     )
     if run_id is not None and outcome.fabro_run_id is None:
         outcome = replace(outcome, fabro_run_id=run_id)
-    return outcome
+    reconcile = merged_reconcile_from_text(text=run_output)
+    return (
+        outcome if reconcile is None else _with_merged_reconcile(outcome=outcome, event=reconcile)
+    )
+
+
+def _with_merged_reconcile(*, outcome: DispatchOutcome, event: MergedReconcile) -> DispatchOutcome:
+    """The outcome carrying the merged-reconcile ending, in its detail and as a value."""
+    return replace(
+        outcome,
+        merged_reconcile=event,
+        detail=f"{outcome.detail}; {merged_reconcile_detail(event=event)}",
+    )
 
 
 def _launcher_terminal(

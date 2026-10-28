@@ -128,6 +128,7 @@ _RECORDS_FIXTURE = Path(__file__).parent / "fixtures/proof_records/pull-request-
 
 _START = "start"
 _PUBLISH_DRAFT = "publish_draft"
+_PUBLISH_MERGED_RECONCILE_ROUTE = "publish_merged_reconcile_route"
 _PROOF_CAPTURE = "proof_capture"
 _REVIEW = "review"
 _DISPOSITION = "disposition"
@@ -140,6 +141,7 @@ _PR = "pr"
 # can reach `pr`. In this journey the default branch does not move, so the
 # refresh leaves the head alone and the breaker falls through to `pr`.
 _PR_REFRESH = "pr_refresh"
+_PR_REFRESH_MERGED_RECONCILE_ROUTE = "pr_refresh_merged_reconcile_route"
 _PR_REFRESH_HEAD = "pr_refresh_head"
 # The per-assertion grade of the verified record (v156; bd-ib-kcq6pu): the only
 # route out of a `verified` replay, so every publishing path passes through it.
@@ -582,7 +584,9 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
     then reports an UNCHANGED head -- also zero -- which is the edge into `pr`.
     A moving default branch is the HOST-CAPTURED assertion of `bd-ib-c3txja`,
     taken against the released build on a real factory run, because a sandboxed
-    journey cannot advance the branch it is publishing onto.
+    journey cannot advance the branch it is publishing onto. The two
+    merged-reconcile route classifiers report failure: their state marker is absent
+    in this ordinary unmerged journey, so each takes its normal fallthrough.
     """
 
     def _act(*, node: str, visit: int) -> tuple[str, str | None]:
@@ -601,6 +605,11 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
             return _SUCCEEDED, _LABEL_FIX
         if node == _PROOF_VERIFY:
             return _SUCCEEDED, _LABEL_APPROVE
+        if node in {
+            _PUBLISH_MERGED_RECONCILE_ROUTE,
+            _PR_REFRESH_MERGED_RECONCILE_ROUTE,
+        }:
+            return _FAILED, None
         return _SUCCEEDED, None
 
     return _act
@@ -887,17 +896,20 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         "implementation_diff",
         "janitor",
         _PUBLISH_DRAFT,
+        _PUBLISH_MERGED_RECONCILE_ROUTE,
         _PROOF_CAPTURE,
         _REVIEW,
         _DISPOSITION,
         "review_fix",
         "janitor",
         _PUBLISH_DRAFT,
+        _PUBLISH_MERGED_RECONCILE_ROUTE,
         _PROOF_CAPTURE,
         _REVIEW,
         _PROOF_VERIFY,
         _PROOF_GRADE,
         _PR_REFRESH,
+        _PR_REFRESH_MERGED_RECONCILE_ROUTE,
         _PR_REFRESH_HEAD,
         _PR,
         "pr_route",

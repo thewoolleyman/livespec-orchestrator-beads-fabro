@@ -46,6 +46,7 @@ property of the container rather than a rule anything has to remember.
 from __future__ import annotations
 
 __all__: list[str] = [
+    "MERGED_RECONCILE_STATE_FILENAME",
     "PR_VISIT_COUNT_STATE_FILENAME",
     "PUBLICATION_STATE_GIT_PATH",
     "PUBLISH_HEAD_STATE_FILENAME",
@@ -67,6 +68,7 @@ __all__: list[str] = [
 PUBLICATION_STATE_GIT_PATH = "livespec-publication"
 
 PUBLISH_HEAD_STATE_FILENAME = "livespec-publish-head"
+MERGED_RECONCILE_STATE_FILENAME = "livespec-merged-reconcile"
 REFRESH_COUNT_STATE_FILENAME = "livespec-pr-refresh-count"
 REFRESH_CHANGED_STATE_FILENAME = "livespec-pr-refresh-changed"
 
@@ -151,6 +153,7 @@ def publication_state_filenames() -> tuple[str, ...]:
     """
     return (
         PUBLISH_HEAD_STATE_FILENAME,
+        MERGED_RECONCILE_STATE_FILENAME,
         REFRESH_COUNT_STATE_FILENAME,
         REFRESH_CHANGED_STATE_FILENAME,
         REFRESH_REPAIR_BRIEF_STATE_FILENAME,

@@ -494,7 +494,8 @@ def test_a_mixed_verdict_fixes_the_tree_and_still_carries_its_record_findings() 
     assert (_REVIEW, _DISPOSITION, "preferred_label=fix") in edges
     assert (_DISPOSITION, _REVIEW_FIX, "preferred_label=fix") in edges
     assert (_REVIEW_FIX, "janitor", "") in edges
-    assert ("publish_draft", _CAPTURE, "") in edges
+    assert ("publish_draft", "publish_merged_reconcile_route", "") in edges
+    assert ("publish_merged_reconcile_route", _CAPTURE, "") in edges
 
     review = _prompt(name="review.md")
     assert "**At least one blocking finding tagged `(tree)`** → `fix`" in review

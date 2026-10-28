@@ -59,6 +59,7 @@ _SUCCESSFUL_NODES = (
     "implementation_diff",
     "janitor",
     "publish_draft",
+    "publish_merged_reconcile_route",
     "proof_capture",
     "review",
     "proof_verify",
@@ -69,6 +70,7 @@ _SUCCESSFUL_NODES = (
     "proof_grade",
     "pr",
     "pr_route",
+    "pr_refresh_merged_reconcile_route",
     "pr_refresh_head",
     "pr_refresh",
     "verify_pr",
@@ -470,7 +472,7 @@ def test_scenario_166_authenticates_terminal_success_and_preserves_non_green_con
     failed_required = _successful_checkpoint()
     failed_required["node_outcomes"] = {
         **{node: {"status": "succeeded"} for node in _SUCCESSFUL_NODES},
-        "review": {"status": "failed"},
+        "janitor": {"status": "failed"},
     }
     needs_human = _successful_checkpoint()
     needs_human.update(current_node="needs_human", next_node_id=None)

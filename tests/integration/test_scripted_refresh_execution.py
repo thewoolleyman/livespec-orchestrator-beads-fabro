@@ -71,6 +71,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate im
     PLUGIN_GATE_PROGRAM_FILENAME,
     plugin_cache_gate_script,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
+    PROOF_HEAD_PROGRAM_FILENAME,
+    proof_head_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
     publication_push_program_source,
@@ -338,6 +342,9 @@ def _materialized_plugins_root(*, root: Path) -> Path:
     _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
         record_file_program_source(), encoding="utf-8"
     )
+    _ = (plugins_root / PROOF_HEAD_PROGRAM_FILENAME).write_text(
+        proof_head_program_source(), encoding="utf-8"
+    )
     gate_script = root / "install-plugin-gate.sh"
     _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
     return plugins_root
@@ -388,6 +395,7 @@ def _build(
                 "armed": armed,
                 "arming_unreadable": arming_unreadable,
                 "disarm_fails": disarm_fails,
+                "comments": [],
                 "calls": [],
             }
         ),
@@ -508,6 +516,21 @@ with open(state_path, "w") as handle:
     json.dump(state, handle)
 
 if argv[:2] == ["pr", "view"]:
+    if argv[argv.index("--json") + 1] == "comments":
+        print(json.dumps({"comments": state.get("comments", [])}))
+        sys.exit(0)
+    if "number,state,mergeCommit,headRefOid" in argv:
+        operand = argv[argv.index("--jq") + 1]
+        if operand != '(.number|tostring)+"\\t"+(.state|tostring)+"\\t"+(.mergeCommit.oid|tostring)+"\\t"+(.headRefOid|tostring)':
+            sys.stderr.write("unmodelled merged-reconcile --jq operand: %%s\n" %% operand)
+            sys.exit(2)
+        if state.get("state") != "MERGED":
+            sys.stderr.write("the pull request is not merged\n")
+            sys.exit(1)
+        print("\t".join(
+            [str(state["number"]), state["state"], state["merge_commit"], state["head"]]
+        ))
+        sys.exit(0)
     if state["arming_unreadable"]:
         sys.stderr.write("the forge declined to report autoMergeRequest\n")
         sys.exit(1)
@@ -868,6 +891,55 @@ def test_a_non_own_empty_checkpoint_still_fails_closed(
     assert "LIVESPEC_PR_REFRESH_FOREIGN_HEAD" in result.stderr
     assert box.remote_head(ref=_BRANCH) == checkpoint
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def test_a_merged_pull_request_with_a_deleted_publish_branch_finishes_refresh(
+    tmp_path: Path,
+) -> None:
+    """Scenario 248: a landed publication is not an unobservable origin.
+
+    The branch is removed exactly as GitHub does after merge.  The stage must
+    read the pull request before it performs any refresh mutation, persist the
+    merged-reconcile evidence, and leave the published work alone for the
+    normal terminal merge observation.
+    """
+    box = _build(root=tmp_path, armed=True)
+    published = box.local_head()
+    _ = _git("push", "--quiet", "origin", "--delete", f"refs/heads/{_BRANCH}", cwd=box.clone)
+    box.forge_state.write_text(
+        json.dumps(
+            {
+                "armed": True,
+                "arming_unreadable": False,
+                "disarm_fails": False,
+                "state": "MERGED",
+                "number": 73,
+                "merge_commit": published,
+                "head": published,
+                "comments": [
+                    {
+                        "body": "Proof of Done — verified — run refresh — now\n\n"
+                        f"Publish-branch head: {published}\n",
+                        "url": "https://example.invalid/proof",
+                    }
+                ],
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in result.stderr
+    assert box.disarm_heads() == []
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == ""
+    assert box.state(name="livespec-merged-reconcile") == (
+        f"pull_request=73\nmerge_commit={published}\nmerged_head={published}\n"
+        f"proof_head={published}\nheads_equal=true\n"
+    )
 
 
 def test_an_absent_remote_publish_ref_is_refused(tmp_path: Path) -> None:
