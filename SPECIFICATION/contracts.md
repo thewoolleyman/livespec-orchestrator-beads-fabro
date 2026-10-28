@@ -9312,6 +9312,15 @@ retired in livespec core's research consolidation):
   that would let that registration succeed. A `bd` call made through the
   plugin from the repository root MUST NOT print an `auto-backup failed`
   warning. Scenario 181 in `scenarios.md` exercises this bullet.
+- **Comment bodies travel by file.** Every ledger comment the plugin writes
+  through the live backend MUST reach `bd` through a file (`--file`), and its
+  body MUST NOT be passed as a command-line argument, because the
+  kernel caps one argument at a length (131072 bytes on Linux) far below what
+  the store holds. A comment's text MUST read back byte-identical through
+  `bd comments <id> --json` whatever its length within the store's own limit;
+  in particular a plan record at the 196608-byte proof record budget MUST be
+  written to its plan epic as one ledger comment that reads back
+  byte-identical.
 - **In-memory fake backend.** For hermetic CI and the
   no-live-connection runtime fallback, the plugin selects an in-memory
   fake backend (via `LIVESPEC_BEADS_FAKE=1` or the `connection.fake`
