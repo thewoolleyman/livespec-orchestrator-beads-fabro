@@ -53,6 +53,7 @@ from returns.io import IOResult
 from returns.result import Failure, Result, Success
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexHeadroomReading
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT,
@@ -70,6 +71,12 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
     session_headroom_assessment_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_headroom_gate import (
+    codex_headroom_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_headroom_io import (
+    read_projected_codex_headroom,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
@@ -168,6 +175,7 @@ def session_headroom_policy(
     now_iso: str,
     journal_path: Path | None,
     read: Callable[..., SessionHeadroomReading] = read_projected_session_headroom,
+    codex_read: Callable[..., CodexHeadroomReading] = read_projected_codex_headroom,
 ) -> SessionHeadroomPolicy:
     """This evaluation's two dials plus its at-most-once reading of the projection.
 
@@ -213,7 +221,18 @@ def session_headroom_policy(
             )
         return taken[0]
 
-    return SessionHeadroomPolicy(floor_percent=floor, horizon_minutes=horizon, read=read_once)
+    return SessionHeadroomPolicy(
+        floor_percent=floor,
+        horizon_minutes=horizon,
+        read=read_once,
+        codex_read=codex_headroom_source(
+            now_iso=now_iso,
+            journal_path=journal_path,
+            floor_percent=floor,
+            horizon_minutes=horizon,
+            read=codex_read,
+        ),
+    )
 
 
 def _assessed(

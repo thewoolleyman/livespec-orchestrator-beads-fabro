@@ -67,6 +67,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     filter_node_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexHeadroomReading
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import AcpHoldLedger
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
 from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
@@ -109,6 +110,7 @@ class AcpPreflightVerdict:
     refusal: str | None = None
     assessed_credentials: Mapping[str, str] = field(default_factory=dict)
     headroom_assessments: tuple[SessionHeadroomReading, ...] = ()
+    codex_headroom_assessments: tuple[CodexHeadroomReading, ...] = ()
     session_headroom_floor_percent: int | None = None
     # The SECOND governing dial, carried for the same reason and keyed on the
     # same distinction: `None` means no policy was supplied, never "the horizon
@@ -322,6 +324,7 @@ def _graded(
         unobservable=ledger.unobservable,
         assessed_credentials=dict(assessed),
         headroom_assessments=_headroom_assessments(preflights=preflights),
+        codex_headroom_assessments=_codex_headroom_assessments(preflights=preflights),
         session_headroom_floor_percent=(
             None if inputs.headroom is None else inputs.headroom.floor_percent
         ),
@@ -344,6 +347,17 @@ def _headroom_assessments(
     seen: dict[str, SessionHeadroomReading] = {}
     for preflight in preflights:
         for reading in preflight.assessments:
+            _ = seen.setdefault(reading.credential_identity, reading)
+    return tuple(seen.values())
+
+
+def _codex_headroom_assessments(
+    *, preflights: tuple[NodePreflight, ...]
+) -> tuple[CodexHeadroomReading, ...]:
+    """Every distinct Codex credential's reading across every node, in node order."""
+    seen: dict[str, CodexHeadroomReading] = {}
+    for preflight in preflights:
+        for reading in preflight.codex_assessments:
             _ = seen.setdefault(reading.credential_identity, reading)
     return tuple(seen.values())
 
