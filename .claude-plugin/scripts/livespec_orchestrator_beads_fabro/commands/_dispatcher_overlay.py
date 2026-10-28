@@ -175,6 +175,9 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # rendering none projects nothing, which the grade reads as an UNESTABLISHED
     # question and fails closed on rather than as an empty set (bd-ib-kcq6pu).
     proof_grade_env: str = "",
+    # The pull requests the item's dispatch records name, already rendered as an
+    # env line by the caller that holds the journal. Empty renders nothing.
+    dispatch_pull_requests_env: str = "",
     git_author: GitAuthor | None = None,
     credential_use: CredentialUseDeclaration | None = None,
     resume_checkout: ResumeCheckout | None = None,
@@ -423,6 +426,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + credential_use_env
         + proof_store_env
         + proof_grade_env
+        + dispatch_pull_requests_env
         # A resumed clone has no publication file from the earlier run. Both
         # publication stages consume this validated anchor as their fallback;
         # never infer it from a branch tip that may have moved since validation.

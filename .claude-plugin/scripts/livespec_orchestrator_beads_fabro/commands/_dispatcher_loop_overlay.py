@@ -46,6 +46,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_pull_requests import (
+    dispatch_pull_requests_env_line,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     contract_prompt_variables,
 )
@@ -206,4 +209,12 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # RECORD happens to list is the fail-open this grade exists to close
         # (bd-ib-kcq6pu).
         proof_grade_env=proof_grade_assertions_env_lines(item=overlay.item),
+        # The pull requests the item's dispatch records name, which `publish_draft`
+        # needs to tell this item's merged publication from a merged pull request
+        # that merely reuses the branch name. Read from the journal here, where
+        # the journal path is held, and rendered always: an item with none renders
+        # an empty value the node reads as "nothing attributable".
+        dispatch_pull_requests_env=dispatch_pull_requests_env_line(
+            journal_path=overlay.journal.path, work_item_id=overlay.item.id
+        ),
     )

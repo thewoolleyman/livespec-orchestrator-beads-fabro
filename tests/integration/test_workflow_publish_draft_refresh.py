@@ -165,6 +165,7 @@ def _publish(
     run: Path,
     landed_pr: str | None = None,
     late_landed_pr: str | None = None,
+    dispatch_pull_requests: str | None = None,
 ) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
@@ -187,6 +188,7 @@ def _publish(
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
             "LIVESPEC_LANDED_PR": landed_pr or "",
             "LIVESPEC_LATE_LANDED_PR": late_landed_pr or "",
+            "LIVESPEC_DISPATCH_PULL_REQUESTS": dispatch_pull_requests or "",
             "GH_CREATE_REFUSED": str(tmp_path / "create-refused"),
             "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
@@ -272,6 +274,7 @@ def test_a_landed_publication_ends_before_push_or_draft_creation(tmp_path: Path)
         tmp_path=tmp_path,
         run=run,
         landed_pr=f"73\t{merged_head}\t{merged_head}",
+        dispatch_pull_requests="12 73",
     )
 
     assert published.result.returncode == 0, published.result.stderr
@@ -301,6 +304,7 @@ def test_a_publication_that_lands_before_draft_creation_is_refused_ends_as_lande
         tmp_path=tmp_path,
         run=run,
         late_landed_pr=f"73\t{merged_head}\t{merged_head}",
+        dispatch_pull_requests="73",
     )
 
     assert published.result.returncode == 0, published.result.stderr
@@ -324,6 +328,36 @@ def test_a_refused_draft_creation_with_nothing_landed_still_fails_closed(
     assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
 
 
+@pytest.mark.parametrize("dispatch_pull_requests", ["", "12 730", "7"])
+@pytest.mark.parametrize("phase", ["before_push", "after_refused_creation"])
+def test_a_merged_pull_request_no_dispatch_record_names_is_not_a_landed_publication(
+    tmp_path: Path, dispatch_pull_requests: str, phase: str
+) -> None:
+    """Scenario 256: a reused branch name's merged pull request is not this item's."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+    merged = f"73\t{merged_head}\t{merged_head}"
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=merged if phase == "before_push" else None,
+        late_landed_pr=merged if phase == "after_refused_creation" else None,
+        dispatch_pull_requests=dispatch_pull_requests,
+    )
+
+    assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert not marker.exists()
+    if phase == "before_push":
+        assert published.result.returncode == 0, published.result.stderr
+        assert published.draft_created is True
+    else:
+        assert published.result.returncode != 0
+        assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
+
+
 @pytest.mark.parametrize("rendered_merge_commit", ["", "null"])
 def test_a_merged_pull_request_with_no_merge_commit_is_not_a_landed_publication(
     tmp_path: Path, rendered_merge_commit: str
@@ -337,6 +371,7 @@ def test_a_merged_pull_request_with_no_merge_commit_is_not_a_landed_publication(
         tmp_path=tmp_path,
         run=run,
         landed_pr=f"73\t{rendered_merge_commit}\t{merged_head}",
+        dispatch_pull_requests="73",
     )
 
     assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
