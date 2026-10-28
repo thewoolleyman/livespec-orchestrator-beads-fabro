@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.254.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.1...v0.254.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* run the session-headroom admission screen before the expensive pre-dispatch rows ([145339b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/145339bc8ce649ee61f50d2bdc1c92e7fc9288ec))
+
 ## [0.254.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.0...v0.254.1) (2026-10-28)
 
 
