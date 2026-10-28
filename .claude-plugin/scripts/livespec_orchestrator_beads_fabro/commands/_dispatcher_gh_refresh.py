@@ -119,28 +119,56 @@ _AGENT_PUBLICATION_GUARD_SOURCE = r"""livespec_agent_publication_action() {
 livespec_agent_api_publication_action() {
     shift
     endpoint=''
-    method=GET
+    method=''
+    has_body=''
+    unreadable=''
     query=''
     value_for=''
     for argument in "$@"; do
         case "$value_for" in
             method) method="$argument"; value_for='' ;;
-            field) query="$query $argument"; value_for='' ;;
+            field) has_body=1; query="$query $argument"; value_for='' ;;
+            typed_field)
+                has_body=1
+                query="$query $argument"
+                case "${argument#*=}" in @*) unreadable=1 ;; esac
+                value_for=''
+                ;;
+            input) has_body=1; unreadable=1; value_for='' ;;
             *)
                 case "$argument" in
                     --method|-X) value_for=method ;;
                     --method=*) method="${argument#*=}" ;;
                     -X?*) method="${argument#-X}" ;;
-                    -f|-F|--field|--raw-field) value_for=field ;;
+                    -f|--raw-field) value_for=field ;;
+                    -F|--field) value_for=typed_field ;;
+                    --raw-field=*) has_body=1; query="$query ${argument#--raw-field=}" ;;
+                    -f?*) has_body=1; query="$query ${argument#-f}" ;;
+                    --field=*|-F?*)
+                        has_body=1
+                        attached="${argument#--field=}"
+                        attached="${attached#-F}"
+                        query="$query $attached"
+                        case "${attached#*=}" in @*) unreadable=1 ;; esac
+                        ;;
+                    --input) value_for=input ;;
+                    --input=*) has_body=1; unreadable=1 ;;
                     query=*|mutation=*) query="$query $argument" ;;
                     graphql|/repos/*|repos/*) endpoint="$argument" ;;
                 esac
                 ;;
         esac
     done
+    if test -z "$method"; then
+        if test -n "$has_body"; then method=POST; else method=GET; fi
+    fi
     method=$(printf '%s' "$method" | tr '[:lower:]' '[:upper:]')
     case "$endpoint" in
         graphql)
+            if test -n "$unreadable"; then
+                printf '%s' gh_api_graphql_unreadable
+                return 0
+            fi
             query=$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')
             case "$query" in
                 *mergepullrequest*) printf '%s' gh_api_graphql_merge ;;
@@ -158,8 +186,11 @@ livespec_agent_api_publication_action() {
         /repos/*/pulls|repos/*/pulls)
             test "$method" = POST && printf '%s' gh_api_create
             ;;
-        /repos/*/pulls/*|repos/*/pulls/*)
+        /repos/*/pulls/*/*|repos/*/pulls/*/*)
             test "$method" = PATCH && printf '%s' gh_api_edit
+            ;;
+        /repos/*/pulls/*|repos/*/pulls/*)
+            test "$method" != GET && test "$method" != HEAD && printf '%s' gh_api_edit
             ;;
         *) return 1 ;;
     esac

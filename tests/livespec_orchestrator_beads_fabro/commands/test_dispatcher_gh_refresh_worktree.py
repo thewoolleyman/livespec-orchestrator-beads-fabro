@@ -276,6 +276,30 @@ def test_an_agent_stage_cannot_reach_gh_pull_request_publication(
             ),
             "gh_api_graphql_auto_merge",
         ),
+        (
+            (
+                "api",
+                "repos/acme/widget/pulls",
+                "-f",
+                "title=t",
+                "-f",
+                "head=b",
+                "-f",
+                "base=master",
+            ),
+            "gh_api_create",
+        ),
+        (("api", "repos/acme/widget/pulls", "-F", "draft=true"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--field", "title=t"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--raw-field=title=t"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "-ftitle=t"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--input", "body.json"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--input=body.json"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls/4", "-f", "state=closed"), "gh_api_edit"),
+        (("api", "graphql", "-F", "query=@q.graphql"), "gh_api_graphql_unreadable"),
+        (("api", "graphql", "--field", "query=@q.graphql"), "gh_api_graphql_unreadable"),
+        (("api", "graphql", "--input", "-"), "gh_api_graphql_unreadable"),
+        (("api", "graphql", "--input=q.json"), "gh_api_graphql_unreadable"),
     ],
 )
 def test_an_agent_stage_cannot_reach_gh_api_pull_request_publication(
@@ -317,6 +341,9 @@ def test_an_agent_stage_cannot_reach_gh_api_pull_request_publication(
         ("api", "repos/acme/widget/pulls/4"),
         ("api", "repos/acme/widget/pulls", "--method", "GET"),
         ("api", "graphql", "-f", "query=query { viewer { login } }"),
+        ("api", "graphql", "-F", "owner=acme", "-f", "query=query { viewer { login } }"),
+        ("api", "repos/acme/widget/pulls", "-X", "GET", "-f", "state=open"),
+        ("api", "repos/acme/widget/pulls", "--method=GET", "-F", "per_page=5"),
     ],
 )
 def test_an_agent_stage_can_still_read_the_forge_through_gh(
