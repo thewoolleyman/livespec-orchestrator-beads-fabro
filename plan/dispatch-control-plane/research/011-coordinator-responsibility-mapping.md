@@ -1,9 +1,17 @@
 # What the coordinator does today, and who would do it next
 
-Detailed responsibility mapping · 27 October 2026
+Detailed responsibility mapping · 27 October 2026 · authority correction 28 October 2026
 
 Current coordinator: **gitops-fleet-capacity-monitoring**, `livespec-dev-tooling-dfixhe`.
 Proposed replacement infrastructure: **dispatch-control-plane**, `bd-ib-k6dqwc`.
+
+**Correction, 28 October:** this report originally treated R121 as an agreed
+restriction. That was wrong: it was a coordinator-authored restriction following
+a peer objection, not a verified maintainer decision. The maintainer has now
+explicitly rejected it and the later blanket picker ban, R158. The coordinator's
+09:52 handoff voids both. Preserve delegated authority and record the actual
+answerer; do not solve misattribution by stopping authorized answers. See the
+[stall-prevention requirements](#preventing-the-same-stall) and [C9](#c9).
 
 The proposed system must preserve the coordinator's useful work while separating
 judgment, routine checks, execution and human decisions. It is not simply the
@@ -88,8 +96,8 @@ Sources: [C2](#c2), [C3](#c3), [C4](#c4), [C5](#c5), [C6](#c6), [C9](#c9), [N2](
 | **B03. Create or recover an authorized seat** | It opens an owner tab or arranges restart after an outage. Rule A now makes the maintainer's active sessions, including dispatch-control-plane, monitor-only: no messaging, rename, restart or close by the coordinator. | **Supervision** starts a replacement only under the affected plan's grant. **Plan progress** escalates protected sessions to the human. **Agreed direction.** Protection must be checked by the service, not remembered only in an agent prompt. |
 | **B04. Keep the coordinator itself supervised** | A Claude `/loop` and an overseer state file maintain its activity. Rule D forbids self-declared context wind-down: the overseer measures context and signals handoff, because premature “awaiting successor” previously left no replacement. | **Supervision** owns lifecycle; role obligations survive a worker's exit in shared state. A role may finish a bounded invocation without abandoning its work. **Assignment needed:** prove successor recovery, fencing and protected-session handling rather than copying a local state file into a pod. |
 | **B05. Avoid stopping the whole fleet on a question** | The coordinator is forbidden to present a blocking picker. It decides ordinary operational questions and reports them; genuine maintainer questions appear as non-blocking text. | **Attention role** holds the decision request while unrelated roles continue. Its worker may stop after saving a safe continuation. **Agreed direction.** One waiting answer must not suspend the scheduler or all plan-progress work. |
-| **B06. Answer ordinary delegated decisions** | Under R301 and subsequent restrictions, it reads a seat's decision picker, answers it through terminal input, and messages the seat with the ruling. Recent valid examples include design and ordering choices that are neither guarded nor spend-raising. | **Attention role** answers a durable question using a recorded grant; the owning worker receives it through an adapter. Validate question occurrence, evidence version and authority at submission and application. **Agreed direction.** No keystrokes into another session are required. |
-| **B07. Preserve genuinely human-only approvals** | The later **R121** corrected an attempted workflow-edit approval by keypress. Workflow approvals, secrets, guarded host mutation and `approval:*` labels stay with the maintainer. A peer's answer cannot bypass the seat's permissions. | **Attention role** routes these to an authenticated human. The applying operation enforces the restriction regardless of who submitted the request. **Agreed direction; approval taxonomy and grant enforcement need explicit contracts.** Transport changes confer no new authority. |
+| **B06. Answer delegated decisions** | The maintainer delegated authority to answer blocking seat pickers. R121 narrowed that authority following a peer refusal; R158 later stopped picker answers altogether. On October 28 the maintainer rejected both restrictions. The coordinator resumed answering and recording that it, acting under delegation, chose the answer. | **Attention role** answers a durable question under the active grant. The adapter preserves actual actor, represented authority, question identity and evidence version. A peer complaint is evidence to investigate, not a grant revocation. **Agreed direction; enforcement needs implementation.** |
+| **B07. Enforce actual authority limits without inventing new ones** | The October 28 purge retains maintainer-sourced limits, including paid credits, caam policy, Codex hook-trust prompts and protected sessions. It explicitly voids R121's peer-derived blanket human-only restriction. Independently existing repository and tool controls must be identified by their own source, not attributed to R121. | **Attention and applying services** use authenticated grants and explicit governing restrictions. An objection must identify the action and actual conflicting rule; it cannot suspend unrelated authorized answers. A real tool refusal remains a specific unresolved operation with an owner and authorized resolution path. **Agreed direction; exact policy resolution and enforcement need implementation.** |
 | **B08. Clear a stale usage-limit menu** | Amended rule B permits choosing “stop and wait” when the active account actually has allowance, then resuming the owner. It does not permit switching to paid usage credits. | **Supervision and the harness adapter** detect a recoverable stale session condition; **attention** decides exceptional cases. **Assignment needed:** separate stale UI state from genuine exhausted allowance and from a purchase decision. Keep the existing authorized recovery during transition. |
 | **B09. Respect account-policy ownership** | The coordinator reads caam usage and selection. Rule E explicitly forbids instructing caam to change rotation, protected accounts or reserve floors—even under a general “unblock everything” direction. | **Scheduler** consumes published account availability; **incident/attention roles** route problems to caam's owner. **Existing owner retained.** Neither a scheduler nor a new coordinator agent gets account-policy authority by default. |
 | **B10. Give the human understandable identities** | Reports must name workspace and tab, not opaque pane coordinates. Internally, however, the coordinator still needs pane addresses for terminal actions. | Frontends show plan, role, owner and human-readable worker names; stable IDs route actions across hosts. **Assignment needed:** preserve useful names without making a Herdr pane the identity of an obligation. |
@@ -162,9 +170,9 @@ Sources: [C2](#c2), [C3](#c3), [C4](#c4), [C8](#c8), [C9](#c9), [N1](#n1), [N2](
 | Current capability or function | Specifically how the current coordinator provides it | How the new plan would provide it |
 | --- | --- | --- |
 | **G01. Remember current operational commitments** | Current obligations are spread across coordinator comments, owner handoffs, native sessions, local hold/cap files, FIFO tickets and in-flight markers; dispatch recovery also depends on the host-local journal. Owners reconstruct the active combination when they resume. | **Dedicated non-Beads coordination Dolt** owns cross-tenant assignments, questions, answers, holds, reservations and unfinished actions. Existing Beads items and Fabro run records remain authoritative for their own facts. **Agreed direction.** No fleet operational queue in a plan's comments. |
-| **G02. Preserve policy without reviving superseded rules** | Successors follow a chain of RULES, amendments and handoffs. Some rule numbers repeat across days, and later corrections reverse earlier directions. A report that reads only the old charter or one handoff gets the wrong mandate. | Plan rulings remain in their owning ledgers; active grants/policy need versioned, attributable references that services can enforce. **Assignment needed:** explicit supersession and conflict handling. This report is a dated comparison, not a replacement authority document. |
+| **G02. Preserve policy without promoting peer preferences into rules** | Successors follow RULES, amendments and handoffs. R121 and R158 demonstrate that a newer numbered entry can still be an unauthorized restriction. This report initially repeated that error. The October 28 maintainer correction voids both. | Plan rulings remain in their owning ledgers. Shared grants/policy in coordination Dolt need authenticated issuer, source, scope, version and explicit supersession. Only a principal entitled to change a grant may do so; a coordinator cannot narrow the maintainer's delegation because a peer objects. **Assignment needed:** verify authority to change policy, not merely chronology. |
 | **G03. Hand work over without losing waits or actions** | The coordinator records a sanctioned handoff; owners carry gate IDs, pending watchers, run IDs, FIFO order and recovery pointers. An apparently live session is not sufficient evidence that the obligation is progressing. | **Supervision and reconciliation** restore obligations from shared state and distinguish intent, attempted effect, observed effect and completion. **Agreed direction.** A crash between recording an intent and applying it requires reconciliation; an action marker alone is not an exactly-once guarantee. |
-| **G04. Preserve who actually authorized an action** | R120 corrected a seat that called a coordinator keypress “maintainer authorization received directly”; R121 then narrowed the practice. Some historical comments use a human invoker string for delegated acts. | **Authenticated answer/action records** preserve actual actor, represented authority and the specific grant. **Attention and applying services** enforce this. **Assignment needed:** an identity string such as `human:cwoolley` cannot itself be proof that a human answered. |
+| **G04. Preserve who answered and whose authority they used** | R120 corrected a seat that called a coordinator keypress direct maintainer authorization. The ensuing restrictions R121/R158 were the wrong remedy and are now void. Current practice follows the picker answer with a message recording delegated authorship. | **Authenticated answer/action records** retain the actual actor and the maintainer grant separately. Services validate both; worker replacement preserves the grant. **Assignment needed:** make attribution part of the accepted answer, rather than a later message that can be lost. Accurate provenance must not remove authorized delegation. |
 | **G05. Report progress without creating another endless transcript** | It posts ticks, hourly capacity results, owner reports and major-change summaries, and records them in the epic. The charter also called for six-hour reports. The accumulated history now exceeds 3,300 entries. | Deterministic views show current obligations and changes; telemetry holds observations; plan ledgers retain their own rulings and outcomes. **Attention role** gives concise human summaries. **Agreed direction; retention and digest-refresh policy need specification.** |
 | **G06. Retire the old coordination mechanism safely** | The current session continues to carry obligations even when underlying launchers or processes change. Its old charter's “retire when bespoke hosts retire” condition no longer captures its expanded remit. | Transfer one responsibility explicitly, disable the incumbent's independent execution of it, and prove continuity before expanding. Keep the incumbent for untransferred duties. **Agreed direction.** Closing its epic requires disposition of outstanding obligations, not merely deploying containers. |
 
@@ -206,13 +214,87 @@ cover the operating contracts required to replace the current coordinator.
 | --- | --- | --- |
 | **The current coordinator is also the owner of a substantial delivery program.** | Factory migration, observability and stability are not merely “monitoring.” Removing the long-lived session could orphan them even if scheduling improves. | Retain the current epic and accountable delivery owners until each obligation is explicitly completed, transferred or deferred. Keep the 15-row mapping beside the service rollout. |
 | **The proposed boundary is narrower than current practice.** | The approved split keeps per-item acceptance out of central coordination, but today's coordinator spends substantial effort repairing proof and arranging acceptance. | Move that work to capable plan owners and provide review/capture capacity. Removing the central work before the owners can do it creates a gap, not simplification. |
-| **Broad delegation has already been misread.** | R118's workflow approval was corrected by R120/R121; amended rule B permits a free stale-menu recovery, while rule E still forbids caam policy changes. | Use operation-specific grants and actual caller identity. Preserve later restrictions and protected sessions. Have the target enforce authority; never treat a role name or relayed “yes” as sufficient. |
+| **Peer objections have been promoted into binding restrictions.** | R121 and R158 narrowed the maintainer's delegation without his authority; R158 left a plan stalled for about five and a half hours. This report initially reinforced R121 by labeling it agreed direction. | Keep grant changes separate from observations and peer preferences. Enforce who can change grants, retain their source, and treat an unanswered delegated question as an overdue obligation. Correct attribution without revoking authority. |
 | **Routine capacity enforcement and capacity policy are different jobs.** | The approved design says the coordinator should not touch caps, but some current experiments depend on judgment about invalid measurements, priorities and incidents. | Specify who owns policy changes, how they are approved, and what the deterministic scheduler may tune by itself. Preserve domain judgment without putting an LLM back into every admission. |
 | **Service recovery is broader than restarting a process.** | A maintenance transition may be interrupted after some runs are cancelled, after a deployment, or before redispatch is recorded. A live model process may also have stopped fulfilling its obligation. | Model the maintenance and work obligations explicitly. Reconcile effects against Fabro and deployment state. Prove stale-worker exclusion and lost-notification recovery. |
 | **A shared database is necessary to this direction but is not a complete workflow engine.** | A transaction cannot atomically include an arbitrary later Fabro, Beads or GitHub action. Recording “started” does not prove an action happened. | Prove each supported action's identity, retry, uncertain-outcome and stale-evidence rules. Keep cross-tenant coordination in dedicated Dolt; do not fall back to an epic comment stream. |
 | **The evidence source can be wrong even when a query succeeds.** | Recent corrections changed run counts, cost rates, capacity conclusions, event counts and the datastore interpretation. | Preserve source identity, observation time, confidence and correction history. Validate important assumptions with a positive control before automating decisions from them. |
 | **Four resident agents could increase the problem they are meant to solve.** | More sessions can mean more polling, context replay, duplicate questions and coordination chatter. Rule F now explicitly prioritizes removing work. | Keep duties persistent and invoke models only for changed facts requiring judgment. Measure tokens/calls/run-hours, useful outcomes and human handling time across the whole system. |
 | **A universal worker must not erase domain ownership.** | caam, Fabro, GitOps, observability, spec review and plan acceptance each have distinct contracts and authority. | Give the new services narrow APIs into those owners. Keep the question “who may decide?” separate from “which process can execute?” |
+
+## Preventing the same stall
+
+The failure was not simply a missed message. A peer raised a valid attribution
+problem; the coordinator chose an unauthorized policy change as the remedy;
+that change became a standing rule; and blocked work did not trigger recovery.
+A later report, including this one, then treated the recorded restriction as
+legitimate. More emphatic prompt instructions alone leave all four failures
+possible. Kubernetes and headless execution do not fix them either.
+
+The following are **proposed implementation requirements**, derived from the
+maintainer's correction. They are not deployed protections or newly approved
+numerical timeout settings.
+
+1. **Separate grants from observations.** Store shared coordination grants in
+   dedicated non-Beads Dolt, with an authenticated issuer, recipient, scope,
+   source and revision. A worker may report an objection or propose a change;
+   it cannot turn that into a revocation. This is an API/write-permission
+   boundary, not another instruction to the model. Do not give ordinary workers
+   unrestricted SQL access to grant records. Existing owners retain domain
+   controls; a coordinator-authored note cannot impersonate their policy either.
+2. **Accept answers with attribution attached.** The answer records the actual
+   actor, the grant being exercised, the specific question occurrence and the
+   evidence revision. “The coordinator answered for the maintainer” is accurate;
+   “the maintainer typed this” is not. The receiving plan checks the current grant
+   and consumes the answer without asking the human to repeat an already
+   delegated decision. During migration, any legacy picker adapter must preserve
+   the authoritative attribution even if the UI cannot render it.
+3. **Make unblocking an outstanding obligation.** A delegated question has an
+   accountable role, a due time and an expected result. Deterministic supervision
+   detects unanswered or unapplied answers independently of the model's loop.
+   On expiry it verifies current authority, retries delivery or assigns a
+   replacement decision worker, then checks continuation. A heartbeat or an
+   “I am monitoring” message does not satisfy the obligation. Retries and
+   replacement are bounded, with an escalation path, rather than an unlimited
+   model loop. Exact time budgets remain to be chosen.
+4. **Require a concrete basis for a refusal.** A refusal identifies the exact
+   action, applicable rule and source. A peer's discomfort or a tool's wording
+   does not become a fleet-wide prohibition. A genuine enforcing control is not
+   bypassed: route its specific conflict to the authorized owner while other
+   work continues. The coordinator may also have introduced a needless
+   constraint in its own launch prompt; check that source as well as the ledger.
+5. **Keep authority and work recoverable.** A replacement process reads current
+   grants and outstanding questions from the shared service. It does not rebuild
+   policy from the newest-looking chat paragraph. Superseded restrictions remain
+   audit history but are excluded from active policy. Expired workers cannot
+   overwrite newer answers or change the grant.
+6. **Measure outcomes.** Track age of delegated questions, time from answer to
+   observed continuation, unsupported refusals, repeated human requests for
+   already delegated choices, and recovery cost. Advancing an obligation means
+   observing its expected result, not receiving any arbitrary tool call. A
+   timeout is a failed service obligation to recover, not permission to declare
+   success or manufacture approval.
+
+The first delivery should prove these behaviors on a small delegated decision
+before broad rollout. These are acceptance scenarios to implement, not claims
+that the existing six native-input probes already cover them:
+
+| Scenario | Required observable outcome |
+| --- | --- |
+| A peer says “do not answer my picker.” | The objection is recorded; the maintainer's grant remains unchanged; an authorized answer is applied and the plan continues. |
+| A worker tries to publish that objection as a standing restriction. | The policy write is rejected because the worker lacks authority to narrow the grant; unrelated authorized work continues. |
+| A delegated answer is received. | The record identifies the actual coordinator actor and grant, and never claims the human typed it. |
+| The coordinator remains alive but ignores a delegated question. | Its due time expires; supervision detects the unmet obligation and effects bounded recovery without waiting for the human to notice. |
+| The worker dies after answering but before confirming application. | A replacement reconciles the same answer identity and observes continuation without duplicating the effect. |
+| An old worker replays a superseded restriction or stale answer. | Current policy and answer revision checks reject the stale change; history cannot silently become active policy. |
+| The maintainer explicitly revokes a grant, or an independently sourced control refuses the operation. | The affected action stops or follows the authorized exception path; the system does not broaden the restriction to unrelated work or bypass the control. |
+| The chosen plan has independent work while one operation is unresolved. | Its owner continues the independent work, while the coordinator retains and resolves the blocked obligation. |
+
+These checks belong to the portable coordination contract, exercised through
+Claude, Codex and pi adapters and across worker loss on both Compose and Kubernetes.
+The existing coordinator remains responsible until a particular duty has passed
+that proof and been explicitly transferred. The admission/scheduler and supervision
+services must detect this failure without spending a model turn on every poll.
 
 ## 10. What to transfer first, and what to keep with the incumbent
 
@@ -224,7 +306,7 @@ record, proof of the required effect and a way to recover from interrupted work.
 | Slice | What moves to the new system | What the existing coordinator still does | Proof before expanding |
 | --- | --- | --- | --- |
 | **1. Shared read-only facts** | Aggregate current questions, owners, holds and relevant run facts through the existing public surfaces. | All decisions, routing and existing execution coordination. | Compare results with current sources, report unknown/stale inputs, and account for cross-tenant obligations rather than only direct children. |
-| **2. One ordinary delegated decision class** | Save a question in coordination Dolt; accept the authorized answer through a common API; route it to the owning plan. | Answers within its existing grant and handles protected/human-only cases through their current owners. | Cross-host/harness answer delivery, stale/conflicting-answer rejection, process-loss recovery and observed application. The six native-input tests in report 010 are prerequisites, not this proof. |
+| **2. One ordinary delegated decision class** | Save a question in coordination Dolt; accept the authorized answer through a common API; route it to the owning plan. | Answers within its existing grant and continues to own all untransferred duties and actual maintainer-sourced exceptions. Limiting the pilot does not narrow the incumbent's wider delegation. | Cross-host/harness answer delivery, stale/conflicting-answer rejection, accurate delegated attribution, process-loss recovery and observed continuation. Inject a peer objection and prove it cannot revoke the grant or leave the question unattended. Native-input tests in report 010 do not prove this. |
 | **3. One plan-continuation responsibility** | A plan-progress worker takes a named obligation with fenced ownership; deterministic supervision handles routine recovery. | Untransferred plans, fleet incidents, migration and observability delivery, and unresolved judgments. | Explicit handover stops duplicate incumbent action; worker replacement preserves the obligation and does not wake a protected session. |
 | **4. Scheduling and routine reconciliation** | Typed pools, reserve-before-launch, shared holds, fair supply and recovery replace the corresponding temporary launch mechanisms. | Policy exceptions and fleet incidents within its grants; domain owners retain their actual operations. | Prove database/concurrency guarantees, admission compatibility, account restrictions, rollback and unknown outcomes on both Compose and Kubernetes. |
 | **5. Further judgment roles and retirement** | Transfer cross-plan and incident duties when their interfaces and owners are ready; retire obsolete scripts and state only after their callers migrate. | Any delivery obligation that has not been explicitly disposed. | All 58 functions have an owner or an explicit retirement decision; all 15 completion requirements retain a valid disposition. A container rollout alone never closes the coordinator epic. |
@@ -296,10 +378,21 @@ seat report at 19:39:17; R149 completion at 19:58:42; parking-lot finding at
 22:15:35; reduction-item completion at 22:19:32 UTC.
 
 <a id="c9"></a>
-**C9 — Correction of delegated approval and provenance.** R118 at 2026-10-27
-09:08:40; R120 at 09:21:58; **R121 at 09:24:54**, which narrows the unblock
-practice and upholds the owner's refusal of a guarded approval by coordinator
-keypress. Workspace/tab-name reporting rule: 2026-10-23 21:03:05 UTC.
+**C9 — Provenance error, unauthorized restriction and maintainer correction.**
+R118 at 2026-10-27 09:08:40; R120 at 09:21:58; R121 at 09:24:54.
+The original report wrongly treated R121 as an authorized restriction. R158 at
+2026-10-28 04:10:42 extended the restriction to all picker answers except stale
+usage menus. At 09:51:20 the coordinator acknowledged it was self-made and
+reported the affected plan had stalled for roughly five and a half hours. The
+09:52:25 handoff quotes the maintainer's rejection and explicitly voids both
+R121 and R158; 09:52:54 confirms the purge. Those entries establish the
+correction, not a new blanket permission to bypass independently enforced
+controls. The last entry also identifies a remaining AGENTS.md-specific hold
+from repository instructions and the coordinator's own launch prompt, while
+baseline work continues. Workspace/tab-name reporting rule: 2026-10-23 21:03:05 UTC.
+The correction uses a fresh `bd comments` snapshot of 3,391 comments through
+2026-10-28 09:52:54 UTC; the rest of the activity inventory retains its original
+October 27 cutoff. Reported actions are not independently re-executed here.
 
 <a id="c10"></a>
 **C10 — Supply and capacity.** The [idle-slot audit](https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/plan/gitops-fleet-capacity-monitoring/research/002-idle-slot-audit-2026-10-16.md);
