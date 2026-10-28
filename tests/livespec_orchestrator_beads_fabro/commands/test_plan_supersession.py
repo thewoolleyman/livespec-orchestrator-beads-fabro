@@ -242,6 +242,37 @@ def test_a_misderived_cause_without_its_derivation_identity_is_refused() -> None
     assert "deriving operation" in verdict.detail
 
 
+def test_a_factory_safe_implementation_supersession_needs_no_open_carrier() -> None:
+    """The implementation arm reads no carrier, so it must not demand one."""
+    verdict = validate_causal_supersession(
+        supersession=_supersession(open_carrier_id=None),
+        evidence=SupersessionEvidence(
+            deriving=_deriving(),
+            carrier=None,
+            plan_level=False,
+            implementation=ImplementationEvidence(factory_safe=True, recorded_at=_BEFORE),
+        ),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert verdict is None
+
+
+def test_a_plan_level_supersession_without_an_open_carrier_is_refused() -> None:
+    """The carrier arm still requires the carrier the implementation arm drops."""
+    verdict = _refusal(
+        supersession=_supersession(open_carrier_id=None),
+        evidence=_evidence(),
+        prior_identity=_IDENTITY,
+        current_epoch=_EPOCH,
+        replacement=_REPLACEMENT,
+    )
+
+    assert "must name an open carrier" in verdict.detail
+
+
 def test_factory_safety_with_no_recorded_instant_is_refused() -> None:
     """A label without a timestamp cannot prove it existed at derivation."""
     verdict = _refusal(
