@@ -53,9 +53,11 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_variant import (
     criteria_wall_variant,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_item_comments import (
+    item_comment_bodies,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     held_judgement,
-    item_comment_bodies,
     judge_item_definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
