@@ -128,6 +128,15 @@ def _forge_double(*, tmp_path: Path) -> Path:
         '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LANDED_PR" && exit 0; done\n'
         "fi\n"
         'if test "$1 $2" = "pr view"; then printf \'%s\\n\' \'{"comments": []}\'; exit 0; fi\n'
+        'if test "$1 $2" = "pr list" && test "${LIVESPEC_LATE_LANDED_PR:-}" != "" '
+        '&& test -f "$GH_CREATE_REFUSED"; then\n'
+        '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LATE_LANDED_PR" && exit 0; done\n'
+        "fi\n"
+        'if test "$1 $2" = "pr create" && test "${LIVESPEC_LATE_LANDED_PR:-}" != ""; then\n'
+        '  : > "$GH_CREATE_REFUSED"\n'
+        '  echo "pull request create failed: No commits between master and $LIVESPEC_PUBLISH_BRANCH" >&2\n'
+        "  exit 1\n"
+        "fi\n"
         'if test "$1 $2" = "pr create"; then : > "$GH_DRAFT_CREATED"; fi\n'
         "exit 0\n",
         encoding="utf-8",
@@ -150,7 +159,13 @@ def _calls(*, path: Path) -> tuple[tuple[str, ...], ...]:
     return tuple(calls)
 
 
-def _publish(*, tmp_path: Path, run: Path, landed_pr: str | None = None) -> _Published:
+def _publish(
+    *,
+    tmp_path: Path,
+    run: Path,
+    landed_pr: str | None = None,
+    late_landed_pr: str | None = None,
+) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
     bin_dir = _forge_double(tmp_path=tmp_path)
@@ -171,6 +186,8 @@ def _publish(*, tmp_path: Path, run: Path, landed_pr: str | None = None) -> _Pub
             "GH_DRAFT_CREATED": str(created),
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
             "LIVESPEC_LANDED_PR": landed_pr or "",
+            "LIVESPEC_LATE_LANDED_PR": late_landed_pr or "",
+            "GH_CREATE_REFUSED": str(tmp_path / "create-refused"),
             "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
     )
@@ -270,6 +287,41 @@ def test_a_landed_publication_ends_before_push_or_draft_creation(tmp_path: Path)
     assert f"merged_head={merged_head}" in marker_text
     assert "proof_head=none" in marker_text
     assert "heads_equal=false" in marker_text
+
+
+def test_a_publication_that_lands_before_draft_creation_is_refused_ends_as_landed(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: a refused creation re-asks whether the publication already landed."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        late_landed_pr=f"73\t{merged_head}\t{merged_head}",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" not in published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in published.result.stderr
+    assert published.draft_created is False
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert "pull_request=73" in marker.read_text(encoding="utf-8")
+
+
+def test_a_refused_draft_creation_with_nothing_landed_still_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: with no landed publication the creation refusal is unchanged."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(tmp_path=tmp_path, run=run, late_landed_pr="73\tnull\tnull")
+
+    assert published.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
 
 
 @pytest.mark.parametrize("rendered_merge_commit", ["", "null"])
