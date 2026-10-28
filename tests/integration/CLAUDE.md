@@ -1615,6 +1615,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   unreachable host takes. Its unit-tier counterpart, covering the attribution
   precedence and the per-field degradations, is
   `tests/livespec_orchestrator_beads_fabro/commands/test_needs_attention_needs_human_question.py`.
+- `test_non_converged_cause_line.py` and
+  `test_dispatcher_recapture_exhausted_rest.py` — bind work-item `bd-ib-iy4cd4`:
+  the `non_converged` terminal ends TWO caps, the janitor's fix loop and
+  `recapture_route`'s third recapture verdict, and its one fixed line used to name
+  the janitor cap for both, which bounced a run whose real fault was a proof
+  record failing the record grammar to `backlog`. The first module EXECUTES the
+  shipped `non_converged` script bytes (taken through `parse_dot_graph`) in a
+  throwaway clone, reaching the recapture arm the way a run does — three entries
+  of the real `recapture_route` node, which writes the counter the terminal reads
+  — with a stub `gh` standing in for the forge; the jq filter that picks the
+  recurring findings out of the review records is NOT run there, since the
+  sandbox carries no `jq`. The second carries the cause line through the REAL
+  terminal mapper and `dispatcher.main`, and reads the ledger (status,
+  blocked reason, the cause comment, the journal stages) rather than the exit
+  code, because a bounce and a needs-human rest both exit non-zero. Both carry the
+  janitor-cap ending as the control: a recapture arm that swallowed it would pass
+  the positive cases alone.
 - `fixture_check_env.py` and `test_fixture_check_environment.py` — the one
   helper every test that runs a fixture `just check` builds its process
   environment through. The repository's `check` recipe merges an inherited
