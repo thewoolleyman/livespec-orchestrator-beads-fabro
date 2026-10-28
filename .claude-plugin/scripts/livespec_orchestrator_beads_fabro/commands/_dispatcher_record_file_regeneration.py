@@ -58,10 +58,14 @@ wrong half of the seam entirely.
 
 from __future__ import annotations
 
-import json
-
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
     PLUGIN_BLOCK,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_files import (
     GENERATOR_KEY,
@@ -534,24 +538,23 @@ def record_file_program_path_expansion() -> str:
 def record_file_program_prepare_steps_block() -> str:
     """The prepare step that lands the program below the sandbox plugins root.
 
-    Written through a heredoc with a QUOTED delimiter, so the shell expands
-    nothing inside the program: the program carries dollar-bearing,
-    shell-looking text of its own, and an unquoted heredoc would substitute into
-    it at prepare time and land bytes nobody wrote.
+    The program rides the step's `env` and `printf %s` writes it, so the shell
+    expands nothing inside it: the program carries dollar-bearing,
+    shell-looking text of its own, and an expanding write would land bytes
+    nobody wrote.
     """
     root = sandbox_plugins_root_expansion()
-    script = (
-        f'set -eu\nmkdir -p "{root}"\n'
-        f'cat > "{root}/{RECORD_FILE_PROGRAM_FILENAME}" '
-        f"<<'LIVESPEC_RECORD_FILE_PROGRAM'\n"
-        f"{record_file_program_source()}"
-        "LIVESPEC_RECORD_FILE_PROGRAM"
+    step = PrepareStep(
+        script=(
+            f'set -eu\nmkdir -p "{root}"\n'
+            + payload_write_command(path_word=f'"{root}/{RECORD_FILE_PROGRAM_FILENAME}"')
+        ),
+        env={PAYLOAD_ENV_VAR: record_file_program_source()},
     )
-    return (
+    header = (
         "\n# --- Dispatcher-materialized generated-record-file resolution: a\n"
         "# --- conflicted generated register is written from its generator, never\n"
         "# --- merged as text, and a refreshed head carrying a hand-merged one\n"
         "# --- fails before the repository-declared gate (bd-ib-ze7xxj) ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(script)}\n"
     )
+    return header + render_prepare_step(step=step)

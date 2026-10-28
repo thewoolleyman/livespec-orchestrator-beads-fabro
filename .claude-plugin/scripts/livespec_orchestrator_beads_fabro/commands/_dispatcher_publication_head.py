@@ -75,10 +75,14 @@ because the superseding case is fail-open in the other direction.
 
 from __future__ import annotations
 
-import json
-
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
     record_reader_fragment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
@@ -393,22 +397,21 @@ def proof_head_program_path_expansion() -> str:
 def proof_head_program_prepare_steps_block() -> str:
     """The prepare step that lands the program below the sandbox plugins root.
 
-    Written through a heredoc with a QUOTED delimiter, so the shell expands
-    nothing inside the program: the reader carries dollar-bearing,
-    shell-looking text of its own, and an unquoted heredoc would substitute
-    into it.
+    The program rides the step's `env` rather than its script, so the engine's
+    compact preamble does not re-send it on every agent request, and the shell
+    writes it with `printf %s` so it expands nothing inside the program: the
+    reader carries dollar-bearing, shell-looking text of its own.
     """
     root = sandbox_plugins_root_expansion()
-    script = (
-        f'set -eu\nmkdir -p "{root}"\n'
-        f'cat > "{root}/{PROOF_HEAD_PROGRAM_FILENAME}" '
-        f"<<'LIVESPEC_PUBLICATION_HEAD_PROGRAM'\n"
-        f"{proof_head_program_source()}"
-        "LIVESPEC_PUBLICATION_HEAD_PROGRAM"
+    step = PrepareStep(
+        script=(
+            f'set -eu\nmkdir -p "{root}"\n'
+            + payload_write_command(path_word=f'"{root}/{PROOF_HEAD_PROGRAM_FILENAME}"')
+        ),
+        env={PAYLOAD_ENV_VAR: proof_head_program_source()},
     )
-    return (
+    header = (
         "\n# --- Dispatcher-materialized publication-head program: the ONE reader of\n"
         "# --- the Proof of Done record format the scripted pr stage may use ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(script)}\n"
     )
+    return header + render_prepare_step(step=step)

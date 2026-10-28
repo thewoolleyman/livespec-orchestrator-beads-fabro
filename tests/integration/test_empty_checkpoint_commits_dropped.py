@@ -59,7 +59,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_progra
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
-    plugin_cache_gate_script,
+    plugin_cache_gate_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
@@ -79,6 +79,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
+
+from tests.prepare_step_support import runnable_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GRAPH_PATH = (
@@ -720,7 +722,9 @@ def _refresh_plugins_root(*, root: Path) -> Path:
     """
     plugins_root = _materialized_push_program(root=root)
     gate_script = root / "install-plugin-gate.sh"
-    _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
+    _ = gate_script.write_text(
+        runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8"
+    )
     _ = subprocess.run(
         ["bash", str(gate_script)],
         check=True,

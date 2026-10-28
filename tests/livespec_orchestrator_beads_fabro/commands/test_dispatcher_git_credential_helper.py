@@ -44,6 +44,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
 
+from tests.prepare_step_support import runnable_script, steps_in
+
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"
     "\n"
@@ -336,6 +338,8 @@ def _prepare_step_scripts(*, rendered: str) -> list[str]:
     tail = rendered[start + len(_GH_REFRESH_MARKER) :]
     credential_step = _credential_helper_step(rendered=rendered)
     boundary = tail.index(json.dumps(credential_step))
-    scripts = re.findall(r"script = '''\n(.*?)\n'''", tail[:boundary], re.DOTALL)
+    between = tail[:boundary]
+    gh_refresh_block = between[: between.rindex("[[run.prepare.steps]]")]
+    scripts = [runnable_script(step=step) for step in steps_in(block=gh_refresh_block)]
     assert scripts, "the gh-refresh block emitted no prepare steps"
     return [*scripts, credential_step]

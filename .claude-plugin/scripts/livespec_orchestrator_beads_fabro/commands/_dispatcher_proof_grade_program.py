@@ -84,6 +84,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance import (
     FACTORY_RUN_ID_MARKER,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
 )
@@ -503,11 +509,11 @@ def proof_grade_program_path_expansion() -> str:
 def proof_grade_program_prepare_steps_block() -> str:
     """The prepare step that lands the program and its reader inside the sandbox.
 
-    Every file is written through a heredoc with a QUOTED delimiter, so the shell
-    expands nothing inside sources that legitimately carry dollar-bearing,
+    Every file rides the step's `env` and is written with `printf %s`, so the
+    shell expands nothing inside sources that legitimately carry dollar-bearing,
     shell-looking text -- the reader's own regular expressions contain `$` and
-    backticks, and an unquoted delimiter would substitute them away while the
-    step still succeeded.
+    backticks, and an expanding write would substitute them away while the step
+    still succeeded.
 
     The reader lands BEFORE the program, which is a requirement rather than a
     preference: a sandbox given the program alone fails at its import line, in a
@@ -516,17 +522,18 @@ def proof_grade_program_prepare_steps_block() -> str:
     root = sandbox_plugins_root_expansion()
     reader = f"{root}/{PROOF_GRADE_READER_DIRECTORY}"
     lines = [f'set -eu\nmkdir -p "{reader}"']
-    for index, (name, source) in enumerate(proof_record_reader_sources()):
-        delimiter = f"LIVESPEC_PROOF_RECORD_READER_{index}"
-        lines.append(f"cat > \"{reader}/{name}\" <<'{delimiter}'\n{source}{delimiter}")
-    delimiter = "LIVESPEC_PROOF_GRADE_PROGRAM"
-    program = f"{root}/{PROOF_GRADE_PROGRAM_FILENAME}"
-    lines.append(f"cat > \"{program}\" <<'{delimiter}'\n{proof_grade_program_source()}{delimiter}")
-    return (
+    env: dict[str, str] = {}
+    destinations = [(f"{reader}/{name}", source) for name, source in proof_record_reader_sources()]
+    destinations.append((f"{root}/{PROOF_GRADE_PROGRAM_FILENAME}", proof_grade_program_source()))
+    for index, (destination, source) in enumerate(destinations):
+        var = f"{PAYLOAD_ENV_VAR}_{index}"
+        env[var] = source
+        lines.append(payload_write_command(path_word=f'"{destination}"', var=var))
+    step = PrepareStep(script=chr(10).join(lines), env=env)
+    header = (
         "\n# --- Dispatcher-materialized per-assertion Proof of Done grade: the\n"
         "# --- acceptance pass's OWN record reader, shipped verbatim, so the grade\n"
         "# --- the run advances on and the grade the pass takes cannot disagree\n"
         "# --- (bd-ib-kcq6pu) ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(chr(10).join(lines))}\n"
     )
+    return header + render_prepare_step(step=step)

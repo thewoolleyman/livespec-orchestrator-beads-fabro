@@ -47,6 +47,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
     published_head,
 )
 
+from tests.prepare_step_support import env_of, steps_in
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REAL_PAYLOADS = _REPO_ROOT / "tests" / "integration" / "fixtures" / "proof_records"
 
@@ -364,19 +366,19 @@ def test_the_prepare_step_lands_a_runnable_program_under_the_shared_root(
     """The step the overlay renders actually materializes the program.
 
     Run as the sandbox runs it -- the rendered TOML basic string handed to `sh`
-    -- rather than asserted as text, because the heredoc delimiter is QUOTED to
-    stop the shell substituting into a program that is full of dollar signs, and
-    that quoting is exactly the kind of thing a text assertion passes over.
+    -- rather than asserted as text, because the write must stop the shell
+    substituting into a program that is full of dollar signs, and that is
+    exactly the kind of thing a text assertion passes over.
     """
     block = proof_head_program_prepare_steps_block()
-    script = json.loads(block.split("script = ", 1)[1].strip())
+    [step] = steps_in(block=block)
 
     result = subprocess.run(
-        ["sh", "-c", script],
+        ["sh", "-c", step.script],
         capture_output=True,
         text=True,
         check=False,
-        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"},
+        env=env_of(step=step, base={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}),
     )
 
     landed = tmp_path / ".claude" / "plugins" / PROOF_HEAD_PROGRAM_FILENAME

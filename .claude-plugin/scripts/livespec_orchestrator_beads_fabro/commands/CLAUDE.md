@@ -515,6 +515,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   URL already carrying a username and a password, so the token Fabro embeds in
   the origin URL still wins there. That precedence is git's own, not something
   arranged here, which is why both cases are asserted as a pair.
+- `_dispatcher_prepare_payload.py` — how a prepare step carries a helper program
+  or archive WITHOUT putting its bytes in the step's script (`bd-ib-coxsfu`). The
+  Petri engine's default `compact` fidelity re-sends every completed command
+  stage's full `Script:` text on every agent request and never sends its `env`, so
+  46 prepare scripts cost about 241,400 tokens, 71% of the first-request floor.
+  A payload step is therefore a short script that writes a variable
+  (`payload_write_command`, `printf %s` so nothing in the payload is expanded) plus
+  the bytes in the step's own `env` (`PrepareStep`, `render_prepare_step`). Three
+  properties an editor must not invert. The variable is checked with `${VAR:?}`
+  before it is written, because a step whose env the engine did not deliver would
+  otherwise write an EMPTY helper and succeed. Each value is capped under the
+  kernel's per-string exec limit (`bd-ib-gnli`) and measured in BYTES. And the
+  strings are written WITHOUT `json.dumps`'s ASCII escaping: it emits a non-BMP
+  character as a surrogate pair, which TOML rejects, so one emoji in a pull-request
+  body made the whole overlay unparseable. Do NOT put a payload back in a script
+  to "keep it readable" — `test_dispatcher_prepare_payload_off_script` renders the
+  whole overlay and refuses any heredoc or long base64 run in a script. A test that
+  EXECUTES a payload step needs the script AND its env (`tests/prepare_step_support`).
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
   shared by ALL FOUR projections that write a fixed `/workspace` path:

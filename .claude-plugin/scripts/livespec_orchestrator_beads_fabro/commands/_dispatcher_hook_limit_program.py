@@ -82,7 +82,6 @@ exit while it is being walked, and a reader that refused on the first vanished
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -91,6 +90,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import (
     HOOK_OVER_LIMIT_SENTINEL,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
@@ -419,35 +424,34 @@ def hook_limit_prepare_steps_block(*, limit_seconds: int | None) -> str:
     Rendering the program anyway costs nothing and keeps the two prepare steps
     from having to agree about a condition.
 
-    Written through a heredoc with a QUOTED delimiter, so the shell expands
-    nothing inside the program: the observer carries dollar-bearing,
-    shell-looking text of its own.
+    The program rides the step's `env` and `printf %s` writes it, so the shell
+    expands nothing inside it: the observer carries dollar-bearing,
+    shell-looking text of its own. The figures are two short assignments, not a
+    payload, so they stay in the script.
     """
     root = sandbox_plugins_root_expansion()
     figures = (
         ""
         if limit_seconds is None
         else (
-            f'cat > "{root}/{HOOK_LIMIT_LIMITS_FILENAME}" '
-            f"<<'LIVESPEC_HOOK_LIMIT_FIGURES'\n"
-            f"LIVESPEC_PUBLISH_DRAFT_LIMIT_SECONDS={limit_seconds}\n"
-            "LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS="
-            f"{push_observation_budget_seconds(limit_seconds=limit_seconds)}\n"
-            "LIVESPEC_HOOK_LIMIT_FIGURES\n"
+            "\nprintf '%s\\n' "
+            f"'LIVESPEC_PUBLISH_DRAFT_LIMIT_SECONDS={limit_seconds}' "
+            "'LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS="
+            f"{push_observation_budget_seconds(limit_seconds=limit_seconds)}' "
+            f'> "{root}/{HOOK_LIMIT_LIMITS_FILENAME}"'
         )
     )
-    script = (
-        f'set -eu\nmkdir -p "{root}"\n'
-        f'cat > "{root}/{HOOK_LIMIT_PROGRAM_FILENAME}" '
-        f"<<'LIVESPEC_HOOK_LIMIT_PROGRAM'\n"
-        f"{hook_limit_program_source()}"
-        "LIVESPEC_HOOK_LIMIT_PROGRAM\n"
-        f"{figures}"
+    step = PrepareStep(
+        script=(
+            f'set -eu\nmkdir -p "{root}"\n'
+            + payload_write_command(path_word=f'"{root}/{HOOK_LIMIT_PROGRAM_FILENAME}"')
+            + figures
+        ),
+        env={PAYLOAD_ENV_VAR: hook_limit_program_source()},
     )
-    return (
+    header = (
         "\n# --- Dispatcher-materialized repository-hook limit observer: the ONE\n"
         "# --- reader of a hook run's processes at the moment a command node's\n"
         "# --- resolved timeout ends its push (bd-ib-xi63mq, Scenario 177) ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(script)}\n"
     )
+    return header + render_prepare_step(step=step)

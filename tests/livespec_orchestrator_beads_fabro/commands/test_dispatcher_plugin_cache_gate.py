@@ -34,6 +34,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
     parse_dot_graph,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
+
+from tests.prepare_step_support import runnable_script, steps_in
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -94,7 +97,9 @@ def _gate_env(*, plugins_root: Path, tmp_path: Path) -> dict[str, str]:
 def _run_gate(*, plugins_root: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     module = importlib.import_module(_MODULE_NAME)
     script = tmp_path / "gate.sh"
-    script.write_text(module.plugin_cache_gate_script(), encoding="utf-8")
+    script.write_text(
+        runnable_script(step=module.plugin_cache_gate_prepare_step()), encoding="utf-8"
+    )
     return subprocess.run(
         ["bash", str(script)],
         capture_output=True,
@@ -300,9 +305,11 @@ def test_overlay_appends_the_gate_as_a_prepare_step() -> None:
 
     assert block.startswith("\n# --- Dispatcher-materialized Claude plugin-cache")
     assert "[[run.prepare.steps]]" in block
-    assert "cache-manifest.json" in block
-    assert "required_paths" in block
-    assert module.plugin_cache_gate_script() in block
+    [gate, *_] = steps_in(block=block)
+    assert gate == module.plugin_cache_gate_prepare_step()
+    assert "cache-manifest.json" not in gate.script
+    assert "cache-manifest.json" in gate.env[PAYLOAD_ENV_VAR]
+    assert "required_paths" in gate.env[PAYLOAD_ENV_VAR]
 
 
 def test_the_prepare_pass_materializes_the_gate_program_for_later_stages(

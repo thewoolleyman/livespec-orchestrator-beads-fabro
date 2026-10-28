@@ -88,6 +88,12 @@ import json
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_gate_session_hook_declaration,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_guard_command,
+    render_prepare_step,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
     worktree_exclude_script,
 )
@@ -269,7 +275,7 @@ def harness_settings_merge_program() -> str:
 
     `json.dumps` with an indent keeps the declaration a readable Python literal
     (a JSON object of strings IS one), and it is also what guarantees the
-    substituted text cannot close the heredoc or the TOML string that carry it.
+    substituted text cannot close the TOML string that carries it.
     """
     declared = json.dumps(dict(_HARNESS_SHELL_ENV), indent=4)
     hooks = json.dumps(plugin_gate_session_hook_declaration(), indent=4)
@@ -326,10 +332,10 @@ def harness_settings_prepare_steps_block() -> str:
         "fi\n"
         f'settings="$toplevel/{SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH}"\n'
         'mkdir -p "$(dirname "$settings")"\n'
-        "python3 - \"$settings\" <<'PY'\n"
-        f"{harness_settings_merge_program()}"
-        "PY"
+        f"{payload_guard_command()}\n"
+        f'printf %s "${PAYLOAD_ENV_VAR}" | python3 - "$settings"'
     )
+    step = PrepareStep(script=script, env={PAYLOAD_ENV_VAR: harness_settings_merge_program()})
     lines = [
         "",
         "# --- Dispatcher-materialized harness settings: the sandbox agent loads",
@@ -339,7 +345,6 @@ def harness_settings_prepare_steps_block() -> str:
         "[[run.prepare.steps]]",
         f"script = {json.dumps(exclude)}",
         "",
-        "[[run.prepare.steps]]",
-        f"script = {json.dumps(script)}",
+        render_prepare_step(step=step).rstrip("\n"),
     ]
     return "\n".join(lines) + "\n"

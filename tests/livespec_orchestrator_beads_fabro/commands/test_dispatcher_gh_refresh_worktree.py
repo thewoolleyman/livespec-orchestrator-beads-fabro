@@ -23,7 +23,6 @@ in production the root IS inside the run's worktree.
 """
 
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -33,6 +32,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     refreshing_gh_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
+
+from tests.prepare_step_support import runnable_script, steps_in
 
 _BUNDLE_DIRNAME = ".livespec-gh-refresh"
 _DEFAULT_BRANCH = "master"
@@ -492,13 +493,11 @@ def _rendered_prepare_scripts(
     monkeypatch.setenv("GITHUB_APP_ID", "42")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
     monkeypatch.setenv(SANDBOX_GH_REFRESH_ROOT_ENV_VAR, str(bundle_root))
-    found = re.findall(
-        r"script = '''\n(.*?)\n'''",
-        refreshing_gh_prepare_steps_block(),
-        re.DOTALL,
-    )
+    found = [
+        runnable_script(step=step) for step in steps_in(block=refreshing_gh_prepare_steps_block())
+    ]
     assert found
-    return list(found)
+    return found
 
 
 def _git_repo(*, root: Path) -> Path:

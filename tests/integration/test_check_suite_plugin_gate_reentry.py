@@ -78,8 +78,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate im
     PLUGIN_BUILD_ADVANCED_MARKER,
     PLUGIN_CACHE_UNMATERIALIZED_MARKER,
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
-    plugin_cache_gate_script,
+    plugin_cache_gate_prepare_step,
 )
+
+from tests.prepare_step_support import runnable_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
@@ -249,7 +251,7 @@ def _prepare(*, box: _Sandbox) -> None:
     restating it is what makes the gate under test the gate the Dispatcher ships.
     """
     script = box.home.parent / "install-plugin-gate.sh"
-    _ = script.write_text(plugin_cache_gate_script(), encoding="utf-8")
+    _ = script.write_text(runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8")
     _ = subprocess.run(
         ["bash", str(script)],
         check=True,

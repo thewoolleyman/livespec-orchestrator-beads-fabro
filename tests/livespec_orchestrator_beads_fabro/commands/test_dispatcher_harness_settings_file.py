@@ -44,7 +44,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import tomli
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_harness_shell_policy
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     HARNESS_SETTINGS_MARKER,
@@ -54,9 +53,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PrepareStep
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
 )
+
+from tests.prepare_step_support import steps_in
 
 # Opaque non-secret placeholders: the overlay renders whatever it is handed, and
 # a literal spelled like a credential at the call site reads to the lint rule as
@@ -158,20 +160,8 @@ def _resume_overlay(*, tmp_path: Path) -> str:
 
 
 def _prepare_scripts(*, overlay: str) -> tuple[str, ...]:
-    """Every `[[run.prepare.steps]]` script the overlay declares, decoded.
-
-    Each renderer writes its script as a TOML BASIC string, which is the shape
-    `json.dumps` produces, so one `json.loads` per value recovers the exact bytes
-    the sandbox shell receives. The two renderers that use a TOML multi-line
-    LITERAL string open with `script = '''` and are therefore outside this
-    prefix; neither writes the settings file, so skipping them loses nothing
-    here.
-    """
-    return tuple(
-        json.loads(line[len("script = ") :])
-        for line in overlay.splitlines()
-        if line.startswith(_SCRIPT_PREFIX)
-    )
+    """Every `[[run.prepare.steps]]` script the overlay declares, decoded by a TOML parser."""
+    return tuple(step.script for step in steps_in(block=overlay))
 
 
 def _settings_writers(*, overlay: str) -> tuple[str, ...]:
@@ -183,13 +173,13 @@ def _settings_writers(*, overlay: str) -> tuple[str, ...]:
     what discriminates them.
     """
     return tuple(
-        script
-        for script in _prepare_scripts(overlay=overlay)
-        if _SETTINGS_RELATIVE_PATH in script and "python3" in script
+        "\n".join([step.script, *step.env.values()])
+        for step in steps_in(block=overlay)
+        if _SETTINGS_RELATIVE_PATH in step.script and "python3" in step.script
     )
 
 
-def _prepare_steps() -> tuple[str, ...]:
+def _prepare_steps() -> tuple[PrepareStep, ...]:
     """The policy block's own two steps, in order, decoded through a TOML parser.
 
     Read from the production renderer rather than sliced out of the whole overlay
@@ -201,13 +191,10 @@ def _prepare_steps() -> tuple[str, ...]:
     scripts, and a step carrying an absolute `/workspace` path would write into
     the REAL sandbox root of whatever factory stage is running this suite.
     """
-    document = tomli.loads(harness_settings_prepare_steps_block())
-    steps = document["run"]["prepare"]["steps"]
-    assert isinstance(steps, list)
-    scripts = tuple(str(step["script"]) for step in steps)
-    for script in scripts:
-        assert _SANDBOX_ROOT not in script
-    return scripts
+    steps = tuple(steps_in(block=harness_settings_prepare_steps_block()))
+    for step in steps:
+        assert _SANDBOX_ROOT not in step.script
+    return steps
 
 
 def test_an_ordinary_dispatch_overlay_writes_the_harness_settings_file(
@@ -263,9 +250,9 @@ def test_neither_prepare_step_assumes_a_fixed_sandbox_path_for_the_settings_sour
     """
     steps = _prepare_steps()
     assert len(steps) == 2
-    for script in steps:
-        assert _SANDBOX_ROOT not in script
-        assert _CLONE_ROOT_RESOLUTION in script
+    for step in steps:
+        assert _SANDBOX_ROOT not in step.script
+        assert _CLONE_ROOT_RESOLUTION in step.script
     # And the overlay the dispatch submits carries the same two, so this is a
     # claim about a dispatch rather than about a renderer nobody composes.
     for script in (*_prepare_scripts(overlay=_ordinary_overlay(tmp_path=tmp_path)),):
@@ -347,8 +334,8 @@ def test_the_prepare_steps_land_the_settings_source_at_the_clone_root(
         json.dumps({"permissions": {"allow": ["Bash"]}}), encoding="utf-8"
     )
 
-    for script in _prepare_steps():
-        _run_prepare_step(script=script, repo=repo)
+    for step in _prepare_steps():
+        _run_prepare_step(step=step, repo=repo)
 
     document = json.loads((repo / _SETTINGS_RELATIVE_PATH).read_text(encoding="utf-8"))
     assert document["env"]["BASH_DEFAULT_TIMEOUT_MS"] == "600000"
@@ -384,8 +371,8 @@ def test_no_checkpoint_can_stage_the_settings_source_the_steps_write(
         body=json.dumps({"env": {"BASH_MAX_TIMEOUT_MS": "1200000"}}),
     )
 
-    for script in _prepare_steps():
-        _run_prepare_step(script=script, repo=repo)
+    for step in _prepare_steps():
+        _run_prepare_step(step=step, repo=repo)
     _git("add", "-A", repo=repo)
 
     staged = _git_stdout("diff", "--cached", "--name-only", repo=repo).split()
@@ -420,12 +407,12 @@ def test_a_step_that_cannot_resolve_the_clone_root_refuses_and_says_so(
     write_step = _prepare_steps()[-1]
 
     step = subprocess.run(
-        ["/bin/sh", "-c", write_step],
+        ["/bin/sh", "-c", write_step.script],
         cwd=outside,
         capture_output=True,
         text=True,
         timeout=_STEP_TIMEOUT_SECONDS,
-        env={**os.environ, "GIT_CEILING_DIRECTORIES": str(tmp_path)},
+        env={**os.environ, **write_step.env, "GIT_CEILING_DIRECTORIES": str(tmp_path)},
         check=False,
     )
 
@@ -473,23 +460,24 @@ def _commit_file(*, repo: Path, name: str, body: str) -> None:
     _git("commit", "-m", f"add {name}", repo=repo)
 
 
-def _run_prepare_step(*, script: str, repo: Path) -> None:
+def _run_prepare_step(*, step: PrepareStep, repo: Path) -> None:
     """Execute ONE rendered prepare step the way the engine's shell does.
 
     The engine runs each step with the clone as its working directory, which is
     what the committed chain's own `git fetch --unshallow` already depends on, so
     that is the one thing these cases hand the script.
     """
-    step = subprocess.run(
-        ["/bin/sh", "-c", script],
+    completed = subprocess.run(
+        ["/bin/sh", "-c", step.script],
         cwd=repo,
         capture_output=True,
         text=True,
         timeout=_STEP_TIMEOUT_SECONDS,
+        env={**os.environ, **step.env},
         check=False,
     )
 
-    assert step.returncode == 0, f"{script}\n{step.stdout}\n{step.stderr}"
+    assert completed.returncode == 0, f"{step.script}\n{completed.stdout}\n{completed.stderr}"
 
 
 def _run_merge_program(

@@ -25,12 +25,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_progra
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
     record_reader_fragment,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
     proof_head_program_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
+
+from tests.prepare_step_support import steps_in
 
 
 def _materialized(*, tmp_path: Path) -> ModuleType:
@@ -92,18 +95,21 @@ def test_the_two_materialized_programs_share_one_record_reader() -> None:
     assert shared in proof_head_program_source()
 
 
-def test_the_prepare_step_writes_the_program_through_a_quoted_heredoc() -> None:
+def test_the_prepare_step_carries_the_program_in_env_and_writes_it_without_expansion() -> None:
     """The shell must substitute nothing into a source carrying `$` and a backtick.
 
     The decision's forbidden-character set is a literal containing both, so an
-    UNQUOTED heredoc delimiter would have the shell expand them away while the
-    step still succeeded — leaving a grammar that admits the substitutions it
-    exists to exclude.
+    EXPANDING write would have the shell expand them away while the step still
+    succeeded — leaving a grammar that admits the substitutions it exists to
+    exclude. The program rides the step's env, so its script is a short write.
     """
     block = carry_forward_program_prepare_steps_block()
 
     assert "[[run.prepare.steps]]" in block
-    assert "<<'LIVESPEC_CARRY_FORWARD_PROGRAM'" in block
+    [step] = steps_in(block=block)
+    assert step.env == {PAYLOAD_ENV_VAR: carry_forward_program_source()}
+    assert 'printf %s "$LIVESPEC_PREPARE_PAYLOAD"' in step.script
+    assert carry_forward_program_source() not in step.script
     assert CARRY_FORWARD_PROGRAM_FILENAME in block
 
 

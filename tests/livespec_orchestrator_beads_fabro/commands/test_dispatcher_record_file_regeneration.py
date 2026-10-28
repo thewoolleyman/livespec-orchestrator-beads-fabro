@@ -28,6 +28,9 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
     PLUGIN_BLOCK,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
+
+from tests.prepare_step_support import steps_in
 
 _COMMANDS_DIR = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
 _MODULE_FILE = "_dispatcher_record_file_regeneration.py"
@@ -126,18 +129,21 @@ def test_the_program_carries_no_livespec_import(tmp_path: Path) -> None:
     _ = _materialized(tmp_path=tmp_path)
 
 
-def test_the_prepare_step_quotes_its_heredoc_delimiter(tmp_path: Path) -> None:
-    """The program is written through a heredoc the shell expands nothing inside.
+def test_the_prepare_step_carries_the_program_in_env_and_writes_it_verbatim(
+    tmp_path: Path,
+) -> None:
+    """The program rides the step's env and is written without any shell expansion.
 
-    The program carries dollar-bearing text of its own, so an unquoted delimiter
+    The program carries dollar-bearing text of its own, so an expanding write
     would substitute into the program's own source at prepare time and land bytes
     nobody wrote.
     """
     module = _module()
     block = module.record_file_program_prepare_steps_block()
-    assert "<<'LIVESPEC_RECORD_FILE_PROGRAM'" in block
-    assert module.RECORD_FILE_PROGRAM_FILENAME in block
-    assert json.dumps(module.record_file_program_source())[1:-1] in block
+    [step] = steps_in(block=block)
+    assert module.RECORD_FILE_PROGRAM_FILENAME in step.script
+    assert step.env == {PAYLOAD_ENV_VAR: module.record_file_program_source()}
+    assert module.record_file_program_source() not in step.script
     _ = tmp_path
 
 

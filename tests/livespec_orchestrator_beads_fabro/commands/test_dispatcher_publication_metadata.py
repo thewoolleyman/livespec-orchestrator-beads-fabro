@@ -22,7 +22,7 @@ quote, a backslash or a newline reaches the sandbox as that title rather than
 making the whole overlay unparseable. The body's prepare step is EXECUTED under
 bash in a throwaway root, because the thing under test is whether a file with
 the right bytes appears at the path the stage resolves -- and a substring check
-on the script cannot tell a correct decode from one that writes the base64.
+on the script cannot tell a correct write from one that writes nothing.
 """
 
 from __future__ import annotations
@@ -48,6 +48,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
+
+from tests.prepare_step_support import env_of, steps_in
 
 _ITEM_ID = "bd-ib-c3txja"
 _CRITERIA = """- The implementation workflow renders pr_refresh and pr as command stages.
@@ -211,19 +213,21 @@ def test_the_body_prepare_step_writes_the_rendered_bytes_where_the_stage_reads(
     block = publication_metadata_prepare_steps_block(
         metadata=PublicationMetadata(title="unused", body=body)
     )
-    parsed = tomli.loads(block)
-    [step] = parsed["run"]["prepare"]["steps"]
+    [step] = steps_in(block=block)
 
     completed = subprocess.run(
-        ["bash", "-c", step["script"]],
+        ["bash", "-c", step.script],
         check=False,
         capture_output=True,
         text=True,
-        env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": str(tmp_path / "home"),
-            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(tmp_path / "plugins"),
-        },
+        env=env_of(
+            step=step,
+            base={
+                "PATH": "/usr/local/bin:/usr/bin:/bin",
+                "HOME": str(tmp_path / "home"),
+                SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(tmp_path / "plugins"),
+            },
+        ),
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -267,22 +271,15 @@ def test_a_title_longer_than_the_ceiling_even_without_prose_is_bounded_whole() -
     assert len(metadata.title) <= PUBLICATION_TITLE_MAX_CHARS
 
 
-def test_a_payload_outside_the_base64_alphabet_refuses_rather_than_rendering() -> None:
-    """The invariant that makes the single-quoted payload safe is HELD, not trusted.
+def test_a_body_over_the_env_value_limit_refuses_rather_than_rendering() -> None:
+    """A body the kernel would reject at exec is refused BEFORE the run exists.
 
-    The payload is single-quoted in shell with no escaping, which is sound only
-    because base64 emits `A-Za-z0-9+/=` and nothing else. A build whose encoder
-    changed would otherwise render a step that breaks out of its own quoting, so
-    the guard is reached directly -- by monkeypatching the encoder, since no
-    body can produce a bad payload through the real one.
+    The body rides the step's env, and one env string over `MAX_ARG_STRLEN`
+    makes `execve` fail with "argument list too long" and kills the run at
+    launch with no branch. `publication_metadata_for` bounds the body well under
+    that, so the refusal is reached directly with a hand-built value.
     """
-    from livespec_orchestrator_beads_fabro.commands import (
-        _dispatcher_publication_metadata as module,
-    )
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(module.base64, "b64encode", lambda _: b"not'base64")
-        with pytest.raises(ValueError, match="base64 alphabet"):
-            _ = publication_metadata_prepare_steps_block(
-                metadata=PublicationMetadata(title="t", body="b")
-            )
+    with pytest.raises(ValueError, match="argument list too long"):
+        _ = publication_metadata_prepare_steps_block(
+            metadata=PublicationMetadata(title="t", body="b" * 200_000)
+        )

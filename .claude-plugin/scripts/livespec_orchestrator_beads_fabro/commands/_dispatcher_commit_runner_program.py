@@ -37,8 +37,12 @@ than waiting forever on a terminal nobody holds.
 
 from __future__ import annotations
 
-import json
-
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -346,14 +350,11 @@ def commit_runner_prepare_steps_block() -> str:
     """Render the prepare step that writes the runner before any ACP stage runs."""
     root = sandbox_plugins_root_expansion()
     path = commit_runner_program_path_expansion()
-    script = (
-        f'set -eu\nmkdir -p "{root}"\n'
-        f"cat > \"{path}\" <<'LIVESPEC_COMMIT_RUNNER'\n"
-        f"{commit_runner_program_source()}"
-        "LIVESPEC_COMMIT_RUNNER\n"
+    step = PrepareStep(
+        script=f'set -eu\nmkdir -p "{root}"\n' + payload_write_command(path_word=f'"{path}"'),
+        env={PAYLOAD_ENV_VAR: commit_runner_program_source()},
     )
     return (
         "\n# --- Dispatcher-materialized detached commit runner (bd-ib-atyefi) ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(script)}\n"
+        + render_prepare_step(step=step)
     )

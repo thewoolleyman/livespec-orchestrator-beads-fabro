@@ -35,8 +35,6 @@ be read as runnable on its own when it is not.
 
 from __future__ import annotations
 
-import json
-
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_decision import (
     decision_fragment,
 )
@@ -46,6 +44,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_gramma
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
     record_parse_fragment,
     record_reader_fragment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
@@ -113,23 +117,22 @@ def carry_forward_program_path_expansion() -> str:
 def carry_forward_program_prepare_steps_block() -> str:
     """The prepare step that lands the program below the sandbox plugins root.
 
-    Written through a heredoc with a QUOTED delimiter, so the shell expands
-    nothing inside the program: the decision carries dollar-bearing,
+    The program rides the step's `env` and `printf %s` writes it, so the shell
+    expands nothing inside it: the decision carries dollar-bearing,
     shell-looking text of its own -- the forbidden-character set alone contains
-    `$` and a backtick -- and an unquoted heredoc would substitute into it.
+    `$` and a backtick.
     """
     root = sandbox_plugins_root_expansion()
-    script = (
-        f'set -eu\nmkdir -p "{root}"\n'
-        f'cat > "{root}/{CARRY_FORWARD_PROGRAM_FILENAME}" '
-        f"<<'LIVESPEC_CARRY_FORWARD_PROGRAM'\n"
-        f"{carry_forward_program_source()}"
-        "LIVESPEC_CARRY_FORWARD_PROGRAM"
+    step = PrepareStep(
+        script=(
+            f'set -eu\nmkdir -p "{root}"\n'
+            + payload_write_command(path_word=f'"{root}/{CARRY_FORWARD_PROGRAM_FILENAME}"')
+        ),
+        env={PAYLOAD_ENV_VAR: carry_forward_program_source()},
     )
-    return (
+    header = (
         "\n# --- Dispatcher-materialized carry-forward decision program: the\n"
         "# --- deterministic rule a changed-head pr_refresh decides by, with no\n"
         "# --- language-model judgement in it (bd-ib-v4exlm) ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(script)}\n"
     )
+    return header + render_prepare_step(step=step)
