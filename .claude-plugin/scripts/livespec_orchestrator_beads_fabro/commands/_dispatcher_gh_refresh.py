@@ -273,11 +273,14 @@ def _payload_chunk_steps(*, payload_path: str) -> list[PrepareStep]:
 _MINT_VAR = f"{PAYLOAD_ENV_VAR}_MINT"
 _PUSH_VAR = f"{PAYLOAD_ENV_VAR}_PUSH"
 _WRAPPER_TAIL_VAR = f"{PAYLOAD_ENV_VAR}_WRAPPER_TAIL"
-_WRAPPER_TAIL = _AGENT_PUBLICATION_GUARD_SOURCE + """token="$(python3 "$mint")"
+_WRAPPER_TAIL = (
+    _AGENT_PUBLICATION_GUARD_SOURCE
+    + """token="$(python3 "$mint")"
 export GH_TOKEN="$token"
 export GITHUB_TOKEN="$token"
 exec "$real_gh" "$@"
 """
+)
 _EXTRACT_PROGRAM = """import base64, io, pathlib, sys, tarfile
 payload = base64.b64decode(pathlib.Path(sys.argv[1]).read_text())
 with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
