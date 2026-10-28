@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.250.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.249.2...v0.250.0) (2026-10-28)
+
+
+### Features
+
+* admit factory-safe implementation and disposed plan-obligation supersession ([ed24df8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ed24df887593e2155e2799cae91d5d3403a1c31e))
+
+
+### Bug Fixes
+
+* a factory-safe implementation supersession names no open carrier ([71887f0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/71887f03b75843d6236cd1296c0d28bf785061d7))
+
 ## [0.249.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.249.1...v0.249.2) (2026-10-28)
 
 
