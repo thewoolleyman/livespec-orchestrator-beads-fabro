@@ -115,6 +115,9 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # caller that holds the work-item. Empty for a direct caller, which the grade
     # reads as an UNESTABLISHED question and fails closed on (bd-ib-kcq6pu).
     proof_grade_env: str = "",
+    # The item's recorded pull request numbers as one rendered env line, for the
+    # same reason as the assertions above: the journal is read by the caller.
+    dispatch_pull_requests_env: str = "",
     # The CLIENT build this dispatch resolved for its factory, which decides how
     # the written config may NAME its graph. None is the pinned-engine posture —
     # the absolute path every overlay has always carried — so a caller that
@@ -375,6 +378,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # here: the derivation reads a work-item and this function is handed only
         # an id, exactly as the publication metadata above is.
         proof_grade_env=proof_grade_env,
+        dispatch_pull_requests_env=dispatch_pull_requests_env,
         # The pre-launch dispatch id the sandbox declares as its
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.
