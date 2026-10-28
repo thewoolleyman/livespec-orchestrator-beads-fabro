@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.248.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.248.0...v0.248.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **workflow:** pr_refresh counts only conflicting, gate-failing or conflict-entered refreshes and refreshes cleanly once ([b313804](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b3138048aae0f6900ddc31ff73f8cbb3f831cb42))
+
 ## [0.248.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.247.2...v0.248.0) (2026-10-28)
 
 
