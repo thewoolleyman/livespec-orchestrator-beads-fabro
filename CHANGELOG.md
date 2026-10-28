@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.247.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.247.1...v0.247.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* render the captured governing scenario on a host_verified replay ([3d897cc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d897cc7ff71f51a89261320cc7ffe442b2115f1))
+
 ## [0.247.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.247.0...v0.247.1) (2026-10-28)
 
 
