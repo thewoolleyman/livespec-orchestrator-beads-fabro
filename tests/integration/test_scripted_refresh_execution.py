@@ -942,6 +942,44 @@ def test_a_merged_pull_request_with_a_deleted_publish_branch_finishes_refresh(
     )
 
 
+@pytest.mark.parametrize("rendered_merge_commit", ["null", ""])
+def test_a_merged_pull_request_with_no_merge_commit_is_not_a_landed_publication(
+    tmp_path: Path, rendered_merge_commit: str
+) -> None:
+    """Scenario 248: a MERGED pull request whose merge commit is null still fails closed.
+
+    `gh --jq '(.mergeCommit.oid|tostring)'` prints the literal `null` for an
+    absent merge commit, which a bare non-empty test accepts; only a full object
+    name is a merge commit.
+    """
+    box = _build(root=tmp_path, armed=True)
+    published = box.local_head()
+    _ = _git("push", "--quiet", "origin", "--delete", f"refs/heads/{_BRANCH}", cwd=box.clone)
+    box.forge_state.write_text(
+        json.dumps(
+            {
+                "armed": True,
+                "arming_unreadable": False,
+                "disarm_fails": False,
+                "state": "MERGED",
+                "number": 73,
+                "merge_commit": rendered_merge_commit,
+                "head": published,
+                "comments": [],
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE" in result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" not in result.stderr
+    assert box.state(name="livespec-merged-reconcile") is None
+
+
 def test_an_absent_remote_publish_ref_is_refused(tmp_path: Path) -> None:
     """A branch origin no longer carries is not recreated from a local tree.
 
