@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.251.1...v0.251.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **dev-tooling:** record a scoped green verdict when the janitor skips targets ([e0327e8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e0327e89ea23ee6e1fb4c788d2121a2ebc66b9f6))
+
 ## [0.251.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.251.0...v0.251.1) (2026-10-28)
 
 
