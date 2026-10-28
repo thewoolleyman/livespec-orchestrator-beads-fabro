@@ -1615,6 +1615,16 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   unreachable host takes. Its unit-tier counterpart, covering the attribution
   precedence and the per-field degradations, is
   `tests/livespec_orchestrator_beads_fabro/commands/test_needs_attention_needs_human_question.py`.
+- `fixture_check_env.py` and `test_fixture_check_environment.py` — the one
+  helper every test that runs a fixture `just check` builds its process
+  environment through. The repository's `check` recipe merges an inherited
+  `SKIP_TARGETS` into the green token's skipped-target scope, and the delegated
+  gate client exports its authority-reading members into that variable, so a
+  fixture run that copied `os.environ` went red under the gate while GitHub CI,
+  which never sets it, stayed green. The helper drops the inherited variable and
+  keeps everything else; the test asserts both halves.
+  `test_skipped_green_token_scope.py` sets `SKIP_TARGETS` in its own janitor
+  case so the leak is exercised on every venue.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
