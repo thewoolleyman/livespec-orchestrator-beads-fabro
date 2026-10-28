@@ -103,6 +103,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome 
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import ResolvedAcpChain
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
+    CodexHeadroomReading,
+    codex_headroom_covers_candidate,
+    codex_headroom_skip_kind,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_hold_coverage import (
     candidate_domain_keys,
     hold_covers_candidate,
@@ -116,10 +121,12 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import (
     PROVIDER_LIMIT_CONDITIONS,
     TYPED_HOLD_SKIP,
     UNAVAILABLE_EVIDENCE_SKIP,
+    CodexHeadroomShortfall,
     HeadroomShortfall,
     NodePreflight,
     PreflightInputs,
     SkippedCandidate,
+    codex_headroom_skip,
     confirmation_skip,
     ephemeral_skip,
     record_skip,
@@ -181,6 +188,7 @@ def filter_node_candidates(
     selectable: list[AcpCandidate] = []
     skipped: list[SkippedCandidate] = []
     assessments: list[SessionHeadroomReading] = []
+    codex_assessments: list[CodexHeadroomReading] = []
     turns: dict[str, str] = {} if confirmed is None else confirmed
     for candidate in ordered:
         skip = _skip_for(
@@ -188,6 +196,7 @@ def filter_node_candidates(
             inputs=inputs,
             assessed=assessed,
             assessments=assessments,
+            codex_assessments=codex_assessments,
             confirmed=turns,
         )
         if skip is None:
@@ -200,6 +209,7 @@ def filter_node_candidates(
         candidates=tuple(selectable),
         skipped=tuple(skipped),
         assessments=tuple(assessments),
+        codex_assessments=tuple(codex_assessments),
     )
 
 
@@ -209,6 +219,7 @@ def _skip_for(
     inputs: PreflightInputs,
     assessed: dict[str, str],
     assessments: list[SessionHeadroomReading],
+    codex_assessments: list[CodexHeadroomReading],
     confirmed: dict[str, str],
 ) -> SkippedCandidate | None:
     """The first filter this candidate fails, or `None` when it survives all five."""
@@ -238,7 +249,9 @@ def _skip_for(
     probed = _probe_skip(candidate=candidate, probe=inputs.probe, assessed=assessed)
     if probed is not None:
         return probed
-    return _headroom_skip(candidate=candidate, inputs=inputs, assessments=assessments)
+    return _codex_headroom_skip(
+        candidate=candidate, inputs=inputs, codex_assessments=codex_assessments
+    ) or _headroom_skip(candidate=candidate, inputs=inputs, assessments=assessments)
 
 
 def _confirmation_turn(
@@ -356,6 +369,41 @@ def _headroom_skip(
         candidate=candidate,
         reason=HEADROOM_SKIP,
         shortfall=HeadroomShortfall(
+            reading=reading,
+            floor_percent=policy.floor_percent,
+            horizon_minutes=policy.horizon_minutes,
+            kind=kind,
+        ),
+    )
+
+
+def _codex_headroom_skip(
+    *,
+    candidate: AcpCandidate,
+    inputs: PreflightInputs,
+    codex_assessments: list[CodexHeadroomReading],
+) -> SkippedCandidate | None:
+    """Assess a COVERED Codex candidate's projected credential, skip only a shortfall.
+
+    The reading is recorded in `codex_assessments` BEFORE the skip is decided, so
+    an above-floor reading is journalable. A policy carrying no Codex read leaves
+    the candidate unassessed, which is the posture of every composer that issues
+    no live usage request.
+    """
+    policy = inputs.headroom
+    if policy is None or policy.codex_read is None:
+        return None
+    if not codex_headroom_covers_candidate(candidate=candidate):
+        return None
+    reading = policy.codex_read()
+    if reading not in codex_assessments:
+        codex_assessments.append(reading)
+    kind = codex_headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
+    if kind is None:
+        return None
+    return codex_headroom_skip(
+        candidate=candidate,
+        shortfall=CodexHeadroomShortfall(
             reading=reading,
             floor_percent=policy.floor_percent,
             horizon_minutes=policy.horizon_minutes,

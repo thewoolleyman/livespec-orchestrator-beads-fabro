@@ -516,8 +516,17 @@ def _hermetic_session_headroom_reading(monkeypatch: pytest.MonkeyPatch) -> None:
     patching the builder in its own module would also wrap it for those -- one
     of which binds the builder at import time and one of which asserts its
     signature.
+
+    THE CODEX READ IS STUBBED THE SAME WAY, and for the same reason: a Codex
+    candidate in a fixture chain would otherwise read the host `auth.json` and
+    reach the provider, or grade unobservable and be skipped. Untouched too, so
+    no fixture changes answer.
     """
     from livespec_orchestrator_beads_fabro.commands import _dispatcher_admission
+    from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
+        CodexHeadroomReading,
+        codex_headroom_reading,
+    )
     from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
         SessionHeadroomPolicy,
         SessionHeadroomReading,
@@ -535,8 +544,24 @@ def _hermetic_session_headroom_reading(monkeypatch: pytest.MonkeyPatch) -> None:
             utilization=0,
         )
 
+    def untouched_codex_window(*, auth_json: str | None, observed_at: str) -> CodexHeadroomReading:
+        _ = auth_json
+        return codex_headroom_reading(
+            credential_identity="hermetic-codex-session-headroom",
+            observed_at=observed_at,
+            response={
+                "rate_limit": {
+                    "allowed": True,
+                    "limit_reached": False,
+                    "primary_window": {"used_percent": 0, "limit_window_seconds": 18000},
+                    "secondary_window": None,
+                }
+            },
+        )
+
     def hermetic_policy(**kwargs: Any) -> SessionHeadroomPolicy:
         _ = kwargs.setdefault("read", untouched_window)
+        _ = kwargs.setdefault("codex_read", untouched_codex_window)
         return session_headroom_policy(**kwargs)
 
     monkeypatch.setattr(_dispatcher_admission, "session_headroom_policy", hermetic_policy)

@@ -69,6 +69,7 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import CLAUDE_AGENT_ID
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import ANTHROPIC_DOMAIN
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexHeadroomReading
 
 __all__: list[str] = [
     "ABSENT_SEVEN_DAY_READING",
@@ -270,11 +271,16 @@ class SessionHeadroomPolicy:
     default here would let a caller that simply forgot to thread the horizon
     through report the ratified 180 for every dispatch forever -- a policy that
     reads exactly like one whose operator configured nothing.
+
+    `codex_read` is the Codex clause's reading seam, memoized the same way and
+    governed by the same two dials. It defaults to ABSENT, which leaves every
+    Codex candidate unassessed exactly as before the clause existed.
     """
 
     floor_percent: int
     horizon_minutes: int
     read: Callable[[], SessionHeadroomReading]
+    codex_read: Callable[[], CodexHeadroomReading] | None = None
 
 
 def session_headroom_reading(
