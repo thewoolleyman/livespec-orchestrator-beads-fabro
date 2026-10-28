@@ -61,6 +61,7 @@ __all__: list[str] = [
     "STAGE_DISPATCH",
     "STAGE_FILING",
     "STAGE_GROOM",
+    "STAGE_RELEASE",
     "RecordedSpecChangeTier",
     "classification_did_not_run_comment",
     "recorded_did_not_run_causes",
@@ -79,6 +80,9 @@ SPEC_CHANGE_TIER_UNAVAILABLE_MARKER = "livespec-spec-change-tier-unavailable"
 STAGE_FILING = "filing"
 STAGE_GROOM = "groom"
 STAGE_DISPATCH = "dispatch"
+# The human `release-spec-tier` valve is a fourth point that records a tier: it
+# clears the hold, and the record it leaves says it was a human act.
+STAGE_RELEASE = "release-spec-tier"
 
 _WORK_ITEM_FIELD = "work-item"
 _STAGE_FIELD = "stage"
