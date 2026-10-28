@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.252.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.251.2...v0.252.0) (2026-10-28)
+
+
+### Features
+
+* **dod-judgement:** a host judgement record names each candidate the chain ran ([82820d9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/82820d969beed1e3da4cb0730c0467d4e9b141c5))
+
 ## [0.251.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.251.1...v0.251.2) (2026-10-28)
 
 
