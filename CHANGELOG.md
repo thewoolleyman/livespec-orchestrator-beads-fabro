@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.248.1...v0.249.0) (2026-10-28)
+
+
+### Features
+
+* key the Definition-of-Done subject on governing clause provenance ([00d3c3f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/00d3c3f2cc009eb1222938e0804eb2c345138787))
+
 ## [0.248.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.248.0...v0.248.1) (2026-10-28)
 
 
