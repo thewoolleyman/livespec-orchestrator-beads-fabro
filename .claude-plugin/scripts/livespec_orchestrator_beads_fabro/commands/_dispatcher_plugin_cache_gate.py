@@ -110,6 +110,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     publication_push_program_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    record_file_merge_program_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
     record_file_program_prepare_steps_block,
 )
@@ -551,4 +554,5 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         + carry_forward_program_prepare_steps_block()
         + proof_grade_program_prepare_steps_block()
         + record_file_program_prepare_steps_block()
+        + record_file_merge_program_prepare_steps_block()
     )

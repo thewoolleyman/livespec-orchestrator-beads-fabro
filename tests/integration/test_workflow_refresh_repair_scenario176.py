@@ -1240,7 +1240,9 @@ def _repaired_run(*, root: Path, push_program: bool) -> _Repaired:
         repaired_head=repaired,
         advanced_default=advanced,
         plugins_root=(
-            _materialized_push_program(root=root) if push_program else root / "absent-plugins"
+            _materialized_push_program(root=root)
+            if push_program
+            else _record_file_program_without_push_helper(root=root)
         ),
         forge_bin=_forge_double(root=root),
     )
@@ -1257,6 +1259,20 @@ def _run_repaired_publish_draft(
     return _run_publish_draft(
         world=repaired.world, extra_env=env if extra_env is None else {**env, **extra_env}
     )
+
+
+def _record_file_program_without_push_helper(*, root: Path) -> Path:
+    """Materialize the ordinary record helper while deliberately withholding push.
+
+    The plain-fast-forward case exercises the absence of the exact-head helper,
+    not an unrelated sandbox preparation failure.
+    """
+    plugins_root = root / "absent-plugins"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
+    return plugins_root
 
 
 def _foreign_publish_tip(*, world: _World) -> str:
