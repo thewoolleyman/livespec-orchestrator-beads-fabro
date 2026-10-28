@@ -396,6 +396,58 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
     assert runner.codex_auth == "host-auth"
 
 
+def test_host_judge_scratch_retries_after_a_git_worktree_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scratch candidate nested below a repository must be discarded."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+    repository = _repo(tmp_path=tmp_path)
+    subprocess.run(["git", "init", "--quiet", str(repository)], check=True)
+    monkeypatch.setattr(module, "_scratch_parent_candidates", lambda: (repository, tmp_path))
+    scratch_directory = vars(module)["_non_repository_scratch_directory"]
+
+    with scratch_directory() as scratch:
+        assert scratch.parent == tmp_path
+
+
+def test_host_judge_scratch_refuses_when_no_candidate_directory_can_be_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A launch must not fall back into an unverified temporary directory."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+
+    def unavailable(**_kwargs: object) -> None:
+        raise OSError("unavailable")
+
+    monkeypatch.setattr(module, "_scratch_parent_candidates", lambda: (tmp_path,))
+    monkeypatch.setattr(module.tempfile, "TemporaryDirectory", unavailable)
+    scratch_directory = vars(module)["_non_repository_scratch_directory"]
+
+    with pytest.raises(RuntimeError, match="non-repository scratch directory"), scratch_directory():
+        pytest.fail("an unavailable scratch directory must not be yielded")
+
+
+def test_host_judge_treats_an_unavailable_git_command_as_not_a_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing Git executable does not prevent a non-Git candidate launch."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+
+    def unavailable_git(*_args: object, **_kwargs: object) -> None:
+        raise OSError("git unavailable")
+
+    monkeypatch.setattr(module.subprocess, "run", unavailable_git)
+    inside_git_worktree = vars(module)["_inside_git_worktree"]
+
+    assert not inside_git_worktree(directory=tmp_path)
+
+
 def test_a_host_claude_judge_has_no_interactive_settings_or_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
