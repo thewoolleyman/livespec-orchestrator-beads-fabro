@@ -23,6 +23,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
     REFRESH_CHANGED_STATE_FILENAME,
+    REFRESH_CLEAN_STATE_FILENAME,
+    REFRESH_CONFLICT_ENTRY_STATE_FILENAME,
     REFRESH_COUNT_STATE_FILENAME,
     REFRESH_REPAIR_BRIEF_STATE_FILENAME,
     REFRESH_REPAIR_COUNT_STATE_FILENAME,
@@ -112,7 +114,10 @@ def test_the_filename_set_is_complete_and_distinct() -> None:
     spend the other's. The REFRESH-ROUTE pair is held apart from both for the
     same reason: `PR_VISIT_COUNT_STATE_FILENAME` counts `pr` visits and decides
     nothing about convergence, so a name shared with either refresh counter
-    would make a routed re-entry spend a refresh budget twice.
+    would make a routed re-entry spend a refresh budget twice. The two
+    CLEAN-ONCE names are held apart from the counter for the opposite reason: a
+    clean refresh spends none of the bound, so a fact sharing the counter's file
+    could not record it.
     """
     filenames = publication_state_filenames()
 
@@ -124,6 +129,14 @@ def test_the_filename_set_is_complete_and_distinct() -> None:
         REFRESH_REPAIR_COUNT_STATE_FILENAME,
         PR_VISIT_COUNT_STATE_FILENAME,
         REFRESH_ROUTE_MARKER_STATE_FILENAME,
+        REFRESH_CLEAN_STATE_FILENAME,
+        REFRESH_CONFLICT_ENTRY_STATE_FILENAME,
     }
     assert len(filenames) == len(set(filenames))
     assert all(re.fullmatch(r"livespec-[a-z-]+", name) for name in filenames), filenames
+
+
+def test_the_clean_once_filenames_are_the_spellings_the_stages_read() -> None:
+    """The two literals the workflow scripts hard-code are the declared names."""
+    assert REFRESH_CLEAN_STATE_FILENAME == "livespec-pr-refresh-clean"
+    assert REFRESH_CONFLICT_ENTRY_STATE_FILENAME == "livespec-pr-refresh-conflict-entry"

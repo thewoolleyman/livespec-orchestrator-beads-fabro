@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_confirmation i
     AcpAvailabilityConfirmation,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexHeadroomReading
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import AcpAvailabilityHold
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     SessionHeadroomPolicy,
@@ -47,10 +48,12 @@ __all__: list[str] = [
     "PROVIDER_LIMIT_CONDITIONS",
     "TYPED_HOLD_SKIP",
     "UNAVAILABLE_EVIDENCE_SKIP",
+    "CodexHeadroomShortfall",
     "HeadroomShortfall",
     "NodePreflight",
     "PreflightInputs",
     "SkippedCandidate",
+    "codex_headroom_skip",
     "confirmation_skip",
     "ephemeral_skip",
     "record_skip",
@@ -112,6 +115,11 @@ class SkippedCandidate:
     because the two shortfalls are not exclusive: a reading can sit below the
     floor AND project an exhaustion inside the horizon, and only the filter
     knows which test actually stopped the candidate.
+
+    `codex_headroom` is the Codex clause's reading, carried in its OWN field
+    because a Codex reading has two windows and no five-hour utilization, so it
+    cannot ride `headroom`; a Codex skip leaves `headroom` null, and the two are
+    never both set.
     """
 
     availability_key: str | None
@@ -125,6 +133,7 @@ class SkippedCandidate:
     headroom_floor_percent: int | None = None
     headroom_horizon_minutes: int | None = None
     headroom_skip_kind: str | None = None
+    codex_headroom: CodexHeadroomReading | None = None
     confirmation_observation_ids: tuple[str, ...] = ()
 
 
@@ -139,6 +148,16 @@ class HeadroomShortfall:
     """
 
     reading: SessionHeadroomReading
+    floor_percent: int
+    horizon_minutes: int
+    kind: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class CodexHeadroomShortfall:
+    """The four facts ONE Codex headroom skip is recorded from, as one value."""
+
+    reading: CodexHeadroomReading
     floor_percent: int
     horizon_minutes: int
     kind: str
@@ -160,6 +179,7 @@ class NodePreflight:
     candidates: tuple[AcpCandidate, ...]
     skipped: tuple[SkippedCandidate, ...]
     assessments: tuple[SessionHeadroomReading, ...] = ()
+    codex_assessments: tuple[CodexHeadroomReading, ...] = ()
 
     @property
     def exhausted(self) -> bool:
@@ -280,6 +300,26 @@ def ephemeral_skip(
         headroom_floor_percent=None if shortfall is None else shortfall.floor_percent,
         headroom_horizon_minutes=None if shortfall is None else shortfall.horizon_minutes,
         headroom_skip_kind=None if shortfall is None else shortfall.kind,
+    )
+
+
+def codex_headroom_skip(
+    *, candidate: AcpCandidate, shortfall: CodexHeadroomShortfall
+) -> SkippedCandidate:
+    """A skip the Codex headroom clause decided for THIS evaluation.
+
+    It carries the shared `HEADROOM_SKIP` reason, so every consumer keyed on
+    that reason treats a Codex headroom skip as the headroom skip it is.
+    """
+    availability_key, candidate_key = skip_identity(candidate=candidate)
+    return SkippedCandidate(
+        availability_key=availability_key,
+        candidate_key=candidate_key,
+        reason=HEADROOM_SKIP,
+        headroom_floor_percent=shortfall.floor_percent,
+        headroom_horizon_minutes=shortfall.horizon_minutes,
+        headroom_skip_kind=shortfall.kind,
+        codex_headroom=shortfall.reading,
     )
 
 
