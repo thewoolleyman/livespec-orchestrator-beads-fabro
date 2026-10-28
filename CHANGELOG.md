@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.253.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.252.0...v0.253.0) (2026-10-28)
+
+
+### Features
+
+* **dispatcher:** agent stages cannot publish through the gh wrapper or push_origin ([8b370e0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8b370e0f0513964f4859187ce60b5a41077b4939))
+
+
+### Bug Fixes
+
+* refuse implicit-POST and unreadable gh api publication in agent stages ([943ecfc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/943ecfca0069426146c877eeada538cf97d39ad4))
+
 ## [0.252.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.251.2...v0.252.0) (2026-10-28)
 
 
