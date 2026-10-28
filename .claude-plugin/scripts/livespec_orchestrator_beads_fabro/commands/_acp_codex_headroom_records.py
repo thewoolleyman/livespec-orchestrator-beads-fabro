@@ -27,6 +27,7 @@ result per window.
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
+    CODEX_HEADROOM_STAGE,
     CODEX_PROJECTION_SKIP_KIND,
     CODEX_PROVIDER,
     CodexHeadroomReading,
@@ -36,10 +37,29 @@ from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import SkippedCandidate
 
 __all__: list[str] = [
+    "codex_headroom_assessment_record",
     "codex_headroom_projection_fields",
     "codex_headroom_reading_fields",
     "codex_headroom_skip_fields",
 ]
+
+
+def codex_headroom_assessment_record(
+    *, work_item_id: str, floor_percent: int, assessments: tuple[CodexHeadroomReading, ...]
+) -> dict[str, object]:
+    """The per-work-item record one admission evaluation's Codex readings produce.
+
+    The floor rides along because the readings alone cannot be interpreted without
+    it: the dial is committed configuration a reader of an old journal line cannot
+    recover from the repository as it stands now.
+    """
+    return {
+        "stage": CODEX_HEADROOM_STAGE,
+        "provider": CODEX_PROVIDER,
+        "work_item_id": work_item_id,
+        "session_headroom_floor_percent": floor_percent,
+        "assessments": [codex_headroom_reading_fields(reading=reading) for reading in assessments],
+    }
 
 
 def codex_headroom_skip_fields(
