@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.249.0...v0.249.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* judge a landed publication against the default tip and let verify_pr accept it ([d239325](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d239325187ca6acbbe0766e5310d6714876f586c))
+* re-ask the landed-publication check when draft creation is refused ([dc4e203](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dc4e2034ea406cf89d0af097179c6de79394b715))
+* require a full object name for the merge commit of a landed publication ([59e4461](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/59e4461e233deb3f304c7155b900a2a7ca90c294))
+* route a pull request merged before its refresh to the merged-reconcile ending ([5d4c379](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5d4c379f876a1a44dccb459ff99751f64162853a))
+* take the landed-publication ending only for a pull request the item's dispatch records name ([4ee4d2a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4ee4d2a4a0b4fe06772fe2785fc485061f2e1db5))
+
 ## [0.249.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.248.1...v0.249.0) (2026-10-28)
 
 
