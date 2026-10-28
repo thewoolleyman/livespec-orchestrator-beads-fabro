@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.253.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.3...v0.253.4) (2026-10-28)
+
+
+### Bug Fixes
+
+* refuse a refused --acp-node override before the claim ([6dc933d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6dc933dfed5c006c82b043cbb6287fc1a77c3db5))
+
 ## [0.253.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.2...v0.253.3) (2026-10-28)
 
 
