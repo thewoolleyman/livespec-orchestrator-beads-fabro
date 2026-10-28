@@ -92,6 +92,11 @@ _MATCHER = "Bash"
 # named nothing would still be a well-formed hook.
 _GATE_PROGRAM = "livespec-run-plugin-gate.py"
 
+# The review-turn guard (`bd-ib-azxvoo`) is a second Bash hook on the same event,
+# installed by the same merge program. These cases are about the GATE, so they
+# select its commands by program name rather than counting every Bash hook.
+_REVIEW_GUARD_PROGRAM = "livespec-review-guard.py"
+
 # The exit code the engine treats as a BLOCKING error for a `PreToolUse` hook.
 # Named because the whole point of the last case is that this status is the one
 # the hook can never return.
@@ -149,6 +154,14 @@ def _bash_commands(*, document: dict[str, object]) -> list[str]:
     return found
 
 
+def _gate_commands(*, document: dict[str, object]) -> list[str]:
+    return [one for one in _bash_commands(document=document) if _GATE_PROGRAM in one]
+
+
+def _guard_commands(*, document: dict[str, object]) -> list[str]:
+    return [one for one in _bash_commands(document=document) if _REVIEW_GUARD_PROGRAM in one]
+
+
 def test_the_merge_program_installs_the_gate_re_entry_as_a_pretooluse_bash_hook(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -169,10 +182,9 @@ def test_the_merge_program_installs_the_gate_re_entry_as_a_pretooluse_bash_hook(
     )
 
     groups = _matcher_groups(document=document, event=_EVENT)
-    assert [group.get("matcher") for group in groups] == [_MATCHER]
-    commands = _bash_commands(document=document)
-    assert len(commands) == 1
-    assert _GATE_PROGRAM in commands[0]
+    assert [group.get("matcher") for group in groups] == [_MATCHER, _MATCHER]
+    assert len(_gate_commands(document=document)) == 1
+    assert len(_guard_commands(document=document)) == 1
 
 
 def test_the_merge_program_keeps_a_foreign_hook_and_installs_exactly_one_of_its_own(
@@ -212,8 +224,9 @@ def test_the_merge_program_keeps_a_foreign_hook_and_installs_exactly_one_of_its_
         monkeypatch=monkeypatch,
     )
 
-    assert len(_bash_commands(document=first)) == 1
-    assert len(_bash_commands(document=second)) == 1
+    for document in (first, second):
+        assert len(_gate_commands(document=document)) == 1
+        assert len(_guard_commands(document=document)) == 1
     assert foreign in _matcher_groups(document=second, event=_EVENT)
     env = second.get("env")
     assert isinstance(env, dict)
@@ -221,7 +234,7 @@ def test_the_merge_program_keeps_a_foreign_hook_and_installs_exactly_one_of_its_
 
 
 def _hook_command(*, document: dict[str, object]) -> str:
-    commands = _bash_commands(document=document)
+    commands = _gate_commands(document=document)
     assert len(commands) == 1, commands
     return commands[0]
 
