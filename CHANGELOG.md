@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.248.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.247.2...v0.248.0) (2026-10-28)
+
+
+### Features
+
+* admission skips a Codex candidate whose window projects exhaustion ([b9aa298](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b9aa298d67baef7b29ce98901ac7354641ab62eb))
+* journal each Codex headroom assessment beside the Claude records ([cf05b97](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cf05b97499249f5d36da523436c8ea5c2b84a970))
+* name a Codex headroom skip in the per-node selection record ([b5bed2c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b5bed2ce93bd363a434e0a5ccd11f8d9206a7e5b))
+
+## [0.247.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.247.1...v0.247.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* render the captured governing scenario on a host_verified replay ([3d897cc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d897cc7ff71f51a89261320cc7ffe442b2115f1))
+
 ## [0.247.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.247.0...v0.247.1) (2026-10-28)
 
 

@@ -1945,6 +1945,28 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   forbids from skipping anything, so a wrong spelling degrades to the
   five-hour-only behaviour rather than to a wrong refusal — which is why the
   fail-open direction is load-bearing here and not merely conservative.
+- The CODEX SIBLING of that filter (`bd-ib-4jdgcw`, Scenario 243, `contracts.md`
+  "Admission filters Codex candidates by projected usage-window headroom") lives
+  in FIVE modules and reuses the Claude filter's two dials, its at-most-once
+  memo and its skip semantics: `_acp_codex_headroom` (PURE: the reading, its
+  whole-reading grade, coverage and the three skip kinds) →
+  `_acp_codex_headroom_projection` (PURE: the per-window projection) and
+  `_acp_codex_headroom_records` (PURE: the journal row, the skip fields) and
+  `_dispatcher_codex_headroom_io` (the one bounded `wham/usage` read) →
+  `_dispatcher_codex_headroom_gate` (the memoized per-evaluation source and the
+  per-window-length baseline read). Five properties an editor must not invert.
+  `_acp_codex_headroom` imports NOTHING from the Claude headroom module, because
+  `SessionHeadroomPolicy` carries the Codex read seam and the opposite direction
+  closes a cycle. Validity is decided for the WHOLE reading: a valid window beside
+  a malformed one is unobservable and is never used to admit. Credits are never
+  headroom, so only `rate_limit` fields are read. A baseline is keyed on the
+  credential AND the window length, and the Codex journal stage is distinct from
+  the Claude one so neither provider's baseline reader sees the other's rows. And
+  the credential identity digests the ACCOUNT identifier, not the access token,
+  because the token rotates on every host refresh and would discard the baseline
+  with it. `tests/conftest.py` stubs the Codex read to an untouched window beside
+  the Claude one, for the same reason: a fixture chain carrying a Codex
+  candidate would otherwise read the host `auth.json`.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory
