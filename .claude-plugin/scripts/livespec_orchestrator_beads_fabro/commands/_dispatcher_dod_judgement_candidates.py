@@ -13,7 +13,6 @@ purpose keeps the candidates' plain replies and is never ended on input use.
 from __future__ import annotations
 
 import os
-import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candid
     candidate_command,
     candidate_label,
     candidate_model,
+    is_codex_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt import (
     resolve_judge_timeout_seconds,
@@ -41,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage 
     candidate_reply,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate import (
+    isolated_launch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
     ShellCommandRunner,
 )
@@ -72,7 +75,6 @@ CAUSE_INPUT_LIMIT = "input-limit-reached"
 # two numbers come from rather than from any convention restated here.
 _EXIT_TIMED_OUT = 124
 _EXIT_EXECUTABLE_ABSENT = 127
-_PROMPT_FILE_PREFIX = "livespec-dod-gate-"
 _UNBOUNDED_USAGE = CandidateInputUsage(total_tokens=None, status=INPUT_USAGE_UNREPORTED)
 
 
@@ -217,34 +219,36 @@ def _run_candidate(  # noqa: PLR0913 - each argument is an independent seam inpu
 ) -> _CandidateRun:
     """Run one configured host candidate with a prompt file as its only stdin."""
     argv, judge_environ = candidate_command(
-        candidate=candidate, environ=environ, bound_input=bound_input
+        candidate=candidate, environ=environ, bound_input=bound_input, allowed_directory=cwd
     )
-    with tempfile.TemporaryDirectory(prefix=_PROMPT_FILE_PREFIX) as scratch:
-        prompt_path = Path(scratch) / "prompt.txt"
-        _ = prompt_path.write_text(prompt, encoding="utf-8")
-        with prompt_path.open("rb") as handle:
-            if bound_input and isinstance(runner, ShellCommandRunner):
-                live_usage = _LiveUsage()
-                result = runner.run_streaming(
-                    argv=argv,
-                    cwd=cwd,
-                    timeout_seconds=timeout_seconds,
-                    on_stdout_line=live_usage.observe,
-                    env=judge_environ,
-                    stdin=handle.fileno(),
-                )
-                return _CandidateRun(
-                    result=result,
-                    usage=candidate_input_usage(output=result.stdout),
-                    ended_by_input_limit=live_usage.ended_by_input_limit,
-                )
-            result = runner.run(
+    with isolated_launch(
+        is_codex=is_codex_candidate(candidate=candidate),
+        prompt=prompt,
+        candidate_environ=judge_environ,
+        ambient_environ=environ,
+    ) as isolated:
+        if bound_input and isinstance(runner, ShellCommandRunner):
+            live_usage = _LiveUsage()
+            result = runner.run_streaming(
                 argv=argv,
-                cwd=cwd,
+                cwd=isolated.cwd,
                 timeout_seconds=timeout_seconds,
-                env=judge_environ,
-                stdin=handle.fileno(),
+                on_stdout_line=live_usage.observe,
+                env=isolated.environ,
+                stdin=isolated.stdin,
             )
+            return _CandidateRun(
+                result=result,
+                usage=candidate_input_usage(output=result.stdout),
+                ended_by_input_limit=live_usage.ended_by_input_limit,
+            )
+        result = runner.run(
+            argv=argv,
+            cwd=isolated.cwd,
+            timeout_seconds=timeout_seconds,
+            env=isolated.environ,
+            stdin=isolated.stdin,
+        )
     usage = candidate_input_usage(output=result.stdout) if bound_input else _UNBOUNDED_USAGE
     return _CandidateRun(result=result, usage=usage, ended_by_input_limit=False)
 

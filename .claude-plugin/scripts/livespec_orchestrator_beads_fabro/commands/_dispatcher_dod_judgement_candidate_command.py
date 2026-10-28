@@ -24,19 +24,36 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate import (
+    resolve_codex_path,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 
-__all__: list[str] = ["candidate_command", "candidate_label", "candidate_model"]
+__all__: list[str] = [
+    "candidate_command",
+    "candidate_label",
+    "candidate_model",
+    "is_codex_candidate",
+]
 
 _CODEX_AGENT = "codex-acp"
 _CODEX_SANDBOX_SETTINGS = frozenset({"sandbox_mode", "approval_policy"})
 _CLAUDE_AGENT = "claude-acp"
+_CODEX_ISOLATION_SETTINGS = (
+    "project_doc_max_bytes=0",
+    "features.skills=false",
+    "features.multi_agent=false",
+)
 
 
 def candidate_command(
-    *, candidate: AcpCandidate, environ: dict[str, str], bound_input: bool
+    *,
+    candidate: AcpCandidate,
+    environ: dict[str, str],
+    bound_input: bool,
+    allowed_directory: Path,
 ) -> tuple[list[str], dict[str, str]]:
     """The direct host command for one catalog-resolved ACP candidate.
 
@@ -49,6 +66,12 @@ def candidate_command(
     approval settings do not carry over; a host judge only reads, so Codex runs
     `-s read-only`, the counterpart of the Claude judge's read-only tool list.
 
+    Each CLI is resolved from the invoking environment and declines the
+    interactive setup the invoking profile would load (project instructions,
+    skills, settings, MCP servers, slash commands, session persistence); the
+    governed repository is readable only through `allowed_directory`, which the
+    caller's scratch working directory does not contain.
+
     Under `bound_input` each CLI is also asked for its usage-reporting output
     form, because a candidate that reports no usage can be neither measured nor
     ended by the bound.
@@ -57,28 +80,37 @@ def candidate_command(
     if candidate.agent_id == _CODEX_AGENT:
         settings = codex_settings(candidate=candidate)
         model = settings.pop("model", "")
-        argv = ["codex", "exec", "-m", model]
+        argv = [resolve_codex_path(environ=environ), "exec", "-m", model]
         if bound_input:
             argv.append("--json")
         for key, value in settings.items():
             argv.extend(("-c", f"{key}={json.dumps(value)}"))
-        argv.extend(("-s", "read-only"))
+        for setting in _CODEX_ISOLATION_SETTINGS:
+            argv.extend(("-c", setting))
+        argv.extend(("--add-dir", str(allowed_directory), "-s", "read-only"))
+        argv.append("--skip-git-repo-check")
         return argv, judge_environ
     if candidate.agent_id == _CLAUDE_AGENT:
         model = candidate.adapter.env.get("ANTHROPIC_MODEL", "")
         credential = select_factory_credential(
             environ=environ,
-            home=Path.home(),
+            home=Path(environ.get("HOME", str(Path.home()))),
             warn=lambda message: sys.stderr.write(f"{message}\n"),
         )
         judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
         argv = judgement_argv(
             judge_path=resolve_judge_path(environ=environ),
             model=model,
+            allowed_directory=allowed_directory,
             stream_usage=bound_input,
         )
         return argv, judge_environ
     return [candidate.adapter.command, *candidate.adapter.args], judge_environ
+
+
+def is_codex_candidate(*, candidate: AcpCandidate) -> bool:
+    """Whether the candidate runs the Codex CLI, which takes a private config home."""
+    return candidate.agent_id == _CODEX_AGENT
 
 
 def candidate_label(*, candidate: AcpCandidate) -> str:
