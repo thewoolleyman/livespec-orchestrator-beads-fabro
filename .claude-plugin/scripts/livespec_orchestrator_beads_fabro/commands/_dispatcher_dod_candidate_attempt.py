@@ -18,6 +18,7 @@ __all__: list[str] = [
     "OUTCOME_VERDICT",
     "CandidateAttempt",
     "candidate_record_lines",
+    "candidate_report",
     "unavailable_record_lines",
     "unavailable_report",
 ]
@@ -81,3 +82,8 @@ def unavailable_report(*, cause: str, attempts: Sequence[CandidateAttempt]) -> s
         else "no candidate ran"
     )
     return f"dod-gate: the judgement did not run (cause {cause}); {ended}"
+
+
+def candidate_report(*, attempt: CandidateAttempt) -> str:
+    """The standard-error line saying one candidate ran, and what came of it."""
+    return f"dod-gate: candidate ran: {attempt.render()}"
