@@ -47,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     DefinitionOfDone,
     definition_of_done,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    CandidateAttempt,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_judgement_record,
 )
@@ -117,11 +120,15 @@ _EXCLUDED_SPEC_DIRECTORIES = frozenset({"proposed_changes", "history"})
 
 @dataclass(frozen=True, kw_only=True)
 class DodJudgement:
-    """One judgement result, including the actionable held findings."""
+    """One judgement result, including the actionable held findings.
+
+    `attempts` is every candidate the taking ran, in the order it ran them.
+    """
 
     outcome: str
     findings: tuple[str, ...] = ()
     cause: str | None = None
+    attempts: tuple[CandidateAttempt, ...] = ()
 
     @property
     def holds(self) -> bool:

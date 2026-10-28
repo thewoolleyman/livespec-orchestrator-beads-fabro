@@ -41,6 +41,9 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    candidate_record_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
     clause_line,
     clauses_from,
@@ -186,6 +189,7 @@ def verdict_comment(  # noqa: PLR0913 - each argument is one field of the record
         f"{_OUTCOME_FIELD}{_FIELD_SEPARATOR}{judgement.outcome}",
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
+        *candidate_record_lines(attempts=judgement.attempts),
     ]
     if spec_identity is not None:
         lines.extend(spec_identity_lines(identity=spec_identity))

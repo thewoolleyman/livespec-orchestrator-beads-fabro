@@ -35,6 +35,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_command import (
+    resolve_judge_path,
+    resolve_judge_timeout_seconds,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     CAUSE_UNPARSEABLE_VERDICT,
     JUDGEMENT_ADMITTED,
@@ -49,8 +53,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     CAUSE_PROMPT_UNREADABLE,
     dod_gate_prompt_path,
     judgement_prompt,
-    resolve_judge_path,
-    resolve_judge_timeout_seconds,
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult

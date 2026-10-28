@@ -49,13 +49,15 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_command import (
+    resolve_judge_path,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     JUDGEMENT_COMMENT_MARKER,
     UNAVAILABLE_COMMENT_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     CAUSE_NO_ELIGIBLE_MODEL,
-    resolve_judge_path,
 )
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
@@ -69,7 +71,7 @@ from returns.unsafe import unsafe_perform_io
 # production constant would make this module agree with it whatever it said —
 # including after a rename that left the conftest fixture behind, which is the
 # drift that causes this class of defect. The name is private to
-# `_dispatcher_dod_judgement_run`, so the literal is kept honest by handing it
+# `_dispatcher_dod_candidate_command`, so the literal is kept honest by handing it
 # to the production resolver instead of by comparing it to an import.
 _JUDGE_PATH_ENV = "LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH"
 
