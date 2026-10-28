@@ -4261,7 +4261,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     Given a refresh already pushed a new head with durable run provenance
     When the same refresh is retried against the matching remote
     Then it resumes from that head and requires proof naming it
-    And three completed refreshes followed by more base movement end with an explicit non-convergence cause
+    And three refreshes that conflicted or failed the repository-declared gate, each repaired, followed by a further conflicting or gate-failing refresh end with an explicit non-convergence cause
   Scenario: Publication renders metadata as data and verifies the exact pull request
     Given the title and body contain shell metacharacters
     When pr executes the deterministic publication recipe
@@ -6355,11 +6355,17 @@ Feature: A janitor-green run survives a default branch that moved under it
     When a publish_draft refresh conflict routes the run to a refresh-repair round
     Then the run still has the same number of review-fix rounds remaining as before the repair
 
-  Scenario: Repaired and clean refreshes share the non-convergence bound
-    Given a run whose pr_refresh has refreshed cleanly twice
-    And whose third pr_refresh refresh conflicted and was repaired
-    When the default branch advances again before pr
+  Scenario: Only conflicting or gate-failing refreshes count toward the non-convergence bound
+    Given a run whose pr_refresh refreshes have conflicted or failed the gate three times, each repaired
+    When the default branch advances again before pr and that refresh conflicts
     Then the run ends with the explicit non-convergence cause and preserved work
+
+  Scenario: A run refreshes cleanly once and leaves later default-branch movement to the merge path
+    Given a run whose pr_refresh has refreshed cleanly onto an advanced default branch once
+    And the default branch advances again, without conflicting with the run's commits, before the pull request merges
+    When the run next reaches pr_refresh and then pr
+    Then pr_refresh does not refresh again and the clean refresh is not counted toward the non-convergence bound
+    And pr arms auto-merge for the head the latest verified or carried_forward record names, and the run does not end pr-refresh-non-converged
 
   Scenario: The repair budget is bounded
     Given a run that has already taken two refresh-repair rounds across publish_draft and pr_refresh
@@ -6920,12 +6926,25 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
   So that a proof-verified run is not ended for a human because master moved a few seconds too late
 
   Scenario: A refreshable advance before the arming re-enters pr_refresh and then arms
-    Given a run whose latest verified record names head H
+    Given a run that has not yet refreshed cleanly onto an advanced default branch and whose latest verified record names head H
     And the default branch advances to tip T, which is not an ancestor of H, with a commit that does not conflict with the run's commits
     When pr marks the draft ready and the forge rejects the head-bound arming as not rebaseable
-    Then pr records the refresh-route marker and pr_route routes the run to pr_refresh, which counts one refresh toward the three-refresh bound and takes no refresh-repair round
+    Then pr records the refresh-route marker and pr_route routes the run to pr_refresh, which refreshes cleanly, counts no refresh toward the three-refresh bound and takes no refresh-repair round
     And the refreshed head takes the carry-forward decision before pr is entered again
     And pr reports the pull request already ready and arms auto-merge for the head its latest verified or carried_forward record names
+
+  Scenario: After its one clean refresh a run retries a rejected arming instead of refreshing again
+    Given a run that has taken its one clean pr_refresh refresh and whose latest carried_forward record names head H
+    And the default branch advances again with a commit that does not conflict with the run's commits
+    When pr marks the draft ready and the forge rejects the head-bound arming without reporting a conflict
+    Then pr records no refresh-route marker and retries the arming of H, re-reading the mergeability report before each retry
+    And when an arming succeeds the run proceeds as after any armed pull request, and when the bounded attempts are exhausted pr fails closed naming the forge's last rejection cause
+
+  Scenario: A conflict re-entry after the clean refresh counts even when it applies cleanly
+    Given a run that has taken its one clean pr_refresh refresh
+    And pr recorded the refresh-route marker because the forge reported the pull request in conflict with the default branch
+    When pr_route routes the run to pr_refresh and that refresh applies cleanly
+    Then that visit counts once toward the three-refresh non-convergence bound
 
   Scenario: A conflicting advance before the arming re-enters pr_refresh and takes refresh repair
     Given a run whose latest verified record names head H
