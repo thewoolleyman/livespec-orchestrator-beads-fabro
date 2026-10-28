@@ -163,6 +163,12 @@ _TR_EXTRA_OPERAND = "extra operand"
 # fails here instead of passing against a constant nothing reads.
 _VISIT_COUNT_FILENAME = "livespec-pr-visit-count"
 _ROUTE_MARKER_FILENAME = "livespec-pr-refresh-route"
+# The two facts v253's clean-once rule adds, spelled as the literals the shell
+# reads: `pr` consults the first to decide between retrying a rejected arming
+# and routing it back, and `pr_route` writes the second for the `pr_refresh`
+# visit a forge-reported conflict routes to.
+_CLEAN_FILENAME = "livespec-pr-refresh-clean"
+_CONFLICT_ENTRY_FILENAME = "livespec-pr-refresh-conflict-entry"
 
 # The jq program the merge-commit read owes `jq`: a BARE field path, carrying no
 # quote character of its own. A jq field path needs no quoting, and the quote
@@ -196,6 +202,12 @@ _COVERAGE_ENV_PREFIXES = ("COVERAGE_PROCESS_START", "COV_CORE_")
 # a `pr merge` has been issued, which is the real shape of a forge that answered
 # the observation and then stopped answering: the arming is reached, rejected,
 # and the RE-READ is what cannot be taken.
+#
+# `reject_merge_times` bounds how many armings the forge rejects before it
+# accepts one, and `dirty_after_merges` makes the mergeability report turn
+# DIRTY once that many armings have been issued: the two shapes v253's retry
+# loop has to tell apart, an arming that eventually lands and a conflict that
+# appears while the stage is retrying.
 #
 # `merged_while_arming` is the race the ratified clause names: the forge rejects
 # the arming command AND the pull request is already MERGED when the stage
@@ -241,10 +253,17 @@ if verb == "list":
 
 if verb == "view":
     field = flag(argv, "--json")
+    merge_calls = sum(1 for call in state["calls"] if call[:2] == ["pr", "merge"])
+    dirty_after = state.get("dirty_after_merges")
+    status = (
+        "DIRTY"
+        if dirty_after is not None and merge_calls >= dirty_after
+        else state["mergeStateStatus"]
+    )
     answers = {
         "state": state["state"],
         "headRefOid": state["head"],
-        "mergeStateStatus": state["mergeStateStatus"],
+        "mergeStateStatus": status,
         "isDraft": "true" if state["isDraft"] else "false",
         "autoMergeRequest": "null" if state["autoMergeRequest"] is None else "{}",
         "mergeCommit": state["mergeCommit"] or "",
@@ -257,6 +276,11 @@ if verb == "view":
     declined = state["unreadable_fields"] + (
         state["unreadable_after_merge"] if armed_already else []
     )
+    declined = declined + [
+        name
+        for name, threshold in state.get("unreadable_from_merge_call", {}).items()
+        if merge_calls >= threshold
+    ]
     if field in declined:
         sys.stderr.write("the forge declined to report %%s\n" %% field)
         sys.exit(1)
@@ -284,6 +308,11 @@ if verb == "merge":
             %% (state["number"], required)
         )
         sys.exit(1)
+    remaining = state.get("reject_merge_times")
+    if remaining is not None and remaining <= 0:
+        state["reject_merge"] = None
+    elif remaining is not None:
+        state["reject_merge_times"] = remaining - 1
     if state["reject_merge"]:
         if state["merged_while_arming"]:
             state["state"] = "MERGED"
@@ -496,6 +525,9 @@ def _build(
     unreadable_after_merge: tuple[str, ...] = (),
     merge_state_status: str = "DIRTY",
     merged_while_arming: str | None = None,
+    reject_merge_times: int | None = None,
+    dirty_after_merges: int | None = None,
+    unreadable_from_merge_call: dict[str, int] | None = None,
 ) -> _Route:
     """A real origin and clone whose publish head carries a conforming proof chain.
 
@@ -567,11 +599,20 @@ def _build(
                 "unreadable_fields": list(unreadable_fields),
                 "unreadable_after_merge": list(unreadable_after_merge),
                 "merged_while_arming": merged_while_arming,
+                "reject_merge_times": reject_merge_times,
+                "dirty_after_merges": dirty_after_merges,
+                "unreadable_from_merge_call": unreadable_from_merge_call or {},
                 "calls": [],
             }
         ),
         encoding="utf-8",
     )
+    return box
+
+
+def _after_the_clean_refresh(*, box: _Route) -> _Route:
+    """Record that this run already took its one clean `pr_refresh` refresh."""
+    _ = (box.state_dir() / _CLEAN_FILENAME).write_text("", encoding="utf-8")
     return box
 
 
@@ -605,6 +646,7 @@ def _env(*, box: _Route) -> dict[str, str]:
         "LIVESPEC_TR_OPERANDS": str(box.tr_record),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         "LIVESPEC_PR_TITLE": "feat: a scripted publication",
+        "LIVESPEC_PR_ARM_RETRY_SECONDS": "0",
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(box.plugins_root),
     }
 
@@ -645,6 +687,8 @@ def test_the_two_new_state_files_are_declared_with_the_rest() -> None:
 
     assert _VISIT_COUNT_FILENAME in declared
     assert _ROUTE_MARKER_FILENAME in declared
+    assert _CLEAN_FILENAME in declared
+    assert _CONFLICT_ENTRY_FILENAME in declared
 
 
 def test_an_advanced_default_branch_routes_the_rejected_arming_back_to_pr_refresh(
@@ -835,6 +879,136 @@ def test_a_marker_left_by_an_earlier_pr_visit_can_never_route_a_later_one(
     assert route.returncode == 0, route.stderr
     assert "LIVESPEC_PR_ROUTE_STALE_MARKER" in route.stderr
     assert box.state(name=_ROUTE_MARKER_FILENAME) is None
+
+
+def test_before_the_clean_refresh_any_advance_routes_whatever_the_mergeability(
+    tmp_path: Path,
+) -> None:
+    """A run that has not refreshed cleanly yet routes on the advance alone.
+
+    The mergeability is deliberately not DIRTY: the first clean refresh is the
+    run's to take, and it is taken on the default branch's advance, not on a
+    forge-reported conflict. The marker is the plain visit number.
+    """
+    box = _build(root=tmp_path, merge_state_status="BEHIND")
+    _ = _advance_default(box=box)
+
+    pr = _run(box=box, node="pr")
+
+    assert pr.returncode == 0, pr.stderr
+    assert box.state(name=_ROUTE_MARKER_FILENAME) == "1\n"
+    assert len(box.merge_argvs()) == 1
+
+    route = _run(box=box, node="pr_route")
+
+    assert route.returncode == 1, route.stdout
+    assert box.state(name=_CONFLICT_ENTRY_FILENAME) is None
+
+
+def test_after_the_clean_refresh_a_forge_reported_conflict_routes_as_a_conflict_entry(
+    tmp_path: Path,
+) -> None:
+    """The one route back: the marker names a conflict and `pr_route` passes it on."""
+    box = _after_the_clean_refresh(box=_build(root=tmp_path))
+    _ = _advance_default(box=box)
+
+    pr = _run(box=box, node="pr")
+
+    assert pr.returncode == 0, pr.stderr
+    assert box.state(name=_ROUTE_MARKER_FILENAME) == "1:conflict\n"
+    assert len(box.merge_argvs()) == 1, "a reported conflict is not retried"
+
+    route = _run(box=box, node="pr_route")
+
+    assert route.returncode == 1, route.stdout
+    assert "LIVESPEC_PR_ROUTE_REFRESH" in route.stderr
+    assert box.state(name=_ROUTE_MARKER_FILENAME) is None
+    assert box.state(name=_CONFLICT_ENTRY_FILENAME) == ""
+
+
+def test_after_the_clean_refresh_a_rejection_without_a_conflict_is_retried_then_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """No marker, a bounded number of head-bound retries, and the forge's own cause.
+
+    The mergeability is re-read before each retry, which is asserted as a count
+    of reads rather than inferred, and every retry is bound to the same head.
+    """
+    box = _after_the_clean_refresh(box=_build(root=tmp_path, merge_state_status="BEHIND"))
+    _ = _advance_default(box=box)
+
+    pr = _run(box=box, node="pr")
+
+    assert pr.returncode == 1, pr.stdout
+    assert box.state(name=_ROUTE_MARKER_FILENAME) is None
+    assert "LIVESPEC_PR_ARM_FAILED" in pr.stderr
+    assert _REJECTION in pr.stderr.split("LIVESPEC_PR_ARM_FAILED")[-1]
+    armings = box.merge_argvs()
+    assert len(armings) == 6, "one arming and five bounded retries"
+    assert {argv[argv.index("--match-head-commit") + 1] for argv in armings} == {box.head()}
+    reads = box.view_argvs(field="mergeStateStatus")
+    assert len(reads) == 6, "one read for the rejection and one before each retry"
+    assert box.forge()["autoMergeRequest"] is None
+
+
+def test_after_the_clean_refresh_a_retry_that_lands_arms_the_same_head(tmp_path: Path) -> None:
+    """When an arming succeeds the run proceeds exactly as after any armed pull request."""
+    box = _after_the_clean_refresh(
+        box=_build(root=tmp_path, merge_state_status="BEHIND", reject_merge_times=2)
+    )
+    _ = _advance_default(box=box)
+
+    pr = _run(box=box, node="pr")
+
+    assert pr.returncode == 0, pr.stderr
+    assert "LIVESPEC_PR_READY_AND_ARMED" in pr.stderr
+    assert box.state(name=_ROUTE_MARKER_FILENAME) is None
+    assert box.forge()["autoMergeRequest"] is not None
+    assert len(box.merge_argvs()) == 3
+
+    route = _run(box=box, node="pr_route")
+
+    assert route.returncode == 0, route.stderr
+    assert "LIVESPEC_PR_ROUTE_NONE" in route.stderr
+
+
+def test_a_conflict_that_appears_while_retrying_is_routed_as_a_conflict_entry(
+    tmp_path: Path,
+) -> None:
+    """The mergeability is re-read before every retry, so a late conflict still routes."""
+    box = _after_the_clean_refresh(
+        box=_build(root=tmp_path, merge_state_status="BEHIND", dirty_after_merges=2)
+    )
+    _ = _advance_default(box=box)
+
+    pr = _run(box=box, node="pr")
+
+    assert pr.returncode == 0, pr.stderr
+    assert box.state(name=_ROUTE_MARKER_FILENAME) == "1:conflict\n"
+    assert len(box.merge_argvs()) == 2
+    assert box.forge()["autoMergeRequest"] is None
+
+
+def test_a_retry_whose_mergeability_cannot_be_read_fails_closed_without_routing(
+    tmp_path: Path,
+) -> None:
+    """An unobservable answer is never read as a conflict, and never as a clean pull request."""
+    box = _after_the_clean_refresh(
+        box=_build(
+            root=tmp_path,
+            merge_state_status="BEHIND",
+            unreadable_from_merge_call={"mergeStateStatus": 2},
+        )
+    )
+    _ = _advance_default(box=box)
+
+    pr = _run(box=box, node="pr")
+
+    assert pr.returncode == 1, pr.stdout
+    assert box.state(name=_ROUTE_MARKER_FILENAME) is None
+    assert "LIVESPEC_PR_ARM_FAILED" in pr.stderr
+    assert "before arming attempt" in pr.stderr
+    assert len(box.merge_argvs()) == 2, "the unreadable re-read stopped the retries"
 
 
 @pytest.mark.parametrize("petri", _RENDERINGS)

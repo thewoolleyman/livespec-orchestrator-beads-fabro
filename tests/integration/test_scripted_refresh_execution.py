@@ -110,6 +110,14 @@ _FACTORY_RUN_ID = "01HXQXQ4JBSAME-RUN-CHECKPOINT"
 _OWNED_FILE = "owned.txt"
 _SHARED_FILE = "shared.txt"
 
+# The two facts the clean-once rule adds to the publication state (v253), named
+# here as literals rather than imported: `test_dispatcher_publication_state`
+# binds these spellings to the declared constants, and importing them here
+# would turn a missing declaration into a collection error instead of the
+# assertion failure that proves the behaviour is unimplemented.
+_CLEAN_STATE_FILENAME = "livespec-pr-refresh-clean"
+_CONFLICT_ENTRY_STATE_FILENAME = "livespec-pr-refresh-conflict-entry"
+
 
 # The coverage hooks an allowlisted spawn must scrub, so no child of this file
 # self-instruments and races the concurrent coverage run. Git itself ignores
@@ -581,7 +589,10 @@ def test_an_advanced_default_is_rebased_gated_and_republished_under_a_lease(
     )
     assert contains.returncode == 0, "the republished head does not contain the advanced default"
     assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
-    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    # A refresh that applied cleanly, passed the gate and pushed is NOT counted
+    # (v253); it is recorded as the run's one clean refresh instead.
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+    assert box.state(name=_CLEAN_STATE_FILENAME) is not None
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) == ""
 
 
@@ -1155,6 +1166,8 @@ def test_the_three_refresh_bound_stops_a_fourth_refresh(tmp_path: Path) -> None:
 
     below = _build(root=tmp_path / "below")
     _ = (below.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = (below.state_dir() / _CLEAN_STATE_FILENAME).write_text("", encoding="utf-8")
+    _ = (below.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
     _ = _advance_default(box=below)
 
     allowed = _run(box=below)
@@ -1162,6 +1175,183 @@ def test_the_three_refresh_bound_stops_a_fourth_refresh(tmp_path: Path) -> None:
     assert allowed.returncode == 0, allowed.stderr
     assert "LIVESPEC_PR_REFRESH_CHANGED" in allowed.stderr
     assert below.state(name=REFRESH_COUNT_STATE_FILENAME) == "3\n"
+
+
+def test_a_clean_refresh_is_not_counted_and_is_recorded_as_the_runs_one(
+    tmp_path: Path,
+) -> None:
+    """The headline of v253: a clean refresh spends none of the three-refresh bound.
+
+    The counter is seeded at the bound's last free value so that a build which
+    still counted this refresh would reach three and leave the file at "3\n"
+    instead of untouched.
+    """
+    box = _build(root=tmp_path)
+    _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "2"
+    assert box.state(name=_CLEAN_STATE_FILENAME) is not None
+
+
+def test_after_its_one_clean_refresh_a_run_leaves_later_movement_to_the_merge_path(
+    tmp_path: Path,
+) -> None:
+    """A second advance neither rewrites the publish branch nor ends the run.
+
+    Origin, the local head, the recorded provenance and the changed marker are
+    all asserted, because a build that refreshed again would move origin and set
+    the marker, while one that skipped the rebase but still published would
+    leave the marker behind and send `pr_refresh_head` into a carry-forward
+    decision for a head that did not change.
+    """
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box, path="first.txt", text="one\n")
+    first = _run(box=box)
+    assert first.returncode == 0, first.stderr
+    refreshed = box.remote_head(ref=_BRANCH)
+    second_tip = _advance_default(box=box, path="second.txt", text="two\n")
+
+    second = _run(box=box)
+
+    assert second.returncode == 0, second.stderr
+    assert "LIVESPEC_PR_REFRESH_CLEAN_ONCE" in second.stderr
+    assert "NON_CONVERGED" not in second.stderr
+    assert box.remote_head(ref=_BRANCH) == refreshed
+    assert box.local_head() == refreshed
+    assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{refreshed}\n"
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", second_tip, refreshed],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode != 0, "the refreshed head absorbed the later advance"
+
+
+def test_a_default_branch_that_advances_on_every_window_never_ends_non_converged(
+    tmp_path: Path,
+) -> None:
+    """Churn alone cannot reach the bound when every refresh applies cleanly.
+
+    Six rounds is twice the bound: under the counting this requirement replaces,
+    the fourth round would have refused.
+    """
+    box = _build(root=tmp_path)
+    for round_number in range(6):
+        _ = _advance_default(box=box, path=f"churn-{round_number}.txt", text=f"{round_number}\n")
+
+        result = _run(box=box)
+
+        assert result.returncode == 0, (round_number, result.stderr)
+        assert "NON_CONVERGED" not in result.stderr, round_number
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+
+
+def test_a_conflict_entry_after_the_clean_refresh_refreshes_and_counts_once(
+    tmp_path: Path,
+) -> None:
+    """The one door back into a refresh: `pr_route` on a forge-reported conflict.
+
+    It refreshes onto the advanced default even though the run already refreshed
+    cleanly, counts exactly once at this visit though it applies cleanly, and
+    consumes the entry fact so the NEXT visit is not mistaken for one.
+    """
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box, path="first.txt", text="one\n")
+    assert _run(box=box).returncode == 0
+    refreshed = box.remote_head(ref=_BRANCH)
+    second_tip = _advance_default(box=box, path="second.txt", text="two\n")
+    _ = (box.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert box.remote_head(ref=_BRANCH) != refreshed
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", second_tip, box.remote_head(ref=_BRANCH)],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode == 0, "the conflict-entry refresh did not absorb the advance"
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    assert box.state(name=_CONFLICT_ENTRY_STATE_FILENAME) is None
+
+    third_tip = _advance_default(box=box, path="third.txt", text="three\n")
+    after = _run(box=box)
+
+    assert after.returncode == 0, after.stderr
+    assert "LIVESPEC_PR_REFRESH_CLEAN_ONCE" in after.stderr
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    assert third_tip != box.local_head()
+
+
+def test_a_conflict_entry_at_the_bound_still_ends_non_converged(tmp_path: Path) -> None:
+    """The bound still ends a run that keeps meeting forge-reported conflicts."""
+    box = _build(root=tmp_path)
+    _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("3", encoding="utf-8")
+    _ = (box.state_dir() / _CLEAN_STATE_FILENAME).write_text("", encoding="utf-8")
+    _ = (box.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
+    before = box.remote_head(ref=_BRANCH)
+    _ = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_NON_CONVERGED" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == before
+
+
+def test_an_own_checkpoint_is_still_dropped_after_the_clean_refresh_without_the_new_default(
+    tmp_path: Path,
+) -> None:
+    """The clean-once skip must not leave the engine's checkpoints on the pull request.
+
+    `pr` compares the pull request's head with the head this run published, so
+    a skipped visit that left an own empty checkpoint on origin would end the
+    run at `LIVESPEC_PR_UNEXPECTED_HEAD`. The republish drops the checkpoint at
+    the run's previous base, picks up none of the later movement, and counts
+    nothing.
+    """
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box, path="first.txt", text="one\n")
+    assert _run(box=box).returncode == 0
+    published = box.remote_head(ref=_BRANCH)
+    second_tip = _advance_default(box=box, path="second.txt", text="two\n")
+    checkpoint_clone = _branch_clone(box=box, name="late-checkpoint")
+    checkpoint = _checkpoint(
+        cwd=checkpoint_clone,
+        subject=f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=checkpoint_clone)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert box.remote_head(ref=_BRANCH) == published
+    assert box.remote_head(ref=_BRANCH) != checkpoint
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", second_tip, published],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode != 0
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
 
 
 def test_a_stale_changed_marker_is_cleared_at_every_entry(tmp_path: Path) -> None:
@@ -1257,10 +1447,10 @@ def test_the_refresh_execution_boundary_leaves_enclosing_run_state_intact(
     assert shared_state() == before, "a refresh execution control touched a fixed shared path"
     # The POSITIVE half: each control's own state resolved inside its own
     # `$GIT_DIR`, which is the mechanism that makes the two legs above hold. The
-    # passing arm wrote a counter there and the failing arm did not, so the one
-    # directory carries both answers.
-    assert passing_box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
-    # Both boxes now record a refresh, because v134 counts the repaired visit
+    # passing arm wrote its clean-refresh fact there and the failing arm wrote a
+    # counter, so the one directory carries both answers.
+    assert passing_box.state(name=_CLEAN_STATE_FILENAME) is not None
+    # The failing arm now records a refresh, because v134 counts the repaired visit
     # too; what this case grades is that each recorded it in its OWN clone, which
     # is the boundary under test.
     assert failing_box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
@@ -1407,22 +1597,29 @@ def test_the_refresh_route_visit_caps_admit_the_worst_case_the_bound_allows(
     So the longest run alternates one uncounted entry, one `pr` visit, one
     counted refresh, up to the bound, and ends on the entry that refuses:
 
-      * `pr_refresh`      — `bound` counted + `bound + 1` uncounted + 1 refusing
+      * `pr_refresh`      — `bound` counted + `bound + 1` uncounted + 1 refusing,
+        plus the run's one clean refresh and the uncounted visit that follows it
       * `pr_refresh_head` — every entry but the refusing one
-      * `pr` and `pr_route` — one per uncounted entry
+      * `pr` and `pr_route` — one per uncounted entry, plus the one that routes
+        the clean refresh
     """
     box = _build(root=tmp_path / "probe")
     _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = (box.state_dir() / _CLEAN_STATE_FILENAME).write_text("", encoding="utf-8")
+    _ = (box.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
     _ = _advance_default(box=box)
     assert _run(box=box).returncode == 0, "the probe's premise is a refresh that proceeds"
     bound = int(str(box.state(name=REFRESH_COUNT_STATE_FILENAME)).strip())
 
-    entries = 2 * bound + 2
+    # The run's one clean refresh is uncounted, and so is the visit that returns
+    # from the proof loop to find it done: two more entries than the counted
+    # refreshes alone admit, and one more `pr` visit to route the clean one.
+    entries = 2 * bound + 4
     required = {
         "pr_refresh": entries,
         "pr_refresh_head": entries - 1,
-        "pr": bound + 1,
-        "pr_route": bound + 1,
+        "pr": bound + 2,
+        "pr_route": bound + 2,
     }
 
     graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
