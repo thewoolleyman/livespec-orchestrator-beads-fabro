@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro._store_dod_judgement_marker import (
     mark_work_item_dod_judgement_recorded,
+    stamp_judged_if_able,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
     governing_heading_subject_digest,
@@ -280,12 +281,12 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
 
     def append(*, body: str) -> None:
         append_work_item_comment(path=path, work_item_id=item.id, body=body)
-        mark_work_item_dod_judgement_recorded(path=path, item_id=item.id)
+        stamp_judged_if_able(mark=mark_work_item_dod_judgement_recorded, path=path, item_id=item.id)
 
     bodies = item_comment_bodies(path=path, work_item_id=item.id)
     if bodies is None:
         return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
-    return judge_definition_of_done(
+    decision = judge_definition_of_done(
         item=item,
         repo=repo,
         stage=stage,
@@ -295,6 +296,13 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
         payload_root=payload_root,
         governing_heading=governing_heading,
     )
+    # A verdict recorded before the marker existed is found here and never
+    # rewritten, so this is the only pass that can give it the label the held
+    # lane looks items up by.
+    stamp_judged_if_able(
+        mark=mark_work_item_dod_judgement_recorded, path=path, item_id=item.id, when=decision.reused
+    )
+    return decision
 
 
 def held_judgement(

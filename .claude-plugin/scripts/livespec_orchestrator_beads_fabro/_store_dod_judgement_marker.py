@@ -9,8 +9,9 @@ snapshot (1.4 s each) to find a verdict most of them had never had.
 The marker is a label on the ITEM, so it rides the record the tenant listing
 already returns: one listing names every item a judgement was ever recorded
 against, and only those items need their comments read. It is written by the same
-sanctioned writer that appends the comment, so the two can disagree only for a
-record written before the marker existed.
+sanctioned writer that appends the comment, and by the same entry when it REUSES a
+recorded verdict, so the two can disagree only for a legacy record no judgement
+pass has reached since the marker existed.
 
 A narrow RAW read, mirroring `_store_merge_hold`: the label is not a field of the
 shared `WorkItem` model, which this repository does not own.
@@ -21,14 +22,24 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.effects import attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "DOD_JUDGEMENT_RECORDED_LABEL",
     "mark_work_item_dod_judgement_recorded",
     "read_dod_judged_work_item_ids",
+    "stamp_judged_if_able",
 ]
 
 DOD_JUDGEMENT_RECORDED_LABEL = "dod-judgement:recorded"
@@ -38,6 +49,31 @@ def mark_work_item_dod_judgement_recorded(*, path: StoreConfig, item_id: str) ->
     """Stamp the marker on one item; adding it to an item that carries it is a no-op."""
     make_beads_client(config=path).update_issue(
         issue_id=item_id, add_labels=[DOD_JUDGEMENT_RECORDED_LABEL]
+    )
+
+
+def stamp_judged_if_able(
+    *,
+    mark: Callable[..., None],
+    path: StoreConfig,
+    item_id: str,
+    when: bool = True,
+) -> None:
+    """Run one marker write when asked, letting an expected ledger failure pass.
+
+    The verdict comment is the record and the marker only an index onto it, so a
+    marker write that fails must not undo or mask a judgement already recorded.
+    """
+    if not when:
+        return
+    _ = attempt(
+        action=lambda: mark(path=path, item_id=item_id),
+        exceptions=(
+            BeadsCommandError,
+            BeadsConnectionError,
+            BeadsMappingError,
+            BeadsTenantMissingError,
+        ),
     )
 
 
