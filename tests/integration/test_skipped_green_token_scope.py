@@ -18,6 +18,10 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from tests.integration.fixture_check_env import fixture_check_environment
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCOPE_TOKEN = Path("dev-tooling") / "green-token-scope.sh"
 _PRE_PUSH = Path("dev-tooling") / "just-check-pre-push.sh"
@@ -112,8 +116,9 @@ def _run_janitor(*, repo: Path) -> subprocess.CompletedProcess[str]:
     _ = just.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     for executable in (uv, just):
         executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
-    env = os.environ.copy()
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env = fixture_check_environment(
+        overrides={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    )
     return subprocess.run(
         [real_just, "check"], cwd=repo, env=env, check=False, capture_output=True, text=True
     )
@@ -146,10 +151,9 @@ def _run_pre_push(*, repo: Path, just_status: int = 0) -> subprocess.CompletedPr
     )
     for executable in (uv, just):
         executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
-    env = os.environ.copy()
-    env.update(
-        {
-            "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}",
+    env = fixture_check_environment(
+        overrides={
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
             "STUB_LOG": str(stub_root / "uv.log"),
             "STUB_JUST_LOG": str(stub_root / "just.log"),
             "STUB_JUST_STATUS": str(just_status),
@@ -234,9 +238,14 @@ def test_pre_push_reuses_only_a_byte_identical_token_with_its_current_skip_scope
 
 
 def test_janitor_and_pre_push_derive_the_same_scope_for_a_same_tree_publish(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A factory janitor verdict is reusable by the subsequent sandbox push."""
+    """A factory janitor verdict is reusable by the subsequent sandbox push.
+
+    The delegated gate runs this suite with its own authority-reading members in
+    ``SKIP_TARGETS``; the fixture runs must not inherit them.
+    """
+    monkeypatch.setenv("SKIP_TARGETS", "check-branch-protection-alignment")
     repo = _fixture_repo(tmp_path=tmp_path)
     _git(repo, "config", "livespec.sandboxExempt", "true")
 
