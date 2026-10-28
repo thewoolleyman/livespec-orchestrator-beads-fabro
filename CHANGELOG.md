@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.254.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.0...v0.254.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **dispatcher:** rest a recapture-exhausted run at needs-human instead of bouncing it to backlog ([8bc44a7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8bc44a77d19f9563ba9e2159521242c180824046))
+* **workflow:** name the recapture cap when recapture exhaustion ends the run at non_converged ([98eb15e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98eb15ef9b151f7bd8a674cc7214490025395e03))
+
+## [0.254.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.4...v0.254.0) (2026-10-28)
+
+
+### Features
+
+* commit runner settle operation waits out every live commit run ([2b2c55a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2b2c55a9dc05e3a60eebd825bf8f3ab5a57eb329))
+
 ## [0.253.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.3...v0.253.4) (2026-10-28)
 
 

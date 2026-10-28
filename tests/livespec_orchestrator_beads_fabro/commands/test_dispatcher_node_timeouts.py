@@ -177,10 +177,10 @@ def test_subprocess_ceiling_follows_the_resolved_graph() -> None:
         stall_seconds=7200,
         stall_layer="default",
     )
-    # `implement` carries four worst-case attempts (two visits since the v208
-    # hook-refusal re-entry, two attempts each), so the ceiling grows by four
+    # `implement` carries six worst-case attempts (three visits since the
+    # commit-run settle re-entry, two attempts each), so the ceiling grows by six
     # times the increase over the 1800-second default.
-    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 4 * (14400 - 1800)
+    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 6 * (14400 - 1800)
 
 
 def test_ceiling_never_falls_below_the_stall_watchdog() -> None:

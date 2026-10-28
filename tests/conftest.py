@@ -309,6 +309,24 @@ def _hermetic_operator_attribution_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_agent_stage_publication_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the running agent stage's publication guard out of the test process.
+
+    Every factory agent stage runs under `LIVESPEC_AGENT_STAGE=<stage>`, and the
+    projected `gh` wrapper and `push_origin` helper refuse publication when it
+    names anything but a publication stage. The commit hook that verifies an
+    implement turn's Green amend runs this suite INSIDE that stage, so the guard
+    leaked into every case that publishes through those helpers and 35 of them
+    failed with LIVESPEC_AGENT_PUBLICATION_DENIED on a tree that passes on a
+    developer host and in continuous integration, where the variable is absent.
+    Measured 2026-10-28 in a factory sandbox: 35 failed with it ambient, all
+    passed with it removed. The cases that exercise the guard set the variable
+    explicitly in their own child environment.
+    """
+    monkeypatch.delenv("LIVESPEC_AGENT_STAGE", raising=False)
+
+
 _SERVING_APP_ENV = (
     "GITHUB_APP_ID",
     "GITHUB_PRIVATE_KEY",

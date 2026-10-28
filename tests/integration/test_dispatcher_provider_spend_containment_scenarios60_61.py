@@ -714,7 +714,11 @@ def test_scenario61_the_dispatched_workflow_truncates_an_unchanged_tree(
     # dropped either would reach janitor with the diff question unasked — and the
     # gate itself spends no provider, so the containment this case guards is
     # unmoved.
-    assert re.search(r"\bimplement\s*->\s*implement_completion\b(?![^\n]*condition=)", graph)
+    assert re.search(r"\bimplement\s*->\s*implement_commit_settle\b(?![^\n]*condition=)", graph)
+    assert re.search(
+        r"\bimplement_commit_settle\s*->\s*implement_completion\b(?![^\n]*condition=)",
+        graph,
+    )
     assert re.search(
         r"\bimplement_completion\s*->\s*implementation_diff\b(?![^\n]*condition=)",
         graph,

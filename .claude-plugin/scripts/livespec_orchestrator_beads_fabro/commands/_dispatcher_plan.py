@@ -148,6 +148,7 @@ __all__: list[str] = [
     "DEFAULT_SANDBOX_OTEL_ENDPOINT",
     "NEEDS_HUMAN_MARKER",
     "NON_CONVERGED_MARKER",
+    "RECAPTURE_EXHAUSTED_MARKER",
     "SANDBOX_OTEL_ENDPOINT_ENV_VAR",
     "SIBLING_CLONES_ROOT_ENV_VAR",
     "WORKFLOW_SCOPE_OVERRIDE_LABEL",
@@ -222,6 +223,16 @@ _SIZING_ENUMERATED_LIMIT = 3
 # sentinel here makes the DOT-side producer and the Dispatcher-side
 # consumer share ONE literal (the DOT references this exact string).
 NON_CONVERGED_MARKER = "LIVESPEC_NON_CONVERGED"
+
+# The cause line the same `non_converged` terminal prints when the RECAPTURE cap
+# fired rather than the janitor's (work-item bd-ib-iy4cd4). The two caps end at
+# one terminal but need opposite routing: a janitor cap means the slice is too
+# big and goes back to grooming, while an exhausted recapture means the captured
+# proof record keeps failing its grammar, which a proof-capture rider repairs.
+# The producer is the workflow's `non_converged` script and
+# `recapture_route`'s own bound line; the consumer is
+# `_dispatcher_recapture_exhausted`.
+RECAPTURE_EXHAUSTED_MARKER = "LIVESPEC_RECAPTURE_EXHAUSTED"
 
 # The needs-human sentinel the `needs_human` TERMINAL node emits to stderr
 # (plan ledger-is-the-only-gate, epic bd-ib-n77djm; contracts.md "A factory
@@ -329,8 +340,20 @@ def is_non_convergence_outcome(*, outcome: _NonConvergenceOutcome) -> bool:
     routing refusal, a `blocked` human-gate park, a one-off `pr-view`
     failure) are NOT non-convergence and must not be bounced either, so the
     match is deliberately narrow — the explicit DOT sentinel only.
+
+    AN EXHAUSTED RECAPTURE CAP IS NOT THIS SIGNAL EITHER (`bd-ib-iy4cd4`). The
+    same terminal also ends a run whose review asked for a recapture three times,
+    and that ending names `RECAPTURE_EXHAUSTED_MARKER` instead. The proof record,
+    not the slice, is what failed to converge, so bouncing to `backlog` would send
+    a recoverable item to the maintainer groom valve; the terminal mapper rests it
+    at `blocked` / `needs-human` instead, and this predicate declines any outcome
+    that names the recapture cap so no path can bounce one.
     """
-    return outcome.status == "failed" and NON_CONVERGED_MARKER in outcome.detail
+    return (
+        outcome.status == "failed"
+        and NON_CONVERGED_MARKER in outcome.detail
+        and RECAPTURE_EXHAUSTED_MARKER not in outcome.detail
+    )
 
 
 def is_needs_human_outcome(*, outcome: _NonConvergenceOutcome) -> bool:

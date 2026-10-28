@@ -249,6 +249,18 @@ against this tree: 1123350 shipped and 1753350 at the retired `"15m"`, up from
 seconds of headroom. The freshness gate still demands 111600 seconds, because
 the window governs it and not the graph.
 
+THE COMMIT-RUN SETTLE (work-item bd-ib-xj3qqb) WIDENS THE IMPLEMENT CYCLE, and
+the bound is unchanged. A turn that ends while a commit run it started is still
+running now waits for that run's verdict in `implement_commit_settle`, and a run
+that passed earns one re-entry that does not spend the incomplete-turn budget.
+`implement` and `implement_hook_route` therefore carry `max_visits=3`, which the
+derivation propagates through the completion gate and the diff breaker, and the
+two settle nodes join the budget. Re-measured against this tree: 1279780
+shipped and 1992580 at the retired `"15m"`, up from 1268100 and 1988100. The
+bound of 1300000 still sits above both shipped figures with 20220 seconds of
+headroom, so it is unchanged, and the freshness gate still demands 111600
+seconds because the window governs it and not the graph.
+
 THE EXACT PINS WERE REPLACED BY INVARIANTS (work-item bd-ib-nvhqyq). Every move
 recorded above forced an edit to this module, including moves that changed no
 graph at all: raising `fix` from 3600 to 7200 in `dispatcher.node_timeouts`

@@ -86,11 +86,15 @@ WORKFLOW_DEFAULT_LAYER = "default"
 #
 # `implement_hook_route` (v208, Scenario 204; work-item bd-ib-y7372n) sits on
 # `implement_completion`'s failure edge and can send an incomplete turn back to
-# `implement` ONCE, when the commit hook refused what the turn left staged. So
-# `implement` is reached by two visits of two attempts each, FOUR, and the route
-# and the completion gate once per visit, TWO. The route runs the repository's
-# pre-commit hook, which can take the better part of its timeout, so it is
-# billed at its full visit count like any node that can spend its ceiling.
+# `implement` ONCE, when the commit hook refused what the turn left staged, and
+# (bd-ib-xj3qqb) ONCE MORE without spending that budget when the turn ended while
+# a commit run it started was still running and that run passed. So `implement`
+# is reached by three visits of two attempts each, SIX, and the route, the
+# completion gate, the diff breaker and `implement_commit_settle` once per
+# visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three. The
+# route runs the repository's pre-commit hook, which can take the better part
+# of its timeout, so it is billed at its full visit count like any node that can
+# spend its ceiling.
 #
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
@@ -156,10 +160,11 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "implement": 4,
-    "implement_completion": 2,
-    "implement_hook_route": 2,
-    "implementation_diff": 2,
+    "implement": 6,
+    "implement_commit_settle": 3,
+    "implement_completion": 3,
+    "implement_hook_route": 3,
+    "implementation_diff": 3,
     "janitor": 3,
     "fix": 2,
     "publish_draft": 4,
@@ -170,6 +175,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "proof_grade_route": 3,
     "disposition": 3,
     "review_fix": 3,
+    "review_fix_commit_settle": 3,
     "pr_refresh": 8,
     "pr_refresh_head": 7,
     "pr": 4,

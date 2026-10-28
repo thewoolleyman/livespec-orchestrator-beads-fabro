@@ -130,6 +130,12 @@ _HOOK_ROUTE_LOOP = _HOOK_ROUTE_ADDED | {
     "implement_completion",
     "implementation_diff",
 }
+# The commit-run settles (bd-ib-xj3qqb), kept as their own constant for the same
+# reason. `implement_commit_settle` sits on `implement`'s fallthrough, and the
+# settled-commit re-entry it informs raises the hook-route cycle from two visits
+# to three (so `_HOOK_ROUTE_LOOP` is the set it moves); `review_fix_commit_settle`
+# sits on `review_fix`'s fallthrough and closes no cycle of its own.
+_COMMIT_SETTLE_ADDED = {"implement_commit_settle", "review_fix_commit_settle"}
 _IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
 _IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
     "implement",
@@ -696,6 +702,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_ADDED
         | _HOOK_ROUTE_ADDED
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
+        | _COMMIT_SETTLE_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -720,6 +727,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_LOOP
         | _HOOK_ROUTE_LOOP
         | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
+        | _COMMIT_SETTLE_ADDED
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.
