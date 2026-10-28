@@ -1717,6 +1717,10 @@ references passes with its guidance orphaned.
   scripting with `ls`, `cat` or `grep` — this checkout runs ON vps, hp
   accepts only `root` or `cwoolley`, and the shell aliases corrupt command
   substitution.
+- Read `.ai/fabro-dispatch-diagnosis.md` BEFORE reading a factory run with the
+  host PATH `fabro` — it cannot decode a Petri-era factory's runs, and a
+  failed read there is not missing data; `dispatcher.py inspect --factory
+  <name> <run-id>` is the reader that uses that factory's own client.
 - Read `.ai/git-pr-and-release-mechanics.md` BEFORE arming auto-merge,
   staging an `AGENTS.md` edit, surveying `spec/*` branches, or touching
   `.github/workflows/` — each trap ships a change without its content or
