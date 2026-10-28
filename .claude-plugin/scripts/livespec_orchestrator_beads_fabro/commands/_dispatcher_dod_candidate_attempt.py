@@ -14,9 +14,12 @@ from dataclasses import dataclass
 
 __all__: list[str] = [
     "CANDIDATE_FIELD",
+    "ENDER_FIELD",
     "OUTCOME_VERDICT",
     "CandidateAttempt",
     "candidate_record_lines",
+    "unavailable_record_lines",
+    "unavailable_report",
 ]
 
 # The outcome of a candidate whose reply carried a parseable verdict. Every other
@@ -25,6 +28,10 @@ __all__: list[str] = [
 OUTCOME_VERDICT = "verdict"
 # One record line per candidate the chain ran, in the order it ran them.
 CANDIDATE_FIELD = "candidate"
+# The record line naming the candidate whose failure ended the chain. Deliberately
+# not the bare `candidate`, for the reason the did-not-run cause field is not the
+# bare `cause`: the field name is the discriminator a reader scans for.
+ENDER_FIELD = "judgement-unavailable-candidate"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -52,3 +59,25 @@ class CandidateAttempt:
 def candidate_record_lines(*, attempts: Sequence[CandidateAttempt]) -> list[str]:
     """One `candidate:` record line per attempt, in the order the chain ran them."""
     return [f"{CANDIDATE_FIELD}: {attempt.render()}" for attempt in attempts]
+
+
+def unavailable_record_lines(*, attempts: Sequence[CandidateAttempt]) -> list[str]:
+    """The candidate lines of a did-not-run record, then the one that ended the chain.
+
+    The last attempt is the ender: the chain stops only when its final candidate
+    has failed, because any earlier failure advances it to the next.
+    """
+    lines = candidate_record_lines(attempts=attempts)
+    if attempts:
+        lines.append(f"{ENDER_FIELD}: {attempts[-1].render()}")
+    return lines
+
+
+def unavailable_report(*, cause: str, attempts: Sequence[CandidateAttempt]) -> str:
+    """The standard-error line saying a judgement did not run, and which leg ended it."""
+    ended = (
+        f"the candidate that ended the chain: {attempts[-1].render()}"
+        if attempts
+        else "no candidate ran"
+    )
+    return f"dod-gate: the judgement did not run (cause {cause}); {ended}"

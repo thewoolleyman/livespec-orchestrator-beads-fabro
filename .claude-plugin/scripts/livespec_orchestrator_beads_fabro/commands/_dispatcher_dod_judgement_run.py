@@ -58,6 +58,7 @@ chain is what failed.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -66,6 +67,7 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
     OUTCOME_VERDICT,
     CandidateAttempt,
+    unavailable_report,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_command import (
     candidate_command,
@@ -247,11 +249,9 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     )
     if chain.reply is not None:
         return replace(parse_judgement_reply(reply=chain.reply), attempts=chain.attempts)
-    return DodJudgement(
-        outcome=JUDGEMENT_UNAVAILABLE,
-        cause=chain.cause or CAUSE_NO_ELIGIBLE_MODEL,
-        attempts=chain.attempts,
-    )
+    cause = chain.cause or CAUSE_NO_ELIGIBLE_MODEL
+    _ = sys.stderr.write(f"{unavailable_report(cause=cause, attempts=chain.attempts)}\n")
+    return DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=cause, attempts=chain.attempts)
 
 
 @dataclass(frozen=True, kw_only=True)

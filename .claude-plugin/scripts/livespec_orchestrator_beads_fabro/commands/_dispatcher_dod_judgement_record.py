@@ -42,7 +42,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    CandidateAttempt,
     candidate_record_lines,
+    unavailable_record_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
     clause_line,
@@ -305,9 +307,15 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
 
 
 def did_not_run_comment(
-    *, item_id: str, stage: str, digest: str, rubric_digest: str, cause: str
+    *,
+    item_id: str,
+    stage: str,
+    digest: str,
+    rubric_digest: str,
+    cause: str,
+    attempts: Sequence[CandidateAttempt] = (),
 ) -> str:
-    """The ledger comment recording that the judgement did not run, and why."""
+    """The ledger comment recording that the judgement did not run, why, and who ran."""
     return "\n".join(
         (
             UNAVAILABLE_COMMENT_MARKER,
@@ -320,6 +328,7 @@ def did_not_run_comment(
             f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
             f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
             f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
+            *unavailable_record_lines(attempts=attempts),
         )
     )
 
