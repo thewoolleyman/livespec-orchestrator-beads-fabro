@@ -411,7 +411,6 @@ def test_gathered_signals_use_the_selected_implement_candidate_or_primary_fallba
     tmp_path: Path,
 ) -> None:
     module = _module()
-    from livespec_orchestrator_beads_fabro.commands import _dispatcher_implement_adapter
     from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
         CLAUDE_AGENT_ID,
         CODEX_AGENT_ID,
@@ -426,7 +425,6 @@ def test_gathered_signals_use_the_selected_implement_candidate_or_primary_fallba
     )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSink
 
-    uses_selection = "implement_adapter_selection" in _dispatcher_implement_adapter.__all__
     primary = builtin_agent_catalog()[CLAUDE_AGENT_ID].command
     common = {
         "repo": Path("/repo"),
@@ -473,10 +471,10 @@ def test_gathered_signals_use_the_selected_implement_candidate_or_primary_fallba
         ),
     )
 
-    assert selected.adapter == (CODEX_AGENT_ID if uses_selection else CLAUDE_AGENT_ID)
-    assert getattr(selected, "selected_index", None) == (1 if uses_selection else None)
+    assert selected.adapter == CODEX_AGENT_ID
+    assert selected.selected_index == 1
     assert no_selection.adapter == CLAUDE_AGENT_ID
-    assert getattr(no_selection, "selected_index", None) is None
+    assert no_selection.selected_index is None
     calibration = build_calibration_record(
         item=_item(),
         outcome=_outcome(),
@@ -495,14 +493,7 @@ def test_gathered_signals_use_the_selected_implement_candidate_or_primary_fallba
         for entry in span["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"]
     }
 
-    assert journal["livespec.implement.adapter"] == (
-        CODEX_AGENT_ID if uses_selection else CLAUDE_AGENT_ID
-    )
-    assert journal.get("livespec.implement.selected_index") == (1 if uses_selection else None)
-    assert attributes["livespec.implement.adapter"] == {
-        "stringValue": CODEX_AGENT_ID if uses_selection else CLAUDE_AGENT_ID
-    }
-    assert attributes.get("livespec.implement.selected_index") == (
-        {"intValue": "1"} if uses_selection else None
-    )
-    assert "implement_adapter_selection" in _dispatcher_implement_adapter.__all__
+    assert journal["livespec.implement.adapter"] == CODEX_AGENT_ID
+    assert journal["livespec.implement.selected_index"] == 1
+    assert attributes["livespec.implement.adapter"] == {"stringValue": CODEX_AGENT_ID}
+    assert attributes["livespec.implement.selected_index"] == {"intValue": "1"}
