@@ -38,7 +38,7 @@ from livespec_orchestrator_beads_fabro._store_label_mutations import (
     update_work_item_factory_safety,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
     valve_success,
@@ -86,7 +86,12 @@ def set_factory_safety(
                 f"reason; expected one of {', '.join(FACTORY_SAFETY_REASONS)}."
             ),
         )
-    update_work_item_factory_safety(path=config, item_id=item.id, reason=value)
+    update_work_item_factory_safety(
+        path=config,
+        item_id=item.id,
+        reason=value,
+        recorded_at=utc_now_iso(),
+    )
     record = _journal_opt_out(repo=repo, identity=identity, item=item, reason=value)
     return valve_success(
         aid=aid,

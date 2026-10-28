@@ -19,11 +19,11 @@ carrier, so the only rest state left is a human pointer. Measured 2026-10-22 on
 plan epic `bd-ib-fyozyd`, whose derived proof obligation refused every await on
 the open carrier its carrier map named.
 
-THE CAUSE SET IS CLOSED, AND THIS BUILD VERIFIES ONE OF ITS MEMBERS. Three causes
+THE CAUSE SET IS CLOSED, AND THIS BUILD VERIFIES THE CAUSES ITS WRITERS USE. Three causes
 are ratified — `misderived`, `disposed` and `subsumed` — and each "is accepted
 only when its evidence verifies against the ledger or the forge at write time".
 `SUPERSESSION_CAUSES` is the ratified set, so a later implementer sees the whole
-grammar rather than inferring it; what this build can VERIFY is `misderived`, and
+grammar rather than inferring it; this build verifies `misderived` and `disposed`, and
 a cause whose evidence it cannot verify is refused by the clause's own rule that
 a cause whose evidence does not verify must be refused. That is fail-closed in
 the only direction available: before this module existed, every one of the three
@@ -76,12 +76,8 @@ from datetime import datetime, timedelta
 from livespec_orchestrator_beads_fabro.commands._plan_archive import PLAN_ARCHIVE_ACTOR
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import CLOSED_STATUS
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import PLAN_RESUME_ACTOR
-from livespec_orchestrator_beads_fabro.commands._plan_result_reference import (
-    parse_result_reference,
-)
-from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
-    ItemStatusTarget,
-    ResultReference,
+from livespec_orchestrator_beads_fabro.commands._plan_supersession_carrier import (
+    carrier_refusal_detail,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_supersession_provenance import (
     provenance_detail,
@@ -98,8 +94,11 @@ __all__: list[str] = [
     "CarrierEvidence",
     "CausalSupersession",
     "DerivingTransition",
+    "DisposedEvidence",
+    "ImplementationEvidence",
     "SupersessionEvidence",
     "SupersessionRefusal",
+    "carrier_refusal",
     "validate_causal_supersession",
 ]
 
@@ -137,9 +136,10 @@ class CausalSupersession:
     superseded_result_identity: str
     previous_epoch: int
     cause: str
-    deriving_operation_id: str
-    open_carrier_id: str
     writer: str
+    deriving_operation_id: str | None = None
+    open_carrier_id: str | None = None
+    disposed_target_id: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -182,6 +182,23 @@ class CarrierEvidence:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ImplementationEvidence:
+    """The implementation target's factory-safety label and its recorded instant."""
+
+    factory_safe: bool
+    recorded_at: str | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class DisposedEvidence:
+    """The closed-as-superseded target a `disposed` claim names."""
+
+    target_id: str
+    status: str
+    resolution: str | None
+
+
+@dataclass(frozen=True, kw_only=True)
 class SupersessionEvidence:
     """Every ledger reading one cause's verification needs, taken by the caller.
 
@@ -195,6 +212,9 @@ class SupersessionEvidence:
     deriving: DerivingTransition | None
     carrier: CarrierEvidence | None
     plan_level: bool
+    implementation: ImplementationEvidence | None = None
+    disposed: DisposedEvidence | None = None
+    replacement_unmet: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -219,6 +239,36 @@ def validate_causal_supersession(
     closed, about a supersession that also named the wrong epoch, would fix the
     carrier and meet the same refusal again.
     """
+    structural = _structural_refusal(
+        supersession=supersession,
+        prior_identity=prior_identity,
+        current_epoch=current_epoch,
+    )
+    if structural is not None:
+        return structural
+    if evidence is None:
+        return SupersessionRefusal(detail="the supersession's evidence could not be read")
+    if supersession.cause == CAUSE_DISPOSED:
+        return _disposed_refusal(supersession=supersession, evidence=evidence)
+    if supersession.cause == CAUSE_MISDERIVED:
+        return _misderived_refusal(
+            supersession=supersession,
+            evidence=evidence,
+            prior_identity=prior_identity,
+            replacement=replacement,
+        )
+    return SupersessionRefusal(
+        detail=(
+            f"supersession cause {supersession.cause!r} is ratified, but this build"
+            " verifies evidence for 'misderived' and 'disposed' only"
+        )
+    )
+
+
+def _structural_refusal(
+    *, supersession: CausalSupersession, prior_identity: str, current_epoch: int
+) -> SupersessionRefusal | None:
+    """Validate the named obligation, epoch and closed cause grammar first."""
     if supersession.superseded_result_identity != prior_identity:
         return SupersessionRefusal(
             detail=f"a supersession must name the unmet obligation {prior_identity}"
@@ -238,22 +288,7 @@ def validate_causal_supersession(
                 " and elapsed time never qualify"
             )
         )
-    if supersession.cause != CAUSE_MISDERIVED:
-        return SupersessionRefusal(
-            detail=(
-                f"supersession cause {supersession.cause!r} is ratified, but this build"
-                " verifies evidence for"
-                f" {CAUSE_MISDERIVED!r} only, so its evidence does not verify"
-            )
-        )
-    if evidence is None:
-        return SupersessionRefusal(detail="the supersession's evidence could not be read")
-    return _misderived_refusal(
-        supersession=supersession,
-        evidence=evidence,
-        prior_identity=prior_identity,
-        replacement=replacement,
-    )
+    return None
 
 
 def _misderived_refusal(
@@ -263,13 +298,10 @@ def _misderived_refusal(
     prior_identity: str,
     replacement: object,
 ) -> SupersessionRefusal | None:
-    """Grade the plan-level arm of the `misderived` cause, one condition at a time."""
-    if not evidence.plan_level:
+    """Grade either ratified arm of the `misderived` cause."""
+    if supersession.deriving_operation_id is None or supersession.open_carrier_id is None:
         return SupersessionRefusal(
-            detail=(
-                "the superseded obligation's own target is not the plan epic, so it names"
-                " no plan-level step this build can establish was misderived"
-            )
+            detail="a misderived supersession must name its deriving operation and open carrier"
         )
     if evidence.deriving is None:
         return SupersessionRefusal(
@@ -293,115 +325,104 @@ def _misderived_refusal(
                 f" derivation: the cause is accepted only for {DERIVATION_ACTORS}"
             )
         )
-    return _carrier_refusal(
-        supersession=supersession,
-        evidence=evidence,
-        deriving=evidence.deriving,
-        replacement=replacement,
-    )
+    if evidence.plan_level:
+        return carrier_refusal(
+            supersession=supersession,
+            evidence=evidence,
+            deriving=evidence.deriving,
+            replacement=replacement,
+        )
+    return _implementation_refusal(evidence=evidence, deriving=evidence.deriving)
 
 
-def _carrier_refusal(
+def _disposed_refusal(
+    *, supersession: CausalSupersession, evidence: SupersessionEvidence
+) -> SupersessionRefusal | None:
+    """Require the exact prior target to be closed with superseded resolution."""
+    target_id = supersession.disposed_target_id
+    disposed = evidence.disposed
+    if target_id is None:
+        return SupersessionRefusal(detail="a disposed supersession must name its target record")
+    if disposed is None or disposed.target_id != target_id:
+        return SupersessionRefusal(
+            detail=f"the disposed target {target_id!r} could not be read from the obligation"
+        )
+    if disposed.status != CLOSED_STATUS or disposed.resolution != "superseded":
+        return SupersessionRefusal(
+            detail=(
+                f"the disposed target {target_id!r} is not closed as superseded, so its"
+                " cause does not verify"
+            )
+        )
+    return None
+
+
+def _implementation_refusal(
+    *, evidence: SupersessionEvidence, deriving: DerivingTransition
+) -> SupersessionRefusal | None:
+    """Require a factory-safety label recorded no later than the derivation."""
+    implementation = evidence.implementation
+    if implementation is None or not implementation.factory_safe:
+        return SupersessionRefusal(
+            detail=(
+                "the superseded obligation names no implementation target whose ledger"
+                " record carries a factory-safety label"
+            )
+        )
+    if not _recorded_by(recorded_at=implementation.recorded_at, instant=deriving.recorded_at):
+        return SupersessionRefusal(
+            detail=(
+                "the implementation target's factory-safety label was not recorded when"
+                f" the derivation was recorded at {deriving.recorded_at}"
+            )
+        )
+    return None
+
+
+def _recorded_by(*, recorded_at: str | None, instant: str) -> bool:
+    """Whether ledger evidence existed at an instant, failing closed on bad clocks."""
+    if recorded_at is None:
+        return False
+    recorded = _utc(value=recorded_at)
+    derived = _utc(value=instant)
+    return recorded is not None and derived is not None and recorded <= derived
+
+
+def carrier_refusal(
     *,
     supersession: CausalSupersession,
     evidence: SupersessionEvidence,
     deriving: DerivingTransition,
     replacement: object,
 ) -> SupersessionRefusal | None:
-    """Grade the carrier half: mapped, open then, open now, and named by the replacement."""
+    """Grade carrier evidence through its dedicated, reusable concern."""
+    carrier_id = supersession.open_carrier_id
     carrier = evidence.carrier
-    if carrier is None or not carrier.mapped:
+    if carrier_id is None:
+        return SupersessionRefusal(detail="a misderived supersession must name an open carrier")
+    if carrier is None:
         return SupersessionRefusal(
             detail=(
-                f"carrier {supersession.open_carrier_id!r} is not named by the epic's latest"
-                " carrier-map scope event, so its state is evidence about nothing this plan"
-                " asserted"
+                f"carrier {carrier_id!r} is not named by the epic's latest carrier-map"
+                " scope event, so its state is evidence about nothing this plan asserted"
             )
         )
-    if carrier.status == CLOSED_STATUS:
-        return _closed_carrier_refusal(
-            supersession=supersession, carrier=carrier, deriving=deriving
-        )
-    if not _replacement_names(replacement=replacement, carrier_id=supersession.open_carrier_id):
-        return SupersessionRefusal(
-            detail=(
-                "the replacement result must be the closure of the carrier the evidence"
-                f" names, {supersession.open_carrier_id!r}: a carrier is evidence for"
-                " waiting on that carrier and for nothing else"
-            )
-        )
-    return None
-
-
-def _closed_carrier_refusal(
-    *,
-    supersession: CausalSupersession,
-    carrier: CarrierEvidence,
-    deriving: DerivingTransition,
-) -> SupersessionRefusal:
-    """Say WHICH of the two closed readings refuses, because the remedies differ.
-
-    A carrier already closed when the derivation was recorded means the step
-    could legitimately have been taken, so nothing was misderived. A carrier
-    that has closed SINCE means the replacement result is already satisfied,
-    which no cause may trade an unmet obligation for. Reporting either as the
-    other sends its reader to the wrong question.
-    """
-    if _closed_by(closed_at=carrier.closed_at, instant=deriving.recorded_at):
-        return SupersessionRefusal(
-            detail=(
-                f"carrier {supersession.open_carrier_id!r} was already closed when the"
-                f" derivation was recorded at {deriving.recorded_at}, so the derived step"
-                " could legitimately have been taken"
-            )
-        )
-    return SupersessionRefusal(
-        detail=(
-            f"carrier {supersession.open_carrier_id!r} is closed now, so the replacement"
-            " result is already satisfied and no obligation may be traded for it"
-        )
+    detail = carrier_refusal_detail(
+        carrier_id=carrier_id,
+        mapped=carrier.mapped,
+        status=carrier.status,
+        closed_at=carrier.closed_at,
+        derived_at=deriving.recorded_at,
+        replacement=replacement,
     )
-
-
-def _closed_by(*, closed_at: str | None, instant: str) -> bool:
-    """Whether a closure is recorded at or before one instant, failing CLOSED.
-
-    An absent or uncomparable closure instant answers TRUE, which routes to the
-    "already closed when it was derived" refusal. That is the conservative
-    direction: the opposite would report a carrier whose closure nobody can date
-    as having closed AFTER the derivation, which is the arm that ADMITS a
-    supersession, and a supersession cannot be undone.
-    """
-    if closed_at is None:
-        return True
-    closed = _utc(value=closed_at)
-    derived = _utc(value=instant)
-    if closed is None or derived is None:
-        return True
-    return closed <= derived
+    return None if detail is None else SupersessionRefusal(detail=detail)
 
 
 def _utc(*, value: str) -> datetime | None:
-    """One instant as an aware UTC datetime, or `None` when it is not one.
-
-    `None` rather than a naive value, because comparing an aware instant with a
-    naive one raises: an instant this reader cannot place on the UTC timeline is
-    one it must not compare at all.
-    """
+    """One instant as an aware UTC datetime, or ``None`` when it is not one."""
     parsed = parse_iso_datetime(text=value.replace("Z", "+00:00"))
     if isinstance(parsed, IsoDatetimeParseFailure):
         return None
     if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
         return None
     return parsed
-
-
-def _replacement_names(*, replacement: object, carrier_id: str) -> bool:
-    """Whether the replacement result is that carrier's own closed status."""
-    parsed = parse_result_reference(value=replacement)
-    if not isinstance(parsed, ResultReference):
-        return False
-    target = parsed.target
-    if not isinstance(target, ItemStatusTarget):
-        return False
-    return target.item_id == carrier_id and target.status == CLOSED_STATUS

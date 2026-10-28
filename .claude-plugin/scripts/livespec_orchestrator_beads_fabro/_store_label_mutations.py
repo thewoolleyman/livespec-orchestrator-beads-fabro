@@ -10,7 +10,7 @@ for the per-item cap overrides.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, get_args
+from typing import TYPE_CHECKING, cast, get_args
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.types import FactorySafety
@@ -77,6 +77,7 @@ def update_work_item_factory_safety(
     path: StoreConfig,
     item_id: str,
     reason: str,
+    recorded_at: str,
 ) -> None:
     """Set the intrinsic host-only opt-out label without changing status.
 
@@ -89,11 +90,18 @@ def update_work_item_factory_safety(
     surprise-transition the whole label-only family exists to avoid.
     """
     client = make_beads_client(config=path)
+    record = client.show_issue(issue_id=item_id)
+    raw_metadata = record.get("metadata")
+    metadata = cast("dict[str, object]", raw_metadata) if isinstance(raw_metadata, dict) else {}
     client.update_issue(
         issue_id=item_id,
         remove_labels=[f"{_LABEL_FACTORY_SAFETY}{value}" for value in FACTORY_SAFETY_REASONS],
     )
-    client.update_issue(issue_id=item_id, add_labels=[f"{_LABEL_FACTORY_SAFETY}{reason}"])
+    client.update_issue(
+        issue_id=item_id,
+        add_labels=[f"{_LABEL_FACTORY_SAFETY}{reason}"],
+        metadata={**metadata, "factory_safety_recorded_at": recorded_at},
+    )
 
 
 def update_work_item_workflow_scope_override(
