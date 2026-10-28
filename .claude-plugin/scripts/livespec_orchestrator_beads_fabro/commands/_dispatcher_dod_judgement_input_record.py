@@ -34,10 +34,13 @@ candidate however many the bound actually ended.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import DodJudgement
 
 __all__: list[str] = [
     "BOUND_ENDED_CANDIDATE_FIELD",
+    "bound_ended_lines",
     "input_usage_lines",
 ]
 
@@ -56,8 +59,17 @@ def input_usage_lines(*, judgement: DodJudgement) -> list[str]:
     if judgement.input_tokens is not None:
         lines.append(f"{_DECIDING_INPUT_TOKENS_FIELD}{_FIELD_SEPARATOR}{judgement.input_tokens}")
     lines.append(f"{_DECIDING_INPUT_USAGE_FIELD}{_FIELD_SEPARATOR}{judgement.input_usage}")
-    lines.extend(
-        f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}"
-        for candidate in judgement.bound_ended_candidates
-    )
+    lines.extend(bound_ended_lines(candidates=judgement.bound_ended_candidates))
     return lines
+
+
+def bound_ended_lines(*, candidates: Sequence[str]) -> list[str]:
+    """One record line per candidate the input bound ended, in chain order.
+
+    Shared by the taken-verdict record and the did-not-run record, because a
+    chain the bound exhausted returns no verdict and its only record is the
+    second one.
+    """
+    return [
+        f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}" for candidate in candidates
+    ]

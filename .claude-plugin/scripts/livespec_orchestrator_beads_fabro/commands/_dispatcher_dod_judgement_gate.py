@@ -206,6 +206,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             cause=verdict.cause,
             comments=comments,
             append=append,
+            bound_ended_candidates=verdict.bound_ended_candidates,
         )
     append(
         body=verdict_comment(
@@ -327,6 +328,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     cause: str | None,
     comments: Sequence[str],
     append: Callable[..., None],
+    bound_ended_candidates: Sequence[str] = (),
 ) -> DodJudgementDecision:
     """Record that the judgement did not run, unless this cause already stands.
 
@@ -343,7 +345,12 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     if cause is not None and cause not in recorded_did_not_run_causes(comments=comments):
         append(
             body=did_not_run_comment(
-                item_id=item.id, stage=stage, digest=digest, rubric_digest=rubric, cause=cause
+                item_id=item.id,
+                stage=stage,
+                digest=digest,
+                rubric_digest=rubric,
+                cause=cause,
+                bound_ended_candidates=bound_ended_candidates,
             )
         )
     return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
