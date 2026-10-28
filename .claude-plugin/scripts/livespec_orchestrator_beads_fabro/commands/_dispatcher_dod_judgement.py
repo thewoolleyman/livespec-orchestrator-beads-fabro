@@ -122,6 +122,10 @@ class DodJudgement:
     outcome: str
     findings: tuple[str, ...] = ()
     cause: str | None = None
+    deciding_candidate: str | None = None
+    input_tokens: int | None = None
+    input_usage: str = "unreported"
+    bound_ended_candidates: tuple[str, ...] = ()
 
     @property
     def holds(self) -> bool:
