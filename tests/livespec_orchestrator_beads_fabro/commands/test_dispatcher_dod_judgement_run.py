@@ -403,13 +403,22 @@ def test_host_judge_scratch_retries_after_a_git_worktree_parent(
     module = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
     )
-    repository = _repo(tmp_path=tmp_path)
-    subprocess.run(["git", "init", "--quiet", str(repository)], check=True)
-    monkeypatch.setattr(module, "_scratch_parent_candidates", lambda: (repository, tmp_path))
+    worktree_parent = tmp_path / "worktree-parent"
+    safe_parent = tmp_path / "safe-parent"
+    worktree_parent.mkdir()
+    safe_parent.mkdir()
+
+    def is_inside_worktree(*, directory: Path) -> bool:
+        return directory.parent == worktree_parent
+
+    monkeypatch.setattr(
+        module, "_scratch_parent_candidates", lambda: (worktree_parent, safe_parent)
+    )
+    monkeypatch.setattr(module, "_inside_git_worktree", is_inside_worktree)
     scratch_directory = vars(module)["_non_repository_scratch_directory"]
 
     with scratch_directory() as scratch:
-        assert scratch.parent == tmp_path
+        assert scratch.parent == safe_parent
 
 
 def test_host_judge_scratch_refuses_when_no_candidate_directory_can_be_created(
