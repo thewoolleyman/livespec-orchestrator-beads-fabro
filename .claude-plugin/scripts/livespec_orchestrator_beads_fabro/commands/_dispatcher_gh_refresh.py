@@ -105,6 +105,81 @@ sys.stderr.write("github-token source: github-app-installation-token\\n")
 sys.stdout.write(token)
 """
 
+_AGENT_PUBLICATION_GUARD_SOURCE = r"""livespec_agent_publication_action() {
+    case "${1:-} ${2:-}" in
+        "pr create") printf '%s' gh_pr_create ;;
+        "pr ready") printf '%s' gh_pr_ready ;;
+        "pr merge") printf '%s' gh_pr_merge ;;
+        "pr edit") printf '%s' gh_pr_edit ;;
+        "api "*) livespec_agent_api_publication_action "$@" ;;
+        *) return 1 ;;
+    esac
+}
+
+livespec_agent_api_publication_action() {
+    shift
+    endpoint=''
+    method=GET
+    query=''
+    value_for=''
+    for argument in "$@"; do
+        case "$value_for" in
+            method) method="$argument"; value_for='' ;;
+            field) query="$query $argument"; value_for='' ;;
+            *)
+                case "$argument" in
+                    --method|-X) value_for=method ;;
+                    --method=*) method="${argument#*=}" ;;
+                    -X?*) method="${argument#-X}" ;;
+                    -f|-F|--field|--raw-field) value_for=field ;;
+                    query=*|mutation=*) query="$query $argument" ;;
+                    graphql|/repos/*|repos/*) endpoint="$argument" ;;
+                esac
+                ;;
+        esac
+    done
+    method=$(printf '%s' "$method" | tr '[:lower:]' '[:upper:]')
+    case "$endpoint" in
+        graphql)
+            query=$(printf '%s' "$query" | tr '[:upper:]' '[:lower:]')
+            case "$query" in
+                *mergepullrequest*) printf '%s' gh_api_graphql_merge ;;
+                *createpullrequest*) printf '%s' gh_api_graphql_create ;;
+                *markpullrequestreadyforreview*) printf '%s' gh_api_graphql_ready ;;
+                *updatepullrequest*) printf '%s' gh_api_graphql_edit ;;
+                *enablepullrequestautomerge*|*disablepullrequestautomerge*)
+                    printf '%s' gh_api_graphql_auto_merge ;;
+                *) return 1 ;;
+            esac
+            ;;
+        /repos/*/pulls/*/merge|repos/*/pulls/*/merge)
+            test "$method" = PUT && printf '%s' gh_api_merge
+            ;;
+        /repos/*/pulls|repos/*/pulls)
+            test "$method" = POST && printf '%s' gh_api_create
+            ;;
+        /repos/*/pulls/*|repos/*/pulls/*)
+            test "$method" = PATCH && printf '%s' gh_api_edit
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+livespec_agent_publication_guard_is_active() {
+    case "${LIVESPEC_AGENT_STAGE:-}" in
+        ''|publish_draft|pr_refresh|pr) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+if livespec_agent_publication_guard_is_active \
+    && action="$(livespec_agent_publication_action "$@")"; then
+    printf 'LIVESPEC_AGENT_PUBLICATION_DENIED: stage=%s action=%s\n' \
+        "$LIVESPEC_AGENT_STAGE" "$action" >&2
+    exit 1
+fi
+"""
+
 
 def refreshing_gh_prepare_steps_block() -> str:
     """Install a sandbox-local refreshing `gh` wrapper when App inputs exist.
@@ -142,7 +217,8 @@ def refreshing_gh_prepare_steps_block() -> str:
     lines = ["", "# --- Dispatcher-materialized livespec-refreshing-gh-wrapper ---"]
     for script in scripts:
         _assert_step_within_limit(script=script)
-        lines.extend(["[[run.prepare.steps]]", f"script = '''\n{script}\n'''"])
+        step = "script = '''\n" + script + "\n'''"
+        lines.extend(["[[run.prepare.steps]]", step])
     return "\n".join(lines) + "\n"
 
 
@@ -191,6 +267,15 @@ def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> 
     """Unpack the streamed bundle and install the refreshing `gh` wrapper."""
     helper_source_literal = json.dumps(_MINT_HELPER_SOURCE)
     push_helper = f"{bundle_root}/bin/push_origin"
+    wrapper_source = "".join(
+        (
+            _AGENT_PUBLICATION_GUARD_SOURCE,
+            'token="$(python3 "$mint")"\n',
+            'export GH_TOKEN="$token"\n',
+            'export GITHUB_TOKEN="$token"\n',
+            'exec "$real_gh" "$@"\n',
+        )
+    )
     return (
         "set -eu\n"
         f'bundle_root="{bundle_root}"\n'
@@ -232,11 +317,7 @@ def _unpack_script(*, bundle_root: str, mint_helper: str, payload_path: str) -> 
         'real_gh="$wrapped_gh"\n'
         "EOF\n"
         "cat >> \"$real_gh\" <<'EOF'\n"
-        'token="$(python3 "$mint")"\n'
-        'export GH_TOKEN="$token"\n'
-        'export GITHUB_TOKEN="$token"\n'
-        'exec "$real_gh" "$@"\n'
-        "EOF\n"
+        f"{wrapper_source}EOF\n"
         'chmod 755 "$real_gh"'
     )
 

@@ -258,7 +258,7 @@ def test_default_target_renders_every_node_at_1800_seconds(
     # ACP protocol completes on the Petri-era engine, so the generator writes the
     # resolved command in. The guard wrap is what precedes it.
     assert "inputs.acp_adapter" not in capturing.graph_text
-    guarded = guarded_adapter_string(rendered=_ADAPTER)
+    guarded = guarded_adapter_string(rendered=f"LIVESPEC_AGENT_STAGE=implement {_ADAPTER}")
     assert f'acp.command="{guarded}"' in capturing.graph_text
 
 
