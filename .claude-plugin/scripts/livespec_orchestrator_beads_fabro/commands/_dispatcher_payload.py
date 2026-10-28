@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import ACP_NODES
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_queue_allowance import (
     credential_queue_allowance_from_block,
@@ -260,7 +261,11 @@ def _rendered_graph(
     rendered = render_workflow_graph(committed_text=graph_text, timeouts=timeouts)
     if isinstance(rendered, str):
         return rendered
-    commands = render_acp_commands(graph_text=rendered.text, adapters=adapters)
+    commands = render_acp_commands(
+        graph_text=rendered.text,
+        adapters=adapters,
+        stages={node: node for node in ACP_NODES},
+    )
     if isinstance(commands, str):
         return commands
     entered = _entered_text(text=commands.text, entry_node=entry_node)
