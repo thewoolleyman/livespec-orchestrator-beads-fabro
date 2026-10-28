@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.253.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.253.0...v0.253.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* isolate host judgement candidates without breaking the Codex leg ([e501307](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e501307e4f541bdec55757be9b8e67e22f8236aa))
+
 ## [0.253.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.252.0...v0.253.0) (2026-10-28)
 
 
