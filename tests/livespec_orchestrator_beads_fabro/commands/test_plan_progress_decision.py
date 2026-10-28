@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
 from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
     CAUSE_MISDERIVED,
     CausalSupersession,
+    DerivingTransition,
+    ImplementationEvidence,
+    SupersessionEvidence,
 )
 
 _EPIC_ID = "bd-ib-decisionepic"
@@ -595,3 +598,34 @@ def test_a_supersession_of_an_unreadable_prior_obligation_is_reconciled_first() 
     )
 
     assert "unreadable" in refusal.detail
+
+
+def test_an_accepted_supersession_handoff_consumes_one_inherited_unit() -> None:
+    """The causal event consumes none; the handoff carrying it consumes exactly one."""
+    decision = _decision(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(authority=_prior_authority(consumed=1)),
+            candidate=_candidate(required_result=_RENAMED_RESULT),
+            now=_NOW,
+            is_handoff=True,
+            observation=_observation(status="unsatisfied"),
+            replacement_observation=_observation(status="unsatisfied"),
+            supersession=_supersession(),
+            evidence=SupersessionEvidence(
+                deriving=DerivingTransition(
+                    author="plan-resume",
+                    recorded_at="2026-10-01T00:00:00Z",
+                    required_result=_PRIOR_RESULT,
+                    later_results=(),
+                ),
+                carrier=None,
+                plan_level=False,
+                implementation=ImplementationEvidence(
+                    factory_safe=True, recorded_at="2026-10-01T00:00:00Z"
+                ),
+            ),
+        )
+    )
+
+    assert decision.authority.consumed_handoffs == 2
