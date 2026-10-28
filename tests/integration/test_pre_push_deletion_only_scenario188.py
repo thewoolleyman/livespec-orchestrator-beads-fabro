@@ -69,7 +69,7 @@ _LIVE_OID = "b3d4f1a90c7e25486fd1c0b8a7e6554321098765"
 _OTHER_OID = "ac1e5d0f3b729648175e2c9a0d4f6b8172635409"
 
 _SKIP_NOTICE = "only deletes refs"
-_GREEN_TOKEN_PROBE = "green_token check"
+_GREEN_TOKEN_PROBE = "green-token-scope.sh check"
 _AGGREGATE = "just check-skipping check-codex-skill-picker"
 _LEDGER_CONFORMANCE_STEP = "02-ledger-conformance"
 
