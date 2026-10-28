@@ -57,9 +57,13 @@ chain is what failed.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    unavailable_report,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
     dod_gate_candidates,
 )
@@ -179,11 +183,15 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
             input_tokens=None if usage is None else usage.total_tokens,
             input_usage="unreported" if usage is None else usage.status,
             bound_ended_candidates=result.bound_ended_candidates,
+            attempts=result.attempts,
         )
+    cause = result.cause or CAUSE_NO_ELIGIBLE_MODEL
+    _ = sys.stderr.write(f"{unavailable_report(cause=cause, attempts=result.attempts)}\n")
     return DodJudgement(
         outcome=JUDGEMENT_UNAVAILABLE,
-        cause=result.cause or CAUSE_NO_ELIGIBLE_MODEL,
+        cause=cause,
         bound_ended_candidates=result.bound_ended_candidates,
+        attempts=result.attempts,
     )
 
 

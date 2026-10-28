@@ -41,9 +41,22 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
-    clause_line,
-    clauses_from,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    CandidateAttempt,
+    candidate_record_lines,
+    unavailable_record_lines,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import clauses_from
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_record import (
+    GOVERNING_GENERALIZATION_FIELD,
+    GOVERNING_HEADING_FIELD,
+    GOVERNING_KIND_FIELD,
+    GOVERNING_NAMED_CLAUSE_FIELD,
+    GOVERNING_PROVENANCE_FIELD,
+    GOVERNING_SELECTED_CLAUSE_FIELD,
+    GOVERNING_SUBJECT_DIGEST_FIELD,
+    GoverningHeadingReceipt,
+    governing_record_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_UNAVAILABLE,
@@ -111,26 +124,15 @@ _REMEDY_FIELD = "first-remedy"
 # behind a comment that has nothing to do with the judgement. The field name is
 # the discriminator, so it has to be one nothing else writes.
 _CAUSE_FIELD = "judgement-unavailable-cause"
-# The spec-stated judgement's own verdict, recorded so the `dod_gate` node can
-# be briefed with the verdict the host taking used rather than with a second
-# one taken at the goal render. The heading key is REPEATED, one line per
-# governing clause, exactly as `finding` is.
-_GOVERNING_KIND_FIELD = "governing-heading-kind"
-_GOVERNING_HEADING_FIELD = "governing-heading"
-_GOVERNING_SUBJECT_DIGEST_FIELD = "governing-heading-subject-digest"
-_GOVERNING_PROVENANCE_FIELD = "governing-heading-provenance"
-_GOVERNING_SELECTED_CLAUSE_FIELD = "governing-heading-selected-clause"
-_GOVERNING_NAMED_CLAUSE_FIELD = "governing-heading-named-clause"
-_GOVERNING_GENERALIZATION_FIELD = "governing-heading-generalization-target"
 _FIELD_SEPARATOR = ": "
 # Every key a record may carry more than once, which the field map must leave
 # to the repeated-value reader rather than collapsing to its last occurrence.
 _REPEATED_FIELDS = frozenset(
     {
         _FINDING_FIELD,
-        _GOVERNING_HEADING_FIELD,
-        _GOVERNING_SELECTED_CLAUSE_FIELD,
-        _GOVERNING_NAMED_CLAUSE_FIELD,
+        GOVERNING_HEADING_FIELD,
+        GOVERNING_SELECTED_CLAUSE_FIELD,
+        GOVERNING_NAMED_CLAUSE_FIELD,
         BOUND_ENDED_CANDIDATE_FIELD,
     }
 )
@@ -149,14 +151,6 @@ class RecordedJudgement:
     def first_remedy(self) -> str | None:
         """The remedy the hygiene listing names, derived as the verdict's own."""
         return first_remedy(findings=self.findings)
-
-
-@dataclass(frozen=True, kw_only=True)
-class GoverningHeadingReceipt:
-    """The component verdict and exact non-spec input its record binds."""
-
-    verdict: GoverningHeadingVerdict
-    subject_digest: str
 
 
 def verdict_comment(  # noqa: PLR0913 - each argument is one field of the record it writes.
@@ -192,30 +186,13 @@ def verdict_comment(  # noqa: PLR0913 - each argument is one field of the record
         f"{_OUTCOME_FIELD}{_FIELD_SEPARATOR}{judgement.outcome}",
         f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
         f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
+        *candidate_record_lines(attempts=judgement.attempts),
     ]
     lines.extend(input_usage_lines(judgement=judgement))
     if spec_identity is not None:
         lines.extend(spec_identity_lines(identity=spec_identity))
     if governing is not None:
-        verdict = governing.verdict
-        lines.append(f"{_GOVERNING_KIND_FIELD}{_FIELD_SEPARATOR}{verdict.kind}")
-        lines.append(
-            f"{_GOVERNING_SUBJECT_DIGEST_FIELD}{_FIELD_SEPARATOR}{governing.subject_digest}"
-        )
-        provenance = "complete" if verdict.provenance_complete else "incomplete"
-        lines.append(f"{_GOVERNING_PROVENANCE_FIELD}{_FIELD_SEPARATOR}{provenance}")
-        lines.extend(
-            f"{_GOVERNING_HEADING_FIELD}{_FIELD_SEPARATOR}{heading}"
-            for heading in verdict.stated_by
-        )
-        if verdict.generalization_target is not None:
-            target = verdict.generalization_target
-            lines.append(f"{_GOVERNING_GENERALIZATION_FIELD}{_FIELD_SEPARATOR}{target}")
-        for key, clauses in (
-            (_GOVERNING_SELECTED_CLAUSE_FIELD, verdict.selected_clauses),
-            (_GOVERNING_NAMED_CLAUSE_FIELD, verdict.named_clauses),
-        ):
-            lines.extend(clause_line(key=key, clause=clause) for clause in clauses)
+        lines.extend(governing_record_lines(governing=governing))
     lines.extend(f"{_FINDING_FIELD}{_FIELD_SEPARATOR}{finding}" for finding in judgement.findings)
     remedy = first_remedy(findings=judgement.findings)
     if remedy is not None:
@@ -246,19 +223,17 @@ def reusable_governing_heading(
         if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
             continue
         fields = _fields_of(body=body)
-        if fields.get(_GOVERNING_PROVENANCE_FIELD) != "complete":
+        if fields.get(GOVERNING_PROVENANCE_FIELD) != "complete":
             continue
-        if fields.get(_GOVERNING_SUBJECT_DIGEST_FIELD) != subject_digest:
+        if fields.get(GOVERNING_SUBJECT_DIGEST_FIELD) != subject_digest:
             continue
-        kind = fields.get(_GOVERNING_KIND_FIELD)
+        kind = fields.get(GOVERNING_KIND_FIELD)
         if kind is None:
             continue
         recorded_selected = clauses_from(
-            values=_repeated(body=body, key=_GOVERNING_SELECTED_CLAUSE_FIELD)
+            values=_repeated(body=body, key=GOVERNING_SELECTED_CLAUSE_FIELD)
         )
-        recorded_named = clauses_from(
-            values=_repeated(body=body, key=_GOVERNING_NAMED_CLAUSE_FIELD)
-        )
+        recorded_named = clauses_from(values=_repeated(body=body, key=GOVERNING_NAMED_CLAUSE_FIELD))
         if recorded_selected is None or recorded_named is None:
             continue
         if Counter(recorded_selected) != Counter(selected_clauses) or Counter(
@@ -267,8 +242,8 @@ def reusable_governing_heading(
             continue
         return GoverningHeadingVerdict(
             kind=kind,
-            stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
-            generalization_target=fields.get(_GOVERNING_GENERALIZATION_FIELD),
+            stated_by=_repeated(body=body, key=GOVERNING_HEADING_FIELD),
+            generalization_target=fields.get(GOVERNING_GENERALIZATION_FIELD),
             selected_clauses=selected_clauses,
             named_clauses=named_clauses,
         )
@@ -293,18 +268,18 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
         if comment_marker(body=body) != JUDGEMENT_COMMENT_MARKER:
             continue
         fields = _fields_of(body=body)
-        kind = fields.get(_GOVERNING_KIND_FIELD)
+        kind = fields.get(GOVERNING_KIND_FIELD)
         if kind is None:
             return None
         return GoverningHeadingVerdict(
             kind=kind,
-            stated_by=_repeated(body=body, key=_GOVERNING_HEADING_FIELD),
-            generalization_target=fields.get(_GOVERNING_GENERALIZATION_FIELD),
+            stated_by=_repeated(body=body, key=GOVERNING_HEADING_FIELD),
+            generalization_target=fields.get(GOVERNING_GENERALIZATION_FIELD),
         )
     return None
 
 
-def did_not_run_comment(
+def did_not_run_comment(  # noqa: PLR0913 - each argument is one field of the record it writes.
     *,
     item_id: str,
     stage: str,
@@ -312,12 +287,14 @@ def did_not_run_comment(
     rubric_digest: str,
     cause: str,
     bound_ended_candidates: Sequence[str] = (),
+    attempts: Sequence[CandidateAttempt] = (),
 ) -> str:
-    """The ledger comment recording that the judgement did not run, and why.
+    """The ledger comment recording that the judgement did not run, why, and who ran.
 
-    It names each candidate the input bound ended, because an exhausted chain and
-    a chain that never ran a candidate send an operator to opposite places and the
-    cause alone does not say which this was.
+    It names each candidate the chain ran and the one whose failure ended it, and
+    each candidate the input bound ended, because an exhausted chain and a chain
+    that never ran a candidate send an operator to opposite places and the cause
+    alone does not say which this was.
     """
     return "\n".join(
         (
@@ -332,6 +309,7 @@ def did_not_run_comment(
             f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
             f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
             *bound_ended_lines(candidates=bound_ended_candidates),
+            *unavailable_record_lines(attempts=attempts),
         )
     )
 

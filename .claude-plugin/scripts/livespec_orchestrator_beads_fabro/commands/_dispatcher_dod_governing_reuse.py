@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -115,7 +116,7 @@ def with_governing_findings(
         if governing_heading_holds(section=section, verdict=governing)
         else verdict.outcome
     )
-    return DodJudgement(outcome=outcome, findings=verdict.findings + findings, cause=verdict.cause)
+    return replace(verdict, outcome=outcome, findings=verdict.findings + findings)
 
 
 def _recorded_named_headings(*, body: str) -> tuple[str, ...]:
