@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.250.0...v0.251.0) (2026-10-28)
+
+
+### Features
+
+* add factory-addressed run reader (dispatcher inspect --factory) ([a828272](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a828272315186a0e46cd505e7dc04be66ad9c876))
+
 ## [0.250.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.249.2...v0.250.0) (2026-10-28)
 
 
