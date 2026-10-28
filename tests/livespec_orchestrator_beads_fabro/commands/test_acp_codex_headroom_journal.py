@@ -67,6 +67,7 @@ _CLAUDE_STAGE = "acp-session-headroom"
 _TOKEN = "projected-access-token-value"
 _ACCOUNT = "account-0123456789"
 _EMAIL = "operator@example.com"
+_CREDIT_BALANCE = "credit-balance-sentinel-zq"
 _GRAPH = """
     start [shape=Mdiamond]
     exit  [shape=Msquare]
@@ -141,7 +142,7 @@ def _usage_body(*, used: float) -> bytes:
                 "primary_window": {"used_percent": used, "limit_window_seconds": 18000},
                 "secondary_window": None,
             },
-            "credits": {"balance": "900"},
+            "credits": {"balance": _CREDIT_BALANCE},
         }
     ).encode()
 
@@ -301,7 +302,7 @@ def test_no_credential_value_account_email_or_raw_response_is_journaled(
     records = _admit(monkeypatch, tmp_path=tmp_path)
 
     text = json.dumps(records)
-    for secret in (_TOKEN, _ACCOUNT, _EMAIL, "credits", "900"):
+    for secret in (_TOKEN, _ACCOUNT, _EMAIL, "credits", _CREDIT_BALANCE):
         assert secret not in text
 
 
