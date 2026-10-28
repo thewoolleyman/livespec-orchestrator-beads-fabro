@@ -211,9 +211,8 @@ instrument reported as pointed where it is not. What CAN still fail it is a
 raised window: `dispatcher.credential_queue_allowance_seconds` plus the wall
 budget above 860400 seconds puts the requirement past a fresh credential again,
 and that is a committed-configuration edit this repository can make. The case
-therefore guards the configuration rather than the graph, and the EXACT pin on
-the allowance is what keeps a graph widening from passing unremarked: it fails
-and forces a re-measurement, which is the step that was skipped in v175.
+therefore guards the configuration rather than the graph. A graph widening is
+guarded by the invariants described at the end of this docstring.
 
 Since 2026-10-25 this repository routes EVERY factory node to Codex first
 (`.livespec.jsonc`'s `acp_nodes` make codex-acp each node's primary, with a
@@ -249,6 +248,30 @@ against this tree: 1123350 shipped and 1753350 at the retired `"15m"`, up from
 1055565 and 1644165, so the bound moves from 1100000 to 1150000 with 26650
 seconds of headroom. The freshness gate still demands 111600 seconds, because
 the window governs it and not the graph.
+
+THE EXACT PINS WERE REPLACED BY INVARIANTS (work-item bd-ib-nvhqyq). Every move
+recorded above forced an edit to this module, including moves that changed no
+graph at all: raising `fix` from 3600 to 7200 in `dispatcher.node_timeouts`
+had to re-pin the shipped allowance (902955 to 931755) and the retired
+fifteen-minute control (1415955 to 1444755). A configuration-only change should
+not need a test edit, so no case here pins a derived figure any more. Four
+relations are asserted instead, and each failure message names the re-measured
+figures so a reviewer still sees the move:
+
+* the execution allowance stays at or below `_ALLOWANCE_BOUND_SECONDS`, the one
+  figure this repository chooses;
+* the allowance the retired `"15m"` checkpoint budget resolves is compared WITH
+  the shipped allowance, and must exceed both it and the bound, which proves the
+  five-minute budget is what holds the allowance under the bound;
+* the freshness requirement stays within a FRESH Codex credential's lifetime,
+  the ceiling v175 crossed and this repository does not choose;
+* the requirement is the smaller of the allowance and the bounded
+  credential-use window plus the margin, so an allowance past a fresh
+  credential's lifetime cannot reach the requirement.
+
+The v175 lesson is kept: crossing the credential line fails loudly and cannot
+pass behind a bound the repository can move, because the fresh-credential
+lifetime is a constant of the host and not a bound.
 """
 
 from __future__ import annotations
@@ -267,32 +290,18 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 
-# The bound the EXECUTION ALLOWANCE has to sit under, and the allowance the
-# RETIRED `"15m"` resolved. Measured against the ALLOWANCE rather than the
-# required lifetime since v177: the checkpoint budget moves the allowance and
-# the required lifetime is window-governed, so a required-lifetime comparison
-# reads 111600 at both budgets and discriminates nothing. The bound is
-# deliberately looser than the measured 840675 this budget yields, because the
-# allowance also sums the resolved node timeouts and pinning it here as well
-# would make every unrelated timeout edit fail this case; the control pins the
-# 15m figure exactly, because that one is the thing being moved away from and a
-# drifting comparand would hide the move.
+# The bound the EXECUTION ALLOWANCE has to sit under. Measured against the
+# ALLOWANCE rather than the required lifetime since v177: the checkpoint budget
+# moves the allowance and the required lifetime is window-governed, so a
+# required-lifetime comparison reads the same at both budgets and discriminates
+# nothing. The bound is the only figure here this repository chooses, and no
+# derived figure is pinned beside it: a node-timeout edit that keeps the
+# allowance under the bound needs no edit to this module.
 _ALLOWANCE_BOUND_SECONDS = 1_300_000
-_ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES = 1_988_100
 
-# The execution ALLOWANCE the shipped payload resolves, the lifetime the
-# freshness gate actually demands of a credential, and the lifetime of a FRESH
-# Codex credential. Unlike the bound above, none of these is this repository's to
-# choose freely: the first is what the graph in this tree costs, the second is
-# what the smaller-of-two rule derives from it and the committed window, and the
-# third is what the host mints at renewal -- so their relation is a fact about
-# whether a dispatch can run at all rather than a threshold anyone may move. The
-# allowance is pinned EXACTLY for the reason the docstring gives: a loose
-# comparand is what let v175's widened graph cross the credential ceiling while
-# every case here still passed, and an exact pin forces the re-measurement that
-# was skipped.
-_SHIPPED_EXECUTION_ALLOWANCE_SECONDS = 1_268_100
-_SHIPPED_FRESHNESS_REQUIREMENT_SECONDS = 111_600
+# The lifetime of a FRESH Codex credential. Not this repository's to choose: it
+# is what the host mints at renewal, so a requirement past it is a fact about
+# whether a dispatch can run at all rather than a threshold anyone may move.
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
 
 
@@ -348,24 +357,28 @@ def test_the_run_branch_checkpoint_budget_is_five_minutes() -> None:
 def test_the_checkpoint_budget_holds_the_execution_allowance_under_the_bound(
     tmp_path: Path,
 ) -> None:
-    """The shipped declaration resolves an execution allowance under the bound.
+    """The shipped declaration resolves an execution allowance within the bound.
 
     THE ALLOWANCE IS THE SUBJECT AND NOT THE REQUIRED LIFETIME, since v177. The
     checkpoint budget enters the allowance three times per attempt and moves
     nothing else; the required lifetime is the smaller of that allowance and the
     bounded credential-use window, and the window governs for this repository --
-    so a required-lifetime comparison reads 111600 at `"5m"` and 111600 at
-    `"15m"` and could not fail however large the budget grew. Grading the
-    allowance keeps this case about the declaration it was written for.
+    so a required-lifetime comparison reads the same at `"5m"` and `"15m"` and
+    could not fail however large the budget grew.
+
+    No derived figure is pinned. The allowance has to stay at or below
+    `_ALLOWANCE_BOUND_SECONDS`, and a failure names the re-measured allowance and
+    the bound.
 
     WHY THE CONTROL IS THE LOAD-BEARING HALF. The allowance also sums the
     resolved node timeouts, the visit caps and the retry budgets, so a bare
     inequality would be satisfied by a graph that happened to shrink -- a pass
     earned by something this item never touched. The control re-resolves the SAME
     payload with only the checkpoint budget restored to the retired `"15m"` and
-    requires it to land ABOVE the bound at exactly the measured figure named
-    above, which is what makes the first assertion evidence about this
-    declaration rather than about the graph.
+    compares the two derivations: the retired allowance has to exceed both the
+    shipped one and the bound, which is what makes the first assertion evidence
+    about this declaration rather than about the graph. Neither derivation is
+    pinned, so the control moves with the graph.
 
     The replacement is asserted to match exactly once before it is applied: a
     `str.replace` that matched nothing would leave the control resolving the
@@ -373,7 +386,15 @@ def test_the_checkpoint_budget_holds_the_execution_allowance_under_the_bound(
     """
     resolved = resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
     assert hasattr(resolved, "execution_allowance_seconds"), resolved
-    assert resolved.execution_allowance_seconds < _ALLOWANCE_BOUND_SECONDS
+    shipped = resolved.execution_allowance_seconds
+    assert shipped <= _ALLOWANCE_BOUND_SECONDS, (
+        f"the shipped execution allowance re-derives to {shipped} seconds, past the "
+        f"{_ALLOWANCE_BOUND_SECONDS}-second bound declared in this module "
+        f"(_ALLOWANCE_BOUND_SECONDS): shorten a node timeout or a visit cap, or re-measure "
+        f"and record the move in this module's docstring before choosing any bound, and "
+        f"check the new figure against the {_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS}-second "
+        f"fresh-credential lifetime"
+    )
 
     copied = tmp_path / _PAYLOAD.name
     _ = shutil.copytree(_PAYLOAD, copied)
@@ -388,18 +409,28 @@ def test_the_checkpoint_budget_holds_the_execution_allowance_under_the_bound(
         committed=committed, block=dispatcher_block(cwd=_REPO_ROOT)
     )
     assert hasattr(retired, "execution_allowance_seconds"), retired
-    assert retired.execution_allowance_seconds == _ALLOWANCE_AT_THE_RETIRED_FIFTEEN_MINUTES
-    assert retired.execution_allowance_seconds > _ALLOWANCE_BOUND_SECONDS
+    retired_allowance = retired.execution_allowance_seconds
+    assert retired_allowance > shipped, (
+        f"the retired fifteen-minute checkpoint budget re-derives {retired_allowance} seconds, "
+        f"not above the shipped five-minute figure of {shipped}: the checkpoint budget no "
+        f"longer moves the allowance, so this control proves nothing"
+    )
+    assert retired_allowance > _ALLOWANCE_BOUND_SECONDS, (
+        f"the retired fifteen-minute checkpoint budget re-derives {retired_allowance} seconds, "
+        f"not past the {_ALLOWANCE_BOUND_SECONDS}-second bound (_ALLOWANCE_BOUND_SECONDS) "
+        f"beside the shipped {shipped}: the five-minute budget is no longer what holds the "
+        f"allowance under the bound, so re-choose the bound between the two figures"
+    )
 
 
 def test_the_shipped_freshness_requirement_fits_a_fresh_codex_credential() -> None:
-    """The gate asks 111600 seconds of a credential; a fresh one carries 864000.
+    """The gate asks of a credential no more than a fresh one carries (864000 seconds).
 
-    This is the case the module was missing when v175 widened the graph. Every
-    other case here compares against `_ALLOWANCE_BOUND_SECONDS`, a threshold
-    this repository chooses -- so a graph costing more than a credential can ever
-    hold passes them all, and the honest-looking remedy is to raise the bound,
-    which is exactly what the reverted change did on its way past 864000.
+    This is the case the module was missing when v175 widened the graph. The
+    case above compares against `_ALLOWANCE_BOUND_SECONDS`, a threshold this
+    repository chooses -- so a graph costing more than a credential can ever
+    hold passes it, and the honest-looking remedy is to raise the bound, which
+    is exactly what the reverted change did on its way past 864000.
 
     So the comparand here is the CREDENTIAL, not a bound. A fresh Codex access
     token is minted with a ten-day life and the freshness gate demands the
@@ -407,46 +438,38 @@ def test_the_shipped_freshness_requirement_fits_a_fresh_codex_credential() -> No
     than 864000 seconds is refusable on a token minted moments earlier and no
     bound in this repository can admit it.
 
-    WHAT THIS CASE CAN AND CANNOT FAIL ON, stated rather than implied, because
-    an instrument reported as pointed where it is not is worse than none. Since
-    v177 the required lifetime is the smaller of the execution allowance and the
-    bounded credential-use window, and the window governs here -- so a widened
-    GRAPH can no longer carry this figure past the ceiling, and this case would
-    not catch one. What still fails it is a raised WINDOW: the committed
-    `dispatcher.credential_queue_allowance_seconds` plus the resolved whole-run
-    wall budget above 860400 seconds puts the requirement past a fresh
-    credential again. The graph is guarded instead by the exact allowance pin
-    below, which fails on any derivation move and forces the re-measurement v175
-    skipped.
+    Two relations are asserted and no derived figure is pinned. The requirement
+    must not exceed the fresh-credential lifetime. And the requirement must be
+    the SMALLER of the execution allowance and the bounded credential-use window
+    plus the margin (v177): that rule is what keeps an allowance past the
+    fresh-credential lifetime -- the v175 failure -- from reaching the gate.
+    Each failure names the re-measured figures.
 
-    Three figures are asserted, and each closes a lane the others leave open.
-    The exact REQUIRED lifetime pins what the gate demands; the exact
-    ALLOWANCE pins what the graph costs, so a widening cannot pass unremarked
-    behind a window that absorbs it; and the inequality states the relation the
-    demanded figure has to keep. An inequality alone would pass for any
-    configuration under the ceiling, including one that had silently consumed
-    the whole margin.
+    WHAT THIS CASE CAN FAIL ON: a raised window (the committed
+    `dispatcher.credential_queue_allowance_seconds` plus the wall budget past
+    the credential lifetime less the margin), or a requirement that stops
+    following the smaller-of-two rule. A widened graph alone cannot, because the
+    window absorbs it; the allowance bound in the case above guards the graph.
     """
     resolved = resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
-
     assert hasattr(resolved, "required_seconds"), resolved
-    assert resolved.required_seconds == _SHIPPED_FRESHNESS_REQUIREMENT_SECONDS, (
-        f"the shipped payload resolves {resolved.required_seconds} seconds, not the pinned "
-        f"{_SHIPPED_FRESHNESS_REQUIREMENT_SECONDS}: re-measure the derivation against this "
-        f"tree, record the move in this module's docstring, and check the new figure against "
-        f"the {_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS}-second fresh-credential lifetime "
-        f"before choosing any bound"
+
+    allowance = resolved.execution_allowance_seconds
+    window = resolved.credential_use_window_seconds
+    required = resolved.required_seconds
+    expected = min(allowance, window) + resolved.margin_seconds
+    assert required == expected, (
+        f"the freshness requirement re-derives {required} seconds, not the smaller of the "
+        f"{allowance}-second execution allowance and the {window}-second credential-use "
+        f"window plus the {resolved.margin_seconds}-second margin ({expected}): the "
+        f"smaller-of-two rule no longer holds, so an allowance past the "
+        f"{_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS}-second fresh-credential lifetime can "
+        f"reach the freshness gate"
     )
-    assert resolved.execution_allowance_seconds == _SHIPPED_EXECUTION_ALLOWANCE_SECONDS, (
-        f"the shipped graph costs {resolved.execution_allowance_seconds} seconds, not the "
-        f"pinned {_SHIPPED_EXECUTION_ALLOWANCE_SECONDS}: re-measure it, record the move in "
-        f"this module's docstring, and check it against the "
-        f"{_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS}-second fresh-credential lifetime so a "
-        f"widening cannot pass behind a credential-use window that happens to absorb it"
-    )
-    assert resolved.required_seconds <= _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS, (
-        f"this dispatch asks {resolved.required_seconds} seconds of usable credential "
-        f"lifetime, more than the {_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS} a freshly minted "
-        f"Codex credential carries, so the freshness gate can refuse a dispatch holding a "
-        f"just-renewed token and no bound in this repository can admit it"
+    assert required <= _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS, (
+        f"this dispatch requires {required} seconds of usable credential lifetime (execution "
+        f"allowance {allowance}, credential-use window {window}), more than the "
+        f"{_FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS} a freshly minted Codex credential "
+        f"carries, so the freshness gate can refuse a dispatch holding a just-renewed token "
+        f"and no bound in this repository can admit it"
     )
