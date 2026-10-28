@@ -69,7 +69,9 @@ from pathlib import Path
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import admit_and_select
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
+    admit_and_select,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
 )
@@ -116,6 +118,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import dispatch_preamble
+from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
+    screened_verdict_of,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -347,6 +352,8 @@ def _admit_and_dispatch_resume(
         # a resume resolves its factory as `dispatch --item` does, so it passes
         # the same top layer of that precedence to the pending claim stamp.
         explicit_factory=explicit_dispatch_factory(args=args),
+        # The pre-dispatch session-headroom screen's reading, reused while fresh.
+        screened=screened_verdict_of(args=args),
         # THIS path's route, stated rather than measured: every dispatch it
         # admits is a resume by construction, and the clause makes the item's
         # recorded factory a pin for exactly that route. Nothing here consults

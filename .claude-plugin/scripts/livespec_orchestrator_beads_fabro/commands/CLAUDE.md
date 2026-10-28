@@ -1136,6 +1136,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   every new refusal to be wired twice. Do NOT re-inline it into either command
   module: that is the duplicate returning, and it is also what put the
   single-dispatch module over its file LLOC ceiling.
+- `_dispatcher_session_headroom_screen.py` — the SECOND row of that wall, and
+  the admission session-headroom assessment moved ahead of every row that spends
+  anything (`bd-ib-tsrkqf`). The assessment used to run only inside the admission
+  valve, after the App reach probe, the Definition-of-Done judgement's model
+  call, the proof-asset store and the Codex credential gate, so a dispatch it was
+  going to refuse paid about 14 minutes for work it threw away. Three properties
+  an editor must not invert. It adds NO decision: the verdict comes from the
+  valve's own `admission_acp_verdict` and the refusal is journaled through the
+  valve's own `filter_eligible_candidates`, so the rows and the scheduled
+  reevaluation are the ones the valve writes. It refuses ONLY a headroom-governed
+  verdict, because a chain emptied by a hold or a configuration fault keeps its
+  existing position. And a dispatch it passes spends NO second usage request:
+  the verdict rides `args` to the valve, which reuses it only while it is younger
+  than `SCREENED_VERDICT_REUSE_SECONDS` and repeats the assessment otherwise,
+  because the clause requires the assessment before claim and the rows between
+  the two can run for minutes.
 - `_dispatcher_codex_credential_gate.py` — the fourth refusal in that wall,
   and the pre-CLAIM half of the host Codex credential decision
   (`SPECIFICATION/scenarios.md` Scenario 19). Three properties an editor must
