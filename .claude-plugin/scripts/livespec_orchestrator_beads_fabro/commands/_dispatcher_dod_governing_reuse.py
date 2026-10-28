@@ -36,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     governing_heading_statement,
     verdict_named_headings,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tier_attested_verdict import (
+    attested_governing_heading,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     clauses_named,
     condensed_spec_tree,
@@ -71,7 +74,15 @@ def governing_heading_subject_digest(*, item: WorkItem, comments: Sequence[str])
 def reusable_governing_heading_verdict(
     *, item: WorkItem, repo: Path, comments: Sequence[str]
 ) -> GoverningHeadingVerdict | None:
-    """Read a component receipt against this revision without spending a model call."""
+    """Read a component receipt against this revision without spending a model call.
+
+    A STANDING HUMAN ATTESTATION IS READ FIRST and beats any receipt: the
+    `release-spec-tier` valve's attestation is a human override of this verdict,
+    so no recorded model reading, however current, outranks it.
+    """
+    attested = attested_governing_heading(item=item, repo=repo, comments=comments)
+    if attested is not None:
+        return attested
     section = definition_of_done(description=item.description)
     if not section.present:
         return None

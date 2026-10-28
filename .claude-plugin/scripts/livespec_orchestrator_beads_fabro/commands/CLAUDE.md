@@ -3046,6 +3046,25 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   so a missing spec tree reads back as a well-formed snapshot carrying no files
   and every feature in such a repository would be held for a proposal against a
   specification that does not exist.
+- THE HUMAN WAY THROUGH A MISJUDGED HOLD (`release-spec-tier`, the same
+  autonomy-tier bullet) is two leaves and a valve. `_spec_tier_attestation` is
+  the ledger record of the attestation and the rule for whether it still STANDS;
+  `_spec_tier_attested_verdict` turns a standing one into the governing-heading
+  verdict the Definition-of-Done judgement's reuse read
+  (`_dispatcher_dod_governing_reuse`) and the goal block (`_dispatcher_goal`)
+  return. Four properties an editor must not invert. THE ATTESTATION IS NOT A
+  CACHED CLASSIFICATION: the classification records retire on every revision,
+  while an attestation is voided ONLY by a change to the attested input (the
+  item's asked-for behaviour digest) or to the cited clause's heading and body,
+  so `_spec_change_tier_outcome.standing_outcome` (the outcome type and the
+  recorders, split out of the gate for size) reads it BEFORE the reuse read and
+  records a `none` tier once per specification version. THE COMPARISON BLOCK
+  IS SEPARATE FROM THE QUOTED TEXT: the asked-for behaviour and the assertions
+  are quoted below a blank line because a description line shaped like
+  `input-digest: ...` would win a last-occurrence parse. THE NEWEST ATTESTATION
+  COMMENT DECIDES, and a malformed newest one means nothing is attested. THE
+  LEDGER IS CHECKED BEFORE THE DISK in `attested_governing_heading`, which runs
+  on every taking and every goal render.
 
 Rules an agent editing this tree must follow:
 

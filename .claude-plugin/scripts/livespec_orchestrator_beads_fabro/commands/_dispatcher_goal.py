@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     governing_heading_block,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
+from livespec_orchestrator_beads_fabro.commands._spec_tier_attested_verdict import (
+    attested_governing_heading,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 if TYPE_CHECKING:
@@ -255,8 +258,16 @@ def render_goal(
     # judgement nobody took — the first forecloses its finding and the second
     # leaves it its own search.
     bodies = tuple(comment.text for comment in comments)
+    # A standing human attestation is the verdict when one exists: the `dod_gate`
+    # node "MUST use the attested `stated` verdict", and the receipt the pre-dispatch
+    # taking recorded may predate the attestation.
+    attested = attested_governing_heading(item=item, repo=repo, comments=bodies)
     verdict_block = (
-        "\n" + governing_heading_block(verdict=recorded_governing_heading(comments=bodies)) + "\n"
+        "\n"
+        + governing_heading_block(
+            verdict=recorded_governing_heading(comments=bodies) if attested is None else attested
+        )
+        + "\n"
     )
     # The SPEC IDENTITY the pre-dispatch taking used rides beside the verdict it
     # was derived from, so the run's `dod_gate` node compares on the taking's own

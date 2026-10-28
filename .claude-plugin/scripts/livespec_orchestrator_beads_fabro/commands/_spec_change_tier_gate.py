@@ -7,6 +7,14 @@ three call. Two implementations could not share a record they digest
 differently, so the decision is one function and the positions differ only in
 the `stage` the record names.
 
+A STANDING HUMAN ATTESTATION COMES BEFORE THE REUSE READ. The `release-spec-tier`
+valve attests that an existing clause states the item's behaviour, and that is
+"a human override of the governing-heading verdict ... not a cached model
+verdict", so it must beat a held record the reuse rule would otherwise keep
+returning. It takes no model: the attested `stated` verdict is recorded as a
+`none` tier, once per specification version, and a fresh `none` record that
+already stands is simply reused.
+
 THE ORDER IS REUSE, THEN CLASSIFY, THEN JUDGE, THEN RECORD, and it is the
 cheap-first order the clause's own economy implies. The reuse read is a ledger
 read the drain already pays for; the classification and the judgement are a
@@ -49,7 +57,6 @@ verdicts is that judgement's concern and is owned separately.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_runtime import spec_stated
@@ -69,12 +76,14 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     decide_spec_change_tier,
     exempt_decision,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_outcome import (
+    SpecChangeTierOutcome,
+    did_not_run_outcome,
+    recorded_outcome,
+    standing_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
-    classification_did_not_run_comment,
-    recorded_did_not_run_causes,
     recorded_spec_change_tier,
-    reusable_spec_change_tier,
-    spec_change_tier_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     judge_within_ceiling,
@@ -87,12 +96,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
-    from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
-        SpecChangeTierDecision,
-    )
-    from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
-        RecordedSpecChangeTier,
-    )
     from livespec_orchestrator_beads_fabro.types import SpecSnapshot, StoreConfig, WorkItem
 
 __all__: list[str] = [
@@ -100,7 +103,6 @@ __all__: list[str] = [
     "CAUSE_LEDGER_UNREADABLE",
     "CAUSE_SPEC_TREE_UNREADABLE",
     "CAUSE_VERDICT_UNREADABLE",
-    "SpecChangeTierOutcome",
     "classify_item_spec_change_tier",
     "classify_spec_change_tier",
 ]
@@ -114,39 +116,6 @@ CAUSE_CLASSIFICATION_UNREADABLE = "classification-answer-unreadable"
 CAUSE_VERDICT_UNREADABLE = "spec-stated-verdict-unreadable"
 CAUSE_SPEC_TREE_UNREADABLE = "spec-tree-unreadable"
 CAUSE_LEDGER_UNREADABLE = "ledger-comments-unreadable"
-
-
-@dataclass(frozen=True, kw_only=True)
-class SpecChangeTierOutcome:
-    """What one cadence point learned, and whether anything was spent learning it.
-
-    `recorded` is the classification that NOW STANDS against the item, which is
-    `None` exactly when the classification did not run — and `cause` then names
-    why. The two are reported together rather than as one optional, because a
-    caller routing the item needs both: the tier to route by, and the cause to
-    say in its own record that it routed without one.
-
-    `reused` is reported rather than inferred from `recorded`, because a reused
-    classification and a freshly-taken identical one are indistinguishable by
-    value — and the cap the clause's economy rests on is about the SPEND, not the
-    answer.
-    """
-
-    work_item_id: str
-    recorded: RecordedSpecChangeTier | None
-    cause: str | None = None
-    reused: bool = False
-
-    @property
-    def is_spec_change(self) -> bool:
-        """Whether the standing classification puts the item in the tier.
-
-        `False` for an item whose classification did not run, which is the
-        route-as-before direction the clause requires — not a claim that the
-        item is free, which is what `recorded is None` says and what a caller
-        records.
-        """
-        return self.recorded is not None and self.recorded.is_spec_change
 
 
 def classify_spec_change_tier(
@@ -175,7 +144,7 @@ def classify_spec_change_tier(
     snapshot = _specification(repo=repo)
     digest = behaviour_digest(item=item)
     if snapshot is None:
-        return _did_not_run(
+        return did_not_run_outcome(
             item=item,
             stage=stage,
             spec_version="",
@@ -185,9 +154,16 @@ def classify_spec_change_tier(
             append=append,
         )
     spec_version = str(snapshot.version)
-    reused = reusable_spec_change_tier(comments=comments, spec_version=spec_version, digest=digest)
-    if reused is not None:
-        return SpecChangeTierOutcome(work_item_id=item.id, recorded=reused, reused=True)
+    standing = standing_outcome(
+        item=item,
+        stage=stage,
+        snapshot=snapshot,
+        digest=digest,
+        comments=comments,
+        append=append,
+    )
+    if standing is not None:
+        return standing
     judge_runner = runner or ShellCommandRunner()
     statement = asked_for_behaviour(item=item)
     classification = spec_stated.classify(
@@ -197,7 +173,7 @@ def classify_spec_change_tier(
         run_model=drift_judge(project_root=repo, runner=judge_runner, reply="item_class"),
     )
     if not is_successful(classification):
-        return _did_not_run(
+        return did_not_run_outcome(
             item=item,
             stage=stage,
             spec_version=spec_version,
@@ -208,7 +184,7 @@ def classify_spec_change_tier(
         )
     item_class = classification.unwrap()
     if item_class != FEATURE_CLASS:
-        return _recorded(
+        return recorded_outcome(
             item=item,
             stage=stage,
             decision=exempt_decision(classification=item_class),
@@ -222,7 +198,7 @@ def classify_spec_change_tier(
         run_model=drift_judge(project_root=repo, runner=judge_runner),
     )
     if not is_successful(verdict):
-        return _did_not_run(
+        return did_not_run_outcome(
             item=item,
             stage=stage,
             spec_version=spec_version,
@@ -232,7 +208,7 @@ def classify_spec_change_tier(
             append=append,
         )
     standing = recorded_spec_change_tier(comments=comments)
-    return _recorded(
+    return recorded_outcome(
         item=item,
         stage=stage,
         decision=decide_spec_change_tier(
@@ -308,56 +284,3 @@ def _specification(*, repo: Path) -> SpecSnapshot | None:
     if isinstance(read, AttemptFailure) or not read.files:
         return None
     return read
-
-
-def _recorded(
-    *,
-    item: WorkItem,
-    stage: str,
-    decision: SpecChangeTierDecision,
-    spec_version: str,
-    digest: str,
-    append: Callable[..., None],
-) -> SpecChangeTierOutcome:
-    """Write one decision's record and report the classification it leaves standing.
-
-    The outcome's `recorded` is read back out of the body just written rather
-    than assembled beside it, so the classification a caller routes by is the
-    one the record carries — a second construction is how the two come to differ
-    while both look right.
-    """
-    body = spec_change_tier_comment(
-        item_id=item.id,
-        stage=stage,
-        decision=decision,
-        spec_version=spec_version,
-        digest=digest,
-    )
-    append(body=body)
-    return SpecChangeTierOutcome(
-        work_item_id=item.id, recorded=recorded_spec_change_tier(comments=(body,))
-    )
-
-
-def _did_not_run(  # noqa: PLR0913 - each argument is one field of the record it writes.
-    *,
-    item: WorkItem,
-    stage: str,
-    spec_version: str,
-    digest: str,
-    cause: str,
-    comments: Sequence[str],
-    append: Callable[..., None],
-) -> SpecChangeTierOutcome:
-    """Record that the classification did not run, unless this cause already stands."""
-    if cause not in recorded_did_not_run_causes(comments=comments):
-        append(
-            body=classification_did_not_run_comment(
-                item_id=item.id,
-                stage=stage,
-                spec_version=spec_version,
-                digest=digest,
-                cause=cause,
-            )
-        )
-    return SpecChangeTierOutcome(work_item_id=item.id, recorded=None, cause=cause)

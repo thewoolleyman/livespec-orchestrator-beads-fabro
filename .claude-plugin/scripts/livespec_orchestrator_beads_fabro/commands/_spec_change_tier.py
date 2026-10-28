@@ -54,11 +54,9 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from livespec_runtime.spec_stated import ItemClass, StatedKind
+from livespec_runtime.spec_stated import ItemClass, SpecStatedVerdict, StatedKind
 
 if TYPE_CHECKING:
-    from livespec_runtime.spec_stated import SpecStatedVerdict
-
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -69,6 +67,7 @@ __all__: list[str] = [
     "SPEC_DIRNAME",
     "SpecChangeTierDecision",
     "asked_for_behaviour",
+    "attested_decision",
     "behaviour_digest",
     "decide_spec_change_tier",
     "exempt_decision",
@@ -207,6 +206,28 @@ def decide_spec_change_tier(
         classification=classification,
         verdict=verdict,
         linked_proposal_topic=linked_proposal_topic or proposal_topic_for(item=item),
+    )
+
+
+def attested_decision(*, heading: str) -> SpecChangeTierDecision:
+    """The tier of a feature whose behaviour a human attested an existing clause states.
+
+    The attestation is a human override of the governing-heading verdict, so the
+    decision carries a `stated` verdict naming the cited heading and NO
+    generalization target: nothing needs generalizing when the ratified text
+    already states the behaviour. The tier is `none` because a stated feature is
+    an implementation follow-up, whatever the model's own verdict was.
+    """
+    return SpecChangeTierDecision(
+        tier=NO_TIER,
+        classification=FEATURE_CLASS,
+        verdict=SpecStatedVerdict(
+            kind="stated",
+            stated_by=(heading,),
+            generalization_target=None,
+            rationale=f"a human attested that {heading} states the asked-for behaviour",
+        ),
+        linked_proposal_topic=None,
     )
 
 
