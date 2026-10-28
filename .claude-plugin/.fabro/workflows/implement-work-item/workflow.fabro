@@ -1695,7 +1695,7 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         max_visits=3
-        script="state=$(git rev-parse --git-path livespec-publication); mkdir -p \"$state\"; counter=\"$state/livespec-recapture-verdicts\"; count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then echo \"LIVESPEC_RECAPTURE_COUNT_UNREADABLE: the recorded recapture-verdict count $count is not a number, so the two-lap bound cannot be enforced; failing closed to non_converged rather than re-entering proof_capture against a counter nothing can compare\" >&2; count=2; fi; count=$((count + 1)); printf '%s\\n' \"$count\" > \"$counter\"; if test \"$count\" -ge 3; then echo \"LIVESPEC_RECAPTURE_EXHAUSTED: review has ended with a recapture verdict $count times in this run, so the captured record is not converging on the proof-record findings the reviewer raised; routing to non_converged without entering proof_capture again\" >&2; exit 1; fi; echo \"LIVESPEC_RECAPTURE: recapture lap $count of 2. Every blocking finding of this review verdict is about the captured RECORD rather than the tree, so this run re-enters proof_capture and spends no disposition visit, no review_fix visit and no review-fix round. The reviewer published those findings as its own review record on the pull request; read them there when this preamble carries none.\" >&2; exit 0"
+        script="state=$(git rev-parse --git-path livespec-publication); mkdir -p \"$state\"; counter=\"$state/livespec-recapture-verdicts\"; count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then echo \"LIVESPEC_RECAPTURE_COUNT_UNREADABLE: the recorded recapture-verdict count $count is not a number, so the two-lap bound cannot be enforced; failing closed to non_converged rather than re-entering proof_capture against a counter nothing can compare\" >&2; count=2; fi; count=$((count + 1)); printf '%s\\n' \"$count\" > \"$counter\"; if test \"$count\" -ge 3; then findings=''; branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -n \"$branch\"; then number=$(gh pr list --head \"$branch\" --state open --json number --jq '.[0].number' 2>/dev/null || true); if test -n \"$number\"; then lines=$(gh pr view \"$number\" --json comments --jq '[.comments[].body | select(startswith(\"Review findings\"))] | .[-3:] | .[] | split(\"\\n\") | .[] | select(contains(\"[BLOCKING]\") and contains(\"(proof-record)\"))' 2>/dev/null || true); lines=$(printf '%s\\n' \"$lines\" | grep -v '^[[:space:]]*$' || true); findings=$(printf '%s\\n' \"$lines\" | sort | uniq -d | head -n 5 | tr '\\n' ' '); if test -z \"$findings\"; then findings=$(printf '%s\\n' \"$lines\" | sort -u | head -n 5 | tr '\\n' ' '); fi; fi; fi; printf '%s\\n' \"$findings\" | cut -c1-1500 > \"$state/livespec-recapture-exhausted\"; echo \"LIVESPEC_RECAPTURE_EXHAUSTED: review has ended with a recapture verdict $count times in this run, so the captured record is not converging on the proof-record findings the reviewer raised; routing to non_converged without entering proof_capture again\" >&2; exit 1; fi; echo \"LIVESPEC_RECAPTURE: recapture lap $count of 2. Every blocking finding of this review verdict is about the captured RECORD rather than the tree, so this run re-enters proof_capture and spends no disposition visit, no review_fix visit and no review-fix round. The reviewer published those findings as its own review record on the pull request; read them there when this preamble carries none.\" >&2; exit 0"
     ]
 
     // Terminal dead-implementer node (C5 / bd-ib-vdpb): a deliberate
@@ -1965,11 +1965,19 @@ digraph ImplementWorkItem {
     // lockstep. A dead end (no outgoing edge) is what makes the run
     // terminate rather than loop; same fabro-validate-accepted shape as
     // `abandon`.
+    // TWO CAPS END HERE and the cause line names the one that fired (bd-ib-iy4cd4).
+    // `recapture_route` records `livespec-recapture-exhausted` in the run's state
+    // directory (with the recurring proof-record findings it read off the review
+    // records) when its bound is spent; this node reads that trace. A run that
+    // reaches it with the trace prints LIVESPEC_RECAPTURE_EXHAUSTED and NOT the
+    // LIVESPEC_NON_CONVERGED sentinel, so the Dispatcher rests the item at
+    // blocked / needs-human for proof-record repair instead of bouncing it to
+    // needs-regroom as a janitor non-convergence.
     non_converged [
-        label="Non-converged: fix-loop cap hit; route back to Dispatcher (needs-regroom)"
+        label="Non-converged: a loop cap hit (janitor fix-loop or recapture); route back to Dispatcher"
         shape=parallelogram
         timeout="1800s"
-        script="echo 'LIVESPEC_NON_CONVERGED: janitor fix-loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
+        script="state=$(git rev-parse --git-path livespec-publication 2>/dev/null || true); marker=\"$state/livespec-recapture-exhausted\"; if test -n \"$state\" && test -f \"$marker\"; then findings=$(head -n 1 \"$marker\"); if test -z \"$findings\"; then findings='none could be read from the review records on the pull request; read them there'; fi; echo \"LIVESPEC_RECAPTURE_EXHAUSTED: recapture cap hit, review ended with a recapture verdict three times without converging on the proof-record findings; recurring proof-record findings: $findings; routing back to the Dispatcher for needs-human proof-record repair\" >&2; exit 1; fi; echo 'LIVESPEC_NON_CONVERGED: janitor fix-loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
     ]
 
     start -> dod_gate
