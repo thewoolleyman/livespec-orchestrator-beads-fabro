@@ -2111,6 +2111,17 @@ the third near-miss.
      grepping a file's contents for a fix, ask whether it *could* contain it:
      that same fork's `pr.md` had exactly ONE commit in its history, 18 days
      older than the fix. `git log -- <file>` has no wrong-answer failure mode.
+   - *Corollary — read the spec clause a check implements before calling it
+     defective* (coordinator ruling R187, 2026-10-28). A measured behaviour
+     that looks wrong may be exactly what the ratified spec mandates.
+     *Worked example:* console's `check-fork-drift` exited 0 on a fork 23
+     orchestrator releases stale. That was ruled a defect, and a
+     Definition-of-Done assertion demanding a failure was added to the
+     re-sync item. The launch-time preflight refused the assertion, because
+     console's `### Workflow-Fork Drift Gate` contract and Scenario K say a
+     newer install "MUST NOT fail" the check. The gap was in the spec, so it
+     went to the maintainer as a spec-change-tier item
+     (`livespec-console-beads-fabro-gk7yhj`) instead of a factory assertion.
    - *Corollary — search for a literal COPIED from the artifact*, never one
      reconstructed from memory. Four probes failed this way in one session
      (missing backticks; a line break inside a code block; another repo's
