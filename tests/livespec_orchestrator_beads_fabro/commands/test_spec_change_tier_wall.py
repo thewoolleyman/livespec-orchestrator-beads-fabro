@@ -136,7 +136,7 @@ def _item(*, item_id: str) -> WorkItem:
     )
 
 
-def _record(*, repo: Path, item_id: str, kind: str) -> None:
+def _record(*, repo: Path, item_id: str, kind: str, spec_version: str = "1") -> None:
     item = _item(item_id=item_id)
     append_work_item(path=_config(repo=repo), item=item)
     decision = decide_spec_change_tier(
@@ -156,7 +156,7 @@ def _record(*, repo: Path, item_id: str, kind: str) -> None:
             item_id=item_id,
             stage=STAGE_DISPATCH,
             decision=decision,
-            spec_version="1",
+            spec_version=spec_version,
             digest="a-digest",
         ),
     )
@@ -240,3 +240,81 @@ def test_an_item_with_no_recorded_classification_is_not_held(
     module = _module(name="_spec_change_tier_wall")
 
     assert module.spec_change_tier_refusal(repo=repo, items=[_item(item_id=_FREE_ITEM)]) is None
+
+
+def test_the_drain_keeps_a_ratified_held_row_recorded_against_an_older_specification(
+    tmp_path: Path,
+) -> None:
+    """The no-valve release is reachable from an unnamed drain.
+
+    The topic is ratified (v001 carries an accept revision record) while the
+    held record names specification version 0, so the judgement has not been
+    re-run against the ratified tree. The filter must let the row through so the
+    wall re-classifies it; dropping it would leave no pass that ever does.
+    """
+    repo = _repo(tmp_path=tmp_path, ratified=True)
+    _record(repo=repo, item_id=_HELD_ITEM, kind="unstated", spec_version="0")
+    _record(repo=repo, item_id=_FREE_ITEM, kind="stated")
+
+    kept = _module(name="_spec_change_tier_wall").spec_change_unrefused_candidates(
+        items=[_item(item_id=_HELD_ITEM), _item(item_id=_FREE_ITEM)], repo=repo
+    )
+    assert [one.id for one in kept] == [_HELD_ITEM, _FREE_ITEM]
+
+
+def test_the_drain_drops_a_ratified_held_row_already_rejudged_at_the_current_version(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path, ratified=True)
+    _record(repo=repo, item_id=_HELD_ITEM, kind="unstated", spec_version="1")
+
+    kept = _module(name="_spec_change_tier_wall").spec_change_unrefused_candidates(
+        items=[_item(item_id=_HELD_ITEM)], repo=repo
+    )
+    assert kept == []
+
+
+def test_the_drain_still_drops_an_unratified_held_row_recorded_against_an_older_specification(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path, ratified=False)
+    _record(repo=repo, item_id=_HELD_ITEM, kind="unstated", spec_version="5")
+
+    kept = _module(name="_spec_change_tier_wall").spec_change_unrefused_candidates(
+        items=[_item(item_id=_HELD_ITEM)], repo=repo
+    )
+    assert kept == []
+
+
+def test_an_unreadable_specification_version_keeps_the_held_row_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path, ratified=True)
+    _record(repo=repo, item_id=_HELD_ITEM, kind="unstated", spec_version="0")
+    module = _module(name="_spec_change_tier_wall")
+
+    def unreadable(**_kwargs: object) -> int:
+        raise OSError
+
+    monkeypatch.setattr(module, "current_specification_version", unreadable)
+    assert (
+        module.spec_change_unrefused_candidates(items=[_item(item_id=_HELD_ITEM)], repo=repo) == []
+    )
+
+
+def test_the_drain_candidate_selection_reaches_a_ratified_held_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole unnamed-drain selection, not just the last filter, keeps the row."""
+    repo = _repo(tmp_path=tmp_path, ratified=True)
+    _record(repo=repo, item_id=_HELD_ITEM, kind="unstated", spec_version="0")
+    selection = _module(name="_dispatcher_loop_candidates")
+    held = _item(item_id=_HELD_ITEM)
+    monkeypatch.setattr(selection, "ready_items", lambda **_kwargs: [held])
+    monkeypatch.setattr(selection, "acceptance_eligible_candidates", lambda **kw: kw["items"])
+    monkeypatch.setattr(selection, "dod_unrefused_candidates", lambda **kw: kw["items"])
+
+    chosen = selection.candidates(
+        args=argparse.Namespace(items=[], workflow_name=None), items=[held], repo=repo
+    )
+    assert [one.id for one in chosen] == [_HELD_ITEM]
