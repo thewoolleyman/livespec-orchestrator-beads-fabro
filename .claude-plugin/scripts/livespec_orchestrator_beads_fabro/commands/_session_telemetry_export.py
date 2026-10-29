@@ -204,12 +204,12 @@ class SessionTelemetry:
         return cls(config=config_from_environ(environ=environ))
 
     @property
-    def configured(self) -> bool:
+    def exporting(self) -> bool:
         return self.config.state == STATE_CONFIGURED
 
     def emit(self, *, event: SessionEvent) -> None:
         """Enqueue one event, or count it dropped; never blocks, never raises."""
-        if not self.configured:
+        if not self.exporting:
             return
         stamped = replace(event, attributes={**event.attributes, **self._export_counts()})
         self._start_worker()
