@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.11...v0.256.12) (2026-10-29)
+
+
+### Bug Fixes
+
+* issue the availability-evidence per-run inspect reads concurrently (red) ([152d13d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/152d13de0dd03b866a58ad72de0515fd0fc68ef2))
+
 ## [0.256.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.10...v0.256.11) (2026-10-29)
 
 
