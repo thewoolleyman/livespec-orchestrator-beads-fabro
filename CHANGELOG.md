@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.258.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.257.1...v0.258.0) (2026-10-29)
+
+
+### Features
+
+* name a node-timeout cut, its commit runs and any hook run in the needs-human cause ([09b9bc0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/09b9bc00b2c36c95e1dfe127198ebbeb1b9f0b75))
+* stop and name the commit runs and hook runs a node-timeout cut leaves behind ([02ee843](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02ee843861d7d5b8d27132c77c9a79f962191b91))
+
+
+### Bug Fixes
+
+* factory goal boundary text routes workflow changes to the attended host session ([621137a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/621137a9e9397ddc87f64c10ce9f39f7d6c18323))
+* mark the item's own Definition of Done in the rendered goal ([97894f4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/97894f4d7bfd1e466454390757da5d40f884de49))
+* read a plain-string rawOutput when naming a cut stage's commit runs ([02a45bd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02a45bda9de03e78b0608f26ea32c501fb307ec7))
+
 ## [0.257.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.257.0...v0.257.1) (2026-10-29)
 
 
