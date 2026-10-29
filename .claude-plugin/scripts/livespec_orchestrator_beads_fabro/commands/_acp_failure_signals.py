@@ -179,6 +179,12 @@ class AcpFailureSignal:
     non-eligible verdict can terminate WITH it rather than replacing it
     with a provider cause nobody measured.
 
+    `final_output` and `attempt_succeeded` are the one exception to the three
+    fields above, and they are a narrow one: they describe an agent node
+    attempt the ENGINE recorded as succeeded, whose recorded turn output a
+    `turn.final_output` signature alone may read. A failed attempt carries
+    neither, so no failure-sourced signature can reach response text.
+
     `turn_started` is False for a pre-turn failure. `declared_class` is a
     terminal class the caller already established structurally; see the
     module docstring for why it is believed rather than re-derived.
@@ -191,6 +197,8 @@ class AcpFailureSignal:
     exit_code: int | None = None
     turn_started: bool = False
     declared_class: str | None = None
+    final_output: str | None = None
+    attempt_succeeded: bool = False
 
     @property
     def has_provider_evidence(self) -> bool:
