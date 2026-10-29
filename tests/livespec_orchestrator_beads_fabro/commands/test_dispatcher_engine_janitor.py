@@ -157,7 +157,6 @@ def _merged() -> PrView:
         auto_merge_armed=True,
         merge_state_status="CLEAN",
         merge_sha="cafe08",
-        terminal_required_check_failures=(),
     )
 
 

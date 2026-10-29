@@ -98,7 +98,6 @@ def _merged_view(*, number: int = 1807, merge_sha: str | None = "abc123") -> PrV
         auto_merge_armed=True,
         merge_state_status="CLEAN",
         merge_sha=merge_sha,
-        terminal_required_check_failures=(),
     )
 
 

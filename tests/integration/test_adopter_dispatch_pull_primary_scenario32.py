@@ -61,7 +61,6 @@ _MERGED = PrView(
     auto_merge_armed=True,
     merge_state_status="CLEAN",
     merge_sha="cafe02",
-    terminal_required_check_failures=(),
 )
 
 

@@ -266,7 +266,6 @@ def _pr_view_from_list_entry(
             auto_merge_armed=False,
             merge_state_status="UNKNOWN",
             merge_sha=merge_sha,
-            terminal_required_check_failures=(),
         ),
         tier,
     )
