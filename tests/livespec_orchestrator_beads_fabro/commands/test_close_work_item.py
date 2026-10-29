@@ -147,3 +147,61 @@ def test_main_uses_cwd_project_root_by_default(
     code = main(argv=["li-x"])
     assert code == 0
     assert "closed li-x" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# main --resolution — the non-completion administrative closure paths.
+# --------------------------------------------------------------------------
+
+
+def test_main_resolved_out_of_band_applies_label_and_reason(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _seed(_open_item(id_="li-x"))
+    code = main(
+        argv=["li-x", "--resolution", "resolved-out-of-band", "--reason", "landed as 0dda1e499"]
+    )
+    assert code == 0
+    assert "closed li-x resolution:resolved-out-of-band" in capsys.readouterr().out
+    reloaded = _reload("li-x")
+    assert reloaded is not None
+    assert reloaded.status == "done"
+    assert reloaded.resolution == "resolved-out-of-band"
+    assert reloaded.reason == "landed as 0dda1e499"
+
+
+@pytest.mark.parametrize(
+    "resolution",
+    ["wontfix", "duplicate", "spec-revised", "no-longer-applicable"],
+)
+def test_main_non_completion_resolution_applies_label_and_reason(
+    resolution: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _seed(_open_item(id_="li-x"))
+    code = main(argv=["li-x", "--resolution", resolution, "--reason", "administrative"])
+    assert code == 0
+    assert f"closed li-x resolution:{resolution}" in capsys.readouterr().out
+    reloaded = _reload("li-x")
+    assert reloaded is not None
+    assert reloaded.status == "done"
+    assert reloaded.resolution == resolution
+    assert reloaded.reason == "administrative"
+
+
+def test_main_without_resolution_still_applies_completed() -> None:
+    _seed(_open_item(id_="li-x"))
+    assert main(argv=["li-x", "--reason", "shipped"]) == 0
+    reloaded = _reload("li-x")
+    assert reloaded is not None
+    assert reloaded.resolution == "completed"
+
+
+def test_main_rejects_unknown_resolution(capsys: pytest.CaptureFixture[str]) -> None:
+    _seed(_open_item(id_="li-x"))
+    with pytest.raises(SystemExit) as excinfo:
+        _ = main(argv=["li-x", "--resolution", "bogus"])
+    assert excinfo.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+    reloaded = _reload("li-x")
+    assert reloaded is not None
+    assert reloaded.status == "ready"
