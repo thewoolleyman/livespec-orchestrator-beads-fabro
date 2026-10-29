@@ -1732,6 +1732,21 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   faithfully run, and a repository declaring no participating factory — which
   is NOT a fallback to a host-side probe, because such a repository has no
   authoritative source for the confirmation to become evidence in.
+- `_acp_availability_probe_credential.py` — the WORKER CREDENTIAL one confirmation
+  turn carries (`bd-ib-3pfauo`). A turn placed in the factory's environment with no
+  token in it answered `session/prompt` with `Authentication required` and could
+  never confirm, so admission kept refusing exactly as before the seam existed.
+  Three properties an editor must not invert. The value is the one
+  `select_factory_credential` names, the same selector a dispatch, the headroom
+  gate and `claude-cred-status` call, projected under the standard
+  `CLAUDE_CODE_OAUTH_TOKEN` name. The transport is the factory's declared one,
+  routed through `route_secrets_through_vault` itself: a native-channel factory
+  gets the value stored in its vault under the dispatch's stable key and only a
+  reference in the manifest, and the launch lock the store takes is released by
+  the performing half when the turn ends. And only a Claude candidate is handed
+  it, by the provenance question `headroom_covers_candidate` answers; an absent
+  value launches anyway and is graded as the authentication failure it produces,
+  while a credential with no catalog environment to key its table under refuses.
 - `_dispatcher_acp_confirmation_seam.py` — the production supplier of the
   filter's `confirm` seam (`bd-ib-i4nert`): what admission RUNS for a candidate
   an expired hold leaves owing a post-expiry confirmation. The filter, the
