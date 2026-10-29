@@ -1774,6 +1774,22 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   stage with `merge_hold` false must arm with the declared mode and the proved
   head, because "nothing was armed" passes equally against a stage that never arms.
 
+- `test_session_wait_telemetry_scenario159.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 159 — Wait inventory and measurements
+  arrive in Honeycomb without controlling liveness". The lifecycle case runs the
+  installed host CLI through ONE arc against a real localhost `OtelReceiver`, so
+  an attribute the receiver allowlist would silently drop fails here: the
+  explicit zero-count summary, arming, both observation changes and the return,
+  a populated snapshot with one identity across its summary and its per-wait
+  observation, the once-a-minute limit (an unchanged inventory exports nothing
+  while the receipt acknowledgement exports at once), a second wait with no known
+  associations carrying none, and a canary secret plus the repository path absent
+  from everything delivered. Its siblings pin the wire contract against a
+  capturing socket and run the Outline's four export conditions around a REAL
+  recovery pass, asserting the local effect first (the command ran once) and the
+  local report second. Arrival in Honeycomb itself is declared host-captured on
+  the work item and is not asserted here.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

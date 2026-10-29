@@ -2718,6 +2718,38 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   runs — a `--repo` that does not exist and an unattributed state-changing
   invocation. Do NOT keep one code private by splitting the set across the two
   modules: that is how the surface comes to disagree with itself.
+- The SESSION TELEMETRY of `contracts.md`'s "Bounded session waits and observable
+  inventory" clause (`bd-ib-4mcuty`, Scenario 159) — the curated, typed, bounded
+  export of the wait and recovery families through the EXISTING host-local
+  enrichment/scrub/egress route. The dependency direction reads bottom-up:
+  `_session_telemetry_events` (PURE: the two CLOSED event catalogs, the OTLP
+  rendering under service `livespec-dispatcher`, namespace `livespec-family` and
+  scope `livespec.orchestrator.session_wait`, and the `EventSink` seam) and
+  `_session_telemetry_gate` (PURE: the once-a-minute limit on UNCHANGED
+  observations, persisted between invocations) → `_session_telemetry_export` (the
+  bounded asynchronous exporter: a bounded queue, one daemon worker, a per-call
+  timeout, a fixed attempt count, a bounded shutdown, and ONE local report) →
+  `_session_wait_events`, `_session_wait_telemetry` and `_session_inventory_events`
+  (what each fact of a wait or a snapshot becomes) and
+  `_session_recovery_telemetry` (what each recovery transition, registration and
+  coverage grade becomes, plus `record_transition`, the one place a transition is
+  both written and published). Six properties an editor must not invert. The
+  exporter holds NO Honeycomb credential and REFUSES an endpoint naming
+  Honeycomb: the route is the host receiver's, and a second credentialed route is
+  exactly what the clause forbids. `emit` only enqueues, so a blocked or absent
+  exporter can never move a wait's deadline, and the CLI prints a result BEFORE it
+  closes the exporter. Absent configuration is reported once as local-only and a
+  refused endpoint, transport failure, partial rejection, overflow or abandoned
+  tail as one bounded line, and that line is a plain local write that is never
+  itself an event. Every key an event carries must ALSO be in
+  `_otel_scrub.ATTRIBUTE_ALLOWLIST`, because the receiver rebuilds attributes from
+  it and drops the rest silently; measurements ride as `doubleValue` and arrays as
+  `arrayValue` through `measured_attr`, which sits BESIDE `attr` rather than
+  inside it because every older emitter relies on `attr` stringifying a float. An
+  absent value is omitted, never a zero: a recovery measurement that could not be
+  taken is named in `session.recovery.unavailable` instead. And a recovery event
+  says what a consumer DID; target fulfillment belongs to the canonical result
+  reader alone.
 - The DURABLE LAUNCH OBLIGATION of `contracts.md`'s "Launch obligations and
   consumed recovery" clause (`bd-ib-zejlae`, Scenarios 160 and 161) — the record
   a dispatch or a delegation persists BEFORE it may report a protected launch.

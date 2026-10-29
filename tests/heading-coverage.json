@@ -1621,8 +1621,8 @@
     "heading": "## Scenario 159 \u2014 Wait inventory and measurements arrive in Honeycomb without controlling liveness",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed.",
+    "test": "tests.integration.test_session_wait_telemetry_scenario159.test_scenario_159_lifecycle_and_snapshots_arrive_scrubbed_typed_and_rate_limited",
+    "reason": "Bound by bd-ib-4mcuty. The named case drives the installed host CLI through one arc against a real localhost OtelReceiver, the shared enrich/scrub seam: an empty inventory publishes the explicit zero-count summary, a wait publishes arming, both observation changes and the return with typed numeric measurements, a populated inventory publishes its summary plus the per-wait observation under one snapshot identity, an inventory repeated inside the minute exports nothing while a lifecycle change (the receipt acknowledgement) is exported at once, a second wait with no known work associations carries none, and a canary secret in the environment plus the repository path never appear in any delivered value. Its siblings in the same module pin the wire contract (service livespec-dispatcher, namespace livespec-family, versioned scope) and run the four export conditions of the Outline (unconfigured, unavailable, partially rejecting, queue full) around a real recovery pass, asserting the command ran once and the failure was reported locally. The scenario's first Then, arrival in Honeycomb itself, is declared host-captured on the work item.",
     "work_item": "bd-ib-4mcuty"
   },
   {
