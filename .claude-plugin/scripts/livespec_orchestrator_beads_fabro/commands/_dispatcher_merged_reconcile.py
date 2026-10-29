@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CARRIED_FORWARD,
@@ -32,6 +33,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     ProofRecord,
     latest_proof_record,
 )
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 
 __all__: list[str] = [
     "MERGED_RECONCILE_SENTINEL",
@@ -41,6 +45,7 @@ __all__: list[str] = [
     "merged_reconcile_from_text",
     "record_published_head",
     "records_proving_head",
+    "with_merged_reconcile",
 ]
 
 MERGED_RECONCILE_SENTINEL = "LIVESPEC_MERGED_RECONCILE"
@@ -107,6 +112,22 @@ def merged_reconcile_detail(*, event: MergedReconcile) -> str:
         f"{event.merge_commit} with merged head {event.merged_head}; the latest "
         f"verified or carried_forward head is {proof}; heads equal: "
         f"{'yes' if event.heads_equal else 'no'}"
+    )
+
+
+def with_merged_reconcile(
+    *, outcome: DispatchOutcome, event: MergedReconcile | None
+) -> DispatchOutcome:
+    """The outcome carrying the merged-reconcile ending, in its detail and as a value.
+
+    An outcome whose run reported no such ending passes through untouched.
+    """
+    if event is None:
+        return outcome
+    return replace(
+        outcome,
+        merged_reconcile=event,
+        detail=f"{outcome.detail}; {merged_reconcile_detail(event=event)}",
     )
 
 
