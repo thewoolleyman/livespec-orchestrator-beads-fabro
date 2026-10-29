@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.260.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.260.0...v0.260.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* skip and report a malformed plan timeline comment instead of raising ([1ace007](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ace007b395dcb2fc5c6624b8ffbc91b7d2a1f65))
+
 ## [0.260.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.259.1...v0.260.0) (2026-10-29)
 
 
