@@ -1844,7 +1844,7 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         max_visits=3
-        script="state=$(git rev-parse --git-path livespec-publication); mkdir -p \"$state\"; counter=\"$state/livespec-recapture-verdicts\"; count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then echo \"LIVESPEC_RECAPTURE_COUNT_UNREADABLE: the recorded recapture-verdict count $count is not a number, so the two-lap bound cannot be enforced; failing closed to non_converged rather than re-entering proof_capture against a counter nothing can compare\" >&2; count=2; fi; count=$((count + 1)); printf '%s\\n' \"$count\" > \"$counter\"; if test \"$count\" -ge 3; then echo \"LIVESPEC_RECAPTURE_EXHAUSTED: review has ended with a recapture verdict $count times in this run, so the captured record is not converging on the proof-record findings the reviewer raised; routing to non_converged without entering proof_capture again\" >&2; exit 1; fi; echo \"LIVESPEC_RECAPTURE: recapture lap $count of 2. Every blocking finding of this review verdict is about the captured RECORD rather than the tree, so this run re-enters proof_capture and spends no disposition visit, no review_fix visit and no review-fix round. The reviewer published those findings as its own review record on the pull request; read them there when this preamble carries none.\" >&2; exit 0"
+        script="state=$(git rev-parse --git-path livespec-publication); mkdir -p \"$state\"; counter=\"$state/livespec-recapture-verdicts\"; count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then echo \"LIVESPEC_RECAPTURE_COUNT_UNREADABLE: the recorded recapture-verdict count $count is not a number, so the two-lap bound cannot be enforced; failing closed to non_converged rather than re-entering proof_capture against a counter nothing can compare\" >&2; count=2; fi; count=$((count + 1)); printf '%s\\n' \"$count\" > \"$counter\"; if test \"$count\" -ge 3; then echo \"LIVESPEC_RECAPTURE_EXHAUSTED: recapture verdicts, from review or from a proof_verify fidelity verdict, have now ended $count times in this run, so the captured record is not converging on the proof-record findings raised against it; routing to non_converged without entering proof_capture again\" >&2; exit 1; fi; echo \"LIVESPEC_RECAPTURE: recapture lap $count of 2. The verdict that sent the run here is about the captured RECORD rather than the tree: either a review verdict whose every blocking finding is a proof-record finding, or a proof_verify fidelity verdict whose every not_reproduced assertion differs from its capture only in the record's rendering. This run re-enters proof_capture and spends no disposition visit, no review_fix visit and no review-fix round, and a proof_verify fidelity verdict also spends no behaviour not_reproduced count. The issuing stage published its findings as its own record on the pull request, the review record on the pull request for a review verdict and the Proof of Done not_reproduced record for a proof_verify verdict; read it there when this preamble carries none.\" >&2; exit 0"
     ]
 
     // Terminal dead-implementer node (C5 / bd-ib-vdpb): a deliberate
@@ -2444,12 +2444,26 @@ digraph ImplementWorkItem {
     // fallthrough on the FIRST failed replay. Routing on `preferred_label` alone
     // behaves identically on both engines.
     //
+    // THE RECAPTURE LABEL IS THE FIDELITY VERDICT (v205; work-item bd-ib-v3uksp).
+    // A `not_reproduced` record whose every non-reproduced assertion differs from
+    // its capture only in the record's rendering (stdout/stderr interleaving,
+    // whitespace, formatting) with the same behavioural result ends `proof_verify`
+    // with `preferred_label=recapture`, and that edge reaches `recapture_route`,
+    // never `fix`: the tree has nothing to fix, the RECORD does. Measured on petri
+    // run 01M5JME62ZF8 (bd-ib-7k7re5), where routing such a verdict to `fix` handed
+    // it a superseded finding and ended the run at needs_human on approved work.
+    // The route node's counter is shared with `review`'s recapture verdicts, so the
+    // two-lap bound covers both sources and the third recapture routes to
+    // `non_converged`. The new cycle `proof_verify -> recapture_route ->
+    // proof_capture -> review -> proof_verify` is cut by that node's `max_visits=3`.
+    //
     // A `fix` round re-enters `janitor`, which re-earns a green janitor and
     // therefore re-enters `publish_draft`, `proof_capture` and `review` before
     // returning here — so a proof loop costs a review visit, counted against the
     // review-fix budget like any other, which is what the contract says it is.
     proof_verify -> needs_human   [label="Blocked", condition="outcome=failed", weight=100]
     proof_verify -> proof_grade   [label="verified", condition="preferred_label=approve"]
+    proof_verify -> recapture_route [label="fidelity-only not reproduced", condition="preferred_label=recapture"]
     proof_verify -> fix           [label="not reproduced", condition="preferred_label=fix"]
     proof_verify -> needs_human   [label="unmatched proof_verify outcome"]
 
