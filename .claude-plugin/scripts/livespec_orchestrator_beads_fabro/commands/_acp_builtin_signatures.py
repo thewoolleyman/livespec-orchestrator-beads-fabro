@@ -55,6 +55,7 @@ __all__: list[str] = [
 _TERMINAL_SOURCE = "process.terminal_diagnostic"
 _MESSAGE_SOURCE = "protocol.message"
 _MACHINE_CODE_SOURCE = "protocol.machine_code"
+_FINAL_OUTPUT_SOURCE = "turn.final_output"
 _CANDIDATE_SCOPE = "candidate"
 _DOMAIN_SCOPE = "availability-domain"
 
@@ -118,6 +119,21 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
     cause="model_not_found",
     scope=_CANDIDATE_SCOPE,
     all_literals=("the model", "does not exist or you do not have access to it"),
+)
+
+# MEASURED 2026-10-20 on gmktec, run 01M5C0FBAE8FVZK15XN9WHVM6H of
+# `bd-ib-davaxq`: the `review` node ran on the codex-acp fallback and the
+# engine recorded the turn as SUCCEEDED while its output ended with the
+# provider's refusal, delivered as turn text with no space after the preceding
+# sentence's period. There is no recorded failure for a `protocol.message`
+# form to match, so this is the one built-in form on the `turn.final_output`
+# source. Candidate-scoped: the capacity refusal names the selected model, not
+# the account behind it.
+_CODEX_CAPACITY = AcpAvailabilitySignature(
+    source=_FINAL_OUTPUT_SOURCE,
+    cause="provider_capacity",
+    scope=_CANDIDATE_SCOPE,
+    final_text="Selected model is at capacity. Please try a different model.",
 )
 
 # THE MEASURED PROVIDER-LIMIT SET, transcribed from the same contract
@@ -185,6 +201,7 @@ _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     CODEX_DOMAIN: (
         _CODEX_MODEL_UNSUPPORTED,
         _CODEX_MODEL_NOT_FOUND,
+        _CODEX_CAPACITY,
         _CODEX_USAGE_LIMIT,
         _CODEX_USAGE_LIMIT_EXCEEDED,
         _CODEX_USAGE_LIMIT_CAMEL_TOKEN,
