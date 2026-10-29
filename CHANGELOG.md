@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.256.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.8...v0.256.9) (2026-10-29)
+
+
+### Bug Fixes
+
+* **dispatcher:** grade a factory assertion from a newer not_reproduced record ([e853b43](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e853b43c48c65fa5c8dbd194e6a97f6f6e41d085))
+* **dispatcher:** report a captured-only factory assertion as unobserved naming the record and the resume arm ([2e7e456](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e7e4563f4c03c174203501df0f0574142cedc5b))
+* **dispatcher:** write the Proof of Done pointer when a host replay is the only counting record ([a29f027](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a29f0272566452785b904607311e8a7838242632))
+
 ## [0.256.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.7...v0.256.8) (2026-10-29)
 
 
