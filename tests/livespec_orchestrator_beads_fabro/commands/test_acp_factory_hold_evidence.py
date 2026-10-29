@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import threading
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -868,3 +869,88 @@ def test_the_derived_record_concern_is_its_own_module_beneath_the_host_wide_read
     assert evidence.factory_hold_evidence.__module__.endswith(_MODULE)
     assert records.observation_hold.__module__.endswith(_RECORDS_MODULE)
     assert records.FactoryHoldObservation.__module__.endswith(_RECORDS_MODULE)
+
+
+_CONCURRENT_RUNS = 12
+_INSPECT_CEILING = 8
+
+
+@dataclass(kw_only=True)
+class _ConcurrentReader:
+    """A reader that measures how many `inspect` reads are in flight at once.
+
+    Every read waits (briefly) for the in-flight count to reach the ceiling, so
+    a sequential scan never gets there and a bounded concurrent one always does.
+    """
+
+    rows: tuple[Any, ...]
+    payloads: dict[str, object | None]
+    unreadable: frozenset[str] = frozenset()
+    in_flight: int = 0
+    peak: int = 0
+    saturated: threading.Event = field(default_factory=threading.Event)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def list_runs(self, *, factory: str) -> tuple[Any, ...] | None:
+        return self.rows if factory == "hp" else ()
+
+    def inspect_payload(self, *, factory: str, run_id: str) -> object | None:
+        assert factory == "hp"
+        with self.lock:
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            if self.in_flight >= _INSPECT_CEILING:
+                self.saturated.set()
+        self.saturated.wait(timeout=0.3)
+        with self.lock:
+            self.in_flight -= 1
+        return None if run_id in self.unreadable else self.payloads[run_id]
+
+
+def _concurrent_reader(*, unreadable: frozenset[str] = frozenset()) -> _ConcurrentReader:
+    run_ids = [f"01M4CONCURRENT{index:012d}" for index in range(_CONCURRENT_RUNS)]
+    return _ConcurrentReader(
+        rows=_rows(payload=[_row_payload(run_id=run_id) for run_id in run_ids]),
+        payloads={run_id: _inspect_payload(cause=_CEILING_CAUSE) for run_id in run_ids},
+        unreadable=unreadable,
+    )
+
+
+def test_the_per_run_inspect_reads_are_issued_concurrently_at_most_eight_at_a_time(
+    tmp_path: Path,
+) -> None:
+    """The scan overlaps its per-run reads, bounded at eight in flight.
+
+    Twelve in-window failed runs are listed. A reader that gates each read on
+    eight being in flight at once can only be satisfied by a scan that issues
+    them together, and its peak can never pass the ceiling.
+    """
+    module = _module()
+    reader = _concurrent_reader()
+
+    evidence = module.factory_hold_evidence(
+        repo=_repo(tmp_path=tmp_path), reader=reader, now_iso=_NOW
+    )
+
+    assert reader.peak == _INSPECT_CEILING
+    assert [observation.run_id for observation in evidence.observations] == [
+        row.run_id for row in reader.rows
+    ]
+
+
+def test_one_unreadable_concurrent_read_leaves_the_other_runs_evidence_in_use(
+    tmp_path: Path,
+) -> None:
+    """Only the run whose read failed is reported unreadable; the rest still count."""
+    module = _module()
+    broken = "01M4CONCURRENT000000000005"
+    reader = _concurrent_reader(unreadable=frozenset({broken}))
+
+    evidence = module.factory_hold_evidence(
+        repo=_repo(tmp_path=tmp_path), reader=reader, now_iso=_NOW
+    )
+
+    assert reader.peak == _INSPECT_CEILING
+    assert [entry["run_id"] for entry in evidence.unobservable] == [broken]
+    assert len(evidence.observations) == _CONCURRENT_RUNS - 1
+    assert broken not in {observation.run_id for observation in evidence.observations}
