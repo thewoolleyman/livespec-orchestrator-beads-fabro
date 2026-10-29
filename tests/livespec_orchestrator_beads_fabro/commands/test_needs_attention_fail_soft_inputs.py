@@ -16,12 +16,12 @@ LEGACY single-line handoff on epic livespec-console-beads-fabro-pzbdbo, written
     plan-handoff-entry (shutdown, 2026-10-10T05:25Z, session restarted by
     mistake and retired per overseer notice): no repo change this session. …
 
-`read_timeline` is RIGHT to refuse it — `test_plan_timeline` pins that a plan
-operation fails closed on an unparseable header, naming the comment. The
-operator attention surface is the wrong place for that refusal to propagate: it
-is a read-only composition over every plan, and one legacy comment on one epic
-erased the report for every other plan, item and hygiene fact of the
-repository, on four of four fleet repositories at once. Scenario 125's rule
+`read_timeline` now SKIPS such a comment and reports it through `on_skip`
+(`test_plan_timeline` pins that). The operator attention surface was the place
+the old refusal did the most harm: it is a read-only composition over every
+plan, and one legacy comment on one epic erased the report for every other
+plan, item and hygiene fact of the repository, on four of four fleet
+repositories at once. Scenario 125's rule
 ("the enrichment is omitted and the valve item is still surfaced") is the shape
 this gather already owed: the unreadable timeline becomes THAT plan's finding.
 """
@@ -159,6 +159,25 @@ def test_a_malformed_comment_names_the_comment_so_the_operator_can_find_it(
     _fake().seed_comment(issue_id="bd-ib-legacy", text="plan-scope-event\n\nno author line")
     [output] = plans(project_root=tmp_path, config=_config(), items=[legacy])
     assert "bd-ib-legacy" in output.summary
+
+
+def test_a_skipped_comment_beside_a_valid_handoff_is_still_a_visible_finding(
+    tmp_path: Path,
+) -> None:
+    reset_fake_singleton()
+    mixed = _epic(id_="bd-ib-mixed")
+    _healthy_handoff(epic_id="bd-ib-mixed")
+    _fake().seed_comment(issue_id="bd-ib-mixed", text=_LEGACY_COMMENT)
+    other = _epic(id_="bd-ib-other")
+    _healthy_handoff(epic_id="bd-ib-other")
+
+    outputs = plans(project_root=tmp_path, config=_config(), items=[mixed, other])
+
+    by_topic = {output.topic: output for output in outputs}
+    assert set(by_topic) == {"bd-ib-mixed-slug", "bd-ib-other-slug"}
+    assert by_topic["bd-ib-mixed-slug"].urgency == "high"
+    assert "bd-ib-mixed comment #" in by_topic["bd-ib-mixed-slug"].summary
+    assert "Malformed plan timeline comment" not in by_topic["bd-ib-other-slug"].summary
 
 
 # PART 2 — a missing held-drift anchor, or a failing `bd comments`, reads no holds.

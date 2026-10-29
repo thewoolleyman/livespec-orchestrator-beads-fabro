@@ -7,6 +7,7 @@ import shlex
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from livespec_runtime.needs_attention import PlanThreadOutput
 
@@ -17,6 +18,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_anchor import (
 from livespec_orchestrator_beads_fabro.commands.list_plans import list_plans
 from livespec_orchestrator_beads_fabro.commands.plan import handoff_timeline_findings, read_timeline
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands.plan import PlanTimelineSkip
 
 __all__: list[str] = [
     "availability_wait_journal_command",
@@ -114,27 +118,24 @@ def _plan_topic(*, item: WorkItem) -> str | None:
 
 
 def _timeline_findings(*, config: StoreConfig, epic_id: str | None) -> tuple[str, ...]:
-    """One plan's timeline findings; an UNREADABLE timeline is itself the finding.
+    """One plan's timeline findings; each comment the reader skipped is itself a finding.
 
-    `read_timeline` refuses a comment whose header it cannot parse, naming the
-    comment — the right answer for a plan OPERATION, which must not act on a
-    record it cannot read. It is the wrong answer to let out of this gather: the
-    attention surface composes every plan, item and hygiene fact of the
-    repository, and measured 2026-10-25 on four of four fleet repositories, one
-    legacy single-line `plan-handoff-entry (...)` comment on one epic (written
-    before the structured header existed) erased the whole report with a
-    traceback. Scenario 125's rule already governs this surface: the enrichment
-    that cannot be read is omitted and the item is still surfaced — here, as
-    that plan's own high-urgency repair finding, with the comment named so the
-    operator can fix or retire it.
+    `read_timeline` skips a comment whose header it cannot parse and reports it
+    through `on_skip`, so one malformed comment never costs the plan its timeline.
+    It is also never dropped silently here: the attention surface composes every
+    plan, item and hygiene fact of the repository, and measured 2026-10-25 on
+    four of four fleet repositories, one legacy single-line `plan-handoff-entry
+    (...)` comment on one epic (written before the structured header existed)
+    erased the whole report with a traceback. Scenario 79's rule governs this
+    surface: the unreadable input is skipped and surfaced as that plan's own
+    high-urgency repair finding, with the comment named so the operator can fix
+    or retire it.
     """
     if epic_id is None:
         return ()
-    try:
-        entries = read_timeline(config=config, epic_id=epic_id)
-    except ValueError as error:
-        return (str(error),)
-    return handoff_timeline_findings(entries=entries)
+    skips: list[PlanTimelineSkip] = []
+    entries = read_timeline(config=config, epic_id=epic_id, on_skip=skips.append)
+    return (*(skip.message for skip in skips), *handoff_timeline_findings(entries=entries))
 
 
 def _plan_thread_output(
