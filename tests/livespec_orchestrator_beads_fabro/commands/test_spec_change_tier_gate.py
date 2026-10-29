@@ -58,6 +58,10 @@ _UNSTATED = (
     '{"kind": "unstated", "stated_by": [], "generalization_target": '
     f'"{_HEADING}", "rationale": "the ratified text does not state it"}}'
 )
+_STATED = (
+    f'{{"kind": "stated", "stated_by": ["{_HEADING}"], "generalization_target": null, '
+    '"rationale": "the ratified clause states it"}'
+)
 
 
 @pytest.fixture(autouse=True)
@@ -275,3 +279,38 @@ def test_an_unreadable_spec_tree_records_its_own_cause_and_spends_nothing(
     assert outcome.cause == CAUSE_SPEC_TREE_UNREADABLE
     assert CAUSE_SPEC_TREE_UNREADABLE in _comments(repo=repo)[0]
     assert _calls(ledger=ledger) == 0
+
+
+def test_the_judgement_is_told_a_configuration_bullet_is_not_unratified_behaviour(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    captured = tmp_path / "judge-prompts"
+    captured.mkdir()
+    script = tmp_path / "capturing-judge"
+    _ = script.write_text(
+        "#!/bin/sh\n"
+        f"n=$(ls {captured} | wc -l | tr -d ' ')\n"
+        f'{{ printf "%s\\n" "$@"; cat; }} > {captured}/prompt-$n\n'
+        'if [ "$n" = 0 ]; then echo feature; else\n'
+        f"cat <<'REPLY'\n{_STATED}\nREPLY\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(script))
+    item = _item(
+        acceptance_criteria="- This repository's own configuration declares the four record files."
+    )
+    append_work_item(path=_config(repo=repo), item=item)
+
+    outcome = classify_item_spec_change_tier(
+        item=item, repo=repo, path=_config(repo=repo), stage=STAGE_FILING
+    )
+
+    assert outcome.is_spec_change is False
+    judged = (captured / "prompt-1").read_text(encoding="utf-8")
+    assert "declares the four record files" in judged
+    assert "configures a behaviour a ratified MAY or SHOULD clause permits" in judged
+    assert "is configuration, not asked-for behaviour" in judged
+    assert "still unstated" in judged
