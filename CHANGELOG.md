@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.256.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.12...v0.256.13) (2026-10-29)
+
+
+### Bug Fixes
+
+* read the dispatch journal incrementally from the last offset ([dbdff5c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dbdff5c6c7617bd4592e5a156f84e6bcaabf436f))
+* route every dispatch-journal reader through the incremental tail reader ([02e0fd0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02e0fd0c0a0b020c87d3389ba6e2f7732371e6bb))
+
 ## [0.256.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.11...v0.256.12) (2026-10-29)
 
 
