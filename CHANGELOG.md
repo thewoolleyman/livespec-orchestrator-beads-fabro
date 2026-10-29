@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.258.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.3...v0.258.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* default_fabro_bin falls back when the home probe raises OSError ([1ff9d9a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ff9d9af150dc7dee12640ea2f65e3a07843c08c))
+
 ## [0.258.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.2...v0.258.3) (2026-10-29)
 
 
