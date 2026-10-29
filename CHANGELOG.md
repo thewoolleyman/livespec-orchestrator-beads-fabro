@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.5...v0.256.6) (2026-10-29)
+
+
+### Bug Fixes
+
+* end a dod_gate turn that mutates the sandbox at needs-human ([0f744fc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0f744fce36c6d91fdf41fc7e61eecef59b2964d1))
+
 ## [0.256.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.4...v0.256.5) (2026-10-29)
 
 
