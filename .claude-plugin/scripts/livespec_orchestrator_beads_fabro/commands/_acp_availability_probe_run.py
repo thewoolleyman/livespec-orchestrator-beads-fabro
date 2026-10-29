@@ -82,6 +82,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_probe import (
     availability_probe_labels,
     availability_probe_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_credential import (
+    project_probe_credential,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome import (
     AcpProbeObservation,
     probe_confirms,
@@ -203,27 +206,44 @@ def run_availability_probe(  # noqa: PLR0913 — kw-only probe inputs; each is o
         )
     command = ShellCommandRunner() if runner is None else runner
     fabro_bin = factory_fabro_bin(factory=target, fallback=resolve_fabro_bin(cwd=repo))
+    environment = factory_environment_id(factory=target)
+    credential = project_probe_credential(
+        repo=repo,
+        factory_name=target.name,
+        server=target.server,
+        fabro_bin=fabro_bin,
+        environment=environment,
+        candidate=candidate,
+        builtin=builtin,
+        runner=command,
+    )
+    if isinstance(credential, str):
+        return credential
     port = FabroPort(
         fabro_bin=fabro_bin,
         target=FabroTarget(
             server_url=target.server,
             dev_token=target.dev_token,
-            environment=factory_environment_id(factory=target),
+            environment=environment,
         ),
         runner=command,
         cwd=repo,
         fabro_version=engine_binary(fabro_bin=fabro_bin, runner=command, cwd=repo).version,
     )
-    return _performed(
-        port=port,
-        factory=target.name,
-        candidate=candidate,
-        builtin=builtin,
-        work_item_id=work_item_id,
-        observation_ids=observation_ids,
-        now_iso=now_iso,
-        timeout_seconds=timeout_seconds,
-    )
+    try:
+        return _performed(
+            port=port,
+            factory=target.name,
+            candidate=candidate,
+            builtin=builtin,
+            work_item_id=work_item_id,
+            observation_ids=observation_ids,
+            now_iso=now_iso,
+            timeout_seconds=timeout_seconds,
+            manifest=AVAILABILITY_PROBE_MANIFEST + credential.manifest_tail,
+        )
+    finally:
+        credential.release()
 
 
 def _performed(  # noqa: PLR0913 — the same kw-only probe inputs as above plus the opened port; see that function's own note.
@@ -236,9 +256,12 @@ def _performed(  # noqa: PLR0913 — the same kw-only probe inputs as above plus
     observation_ids: tuple[str, ...],
     now_iso: str,
     timeout_seconds: int,
+    manifest: str,
 ) -> AcpAvailabilityProbeResult:
     """Launch the turn, observe its ending, and build the records it leaves."""
-    launch = _launched(port=port, candidate=candidate, timeout_seconds=timeout_seconds)
+    launch = _launched(
+        port=port, candidate=candidate, timeout_seconds=timeout_seconds, manifest=manifest
+    )
     run_id = launch[0]
     timed_out = launch[1] == PROBE_LAUNCH_TIMEOUT_EXIT_CODE
     terminated = _terminated(port=port, run_id=run_id) if timed_out else False
@@ -282,7 +305,7 @@ def _performed(  # noqa: PLR0913 — the same kw-only probe inputs as above plus
 
 
 def _launched(
-    *, port: FabroPort, candidate: AcpCandidate, timeout_seconds: int
+    *, port: FabroPort, candidate: AcpCandidate, timeout_seconds: int, manifest: str
 ) -> tuple[str | None, int]:
     """Materialize the one-run payload, launch it, and report `(run id, exit)`.
 
@@ -297,12 +320,12 @@ def _launched(
             availability_probe_graph(candidate=candidate, timeout_seconds=timeout_seconds),
             encoding="utf-8",
         )
-        manifest = package / "workflow.toml"
-        _ = manifest.write_text(AVAILABILITY_PROBE_MANIFEST, encoding="utf-8")
+        workflow = package / "workflow.toml"
+        _ = workflow.write_text(manifest, encoding="utf-8")
         goal = package / "goal.md"
         _ = goal.write_text(AVAILABILITY_PROBE_GOAL, encoding="utf-8")
         result = port.run(
-            workflow_toml=manifest,
+            workflow_toml=workflow,
             goal_file=goal,
             inputs=(),
             timeout_seconds=float(timeout_seconds),
