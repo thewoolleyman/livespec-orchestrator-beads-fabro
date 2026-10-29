@@ -96,13 +96,17 @@ from livespec_orchestrator_beads_fabro.commands._session_recovery_records import
     TRANSITION_DEFERRED,
     TRANSITION_RECEIPT,
     TRANSITION_RECONCILED,
-    append_recovery_transition,
 )
 from livespec_orchestrator_beads_fabro.commands._session_recovery_safety import (
     SafetyState,
     SafetyVerdict,
     safety_verdict,
 )
+from livespec_orchestrator_beads_fabro.commands._session_recovery_telemetry import (
+    TransitionScope,
+    record_transition,
+)
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import EventSink
 from livespec_orchestrator_beads_fabro.commands._session_wait_lock import LockBudget
 
 __all__: list[str] = [
@@ -121,6 +125,17 @@ class ConsumerRequest:
     observed_at: float
     lease_seconds: float
     lock_budget: LockBudget | None = None
+    telemetry: EventSink | None = None
+
+    @property
+    def scope(self) -> TransitionScope:
+        return TransitionScope(
+            recovery_store_root=self.recovery_store_root,
+            attempt_id=self.attempt_id,
+            observed_at=self.observed_at,
+            lock_budget=self.lock_budget,
+            telemetry=self.telemetry,
+        )
 
 
 def consume_recovery_obligation(
@@ -132,13 +147,8 @@ def consume_recovery_obligation(
     reader: RecoveryEffectReader,
 ) -> ConsumerOutcome:
     """Acknowledge, claim, grade safety, reconcile the action, and execute once."""
-    _ = append_recovery_transition(
-        recovery_store_root=request.recovery_store_root,
-        attempt_id=request.attempt_id,
-        transition=TRANSITION_RECEIPT,
-        observed_at=request.observed_at,
-        detail={"consumer": request.consumer},
-        lock_budget=request.lock_budget,
+    _ = record_transition(
+        scope=request.scope, transition=TRANSITION_RECEIPT, detail={"consumer": request.consumer}
     )
     claim = claim_recovery(
         recovery_store_root=request.recovery_store_root,
@@ -154,13 +164,10 @@ def consume_recovery_obligation(
             decision=ConsumerDecision(state=CONSUMER_UNCLAIMED, diagnostics=(claim.state,)),
             generation=claim.generation,
         )
-    _ = append_recovery_transition(
-        recovery_store_root=request.recovery_store_root,
-        attempt_id=request.attempt_id,
+    _ = record_transition(
+        scope=request.scope,
         transition=TRANSITION_CLAIMED,
-        observed_at=request.observed_at,
         detail={"consumer": request.consumer, "generation": claim.generation},
-        lock_budget=request.lock_budget,
     )
     graded = safety_verdict(state=safety)
     if not graded.mutation_permitted:
@@ -178,13 +185,10 @@ def _deferred(
     *, request: ConsumerRequest, graded: SafetyVerdict, generation: int
 ) -> ConsumerOutcome:
     """Record the specific barrier, and touch nothing else about the obligation."""
-    _ = append_recovery_transition(
-        recovery_store_root=request.recovery_store_root,
-        attempt_id=request.attempt_id,
+    _ = record_transition(
+        scope=request.scope,
         transition=TRANSITION_DEFERRED,
-        observed_at=request.observed_at,
         detail=_barrier_detail(graded=graded),
-        lock_budget=request.lock_budget,
     )
     return _outcome(
         request=request,
@@ -239,18 +243,16 @@ def _authorized(
             operation=action.operation,
             observed_at=request.observed_at,
             lock_budget=request.lock_budget,
+            telemetry=request.telemetry,
         ),
         command=command,
         reader=reader,
     )
     if outcome.effect is not None:
-        _ = append_recovery_transition(
-            recovery_store_root=request.recovery_store_root,
-            attempt_id=request.attempt_id,
+        _ = record_transition(
+            scope=request.scope,
             transition=TRANSITION_RECONCILED,
-            observed_at=request.observed_at,
             detail={"next_action": outcome.effect.next_action},
-            lock_budget=request.lock_budget,
         )
     return _outcome(
         request=request,

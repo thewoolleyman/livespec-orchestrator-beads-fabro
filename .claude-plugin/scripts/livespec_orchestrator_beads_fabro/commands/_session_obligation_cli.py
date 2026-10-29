@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._session_obligation_records impo
     LaunchAuthority,
     LaunchIntent,
 )
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import EventSink
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = [
@@ -109,6 +110,7 @@ def launch_command(
     primary: Path,
     gate_store_root: Path,
     wall_clock: Callable[[], float],
+    telemetry: EventSink,
 ) -> int:
     """Register one dispatched or delegated launch and attach its real target."""
     pane = cast("list[str] | None", args.pane)
@@ -127,6 +129,7 @@ def launch_command(
         obligation_store_root=obligation_store_root(primary=primary),
         observe=observe,
         now=wall_clock(),
+        telemetry=telemetry,
     )
     _ = write_stdout(text=json.dumps(outcome.payload(), indent=2, sort_keys=True) + "\n")
     return int(not outcome.protected)
@@ -147,11 +150,15 @@ def _intent(*, args: argparse.Namespace, primary: Path) -> LaunchIntent:
     )
 
 
-def complete_command(*, primary: Path) -> int:
+def complete_command(
+    *, primary: Path, telemetry: EventSink, wall_clock: Callable[[], float]
+) -> int:
     """Verify this host's durable obligations before a turn reports completion."""
     verdict = protected_completion(
         coverage=host_coverage_reading(path=coverage_declaration_path(primary=primary)),
         obligation_store_root=obligation_store_root(primary=primary),
+        telemetry=telemetry,
+        now=wall_clock(),
     )
     payload: dict[str, object] = {
         "coverage_state": verdict.coverage_state,

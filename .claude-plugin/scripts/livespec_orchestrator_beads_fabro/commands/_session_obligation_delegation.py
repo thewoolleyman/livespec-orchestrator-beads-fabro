@@ -59,6 +59,7 @@ from livespec_orchestrator_beads_fabro.commands._session_obligation_records impo
     LaunchIntent,
     LaunchTarget,
 )
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import EventSink
 from livespec_orchestrator_beads_fabro.commands._session_wait_pane import freeze_pane_target
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateTarget,
@@ -186,6 +187,7 @@ def register_launch(
     obligation_store_root: Path,
     observe: TargetObservation,
     now: float,
+    telemetry: EventSink | None = None,
 ) -> DelegationOutcome:
     """Register one launch obligation and attach the real target it names."""
     verdict = protected_launch(
@@ -194,6 +196,7 @@ def register_launch(
         obligation_store_root=obligation_store_root,
         effect=observe,
         now=now,
+        telemetry=telemetry,
     )
     if verdict.diagnostic != DIAGNOSTIC_INTENT_ALREADY_RECORDED:
         return _outcome(verdict=verdict, reconciliation=None)

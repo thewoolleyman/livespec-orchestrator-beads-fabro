@@ -28,7 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._session_inventory_events import
     inventory_events,
 )
 from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import (
-    SessionEvent,
+    EventSink,
     rfc3339,
 )
 from livespec_orchestrator_beads_fabro.commands._session_telemetry_gate import (
@@ -66,13 +66,6 @@ __all__: list[str] = [
 WORK_ITEM_ENV = "LIVESPEC_WORK_ITEM_ID"
 DISPATCH_ENV = "LIVESPEC_DISPATCH_ID"
 FABRO_RUN_ENV = "LIVESPEC_FABRO_RUN_ID"
-
-
-class EventSink(Protocol):
-    @property
-    def exporting(self) -> bool: ...
-
-    def emit(self, *, event: SessionEvent) -> None: ...
 
 
 @dataclass(frozen=True, kw_only=True)

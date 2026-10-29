@@ -23,6 +23,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from math import isfinite
+from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import non_zero_hex
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import measured_attr
@@ -34,6 +35,7 @@ __all__: list[str] = [
     "SERVICE_NAME",
     "SERVICE_NAMESPACE",
     "WAIT_EVENT_NAMES",
+    "EventSink",
     "SessionEvent",
     "TraceParent",
     "request_payload",
@@ -90,6 +92,15 @@ class SessionEvent:
     at: float
     trace_key: str
     attributes: dict[str, object]
+
+
+class EventSink(Protocol):
+    """Where curated events go: something that only enqueues and says if it exports."""
+
+    @property
+    def exporting(self) -> bool: ...
+
+    def emit(self, *, event: SessionEvent) -> None: ...
 
 
 def session_event(
