@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from livespec_orchestrator_beads_fabro.commands._acp_builtin_signatures import (
+    builtin_availability_signatures,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_clearance_records import is_clearance_run
 from livespec_orchestrator_beads_fabro.commands._acp_factory_clearance_evidence import (
     recorded_clearance,
@@ -23,6 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_records import
 from livespec_orchestrator_beads_fabro.commands._acp_factory_success_records import (
     FactorySuccessObservation,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_failure_text import ends_at_sentence_boundary
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import REPOSITORY_LABEL_KEY
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import (
     executed_candidate_identity,
@@ -39,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_inspect_record,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
+from livespec_orchestrator_beads_fabro.commands._fabro_turn_output import succeeded_agent_turns
 
 __all__: list[str] = [
     "cleared_observation_ids",
@@ -47,6 +52,7 @@ __all__: list[str] = [
 ]
 
 _SUCCEEDED_STATUS = "succeeded"
+_FINAL_OUTPUT_SOURCE = "turn.final_output"
 
 
 def cleared_observation_ids(
@@ -138,23 +144,60 @@ def succeeded_confirmations(
     allowance either. An unusable payload yields nothing for the same reason it
     yields no observation -- the record was read, and what it says is that it
     establishes no attempt.
+
+    A SUCCEEDED AGENT TURN THAT ENDS WITH A MEASURED REFUSAL YIELDS NOTHING
+    EITHER: "A provider refusal booked as a successful turn is a failed attempt",
+    which "MUST NOT count as a successful completion" under the retirement rule.
     """
     record = fabro_inspect_record(payload=payload)
     if record is None:
         return ()
     checkpoints = fabro_inspect_checkpoints(record=record)
     outcomes = fabro_node_outcomes(record=record, checkpoint=checkpoints[-1] if checkpoints else {})
-    return tuple(
-        FactorySuccessObservation(
-            factory=factory,
-            repository=row.labels.get(REPOSITORY_LABEL_KEY),
-            run_id=row.run_id,
-            node_attempt=executed.node,
-            availability_key=executed.availability_key,
-            candidate_key=executed.candidate_key,
-            started_at=started_at,
+    turn_output = {turn.stage: turn.output for turn in succeeded_agent_turns(payload=payload)}
+    confirmations: list[FactorySuccessObservation] = []
+    for stage, outcome in outcomes.items():
+        if outcome.get("status") != _SUCCEEDED_STATUS:
+            continue
+        executed = executed_candidate_identity(labels=row.labels, node=stage)
+        if executed is None or _booked_refusal(
+            output=turn_output.get(stage), availability_key=executed.availability_key
+        ):
+            continue
+        confirmations.append(
+            FactorySuccessObservation(
+                factory=factory,
+                repository=row.labels.get(REPOSITORY_LABEL_KEY),
+                run_id=row.run_id,
+                node_attempt=executed.node,
+                availability_key=executed.availability_key,
+                candidate_key=executed.candidate_key,
+                started_at=started_at,
+            )
         )
-        for stage, outcome in outcomes.items()
-        if outcome.get("status") == _SUCCEEDED_STATUS
-        and (executed := executed_candidate_identity(labels=row.labels, node=stage)) is not None
+    return tuple(confirmations)
+
+
+def _booked_refusal(*, output: str | None, availability_key: str) -> bool:
+    """Whether a succeeded turn's output ends with a measured refusal of its domain.
+
+    Such an attempt "is not a successful completion" and so confirms nothing:
+    it is the candidate's FAILED attempt, and counting it would let the hold it
+    mints be retired by the very run that minted it.
+
+    THE BUILT-IN TABLE IS THE ONLY ONE CONSULTED, keyed by the run's recorded
+    availability key. A peer repository's own declared `turn.final_output`
+    signatures are configuration this repository does not hold, and a key
+    spelling is not evidence of provenance -- so a repository naming its own key
+    "codex" has a success withheld that was in fact a success. That is the
+    conservative direction: retirement is the destructive one, and a withheld
+    confirmation costs at most one later success.
+    """
+    if output is None:
+        return False
+    return any(
+        signature.source == _FINAL_OUTPUT_SOURCE
+        and signature.final_text is not None
+        and ends_at_sentence_boundary(tail=signature.final_text, text=output)
+        for signature in builtin_availability_signatures(availability_key=availability_key)
     )
