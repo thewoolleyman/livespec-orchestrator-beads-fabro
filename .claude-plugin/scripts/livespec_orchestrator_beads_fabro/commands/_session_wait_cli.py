@@ -257,9 +257,12 @@ def _dispatch_command(*, parser: argparse.ArgumentParser, invocation: _Invocatio
             primary=primary,
             gate_store_root=gate_store_root,
             wall_clock=seams.wall_clock,
+            telemetry=publisher.sink,
         )
     if command == "complete":
-        return complete_command(primary=primary)
+        return complete_command(
+            primary=primary, telemetry=publisher.sink, wall_clock=seams.wall_clock
+        )
     return _ack_command(
         args=args, wait_store_root=wait_store_root, seams=seams, publisher=publisher
     )

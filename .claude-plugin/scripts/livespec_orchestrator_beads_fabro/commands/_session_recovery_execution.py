@@ -63,12 +63,18 @@ from livespec_orchestrator_beads_fabro.commands._session_recovery_lease import (
 )
 from livespec_orchestrator_beads_fabro.commands._session_recovery_records import (
     APPEND_RECORDED,
+    TRANSITION_EXECUTED,
     TRANSITION_STARTED,
-    append_recovery_transition,
     observed_transitions,
     read_recovery_record,
     recovery_record_path,
 )
+from livespec_orchestrator_beads_fabro.commands._session_recovery_telemetry import (
+    TransitionScope,
+    publish_transition,
+    record_transition,
+)
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import EventSink
 from livespec_orchestrator_beads_fabro.commands._session_wait_lock import LockBudget
 
 __all__: list[str] = [
@@ -113,6 +119,17 @@ class ExecutionRequest:
     operation: str
     observed_at: float
     lock_budget: LockBudget | None = None
+    telemetry: EventSink | None = None
+
+    @property
+    def scope(self) -> TransitionScope:
+        return TransitionScope(
+            recovery_store_root=self.recovery_store_root,
+            attempt_id=self.attempt_id,
+            observed_at=self.observed_at,
+            lock_budget=self.lock_budget,
+            telemetry=self.telemetry,
+        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -190,13 +207,10 @@ def _executed(
 
 def _started(*, request: ExecutionRequest, command: SanctionedCommand) -> ExecutionOutcome:
     """Mark the start, run the command once, and record whatever it reports."""
-    status = append_recovery_transition(
-        recovery_store_root=request.recovery_store_root,
-        attempt_id=request.attempt_id,
+    status = record_transition(
+        scope=request.scope,
         transition=TRANSITION_STARTED,
-        observed_at=request.observed_at,
         detail={"operation": request.operation},
-        lock_budget=request.lock_budget,
     )
     if status != APPEND_RECORDED:
         return ExecutionOutcome(state=EXECUTION_UNAVAILABLE, effect=None)
@@ -223,4 +237,7 @@ def _recorded(*, request: ExecutionRequest, effect: RecoveryEffect, state: str) 
     )
     if written is not True:
         return ExecutionOutcome(state=EXECUTION_UNAVAILABLE, effect=None)
+    publish_transition(
+        scope=request.scope, transition=TRANSITION_EXECUTED, detail=effect.record_payload()
+    )
     return ExecutionOutcome(state=state, effect=effect)

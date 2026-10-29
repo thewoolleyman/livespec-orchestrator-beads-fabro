@@ -74,6 +74,11 @@ from livespec_orchestrator_beads_fabro.commands._session_obligation_records impo
     outstanding_obligations,
     record_launch_intent,
 )
+from livespec_orchestrator_beads_fabro.commands._session_recovery_telemetry import (
+    publish_coverage,
+    publish_registered,
+)
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import EventSink
 
 __all__: list[str] = [
     "COMPLETION_PROTECTED",
@@ -155,9 +160,11 @@ def protected_launch(
     obligation_store_root: Path,
     effect: LaunchEffect,
     now: float,
+    telemetry: EventSink | None = None,
 ) -> LaunchVerdict:
     """Record the obligation, perform the effect, attach what it produced."""
     graded = coverage_verdict(reading=coverage)
+    publish_coverage(telemetry=telemetry, intent=intent, state=graded.state, at=now)
     if not graded.verified:
         return _refused_launch(intent=intent, graded=graded)
     status = record_launch_intent(
@@ -168,6 +175,7 @@ def protected_launch(
     )
     if status != INTENT_RECORDED:
         return _unregistered_launch(intent=intent, graded=graded, status=status)
+    publish_registered(telemetry=telemetry, intent=intent, coverage_state=graded.state, at=now)
     return _attached_launch(
         intent=intent,
         graded=graded,
@@ -250,8 +258,20 @@ def protected_completion(
     *,
     coverage: CoverageReading,
     obligation_store_root: Path,
+    telemetry: EventSink | None = None,
+    now: float | None = None,
 ) -> CompletionVerdict:
     """Verify this turn's durable obligations and their independent owner."""
+    verdict = _completion_verdict(coverage=coverage, obligation_store_root=obligation_store_root)
+    publish_coverage(telemetry=telemetry, intent=None, state=verdict.coverage_state, at=now)
+    return verdict
+
+
+def _completion_verdict(
+    *,
+    coverage: CoverageReading,
+    obligation_store_root: Path,
+) -> CompletionVerdict:
     census = outstanding_obligations(obligation_store_root=obligation_store_root)
     outstanding = tuple(cast("str", record["operation_id"]) for record in census.records)
     if census.diagnostics:
