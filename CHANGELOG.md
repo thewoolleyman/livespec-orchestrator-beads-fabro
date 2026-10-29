@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.258.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.2...v0.258.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* pin the proof_verify fidelity recapture route and the fix work order ([11793ff](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/11793ff144c6dd3a2a90939ac534b8230487a0c3))
+
 ## [0.258.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.1...v0.258.2) (2026-10-29)
 
 
