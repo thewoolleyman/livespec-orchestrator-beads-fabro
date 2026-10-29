@@ -45,7 +45,7 @@ from typing import Any
 _WORKFLOW_DIR = Path(".claude-plugin/.fabro/workflows/implement-work-item")
 _WORKFLOW_DOT = _WORKFLOW_DIR / "workflow.fabro"
 _WORKFLOW_TOML = _WORKFLOW_DIR / "workflow.toml"
-_ORDINARY_ROUTES = (("fix", "janitor"), ("review_fix", "review_fix_commit_settle"))
+_ORDINARY_ROUTES = (("fix", "fix_commit_settle"), ("review_fix", "review_fix_commit_settle"))
 _GENERIC_REASON = "loop cannot auto-resolve this work-item"
 _OPEN_RED_CLAUSE = "open Red commit"
 _GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"

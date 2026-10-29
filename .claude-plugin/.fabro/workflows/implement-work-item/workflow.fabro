@@ -502,6 +502,23 @@ digraph ImplementWorkItem {
         prompt="@prompts/fix.md"
     ]
 
+    // Commit-run settle for `fix` (same clause and work-item family as
+    // `implement_commit_settle`; bd-ib-y4oq27). `fix` commits through the same
+    // detached commit runner, has no completion gate and no incomplete-turn
+    // route, so the whole of its obligation is to wait: a commit the turn left
+    // running reaches its own verdict before the janitor validates the tree,
+    // instead of the janitor racing a live hook. The brief is written beside the
+    // implement and review-fix ones under its own name and nothing re-enters
+    // `fix` from it. It sits on the success path only: a `fix` turn that FAILED
+    // takes its labelled edge to the terminal that preserves the tree.
+    fix_commit_settle [
+        label="Settle commit runs: wait out any commit run the fix turn left running"
+        shape=parallelogram
+        timeout="1800s"
+        max_visits=8
+        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 1500 --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; exit 0"
+    ]
+
     // Draft publication (S5 / bd-ib-b4u6b7; SPECIFICATION/contracts.md
     // "Definition-of-Done and Proof-of-Done stages", ratified v114): a COMMAND
     // node entered only from a GREEN janitor and exiting only to proof_capture.
@@ -2184,7 +2201,7 @@ digraph ImplementWorkItem {
     // authored (in both measured incidents a Red commit awaiting its Green)
     // unreachable from the ledger. The terminal preserves that tree on a
     // run-scoped ref and routes the decision to the item, which is the ending
-    // this node owes a timed-out turn. `fix -> janitor` stays as the
+    // this node owes a timed-out turn. `fix -> fix_commit_settle` stays as the
     // UNCONDITIONAL fallthrough, both because conditional edges outrank it and
     // because fabro rejects a node whose every outgoing edge carries a
     // condition (`all_conditional_edges`).
@@ -2192,7 +2209,8 @@ digraph ImplementWorkItem {
     janitor -> fix [label="Red", condition="outcome!=succeeded"]
     janitor -> non_converged [label="Exhausted (fix-loop cap)"]
     fix -> needs_human [label="Blocked", condition="outcome=failed"]
-    fix -> janitor
+    fix -> fix_commit_settle
+    fix_commit_settle -> janitor
 
     // Draft-publication routing. A publish that could not reach origin parks the
     // item at needs_human: there is no pull request for a record to land on, and

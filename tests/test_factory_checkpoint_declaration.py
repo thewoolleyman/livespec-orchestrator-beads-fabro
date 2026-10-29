@@ -273,6 +273,16 @@ Re-measured against this tree: 1277380 shipped and 1990180 at the retired
 shipped figure with 22620 seconds of headroom and below the retired control, so
 it is unchanged.
 
+THE FIX-TURN COMMIT-RUN SETTLE (work-item bd-ib-y4oq27) ADDS ONE NODE, and the
+bound moves from 1300000 to 1350000. `fix_commit_settle` sits on `fix`'s
+fallthrough, ahead of the janitor, and carries `fix`'s `max_visits=8` because it
+is entered once per `fix` visit. Its 1500-second settle bound and 1800-second
+node timeout join the derivation, which took the shipped allowance to
+1300540, past the old bound. The 1350000 bound sits above the
+shipped figure with 49460 seconds of headroom and below the retired `"15m"`
+control. The freshness gate still demands 111600 seconds, because the window
+governs it and not the graph.
+
 THE EXACT PINS WERE REPLACED BY INVARIANTS (work-item bd-ib-nvhqyq). Every move
 recorded above forced an edit to this module, including moves that changed no
 graph at all: raising `fix` from 3600 to 7200 in `dispatcher.node_timeouts`
@@ -321,7 +331,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # nothing. The bound is the only figure here this repository chooses, and no
 # derived figure is pinned beside it: a node-timeout edit that keeps the
 # allowance under the bound needs no edit to this module.
-_ALLOWANCE_BOUND_SECONDS = 1_300_000
+_ALLOWANCE_BOUND_SECONDS = 1_350_000
 
 # The lifetime of a FRESH Codex credential. Not this repository's to choose: it
 # is what the host mints at renewal, so a requirement past it is a fact about
