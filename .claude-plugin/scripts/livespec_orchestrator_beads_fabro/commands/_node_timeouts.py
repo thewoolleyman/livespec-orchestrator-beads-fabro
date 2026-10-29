@@ -91,7 +91,8 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # a commit run it started was still running and that run passed. So `implement`
 # is reached by three visits of two attempts each, SIX, and the route, the
 # completion gate, the diff breaker and `implement_commit_settle` once per
-# visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three. The
+# visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three and
+# `fix_commit_settle` follows `fix`'s two. The
 # route runs the repository's pre-commit hook, which can take the better part
 # of its timeout, so it is billed at its full visit count like any node that can
 # spend its ceiling.
@@ -167,6 +168,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "implementation_diff": 3,
     "janitor": 3,
     "fix": 2,
+    "fix_commit_settle": 2,
     "publish_draft": 4,
     "proof_capture": 7,
     "review": 7,

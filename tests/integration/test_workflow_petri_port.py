@@ -135,7 +135,11 @@ _HOOK_ROUTE_LOOP = _HOOK_ROUTE_ADDED | {
 # settled-commit re-entry it informs raises the hook-route cycle from two visits
 # to three (so `_HOOK_ROUTE_LOOP` is the set it moves); `review_fix_commit_settle`
 # sits on `review_fix`'s fallthrough and closes no cycle of its own.
-_COMMIT_SETTLE_ADDED = {"implement_commit_settle", "review_fix_commit_settle"}
+_COMMIT_SETTLE_ADDED = {
+    "implement_commit_settle",
+    "fix_commit_settle",
+    "review_fix_commit_settle",
+}
 _IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
 _IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
     "implement",
@@ -583,7 +587,7 @@ def test_the_janitor_fix_loop_routes_on_outcome_and_is_bounded_by_max_visits() -
     conditions = _conditions(text=text)
     assert conditions["janitor", "fix"] == "outcome!=succeeded"
     assert conditions["janitor", "publish_draft"] == "outcome=succeeded"
-    assert ("fix", "janitor") in {
+    assert ("fix", "fix_commit_settle") in {
         (edge.group("src"), edge.group("dst")) for edge in _EDGE_RE.finditer(text)
     }
     assert "max_visits=" in _node_bodies(text=text)["fix"]

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -49,10 +50,12 @@ _PROMPT = _PAYLOAD / "prompts" / "implement.md"
 
 _IMPLEMENT_SETTLE = "implement_commit_settle"
 _REVIEW_FIX_SETTLE = "review_fix_commit_settle"
+_FIX_SETTLE = "fix_commit_settle"
 _ROUTE = "implement_hook_route"
 
 _LIVE_GIT_PATH = "livespec-implement-live-commit"
 _REVIEW_FIX_LIVE_GIT_PATH = "livespec-review-fix-live-commit"
+_FIX_LIVE_GIT_PATH = "livespec-fix-live-commit"
 _REFUSAL_GIT_PATH = "livespec-implement-hook-refusal"
 _REENTRIES_GIT_PATH = "livespec-implement-hook-reentries"
 _SETTLED_REENTRIES_GIT_PATH = "livespec-implement-settled-reentries"
@@ -392,3 +395,55 @@ def test_the_settle_nodes_are_billed_into_the_subprocess_ceiling() -> None:
         assert derive_fabro_timeout_seconds(timeouts=configured) == (
             default_ceiling + _SETTLE_VISITS * _CONFIGURED_DELTA
         ), node
+
+
+def test_fix_reaches_the_settle_before_the_janitor() -> None:
+    """A succeeded fix turn waits out its commit runs, then the janitor validates the tree."""
+    assert (_FIX_SETTLE, "") in _targets(source="fix")
+    assert ("janitor", "") not in _targets(source="fix")
+    assert _targets(source=_FIX_SETTLE) == [("janitor", "")]
+
+
+def test_a_failed_fix_turn_still_goes_to_needs_human_without_the_settle() -> None:
+    """The settle sits on the success path only; a failed fix preserves the tree."""
+    targets = _targets(source="fix")
+    assert ("needs_human", "outcome=failed") in targets
+    assert [destination for destination, _ in targets].count(_FIX_SETTLE) == 1
+    assert (_FIX_SETTLE, "outcome=failed") not in targets
+
+
+def test_the_fix_settle_is_a_bounded_command_node_with_its_own_brief() -> None:
+    """The fix wait runs the runner's `settle` with a bounded timeout and its own brief path."""
+    attributes = _attributes(node=_FIX_SETTLE)
+    script = attributes.get("script", "")
+    assert attributes.get("shape") == "parallelogram"
+    assert f"git rev-parse --git-path {_FIX_LIVE_GIT_PATH}" in script
+    bound = re.search(r"settle --timeout-seconds (\d+)", script)
+    assert bound is not None, script
+    assert 0 < int(bound.group(1)) < int(attributes.get("timeout", "0s").rstrip("s"))
+
+
+def test_the_fix_settle_writes_its_own_brief_and_exits_zero(tmp_path: Path) -> None:
+    """The fix wait never touches the implement or review-fix briefs."""
+    repo = _clone(tmp_path)
+    plugins = _plugins(tmp_path)
+    _ = _run_record(repo=repo, record={"state": "running"}, pid=4194303)
+
+    result = _run_node(repo=repo, node=_FIX_SETTLE, plugins=plugins)
+
+    assert result.returncode == 0, result.stderr
+    assert _git_file(repo=repo, name=_FIX_LIVE_GIT_PATH).exists()
+    assert not _git_file(repo=repo, name=_LIVE_GIT_PATH).exists()
+    assert not _git_file(repo=repo, name=_REVIEW_FIX_LIVE_GIT_PATH).exists()
+
+
+def test_the_fix_settle_is_billed_into_the_subprocess_ceiling() -> None:
+    """A node absent from the budget is billed at zero; the fix settle runs once per fix visit."""
+    defaulted = node_timeouts_from_block(block={})
+    assert not isinstance(defaulted, str), defaulted
+    default_ceiling = derive_fabro_timeout_seconds(timeouts=defaulted)
+    configured = node_timeouts_from_block(
+        block={"node_timeouts": {_FIX_SETTLE: DEFAULT_NODE_TIMEOUT_SECONDS + _CONFIGURED_DELTA}}
+    )
+    assert not isinstance(configured, str), configured
+    assert derive_fabro_timeout_seconds(timeouts=configured) > default_ceiling
