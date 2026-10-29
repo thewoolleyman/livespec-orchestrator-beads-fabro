@@ -198,7 +198,12 @@ def started_commit_run_ids(
         if update.get("sessionUpdate") == "tool_call":
             commands[call_id] = _command(update=update)
         elif _RUNNER_START.search(commands.get(call_id, "")) is not None:
-            output = _mapping(value=update.get("rawOutput")).get("formatted_output")
+            raw_output = update.get("rawOutput")
+            output = (
+                raw_output
+                if isinstance(raw_output, str)
+                else _mapping(value=raw_output).get("formatted_output")
+            )
             run_id = output.strip().splitlines()[-1].strip() if isinstance(output, str) else ""
             if _RUN_ID.match(run_id) is not None and run_id not in started:
                 started.append(run_id)
