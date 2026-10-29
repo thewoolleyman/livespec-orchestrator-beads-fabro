@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.257.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.257.0...v0.257.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* close-work-item accepts a --resolution for non-completion closures ([ffd86b0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ffd86b09e9d227f2c4da79a59d886914d3eca5d0))
+* implement prose snippet calls materialize_work_items by keyword ([3324a87](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3324a87a09fbe38d620f2ee8ee512d348d3978c6))
+
 ## [0.257.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.13...v0.257.0) (2026-10-29)
 
 
