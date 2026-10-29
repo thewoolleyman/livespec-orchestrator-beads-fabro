@@ -78,7 +78,7 @@ from livespec_orchestrator_beads_fabro.store import materialize_work_items, read
 from pathlib import Path
 
 config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
-ix = materialize_work_items(read_work_items(path=config))
+ix = materialize_work_items(records=read_work_items(path=config))
 target = ix[work_item_id]
 ```
 
