@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.0...v0.256.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* tell the spec-change-tier judgement a configuration bullet is not unratified behaviour ([ae21562](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ae21562c0386b0125403a49c399c12e11f545bcb))
+
 ## [0.256.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.255.1...v0.256.0) (2026-10-29)
 
 
