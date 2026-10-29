@@ -347,6 +347,27 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   from the aggregate. The stamped-once refusal moved WITH the append that
   applies it: a copy left behind would be a second authority on which fields no
   writer may supply.
+- `_dispatcher_pass_snapshot.py` — the ONE parsed snapshot of the append-only
+  dispatch journal a dispatch pass shares, and the pass-scoped `fabro inspect`
+  memo (`bd-ib-6bbcda`). A host profile put 98% of a pre-launch dispatcher's CPU
+  in readers each re-parsing a 307 MB journal. `pass_snapshot()` opens the scope
+  (the three dispatch commands and `reconcile_runs_pass` do), readers ask
+  `snapshot_records` and fall back to their own read when it answers `None`, and
+  the launch calls `release_pass_snapshot()` because the snapshot's memory is a
+  pre-launch cost. Three properties an editor must not invert. The snapshot is
+  never stale: `JournalFile.append` hands each record to `record_journal_append`,
+  another process's append is read from the offset already consumed, and a
+  rewritten file fails its anchor and is rebuilt. A reader keeps its OWN account
+  of a failure this module cannot read (`None`, never an invented empty), which
+  is why `_acp_hold_ledger` still raises on an unreadable journal: the provider
+  limit disposition guards exactly that `OSError`. The inspect memo is keyed
+  on the factory SERVER and the run id, never on a port object, because every
+  reader opens its own port onto the same factory, and it never holds the pass
+  lock across the read: the selection-replay lane inspects different runs on
+  worker threads, and a second reader of the SAME pair waits for the first
+  reading instead. And `_dispatcher_journal_tail.journal_tail_records` answers
+  from the pass snapshot while one is live, so the readers already routed
+  through the process-wide tail cache share the pass's one parse too.
 - `_dispatcher_item_run_target.py` — the factory ONE item's dispatch went to,
   resolved from the item's own recorded `dispatch_factory` stamp and falling
   back to the repository default, plus `ACP_EVENTS_TIMEOUT_SECONDS`, the bound
