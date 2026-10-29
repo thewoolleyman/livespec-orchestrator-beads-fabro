@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.258.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.0...v0.258.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* post-host-record regrades a rework-pending item instead of driving the refused plain valve ([5591e96](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5591e961ee232734c7a25586cd9a75c251bcfe9f))
+
 ## [0.258.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.257.1...v0.258.0) (2026-10-29)
 
 
