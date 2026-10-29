@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     EffectiveCriteria,
 )
+from livespec_orchestrator_beads_fabro.types import DependsOnRaw
 
 __all__: list[str] = [
     "CandidateSlice",
@@ -51,12 +52,19 @@ class CrossRepoSlice:
 
     Not filed in the local tenant (the one-slice/one-ledger model: each
     slice goes into its target repo's tenant). The `minted_id` is assigned
-    at groom time so local slices that depend on this cross-repo slice can
+    at groom time with the TARGET tenant's id prefix, so the target tenant
+    accepts it and local slices that depend on this cross-repo slice can
     reference it as a `sibling_work_item` dependency with a known id.
+
+    `dep_entries` is the slice's resolved `depends_on`, typed from the target
+    tenant's point of view (`local` for a blocker in the same repo,
+    `sibling_work_item` for a blocker in any other), for the routing layer to
+    apply as dependency edges when it files the slice.
     """
 
     candidate: CandidateSlice
     minted_id: str
+    dep_entries: tuple[DependsOnRaw, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -87,7 +95,8 @@ class GroomResult:
       here; the SKILL.md prose routes each to `/livespec:propose-change`.
     - `cross_repo_slices` — factory slices whose `repo_target` differs from
       `local_repo`; NOT filed in the local tenant. Returned with their
-      minted ids for the SKILL.md prose to route to the target repo.
+      target-prefixed minted ids and resolved dependency entries for the
+      SKILL.md prose to route to the target repo.
     - `regroomed_out` — True once the original backlog item is explicitly
       closed against the filed factory slices.
     """
