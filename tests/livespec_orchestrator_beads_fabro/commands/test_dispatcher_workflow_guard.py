@@ -95,10 +95,14 @@ def test_render_goal_declares_factory_workflow_boundary(tmp_path: Path) -> None:
 
     assert (
         "Factory branches never create/update files under .github/workflows/. "
-        "When an implementation legitimately needs a workflow change, restore "
-        "that file to master's content, publish the rest, and report the "
-        "dropped unified diff for maintainer-side landing."
+        "When an implementation needs a workflow change, leave every file "
+        "under .github/workflows/ unchanged and report in your final message "
+        "that the workflow change routes to the attended host session. A "
+        "workflow change lands through the declared workflow-edit route, "
+        "under which such an item is refused before dispatch and carried by "
+        "the attended host session."
     ) in goal
+    assert "maintainer-side landing" not in goal
 
 
 def test_workflow_guard_module_exists_before_import() -> None:
@@ -123,9 +127,10 @@ def test_workflow_guard_fails_with_carve_out_hint(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert ".github/workflows/ci.yml" in result.message
-    assert "restore that file to master's content" in result.message
-    assert "publish the rest" in result.message
-    assert "dropped unified diff" in result.message
+    assert "leave every file under .github/workflows/ unchanged" in result.message
+    assert "routes to the attended host session" in result.message
+    assert "declared workflow-edit route" in result.message
+    assert "dropped unified diff" not in result.message
     assert runner.calls == [
         (_ORIGIN_HEAD_ARGV, tmp_path),
         (["git", "diff", "--name-only", "origin/master...HEAD"], tmp_path),
