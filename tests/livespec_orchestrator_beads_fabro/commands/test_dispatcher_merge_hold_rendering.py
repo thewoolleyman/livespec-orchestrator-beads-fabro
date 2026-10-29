@@ -382,7 +382,7 @@ def test_a_held_run_terminates_green_at_the_pr_stage_and_never_waits(tmp_path: P
     this module asserts looks like when nobody changes the hold mid-flight.
     """
     config = _held_tenant(repo=tmp_path)
-    # Stocked with the same five results the unheld control needs, so the held
+    # Stocked with the results the unheld control needs, so the held
     # run is short of nothing: a one-result queue would make the poll die on an
     # exhausted fixture, which is a fixture's verdict rather than the engine's.
     held_runner = _Runner(
@@ -412,7 +412,7 @@ def test_a_held_run_terminates_green_at_the_pr_stage_and_never_waits(tmp_path: P
     # request's shape, or the runner.
     update_work_item_merge_hold(path=config, item_id=_item().id, value=False)
     free_runner = _Runner(
-        queue=[CommandResult(exit_code=0, stdout=_pr_json(armed=False), stderr="")] * 5
+        queue=[CommandResult(exit_code=0, stdout=_pr_json(armed=False), stderr="")] * 6
     )
     free_sleeps: list[float] = []
 
@@ -425,7 +425,7 @@ def test_a_held_run_terminates_green_at_the_pr_stage_and_never_waits(tmp_path: P
         fabro_launcher=_Launcher(),
     )
 
-    assert (free.status, free.stage) == ("failed", "merge-poll")
+    assert (free.status, free.stage) == ("blocked", "merge-poll")
     assert free_sleeps == [0.0]
 
 
