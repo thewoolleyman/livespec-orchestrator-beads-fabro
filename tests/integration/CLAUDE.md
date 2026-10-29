@@ -331,6 +331,20 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   no-run on two independent instruments: the launch seam was never entered, and
   no `dispatch-id` record was written.
 
+- `test_groom_cut_approval_arc.py` — binds `SPECIFICATION/scenarios.md`
+  "Scenario 118 — A groom workflow variant drafts a cut, parks it in the ledger,
+  and files only on a recorded approval" as ONE arc: the real groom door, the
+  propose phase's post-run disposition (draft recorded as a ledger comment, item
+  rested at `blocked / needs-human`, nothing filed), the real
+  `resolve-blocked:<id>:ready` valve, and the apply phase's post-run disposition
+  handed a filing plan. Only the Fabro CLI's `inspect` answer is stood in. The
+  approval's ORDER is read off a recording overlay on the fake's two write verbs,
+  not off the end state, since both orderings leave the same `ready` item. The
+  control leg answers the same parked draft with `backlog` and asserts the item
+  rests at `backlog`, nothing is filed and the draft is unapproved to the reader
+  the apply gate uses; mutating that reader to treat every answer as consent reds
+  it, which is what makes the `ready` leg's pass mean anything.
+
 - `test_groom_variant_criteria_wall.py` — the variant-aware pre-dispatch
   acceptance-criteria wall, where `SPECIFICATION/contracts.md` §"Effective
   acceptance criteria" meets §"Consensus-gated automated groom cut": the wall

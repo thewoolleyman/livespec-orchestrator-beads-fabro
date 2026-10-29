@@ -219,13 +219,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 118 \u2014 A groom workflow variant drafts a cut, parks it in the ledger, and files only on a recorded approval",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-09-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 119 \u2014 A per-item merge hold publishes the pull request and merges only on release",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-09-06"
