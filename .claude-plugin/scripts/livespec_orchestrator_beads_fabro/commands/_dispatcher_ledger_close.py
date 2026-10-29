@@ -360,6 +360,10 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # and is therefore absent from every other outcome for reasons that have
     # nothing to do with hooks.
     "hook_over_limit",
+    # The node-timeout cut, dropped on the same ATTRIBUTION terms: an explicit null
+    # would read as "no node timeout ended this run's turn", a positive finding
+    # about an observation only a needs-human ending takes.
+    "node_timeout_cut",
     # The recorded hook verdict, dropped on the same ATTRIBUTION terms: an
     # explicit null would read as "this run's latest commit passed its hook",
     # a positive finding about an observation only a needs-human ending takes.

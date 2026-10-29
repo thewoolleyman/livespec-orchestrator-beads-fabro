@@ -90,9 +90,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
     fabro_run_terminal_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import (
-    MergedReconcile,
-    merged_reconcile_detail,
     merged_reconcile_from_text,
+    with_merged_reconcile,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import (
+    attach_node_timeout_cut,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -286,7 +288,13 @@ def run_dispatch(
         # which classifies the ENGINE's own record and has no business reading a
         # sandbox sentinel. The event is evidence the cause writer renders only
         # where the ending is attributed to it.
-        return replace(publication.refusal, hook_over_limit=hook_over_limit)
+        return attach_node_timeout_cut(
+            outcome=replace(publication.refusal, hook_over_limit=hook_over_limit),
+            node_timeouts=plan.node_timeouts,
+            text=run_output,
+            events_payload=None if inspect is None else inspect.events_payload,
+            journal=journal,
+        )
     hold, view = publication.hold, publication.view
     if publication.pr_view_error is not None:
         return failed_outcome(
@@ -341,19 +349,7 @@ def run_dispatch(
     )
     if run_id is not None and outcome.fabro_run_id is None:
         outcome = replace(outcome, fabro_run_id=run_id)
-    reconcile = merged_reconcile_from_text(text=run_output)
-    return (
-        outcome if reconcile is None else _with_merged_reconcile(outcome=outcome, event=reconcile)
-    )
-
-
-def _with_merged_reconcile(*, outcome: DispatchOutcome, event: MergedReconcile) -> DispatchOutcome:
-    """The outcome carrying the merged-reconcile ending, in its detail and as a value."""
-    return replace(
-        outcome,
-        merged_reconcile=event,
-        detail=f"{outcome.detail}; {merged_reconcile_detail(event=event)}",
-    )
+    return with_merged_reconcile(outcome=outcome, event=merged_reconcile_from_text(text=run_output))
 
 
 def _launcher_terminal(

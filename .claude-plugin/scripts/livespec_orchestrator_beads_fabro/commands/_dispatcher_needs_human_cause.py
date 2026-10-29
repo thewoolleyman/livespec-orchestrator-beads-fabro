@@ -64,6 +64,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     NEEDS_HUMAN_CAUSE_ABSENT,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import (
+    node_timeout_cut_cause_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     comment_safe_external_text,
@@ -241,6 +244,8 @@ def _attribution(*, outcome: DispatchOutcome) -> tuple[str, ...]:
     # exactly that, and the event reaching this writer at all means the run
     # ended on the stage the observation came from.
     lines.extend(hook_over_limit_cause_lines(event=outcome.hook_over_limit))
+    # The node-timeout cut, OUR text, under STAGE_FAILURE only for the reason above.
+    lines.extend(node_timeout_cut_cause_lines(cut=outcome.node_timeout_cut))
     if outcome.fabro_failure_category is not None:
         lines.append(f"failure category: {outcome.fabro_failure_category}")
     if outcome.fabro_failure_signature is not None:

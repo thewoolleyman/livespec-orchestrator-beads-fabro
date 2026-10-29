@@ -13,6 +13,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import HookVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import MergedReconcile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import NodeTimeoutCut
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     ProviderLimitRelease,
 )
@@ -177,6 +178,11 @@ class DispatchOutcome:
     needs_human_reason: str | None = None
     needs_human_preservation: str | None = None
     hook_over_limit: HookOverLimit | None = None
+    # The node-timeout cut this needs-human ending is, with the commit runs the cut
+    # turn had started and their states when preservation began (Scenario 192,
+    # bd-ib-ptnxyg). Carried for the reason `hook_over_limit` beside it is: the
+    # durable cause is written from the outcome alone, long after the sandbox is gone.
+    node_timeout_cut: NodeTimeoutCut | None = None
     # The recorded verdict of the failing stage's latest hook-running commit
     # attempt, carried in its OWN field so the journal's outcome row states the
     # hook's exit status and failed targets beside — never inside — the agent's
