@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.255.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.255.0...v0.255.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* run the owed availability confirmation turn during admission ([9a11020](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9a1102006d2d507bf13226d4d28140863b029a0f))
+
 ## [0.255.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.254.3...v0.255.0) (2026-10-28)
 
 
