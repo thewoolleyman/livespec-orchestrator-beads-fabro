@@ -382,6 +382,11 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # pre-dispatch refusal and every post-merge step would otherwise carry it.
     "provider_limit_release",
     "provider_usage_limit_provider",
+    # The reclassified turns, dropped on the same ATTRIBUTION terms: an explicit
+    # null would read as "this run's succeeded turns were examined for a booked
+    # refusal and none was found", a positive finding only a non-green terminal
+    # takes.
+    "reclassified_turns",
     "remedy",
     "step",
     # The acceptance verdict, which only an outcome that reached the post-merge

@@ -139,6 +139,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outco
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
+    HoldEvidence,
     provider_limit_hold_record,
     provider_limit_release_record,
 )
@@ -161,6 +162,7 @@ __all__: list[str] = [
     "PROVIDER_LIMIT_RELEASE_REFUSED_HOLD_STAGE",
     "AttemptCostBuilder",
     "dispose_provider_limit_release",
+    "dispose_reclassified_turn_holds",
 ]
 
 # The journal stage a replay appends when it declines to perform the release.
@@ -257,8 +259,30 @@ def dispose_provider_limit_release(
     _release_claim(repo=repo, item=item, journal=journal, release=release)
 
 
+def dispose_reclassified_turn_holds(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+    now_iso: str,
+) -> None:
+    """Record the candidate hold of every succeeded turn booked as a refusal.
+
+    A refusal booked as a successful turn "mints the candidate hold that the
+    signature declares" whether or not it ended the run, so this runs for any
+    non-green terminal and not only for a release. It is keyed on the same
+    `factory:run:node attempt` triple a release uses, so a turn that is also the
+    release's failing attempt derives the identical observation id and the
+    ingest here is declined as a replay rather than doubling the hold.
+    """
+    _ = repo
+    for turn in outcome.reclassified_turns or ():
+        _record_hold(release=turn, item_id=item.id, journal=journal, now_iso=now_iso)
+
+
 def _record_hold(
-    *, release: ProviderLimitRelease, item_id: str, journal: JournalFile, now_iso: str
+    *, release: HoldEvidence, item_id: str, journal: JournalFile, now_iso: str
 ) -> None:
     """Append the hold this release observed, or journal why it could not be.
 

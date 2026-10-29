@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
@@ -26,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome import (
     provider_limit_release_outcome,
+    reclassified_turns,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted import (
     recapture_exhausted_outcome,
@@ -66,7 +68,37 @@ def fabro_run_terminal_outcome(
     exit_code: int,
     stderr: str,
 ) -> DispatchOutcome | None:
-    """Return a non-green run observation, or None for ordinary PR reconciliation."""
+    """Return a non-green run observation, or None for ordinary PR reconciliation.
+
+    EVERY non-green ending carries the run's reclassified turns, whichever
+    mapping below produced it: a refusal booked as a successful turn mints its
+    candidate hold even when a later failure kept its own route, so the evidence
+    rides the outcome the disposition reads instead of being re-derived there.
+    """
+    outcome = _terminal_outcome(
+        outcome_type=outcome_type,
+        plan=plan,
+        run_id=run_id,
+        inspect=inspect,
+        exit_code=exit_code,
+        stderr=stderr,
+    )
+    if outcome is None:
+        return None
+    turns = reclassified_turns(plan=plan, inspect=inspect, run_id=run_id)
+    return replace(outcome, reclassified_turns=turns) if turns else outcome
+
+
+def _terminal_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    run_id: str | None,
+    inspect: FabroInspectResult | None,
+    exit_code: int,
+    stderr: str,
+) -> DispatchOutcome | None:
+    """The terminal mapping itself, before the reclassified turns are attached."""
     # FIRST, because the clause releases a provider-limit failure "through any
     # terminal, the workflow's `needs_human` terminal included" -- so it has to
     # outrank BOTH mappings below that would otherwise rest the item at

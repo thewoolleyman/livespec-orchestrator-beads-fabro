@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_disposition import (
     dispose_provider_limit_release,
+    dispose_reclassified_turn_holds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_disposition import (
     dispose_run_wall_budget_cancel,
@@ -104,6 +105,9 @@ def dispose_terminal_routing(
     dispose_run_wall_budget_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     _dispose_external_fabro_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_provider_limit_release(
+        repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
+    )
+    dispose_reclassified_turn_holds(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
     )
 
