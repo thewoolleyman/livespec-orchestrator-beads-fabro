@@ -34,6 +34,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_judgement_record,
 )
@@ -77,6 +80,11 @@ __all__: list[str] = [
 ]
 
 _MINIJINJA_OPEN_DELIMITER_RE = re.compile(r"\{\{|\{%|\{#")
+
+_DEFINITION_OF_DONE_BEGIN_MARK = (
+    "--- BEGIN ITEM DEFINITION OF DONE (the item's own section; ledger comments are outside it) ---"
+)
+_DEFINITION_OF_DONE_END_MARK = "--- END ITEM DEFINITION OF DONE ---"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -219,7 +227,7 @@ def render_goal(
         f"{FACTORY_WORKFLOW_BOUNDARY_TEXT}\n"
         "\n"
         "Description:\n"
-        f"{item.description}\n"
+        f"{_description_with_marked_definition_of_done(description=item.description)}\n"
         f"{acceptance_line}"
         f"{notes_line}"
     )
@@ -288,6 +296,31 @@ def render_goal(
     for index, comment in enumerate(riders, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
     return escape_minijinja_literal(text=body + "\n".join(lines) + "\n" + verdict_block)
+
+
+def _description_with_marked_definition_of_done(*, description: str) -> str:
+    """The description, with its own Definition of Done section fenced by two marks.
+
+    A `dod_gate` refusal is recorded as a ledger comment quoting the reference
+    line as it stood, and the brief carries every comment, so a repaired item's
+    goal holds the corrected line in the description and the stale one in that
+    comment. The marks tell the node which text is the item's own section; the
+    section is the verbatim slice `definition_of_done_source` reads, so the marks
+    and the host-side grading agree on its extent. A description with no section
+    is returned unchanged.
+    """
+    section = definition_of_done_source(description=description)
+    if section == "":
+        return description
+    lines = description.splitlines(keepends=True)
+    extent = len(section.splitlines(keepends=True))
+    start = next(
+        index for index in range(len(lines)) if "".join(lines[index : index + extent]) == section
+    )
+    before = "".join(lines[:start])
+    after = "".join(lines[start + extent :])
+    marked = f"{_DEFINITION_OF_DONE_BEGIN_MARK}\n{section}\n{_DEFINITION_OF_DONE_END_MARK}\n"
+    return f"{before}{marked}{after}"
 
 
 def _comment_entry(*, comment: WorkItemComment) -> str:
