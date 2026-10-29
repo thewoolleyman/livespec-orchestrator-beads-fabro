@@ -149,6 +149,21 @@ records receipt ONLY: it is not recovery-command execution, it does not consume
 an outstanding obligation, and it is not authoritative evidence that the
 target's own result was fulfilled.
 
+`check` also reads the durable launch-obligation store and the host's declared
+independent recovery coverage, so unfinished authorized work is reported even when
+no wait was ever armed, and a missing recovery owner is reported as an unmonitored
+finding rather than as health. Register a dispatched or delegated launch with
+`launch` at dispatch time; `complete` is the same obligation check on its own.
+Every wait needs an explicit deadline and an explicit owner `ack`. Derive any claim
+about what is being monitored from `inventory` or `check` output, never from memory
+of what was armed. A factory agent turn runs no blocking host wait; only an
+attended host session waits.
+
+Automatic stop-hook coverage is NOT claimed for native Codex: this package's installed
+hook surface for that runtime has not been exercised. Run `check` explicitly before
+finishing a turn or parking, and rely on launch-time registration plus the independent
+consumer for coverage when no wait exists.
+
 The `gate-*` recipes come from the livespec-dev-tooling worktree-discipline pack, imported optionally and installed by `just install-worktree-pack` (which `just bootstrap` runs). `Justfile does not contain recipe gate-start` therefore means the pack is not installed in that checkout — install it rather than falling back to a background task.
 
 ## Recovering a merged item left `active`

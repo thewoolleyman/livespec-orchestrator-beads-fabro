@@ -27,14 +27,14 @@ binding only maps its tools to it.
 
 ## Bounded Host Waits
 
-When planning delegates long-running commands through detached gates, arm ONE
-bounded first-event wait over all of them through the plugin's
-`scripts/bin/session_wait.py`: `wait`, given the repository, a unique wait id,
-the owning session id, a positive finite deadline and one `--gate <run-id>` per
-target, freezes those ids at arming, returns the first terminal gate with that
-gate's own verdict, and leaves every gate running. Run `inventory` or `check`
-for the durable census before parking, then `ack` once the owning session has
-RECEIVED the result — receipt ONLY, never recovery execution or fulfillment.
+When planning delegates long-running commands through detached gates, arm ONE bounded first-event wait over all of them
+through the plugin's `scripts/bin/session_wait.py`: `wait` takes the repository, a unique wait id, the owning session id,
+an explicit deadline and one `--gate <run-id>` per target; it returns the first terminal gate's own verdict and leaves
+every gate running. Run `check` before parking and at turn end: it reads waits and the durable launch-obligation store,
+so unfinished work is reported even when no wait was ever armed. `ack` records receipt ONLY, never recovery execution
+or fulfillment. Every wait needs an explicit deadline and an explicit owner `ack`; derive monitoring claims from
+`inventory` or `check`, never from memory of what was armed. Only Claude's `Stop` hook runs `check` automatically;
+Codex and pi invoke it explicitly. A factory agent turn runs no blocking host wait.
 
 ## Flow
 
