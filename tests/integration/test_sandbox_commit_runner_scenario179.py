@@ -22,7 +22,6 @@ import os
 import signal
 import subprocess
 import sys
-import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,7 +43,6 @@ _TRAILERS = (("Hook-Trailer-One", "alpha"), ("Hook-Trailer-Two", "beta"))
 _FAILED_TARGET = "check-lint"
 _FIRST_WAIT_SECONDS = "1"
 _TERMINAL_WAIT_SECONDS = "120"
-_STARTED_DEADLINE_SECONDS = 30.0
 
 # The hook polls for the release file, then answers with its content: `pass`
 # lets the commit proceed, anything else refuses it with the gate aggregate's
@@ -192,15 +190,6 @@ def _release_hook(*, sandbox: _Sandbox, verdict: str) -> None:
     _ = release.write_text(verdict, encoding="utf-8")
 
 
-def _await_hook_started(*, sandbox: _Sandbox, run_id: str) -> None:
-    """Block until the commit's hook is demonstrably running, so a signal lands on a live run."""
-    output = _runs_directory(sandbox=sandbox) / f"{run_id}.pid"
-    deadline = time.monotonic() + _STARTED_DEADLINE_SECONDS
-    while not output.is_file():
-        assert time.monotonic() < deadline, "the commit run's worker never recorded its group"
-        time.sleep(0.05)
-
-
 def _head(*, sandbox: _Sandbox) -> str:
     return _git(sandbox=sandbox, argv=["rev-parse", "HEAD"])
 
@@ -254,7 +243,6 @@ def test_a_commit_ended_by_a_signal_has_no_verdict_and_is_never_reported_passed(
     """Killing the run's whole process group before the hook answers leaves no verdict at all."""
     before = _head(sandbox=sandbox)
     run_id = _start_commit(sandbox=sandbox, message="feat: signalled commit")
-    _await_hook_started(sandbox=sandbox, run_id=run_id)
     assert _wait(sandbox=sandbox, run_id=run_id, seconds=_FIRST_WAIT_SECONDS)["state"] == "running"
 
     group = int((_runs_directory(sandbox=sandbox) / f"{run_id}.pid").read_text(encoding="utf-8"))
