@@ -1298,9 +1298,9 @@
     "heading": "## Scenario 119 \u2014 A per-item merge hold publishes the pull request and merges only on release",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the per-item-merge-hold revise pass (plan epic bd-ib-yqpdrt, spec carrier bd-ib-vlhp). The exercising integration-tier test is owed by plan pluggable-factory-workflow-configs once the implementation child filed under bd-ib-vlhp at this revision's revise pass lands; until then the behavior has no implementation to bind to.",
-    "work_item": "bd-ib-heat"
+    "test": "tests.integration.test_pr_stage_merge_hold_scenario119.test_a_held_pr_stage_publishes_unarmed_and_the_release_arms_the_journaled_method",
+    "reason": "Ratified by the per-item-merge-hold revise pass (plan epic bd-ib-yqpdrt, spec carrier bd-ib-vlhp) and bound by bd-ib-xigh7o once the implementation children bd-ib-jjd4q3, bd-ib-szmox5 and bd-ib-ofxs6g landed. The named case walks one arc over a shared forge state: a dispatch plan declaring squash renders merge_hold true and is journaled, the shipped pr stage bytes run under hold and ready the pull request, print MERGE_HOLD=held beside the PR_NUMBER line and send no auto-merge request, the repository declaration is then rewritten to rebase, and the production set-merge-hold off valve arms auto-merge with the journaled squash rather than the rebase configuration now says. Its sibling in the same integration module is the control leg: the identical stage and declaration with merge_hold false arms auto-merge with the declared merge mode bound to the proved head, without which the held assertions pass equally against a stage that never arms anything.",
+    "work_item": "bd-ib-xigh7o"
   },
   {
     "heading": "## Scenario 120 \u2014 An idle factory with dispatchable work surfaces its first dispatch",

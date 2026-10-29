@@ -1748,6 +1748,22 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   retained artifact path and digest, and artifact-write failure without a
   verdict or attribution change.
 
+- `test_pr_stage_merge_hold_scenario119.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 119 — A per-item merge hold publishes the
+  pull request and merges only on release" as ONE arc: a dispatch plan declaring
+  `squash` renders `merge_hold` true and is journaled through the production
+  record writer, the shipped `pr` node bytes (taken through `parse_dot_graph`)
+  run under `bash` in a real clone, and the production `set-merge-hold:<id>:off`
+  valve then releases the hold, both stages sharing one `gh` stub's forge state so
+  the release acts on the pull request the held stage published. The held leg
+  asserts the pull request is readied, `MERGE_HOLD=held` prints beside the
+  `PR_NUMBER` line and no `gh pr merge` was issued; the declaration is then
+  rewritten to `rebase`, with a plan resolved from the rewritten file asserted to
+  arm `--rebase`, so the `--squash` the release arms can only have come from the
+  journal. The sibling case is the control leg and is load-bearing: the identical
+  stage with `merge_hold` false must arm with the declared mode and the proved
+  head, because "nothing was armed" passes equally against a stage that never arms.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
