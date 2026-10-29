@@ -28,12 +28,12 @@ AFTER a particular row.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
-from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_tail import (
+    journal_tail_records,
+)
 
 __all__: list[str] = [
     "journal_records",
@@ -43,18 +43,7 @@ __all__: list[str] = [
 
 def journal_records(*, journal: JournalFile) -> tuple[Mapping[str, object], ...]:
     """Every mapping record the journal file holds, in append order."""
-    read = attempt(action=lambda: journal.path.read_text(encoding="utf-8"), exceptions=(OSError,))
-    if isinstance(read, AttemptFailure):
-        return ()
-    parsed = attempt(
-        action=lambda: [json.loads(line) for line in read.splitlines()], exceptions=(ValueError,)
-    )
-    if isinstance(parsed, AttemptFailure):
-        return ()
-    records = cast("list[object]", parsed)
-    return tuple(
-        cast("Mapping[str, object]", record) for record in records if isinstance(record, dict)
-    )
+    return journal_tail_records(journal_path=journal.path)
 
 
 def names_stage(*, record: Mapping[str, object], item_id: str, stage: str) -> bool:

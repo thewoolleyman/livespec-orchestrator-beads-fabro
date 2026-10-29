@@ -155,18 +155,21 @@ def test_an_unreadable_journal_yields_no_rows_rather_than_raising(tmp_path: Path
     assert consecutive_stall_cancel_rows(journal=JournalFile(path=tmp_path), item_id=_ITEM_ID) == ()
 
 
-def test_a_line_that_is_not_json_yields_no_rows(tmp_path: Path) -> None:
-    """A truncated or half-written journal reads as carrying no cancel row.
+def test_a_line_that_is_not_json_is_skipped_and_the_rows_around_it_are_kept(
+    tmp_path: Path,
+) -> None:
+    """A truncated or half-written line costs the journal that line and nothing else.
 
-    Asserted alongside a well-formed row in the SAME file so the case cannot
-    pass on a build that returns the empty tuple unconditionally: the
-    malformed line is what decides the answer, not the absence of any row.
+    The tail reader every journal reader now shares skips a line it cannot parse,
+    so one torn append no longer hides the cancel rows written either side of it.
+    Asserted with the malformed line BETWEEN two rows, so the case cannot pass on
+    a build that stops reading at the first bad line or drops the whole file.
     """
-    journal = _journal(tmp_path=tmp_path, lines=("{not json", _cancel_line(run_id="01A")))
-    assert consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID) == ()
-
-    well_formed = _journal(tmp_path=tmp_path / "ok", lines=(_cancel_line(run_id="01A"),))
-    assert len(consecutive_stall_cancel_rows(journal=well_formed, item_id=_ITEM_ID)) == 1
+    journal = _journal(
+        tmp_path=tmp_path,
+        lines=(_cancel_line(run_id="01A"), "{not json", _cancel_line(run_id="01B")),
+    )
+    assert len(consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID)) == 2
 
 
 def test_only_this_items_cancel_rows_are_returned(tmp_path: Path) -> None:
