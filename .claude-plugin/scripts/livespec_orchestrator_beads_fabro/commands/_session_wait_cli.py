@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_commands import (
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     resolve_primary_repository,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_payloads import check_summary
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     process_generation_token,
 )
@@ -149,12 +150,13 @@ def _inventory_command(
         observe_target=seams.observe_target,
         process_generation=seams.process_generation,
     )
-    _ = write_stdout(
-        text=json.dumps(snapshot_payload(snapshot=snapshot), indent=2, sort_keys=True) + "\n"
-    )
+    payload = snapshot_payload(snapshot=snapshot)
+    summary = check_summary(snapshot=snapshot)
+    if command == "check":
+        payload["summary"] = summary
+    _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
     publisher.inventory(snapshot=snapshot)
-    has_findings = any(record.findings for record in snapshot.records)
-    return int(command == "check" and has_findings)
+    return int(command == "check" and not summary["healthy"])
 
 
 def _ack_command(
