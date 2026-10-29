@@ -124,9 +124,6 @@ def _decode(*, span: dict[str, object]) -> Decoded:
             decoded[key] = float(cast("float", value["doubleValue"]))
         elif "boolValue" in value:
             decoded[key] = bool(value["boolValue"])
-        elif "arrayValue" in value:
-            items = cast("dict[str, list[dict[str, str]]]", value["arrayValue"])["values"]
-            decoded[key] = [item["stringValue"] for item in items]
         else:
             decoded[key] = value["stringValue"]
     return decoded
