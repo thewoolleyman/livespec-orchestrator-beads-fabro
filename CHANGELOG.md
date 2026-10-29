@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.256.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.4...v0.256.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **dispatcher:** name a remedy that changes an active item in the resume refusal ([bae6232](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bae62325459b5188b0889d254307a4a2f2635a01))
+* **dispatcher:** rest an exhausted merge wait on an open pull request for resume ([99fab09](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/99fab09d0faed718395ace0777d06c610ad459ef))
+
 ## [0.256.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.3...v0.256.4) (2026-10-29)
 
 
