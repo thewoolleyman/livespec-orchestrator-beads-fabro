@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from livespec_orchestrator_beads_fabro._beads_client import EDGE_BLOCKS, IssueDraft
+from livespec_orchestrator_beads_fabro._beads_client import (
+    EDGE_BLOCKS,
+    EDGE_PARENT_CHILD,
+    EDGE_TRACKS,
+    IssueDraft,
+)
 from livespec_orchestrator_beads_fabro._beads_client_fake import FakeBeadsClient
 from livespec_orchestrator_beads_fabro.errors import BeadsMappingError
 
@@ -126,6 +131,39 @@ def test_fake_children_filters_by_parent() -> None:
     children = fake.children(parent_id="li-epic")
     assert [record["id"] for record in children] == ["li-child"]
     assert children[0]["dependencies"] == [{"depends_on_id": "li-epic", "type": "parent-child"}]
+
+
+def test_fake_children_returns_edge_only_parent_child_record() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-edge", parent_id=None))
+    _ = fake.create_issue(draft=_draft(issue_id="li-epic", parent_id=None))
+    fake.add_dependency(from_id="li-edge", to_id="li-epic", edge_type=EDGE_PARENT_CHILD)
+    assert [record["id"] for record in fake.children(parent_id="li-epic")] == ["li-edge"]
+
+
+def test_fake_children_returns_tracks_edge_record() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-edge", parent_id=None))
+    _ = fake.create_issue(draft=_draft(issue_id="li-epic", parent_id=None))
+    fake.add_dependency(from_id="li-edge", to_id="li-epic", edge_type=EDGE_TRACKS)
+    assert [record["id"] for record in fake.children(parent_id="li-epic")] == ["li-edge"]
+
+
+def test_fake_children_excludes_blocks_edge_record() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-edge", parent_id=None))
+    _ = fake.create_issue(draft=_draft(issue_id="li-epic", parent_id=None))
+    fake.add_dependency(from_id="li-edge", to_id="li-epic", edge_type=EDGE_BLOCKS)
+    assert fake.children(parent_id="li-epic") == []
+
+
+def test_fake_children_returns_immediate_dotted_child_only() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="x", parent_id=None))
+    _ = fake.create_issue(draft=_draft(issue_id="x.1", parent_id=None))
+    _ = fake.create_issue(draft=_draft(issue_id="x.1.2", parent_id=None))
+    assert [record["id"] for record in fake.children(parent_id="x")] == ["x.1"]
+    assert [record["id"] for record in fake.children(parent_id="x.1")] == ["x.1.2"]
 
 
 def test_fake_seed_and_list_comments_roundtrip() -> None:
