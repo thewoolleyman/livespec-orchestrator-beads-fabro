@@ -54,6 +54,13 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import render_run_config_overlay
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BUNDLE = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
@@ -313,6 +320,11 @@ def _child_env(*, tmp_path: Path) -> dict[str, str]:
     stub.chmod(0o755)
     home = tmp_path / "home"
     home.mkdir()
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     return {
         "PATH": f"{bin_dir}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(home),
@@ -322,6 +334,7 @@ def _child_env(*, tmp_path: Path) -> dict[str, str]:
         "GIT_TERMINAL_PROMPT": "0",
         "LIVESPEC_FAKE_FORGE_CALLS": str(tmp_path / "forge-calls.txt"),
         "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
+        SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
         "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(tmp_path / "absent-gh-refresh-root"),
     }
 

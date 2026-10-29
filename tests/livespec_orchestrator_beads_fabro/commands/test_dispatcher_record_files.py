@@ -238,3 +238,14 @@ def test_the_refusal_names_the_offending_entrys_own_position(tmp_path: Path) -> 
     assert isinstance(finding, str)
     assert f"{_KEY}[1].generator" in finding
     assert f"{_KEY}[0]" not in finding
+
+
+def test_declared_record_file_merge_helper_is_shipped_to_sandboxes() -> None:
+    """Refresh handling has a dedicated declared-record merge helper.
+
+    The helper is a sandbox-preparation dependency, so asserting its source
+    exists catches a workflow that names a resolver the package did not ship.
+    """
+    helper = _COMMANDS_DIR / "_dispatcher_record_file_merge.py"
+
+    assert helper.is_file()
