@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
-from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 
 __all__: list[str] = [
     "auto_disposition_journal_record",
@@ -32,19 +33,5 @@ def auto_disposition_journal_record(
 
 def read_auto_disposition_decisions(*, journal_path: Path) -> tuple[dict[str, object], ...]:
     """Read auto-disposition records from the append-only Dispatcher journal."""
-    records = _read_journal_records(journal_path=journal_path)
+    records = read_journal_records(journal_path=journal_path)
     return tuple(record for record in records if record.get("stage") == _AUTO_DISPOSITION_STAGE)
-
-
-def _read_journal_records(*, journal_path: Path) -> tuple[dict[str, object], ...]:
-    if not journal_path.is_file():
-        return ()
-    records: list[dict[str, object]] = []
-    for line in journal_path.read_text(encoding="utf-8").splitlines():
-        parsed = parse_json(text=line)
-        if isinstance(parsed, JsonParseFailure):
-            continue
-        if isinstance(parsed, dict):
-            mapping = cast("dict[object, object]", parsed)
-            records.append({str(key): value for key, value in mapping.items()})
-    return tuple(records)

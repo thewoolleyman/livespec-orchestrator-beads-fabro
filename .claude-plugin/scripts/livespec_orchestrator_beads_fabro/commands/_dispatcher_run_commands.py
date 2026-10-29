@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     ready_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
@@ -66,6 +67,11 @@ class _DispatchStart:
 
 
 def run_dispatch_command(*, args: argparse.Namespace) -> int:
+    with pass_snapshot():
+        return _dispatch_in_pass(args=args)
+
+
+def _dispatch_in_pass(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
     started = _start_dispatch(args=args, repo=repo)
     if isinstance(started, int):

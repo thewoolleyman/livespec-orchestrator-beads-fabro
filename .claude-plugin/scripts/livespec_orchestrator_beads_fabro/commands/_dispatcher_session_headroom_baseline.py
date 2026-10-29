@@ -51,7 +51,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain impo
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
     SESSION_HEADROOM_STAGE,
 )
-from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 
 __all__: list[str] = [
     "session_headroom_baseline",
@@ -71,19 +73,20 @@ def session_headroom_baseline(
         return None
     return baseline_assessment(
         priors=_priors(
-            text=journal_path.read_text(encoding="utf-8"),
+            records=read_journal_records(journal_path=journal_path),
             credential_identity=credential_identity,
         ),
         now_iso=now_iso,
     )
 
 
-def _priors(*, text: str, credential_identity: str) -> tuple[SessionHeadroomPriorReading, ...]:
+def _priors(
+    *, records: tuple[dict[str, object], ...], credential_identity: str
+) -> tuple[SessionHeadroomPriorReading, ...]:
     """Every valid earlier assessment of ONE credential, in journal order."""
     priors: list[SessionHeadroomPriorReading] = []
-    for line in text.splitlines():
-        record = _record(line=line)
-        if record is None or record.get("stage") != SESSION_HEADROOM_STAGE:
+    for record in records:
+        if record.get("stage") != SESSION_HEADROOM_STAGE:
             continue
         assessments = record.get("assessments")
         if not isinstance(assessments, list):
@@ -93,14 +96,6 @@ def _priors(*, text: str, credential_identity: str) -> tuple[SessionHeadroomPrio
             if prior is not None:
                 priors.append(prior)
     return tuple(priors)
-
-
-def _record(*, line: str) -> dict[str, object] | None:
-    parsed = parse_json(text=line)
-    if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
-        return None
-    mapping = cast("dict[object, object]", parsed)
-    return {str(key): value for key, value in mapping.items()}
 
 
 def _prior(*, entry: object, credential_identity: str) -> SessionHeadroomPriorReading | None:

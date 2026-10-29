@@ -24,6 +24,7 @@ expected error and the append raises instead of overwriting it.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -32,6 +33,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
     default_invoker_identity,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
+    record_journal_append,
 )
 
 __all__: list[str] = [
@@ -77,11 +81,15 @@ class JournalFile:
             "invoker_source": self.identity.invoker_source,
             **record,
         }
-        line = json.dumps(stamped, sort_keys=True) + "\n"
+        line = (json.dumps(stamped, sort_keys=True) + "\n").encode("utf-8")
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
+            with self.path.open("ab") as handle:
+                start = handle.tell()
                 _ = handle.write(line)
+                handle.flush()
+                status = os.fstat(handle.fileno())
+            record_journal_append(path=self.path, start=start, line=line, status=status)
 
 
 def utc_now_iso() -> str:
