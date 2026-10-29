@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.259.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.259.0...v0.259.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* FakeBeadsClient.children matches the real immediate-child surface ([17e54b9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/17e54b98ca8400134be37157834bb8edd0dfda2b))
+
 ## [0.259.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.6...v0.259.0) (2026-10-29)
 
 
