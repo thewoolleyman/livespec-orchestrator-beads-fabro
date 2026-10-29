@@ -164,7 +164,13 @@ def test_the_gate_falls_through_to_implement_and_routes_a_failure_to_needs_human
 
     assert edges, "the gate declares no outgoing edges"
     fallthrough = [edge for edge in edges if "condition=" not in edge]
-    assert fallthrough == [f"{_GATE} -> implement"]
+    assert fallthrough == [f"{_GATE} -> dod_gate_mutation_guard"]
+    guard_fallthrough = [
+        edge
+        for edge in _edges(text=_dot(payload=_BUNDLE))
+        if edge.startswith("dod_gate_mutation_guard ->") and "condition=" not in edge
+    ]
+    assert guard_fallthrough == ["dod_gate_mutation_guard -> implement"]
     blocked = [edge for edge in edges if edge.startswith(f"{_GATE} -> needs_human")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]

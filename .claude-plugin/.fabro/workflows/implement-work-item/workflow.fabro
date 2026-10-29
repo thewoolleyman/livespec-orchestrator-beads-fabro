@@ -127,6 +127,39 @@ digraph ImplementWorkItem {
         prompt="@prompts/dod-gate.md"
     ]
 
+    // Post-turn role guard for `dod_gate` (work-item bd-ib-al54tl). The node
+    // above is a GRADING turn, and nothing mechanical stopped its agent from
+    // doing implement work: run 01M5SWSTWJZBAG194Q8NHS2RGB (bd-ib-nz4av6, petri)
+    // edited files, ran the check suite and started a commit inside it, burned
+    // two 1800 s turns (the second is the max_retries=1 retry) and only then
+    // reached needs-human, while the other seven dod_gate turns in the same
+    // window took 0.7 to 1.6 minutes. The prompt says the same thing the agent
+    // already ignored, so the run enforces it afterwards.
+    //
+    // WHAT IT COMPARES. The engine commits one `fabro(<run>): <node> (<status>)`
+    // checkpoint per stage, so the newest checkpoint that is not a dod_gate one
+    // is the commit the node STARTED on (an agent's own commit sits above it, which
+    // is why the parent of the dod_gate checkpoint is not the baseline). The guard
+    // requires, against that commit:
+    // a clean working tree, no commit that is not an engine checkpoint, and an
+    // identical tree at HEAD. The tree comparison matters because a checkpoint
+    // commits whatever the turn left in the working tree, so a clean tree alone
+    // would read an edited file as unchanged.
+    //
+    // A MUTATION OR AN UNPROVABLE START FAILS CLOSED to needs_human, with the
+    // reason written where `needs_human` reads it first
+    // (`livespec-needs-human-reason`) and echoed on stderr under
+    // LIVESPEC_DOD_GATE_MUTATION or LIVESPEC_DOD_GATE_MUTATION_UNPROVABLE, the
+    // latter for a run whose checkpoint chain cannot establish the starting
+    // state. A dod_gate turn that itself ended failed never reaches this node:
+    // its findings route straight to needs_human on the Blocked edge.
+    dod_gate_mutation_guard [
+        label="Guard: the dod_gate turn must leave the working tree and HEAD as it found them"
+        shape=parallelogram
+        timeout="600s"
+        script="fail() { printf '%s\\n' \"$1\" > \"$(git rev-parse --git-path livespec-needs-human-reason)\"; echo \"$2: $1\" >&2; exit 1; }; unprovable() { fail \"the dod_gate turn could not be checked for mutation: $1\" LIVESPEC_DOD_GATE_MUTATION_UNPROVABLE; }; base=$(git log --format='%H %s' origin/{{ inputs.default_branch }}..HEAD 2>/dev/null | grep -E '^[0-9a-f]+ fabro[(][^)]*[)]: ' | grep -vE '^[0-9a-f]+ fabro[(][^)]*[)]: dod_gate [(]' | head -n 1 | cut -d' ' -f1); if test -z \"$base\"; then unprovable 'no engine checkpoint before the dod_gate node is on the run branch, so the commit the node started on cannot be established'; fi; if ! status=$(git status --porcelain 2>/dev/null); then unprovable 'git status failed'; fi; if ! subjects=$(git log --format=%s \"$base..HEAD\" 2>/dev/null); then unprovable \"git log $base..HEAD failed\"; fi; problems=''; if test -n \"$status\"; then problems=\"${problems}the working tree has uncommitted changes ($(printf '%s\\n' \"$status\" | head -n 5 | tr '\\n' ',')); \"; fi; foreign=$(printf '%s\\n' \"$subjects\" | grep -vE '^(fabro[(][^)]*[)]: |$)' | head -n 3 | tr '\\n' ','); if test -n \"$foreign\"; then problems=\"${problems}the turn created commit(s) ($foreign); \"; fi; if test \"$(git rev-parse 'HEAD^{tree}' 2>/dev/null)\" != \"$(git rev-parse \"$base^{tree}\" 2>/dev/null)\"; then changed=$(git diff --name-only \"$base\" HEAD 2>/dev/null | head -n 5 | tr '\\n' ','); problems=\"${problems}the tree at HEAD differs from the tree the node started on (changed: $changed); \"; fi; if test -n \"$problems\"; then fail \"the dod_gate turn mutated the sandbox: ${problems}the node grades the Definition of Done only and must not edit files, run the check suite or commit\" LIVESPEC_DOD_GATE_MUTATION; fi; exit 0"
+    ]
+
     // The implement timeout is the per-turn ceiling for the ACP backend:
     // two heavy multi-RGR items (dev-tooling p60, git-jsonl tenpup, both
     // 2026-06-12) died at "ACP turn timed out" at ~120m against the then
@@ -2118,7 +2151,13 @@ digraph ImplementWorkItem {
     // the exceptional route with a condition, and let the ordinary route be the
     // unconditional fallback that conditional edges outrank.
     dod_gate -> needs_human [label="Blocked", condition="outcome=failed"]
-    dod_gate -> implement
+    dod_gate -> dod_gate_mutation_guard
+
+    // A dod_gate turn that edited, wrote or committed ends the run here
+    // (bd-ib-al54tl); one that graded and changed nothing proceeds to implement
+    // exactly as before.
+    dod_gate_mutation_guard -> needs_human [label="dod_gate mutated the sandbox", condition="outcome=failed"]
+    dod_gate_mutation_guard -> implement
 
     // An explicit failed implement output first reaches the amendment
     // classifier. A Definition-of-Done amendment still rests at needs_human;
