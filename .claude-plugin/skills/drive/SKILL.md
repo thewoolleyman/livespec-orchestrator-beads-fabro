@@ -22,7 +22,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/drive.py" "$@"
 Accepted action ids:
 
 - `impl:<work-item-id>` dispatches the selected implementation work-item through Dispatcher/Fabro in `shadow` mode with `budget=1`, `parallel=1`, and `--item <work-item-id>`.
-- `approve:<work-item-id>` moves an effective-manual `pending-approval` item to `ready`.
+- `approve:<work-item-id>` moves a `pending-approval` item to `ready`, whatever its current admission policy.
 - `accept:<work-item-id>` moves an `acceptance` item to `done`.
 - `reject:<work-item-id>:rework` moves an `acceptance` item back to `active`.
 - `reject:<work-item-id>:regroom` reverts the recorded merge SHA, then moves an `acceptance` item to `backlog`.

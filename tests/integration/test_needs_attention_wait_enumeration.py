@@ -269,22 +269,19 @@ def test_every_advertised_drive_handoff_is_accepted_by_drive(
     }
 
 
-def test_a_state_drive_refuses_by_construction_is_never_advertised(
+def test_a_dispatcher_owned_item_is_surfaced_as_awaiting_admission_not_as_an_approve_valve(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_project(root=tmp_path)
     # `auto_approve_ready` makes this item's effective admission policy `auto`,
-    # so the Dispatcher owns it and the human approve valve refuses it by
-    # construction.
+    # so the Dispatcher owns it and the attention surface does not offer a
+    # human approve for it (drive would still accept an explicit one).
     _seed(id_="bd-auto", status="pending-approval", rank="a1")
 
     attention = _snapshot(root=tmp_path, monkeypatch=monkeypatch)
-    refusal = run_action(repo=tmp_path, action_id="approve:bd-auto")
 
-    assert refusal["status"] == "failed"
-    assert refusal["summary"] == "approve requires an effective-manual pending-approval item."
     assert "approve:bd-auto" not in {item.handoff.action_id for item in attention}
-    # It is surfaced — just not as an action the enforcer would reject. The
+    # It is surfaced under the awaiting-admission lane instead. The
     # awaiting-admission lane is selected by id rather than by referent, because
     # an auto-admissible item on an idle factory is also the idle-factory fact's
     # first ranked dispatch, and that row names the same work-item.
