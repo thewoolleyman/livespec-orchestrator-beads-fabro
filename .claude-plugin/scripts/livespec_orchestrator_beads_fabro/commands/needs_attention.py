@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro._store_answer_disposition import (
 from livespec_orchestrator_beads_fabro._store_merge_hold import read_merge_held_work_item_ids
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_pin_snapshot import (
+    workflow_pin_snapshot_scope,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_capacity import (
     capacity_items,
 )
@@ -180,157 +183,166 @@ def build_attention(
         if include_hygiene
         else []
     )
-    return composed_conformant(
-        context=context,
-        spec_next=spec_next(project_root=project_root),
-        impl_next=impl_next(
-            project_root=project_root,
-            items=materialized,
-            manifest=manifest,
-            sibling_status_lookup=sibling_status_lookup,
-        ),
-        human_valve_lanes=human_valves(
-            project_root=project_root,
-            items=materialized,
-            index=index,
-            manifest=manifest,
-            sibling_status_lookup=sibling_status_lookup,
-            answer_disposition_labels=answer_disposition_labels,
-        ),
-        plan_threads=plans(project_root=project_root, config=config, items=materialized),
-    ) + (
-        auto_admission_items(project_root=project_root, repo=repo_name, items=materialized)
-        + provider_exhaustion_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The LEGACY wait's sibling in the same enumerated-wait clause, and the
-        # one no other lane here can report: an item an admission-required ACP
-        # chain holds rests in `ready` with no claim and no blocked reason, so
-        # nothing is stranded, nothing is aging past a bound, and the
-        # idle-factory row deliberately clears — a factory held back by an
-        # exhausted chain is waiting rather than idle.
-        + availability_wait_items(project_root=project_root, repo=repo_name, items=materialized)
-        + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
-        + stranded_dispatch_items(
-            project_root=project_root,
-            repo=repo_name,
-            items=materialized,
-            held_work_item_ids=held_work_item_ids,
-        )
-        # A hold parks an item in exactly the shape every other lane here is
-        # taught to ignore, so this row is the one thing standing between a
-        # deliberate merge window and an invisible one.
-        + merge_hold_items(
-            project_root=project_root,
-            repo=repo_name,
-            items=materialized,
-            held_work_item_ids=held_work_item_ids,
-        )
-        + capacity_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The mirror image of the capacity fact above: that one reports a
-        # factory too busy to take more, this one a factory taking nothing
-        # while dispatchable work waits. An idle queue is silent on every
-        # other lane here — nothing is stranded, held, or aging past a
-        # bound — so without this row it is visible only by being noticed.
-        + idle_factory_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The CROSS-TENANT half of that pair, and the one the row above
-        # structurally cannot report: it is scoped to this repository's own
-        # ready set, so a priority epic in another tenant is invisible to it,
-        # and so is a stale edge — an item held only by blockers that landed
-        # and were never closed. Composes nothing unless this repository
-        # commits a `dispatcher.idle_slot_audit` object, so an unconfigured
-        # repository reads no tenant and no board.
-        + idle_slot_items(project_root=project_root, repo=repo_name)
-        # The other half of that pair, and the one the idle-factory fact cannot
-        # report: an item resting in `ready` that NO dispatch will ever take,
-        # because the shared eligibility decision refuses it. Such a row is
-        # silent on every lane here — nothing is stranded, held, or aging — so
-        # without it an unrunnable item is visible only by being noticed.
-        + unrunnable_acceptance_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The row that lane CANNOT produce, and the asymmetry is the point: it
-        # fires on the shared eligibility decision refusing an item, while an
-        # advisory Definition-of-Done finding is forbidden from refusing anything.
-        # Such an item is dispatchable, is silent on every lane here, and becomes
-        # visible only through the sandbox it spends discovering the finding.
-        + advisory_definition_of_done_items(
-            project_root=project_root, repo=repo_name, items=materialized
-        )
-        # Its neighbour, and the row the advisory lane cannot produce: an item
-        # the Definition-of-Done judgement HELD is not dispatchable at all, so
-        # it is silent on that lane by construction and on every other lane
-        # here, because nothing about it is stranded, aging or claimed.
-        + held_definition_of_done_items(
-            project_root=project_root, repo=repo_name, items=materialized
-        )
-        # The four Proof of Done hygiene rows, reached through the one entry
-        # point that owns their grouping. A parked item awaiting its host replay
-        # or its human attestation is otherwise indistinguishable from any other
-        # parked acceptance, a stale pointer is silent on every lane here, and an
-        # item carrying NO pointer is invisible even to those two — which is
-        # exactly the state the first merged proof-chain item rested in from
-        # 2026-10-01. Why each of the four is its own row is recorded beside
-        # them, in `_needs_attention_proof.proof_hygiene_items`.
-        + proof_hygiene_items(project_root=project_root, repo=repo_name, items=materialized)
-        # A run the ledger disowns holds a factory scheduler slot, and no
-        # surface keyed on THIS repo's records can see it: the projection is
-        # the reconciler's own dry run, so the lane and the remedy it prints
-        # can never disagree about what an orphan is.
-        + orphan_run_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The ACP fallback row. It was composed beside a projection-failure
-        # row that v127 retired, because the absence of one changed what the
-        # other meant: a repository whose event projection was broken showed
-        # no model-fallback warnings, and that emptiness read as "nothing
-        # fell back" rather than "nobody looked". The warning is now sourced
-        # from the Dispatcher's own selection records, which it writes itself
-        # and cannot fail to read, so an empty lane has one meaning again.
-        + model_fallback_items(project_root=project_root, repo=repo_name)
-        # Detection recency is a REPOSITORY property computed from the
-        # completed coverage records on the committed anchor. Neither fact
-        # invokes a detector: both are surfaced triggers naming the skill.
-        + detection_staleness_items(project_root=project_root, repo=repo_name, config=config)
-        # Ambient plugin-currency staleness is SURFACED here and nowhere
-        # else: the dispatch-admission gate lost its blocking authority over
-        # it in v089, so this fact is what carries the freshness pressure.
-        # It never gates a dispatch — only a committed
-        # `dispatcher.minimum_release` floor can refuse on currency.
-        + currency_staleness_items(
-            project_root=project_root,
-            repo=repo_name,
-            seams=default_currency_staleness_seams(),
-        )
-        # Adoption is a HOST fact, not a tenant fact: the pin is a moving
-        # branch, so the only per-repo evidence that a release actually
-        # arrived lives in this machine's install records.
-        + release_adoption_items(
-            project_root=project_root,
-            repo=repo_name,
-            bases=default_release_adoption_bases(),
-        )
-        + ready_aging_items(
-            context=ReadyAgingContext(
+    # The acceptance-eligibility wall behind `impl_next`, `idle_slot_items` and
+    # `unrunnable_acceptance_items` reads each item's recorded workflow pin; one
+    # snapshot scope serves all three from one list read per repository rather
+    # than a `bd show` per graded item.
+    with workflow_pin_snapshot_scope():
+        return composed_conformant(
+            context=context,
+            spec_next=spec_next(project_root=project_root),
+            impl_next=impl_next(
+                project_root=project_root,
+                items=materialized,
+                manifest=manifest,
+                sibling_status_lookup=sibling_status_lookup,
+            ),
+            human_valve_lanes=human_valves(
+                project_root=project_root,
+                items=materialized,
+                index=index,
+                manifest=manifest,
+                sibling_status_lookup=sibling_status_lookup,
+                answer_disposition_labels=answer_disposition_labels,
+            ),
+            plan_threads=plans(project_root=project_root, config=config, items=materialized),
+        ) + (
+            auto_admission_items(project_root=project_root, repo=repo_name, items=materialized)
+            + provider_exhaustion_items(
+                project_root=project_root, repo=repo_name, items=materialized
+            )
+            # The LEGACY wait's sibling in the same enumerated-wait clause, and the
+            # one no other lane here can report: an item an admission-required ACP
+            # chain holds rests in `ready` with no claim and no blocked reason, so
+            # nothing is stranded, nothing is aging past a bound, and the
+            # idle-factory row deliberately clears — a factory held back by an
+            # exhausted chain is waiting rather than idle.
+            + availability_wait_items(project_root=project_root, repo=repo_name, items=materialized)
+            + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
+            + stranded_dispatch_items(
                 project_root=project_root,
                 repo=repo_name,
-                manifest=manifest,
-            ),
-            items=materialized,
-            ready_dwell_instants=read_ready_dwell_instants(path=config.work_items_path),
-            sibling_status_lookup=sibling_status_lookup,
-            seams=ReadyAgingSeams(
-                live_lock_lookup=live_dispatch_lock_lookup,
-                watchable_run_item_ids=watchable_fabro_run_item_ids,
-                now_iso=_utc_now_iso(),
-            ),
+                items=materialized,
+                held_work_item_ids=held_work_item_ids,
+            )
+            # A hold parks an item in exactly the shape every other lane here is
+            # taught to ignore, so this row is the one thing standing between a
+            # deliberate merge window and an invisible one.
+            + merge_hold_items(
+                project_root=project_root,
+                repo=repo_name,
+                items=materialized,
+                held_work_item_ids=held_work_item_ids,
+            )
+            + capacity_items(project_root=project_root, repo=repo_name, items=materialized)
+            # The mirror image of the capacity fact above: that one reports a
+            # factory too busy to take more, this one a factory taking nothing
+            # while dispatchable work waits. An idle queue is silent on every
+            # other lane here — nothing is stranded, held, or aging past a
+            # bound — so without this row it is visible only by being noticed.
+            + idle_factory_items(project_root=project_root, repo=repo_name, items=materialized)
+            # The CROSS-TENANT half of that pair, and the one the row above
+            # structurally cannot report: it is scoped to this repository's own
+            # ready set, so a priority epic in another tenant is invisible to it,
+            # and so is a stale edge — an item held only by blockers that landed
+            # and were never closed. Composes nothing unless this repository
+            # commits a `dispatcher.idle_slot_audit` object, so an unconfigured
+            # repository reads no tenant and no board.
+            + idle_slot_items(project_root=project_root, repo=repo_name)
+            # The other half of that pair, and the one the idle-factory fact cannot
+            # report: an item resting in `ready` that NO dispatch will ever take,
+            # because the shared eligibility decision refuses it. Such a row is
+            # silent on every lane here — nothing is stranded, held, or aging — so
+            # without it an unrunnable item is visible only by being noticed.
+            + unrunnable_acceptance_items(
+                project_root=project_root, repo=repo_name, items=materialized
+            )
+            # The row that lane CANNOT produce, and the asymmetry is the point: it
+            # fires on the shared eligibility decision refusing an item, while an
+            # advisory Definition-of-Done finding is forbidden from refusing anything.
+            # Such an item is dispatchable, is silent on every lane here, and becomes
+            # visible only through the sandbox it spends discovering the finding.
+            + advisory_definition_of_done_items(
+                project_root=project_root, repo=repo_name, items=materialized
+            )
+            # Its neighbour, and the row the advisory lane cannot produce: an item
+            # the Definition-of-Done judgement HELD is not dispatchable at all, so
+            # it is silent on that lane by construction and on every other lane
+            # here, because nothing about it is stranded, aging or claimed.
+            + held_definition_of_done_items(
+                project_root=project_root, repo=repo_name, items=materialized
+            )
+            # The four Proof of Done hygiene rows, reached through the one entry
+            # point that owns their grouping. A parked item awaiting its host replay
+            # or its human attestation is otherwise indistinguishable from any other
+            # parked acceptance, a stale pointer is silent on every lane here, and an
+            # item carrying NO pointer is invisible even to those two — which is
+            # exactly the state the first merged proof-chain item rested in from
+            # 2026-10-01. Why each of the four is its own row is recorded beside
+            # them, in `_needs_attention_proof.proof_hygiene_items`.
+            + proof_hygiene_items(project_root=project_root, repo=repo_name, items=materialized)
+            # A run the ledger disowns holds a factory scheduler slot, and no
+            # surface keyed on THIS repo's records can see it: the projection is
+            # the reconciler's own dry run, so the lane and the remedy it prints
+            # can never disagree about what an orphan is.
+            + orphan_run_items(project_root=project_root, repo=repo_name, items=materialized)
+            # The ACP fallback row. It was composed beside a projection-failure
+            # row that v127 retired, because the absence of one changed what the
+            # other meant: a repository whose event projection was broken showed
+            # no model-fallback warnings, and that emptiness read as "nothing
+            # fell back" rather than "nobody looked". The warning is now sourced
+            # from the Dispatcher's own selection records, which it writes itself
+            # and cannot fail to read, so an empty lane has one meaning again.
+            + model_fallback_items(project_root=project_root, repo=repo_name)
+            # Detection recency is a REPOSITORY property computed from the
+            # completed coverage records on the committed anchor. Neither fact
+            # invokes a detector: both are surfaced triggers naming the skill.
+            + detection_staleness_items(project_root=project_root, repo=repo_name, config=config)
+            # Ambient plugin-currency staleness is SURFACED here and nowhere
+            # else: the dispatch-admission gate lost its blocking authority over
+            # it in v089, so this fact is what carries the freshness pressure.
+            # It never gates a dispatch — only a committed
+            # `dispatcher.minimum_release` floor can refuse on currency.
+            + currency_staleness_items(
+                project_root=project_root,
+                repo=repo_name,
+                seams=default_currency_staleness_seams(),
+            )
+            # Adoption is a HOST fact, not a tenant fact: the pin is a moving
+            # branch, so the only per-repo evidence that a release actually
+            # arrived lives in this machine's install records.
+            + release_adoption_items(
+                project_root=project_root,
+                repo=repo_name,
+                bases=default_release_adoption_bases(),
+            )
+            + ready_aging_items(
+                context=ReadyAgingContext(
+                    project_root=project_root,
+                    repo=repo_name,
+                    manifest=manifest,
+                ),
+                items=materialized,
+                ready_dwell_instants=read_ready_dwell_instants(path=config.work_items_path),
+                sibling_status_lookup=sibling_status_lookup,
+                seams=ReadyAgingSeams(
+                    live_lock_lookup=live_dispatch_lock_lookup,
+                    watchable_run_item_ids=watchable_fabro_run_item_ids,
+                    now_iso=_utc_now_iso(),
+                ),
+            )
+            # A second raw read of the tenant: the triage marker is a label and the
+            # urgency tier is the beads-native `priority` column, and the
+            # materialized `WorkItem` above carries neither (labels are decoded into
+            # named fields; `priority` was dropped for `rank`). Same shape as the
+            # other narrow raw read, `read_work_item_native_priorities`.
+            + untriaged_backlog_items(
+                project_root=project_root,
+                repo=repo_name,
+                records=read_intake_triage_records(path=config.work_items_path),
+            )
+            + hygiene_scan
         )
-        # A second raw read of the tenant: the triage marker is a label and the
-        # urgency tier is the beads-native `priority` column, and the
-        # materialized `WorkItem` above carries neither (labels are decoded into
-        # named fields; `priority` was dropped for `rank`). Same shape as the
-        # other narrow raw read, `read_work_item_native_priorities`.
-        + untriaged_backlog_items(
-            project_root=project_root,
-            repo=repo_name,
-            records=read_intake_triage_records(path=config.work_items_path),
-        )
-        + hygiene_scan
-    )
 
 
 def _utc_now_iso() -> str:

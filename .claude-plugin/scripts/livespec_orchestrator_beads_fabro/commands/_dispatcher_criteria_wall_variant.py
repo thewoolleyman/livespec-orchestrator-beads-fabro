@@ -43,6 +43,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     previewed_workflow_variant,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_pin_snapshot import (
+    PREVIEW_UNRESOLVABLE_FAULTS,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
     WORKFLOW_KIND_GROOM,
     WORKFLOW_KIND_IMPLEMENT,
@@ -50,34 +53,11 @@ from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
 )
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import RESERVED_WORKFLOW_NAME
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsCredentialMissingError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    ConnectionPrefixMissingError,
-    LivespecConfigUnreadableError,
-)
 
 __all__: list[str] = [
     "CriteriaWallVariant",
     "criteria_wall_variant",
 ]
-
-# Every EXPECTED way the preview can fail to reach an answer, enumerated rather
-# than caught broadly: each of these is an environment or configuration fault,
-# and none of them is evidence about the variant. A bug still raises.
-_UNRESOLVABLE = (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsCredentialMissingError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    ConnectionPrefixMissingError,
-    LivespecConfigUnreadableError,
-    OSError,
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -137,7 +117,7 @@ def criteria_wall_variant(
         action=lambda: previewed_workflow_variant(
             repo=repo, work_item_id=work_item_id, name=workflow_name
         ),
-        exceptions=_UNRESOLVABLE,
+        exceptions=PREVIEW_UNRESOLVABLE_FAULTS,
     )
     if isinstance(resolved, AttemptFailure):
         return CriteriaWallVariant(name=RESERVED_WORKFLOW_NAME, kind=WORKFLOW_KIND_IMPLEMENT)
