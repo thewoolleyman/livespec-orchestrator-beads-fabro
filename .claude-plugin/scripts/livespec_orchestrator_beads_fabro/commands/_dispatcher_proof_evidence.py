@@ -137,6 +137,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_factory_evidence import (
     factory_assertion_evidence,
+    newest_proof_verify_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
     AssertionEvidence,
@@ -144,7 +145,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
-    VERDICT_VERIFIED,
     ProofRecord,
     latest_proof_record,
     proof_records,
@@ -308,7 +308,7 @@ def proof_leg(
     `contains_merge` does: a caller that forgot to supply one parks an
     attachment-bearing assertion rather than closing it on a digest nobody compared.
     """
-    record = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=run_ids)
+    record = newest_proof_verify_record(records=records, run_ids=run_ids)
     captured = latest_proof_record(records=records, verdict=VERDICT_CAPTURED, run_ids=run_ids)
     host = host_leg_for_records(
         assertions=criteria.host_captured_assertions,
