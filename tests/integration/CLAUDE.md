@@ -1647,6 +1647,16 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   unreachable host takes. Its unit-tier counterpart, covering the attribution
   precedence and the per-field degradations, is
   `tests/livespec_orchestrator_beads_fabro/commands/test_needs_attention_needs_human_question.py`.
+- `test_proof_verify_fidelity_recapture_scenario137.py` — binds work-item
+  `bd-ib-v3uksp` against the v205 `proof_verify` clauses of `contracts.md` and
+  Scenarios 137 and 138: a `not_reproduced` verdict whose every difference is
+  record fidelity ends `proof_verify` with `recapture` and reaches
+  `recapture_route`, never `fix`; a behaviour difference keeps its `fix` edge;
+  and `fix` takes the record the entering stage graded in that visit, never a
+  capture a later `proof_capture` superseded. The graph is read structurally, the
+  prompts through whitespace-collapsed needles, and the route node's shipped
+  script is executed to show the two-lap bound is shared by both recapture
+  sources.
 - `test_non_converged_cause_line.py` and
   `test_dispatcher_recapture_exhausted_rest.py` — bind work-item `bd-ib-iy4cd4`:
   the `non_converged` terminal ends TWO caps, the janitor's fix loop and

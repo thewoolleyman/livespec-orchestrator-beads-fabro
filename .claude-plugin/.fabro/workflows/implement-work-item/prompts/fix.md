@@ -75,6 +75,20 @@ referenced response artifact). Do not choose an older green proof record
 over that stage's current finding. When several rounds are visible, use
 the incoming stage's latest response, not an earlier round's disposition.
 
+## Which proof record is your work order
+
+When you were entered on a proof finding, take as your work order the record
+the entering stage graded in that visit: on entry from `proof_verify`, the
+`not_reproduced` record that visit published; on entry from `proof_capture`,
+that visit's `not_captured` record. A finding from a capture that a later
+`proof_capture` visit superseded is NOT your work order, however prominent it
+is in the preamble: a run that re-captured has an earlier capture whose
+steps, untracked scratch programs and findings describe a record that no longer
+stands, and acting on it asks you to repair a record nobody graded. When the
+preamble shows both a superseded capture's finding and the entering stage's
+record, work from the entering stage's record, and name that record in your
+final reply.
+
 ## When the preamble carries no finding, read the pull request
 
 A proof finding reaches you by TWO routes, and the second exists because
@@ -87,10 +101,14 @@ Find the pull request for this run's publish branch with `gh pr list --head
 <publish branch> --state open --json number`, read its comments (`gh pr
 view <number> --comments`, or `gh api` for the full bodies), and take the
 LATEST comment whose first line opens `Proof of Done — ` and whose verdict
-field is `not_captured` (from `proof_capture`) or `not_reproduced` (from
-`proof_verify`). Its body names the assertion, the step that failed, what
-was observed and what the proof needs: that is your work order. An older
-`captured` or `verified` record is NOT a discharge of it.
+field is the entering stage's own: `not_captured` when you were entered from
+`proof_capture`, `not_reproduced` when you were entered from `proof_verify`.
+That is the latest record of the entering stage, and it is chosen by the
+verdict word rather than by position among all comments, so a `captured`
+record posted by a later or earlier capture cannot outrank it. Its body names
+the assertion, the step that failed, what was observed and what the proof
+needs: that is your work order. An older `captured` or `verified` record is NOT
+a discharge of it.
 
 Only when the preamble carries no finding AND the pull request carries no such record
 is the finding missing or unreadable. Then use the failed outcome below and
