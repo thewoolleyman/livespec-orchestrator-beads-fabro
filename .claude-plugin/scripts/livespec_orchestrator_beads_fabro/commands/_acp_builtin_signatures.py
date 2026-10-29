@@ -138,6 +138,12 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
 #   (`plan/fabro-currency/research/004-acp-spend-limit-evidence.json`,
 #   mode `usage-cap`). `resets` is the second literal rather than a nicety:
 #   "hit your limit" alone is the prefix of sentences that are not ceilings.
+# - the WEEKLY limit, "You've hit your weekly limit - resets Oct 23, 3pm
+#   (UTC)". Measured 2026-10-18 on gmktec, run 01M580PF02S0 of bd-ib-fubkcv:
+#   `proof_verify@3` failed after six hours with this sentence and a structured
+#   `errorKind` of `rate_limit`. `resets` is the second literal for the same
+#   reason as the generic form, and the sentence is the discriminator -- the
+#   `rate_limit` kind alone establishes nothing.
 # - the USAGE limit, which Claude emits with the same wording Codex does.
 #   It belongs in BOTH tables: the contract attributes a shared sentence to
 #   "the candidate that actually ran", and a candidate only ever consults
@@ -160,6 +166,7 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
 # `usage_limit_exceeded` and the October one carries `usageLimitExceeded`.
 _ANTHROPIC_SESSION_LIMIT = _quota_message(literals=("hit your session limit",))
 _ANTHROPIC_GENERIC_LIMIT = _quota_message(literals=("hit your limit", "resets"))
+_ANTHROPIC_WEEKLY_LIMIT = _quota_message(literals=("hit your weekly limit", "resets"))
 _ANTHROPIC_USAGE_LIMIT = _quota_message(literals=("hit your usage limit",))
 _ANTHROPIC_ORG_SPEND_LIMIT = _quota_message(literals=("org", "spend limit"))
 _CODEX_USAGE_LIMIT = _quota_message(literals=("hit your usage limit",))
@@ -171,6 +178,7 @@ _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     ANTHROPIC_DOMAIN: (
         _ANTHROPIC_SESSION_LIMIT,
         _ANTHROPIC_GENERIC_LIMIT,
+        _ANTHROPIC_WEEKLY_LIMIT,
         _ANTHROPIC_USAGE_LIMIT,
         _ANTHROPIC_ORG_SPEND_LIMIT,
     ),
