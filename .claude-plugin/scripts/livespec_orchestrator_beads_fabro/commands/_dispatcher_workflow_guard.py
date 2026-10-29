@@ -50,9 +50,12 @@ __all__: list[str] = [
 
 FACTORY_WORKFLOW_BOUNDARY_TEXT = (
     "Factory branches never create/update files under .github/workflows/. "
-    "When an implementation legitimately needs a workflow change, restore "
-    "that file to master's content, publish the rest, and report the "
-    "dropped unified diff for maintainer-side landing."
+    "When an implementation needs a workflow change, leave every file "
+    "under .github/workflows/ unchanged and report in your final message "
+    "that the workflow change routes to the attended host session. A "
+    "workflow change lands through the declared workflow-edit route, "
+    "under which such an item is refused before dispatch and carried by "
+    "the attended host session."
 )
 _WORKFLOWS_PREFIX = ".github/workflows/"
 _DIFF_TIMEOUT_SECONDS = 30.0

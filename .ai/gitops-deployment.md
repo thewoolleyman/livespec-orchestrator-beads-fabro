@@ -67,8 +67,8 @@ no host here to drift, and rules 2 through 5 have no surface to bind to.
 
 The committed workflow is the mechanism, which means a change to WHEN or HOW this
 runs lands in `.github/workflows/ci.yml`. A factory branch never creates or
-updates a file under `.github/workflows/`: restore it to master's content,
-publish the rest, and report the dropped diff for maintainer-side landing
+updates a file under `.github/workflows/`: it leaves them unchanged and reports
+that the workflow change routes to the attended host session
 (`.ai/git-pr-and-release-mechanics.md`).
 
 ### `orchestrator-image/services/reconcile-runs/install.sh` — nothing deploys it
