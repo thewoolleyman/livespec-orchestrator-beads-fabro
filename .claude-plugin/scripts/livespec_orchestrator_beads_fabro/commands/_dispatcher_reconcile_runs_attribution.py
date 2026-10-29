@@ -35,11 +35,12 @@ why a run parked at the in-loop human gate was never looked at again.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroRunSummary
 from livespec_orchestrator_beads_fabro.commands._run_attribution import (
     GOAL_TEXT_ONLY,
@@ -65,6 +66,7 @@ __all__: list[str] = [
     "JournaledRuns",
     "attributed_runs",
     "journaled_runs",
+    "journaled_runs_from_records",
     "read_journaled_runs",
 ]
 
@@ -157,12 +159,23 @@ class AttributedRun:
 
 def journaled_runs(*, text: str, source_path: Path | None = None) -> JournaledRuns:
     """Index authoritative launch stamps by work-item and by run id."""
+    return journaled_runs_from_records(
+        records=[
+            record
+            for record in (_record(line=line) for line in text.splitlines())
+            if record is not None
+        ],
+        source_path=source_path,
+    )
+
+
+def journaled_runs_from_records(
+    *, records: Iterable[Mapping[str, object]], source_path: Path | None = None
+) -> JournaledRuns:
+    """Index authoritative launch stamps from records the caller already parsed."""
     newest: dict[str, str] = {}
     item_by_run: dict[str, str] = {}
-    for line in text.splitlines():
-        record = _record(line=line)
-        if record is None:
-            continue
+    for record in records:
         if record.get("stage") not in _OWNERSHIP_JOURNAL_STAGES:
             continue
         work_item_id = _str_value(value=record.get("work_item_id"))
@@ -185,6 +198,9 @@ def read_journaled_runs(*, path: Path) -> JournaledRuns:
     make the join louder: with no journaled run ids the `superseded-run` arm
     simply never fires, and every other arm still holds.
     """
+    snapshot = snapshot_records(journal_path=path)
+    if snapshot is not None:
+        return journaled_runs_from_records(records=snapshot, source_path=path)
     read = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
     if isinstance(read, AttemptFailure):
         # The source is recorded even when nothing could be read from it: the

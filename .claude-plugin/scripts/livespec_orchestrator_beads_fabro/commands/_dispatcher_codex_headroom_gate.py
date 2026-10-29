@@ -42,7 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import re
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_headroom_io import (
     read_projected_codex_headroom,
 )
-from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 
 __all__: list[str] = [
     "codex_headroom_source",
@@ -87,7 +89,7 @@ def codex_window_baseline(
         return None
     return baseline_assessment(
         priors=_priors(
-            text=journal_path.read_text(encoding="utf-8"),
+            records=read_journal_records(journal_path=journal_path),
             credential_identity=credential_identity,
             window_seconds=window_seconds,
         ),
@@ -128,11 +130,10 @@ def _assessed(
 
 
 def _priors(
-    *, text: str, credential_identity: str, window_seconds: int
+    *, records: tuple[dict[str, object], ...], credential_identity: str, window_seconds: int
 ) -> tuple[SessionHeadroomPriorReading, ...]:
     priors: list[SessionHeadroomPriorReading] = []
-    for line in text.splitlines():
-        record = _fields(value=parse_json(text=line))
+    for record in records:
         if record.get("stage") != CODEX_HEADROOM_STAGE:
             continue
         for assessment in _entries(value=record.get("assessments")):
@@ -162,7 +163,7 @@ def _prior(
 
 
 def _fields(*, value: object) -> dict[str, object]:
-    if isinstance(value, JsonParseFailure) or not isinstance(value, dict):
+    if not isinstance(value, dict):
         return {}
     return {str(key): item for key, item in cast("dict[object, object]", value).items()}
 

@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_records import (
     parse_hold_instant,
     parse_hold_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -296,6 +297,9 @@ def _records(*, journal_path: Path | None) -> tuple[Mapping[str, Any], ...]:
     truncated line -- a crash mid-append -- must not make the whole hold
     ledger unreadable and send work at a live outage.
     """
+    snapshot = snapshot_records(journal_path=journal_path)
+    if snapshot is not None:
+        return snapshot
     if journal_path is None or not journal_path.is_file():
         return ()
     records: list[Mapping[str, Any]] = []

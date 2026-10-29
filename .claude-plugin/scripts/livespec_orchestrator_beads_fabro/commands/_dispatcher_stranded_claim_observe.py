@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
     observe_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
     FORGE_MERGED_PR,
     FORGE_NO_MERGED_PR,
@@ -159,6 +160,9 @@ def journal_records_or_none(*, journal_path: Path) -> tuple[Mapping[str, object]
     never dispatched has a readable, empty history, and reporting it as
     unavailable would hold every claim on every fresh checkout forever.
     """
+    snapshot = snapshot_records(journal_path=journal_path)
+    if snapshot is not None:
+        return snapshot
     if not journal_path.exists():
         return ()
     read = attempt(
