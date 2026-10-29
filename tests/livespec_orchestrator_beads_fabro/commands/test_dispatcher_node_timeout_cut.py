@@ -148,6 +148,26 @@ def test_the_started_run_ids_are_read_from_the_cut_stages_recorded_runner_calls(
     assert module.started_commit_run_ids(events_payload=None, stage="fix") is None
 
 
+def test_a_claude_acp_string_raw_output_still_yields_the_started_run_id() -> None:
+    """Scenario 192: a plain-string `rawOutput` (claude-acp) names the run as its last line."""
+    module = _module()
+    runner = "python3 /root/.claude/plugins/livespec-commit-runner.py"
+    events = [
+        _tool_call(seq=1, call_id="c1", node="fix", command=f"{runner} start -- git commit -m x"),
+        _envelope(
+            seq=2,
+            node="fix",
+            update={
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "c1",
+                "rawOutput": f"started\n{_RUN_A}\n",
+            },
+        ),
+    ]
+
+    assert module.started_commit_run_ids(events_payload=events, stage="fix") == (_RUN_A,)
+
+
 def _envelope(*, seq: int, node: str, update: dict[str, object]) -> dict[str, object]:
     return {
         "stream_seq": seq,
