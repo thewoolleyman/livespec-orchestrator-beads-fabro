@@ -20,6 +20,7 @@ __all__: list[str] = [
 ]
 
 _EDGE_PARENT_CHILD = "parent-child"
+_EDGE_TRACKS = "tracks"
 
 # The id shape the server hands a no-history record. The live tenant mints
 # `bd-ib-wisp-<hex>`; the fake counts instead, because a deterministic id is
@@ -348,9 +349,16 @@ def _remove_labels(*, record: BeadsRecord, labels: list[str] | None) -> None:
 
 
 def _is_child_of(*, record: BeadsRecord, parent_id: str) -> bool:
+    if record.get("parent_id") == parent_id:
+        return True
     issue_id = record.get("id")
-    return record.get("parent_id") == parent_id or (
-        isinstance(issue_id, str) and issue_id.startswith(f"{parent_id}.")
+    if isinstance(issue_id, str) and issue_id.rpartition(".")[0] == parent_id:
+        return True
+    edges = cast("list[DependencyEdge]", record.get("dependencies", []))
+    return any(
+        edge.get("depends_on_id") == parent_id
+        and edge.get("type") in (_EDGE_PARENT_CHILD, _EDGE_TRACKS)
+        for edge in edges
     )
 
 
