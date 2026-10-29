@@ -36,7 +36,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     resolved_stored_factory_size_decision,
 )
-from livespec_orchestrator_beads_fabro.commands._drive_valve_predicates import can_approve_item
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     invalid_source_state,
     valve_refusal,
@@ -106,15 +105,16 @@ def _definition_of_done_refusal(
 def approve_item(
     *, repo: Path, config: StoreConfig, item: WorkItem, action_id: str
 ) -> dict[str, Any]:
+    """Admit a `pending-approval` item to `ready`, whatever its admission policy.
+
+    The status, not the admission label, is what the item is waiting on. A
+    `set-admission:<id>:auto` flip never moves the item (it rests at
+    `pending-approval` until a Dispatcher pass reaches it), so refusing the
+    explicit `approve` on the label would strand an item that was parked at this
+    valve when its policy changed.
+    """
     if item.status != "pending-approval":
         return invalid_source_state(aid=action_id, item=item, expected="pending-approval")
-    if not can_approve_item(item=item, cwd=repo):
-        return valve_refusal(
-            aid=action_id,
-            wid=item.id,
-            err="invalid-source-state",
-            msg="approve requires an effective-manual pending-approval item.",
-        )
     size_result = resolved_stored_factory_size_decision(
         cwd=repo,
         path_factory=lambda: config,

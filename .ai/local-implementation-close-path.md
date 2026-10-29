@@ -59,8 +59,8 @@ capture once the blockers release.
   by a judgement finding (comment `livespec-dod-judgement`, outcome
   `rests-at-needs-human`), typically "the References line does not name
   `## <governing heading>`". Apply the remedy verbatim with `bd update <id>
-  --body-file`. Do NOT reach for `drive --action approve:<id>`: it refuses
-  ("approve requires an effective-manual pending-approval item") by design.
+  --body-file`. Do NOT reach for `drive --action approve:<id>`: the item is
+  Dispatcher-owned and `needs-attention` does not advertise `approve` for it.
   The dispatcher's admission pass re-judges on the new subject digest and
   auto-approves the item to `ready` at dispatch (`plan_admissions`, journal
   disposition `auto-approve`).
