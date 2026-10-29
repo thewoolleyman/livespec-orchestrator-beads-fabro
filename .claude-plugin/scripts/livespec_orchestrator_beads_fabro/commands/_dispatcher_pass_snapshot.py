@@ -28,6 +28,14 @@ THE SNAPSHOT IS NEVER STALE, and that is what makes it safe to share:
   mid-append. It is parsed for the reader that asked but is not consumed, so
   the bytes that complete it are parsed whole when they arrive.
 
+THE SAME SCOPE ALSO MEMOIZES `fabro inspect`, one reading per factory and run
+(`memoized_inspection`). The pre-launch readers each open their own port onto the
+same factory, so the only unit they share is the pair, and a pass asked the
+factory about one run once per reader. A failed reading is memoized too: the
+pass has been told the factory could not answer, and asking again inside the
+same pass does not make the answer fresher. `forget_inspection` drops one pair,
+because a removed run is no longer what was read.
+
 `release_pass_snapshot` ends the snapshot at the launch, because the memory it
 holds is a pre-launch cost and a run can last hours. After it, and outside any
 scope, `snapshot_records` answers `None` and every reader falls back to its own
@@ -45,11 +53,11 @@ from __future__ import annotations
 import json
 import os
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import TypeVar, cast
 
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
@@ -59,6 +67,8 @@ from livespec_orchestrator_beads_fabro.effects import (
 )
 
 __all__: list[str] = [
+    "forget_inspection",
+    "memoized_inspection",
     "pass_snapshot",
     "record_journal_append",
     "release_pass_snapshot",
@@ -68,6 +78,8 @@ __all__: list[str] = [
 _ANCHOR_BYTES = 64
 
 _StatKey = tuple[int, int, int]
+
+_Reading = TypeVar("_Reading")
 
 
 @dataclass(kw_only=True)
@@ -87,6 +99,7 @@ class _Scope:
     depth: int = 0
     live: bool = True
     cursors: dict[Path, _Cursor] = field(default_factory=dict)
+    inspections: dict[tuple[str, str], object] = field(default_factory=dict)
 
 
 @dataclass(kw_only=True)
@@ -123,6 +136,27 @@ def release_pass_snapshot() -> None:
         if scope is not None:
             scope.live = False
             scope.cursors.clear()
+            scope.inspections.clear()
+
+
+def memoized_inspection(*, factory: str, run_id: str, read: Callable[[], _Reading]) -> _Reading:
+    """`read()` once per factory and run inside a live pass; every call outside one reads."""
+    with _LOCK:
+        scope = _HOLDER.scope
+        if scope is None or not scope.live:
+            return read()
+        key = (factory, run_id)
+        if key not in scope.inspections:
+            scope.inspections[key] = read()
+        return cast("_Reading", scope.inspections[key])
+
+
+def forget_inspection(*, factory: str, run_id: str) -> None:
+    """Drop what the pass read of one run, so its next inspection asks the factory."""
+    with _LOCK:
+        scope = _HOLDER.scope
+        if scope is not None:
+            _ = scope.inspections.pop((factory, run_id), None)
 
 
 def snapshot_records(*, journal_path: Path | None) -> tuple[dict[str, object], ...] | None:
