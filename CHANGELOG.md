@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.2...v0.256.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* **dispatcher:** fail a merge wait fast on a failed required check read from the forge ([1b4a7b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1b4a7b7e130c530dd8bf194b2b324ae70a116189))
+
 ## [0.256.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.1...v0.256.2) (2026-10-29)
 
 
