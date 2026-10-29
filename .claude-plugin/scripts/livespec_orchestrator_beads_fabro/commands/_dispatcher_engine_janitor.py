@@ -223,6 +223,7 @@ def _check_suite_red(
         # this one stage.
         journal_options=StageJournalOptions(
             retention=plan.janitor_retention,
+            janitor_failure_diagnostics=True,
             removed_env_vars=janitor_removed_env_vars(),
             extra_fields=janitor_check_row_fields(
                 on_the_cluster=on_the_cluster,

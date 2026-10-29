@@ -1739,6 +1739,15 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   before the node must fail closed rather than pass. The prompt half and the
   edge shape are asserted beside it.
 
+- `test_failed_janitor_target_attribution_scenario167.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 167 — A failed janitor names the
+  aggregate runner's failed targets" through the real post-merge janitor child
+  process and real journal. It covers an over-window structured summary, a
+  passing recipe at the end of stderr, the aggregate's stdout summary winning
+  over nested and stderr-emitted ones, the labelled two-stream fallback, the
+  retained artifact path and digest, and artifact-write failure without a
+  verdict or attribution change.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
