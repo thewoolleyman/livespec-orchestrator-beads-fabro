@@ -31,6 +31,9 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._store_rework_mutations import (
+    update_work_item_rework_pending,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     RELEASE_TAG_LABEL,
@@ -1051,6 +1054,53 @@ def test_the_bound_reconcile_carries_the_invocations_repository_to_the_valve(
     )
 
     assert drive(work_item_id="bd-ib-unfiled") != 0
+
+
+def _drive_capturing_valve_args(
+    *, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[argparse.Namespace]:
+    """Drive the bound reconcile for the filed item, capturing what the valve was given."""
+    import livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli as cli
+
+    seen: list[argparse.Namespace] = []
+
+    def fake_valve(*, args: argparse.Namespace) -> int:
+        seen.append(args)
+        return 0
+
+    monkeypatch.setattr(cli, "reconcile_merged_for_item", fake_valve)
+    drive = reconcile_for(repo=repo, args=argparse.Namespace(journal=None, invoker="human:test"))
+    assert drive(work_item_id=_ITEM_ID) == 0
+    return seen
+
+
+def test_a_replay_post_on_a_rework_pending_item_drives_the_regrade_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a not-reproduced verdict left `rework:pending`, the post regrades the merge.
+
+    The plain valve refuses a marked item with exit 3, so a verified post that drove it
+    would leave the item parked until an operator re-ran the valve with `--regrade` by hand.
+    """
+    _file_item(repo=tmp_path)
+    update_work_item_rework_pending(path=_config(), item_id=_ITEM_ID, value=True)
+
+    seen = _drive_capturing_valve_args(repo=tmp_path, monkeypatch=monkeypatch)
+
+    assert [one.regrade for one in seen] == [True]
+    assert [one.item for one in seen] == [_ITEM_ID]
+
+
+def test_a_replay_post_on_an_unmarked_item_drives_the_plain_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An item with no `rework:pending` label closes through the plain valve, as before."""
+    _file_item(repo=tmp_path)
+
+    seen = _drive_capturing_valve_args(repo=tmp_path, monkeypatch=monkeypatch)
+
+    assert [one.regrade for one in seen] == [False]
+    assert [one.item for one in seen] == [_ITEM_ID]
 
 
 _RECORD_FILE_KEYS = (

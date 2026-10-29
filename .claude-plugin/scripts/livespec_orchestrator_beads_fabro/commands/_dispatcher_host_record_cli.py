@@ -51,6 +51,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_post imp
     HostRecordPost,
     run_post_host_record_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_subject import (
+    ledger_item,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import add_invoker_argument
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
@@ -181,9 +184,15 @@ def reconcile_for(*, repo: Path, args: argparse.Namespace) -> Callable[..., int]
 
     A named closure rather than a lambda because the annotation matters: a lambda's
     parameter type is unknowable to the type checker, and this tree runs strict.
+
+    The item's `rework:pending` label is read at DRIVE time, after the post, and
+    selects the `--regrade` arm. A not-reproduced verdict leaves the label behind, and
+    the plain valve refuses a marked item with exit 3, so a later verified post that
+    drove the plain valve would strand the item until an operator re-ran it by hand.
     """
 
     def drive(*, work_item_id: str) -> int:
+        item = ledger_item(repo=repo, work_item_id=work_item_id)
         return reconcile_merged_for_item(
             args=argparse.Namespace(
                 repo=str(repo),
@@ -192,7 +201,7 @@ def reconcile_for(*, repo: Path, args: argparse.Namespace) -> Callable[..., int]
                 journal=args.journal,
                 invoker=getattr(args, "invoker", None),
                 force=False,
-                regrade=False,
+                regrade=item is not None and item.rework_pending,
                 as_json=False,
             )
         )
