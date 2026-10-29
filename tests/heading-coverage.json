@@ -1290,9 +1290,9 @@
     "heading": "## Scenario 118 \u2014 A groom workflow variant drafts a cut, parks it in the ledger, and files only on a recorded approval",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the consensus-gated-automated-groom-cut revise pass (plan epic bd-ib-yqpdrt, spec carrier bd-ib-e38q). The exercising integration-tier test is owed by plan pluggable-factory-workflow-configs once the groom workflow variant child (filed under bd-ib-yqpdrt at this revision's revise pass) and bd-ib-ouoq (the required approval record on file_approved_slices) land; until then the behavior has no implementation to bind to.",
-    "work_item": "bd-ib-heat"
+    "test": "tests.integration.test_groom_cut_approval_arc.test_a_drafted_cut_is_filed_only_after_a_recorded_approval",
+    "reason": "Bound by work-item bd-ib-bc2fno once the groom workflow variant child and bd-ib-ouoq (the required approval record on file_approved_slices) had landed. The named case walks ONE work-item through the real groom door, the propose phase's post-run disposition, the resolve-blocked ready valve and the apply phase's post-run disposition: the propose phase files no slice and rests the item at blocked / needs-human with the draft as a ledger comment, the approval comment naming the invoker is written before the status transition (read off the ordered ledger writes, not the end state), and the apply phase files the approved slices with dependency edges linked, closes the original as regroomed-out, and stamps every filed slice and the original with the approval record in a queryable field. Its sibling in the same module is the load-bearing control: a resolve-blocked backlog answer carrying feedback leaves the item at backlog with no slice filed and the draft unapproved to the reader the apply gate uses, which a build that read any answer as consent would fail.",
+    "work_item": "bd-ib-bc2fno"
   },
   {
     "heading": "## Scenario 119 \u2014 A per-item merge hold publishes the pull request and merges only on release",
