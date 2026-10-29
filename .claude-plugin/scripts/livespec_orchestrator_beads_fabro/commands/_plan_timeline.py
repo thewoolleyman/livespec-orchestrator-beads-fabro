@@ -18,6 +18,7 @@ whether a newest handoff still reads as self-sufficient to a person.
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -25,7 +26,7 @@ from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, p
 from livespec_orchestrator_beads_fabro.store import read_work_item_comments
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from livespec_orchestrator_beads_fabro.store import WorkItemComment
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -37,6 +38,7 @@ __all__: list[str] = [
     "SCOPE_KIND",
     "UNATTENDED_ENV_VAR",
     "PlanTimelineEntry",
+    "PlanTimelineSkip",
     "handoff_timeline_findings",
     "is_unattended_session",
     "plan_comment_body",
@@ -69,6 +71,23 @@ class PlanTimelineEntry:
     body: str
     author: str
     created_at: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class PlanTimelineSkip:
+    """One plan-prefixed comment the timeline reader could not parse and left out."""
+
+    comment_ref: str
+    reason: str
+
+    @property
+    def message(self) -> str:
+        """The skip as one operator-readable line naming the comment and the reason."""
+        problem = f"Malformed plan timeline comment {self.comment_ref}: {self.reason}"
+        expected = (
+            f"expected plan timeline header {_EXPECTED_HEADER_SHAPE}, then a blank line and body"
+        )
+        return f"{problem}; {expected}"
 
 
 def is_unattended_session(*, env: Mapping[str, str]) -> bool:
@@ -122,20 +141,37 @@ def handoff_timeline_findings(*, entries: Sequence[PlanTimelineEntry]) -> tuple[
     return tuple(findings)
 
 
-def read_timeline(*, config: StoreConfig, epic_id: str) -> tuple[PlanTimelineEntry, ...]:
-    """Read plan-epic handoff and scope comments oldest-first, each kind-labelled."""
+def read_timeline(
+    *,
+    config: StoreConfig,
+    epic_id: str,
+    on_skip: Callable[[PlanTimelineSkip], None] | None = None,
+) -> tuple[PlanTimelineEntry, ...]:
+    """Read plan-epic handoff and scope comments oldest-first, each kind-labelled.
+
+    A comment the parser cannot read is SKIPPED, never fatal: ledger comments are
+    append-only, so one hand-authored entry that raised here would leave the
+    epic's timeline unreadable for good. Every skip is handed to `on_skip`; with
+    no callback it is written to stderr, because a skipped record must stay
+    visible even to a caller that did not ask to hear about it.
+    """
     entries: list[PlanTimelineEntry] = []
     for index, comment in enumerate(
         read_work_item_comments(path=config, work_item_id=epic_id), start=1
     ):
         if not comment.text.startswith((PLAN_HANDOFF_PREFIX, PLAN_SCOPE_PREFIX)):
             continue
-        entries.append(
-            _parse_entry(
-                comment=comment,
-                comment_ref=_comment_ref(epic_id=epic_id, comment=comment, index=index),
-            )
+        parsed = _parse_entry(
+            comment=comment,
+            comment_ref=_comment_ref(epic_id=epic_id, comment=comment, index=index),
         )
+        if isinstance(parsed, PlanTimelineSkip):
+            if on_skip is None:
+                _ = sys.stderr.write(f"livespec-plan: skipped {parsed.message}\n")
+            else:
+                on_skip(parsed)
+            continue
+        entries.append(parsed)
     return tuple(entries)
 
 
@@ -153,17 +189,26 @@ def _newest_handoff_findings(*, entries: Sequence[PlanTimelineEntry]) -> list[st
     return findings
 
 
-def _parse_entry(*, comment: WorkItemComment, comment_ref: str) -> PlanTimelineEntry:
+def _parse_entry(
+    *, comment: WorkItemComment, comment_ref: str
+) -> PlanTimelineEntry | PlanTimelineSkip:
     header, _, body = comment.text.partition("\n\n")
     lines = header.splitlines()
+    prefix = (
+        PLAN_HANDOFF_PREFIX if comment.text.startswith(PLAN_HANDOFF_PREFIX) else PLAN_SCOPE_PREFIX
+    )
+    problems: list[str] = []
+    if lines[0] != prefix:
+        problems.append(f"first line carries text after the `{prefix}` prefix")
     if len(lines) < _MIN_HEADER_LINES:
-        raise _format_error(comment_ref=comment_ref, detail="missing author line")
-    created_at = _created_at(lines=lines, comment=comment)
+        problems.append("missing author line")
+    if problems:
+        return PlanTimelineSkip(comment_ref=comment_ref, reason="; ".join(problems))
     return PlanTimelineEntry(
-        kind=HANDOFF_KIND if lines[0] == PLAN_HANDOFF_PREFIX else SCOPE_KIND,
+        kind=HANDOFF_KIND if prefix == PLAN_HANDOFF_PREFIX else SCOPE_KIND,
         body=body,
         author=lines[_AUTHOR_LINE_INDEX].removeprefix("author: "),
-        created_at=created_at,
+        created_at=_created_at(lines=lines, comment=comment),
     )
 
 
@@ -184,10 +229,3 @@ def _comment_ref(*, epic_id: str, comment: WorkItemComment, index: int) -> str:
     if comment.comment_id is not None:
         return comment.comment_id
     return f"{epic_id} comment #{index}"
-
-
-def _format_error(*, comment_ref: str, detail: str) -> ValueError:
-    problem = f"Malformed plan timeline comment {comment_ref}: {detail}"
-    expected = f"expected plan timeline header {_EXPECTED_HEADER_SHAPE}, then a blank line and body"
-    message = f"{problem}; {expected}"
-    return ValueError(message)

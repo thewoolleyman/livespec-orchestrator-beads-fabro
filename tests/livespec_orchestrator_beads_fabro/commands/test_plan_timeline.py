@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
@@ -15,17 +15,14 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands.plan import (
     NextAction,
     append_handoff,
+    current_continuation_ruling,
+    plan_record_rate_warnings,
     read_timeline,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
-
-@dataclass(frozen=True, kw_only=True)
-class _Comment:
-    text: str
-    author: str | None = None
-    created_at: str | None = None
-    comment_id: str | None = None
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._plan_timeline import PlanTimelineSkip
 
 
 def _config() -> StoreConfig:
@@ -175,33 +172,150 @@ def test_timeline_recovers_unparseable_header_timestamp_from_comment_record() ->
     assert entry.body == "Archived after review."
 
 
-def test_unrecoverable_timeline_parse_error_names_comment_and_expected_header(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from livespec_orchestrator_beads_fabro.commands import _plan_timeline
+_ONE_LINE_HAND_AUTHORED = (
+    "plan-handoff-entry / author: resumed-session (livespec-overseer, primary checkout) / "
+    "2026-09-06: DAEMON-ROW PORTION LANDED and the rest follows."
+)
+_NONE_ACTION = NextAction(
+    kind="none", ref="", text="Nothing is recorded.", required_result=None, budget=None
+)
 
-    def fake_read_comments(
-        *,
-        path: StoreConfig,
-        work_item_id: str,
-    ) -> tuple[_Comment, ...]:
-        _ = path
-        _ = work_item_id
-        return (
-            _Comment(
-                text="plan-handoff-entry\n\nNo author line.",
-                created_at=None,
-                comment_id="comment-7",
-            ),
+
+def _plan_epic() -> None:
+    reset_fake_singleton()
+    _ = _fake().create_issue(
+        draft=IssueDraft(
+            issue_id="bd-ib-plan",
+            issue_type="epic",
+            title="plan",
+            description="plan",
+            assignee=None,
+            created_at="2026-08-11T00:00:00Z",
+            metadata={"rank": "a1"},
+            labels=["origin:freeform"],
         )
+    )
 
-    monkeypatch.setattr(_plan_timeline, "read_work_item_comments", fake_read_comments)
 
-    with pytest.raises(
-        ValueError,
-        match=(
-            "comment-7.*expected plan timeline header "
-            "`plan-handoff-entry\\|plan-scope-event`, `author: `, `timestamp: `"
-        ),
-    ):
-        _ = _plan_timeline.read_timeline(config=_config(), epic_id="bd-ib-plan")
+def _valid(*, text: str, created_at: str) -> None:
+    _fake().seed_comment(
+        issue_id="bd-ib-plan",
+        text=f"plan-handoff-entry\nauthor: writer\ntimestamp: {created_at}\n\n{text}",
+        author="beads-problems",
+        created_at=created_at,
+    )
+
+
+def _hand_authored(*, text: str = _ONE_LINE_HAND_AUTHORED) -> None:
+    _fake().seed_comment(
+        issue_id="bd-ib-plan",
+        text=text,
+        author="beads-problems",
+        created_at="2026-09-06T16:47:30Z",
+    )
+
+
+def _seed_malformed_between_valid_entries() -> None:
+    _plan_epic()
+    _valid(text="first", created_at="2026-09-06T10:00:00Z")
+    _hand_authored()
+    _valid(text="second", created_at="2026-09-06T18:00:00Z")
+
+
+def test_a_one_line_hand_authored_comment_is_skipped_and_reported_beside_valid_entries() -> None:
+    _seed_malformed_between_valid_entries()
+    skips: list[PlanTimelineSkip] = []
+
+    entries = read_timeline(config=_config(), epic_id="bd-ib-plan", on_skip=skips.append)
+
+    assert [entry.body for entry in entries] == ["first", "second"]
+    [skip] = skips
+    assert skip.comment_ref == "bd-ib-plan comment #2"
+    assert "missing author line" in skip.reason
+    assert "bd-ib-plan comment #2" in skip.message
+    assert "missing author line" in skip.message
+
+
+def test_an_unreported_skip_still_surfaces_on_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    _seed_malformed_between_valid_entries()
+
+    entries = read_timeline(config=_config(), epic_id="bd-ib-plan")
+
+    assert len(entries) == 2
+    stderr = capsys.readouterr().err
+    assert "bd-ib-plan comment #2" in stderr
+    assert "missing author line" in stderr
+
+
+def test_a_decorated_prefix_is_never_labelled_with_the_other_kind() -> None:
+    _plan_epic()
+    _hand_authored(
+        text=(
+            "plan-handoff-entry (shutdown, retired)\n"
+            "author: resumed-session\n"
+            "timestamp: 2026-09-06T16:47:30Z\n\n"
+            "Decorated body."
+        )
+    )
+    skips: list[PlanTimelineSkip] = []
+
+    entries = read_timeline(config=_config(), epic_id="bd-ib-plan", on_skip=skips.append)
+
+    assert [entry for entry in entries if entry.kind == "scope"] == []
+    assert entries == ()
+    [skip] = skips
+    assert skip.comment_ref == "bd-ib-plan comment #1"
+    assert "plan-handoff-entry" in skip.reason
+
+
+def test_a_decorated_scope_prefix_is_skipped_not_read_as_a_handoff() -> None:
+    _plan_epic()
+    _hand_authored(
+        text="plan-scope-event: ruling\nauthor: a\ntimestamp: 2026-09-06T16:47:30Z\n\nbody"
+    )
+    skips: list[PlanTimelineSkip] = []
+
+    entries = read_timeline(config=_config(), epic_id="bd-ib-plan", on_skip=skips.append)
+
+    assert entries == ()
+    assert len(skips) == 1
+
+
+def test_an_unparseable_header_timestamp_takes_the_comment_created_at_without_a_report() -> None:
+    _plan_epic()
+    _fake().seed_comment(
+        issue_id="bd-ib-plan",
+        text="plan-handoff-entry\nauthor: writer\ntimestamp: not-a-time\n\nbody",
+        author="beads-problems",
+        created_at="2026-08-17T08:37:24Z",
+    )
+    skips: list[PlanTimelineSkip] = []
+
+    [entry] = read_timeline(config=_config(), epic_id="bd-ib-plan", on_skip=skips.append)
+
+    assert entry.created_at == "2026-08-17T08:37:24Z"
+    assert skips == []
+
+
+def test_append_handoff_rate_warnings_and_continuation_complete_past_a_malformed_comment() -> None:
+    _seed_malformed_between_valid_entries()
+
+    refusal = append_handoff(
+        config=_config(),
+        epic_id="bd-ib-plan",
+        body="Appended after the malformed comment.",
+        author="factory-test",
+        now="2026-09-07T00:00:00Z",
+        next_action=_NONE_ACTION,
+    )
+    entries = read_timeline(config=_config(), epic_id="bd-ib-plan", on_skip=lambda _skip: None)
+
+    assert refusal is None
+    assert [entry.body for entry in entries][-1] == "Appended after the malformed comment."
+    assert plan_record_rate_warnings(entries=entries) == ()
+    assert (
+        current_continuation_ruling(
+            config=_config(), epic_id="bd-ib-plan", now="2026-09-07T00:00:00Z"
+        )
+        is None
+    )
