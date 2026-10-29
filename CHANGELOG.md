@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.259.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.6...v0.259.0) (2026-10-29)
+
+
+### Features
+
+* classify a refusal booked as a successful turn from the attempt's output ([cc3c978](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cc3c9785f4d6afc8f0a1cf9567883977e5306bc7))
+* map the codex-acp capacity refusal as a turn.final_output signature ([86f120b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86f120bf6dd8945eb9f9df1c66fb2c423519ee2f))
+* release a run whose terminal turn was a provider refusal booked as success ([9f5ff5f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9f5ff5fbbf08341f4c5885bf0376d91688425eca))
+
+
+### Bug Fixes
+
+* do not retire a candidate hold on a refusal booked as a successful turn ([c386920](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c38692083efe8b3858196057b1234c43fed684c8))
+
 ## [0.258.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.5...v0.258.6) (2026-10-29)
 
 
