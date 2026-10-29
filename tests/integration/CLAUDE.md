@@ -1689,6 +1689,20 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   "the wall treats the citation as stated" is a claim about what it does NOT
   refuse.
 
+- `test_needs_human_node_timeout_cut_scenario192.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 192 and the `contracts.md` paragraph "A
+  commit run outlives a node-timeout cut" (work-item `bd-ib-ptnxyg`). The committed
+  `needs_human` script body is executed by `sh` against a real throwaway origin, a
+  real repository hook and the real materialized commit runner, with the work a cut
+  turn leaves behind (a commit run, or a plain `git commit`) still going when the
+  node starts. The three gherkin scenarios are three cases: a run that passes
+  inside the bounded wait (its HEAD is read back from the pushed ref's history), a
+  run still running at the bound (stopped BEFORE the preservation sentinel in the
+  output, and no hook process left), and an in-turn commit whose hook is executing.
+  A fourth case is the control that a node with nothing left running prints no
+  sentinel. Each case feeds the script's stderr to the Dispatcher's own reader, so
+  the sentinel the sandbox prints and the line the host parses cannot drift.
+
 - `test_sandbox_commit_runner_scenario179.py` — binds the runner sub-scenarios of
   `SPECIFICATION/scenarios.md` Scenario 179 and the `contracts.md` paragraph "A
   commit leg completes past one tool call" (work-item `bd-ib-sufca7`): a slow

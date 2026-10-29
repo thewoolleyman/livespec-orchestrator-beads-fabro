@@ -37,6 +37,10 @@ than waiting forever on a terminal nobody holds.
 
 from __future__ import annotations
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import (
+    NODE_CUT_COMMIT_RUN_SENTINEL,
+    NODE_CUT_HOOK_RUN_SENTINEL,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
@@ -84,6 +88,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -105,6 +110,18 @@ VALUE_SHORT_OPTIONS = "mFCct"
 ATTACHED_VALUE_SHORT_OPTIONS = "uS"
 # The repository hook's own banner; a commit whose output lacks it ran no hook.
 HOOK_BANNER = re.compile(__HOOK_BANNER__)
+# The two lines `cut-settle` prints for the host to read; one spelling, substituted.
+CUT_RUN_SENTINEL = "__CUT_RUN_SENTINEL__"
+CUT_HOOK_SENTINEL = "__CUT_HOOK_SENTINEL__"
+# The hooks a git commit or push runs, by operation.
+OPERATION_HOOKS = {
+    "commit": ("pre-commit", "prepare-commit-msg", "commit-msg", "post-commit", "post-rewrite"),
+    "push": ("pre-push",),
+}
+# git options whose value is the next word, so the value is not read as the subcommand.
+GIT_VALUE_OPTIONS = ("-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path")
+TICKS = os.sysconf("SC_CLK_TCK")
+STOP_GRACE_SECONDS = 10.0
 
 
 class RunnerRefusal(Exception):
@@ -404,6 +421,201 @@ def settle(timeout_seconds, brief_file):
     return 0
 
 
+def terminate(pid, signal_number):
+    try:
+        os.kill(pid, signal_number)
+    except OSError:
+        pass
+
+
+def read_text(path):
+    try:
+        return Path(path).read_bytes().decode("utf-8", "replace")
+    except OSError:
+        return None
+
+
+def process_table(proc_root):
+    """{pid: (state, ppid, pgrp, session, start_ticks)} for every process readable now."""
+    table = {}
+    try:
+        names = os.listdir(proc_root)
+    except OSError:
+        return table
+    for name in names:
+        if not name.isdigit():
+            continue
+        raw = read_text(os.path.join(proc_root, name, "stat"))
+        if raw is None:
+            continue
+        fields = raw[raw.rfind(")") + 2 :].split()
+        if len(fields) < 20:
+            continue
+        try:
+            ids = (int(fields[1]), int(fields[2]), int(fields[3]), int(fields[19]))
+        except ValueError:
+            continue
+        table[int(name)] = (fields[0], *ids)
+    return table
+
+
+def descendants(table, root):
+    children = {}
+    for pid, entry in table.items():
+        children.setdefault(entry[1], []).append(pid)
+    found, pending = [], list(children.get(root, ()))
+    while pending:
+        pid = pending.pop()
+        found.append(pid)
+        pending.extend(children.get(pid, ()))
+    return found
+
+
+def argv_of(proc_root, pid):
+    raw = read_text(os.path.join(proc_root, str(pid), "cmdline"))
+    return [word for word in raw.split("\0") if word] if raw else []
+
+
+def git_operation(argv):
+    """`commit` or `push` when argv is an ordinary `git commit` or `git push`, else None."""
+    if not argv or os.path.basename(argv[0]) != "git":
+        return None
+    index = 1
+    while index < len(argv):
+        word = argv[index]
+        if word in GIT_VALUE_OPTIONS:
+            index += 2
+        elif word.startswith("-"):
+            index += 1
+        else:
+            return word if word in OPERATION_HOOKS else None
+    return None
+
+
+def hook_run_start(proc_root, table, pid, operation):
+    """The EARLIEST start among descendants of `pid` that name one of the operation's hooks.
+
+    NAMING THE HOOK MEANS EITHER OF TWO THINGS: an installed hook that runs its work
+    itself carries `hooks/<name>` in argv, and one that ends in `exec <runner> <name>`
+    carries the name as an ARGUMENT instead and never carries the path again.
+    """
+    starts = []
+    for child in descendants(table, pid):
+        argv = argv_of(proc_root, child)
+        text = " ".join(argv)
+        if any("hooks/" + name in text or name in argv for name in OPERATION_HOOKS[operation]):
+            starts.append(table[child][4])
+    return min(starts) if starts else None
+
+
+def elapsed_ms(proc_root, start_ticks):
+    """The hook run's elapsed milliseconds on the boot clock, or None when unmeasurable."""
+    raw = read_text(os.path.join(proc_root, "uptime"))
+    try:
+        uptime = float(raw.split()[0])
+    except (AttributeError, IndexError, ValueError):
+        return None
+    return max(0, int(round((uptime - start_ticks / TICKS) * 1000)))
+
+
+def live(proc_root, pids):
+    table = process_table(proc_root)
+    return [pid for pid in pids if pid in table and table[pid][0] != "Z"]
+
+
+def reap(proc_root, pids):
+    """End every listed process still alive: a termination signal, a grace, then a kill."""
+    for signal_number in (signal.SIGTERM, signal.SIGKILL):
+        for pid in live(proc_root, pids):
+            terminate(pid, signal_number)
+        deadline = time.monotonic() + STOP_GRACE_SECONDS
+        while live(proc_root, pids) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if not live(proc_root, pids):
+            return
+
+
+def stop_run(path, proc_root):
+    """Stop every process of one commit run: its session, its group and its descendants."""
+    try:
+        group = int(path.with_suffix(".pid").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return
+    table = process_table(proc_root)
+    members = {
+        pid for pid, entry in table.items() if entry[0] != "Z" and group in (entry[2], entry[3])
+    }
+    if group in table:
+        members.update(descendants(table, group))
+    reap(proc_root, sorted(members))
+
+
+def in_scope(proc_root, pid, scope):
+    """False only for a process whose working directory is READABLE and outside `scope`.
+
+    The pass ends processes, so it is held to the repository it was started in: a git
+    operation elsewhere on the host is none of its business. A working directory this
+    reader cannot see leaves the process in scope, since a process it cannot read it
+    also cannot signal.
+    """
+    try:
+        cwd = os.path.realpath(os.readlink(os.path.join(proc_root, str(pid), "cwd")))
+    except OSError:
+        return True
+    return cwd == scope or cwd.startswith(scope + os.sep)
+
+
+def reap_hook_runs(proc_root, scope):
+    """Name and end every git commit or push in `scope` whose hook run is still executing."""
+    table = process_table(proc_root)
+    handled = set()
+    for pid, entry in sorted(table.items()):
+        operation = git_operation(argv_of(proc_root, pid))
+        if entry[0] == "Z" or pid in handled or operation is None:
+            continue
+        if not in_scope(proc_root, pid, scope):
+            continue
+        start = hook_run_start(proc_root, table, pid, operation)
+        if start is None:
+            continue
+        elapsed = elapsed_ms(proc_root, start)
+        if elapsed is not None:
+            print(
+                CUT_HOOK_SENTINEL + ": operation=" + operation + " hook_elapsed_ms=" + str(elapsed),
+                file=sys.stderr,
+            )
+        tree = [pid, *descendants(table, pid)]
+        handled.update(tree)
+        reap(proc_root, tree)
+
+
+def cut_settle(timeout_seconds, proc_root="/proc"):
+    """The pass a node-timeout cut owes before its preservation commit.
+
+    Wait out each commit run recorded as running for the one shared bound, STOP any
+    still running so none executes beside the preservation commit, name every run's
+    state, then name and end any git commit or push whose hook run is still executing.
+    """
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    for path in sorted(runs_directory().glob("*.json")):
+        record = read_record(path)
+        if record is None:
+            continue
+        record, state = settled(path, record)
+        while state == RUNNING and time.monotonic() < deadline:
+            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+            record, state = settled(path, read_record(path) or record)
+        if state == RUNNING:
+            stop_run(path, proc_root)
+            state = recorded_state(read_record(path) or record)
+        if state in (RUNNING, NO_VERDICT) and recorded_state(read_record(path) or {}) == RUNNING:
+            write_record(path, {"state": NO_VERDICT, "stopped": True})
+            state = NO_VERDICT
+        print(CUT_RUN_SENTINEL + ": run=" + path.stem + " state=" + state, file=sys.stderr)
+    reap_hook_runs(proc_root, os.path.realpath(os.getcwd()))
+    return 0
+
+
 def main(argv, program):
     parser = argparse.ArgumentParser(prog="livespec-commit-runner")
     operations = parser.add_subparsers(dest="operation", required=True)
@@ -415,6 +627,8 @@ def main(argv, program):
     settle_parser = operations.add_parser("settle")
     settle_parser.add_argument("--timeout-seconds", required=True, type=float)
     settle_parser.add_argument("--brief-file", required=True)
+    cut_parser = operations.add_parser("cut-settle")
+    cut_parser.add_argument("--timeout-seconds", required=True, type=float)
     worker_parser = operations.add_parser("worker")
     worker_parser.add_argument("run_id")
     args = parser.parse_args(argv)
@@ -426,6 +640,8 @@ def main(argv, program):
             return wait(args.run_id, args.timeout_seconds)
         if args.operation == "settle":
             return settle(args.timeout_seconds, args.brief_file)
+        if args.operation == "cut-settle":
+            return cut_settle(args.timeout_seconds)
         return worker(args.run_id)
     except RunnerRefusal as refusal:
         print("livespec commit runner: " + str(refusal), file=sys.stderr)
@@ -439,7 +655,11 @@ if __name__ == "__main__":
 
 def commit_runner_program_source() -> str:
     """The sandbox program's exact bytes, carrying the one hook-banner pattern."""
-    return _PROGRAM_SOURCE.replace("__HOOK_BANNER__", repr(HOOK_BANNER_PATTERN))
+    return (
+        _PROGRAM_SOURCE.replace("__HOOK_BANNER__", repr(HOOK_BANNER_PATTERN))
+        .replace("__CUT_RUN_SENTINEL__", NODE_CUT_COMMIT_RUN_SENTINEL)
+        .replace("__CUT_HOOK_SENTINEL__", NODE_CUT_HOOK_RUN_SENTINEL)
+    )
 
 
 def commit_runner_program_path_expansion() -> str:
