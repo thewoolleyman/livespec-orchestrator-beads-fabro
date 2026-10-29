@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.255.1...v0.256.0) (2026-10-29)
+
+
+### Features
+
+* **dispatcher:** merge declared refresh records ([fbadbf5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fbadbf57c7c5c5f108ac9fceea559b8f491034a7))
+
 ## [0.255.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.255.0...v0.255.1) (2026-10-29)
 
 
