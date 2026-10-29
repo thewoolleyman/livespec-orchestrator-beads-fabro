@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.6...v0.256.7) (2026-10-29)
+
+
+### Bug Fixes
+
+* provision the janitor's livespec core outside the adopter's checkout ([59b441d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/59b441df8572edf1a8c5938876e2f78f970b41d2))
+
 ## [0.256.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.5...v0.256.6) (2026-10-29)
 
 
