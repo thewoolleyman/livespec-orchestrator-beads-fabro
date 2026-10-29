@@ -1706,13 +1706,13 @@ def test_parse_pr_view_reads_fields_and_defaults() -> None:
     assert full is not None
     assert (full.number, full.state, full.auto_merge_armed) == (7, "MERGED", True)
     assert full.merge_sha == "abc123"
-    assert full.terminal_required_check_failures == ()
+    assert full.terminal_check_failures == ()
     sparse = parse_pr_view(stdout=json.dumps({"number": 3}))
     assert sparse is not None
     assert (sparse.state, sparse.merge_state_status) == ("UNKNOWN", "UNKNOWN")
     assert sparse.auto_merge_armed is False
     assert sparse.merge_sha is None
-    assert sparse.terminal_required_check_failures == ()
+    assert sparse.terminal_check_failures == ()
     weird = parse_pr_view(stdout=json.dumps({"number": 3, "mergeCommit": {"oid": ""}}))
     assert weird is not None
     assert weird.merge_sha is None
@@ -1721,20 +1721,20 @@ def test_parse_pr_view_reads_fields_and_defaults() -> None:
     assert nonsense.merge_sha is None
 
 
-def test_parse_pr_view_records_only_required_terminal_check_failures() -> None:
+def test_parse_pr_view_records_every_terminal_check_failure_without_a_required_key() -> None:
     view = parse_pr_view(
         stdout=_pr_json(
             checks=[
-                {"name": "check-coverage", "isRequired": True, "conclusion": "FAILURE"},
-                {"name": "lint", "required": True, "conclusion": "success"},
-                {"name": "docs", "isRequired": False, "conclusion": "failure"},
-                {"name": "slow-ci", "isRequired": True, "status": "IN_PROGRESS"},
-                {"context": "startup", "isRequired": True, "conclusion": "startup_failure"},
+                {"name": "check-coverage", "conclusion": "FAILURE"},
+                {"name": "lint", "conclusion": "success"},
+                {"name": "docs", "conclusion": "failure"},
+                {"name": "slow-ci", "status": "IN_PROGRESS"},
+                {"context": "startup", "conclusion": "startup_failure"},
             ]
         )
     )
     assert view is not None
-    assert view.terminal_required_check_failures == ("check-coverage", "startup")
+    assert view.terminal_check_failures == ("check-coverage", "docs", "startup")
 
 
 def test_parse_pr_view_reads_connection_shaped_status_check_rollup() -> None:
@@ -1746,7 +1746,6 @@ def test_parse_pr_view_reads_connection_shaped_status_check_rollup() -> None:
                     "nodes": [
                         {
                             "name": "check-coverage",
-                            "isRequired": True,
                             "conclusion": "FAILURE",
                         }
                     ]
@@ -1755,7 +1754,7 @@ def test_parse_pr_view_reads_connection_shaped_status_check_rollup() -> None:
         )
     )
     assert view is not None
-    assert view.terminal_required_check_failures == ("check-coverage",)
+    assert view.terminal_check_failures == ("check-coverage",)
 
 
 def test_parse_pr_view_reads_context_connection_shaped_status_check_rollup() -> None:
@@ -1768,7 +1767,6 @@ def test_parse_pr_view_reads_context_connection_shaped_status_check_rollup() -> 
                         "nodes": [
                             {
                                 "name": "check-coverage",
-                                "isRequired": True,
                                 "conclusion": "FAILURE",
                             }
                         ]
@@ -1778,7 +1776,7 @@ def test_parse_pr_view_reads_context_connection_shaped_status_check_rollup() -> 
         )
     )
     assert view is not None
-    assert view.terminal_required_check_failures == ("check-coverage",)
+    assert view.terminal_check_failures == ("check-coverage",)
 
 
 # The fake token the autouse fixture plants in the process env; the
@@ -2960,6 +2958,30 @@ def test_engine_updates_branch_when_behind_then_merges(tmp_path: Path) -> None:
 
 
 def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) -> None:
+    required_answer = {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "commits": {
+                        "nodes": [
+                            {
+                                "commit": {
+                                    "statusCheckRollup": {
+                                        "contexts": {
+                                            "nodes": [
+                                                {"name": "check-coverage", "isRequired": True},
+                                                {"name": "docs", "isRequired": False},
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
     runner = _FakeRunner(
         queue=[
             _ok(),
@@ -2969,28 +2991,25 @@ def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) 
                     armed=True,
                     merge_state="BLOCKED",
                     checks=[
-                        {
-                            "name": "check-coverage",
-                            "isRequired": True,
-                            "conclusion": "failure",
-                        },
-                        {"name": "docs", "isRequired": False, "conclusion": "failure"},
+                        {"name": "check-coverage", "conclusion": "failure"},
+                        {"name": "docs", "conclusion": "failure"},
                     ],
                 )
             ),
+            _ok(stdout=json.dumps(required_answer)),
         ]
     )
     outcome, journal, naps = _dispatch(runner=runner, repo=tmp_path, attempts=80)
     assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
     assert outcome.pr_number == 7
-    assert "check-coverage" in outcome.detail
-    assert "docs" not in outcome.detail
+    assert outcome.detail == "required check failed terminally: check-coverage"
     assert naps == []
     assert [record["stage"] for record in journal.records] == [
         "fabro-run",
         "pr-view",
         "pr-open-diff-size",
         "pr-view",
+        "required-checks",
     ]
 
 

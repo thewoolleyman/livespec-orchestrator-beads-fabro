@@ -25,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_view import (
     GH_TIMEOUT_SECONDS,
     view_pr,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_required_checks import (
+    required_check_names,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -101,16 +104,16 @@ def await_merge(
                 timeout_seconds=GH_TIMEOUT_SECONDS,
             )
             journal_stage(journal=journal, plan=plan, stage="pr-update-branch", result=update)
-        elif view is not None and view.terminal_required_check_failures:
-            checks = ", ".join(view.terminal_required_check_failures)
-            return outcome_type(
-                work_item_id=plan.work_item_id,
-                status="failed",
-                stage="merge-poll",
-                pr_number=view.number,
-                merge_sha=view.merge_sha,
-                detail=f"required check failed terminally: {checks}",
+        elif (
+            failure := _required_check_failure(
+                outcome_type=outcome_type,
+                view=view,
+                plan=plan,
+                runner=runner,
+                journal=journal,
             )
+        ) is not None:
+            return failure
         if attempt + 1 < poll.attempts:
             sleep(poll.interval_seconds)
     return None
@@ -161,6 +164,42 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
             fabro_run_id=run_id,
         )
     return merged
+
+
+def _required_check_failure(
+    *,
+    outcome_type: type[DispatchOutcome],
+    view: PrView | None,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+) -> DispatchOutcome | None:
+    """The terminal outcome when a check the forge reports as required has failed for good.
+
+    The forge is asked only once something has already failed, so a green poll
+    spends no extra call. An unreadable answer is no answer: the poll continues.
+    """
+    if view is None or not view.terminal_check_failures:
+        return None
+    required = required_check_names(
+        plan=plan,
+        number=view.number,
+        runner=runner,
+        journal=journal,
+    )
+    if required is None:
+        return None
+    failed = [name for name in view.terminal_check_failures if name in required]
+    if not failed:
+        return None
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status="failed",
+        stage="merge-poll",
+        pr_number=view.number,
+        merge_sha=view.merge_sha,
+        detail=f"required check failed terminally: {', '.join(failed)}",
+    )
 
 
 def _reports_overtaken_arming(*, view: PrView) -> bool:

@@ -144,18 +144,60 @@ def test_await_merge_updates_behind_branch_then_returns_merged(tmp_path: Path) -
     assert naps == [0.5]
 
 
-def test_await_merge_fails_fast_on_terminal_required_check(tmp_path: Path) -> None:
+# Entries copied verbatim from `gh pr view 3913 --json statusCheckRollup`: the
+# real shape carries exactly these keys and never `isRequired` or `required`.
+_REAL_CI_GREEN_FAILURE: dict[str, object] = {
+    "__typename": "CheckRun",
+    "completedAt": "2026-10-29T05:10:30Z",
+    "conclusion": "FAILURE",
+    "detailsUrl": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/actions/runs/40821372772/job/123275870309",
+    "name": "ci-green",
+    "startedAt": "2026-10-29T05:10:28Z",
+    "status": "COMPLETED",
+    "workflowName": "CI",
+}
+_REAL_COVERAGE_FAILURE: dict[str, object] = {
+    "__typename": "CheckRun",
+    "completedAt": "2026-10-29T05:10:08Z",
+    "conclusion": "FAILURE",
+    "detailsUrl": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/actions/runs/40821372772/job/123274367716",
+    "name": "check-per-file-coverage (root)",
+    "startedAt": "2026-10-29T05:05:44Z",
+    "status": "COMPLETED",
+    "workflowName": "CI",
+}
+_REAL_LINT_SUCCESS: dict[str, object] = {
+    "__typename": "CheckRun",
+    "completedAt": "2026-10-29T05:06:08Z",
+    "conclusion": "SUCCESS",
+    "detailsUrl": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/actions/runs/40821372772/job/123274367818",
+    "name": "check-lint (root)",
+    "startedAt": "2026-10-29T05:05:48Z",
+    "status": "COMPLETED",
+    "workflowName": "CI",
+}
+
+
+def _required_checks_graphql(*, required: list[str]) -> str:
+    """The forge's `isRequired(pullRequestNumber:)` answer: every context, flagged."""
+    names = ["enable-auto-merge", "check-lint (root)", "check-per-file-coverage (root)", "ci-green"]
+    nodes = [
+        {"__typename": "CheckRun", "name": name, "isRequired": name in required} for name in names
+    ]
+    rollup = {"contexts": {"nodes": nodes}}
+    pull_request = {"commits": {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}}
+    return json.dumps({"data": {"repository": {"pullRequest": pull_request}}})
+
+
+def test_await_merge_fails_fast_when_ci_green_failed_and_rollup_has_no_required_key(
+    tmp_path: Path,
+) -> None:
+    rollup = [_REAL_LINT_SUCCESS, _REAL_COVERAGE_FAILURE, _REAL_CI_GREEN_FAILURE]
+    assert all("isRequired" not in entry and "required" not in entry for entry in rollup)
     runner = Runner(
         queue=[
-            _ok(
-                stdout=_pr_json(
-                    merge_state="BLOCKED",
-                    checks=[
-                        {"name": "check-coverage", "isRequired": True, "conclusion": "failure"},
-                        {"name": "docs", "isRequired": False, "conclusion": "failure"},
-                    ],
-                )
-            ),
+            _ok(stdout=_pr_json(merge_state="BLOCKED", checks=rollup)),
+            _ok(stdout=_required_checks_graphql(required=["ci-green"])),
         ]
     )
 
@@ -165,14 +207,90 @@ def test_await_merge_fails_fast_on_terminal_required_check(tmp_path: Path) -> No
         runner=runner,
         journal=Journal(),
         sleep=lambda _: None,
-        poll=PollPolicy(attempts=80, interval_seconds=0.5),
+        poll=PollPolicy(attempts=1, interval_seconds=0.5),
     )
 
     assert isinstance(outcome, DispatchOutcome)
     assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
-    assert "check-coverage" in outcome.detail
-    assert "docs" not in outcome.detail
-    assert "statusCheckRollup" in runner.calls[0][0][-1]
+    assert outcome.detail == "required check failed terminally: ci-green"
+
+
+def test_await_merge_reads_required_checks_from_the_forge_not_the_rollup(
+    tmp_path: Path,
+) -> None:
+    runner = Runner(
+        queue=[
+            _ok(stdout=_pr_json(merge_state="BLOCKED", checks=[_REAL_CI_GREEN_FAILURE])),
+            _ok(stdout=_required_checks_graphql(required=["ci-green"])),
+        ]
+    )
+
+    await_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=1, interval_seconds=0.5),
+    )
+
+    required_argv, required_cwd = runner.calls[1]
+    assert required_argv[:3] == ["gh", "api", "graphql"]
+    assert any("isRequired(pullRequestNumber: $number)" in part for part in required_argv)
+    assert "number=7" in required_argv
+    assert required_cwd == tmp_path
+
+
+def test_await_merge_keeps_polling_when_the_only_failed_check_is_not_required(
+    tmp_path: Path,
+) -> None:
+    runner = Runner(
+        queue=[
+            _ok(stdout=_pr_json(merge_state="BLOCKED", checks=[_REAL_COVERAGE_FAILURE])),
+            _ok(stdout=_required_checks_graphql(required=["ci-green"])),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe04")),
+        ]
+    )
+    naps: list[float] = []
+
+    merged = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        sleep=naps.append,
+        poll=PollPolicy(attempts=2, interval_seconds=0.5),
+    )
+
+    assert not isinstance(merged, DispatchOutcome)
+    assert merged is not None
+    assert merged.merge_sha == "cafe04"
+    assert naps == [0.5]
+
+
+def test_await_merge_keeps_polling_when_the_required_checks_cannot_be_read(
+    tmp_path: Path,
+) -> None:
+    runner = Runner(
+        queue=[
+            _ok(stdout=_pr_json(merge_state="BLOCKED", checks=[_REAL_CI_GREEN_FAILURE])),
+            _err(stderr="GraphQL: Resource not accessible by integration"),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe05")),
+        ]
+    )
+
+    merged = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=Journal(),
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=2, interval_seconds=0.5),
+    )
+
+    assert not isinstance(merged, DispatchOutcome)
+    assert merged is not None
+    assert merged.merge_sha == "cafe05"
 
 
 def test_await_merge_does_not_treat_an_open_fallback_as_merged(tmp_path: Path) -> None:

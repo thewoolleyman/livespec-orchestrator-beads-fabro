@@ -123,7 +123,6 @@ def _merged(*, merge_sha: str | None = _MERGE_SHA) -> PrView:
         auto_merge_armed=True,
         merge_state_status="CLEAN",
         merge_sha=merge_sha,
-        terminal_required_check_failures=(),
     )
 
 
