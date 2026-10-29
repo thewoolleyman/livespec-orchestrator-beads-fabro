@@ -345,13 +345,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 159 \u2014 Wait inventory and measurements arrive in Honeycomb without controlling liveness",
-    "work_item": "bd-ib-4mcuty",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 160 \u2014 Dispatch obligations survive coordinator FINAL without wait registration",
     "work_item": "bd-ib-jy23vh",
     "first_seen": "2026-10-08"
