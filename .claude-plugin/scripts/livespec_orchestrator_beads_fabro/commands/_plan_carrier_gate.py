@@ -41,6 +41,22 @@ this plan live somewhere this checkout has not been told about. The two readings
 pull in opposite directions, which is why neither may be collapsed onto the
 other: one must not block the open carrier behind an unplaceable one, and the
 other must not let an unplaceable one pass as done.
+
+WHY A PREFIX MATCH ALONE DOES NOT PLACE A CARRIER. The tenancy matches an id
+against the prefixes of the CONFIGURED repositories only, so a carrier minted by
+a repository that is not configured can still open with a configured
+repository's prefix followed by a hyphen — `livespec-driver-claude-5jr2xu`
+opens with `livespec-`, and the repository that creates that prefix is a
+different tenant that nothing here was told about. The separator rule keeps a
+shorter prefix from claiming a longer configured one's ids and cannot keep a
+configured prefix from claiming an unconfigured longer one's. So both readings
+place a carrier by CONFIRMING that the tenant its prefix matched holds the id:
+an id that tenant has never held is reported as naming no repository, because an
+obligation to wait on it there could never be satisfied. Only a listing that
+SUCCEEDED establishes absence — a tenant that cannot be listed leaves its
+carriers placed, so the status read reports them `unobservable` and the plan
+stalls diagnosably rather than handing a human a placement question the
+configuration does not raise.
 """
 
 from __future__ import annotations
@@ -63,7 +79,19 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
 from livespec_orchestrator_beads_fabro.commands._plan_result_reference import REPO_FIELD
+from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
+    ResultRepository,
+    result_store_config,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_result_targets import ITEM_STATUS_KIND
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -81,6 +109,16 @@ __all__: list[str] = [
 # are normalized onto beads' built-in closure, so this is the one word every
 # tenant of this family records a finished item at.
 CLOSED_STATUS = "closed"
+
+# The EXPECTED-error surface one tenant listing can raise, caught as exactly this
+# set so an unreachable tenant leaves its carriers placed instead of a traceback.
+_LISTING_ERRORS: tuple[type[Exception], ...] = (
+    BeadsConnectionError,
+    BeadsCommandError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -131,8 +169,9 @@ def first_open_carrier(*, config: StoreConfig, epic_id: str) -> OpenCarrier | No
     if not carriers:
         return None
     tenancy = carrier_tenancy(config=config)
+    placements = _placements(tenancy=tenancy, carriers=carriers)
     for carrier_id in carriers:
-        repository = repository_for_carrier(tenancy=tenancy, carrier_id=carrier_id)
+        repository = placements[carrier_id]
         if repository is None:
             continue
         carrier = OpenCarrier(item_id=carrier_id, repo=repository.name)
@@ -161,12 +200,44 @@ def unplaceable_carrier_ids(*, config: StoreConfig, epic_id: str) -> tuple[str, 
     carriers = plan_carrier_ids(config=config, epic_id=epic_id)
     if not carriers:
         return ()
-    tenancy = carrier_tenancy(config=config)
-    return tuple(
-        carrier_id
-        for carrier_id in carriers
-        if repository_for_carrier(tenancy=tenancy, carrier_id=carrier_id) is None
+    placements = _placements(tenancy=carrier_tenancy(config=config), carriers=carriers)
+    return tuple(carrier_id for carrier_id in carriers if placements[carrier_id] is None)
+
+
+def _placements(
+    *, tenancy: CarrierTenancy, carriers: tuple[str, ...]
+) -> dict[str, ResultRepository | None]:
+    """Each carrier's repository, confirmed against what that tenant holds.
+
+    A tenant is listed once however many carriers its prefix matched, because
+    the listing is the expensive step and its answer does not vary by carrier.
+    """
+    held: dict[str, frozenset[str] | None] = {}
+    placements: dict[str, ResultRepository | None] = {}
+    for carrier_id in carriers:
+        repository = repository_for_carrier(tenancy=tenancy, carrier_id=carrier_id)
+        if repository is not None:
+            if repository.name not in held:
+                held[repository.name] = _held_item_ids(repository=repository)
+            items = held[repository.name]
+            if items is not None and carrier_id not in items:
+                repository = None
+        placements[carrier_id] = repository
+    return placements
+
+
+def _held_item_ids(*, repository: ResultRepository) -> frozenset[str] | None:
+    """Every item id the repository's tenant holds, or `None` when it cannot say."""
+    resolved = result_store_config(repository=repository)
+    if resolved is None:
+        return None
+    listed = attempt(
+        action=lambda: make_beads_client(config=resolved).list_issues(),
+        exceptions=_LISTING_ERRORS,
     )
+    if isinstance(listed, AttemptFailure):
+        return None
+    return frozenset(str(record.get("id", "")) for record in listed)
 
 
 def _carrier_closed(*, tenancy: CarrierTenancy, carrier: OpenCarrier) -> bool:

@@ -81,6 +81,7 @@ _SATISFIED_ITEM = f"{_OWN_PREFIX}-landed"
 # Two carriers whose prefixes no configured target declares, which is what an
 # epic mapped to tenants this checkout has never been told about looks like.
 _UNPLACEABLE = ("ob-5qlusq", "hl-pu2xr6")
+_SIBLING = "sibling"
 
 
 @pytest.fixture(autouse=True)
@@ -109,13 +110,25 @@ def _fake(*, repo: Path) -> FakeBeadsClient:
     return client
 
 
-def _project(*, tmp_path: Path) -> Path:
-    """The plan's own checkout, configuring no sibling at all."""
+def _project(*, tmp_path: Path, sibling_prefix: str | None = None) -> Path:
+    """The plan's own checkout, configuring no sibling unless a prefix is named."""
     repo = tmp_path / _OWN
     repo.mkdir()
     configured: dict[str, object] = {
         "livespec-orchestrator-beads-fabro": {"connection": {"prefix": _OWN_PREFIX}}
     }
+    if sibling_prefix is not None:
+        configured["cross_repo_targets"] = {
+            _SIBLING: {"github_url": f"https://github.com/thewoolleyman/{_SIBLING}"}
+        }
+        clone = tmp_path / _SIBLING
+        clone.mkdir()
+        _ = (clone / ".livespec.jsonc").write_text(
+            json.dumps(
+                {"livespec-orchestrator-beads-fabro": {"connection": {"prefix": sibling_prefix}}}
+            ),
+            encoding="utf-8",
+        )
     _ = (repo / ".livespec.jsonc").write_text(json.dumps(configured), encoding="utf-8")
     return repo
 
@@ -232,3 +245,29 @@ def test_carriers_in_unresolvable_repositories_rest_the_plan_on_a_human_pointer(
     for carrier in _UNPLACEABLE:
         assert carrier in text
     assert directive.next_action is None
+
+
+def test_a_carrier_of_an_unconfigured_tenant_is_not_awaited_in_a_configured_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configured prefix followed by a hyphen does not place a longer prefix's id.
+
+    `livespec-driver-claude-5jr2xu` opens with `livespec-`, which a configured
+    sibling creates, but it was minted by `livespec-driver-claude`, which is not
+    configured. The sibling's tenant holds no such item, so an `await` naming
+    that sibling could never be satisfied; the plan rests on a `human` pointer
+    that names the carrier instead.
+    """
+    carrier = "livespec-driver-claude-5jr2xu"
+    repo = _project(tmp_path=tmp_path, sibling_prefix="livespec")
+    monkeypatch.chdir(repo)
+    _seed(repo=repo, carriers=(f"1: {carrier}",))
+
+    _ = resume_directive(config=_config(repo=repo), epic_id=_EPIC, unattended=True)
+
+    pointer = _pointer(repo=repo)
+    assert pointer["kind"] == "human"
+    assert pointer["required_result"] is None
+    text = pointer["text"]
+    assert isinstance(text, str)
+    assert carrier in text

@@ -24,20 +24,24 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
+    BeadsRecord,
     FakeBeadsClient,
     IssueDraft,
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands import _plan_carrier_gate
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import (
     first_open_carrier,
     plan_carrier_ids,
     unplaceable_carrier_ids,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_result_observation import unobservable
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_SCOPE_PREFIX,
     plan_comment_body,
 )
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _NOW = "2026-10-22T07:00:00Z"
@@ -177,23 +181,109 @@ def test_an_unresolvable_carrier_is_passed_over_so_the_scan_reaches_the_next(
     assert (carrier.item_id, carrier.repo) == ("cr-open", _CARRIER_REPO)
 
 
-def test_a_carrier_whose_status_cannot_be_read_is_reported_open(tmp_path: Path) -> None:
+def test_a_carrier_whose_status_cannot_be_read_is_reported_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Only a SATISFIED reading establishes that a carrier is closed.
 
-    The carrier's repository RESOLVES — its prefix is the sibling's own — and the
-    sibling's tenant holds no such record, which is what a carrier-map event
-    naming a mistyped or deleted id looks like. The read is therefore
-    `unobservable`, and treating that as closed would let an unreadable id
-    discharge a plan assertion. The plan stalls diagnosably instead, and the
-    recorded `await` reports the same unobservable reading on the next resume.
+    The carrier is placed — its tenant holds the record — and the status read of
+    it comes back `unobservable`, which is what an unreachable tenant looks like.
+    Treating that as closed would let an unreadable tenant discharge a plan
+    assertion, so the plan stalls diagnosably on it instead.
     """
     repo = _project(tmp_path=tmp_path)
-    _epic(repo=repo, carriers=(f"1: {_CARRIER_PREFIX}-missing",))
+    _item(repo=repo, item_id=f"{_CARRIER_PREFIX}-held", closed=False)
+    _epic(repo=repo, carriers=(f"1: {_CARRIER_PREFIX}-held",))
+
+    def _unreadable(**_: object) -> object:
+        return unobservable(
+            repo=_CARRIER_REPO,
+            target="item_status",
+            source="ledger",
+            now=_NOW,
+            detail="the tenant could not be reached",
+        )
+
+    monkeypatch.setattr(_plan_carrier_gate, "read_result", _unreadable)
 
     carrier = first_open_carrier(config=_config(repo=repo), epic_id=_EPIC)
 
     assert carrier is not None
-    assert (carrier.item_id, carrier.repo) == (f"{_CARRIER_PREFIX}-missing", _CARRIER_REPO)
+    assert (carrier.item_id, carrier.repo) == (f"{_CARRIER_PREFIX}-held", _CARRIER_REPO)
+
+
+def test_a_carrier_absent_from_the_tenant_its_prefix_matched_is_unplaceable(
+    tmp_path: Path,
+) -> None:
+    """A prefix match alone does not place a carrier; the tenant must hold it.
+
+    `cr-sibling-abc123` opens with `cr-`, the configured repository's prefix, but
+    it was minted by an UNCONFIGURED repository whose own prefix is the longer
+    `cr-sibling`. The configured tenant has never held it, so waiting on it there
+    could never be satisfied: it is reported as naming no repository and the
+    scan passes over it to the carrier behind it.
+    """
+    repo = _project(tmp_path=tmp_path)
+    _item(repo=repo, item_id=f"{_CARRIER_PREFIX}-open", closed=False)
+    _epic(
+        repo=repo,
+        carriers=(f"1: {_CARRIER_PREFIX}-sibling-abc123", f"2: {_CARRIER_PREFIX}-open"),
+    )
+
+    assert unplaceable_carrier_ids(config=_config(repo=repo), epic_id=_EPIC) == (
+        f"{_CARRIER_PREFIX}-sibling-abc123",
+    )
+    carrier = first_open_carrier(config=_config(repo=repo), epic_id=_EPIC)
+    assert carrier is not None
+    assert carrier.item_id == f"{_CARRIER_PREFIX}-open"
+
+
+def test_a_carrier_the_matched_tenant_holds_stays_placed(tmp_path: Path) -> None:
+    """The control for the case above: a held carrier is still placed and waited on."""
+    repo = _project(tmp_path=tmp_path)
+    _item(repo=repo, item_id=f"{_CARRIER_PREFIX}-sibling-held", closed=False)
+    _epic(repo=repo, carriers=(f"1: {_CARRIER_PREFIX}-sibling-held",))
+
+    assert unplaceable_carrier_ids(config=_config(repo=repo), epic_id=_EPIC) == ()
+    carrier = first_open_carrier(config=_config(repo=repo), epic_id=_EPIC)
+    assert carrier is not None
+    assert (carrier.item_id, carrier.repo) == (f"{_CARRIER_PREFIX}-sibling-held", _CARRIER_REPO)
+
+
+def test_a_tenant_whose_items_cannot_be_listed_keeps_its_carriers_placed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreachable tenant cannot show a carrier absent, so it is not unplaced.
+
+    Absence is only established by a listing that succeeded. A failed listing
+    leaves the carrier placed, so the status read reports it unobservable and
+    the plan stalls on it rather than handing a human a placement question the
+    configuration does not raise.
+    """
+    repo = _project(tmp_path=tmp_path)
+    _epic(repo=repo, carriers=(f"1: {_CARRIER_PREFIX}-unlisted",))
+
+    def _unlistable(*_: object) -> list[BeadsRecord]:
+        raise BeadsCommandError(command="bd list", exit_code=1, stderr="unreachable")
+
+    monkeypatch.setattr(FakeBeadsClient, "list_issues", _unlistable)
+
+    assert unplaceable_carrier_ids(config=_config(repo=repo), epic_id=_EPIC) == ()
+
+
+def test_a_tenant_with_no_resolvable_connection_keeps_its_carriers_placed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No connection means no listing was taken, and absence is not established."""
+    repo = _project(tmp_path=tmp_path)
+    _epic(repo=repo, carriers=(f"1: {_CARRIER_PREFIX}-unlisted",))
+
+    def _no_connection(**_: object) -> None:
+        return None
+
+    monkeypatch.setattr(_plan_carrier_gate, "result_store_config", _no_connection)
+
+    assert unplaceable_carrier_ids(config=_config(repo=repo), epic_id=_EPIC) == ()
 
 
 def test_the_carriers_no_configured_target_places_are_reported_in_written_order(
