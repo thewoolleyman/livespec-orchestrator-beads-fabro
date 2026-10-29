@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.9...v0.256.10) (2026-10-29)
+
+
+### Bug Fixes
+
+* refuse a host record for an item whose own dispatches merged no pull request ([e6c76bf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e6c76bf4aad943ab8c149e471c0b14b134d270f3))
+
 ## [0.256.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.8...v0.256.9) (2026-10-29)
 
 
