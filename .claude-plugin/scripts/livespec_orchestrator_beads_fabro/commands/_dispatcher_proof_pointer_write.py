@@ -126,7 +126,14 @@ def write_proof_pointer(
     if pr_number is None:
         _skip(journal=journal, item=item, reason="the merged dispatch recorded no pull request")
         return
-    record = proof.record if proof.record is not None else proof.host_verified_record
+    # A `not_reproduced` record can be the one the pass graded, and the pointer cites only
+    # a record that counts as proof, so it never rests on one.
+    graded = proof.record
+    record = (
+        graded
+        if graded is not None and graded.verdict == VERDICT_VERIFIED
+        else proof.host_verified_record
+    )
     if record is None:
         _skip(
             journal=journal,

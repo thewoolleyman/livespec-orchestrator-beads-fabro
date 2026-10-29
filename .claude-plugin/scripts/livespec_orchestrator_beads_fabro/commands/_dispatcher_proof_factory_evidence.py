@@ -26,12 +26,33 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     PROOF_RECORD_TITLE,
+    VERDICT_NOT_REPRODUCED,
+    VERDICT_VERIFIED,
     ProofRecord,
 )
 
 __all__: list[str] = [
     "factory_assertion_evidence",
+    "newest_proof_verify_record",
 ]
+
+_PROOF_VERIFY_VERDICTS = (VERDICT_VERIFIED, VERDICT_NOT_REPRODUCED)
+
+
+def newest_proof_verify_record(
+    *, records: tuple[ProofRecord, ...], run_ids: tuple[str, ...]
+) -> ProofRecord | None:
+    """The newest `proof_verify` record (`verified` or `not_reproduced`) of one dispatch.
+
+    Each factory assertion is judged on its own section of THIS record whatever its
+    record-wide verdict, so a newer `not_reproduced` record grades the assertion
+    `Reproduced: no` rather than yielding to an older `verified` one, and the pass
+    never falls back past it. An empty `run_ids` matches nothing, as for any record.
+    """
+    matching = [
+        one for one in records if one.verdict in _PROOF_VERIFY_VERDICTS and one.run_id in run_ids
+    ]
+    return matching[-1] if matching else None
 
 
 def factory_assertion_evidence(
@@ -42,7 +63,7 @@ def factory_assertion_evidence(
     captured: ProofRecord | None,
     attachment_digest: AttachmentDigestReader,
 ) -> AssertionEvidence:
-    """Grade one factory assertion off the merging dispatch's `verified` record."""
+    """Grade one factory assertion off the merging dispatch's newest `proof_verify` record."""
     if record is None:
         # A `captured` record grades nothing, so the assertion stays UNEVIDENCED; it
         # is named here so the journal and the parking record can say which record
