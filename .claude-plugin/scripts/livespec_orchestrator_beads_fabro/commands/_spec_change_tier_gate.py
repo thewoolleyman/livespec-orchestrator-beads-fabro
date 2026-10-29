@@ -69,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
+    CONFIGURATION_RUBRIC,
     FEATURE_CLASS,
     SPEC_DIRNAME,
     asked_for_behaviour,
@@ -196,6 +197,7 @@ def classify_spec_change_tier(
         spec_tree=snapshot.files,
         statement=statement,
         run_model=drift_judge(project_root=repo, runner=judge_runner),
+        rubric=CONFIGURATION_RUBRIC,
     )
     if not is_successful(verdict):
         return did_not_run_outcome(

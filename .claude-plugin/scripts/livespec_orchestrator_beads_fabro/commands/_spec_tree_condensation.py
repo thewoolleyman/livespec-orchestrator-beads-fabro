@@ -281,8 +281,14 @@ def judge_within_ceiling(
     statement: str,
     run_model: ModelRunner,
     ceiling: int = PROMPT_CHARACTER_CEILING,
+    rubric: str = "",
 ) -> Result[SpecStatedVerdict, SpecStatedParseError]:
     """The shared spec-stated judgement, taken against the condensed tree.
+
+    `rubric` is judging guidance appended to the statement the model reads and
+    deliberately NOT to the statement the retrieval ranks clauses by, so words
+    that steer the judgement cannot also steer which clauses are shown. The
+    safety margin absorbs its length.
 
     The ONE entry point every consumer of the judgement in this repository
     takes, so the condensation cannot be remembered at one call site and
@@ -302,7 +308,7 @@ def judge_within_ceiling(
             "Mapping[str, str]",
             condensed_spec_tree(spec_tree=spec_tree, statement=statement, ceiling=ceiling),
         ),
-        statement=statement,
+        statement=f"{statement}{rubric}",
         run_model=resolving_subsection_citations(run_model=run_model, spec_tree=spec_tree),
     )
 

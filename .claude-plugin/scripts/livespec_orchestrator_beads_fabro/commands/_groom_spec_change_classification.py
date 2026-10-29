@@ -52,6 +52,7 @@ from returns.pipeline import is_successful
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
+    CONFIGURATION_RUBRIC,
     FEATURE_CLASS,
     SPEC_CHANGE_KINDS,
     SPEC_DIRNAME,
@@ -142,7 +143,10 @@ def _classified(
     if classification.unwrap() != FEATURE_CLASS:
         return replace(candidate, is_spec_change=False)
     verdict = judge_within_ceiling(
-        spec_tree=tree, statement=_behaviour(candidate=candidate), run_model=judge_model
+        spec_tree=tree,
+        statement=_behaviour(candidate=candidate),
+        run_model=judge_model,
+        rubric=CONFIGURATION_RUBRIC,
     )
     if not is_successful(verdict):
         return candidate

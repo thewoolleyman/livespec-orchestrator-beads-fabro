@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "CONFIGURATION_RUBRIC",
     "FEATURE_CLASS",
     "NO_TIER",
     "SPEC_CHANGE_KINDS",
@@ -97,6 +98,23 @@ SPEC_CHANGE_TIER = "spec-change"
 NO_TIER = "none"
 
 _FIELD_ABSENT = "(none recorded)"
+
+# Judging guidance appended to the statement the model reads. A bullet asserting
+# that a repository configures a behaviour a ratified MAY or SHOULD clause
+# permits states nothing about the specification: the specification cannot
+# state, for one repository, that the repository made a permitted choice. Left
+# unguided the judgement reads such a bullet as unratified behaviour and holds
+# the item as spec-change tier although the behaviour itself is fully ratified.
+CONFIGURATION_RUBRIC = """
+
+Judging rule for configuration. A bullet that only asserts this repository
+configures a behaviour a ratified MAY or SHOULD clause permits, such as opting
+in or declaring a list of files, is configuration, not asked-for behaviour. Judge
+the behaviour that clause governs; the repository's own choice of it is a fact
+about the repository that the specification does not and cannot state, so it
+must not lower the verdict to "partial" or "unstated". Behaviour the ratified
+text genuinely does not state is still unstated, and the verdict must say so.
+"""
 
 # A topic stem is lowercase-kebab, which is the form every proposal under
 # `SPECIFICATION/proposed_changes/` already carries. The word cap keeps a long
