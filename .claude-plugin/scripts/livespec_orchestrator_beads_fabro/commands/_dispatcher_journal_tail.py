@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -83,7 +84,15 @@ _TAILS: dict[str, _Tail] = {}
 
 
 def journal_tail_records(*, journal_path: Path) -> tuple[dict[str, object], ...]:
-    """Every parseable JSON-object line of the journal, in append order."""
+    """Every parseable JSON-object line of the journal, in append order.
+
+    Inside a live dispatch pass the pass's one snapshot answers, so the journal is
+    parsed once per pass whichever reader asks and a record the pass appended is
+    already in it; outside a pass the process-wide tail cache answers.
+    """
+    snapshot = snapshot_records(journal_path=journal_path)
+    if snapshot is not None:
+        return snapshot
     return read_journal_tail(journal_path=journal_path).records
 
 
