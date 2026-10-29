@@ -128,7 +128,8 @@ _NO_HOST_LEG_REFUSAL = (
 )
 _NO_TARGET_REFUSAL = (
     "ERROR: post-host-record refused: no single merged pull request resolves for"
-    " work-item {item_id}, so there is no target for its host record.\n"
+    " work-item {item_id}: no merged pull request produced by the item's own dispatches"
+    " was found, so there is no target for its host record.\n"
 )
 _IDENTITY_REFUSAL_TEXT = "ERROR: post-host-record refused: {reason}.\n"
 _POST_FAILED_TEXT = (
