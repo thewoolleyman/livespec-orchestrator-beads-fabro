@@ -3038,11 +3038,12 @@ def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -
                     ],
                 )
             ),
+            _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED")),
         ]
     )
     outcome, _, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
-    assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
-    assert outcome.detail == "PR did not reach MERGED within the poll budget"
+    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
+    assert outcome.detail.startswith("merge-poll-budget-exhausted:")
     assert naps == [0.5]
 
 
@@ -3053,6 +3054,7 @@ def test_engine_poll_budget_exhaustion_keeps_pr_number(tmp_path: Path) -> None:
             _ok(stdout=_pr_json(armed=True)),
             _err(stderr="transient gh failure"),
             _ok(stdout=_pr_json(armed=True)),
+            _err(stderr="transient gh failure at the final read"),
         ]
     )
     outcome, _, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)

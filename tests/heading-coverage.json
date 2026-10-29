@@ -2149,8 +2149,8 @@
     "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget on an open pull request rests the item for resume",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal merge-poll-exhaustion-rests-for-resume, and the owning work-item bd-ib-l6rleb makes an exhausted merge-poll budget re-read the pull request, proceed on MERGED and otherwise rest the item at blocked with cause merge-poll-budget-exhausted, together with the test that binds this entry.",
+    "test": "tests.integration.test_merge_poll_budget_exhausted_scenario220.test_an_open_non_conflicting_pull_request_at_expiry_rests_the_item_for_resume",
+    "reason": "Integration-tier acceptance for the Scenario 220 clause, implemented by bd-ib-l6rleb. The named case binds the heading's first sub-scenario: it drives the production engine and the production post-run disposition against the in-memory tenant, with the forge reporting the pull request open and not in conflict when the poll budget is spent, and asserts the item rests at blocked with blocked_reason needs-human, the outcome detail names resolve-blocked then resume, the dispatch exits 4, and one ledger comment carries the marker line livespec-merge-poll-budget-exhausted. The second sub-scenario, a pull request merged on the final read, is the sibling case in the same module, with a conflicting pull request as the control. The unit-tier decisions are tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_merge_poll_budget_exhausted.",
     "work_item": "bd-ib-l6rleb"
   },
   {

@@ -9,6 +9,15 @@ requires for a `scenarios.md` heading binding (integration-tier-or-above, never
 a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 `heading_coverage` check's default allowlist.
 
+- `test_merge_poll_budget_exhausted_scenario220.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 220": an exhausted merge-poll budget
+  re-reads the pull request, proceeds on MERGED and otherwise rests the item at
+  `blocked / needs-human` with the cause `merge-poll-budget-exhausted`. It runs the
+  production `run_dispatch` and `post_run_dispositions` against the in-memory
+  tenant, standing in only the subprocess seam and the Fabro launcher. Its
+  MERGED-at-the-final-read case and its conflicting-pull-request case are the
+  controls for the resting case: a build that rested every exhausted wait fails the
+  first, and one that rested none fails the second.
 - `test_regroom_state_machine_scenario9.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 9 — needs-regroom state and
   transitions": the three transitions of the `livespec_orchestrator_beads_fabro.regroom`
