@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.256.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.7...v0.256.8) (2026-10-29)
+
+
+### Bug Fixes
+
+* inspect the remaining runs of one reconcile pass concurrently under a named worker bound ([7a841db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7a841db3ed49ba8ad66b7e73aed2e42fba501d2c))
+* place a plan carrier only in the tenant that holds it ([9cd7aa4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9cd7aa414ca6f9706ffb1113cd9a951d29e07136))
+* read a terminal run's ACP-selection outcomes once per run, not on every reconcile pass ([1e72563](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1e725637175149ed21599979b13959dc81f17d3f))
+
 ## [0.256.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.6...v0.256.7) (2026-10-29)
 
 
