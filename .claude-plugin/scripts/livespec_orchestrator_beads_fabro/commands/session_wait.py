@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import replace
 from math import isfinite
 from pathlib import Path
 from typing import Protocol
@@ -19,6 +18,11 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     resolve_primary_repository,
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_lock import LockBudget
+from livespec_orchestrator_beads_fabro.commands._session_wait_outcome import (
+    deadline_result,
+    first_terminal,
+    wait_result,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_pane import (
     HerdrPaneLauncher,
     freeze_pane_target,
@@ -37,6 +41,10 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
     RoutingLauncher,
     observe_wait_target,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_telemetry import (
+    ObservationReporter,
+    observation_reporter,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateObservation,
     GateTarget,
@@ -46,7 +54,6 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     WaitRequest,
     WaitResult,
     freeze_gate_pointer,
-    observation_is_running,
 )
 from livespec_orchestrator_beads_fabro.commands.session_wait_inventory import (
     InventoryRecord,
@@ -85,35 +92,6 @@ class _Sleeper(Protocol):
     def __call__(self, *, seconds: float) -> None: ...
 
 
-def _deadline_result(
-    *,
-    request: WaitRequest,
-    observations: dict[str, GateObservation],
-    deadline: float,
-) -> WaitResult:
-    deadline_observations: dict[str, GateObservation] = {}
-    for target in request.targets:
-        observation = observations.get(target.identity)
-        if observation is None:
-            observation = GateObservation(
-                target=target,
-                state="UNAVAILABLE",
-                exit_code=None,
-                observed_at=deadline,
-                fresh=False,
-            )
-        else:
-            observation = replace(observation, fresh=False)
-        deadline_observations[target.identity] = observation
-    return WaitResult(
-        command_outcome="deadline",
-        trigger_target=None,
-        trigger_exit_code=None,
-        observations=deadline_observations,
-        unfinished_targets=tuple(target.identity for target in request.targets),
-    )
-
-
 def run_wait(
     *,
     request: WaitRequest,
@@ -148,6 +126,9 @@ def run_wait(
     )
     if refusal is not None:
         return refusal
+    publisher = request.publisher
+    if publisher is not None:
+        publisher.armed(request=request, armed_at=wall_clock())
     handles = [
         launcher.launch(
             target=target,
@@ -160,16 +141,27 @@ def run_wait(
         deadline=deadline,
         monotonic=monotonic,
         sleeper=sleeper,
+        on_observation=observation_reporter(
+            request=request, started_at=started_at, monotonic=monotonic, wall_clock=wall_clock
+        ),
     )
     for handle in handles:
         handle.cancel(timeout_seconds=max(0.0, deadline - monotonic()))
-    result = _wait_result(request=request, observations=observations, deadline=deadline)
+    result = wait_result(request=request, observations=observations, deadline=deadline)
     _persist_result(
         wait_store_root=wait_store_root,
         request=request,
         result=result,
         lock_budget=lock_budget,
     )
+    if publisher is not None:
+        publisher.returned(
+            request=request,
+            result=result,
+            at=wall_clock(),
+            elapsed_seconds=monotonic() - started_at,
+            remaining_seconds=deadline - monotonic(),
+        )
     return result
 
 
@@ -196,7 +188,7 @@ def _registration_refusal(
             unfinished_targets=tuple(target.identity for target in request.targets),
         )
     if registration == REGISTRATION_UNAVAILABLE:
-        return _deadline_result(request=request, observations={}, deadline=deadline)
+        return deadline_result(request=request, observations={}, deadline=deadline)
     return None
 
 
@@ -206,6 +198,7 @@ def _observe_until(
     deadline: float,
     monotonic: Callable[[], float],
     sleeper: _Sleeper,
+    on_observation: ObservationReporter,
 ) -> dict[str, GateObservation]:
     """Poll every probe until one target ends or the shared deadline expires.
 
@@ -242,53 +235,13 @@ def _observe_until(
                 return observations
             if observation is not None:
                 observations[observation.target.identity] = observation
-        if _first_terminal(observations=observations) is not None:
+                on_observation(observation=observation)
+        if first_terminal(observations=observations) is not None:
             return observations
         # Clamped at both ends: at one second so a sibling stays observable at
         # that cadence, and at zero because polling can itself outrun what was
         # left, and a negative sleep raises rather than returning at once.
         sleeper(seconds=max(0.0, min(1.0, deadline - monotonic())))
-
-
-def _first_terminal(*, observations: dict[str, GateObservation]) -> GateObservation | None:
-    """The earliest-observed target that has left ITS OWN running state.
-
-    The predicate is per target kind rather than one shared state name: a
-    detached gate continues on `RUNNING` and a Herdr pane on `working`, so a
-    single-name test would read every working pane as a finished target and
-    return a verdict about a pane that is still mid-turn.
-    """
-    terminal = [
-        observation
-        for observation in observations.values()
-        if not observation_is_running(observation=observation)
-    ]
-    if not terminal:
-        return None
-    return min(terminal, key=lambda observation: observation.observed_at)
-
-
-def _wait_result(
-    *,
-    request: WaitRequest,
-    observations: dict[str, GateObservation],
-    deadline: float,
-) -> WaitResult:
-    """Build the outcome from what was actually observed."""
-    terminal = _first_terminal(observations=observations)
-    if terminal is None:
-        return _deadline_result(request=request, observations=observations, deadline=deadline)
-    return WaitResult(
-        command_outcome="target-ended",
-        trigger_target=terminal.target.identity,
-        trigger_exit_code=terminal.exit_code,
-        observations=observations,
-        unfinished_targets=tuple(
-            target.identity
-            for target in request.targets
-            if target.identity != terminal.target.identity
-        ),
-    )
 
 
 def _persist_result(

@@ -4,23 +4,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from math import isfinite
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._session_obligation_cli import (
     add_obligation_parsers,
     complete_command,
     launch_command,
 )
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_export import (
+    SessionTelemetry,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_ack import ack_wait
+from livespec_orchestrator_beads_fabro.commands._session_wait_commands import (
+    snapshot_payload,
+    wait_payload,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
     resolve_primary_repository,
 )
-from livespec_orchestrator_beads_fabro.commands._session_wait_pane import freeze_pane_target
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     process_generation_token,
 )
@@ -28,15 +34,14 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
     default_wait_launcher,
     observe_wait_target,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_telemetry import (
+    SessionWaitPublisher,
+    associations_from_environ,
+)
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
-    GateObservation,
-    GateTarget,
     ProbeLauncher,
-    WaitRequest,
-    WaitTarget,
 )
 from livespec_orchestrator_beads_fabro.commands.session_wait_inventory import (
-    InventorySnapshot,
     ProcessGeneration,
     TargetObserver,
     inventory_waits,
@@ -102,70 +107,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_GATE_STATE_NAME = "telemetry-state.state"
+
+
 def _roots(*, primary: Path, use_tmp_directory: bool) -> tuple[Path, Path]:
     base = primary / "tmp" if use_tmp_directory else primary
     return base / "gate-runs", base / "session-waits"
-
-
-def _observation_payload(*, observation: GateObservation) -> dict[str, object]:
-    return {
-        "exit_code": observation.exit_code,
-        "fresh": observation.fresh,
-        "observed_at": observation.observed_at,
-        "state": observation.state,
-        "target": observation.target.identity,
-    }
-
-
-def _snapshot_payload(*, snapshot: InventorySnapshot) -> dict[str, object]:
-    return {
-        "observation_id": snapshot.observation_id,
-        "observed_at": snapshot.observed_at,
-        "records": [
-            {
-                "diagnostic": record.diagnostic,
-                "findings": sorted(record.findings),
-                "observation_sequence": record.observation_sequence,
-                "observations": [
-                    _observation_payload(observation=observation)
-                    for observation in record.observations
-                ],
-                "record_state": record.record_state,
-                "wait_id": record.wait_id,
-            }
-            for record in snapshot.records
-        ],
-    }
-
-
-def _frozen_targets(
-    *,
-    args: argparse.Namespace,
-    gate_store_root: Path,
-    deadline: float,
-) -> tuple[WaitTarget, ...]:
-    """Every target this invocation named, frozen as it stands right now.
-
-    Each pane's identity is read within what REMAINS of the one deadline, not
-    within a socket timeout of its own. Freezing is an observation of the
-    target like any other, so a slow or silent server must not spend time the
-    caller never granted: measured before this bound, a 0.1s request against
-    a peer that accepted `agent.get` and never answered took 5.01s to refuse.
-    """
-    gate_ids = cast("list[str] | None", args.gate) or []
-    panes = cast("list[list[str]] | None", args.pane) or []
-    gates: tuple[WaitTarget, ...] = tuple(
-        GateTarget.freeze(gate_store_root=gate_store_root, run_id=run_id) for run_id in gate_ids
-    )
-    frozen_panes: tuple[WaitTarget, ...] = tuple(
-        freeze_pane_target(
-            socket_path=Path(socket_path),
-            pane_id=pane_id,
-            timeout_seconds=max(0.0, deadline - time.monotonic()),
-        )
-        for socket_path, pane_id in panes
-    )
-    return gates + frozen_panes
 
 
 def _wait_command(
@@ -175,48 +122,18 @@ def _wait_command(
     gate_store_root: Path,
     wait_store_root: Path,
     seams: SessionWaitCliSeams,
+    publisher: SessionWaitPublisher,
 ) -> int:
-    from livespec_orchestrator_beads_fabro.commands.session_wait import run_wait
-
-    deadline_seconds = float(args.deadline_seconds)
-    started_at = time.monotonic()
-    # An invalid deadline freezes nothing: the wait refuses it before any
-    # target is observed, and freezing first would spend an unbounded
-    # observation on a request that was never going to be armed.
-    targets = (
-        _frozen_targets(
-            args=args,
-            gate_store_root=gate_store_root,
-            deadline=started_at + deadline_seconds,
-        )
-        if isfinite(deadline_seconds) and deadline_seconds > 0
-        else ()
-    )
-    result = run_wait(
-        request=WaitRequest(
-            wait_id=str(args.wait_id),
-            session_id=str(args.session_id),
-            repository=primary,
-            deadline_seconds=deadline_seconds,
-            targets=targets,
-            started_at=started_at,
-        ),
-        launcher=seams.launcher(repository=primary),
+    payload, code = wait_payload(
+        args=args,
+        primary=primary,
+        gate_store_root=gate_store_root,
         wait_store_root=wait_store_root,
-        wall_clock=seams.wall_clock,
+        seams=seams,
+        publisher=publisher,
     )
-    payload: dict[str, object] = {
-        "command_outcome": result.command_outcome,
-        "observations": {
-            identity: _observation_payload(observation=observation)
-            for identity, observation in result.observations.items()
-        },
-        "trigger_exit_code": result.trigger_exit_code,
-        "trigger_target": result.trigger_target,
-        "unfinished_targets": list(result.unfinished_targets),
-    }
     _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    return int(result.command_outcome not in {"target-ended", "deadline"})
+    return code
 
 
 def _inventory_command(
@@ -224,6 +141,7 @@ def _inventory_command(
     command: str,
     wait_store_root: Path,
     seams: SessionWaitCliSeams,
+    publisher: SessionWaitPublisher,
 ) -> int:
     snapshot = inventory_waits(
         wait_store_root=wait_store_root,
@@ -232,14 +150,19 @@ def _inventory_command(
         process_generation=seams.process_generation,
     )
     _ = write_stdout(
-        text=json.dumps(_snapshot_payload(snapshot=snapshot), indent=2, sort_keys=True) + "\n"
+        text=json.dumps(snapshot_payload(snapshot=snapshot), indent=2, sort_keys=True) + "\n"
     )
+    publisher.inventory(snapshot=snapshot)
     has_findings = any(record.findings for record in snapshot.records)
     return int(command == "check" and has_findings)
 
 
 def _ack_command(
-    *, args: argparse.Namespace, wait_store_root: Path, seams: SessionWaitCliSeams
+    *,
+    args: argparse.Namespace,
+    wait_store_root: Path,
+    seams: SessionWaitCliSeams,
+    publisher: SessionWaitPublisher,
 ) -> int:
     result = ack_wait(
         wait_store_root=wait_store_root,
@@ -247,9 +170,20 @@ def _ack_command(
         session_id=str(args.session_id),
         acknowledged_at=seams.wall_clock(),
         retention_limit=100,
+        publisher=publisher,
     )
     _ = write_stdout(text=json.dumps(asdict(result), indent=2, sort_keys=True) + "\n")
     return int(result.status != "receipt-acknowledged")
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Invocation:
+    args: argparse.Namespace
+    primary: Path
+    gate_store_root: Path
+    wait_store_root: Path
+    seams: SessionWaitCliSeams
+    publisher: SessionWaitPublisher
 
 
 def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT_SEAMS) -> int:
@@ -260,6 +194,39 @@ def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT
         primary=primary,
         use_tmp_directory=seams.use_tmp_directory,
     )
+    # The exporter is closed AFTER the command has produced its result, so the
+    # bounded shutdown allowance can never sit on a wait's deadline path. An
+    # unconfigured host says so once on stderr; the result is unchanged.
+    environ = dict(os.environ)
+    telemetry = SessionTelemetry.from_environ(environ=environ)
+    publisher = SessionWaitPublisher(
+        sink=telemetry,
+        associations=associations_from_environ(environ=environ),
+        gate_path=wait_store_root / _GATE_STATE_NAME,
+    )
+    try:
+        return _dispatch_command(
+            parser=parser,
+            invocation=_Invocation(
+                args=args,
+                primary=primary,
+                gate_store_root=gate_store_root,
+                wait_store_root=wait_store_root,
+                seams=seams,
+                publisher=publisher,
+            ),
+        )
+    finally:
+        _ = telemetry.close()
+
+
+def _dispatch_command(*, parser: argparse.ArgumentParser, invocation: _Invocation) -> int:
+    args = invocation.args
+    primary = invocation.primary
+    gate_store_root = invocation.gate_store_root
+    wait_store_root = invocation.wait_store_root
+    seams = invocation.seams
+    publisher = invocation.publisher
     command = str(args.command)
     if command == "wait":
         # Neither target option is individually required — a wait may watch
@@ -275,12 +242,14 @@ def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT
             gate_store_root=gate_store_root,
             wait_store_root=wait_store_root,
             seams=seams,
+            publisher=publisher,
         )
     if command in {"inventory", "check"}:
         return _inventory_command(
             command=command,
             wait_store_root=wait_store_root,
             seams=seams,
+            publisher=publisher,
         )
     if command == "launch":
         return launch_command(
@@ -291,4 +260,6 @@ def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT
         )
     if command == "complete":
         return complete_command(primary=primary)
-    return _ack_command(args=args, wait_store_root=wait_store_root, seams=seams)
+    return _ack_command(
+        args=args, wait_store_root=wait_store_root, seams=seams, publisher=publisher
+    )
