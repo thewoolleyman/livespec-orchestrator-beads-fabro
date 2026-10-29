@@ -48,6 +48,8 @@ from livespec_orchestrator_beads_fabro.commands._session_obligation_host import 
     obligation_store_root,
 )
 from livespec_orchestrator_beads_fabro.commands._session_obligation_launch import (
+    COMPLETION_UNOBSERVABLE,
+    CompletionVerdict,
     protected_completion,
 )
 from livespec_orchestrator_beads_fabro.commands._session_obligation_records import (
@@ -61,6 +63,7 @@ __all__: list[str] = [
     "SubcommandFactory",
     "add_obligation_parsers",
     "complete_command",
+    "completion_check",
     "launch_command",
 ]
 
@@ -154,18 +157,62 @@ def complete_command(
     *, primary: Path, telemetry: EventSink, wall_clock: Callable[[], float]
 ) -> int:
     """Verify this host's durable obligations before a turn reports completion."""
-    verdict = protected_completion(
+    verdict = _completion_verdict(primary=primary)
+    _ = write_stdout(
+        text=json.dumps(_completion_payload(verdict=verdict), indent=2, sort_keys=True) + "\n"
+    )
+    return int(not verdict.protected)
+
+
+def completion_check(*, primary: Path) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """The completion verdict `check` folds in, with the findings it contributes.
+
+    A host that declares no recovery owner is a finding only when work is left
+    unfinished or the store cannot be read: with nothing outstanding there is
+    nothing for an owner to cover, and flagging every idle turn on an undeclared
+    host would train sessions to ignore the check.
+    """
+    verdict = _completion_verdict(primary=primary)
+    findings: list[dict[str, object]] = []
+    if not verdict.protected:
+        findings = [
+            _finding(identity=operation_id, finding=verdict.state, record_state="available")
+            for operation_id in verdict.outstanding_operation_ids
+        ]
+        if verdict.state == COMPLETION_UNOBSERVABLE:
+            findings.append(
+                _finding(
+                    identity="obligation-store",
+                    finding=verdict.state,
+                    record_state="unavailable",
+                )
+            )
+    return _completion_payload(verdict=verdict), findings
+
+
+def _finding(*, identity: str, finding: str, record_state: str) -> dict[str, object]:
+    return {
+        "finding": finding,
+        "id": identity,
+        "record_state": record_state,
+        "source": "obligation",
+    }
+
+
+def _completion_verdict(*, primary: Path) -> CompletionVerdict:
+    return protected_completion(
         coverage=host_coverage_reading(path=coverage_declaration_path(primary=primary)),
         obligation_store_root=obligation_store_root(primary=primary),
         telemetry=telemetry,
         now=wall_clock(),
     )
-    payload: dict[str, object] = {
+
+
+def _completion_payload(*, verdict: CompletionVerdict) -> dict[str, object]:
+    return {
         "coverage_state": verdict.coverage_state,
         "diagnostic": verdict.diagnostic,
         "outstanding_operation_ids": list(verdict.outstanding_operation_ids),
         "protected": verdict.protected,
         "state": verdict.state,
     }
-    _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    return int(not verdict.protected)
