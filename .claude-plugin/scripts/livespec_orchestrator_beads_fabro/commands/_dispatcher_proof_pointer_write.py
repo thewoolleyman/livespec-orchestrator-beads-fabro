@@ -19,15 +19,16 @@ undisposed because its description could not be rewritten. So an absent record,
 an absent Definition of Done section, and a failed ledger write each journal what
 stopped the write and return, exactly as the sibling fail-soft dispositions do.
 
-A HOST-ONLY ITEM'S CITED RECORD IS ITS HOST REPLAY, and the write used to refuse
-it. The cited record was read from `proof.record` alone — the FACTORY `verified`
-record — so an item declaring only `host_captured` assertions, which owes no
-factory record and whose acceptance genuinely rests on an independent
-`host_verified` replay, journaled `proof-pointer-skipped` "no verified Proof of
-Done record for the merging run". The consequence compounds rather than stopping
-at the missing section: the `accept` valve reads the pull request OFF THE POINTER
-and refuses an item carrying none, so the item could neither close on its own
-evidence nor be accepted by hand. `host_only_record` is that arm.
+THE CITED RECORD IS THE LATEST ONE THAT COUNTS FOR A DECLARED MODE. The factory
+`verified` record leads when the merging dispatch published one. Without it the
+cited record is the independent `host_verified` replay the host leg itself
+accepted, and that holds for a MIXED item as much as for a host-only one: the
+`accept` valve reads the pull request OFF THE POINTER and refuses an item carrying
+none, so an item whose pull request holds a replay and no `verified` record
+(a factory `captured` record counts for no mode, because it carries no
+per-assertion verdict) could neither close on its own evidence nor be accepted by
+hand. A pointer citing the replay says only which record counts; the acceptance
+verdict still rests on the factory leg, which stays unevidenced and parks.
 """
 
 from __future__ import annotations
@@ -44,7 +45,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_CARRIED_FORWARD,
     VERDICT_HUMAN_ATTESTED,
     VERDICT_VERIFIED,
-    ProofRecord,
     latest_proof_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
@@ -71,7 +71,6 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "PROOF_POINTER_STAGE",
     "carried_forward_record_url",
-    "host_only_record",
     "host_verified_record_url",
     "human_attested_record_url",
     "resumed_run_id",
@@ -127,7 +126,7 @@ def write_proof_pointer(
     if pr_number is None:
         _skip(journal=journal, item=item, reason="the merged dispatch recorded no pull request")
         return
-    record = proof.record if proof.record is not None else host_only_record(proof=proof)
+    record = proof.record if proof.record is not None else proof.host_verified_record
     if record is None:
         _skip(
             journal=journal,
@@ -201,41 +200,6 @@ def resumed_run_id(
 
 def _skip(*, journal: JournalFile, item: WorkItem, reason: str) -> None:
     journal.append(record={"stage": _SKIPPED_STAGE, "work_item_id": item.id, "reason": reason})
-
-
-def host_only_record(*, proof: ProofLeg) -> ProofRecord | None:
-    """The record a HOST-ONLY item's pointer cites, when the pass rested on one.
-
-    A host-only item declares no `factory_captured` assertion, so no factory
-    `verified` record is owed and the evidence the acceptance pass actually graded
-    is the independent `host_verified` replay. Requiring `proof.record` regardless
-    left such an item with NO pointer — and because the `accept` valve reads the
-    pull request off the pointer and refuses an item that carries none, the item
-    could then never be accepted either. The loss is provenance, not verdict: the
-    merge was real and the proof was published, and the item's own description
-    ended up naming neither.
-
-    BOTH guards are load-bearing and neither substitutes for the other. The
-    host-only test keeps a MIXED item's factory attribution fail-closed, so an
-    unattributable `verified` record is never papered over with a host one. And
-    `host_verified_record` is the HOST LEG'S OWN verdict rather than a scan for the
-    newest `host_verified` comment, so a replay the pass refused — for failing
-    containment, for an unreadable comparison, or for being published by the
-    capturing identity — can never reach the pointer: it is `None` unless a record
-    actually PASSED an assertion.
-
-    THE SAME LINK THEN APPEARS TWICE in the rendered section, and that is the
-    honest reading rather than an oversight. The two bullets answer two different
-    questions the clause names separately — which record this item's acceptance was
-    judged against, and which `host_verified` record discharged its host leg — and
-    for a host-only item ONE record is the answer to both. Rendering only the
-    second would leave the section with no cited record at all; suppressing it
-    would make a host-only item the one case where the host link is absent while a
-    host replay is exactly what closed it.
-    """
-    if not proof.host_captured_only:
-        return None
-    return proof.host_verified_record
 
 
 def carried_forward_record_url(*, proof: ProofLeg) -> str | None:
