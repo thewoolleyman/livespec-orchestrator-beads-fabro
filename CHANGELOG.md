@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.260.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.259.1...v0.260.0) (2026-10-29)
+
+
+### Features
+
+* admit the session wait and recovery vocabulary through the receiver seam ([3b01523](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3b0152367d209d8f9e29390398ea8008c2460156))
+* export host-session wait and recovery events through a bounded exporter ([20ad13d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/20ad13dbbb50b2042e4dbf2608658fe3ab7ec3b8))
+* publish obligation registration and recovery transitions as typed events ([c5bda93](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c5bda9370f96d4675fc8787b6ae31f8ad2bdc580))
+* publish wait lifecycle and inventory events with typed measurements ([bb33ddc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb33ddca066a9189e0dadad77a3d90868bf4d875))
+
 ## [0.259.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.259.0...v0.259.1) (2026-10-29)
 
 
