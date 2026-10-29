@@ -357,7 +357,7 @@ def test_enrich_bool_attribute_round_trips_without_scrub() -> None:
 def test_enrich_handles_unknown_value_shape_as_empty() -> None:
     span = {
         "name": "x",
-        "attributes": [{"key": "repo", "value": {"doubleValue": 1.5}}],
+        "attributes": [{"key": "repo", "value": {"bytesValue": "AQID"}}],
     }
     enriched = enrich_span(span=cast("dict[str, object]", span), triple={})
     assert enriched is not None
@@ -644,3 +644,29 @@ def test_forward_once_joins_run_identity_from_the_attribute_and_from_legacy_even
     }
     assert {key: exported["run_turn"][key] for key in expected} == expected
     assert {key: exported["run"][key] for key in expected} == expected
+
+
+def test_enrich_keeps_a_double_measurement_typed_and_degrades_a_malformed_one() -> None:
+    span = {
+        "name": "x",
+        "attributes": [
+            {"key": "duration_ms", "value": {"doubleValue": 2.5}},
+            {"key": "cost_usd", "value": {"doubleValue": ["bad"]}},
+            {"key": "model", "value": {"arrayValue": "bad"}},
+            {"key": "request_id", "value": {"arrayValue": {"values": "bad"}}},
+            {
+                "key": "agent.id",
+                "value": {"arrayValue": {"values": ["bad", {"stringValue": 3}]}},
+            },
+        ],
+    }
+    enriched = enrich_span(span=cast("dict[str, object]", span), triple={})
+    assert enriched is not None
+    attrs = cast("list[dict[str, object]]", enriched["attributes"])
+    assert [entry["value"] for entry in attrs] == [
+        {"doubleValue": 2.5},
+        {"stringValue": ""},
+        {"arrayValue": {"values": []}},
+        {"arrayValue": {"values": []}},
+        {"arrayValue": {"values": []}},
+    ]
