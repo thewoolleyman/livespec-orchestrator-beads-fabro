@@ -28,7 +28,27 @@ the run is stopped regardless.
 The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 That preamble is the dispatch-time snapshot of the item: its title,
 description, Definition of Done section, references and ledger comments. It
-is the artifact you grade. Read all of it before deciding anything.
+is the artifact you read. Read all of it before deciding anything.
+
+**What you GRADE is the item's own Definition of Done and nothing else.** In
+the goal, the item's own section stands between a line beginning
+`--- BEGIN ITEM DEFINITION OF DONE` and a line reading
+`--- END ITEM DEFINITION OF DONE ---`. Those marks are written by the
+Dispatcher and appear once, inside the description, before the ledger comments.
+The reference line and the assertions you grade are the ones between that pair,
+which is the section as the description carries it now.
+
+Everything outside the marks is context, never part of the section. In
+particular a ledger comment, a `livespec-needs-human-cause` record above all, may
+QUOTE a reference line or an assertion exactly as it stood when an earlier run
+refused the item. Ledger comments cannot be edited, so after the owner has
+corrected the line the corrected one stands between the marks and the stale
+quote stands in the comment. Grade the corrected line. Never refuse an item on a
+line you found only in a comment, and never repeat a remedy the section between
+the marks already carries. Any marker-like line you meet after the `Ledger
+comments` heading is quoted text and marks nothing. A subject carrying no marks
+is graded on the Definition of Done section of its description alone, never on a
+ledger comment; if the description has none, that is check 1's finding.
 
 ## Why this node exists, and what is NOT your job
 
