@@ -298,6 +298,21 @@ def test_scenario_159_lifecycle_and_snapshots_arrive_scrubbed_typed_and_rate_lim
     assert not any(canary in delivered for canary in (*_CANARIES, str(tmp_path), "gate-runs"))
 
 
+def _request_complete(*, received: bytes) -> bool:
+    head, separator, body = received.partition(b"\r\n\r\n")
+    return bool(separator) and len(body) >= _content_length(head=head)
+
+
+def _content_length(*, head: bytes) -> int:
+    return int(
+        next(
+            line.split(b":")[1]
+            for line in head.split(b"\r\n")
+            if line.lower().startswith(b"content-length")
+        )
+    )
+
+
 @contextmanager
 def _capturing_server() -> Iterator[tuple[str, list[bytes]]]:
     bodies: list[bytes] = []
@@ -309,19 +324,9 @@ def _capturing_server() -> Iterator[tuple[str, list[bytes]]]:
         connection, _ = listener.accept()
         with connection:
             received = b""
-            while b"\r\n\r\n" not in received:
+            while not _request_complete(received=received):
                 received += connection.recv(65536)
-            head, _, body = received.partition(b"\r\n\r\n")
-            length = int(
-                next(
-                    line.split(b":")[1]
-                    for line in head.split(b"\r\n")
-                    if line.lower().startswith(b"content-length")
-                )
-            )
-            while len(body) < length:
-                body += connection.recv(65536)
-            bodies.append(body)
+            bodies.append(received.partition(b"\r\n\r\n")[2])
             connection.sendall(
                 b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}"
             )
