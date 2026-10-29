@@ -24,9 +24,13 @@ from __future__ import annotations
 
 __all__: list[str] = [
     "conjunction_matches",
+    "ends_at_sentence_boundary",
     "matches_any_conjunction",
     "normalized",
 ]
+
+_TERMINATORS = (".", "!", "?")
+_SPACED_TERMINATORS = (". ", "! ", "? ")
 
 
 def normalized(*, text: str) -> str:
@@ -57,3 +61,24 @@ def conjunction_matches(*, literals: tuple[str, ...], text: str) -> bool:
 def matches_any_conjunction(*, conjunctions: tuple[tuple[str, ...], ...], text: str) -> bool:
     """Whether any ONE of several conjunctions matches in full."""
     return any(conjunction_matches(literals=literals, text=text) for literals in conjunctions)
+
+
+def ends_at_sentence_boundary(*, tail: str, text: str) -> bool:
+    """Whether the normalized text ENDS WITH the normalized tail at a sentence boundary.
+
+    The `turn.final_output` comparison. The output either equals the tail, or
+    the character immediately before the tail is `.`, `!` or `?`, or the tail
+    is preceded by exactly one space whose preceding character is one of those.
+    Nothing else satisfies it, which is what keeps a refusal quoted after a
+    colon lead-in, or merely discussed mid-sentence, from reading as the
+    provider's own refusal. The first spelling is deliberate: the measured
+    output reads `I'll make no changes.Selected model is at capacity.` with no
+    space after the period. An empty tail never matches, for the reason an empty
+    conjunction does not.
+    """
+    folded_text = normalized(text=text)
+    folded_tail = normalized(text=tail)
+    if folded_tail == "" or not folded_text.endswith(folded_tail):
+        return False
+    head = folded_text[: len(folded_text) - len(folded_tail)]
+    return head == "" or head.endswith(_TERMINATORS) or head.endswith(_SPACED_TERMINATORS)
