@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -n \"${CODEX_THREAD_ID:-}\" ]; then exit 0; fi; python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/session_wait_stop.py\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

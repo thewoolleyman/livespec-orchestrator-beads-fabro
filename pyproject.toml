@@ -165,6 +165,10 @@ ban-relative-imports = "all"
 # constants, and `git` must resolve through the mise-managed PATH rather than
 # an absolute path. No other diagnostic is waived for this file.
 ".claude/hooks/livespec_tdd_order_guard.py" = ["S603", "S607"]
+# The Stop hook runs the plugin's own `session_wait.py check` through ONE
+# subprocess whose argv is the interpreter, a fixed script path under the
+# plugin root and constant subcommand tokens. Only S603 is waived.
+".claude-plugin/hooks/session_wait_stop.py" = ["S603"]
 # Shebang-wrapper contract: shebang → docstring → `from _bootstrap import
 # bootstrap` → `bootstrap()` → `from <pkg>.<...> import main` →
 # `raise SystemExit(main())`. The post-bootstrap() import structurally
@@ -430,6 +434,7 @@ supervisor_entry_files = [
     # cannot be parsed, which is the same hook-protocol contract the guards own.
     ".claude/hooks/livespec_uv_hook_launcher.py",
     ".claude-plugin/hooks/codex_yolo_reapply.py",
+    ".claude-plugin/hooks/session_wait_stop.py",
     # Exact research entry points: the runner emits its evidence receipt and
     # the fake agent owns ACP JSON-RPC stdout. No tree-wide exemption.
     "plan/fabro-currency/research/004-acp-spend-limit-repro.py",
