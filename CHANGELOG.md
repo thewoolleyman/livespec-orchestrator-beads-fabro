@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.3...v0.256.4) (2026-10-29)
+
+
+### Bug Fixes
+
+* wait out a fix turn's live commit run before the janitor validates the tree ([2c9f905](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2c9f905e1db0e4c2f546121801258ebbfc09f4a5))
+
 ## [0.256.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.2...v0.256.3) (2026-10-29)
 
 
