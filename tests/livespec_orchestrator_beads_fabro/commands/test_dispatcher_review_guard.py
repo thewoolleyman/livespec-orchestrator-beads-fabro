@@ -53,7 +53,7 @@ def _program() -> dict[str, Any]:
     """The guard's exact shipped source, loaded into a fresh namespace."""
     namespace: dict[str, Any] = {"__name__": "livespec_review_guard_under_test"}
     source: str = _guard_module().review_guard_program_source()
-    exec(compile(source, "livespec-review-guard.py", "exec"), namespace)  # noqa: S102
+    exec(compile(source, str(_MODULE_PATH), "exec"), namespace)  # noqa: S102
     return namespace
 
 
