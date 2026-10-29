@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "dispatch_workflow_for",
     "dispatch_workflow_from_record",
+    "dispatch_workflows_for",
     "record_dispatch_workflow",
 ]
 
@@ -43,6 +44,21 @@ def dispatch_workflow_for(*, path: StoreConfig, work_item_id: str) -> str | None
     """Return the workflow-variant name a prior dispatch pinned, if any."""
     client = make_beads_client(config=path)
     return dispatch_workflow_from_record(record=client.show_issue(issue_id=work_item_id))
+
+
+def dispatch_workflows_for(*, path: StoreConfig) -> dict[str, str | None]:
+    """Every item's recorded workflow-variant name, from ONE issue-list payload.
+
+    The snapshot peer of `dispatch_workflow_for`, in the shape
+    `dispatch_factories_for` already uses: an item with no pin maps to None, so
+    a caller can tell "listed, unpinned" from "not in the snapshot".
+    """
+    client = make_beads_client(config=path)
+    return {
+        issue_id: dispatch_workflow_from_record(record=record)
+        for record in client.list_issues()
+        if isinstance((issue_id := record.get("id")), str)
+    }
 
 
 def dispatch_workflow_from_record(*, record: BeadsRecord) -> str | None:
