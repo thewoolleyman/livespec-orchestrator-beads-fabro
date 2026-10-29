@@ -25,6 +25,12 @@ A LINE THAT IS NOT A JSON OBJECT IS SKIPPED rather than raised, for the reason
 one torn line must not make the whole file unreadable. An unreadable file yields
 no records, the same posture every previous reader took.
 
+THE JOURNAL IS ASSUMED APPEND-ONLY. A file REWRITTEN IN PLACE to a longer length
+inside one modification-time tick, with the same inode, is indistinguishable from
+an append by the three keys above and would be read from the stale offset; the
+only writer, `JournalFile.append`, never does that, and rotation replaces the
+inode.
+
 THE RETURNED RECORDS ARE SHARED across callers of one process and MUST be treated
 as read-only.
 """

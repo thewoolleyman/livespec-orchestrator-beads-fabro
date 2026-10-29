@@ -815,7 +815,7 @@ def test_a_rework_stage_cancel_refuses_naming_the_stage_and_a_plain_dispatch(
             repo=repo,
             item=_item(),
             journal_path=_cancel_journal(
-                path=repo / "tmp" / "journal.jsonl", executing_stage=stage
+                path=repo / "tmp" / f"journal-{stage}.jsonl", executing_stage=stage
             ),
             runner=_runner(view=_ok(stdout=json.dumps({"comments": []}))),
         )

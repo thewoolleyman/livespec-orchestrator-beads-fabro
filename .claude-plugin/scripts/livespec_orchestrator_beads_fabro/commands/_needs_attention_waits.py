@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,6 +13,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
     resolve_acp_preflight,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_tail import (
+    journal_tail_records,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     dispatch_provider_exhaustion,
 )
@@ -24,7 +26,6 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import
     dispatcher_loop_command,
     host_only_command,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -269,26 +270,7 @@ def _latest_record(*, project_root: Path, item_id: str, stage: str) -> dict[str,
 
 
 def _journal_records(*, project_root: Path) -> tuple[dict[str, Any], ...]:
-    journal = project_root / _DISPATCHER_JOURNAL_PATH
-    if not journal.is_file():
-        return ()
-    loaded = attempt(action=lambda: journal.read_text(encoding="utf-8"), exceptions=(OSError,))
-    if isinstance(loaded, AttemptFailure):
-        return ()
-    records: list[dict[str, Any]] = []
-    for line in loaded.splitlines():
-        record = _json_object(line=line)
-        if record is not None:
-            records.append(record)
-    return tuple(records)
-
-
-def _json_object(*, line: str) -> dict[str, Any] | None:
-    parsed = attempt(action=lambda: json.loads(line), exceptions=(json.JSONDecodeError,))
-    loaded = cast("object", parsed)
-    if isinstance(loaded, AttemptFailure) or not isinstance(loaded, dict):
-        return None
-    return cast("dict[str, Any]", loaded)
+    return journal_tail_records(journal_path=project_root / _DISPATCHER_JOURNAL_PATH)
 
 
 def _absent_evidence_legs(

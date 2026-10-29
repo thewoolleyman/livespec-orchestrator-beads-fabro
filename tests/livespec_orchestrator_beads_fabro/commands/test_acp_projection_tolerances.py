@@ -442,5 +442,9 @@ def test_the_journal_reader_tolerates_absence_unreadability_and_junk_lines(
 
     # A journal the process cannot READ reports no records rather than
     # raising through whichever ledger happened to ask for it first.
-    monkeypatch.setattr(Path, "read_text", _refuse)
-    assert journal_records(journal_path=path) == ()
+    # The reader consults the cached prefix of a file whose size and time are
+    # unchanged, so unreadability is observed on a journal not read before.
+    unread = tmp_path / "unread.jsonl"
+    unread.write_text('{"stage": "b"}\n', encoding="utf-8")
+    monkeypatch.setattr(Path, "open", _refuse)
+    assert journal_records(journal_path=unread) == ()

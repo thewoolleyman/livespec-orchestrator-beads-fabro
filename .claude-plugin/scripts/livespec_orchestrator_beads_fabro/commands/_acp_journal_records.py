@@ -23,13 +23,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from livespec_orchestrator_beads_fabro.effects import (
-    AttemptFailure,
-    JsonParseFailure,
-    attempt,
-    parse_json,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_tail import (
+    journal_tail_records,
 )
 
 __all__: list[str] = [
@@ -45,15 +42,6 @@ def journal_records(*, journal_path: Path | None) -> tuple[Mapping[str, Any], ..
     not a failure to report -- every caller here treats "no records" as
     "no ledger state", which is exactly right for both.
     """
-    if journal_path is None or not journal_path.is_file():
+    if journal_path is None:
         return ()
-    text = attempt(action=lambda: journal_path.read_text(encoding="utf-8"), exceptions=(OSError,))
-    if isinstance(text, AttemptFailure):
-        return ()
-    records: list[Mapping[str, Any]] = []
-    for line in text.splitlines():
-        parsed = parse_json(text=line)
-        if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
-            continue
-        records.append({str(key): value for key, value in cast("dict[str, Any]", parsed).items()})
-    return tuple(records)
+    return journal_tail_records(journal_path=journal_path)
