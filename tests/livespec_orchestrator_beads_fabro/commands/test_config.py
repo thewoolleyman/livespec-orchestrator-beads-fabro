@@ -502,6 +502,40 @@ def test_default_fabro_bin_returns_concrete_home_path_when_unresolvable(
     assert resolve_fabro_bin(cwd=tmp_path) == str(tmp_path / ".fabro" / "bin" / "fabro")
 
 
+_REAL_IS_FILE = Path.is_file
+
+
+def _raise_permission_error(self: Path) -> bool:
+    """Stand in for `Path.is_file` on an unreadable `$HOME` (EACCES escapes pathlib)."""
+    if self.name == "fabro":
+        raise PermissionError(13, "Permission denied", str(self))
+    return _REAL_IS_FILE(self)
+
+
+def test_default_fabro_bin_unreadable_home_falls_back_to_path_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OSError probing the home candidate degrades to the PATH lookup, not a crash."""
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(Path, "is_file", _raise_permission_error)
+    monkeypatch.setattr(_CONFIG_SHUTIL_WHICH, lambda _name: "/usr/local/bin/fabro")
+    assert resolve_fabro_bin(cwd=tmp_path) == "/usr/local/bin/fabro"
+
+
+def test_default_fabro_bin_unreadable_home_returns_concrete_home_path_when_no_path_hit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OSError probing the home candidate with no PATH hit still yields the home path."""
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(Path, "is_file", _raise_permission_error)
+    monkeypatch.setattr(_CONFIG_SHUTIL_WHICH, lambda _name: None)
+    assert resolve_fabro_bin(cwd=tmp_path) == str(tmp_path / ".fabro" / "bin" / "fabro")
+
+
 def test_resolve_fabro_bin_uses_dispatcher_config_key(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
