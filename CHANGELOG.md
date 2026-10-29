@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.258.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.4...v0.258.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* inspect each run once per factory in a dispatch pass (bd-ib-6bbcda) ([7b221f6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7b221f6dccae71e54fba4312908e6be4d8e44ff1))
+* parse the dispatch journal once per dispatch pass (bd-ib-6bbcda) ([87b452d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/87b452dad95d8a6fe0f93ca004bb2ee57d849077))
+
 ## [0.258.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.3...v0.258.4) (2026-10-29)
 
 
