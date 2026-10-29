@@ -47,6 +47,19 @@ warning and per attempt. So:
   rest of the journal's life. The standing warning is untouched either way --
   the ceiling stops the lane ASKING, and never clears anything.
 
+- A run whose node outcomes this lane has already read WHILE THE RUN WAS TERMINAL
+  is passed over. A terminal run's outcomes cannot change, so the reading taken
+  once is the reading, and a ten-minute timer re-inspecting it for the whole
+  window measured 159 `fabro inspect` calls and 25 minutes for one pass, 151 of
+  them for runs that had already ended. The fact that the read happened is
+  journaled as `SELECTION_OUTCOMES_READ_STAGE`, so the skip survives the fresh
+  process every timer tick starts. The record is written only for a run the
+  engine itself reports terminal: a run still moving, or whose status cannot be
+  recognised as terminal, is read again, because the extra read is the
+  conservative direction. A run whose outcomes were unreadable earns the
+  unavailable record instead and is retried under the ceiling above, so this
+  skip never narrows that retry.
+
 A stamp whose own `at` cannot be read is passed over too, because the window is
 what bounds this set and a record the bound cannot PLACE would otherwise be
 replayed for ever. A journal in which NO stamp can be dated establishes no
@@ -114,6 +127,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 )
 
 __all__: list[str] = [
+    "SELECTION_OUTCOMES_READ_STAGE",
     "SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT",
     "SELECTION_OUTCOMES_UNAVAILABLE_STAGE",
     "SELECTION_REPLAY_WINDOW",
@@ -125,6 +139,15 @@ __all__: list[str] = [
 # standing warning in place, which at the attention lane is indistinguishable
 # from a run that executed no fallback.
 SELECTION_OUTCOMES_UNAVAILABLE_STAGE = "acp-selection-outcomes-unavailable"
+
+# The stage that records one TERMINAL run's node outcomes as read, so a later pass
+# spends no `fabro inspect` on a run whose outcomes cannot change.
+SELECTION_OUTCOMES_READ_STAGE = "acp-selection-outcomes-read"
+
+# The status kinds after which a run's node outcomes are final. Deliberately an
+# explicit list rather than the complement of the non-terminal kinds: a status
+# this lane does not recognise must read as not terminal and be read again.
+_TERMINAL_STATUS_KINDS = frozenset({"cancelled", "canceled", "dead", "failed", "succeeded"})
 
 # How far back from the journal's NEWEST stamp a stamp may sit and still be
 # replayed. A week of this repository's own dispatch history: a run whose
@@ -140,6 +163,14 @@ SELECTION_REPLAY_WINDOW = timedelta(days=7)
 SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT = 12
 
 _INSPECT_TIMEOUT_SECONDS = 60.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Reading:
+    """One inspect of one run: its readable outcomes, and whether they are final."""
+
+    outcomes: Mapping[str, Mapping[str, object]] | None
+    terminal: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -211,7 +242,8 @@ def _replay_one_run(
     ledger: _PassLedger,
 ) -> None:
     """Mint this run's warnings and apply the primary attempts it evidences."""
-    outcomes = _node_outcomes(port=port, run_id=target.run_id)
+    reading = _read_run(port=port, run_id=target.run_id)
+    outcomes = reading.outcomes
     if outcomes is None:
         inputs.journal.append(
             record={
@@ -244,6 +276,16 @@ def _replay_one_run(
     ):
         for clearance in primary_success_clearance_records(ledger=ledger.ledger, attempt=attempt):
             ledger.append(record=clearance)
+    if reading.terminal:
+        inputs.journal.append(
+            record={
+                "stage": SELECTION_OUTCOMES_READ_STAGE,
+                "work_item_id": target.work_item_id,
+                "run_id": target.run_id,
+                "factory_name": factory.name,
+                "factory_server_url": factory.server,
+            }
+        )
 
 
 def _retire_replaced_primaries(*, inputs: ReconcileInputs, ledger: _PassLedger) -> None:
@@ -297,10 +339,13 @@ def _stamped_runs(
         return ()
     horizon = max(instant for instant, _ in dated)
     attempts = _unavailable_attempts(records=records)
+    already_read = _terminal_reads(records=records)
     found: dict[str, _StampedRun] = {}
     for instant, record in dated:
         target = _replay_target(record=record, factory=factory, inputs=inputs)
         if target is None or horizon - instant > SELECTION_REPLAY_WINDOW:
+            continue
+        if target.run_id in already_read:
             continue
         if attempts.get(target.run_id, 0) >= SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT:
             continue
@@ -360,6 +405,16 @@ def _unavailable_attempts(*, records: tuple[Mapping[str, object], ...]) -> dict[
     return counts
 
 
+def _terminal_reads(*, records: tuple[Mapping[str, object], ...]) -> frozenset[str]:
+    """Every run whose outcomes this lane has already read while it was terminal."""
+    read: set[str] = set()
+    for record in records:
+        run_id = _text(value=record.get("run_id"))
+        if record.get("stage") == SELECTION_OUTCOMES_READ_STAGE and run_id is not None:
+            read.add(run_id)
+    return frozenset(read)
+
+
 def _instant(*, value: object) -> datetime | None:
     """One journal instant as a comparable datetime, or `None` when unreadable.
 
@@ -375,23 +430,25 @@ def _instant(*, value: object) -> datetime | None:
     return None if isinstance(parsed, IsoDatetimeParseFailure) else parsed
 
 
-def _node_outcomes(*, port: FabroPort, run_id: str) -> Mapping[str, Mapping[str, object]] | None:
-    """One run's readable node outcomes, or `None` when the evidence is unavailable.
+def _read_run(*, port: FabroPort, run_id: str) -> _Reading:
+    """One run's readable node outcomes (`None` when unavailable) and its finality.
 
     The two-input reading, because the Petri engine records no `node_outcomes`
     at all and an empty map there is a record offering nothing to grade rather
     than a run that reached no node. Every arm that cannot measure answers
-    `None`, which is what the caller records and retries.
+    `None` outcomes, which is what the caller records and retries.
     """
     inspect = port.inspect(run_id=run_id, timeout_seconds=_INSPECT_TIMEOUT_SECONDS)
     if inspect.command.exit_code != 0:
-        return None
+        return _Reading(outcomes=None, terminal=False)
     record = fabro_inspect_record(payload=inspect.payload)
     if record is None:
-        return None
+        return _Reading(outcomes=None, terminal=False)
     checkpoints = fabro_inspect_checkpoints(record=record)
     outcomes = fabro_node_outcomes(record=record, checkpoint=checkpoints[-1] if checkpoints else {})
-    return outcomes or None
+    return _Reading(
+        outcomes=outcomes or None, terminal=inspect.status_kind in _TERMINAL_STATUS_KINDS
+    )
 
 
 def _text(*, value: object) -> str | None:
