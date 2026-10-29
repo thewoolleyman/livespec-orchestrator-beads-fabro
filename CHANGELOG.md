@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.256.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.10...v0.256.11) (2026-10-29)
+
+
+### Bug Fixes
+
+* read workflow pins from one snapshot in the criteria wall ([2354740](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/23547403d4b9c3b381ee25f4ced47d2c8cdc3d8c))
+
 ## [0.256.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.9...v0.256.10) (2026-10-29)
 
 
