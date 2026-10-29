@@ -42,6 +42,7 @@ would report the lane clean while the primary was still falling over.
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -105,6 +106,13 @@ _UNDATEABLE = "not-an-instant"
 # the ceiling cannot tell a bound from an unbounded retry.
 _BOUNDED_RETRY_PASSES = 40
 _STALE_RUN = "01STALE"
+# How many stamped runs the concurrency case launches. It must EXCEED the lane's
+# worker-count constant, because the claim is that in-flight inspects reach that
+# bound and stop there; a run count at or below it cannot tell a bound from
+# unbounded fan-out.
+_CONCURRENT_RUNS = 24
+# How long a held inspect waits for company before giving up, in seconds.
+_HOLD_SECONDS = 0.3
 
 
 @dataclass(kw_only=True)
@@ -1003,3 +1011,76 @@ def test_a_run_unreadable_on_an_earlier_pass_is_read_until_it_is_readable(
     assert written.count(_UNAVAILABLE_STAGE) == 2
     assert written.count(_READ_STAGE) == 1
     assert _inspect_count(runner=runner) == 3
+
+
+@dataclass(kw_only=True)
+class _HeldRunner(_Runner):
+    """A fake `fabro` CLI that holds each `inspect` open until its peers have joined it.
+
+    A call returns once `hold_for` inspects are in flight together, or once every
+    run has started, or after `_HOLD_SECONDS`. One serial caller therefore never
+    sees a peer and waits the whole hold on every call, while a concurrent caller
+    releases at once, and `peak` records the most inspects ever in flight at the
+    same instant -- the quantity the worker-count bound is about.
+    """
+
+    total: int
+    hold_for: int
+    condition: threading.Condition = field(default_factory=threading.Condition)
+    started: int = 0
+    in_flight: int = 0
+    peak: int = 0
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        if argv[1] != "inspect":
+            return CommandResult(exit_code=0, stdout="[]", stderr="")
+        with self.condition:
+            self.started += 1
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            self.condition.notify_all()
+            _ = self.condition.wait_for(
+                lambda: self.in_flight >= self.hold_for or self.started >= self.total,
+                timeout=_HOLD_SECONDS,
+            )
+            self.in_flight -= 1
+            self.condition.notify_all()
+        return CommandResult(exit_code=0, stdout=_inspected(status="running"), stderr="")
+
+
+def test_the_remaining_inspects_of_one_pass_run_concurrently_up_to_the_worker_bound(
+    tmp_path: Path,
+) -> None:
+    """Many runs to read are inspected side by side, and never more than the bound at once.
+
+    The pass this item measured spent about nine seconds per inspect, one after
+    another. The runner here holds every call open until `_CONCURRENT_RUNS` of
+    them are in flight together, which no bound can allow, so the peak it records
+    is exactly the most the lane ever ran at once: more than one proves the calls
+    overlap, and equality with the named constant proves the fan-out is capped at
+    that constant rather than at the number of runs.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=tuple(
+            _run_stamp(dispatch_id=f"dispatch-{index}", run_id=f"01RUN{index:02d}")
+            for index in range(_CONCURRENT_RUNS)
+        ),
+    )
+    runner = _HeldRunner(total=_CONCURRENT_RUNS, hold_for=_CONCURRENT_RUNS)
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert runner.started == _CONCURRENT_RUNS
+    assert runner.peak >= 2
+    assert runner.peak == selection_lane.SELECTION_INSPECT_WORKERS

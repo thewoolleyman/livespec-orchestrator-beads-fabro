@@ -1402,10 +1402,18 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   compatible with the clause's "MUST NOT clear an existing warning": factory run
   storage is pruned, so a historical run becomes PERMANENTLY unreadable and the
   ratified retry has to be a retry rather than one append per pass for the rest
-  of the journal's life. And both are applied in `_stamped_runs` rather than
-  inside `_replay_one_run`, because the cost they bound is the `fabro inspect`
-  that function opens with — a ceiling read after the round trip has been spent
-  bounds the journal and not the pass.
+  of the journal's life. And both are applied in `stamped_runs` (module
+  `_dispatcher_reconcile_acp_selection_stamps`, which owns the window, the
+  ceiling and the stage names) rather than inside `_replay_one_run`, because
+  the cost they bound is the `fabro inspect` that function opens with — a
+  ceiling read after the round trip has been spent bounds the journal and not
+  the pass. A third bound skips a run whose node outcomes were already read
+  while the run was TERMINAL (`SELECTION_OUTCOMES_READ_STAGE` on the journal,
+  so it survives the fresh process each timer tick starts); a run still moving
+  or with an unrecognised status is read again, and an unreadable run earns the
+  unavailable record instead and keeps its retry. The inspects that remain run
+  concurrently, at most `SELECTION_INSPECT_WORKERS` at once, while every journal
+  append stays in the pass's own thread.
 - `_acp_dispatch_coverage` is the DISPATCH-scoped half of the legacy
   provider-record coverage rule: `_acp_hold_coverage` answers it for one
   candidate, and this answers it for the whole set a dispatch's resolved node
