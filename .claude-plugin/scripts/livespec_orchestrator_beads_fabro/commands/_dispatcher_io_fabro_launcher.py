@@ -23,6 +23,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
     liveness_sample,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
+    release_pass_snapshot,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
@@ -117,6 +120,7 @@ class WatchedFabroLauncher:
     ) -> FabroRunResult:
         run_fabro_factory_auth_login(plan=plan, runner=runner)
         port = fabro_port_for_plan(plan=plan, runner=runner)
+        release_pass_snapshot()
         holder: dict[str, CommandResult] = {}
         run_id_holder: dict[str, str | None] = {}
         # Set once this dispatch's `fabro run` call has RETURNED, which is

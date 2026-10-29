@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -34,6 +35,9 @@ def read_journal_records(*, journal_path: Path | None) -> tuple[dict[str, object
     reader asking one where its history lives must get "none to offer" rather
     than an `AttributeError` from a caller that had no way to know.
     """
+    snapshot = snapshot_records(journal_path=journal_path)
+    if snapshot is not None:
+        return snapshot
     if journal_path is None or not journal_path.is_file():
         return ()
     records: list[dict[str, object]] = []

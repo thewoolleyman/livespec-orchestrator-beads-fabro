@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -16,6 +15,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_exhaustion_credential_identity import (
     journaled_admission_credential_identity,
     record_identity_covers_dispatch,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.effects import parse_iso_datetime
 
@@ -197,7 +199,7 @@ def live_provider_exhaustions(
     live: list[ProviderExhaustionRecord] = []
     decided: set[object] = set()
     cleared: set[object] = set()
-    for record in reversed(_records(text=journal_path.read_text(encoding="utf-8"))):
+    for record in reversed(_records(records=read_journal_records(journal_path=journal_path))):
         provider = record.get("provider")
         if record.get("stage") == _CLEARED_STAGE:
             cleared.add(provider)
@@ -368,14 +370,8 @@ def _outcome_record(*, outcome: DispatchOutcome) -> dict[str, object]:
     return record
 
 
-def _records(*, text: str) -> list[dict[str, object]]:
-    records: list[dict[str, object]] = []
-    for line in text.splitlines():
-        parsed_record = cast("dict[object, object]", json.loads(line))
-        record = {str(key): value for key, value in parsed_record.items()}
-        if record.get("stage") in {_RECORD_STAGE, _CLEARED_STAGE}:
-            records.append(record)
-    return records
+def _records(*, records: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+    return [record for record in records if record.get("stage") in {_RECORD_STAGE, _CLEARED_STAGE}]
 
 
 def _parse_journal_iso(*, text: str) -> datetime:

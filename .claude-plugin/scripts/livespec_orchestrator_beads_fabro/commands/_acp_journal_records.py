@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -45,6 +46,9 @@ def journal_records(*, journal_path: Path | None) -> tuple[Mapping[str, Any], ..
     not a failure to report -- every caller here treats "no records" as
     "no ledger state", which is exactly right for both.
     """
+    snapshot = snapshot_records(journal_path=journal_path)
+    if snapshot is not None:
+        return snapshot
     if journal_path is None or not journal_path.is_file():
         return ()
     text = attempt(action=lambda: journal_path.read_text(encoding="utf-8"), exceptions=(OSError,))

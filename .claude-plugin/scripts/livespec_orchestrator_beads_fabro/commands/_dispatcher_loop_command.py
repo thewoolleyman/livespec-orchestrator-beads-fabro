@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_wave import (
     dispatch_loop_wave,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     run_turn_sink_path,
@@ -85,6 +86,11 @@ class _LoopStart:
 
 
 def run_loop_command(*, args: argparse.Namespace) -> int:
+    with pass_snapshot():
+        return _loop_in_pass(args=args)
+
+
+def _loop_in_pass(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
     started = _start_loop(args=args, repo=repo)
     if isinstance(started, int):

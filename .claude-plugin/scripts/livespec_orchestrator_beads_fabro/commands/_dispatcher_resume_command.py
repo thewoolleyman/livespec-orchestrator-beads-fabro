@@ -99,6 +99,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import prepare
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
@@ -176,6 +177,11 @@ def resume_refusal_report(*, work_item_id: str, refusals: Sequence[str]) -> str:
 
 def run_resume_command(*, args: argparse.Namespace) -> int:
     """Measure, grade, journal, and dispatch one resume; or refuse naming every mismatch."""
+    with pass_snapshot():
+        return _resume_in_pass(args=args)
+
+
+def _resume_in_pass(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
     janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
     if preamble_exit is not None:
