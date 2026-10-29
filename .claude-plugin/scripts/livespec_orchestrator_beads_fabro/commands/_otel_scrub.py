@@ -31,6 +31,8 @@ inputs, amenable to direct + property-based testing.
 from __future__ import annotations
 
 import re
+from math import isfinite
+from typing import cast
 
 __all__: list[str] = [
     "ATTRIBUTE_ALLOWLIST",
@@ -39,6 +41,7 @@ __all__: list[str] = [
     "REDACTION_MARKER",
     "attr",
     "is_allowed_attr",
+    "measured_attr",
     "scrub",
 ]
 
@@ -303,6 +306,62 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "tdd.size_justified",
         "livespec.implement.adapter",
         "livespec.implement.selected_index",
+        # Host-session wait and recovery telemetry (plan
+        # `agent-session-stall-prevention`, `bd-ib-4mcuty`). Two producers share
+        # this vocabulary under the versioned `livespec.orchestrator.session_wait`
+        # scope: the wait command's closed wait-family catalog and its
+        # recovery-family catalog. The sibling overseer's
+        # `livespec.overseer.recovery` and `livespec.overseer.daemon` scopes
+        # spell the producer-specific `session.recovery.observed_at` and
+        # `session.recovery.coverage_state` beside the orchestrator's
+        # `session.observation.time` and `session.coverage.state`, so both
+        # spellings are named. Identities are opaque strings (the obligation
+        # epoch is passed through as a string, never coerced to a counter);
+        # measurements are typed numbers; `*.unavailable` is an array of omitted
+        # attribute NAMES. No key here can carry a command, prompt, transcript or
+        # environment value.
+        "session.repository",
+        "session.wait.id",
+        "session.wait.target.kind",
+        "session.wait.target.id",
+        "session.wait.target_count",
+        "session.wait.return_reason",
+        "session.wait.trigger_exit_code",
+        "session.wait.acknowledged",
+        "session.wait.waiter_alive",
+        "session.wait.elapsed_seconds",
+        "session.wait.remaining_seconds",
+        "session.wait.budget_seconds",
+        "session.wait.overdue_seconds",
+        "session.observation.id",
+        "session.observation.sequence",
+        "session.observation.time",
+        "session.observation.state",
+        "session.observation.fresh",
+        "session.observation.age_seconds",
+        "session.observation.unavailable",
+        "session.inventory.wait_count",
+        "session.inventory.active_count",
+        "session.inventory.unacknowledged_count",
+        "session.export.dropped_count",
+        "session.export.rejected_count",
+        "session.export.failed_count",
+        "session.obligation.id",
+        "session.obligation.epoch",
+        "session.obligation.deadline",
+        "session.obligation.overdue_seconds",
+        "session.coverage.state",
+        "session.recovery.attempt_id",
+        "session.recovery.state",
+        "session.recovery.latency_seconds",
+        "session.recovery.duplicate_count",
+        "session.recovery.fenced_count",
+        "session.recovery.observed_at",
+        "session.recovery.deferral_reason",
+        "session.recovery.next_action",
+        "session.recovery.unavailable",
+        "session.recovery.coverage_state",
+        "overseer.alert.condition",
     }
 )
 
@@ -344,3 +403,26 @@ def attr(*, key: str, value: object) -> dict[str, object]:
         return {"key": key, "value": {"intValue": str(value)}}
     text = scrub(value=str(value))
     return {"key": key, "value": {"stringValue": text}}
+
+
+def measured_attr(*, key: str, value: object) -> dict[str, object]:
+    """Build one attribute entry that keeps a measurement a queryable number.
+
+    `attr` stringifies a float, which every pre-existing emitter relies on, so
+    the typed forms live beside it rather than inside it: a finite float ships
+    as `doubleValue` and a list or tuple as an `arrayValue` of scrubbed
+    strings. Anything else is exactly what `attr` builds.
+    """
+    if isinstance(value, float) and isfinite(value):
+        return {"key": key, "value": {"doubleValue": value}}
+    if isinstance(value, list | tuple):
+        items = cast("list[object] | tuple[object, ...]", value)
+        return {
+            "key": key,
+            "value": {
+                "arrayValue": {
+                    "values": [{"stringValue": scrub(value=str(item))} for item in items]
+                }
+            },
+        }
+    return attr(key=key, value=value)
