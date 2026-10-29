@@ -112,6 +112,31 @@ def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_sandbox_plugins_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Keep every graph-node script this suite runs off the host's real sandbox helpers.
+
+    The shipped nodes resolve the Dispatcher-materialized helpers through
+    `LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT`, falling back to `$HOME/.claude/plugins`. Inside
+    a factory sandbox that fallback holds the REAL commit runner, so a test executing the
+    `needs_human` body without naming a root ran the real program: its `cut-settle` pass
+    scans the host process table, and the commit hook that was running this very suite is
+    exactly a git commit with a hook run under it. Measured as a design hazard when the
+    pass was written (work-item bd-ib-ptnxyg), before any case could end a real commit; the
+    pass is also scoped to its own working directory, and this fixture is the second wall.
+
+    An empty root is the whole fixture: a node finds no helper and takes its documented
+    absent-helper arm, which is byte for byte what it does on CI. Tests that need helpers
+    materialize their own root and name it, and their own value wins.
+    """
+    monkeypatch.setenv(
+        "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT",
+        str(tmp_path_factory.mktemp("sandbox-plugins-root")),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_dod_judgement_judge(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:

@@ -105,14 +105,18 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 __all__: list[str] = [
     "HOOK_LIMIT_LIMITS_FILENAME",
     "HOOK_LIMIT_PROGRAM_FILENAME",
+    "NEEDS_HUMAN_NODE",
     "PUBLISH_DRAFT_NODE",
     "PUSH_OBSERVATION_RESERVE_SECONDS",
+    "hook_limit_graph_prepare_steps_block",
     "hook_limit_limits_path_expansion",
     "hook_limit_prepare_steps_block",
     "hook_limit_program_path_expansion",
     "hook_limit_program_source",
+    "node_limit_from_graph",
     "publish_draft_limit_from_graph",
     "push_observation_budget_seconds",
+    "resolve_needs_human_limit",
     "resolve_publish_draft_limit",
 ]
 
@@ -125,6 +129,10 @@ HOOK_LIMIT_LIMITS_FILENAME = "livespec-hook-limits.env"
 # same budget, but its push republishes an already-published head, so the
 # work-item scopes the observation to `publish_draft`'s first push.
 PUBLISH_DRAFT_NODE = "publish_draft"
+
+# The terminal node whose own timeout bounds the wait it spends on a cut turn's commit
+# runs, so the wait ends while enough of that timeout remains to preserve the tree.
+NEEDS_HUMAN_NODE = "needs_human"
 
 # What the node holds back from its own limit to observe and report with.
 #
@@ -153,8 +161,8 @@ def push_observation_budget_seconds(*, limit_seconds: int) -> int:
     return max(1, limit_seconds - PUSH_OBSERVATION_RESERVE_SECONDS)
 
 
-def publish_draft_limit_from_graph(*, graph: Path) -> int | None:
-    """`publish_draft`'s own rendered limit, read off the graph the run will use.
+def node_limit_from_graph(*, graph: Path, node: str) -> int | None:
+    """One node's own rendered limit, read off the graph the run will use.
 
     Fail-soft to None on an unreadable graph, for the reason the module docstring
     gives: the caller withholds the figure, the node pushes unbounded, and
@@ -168,7 +176,12 @@ def publish_draft_limit_from_graph(*, graph: Path) -> int | None:
     )
     if isinstance(text, AttemptFailure):
         return None
-    return node_timeout_seconds(graph_text=text, node=PUBLISH_DRAFT_NODE)
+    return node_timeout_seconds(graph_text=text, node=node)
+
+
+def publish_draft_limit_from_graph(*, graph: Path) -> int | None:
+    """`publish_draft`'s own rendered limit; see `node_limit_from_graph` for the fail-soft rule."""
+    return node_limit_from_graph(graph=graph, node=PUBLISH_DRAFT_NODE)
 
 
 def resolve_publish_draft_limit(
@@ -216,6 +229,20 @@ def resolve_publish_draft_limit(
         )
         _ = warn(message)
     return limit_seconds
+
+
+def resolve_needs_human_limit(*, graph_artifact: Path | None, written_graph: Path) -> int | None:
+    """The `needs_human` node's own rendered limit, read the way the publish limit is.
+
+    The same candidate choice as `resolve_publish_draft_limit` and for the same reason: a
+    RELATIVE name is readable and wrong. Withheld as None without a warning, because the
+    node's own fallback is a fixed wait that fits the workflow's default timeout, so a
+    withheld figure degrades the bound and never the preservation.
+    """
+    candidate = written_graph if graph_artifact is None else graph_artifact
+    if not candidate.is_absolute():
+        return None
+    return node_limit_from_graph(graph=candidate, node=NEEDS_HUMAN_NODE)
 
 
 def hook_limit_program_path_expansion() -> str:
@@ -409,7 +436,9 @@ def hook_limit_program_source() -> str:
     return _PROGRAM_SOURCE.replace("__SENTINEL__", HOOK_OVER_LIMIT_SENTINEL)
 
 
-def hook_limit_prepare_steps_block(*, limit_seconds: int | None) -> str:
+def hook_limit_prepare_steps_block(
+    *, limit_seconds: int | None, needs_human_limit_seconds: int | None = None
+) -> str:
     """Land the observer and this dispatch's resolved figures in the sandbox.
 
     The two figures travel as a SOURCEABLE FILE rather than as overlay env keys
@@ -426,20 +455,27 @@ def hook_limit_prepare_steps_block(*, limit_seconds: int | None) -> str:
 
     The program rides the step's `env` and `printf %s` writes it, so the shell
     expands nothing inside it: the observer carries dollar-bearing,
-    shell-looking text of its own. The figures are two short assignments, not a
+    shell-looking text of its own. The figures are short assignments, not a
     payload, so they stay in the script.
+
+    A THIRD FIGURE, `LIVESPEC_NEEDS_HUMAN_LIMIT_SECONDS`, is the `needs_human`
+    node's own rendered timeout (Scenario 192). Its consumer is that node, which
+    sizes the wait it spends on a cut turn's commit runs from it so the wait ends
+    while enough of the timeout remains to preserve the tree. It is written
+    independently of the publication figures: a withheld publish limit must not
+    cost the node its bound, and the publication guard reads only its own names.
     """
     root = sandbox_plugins_root_expansion()
+    lines: list[str] = []
+    if limit_seconds is not None:
+        lines.append(f"LIVESPEC_PUBLISH_DRAFT_LIMIT_SECONDS={limit_seconds}")
+        budget = push_observation_budget_seconds(limit_seconds=limit_seconds)
+        lines.append(f"LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS={budget}")
+    if needs_human_limit_seconds is not None:
+        lines.append(f"LIVESPEC_NEEDS_HUMAN_LIMIT_SECONDS={needs_human_limit_seconds}")
+    quoted = " ".join(f"'{line}'" for line in lines)
     figures = (
-        ""
-        if limit_seconds is None
-        else (
-            "\nprintf '%s\\n' "
-            f"'LIVESPEC_PUBLISH_DRAFT_LIMIT_SECONDS={limit_seconds}' "
-            "'LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS="
-            f"{push_observation_budget_seconds(limit_seconds=limit_seconds)}' "
-            f'> "{root}/{HOOK_LIMIT_LIMITS_FILENAME}"'
-        )
+        f"\nprintf '%s\\n' {quoted} > \"{root}/{HOOK_LIMIT_LIMITS_FILENAME}\"" if lines else ""
     )
     step = PrepareStep(
         script=(
@@ -455,3 +491,20 @@ def hook_limit_prepare_steps_block(*, limit_seconds: int | None) -> str:
         "# --- resolved timeout ends its push (bd-ib-xi63mq, Scenario 177) ---\n"
     )
     return header + render_prepare_step(step=step)
+
+
+def hook_limit_graph_prepare_steps_block(
+    *,
+    graph_artifact: Path | None,
+    written_graph: Path,
+    warn: Callable[[str], object] | None,
+) -> str:
+    """The observer and BOTH resolved figures, each read off the graph the run will use."""
+    return hook_limit_prepare_steps_block(
+        limit_seconds=resolve_publish_draft_limit(
+            graph_artifact=graph_artifact, written_graph=written_graph, warn=warn
+        ),
+        needs_human_limit_seconds=resolve_needs_human_limit(
+            graph_artifact=graph_artifact, written_graph=written_graph
+        ),
+    )

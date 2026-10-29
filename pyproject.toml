@@ -606,6 +606,15 @@ destructive_cli_allowlist = [
 #   process-group liveness reading. It scrubs the child env exactly as an
 #   allowlisted spawn must, dropping every GIT_ and COV_CORE_ variable and
 #   COVERAGE_PROCESS_START.
+# - test_needs_human_node_timeout_cut_scenario192.py runs the MATERIALIZED sandbox
+#   commit runner and the committed `needs_human` body against real processes,
+#   for the reason the sibling above gives and one of its own: what the scenario
+#   claims -- a commit run left running when a node timeout cut the turn, a hook
+#   run still executing, and the order in which the node stops them against its
+#   preservation commit -- is a property of the processes alive at that instant,
+#   and a doubled process table cannot tell a stopped hook from one never
+#   started. It scrubs the child env exactly as an allowlisted spawn must,
+#   dropping every GIT_ and COV_CORE_ variable and COVERAGE_PROCESS_START.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -635,6 +644,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_pr_refresh_carry_forward_scenario178.py",
     "tests/integration/test_empty_checkpoint_commits_dropped.py",
     "tests/integration/test_sandbox_commit_runner_scenario179.py",
+    "tests/integration/test_needs_human_node_timeout_cut_scenario192.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

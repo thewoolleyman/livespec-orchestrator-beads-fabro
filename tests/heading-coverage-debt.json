@@ -688,13 +688,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 192 \u2014 A turn cut by its node timeout leaves its commit run to finish or be named, and a hook still executing at the cut is a hook-over-limit event",
-    "work_item": "bd-ib-ptnxyg",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded",
     "work_item": "bd-ib-m0t0",
     "first_seen": "2026-10-18"

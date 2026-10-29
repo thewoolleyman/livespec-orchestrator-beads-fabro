@@ -70,8 +70,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy
     harness_shell_env_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
-    hook_limit_prepare_steps_block,
-    resolve_publish_draft_limit,
+    hook_limit_graph_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_input_tokens import (
     substitute_input_tokens,
@@ -345,8 +344,9 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # rather than `resolved_graph`: the latter is the NAME the config carries,
     # and for a package-era client that name is relative to a directory this
     # process is not standing in.
-    plugin_cache_steps = plugin_cache_gate_prepare_steps_block() + hook_limit_prepare_steps_block(
-        limit_seconds=resolve_publish_draft_limit(
+    plugin_cache_steps = (
+        plugin_cache_gate_prepare_steps_block()
+        + hook_limit_graph_prepare_steps_block(
             graph_artifact=graph_artifact, written_graph=resolved_graph, warn=warn
         )
     )
