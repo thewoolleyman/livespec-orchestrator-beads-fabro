@@ -45,9 +45,19 @@ _LOCALLY_BUILT_ENTRY_STATUSES = frozenset({"pending-approval", "ready"})
 
 
 def resolve_merged_pr(
-    *, plan: DispatchPlan, item: WorkItem, runner: CommandRunner, journal: JournalFile
+    *,
+    plan: DispatchPlan,
+    item: WorkItem,
+    runner: CommandRunner,
+    journal: JournalFile,
+    produced_by_item_dispatch_only: bool = False,
 ) -> PrView | str | None:
-    """Resolve the merged PR for `item`: a view, a refusal string, or `None`."""
+    """Resolve the merged PR for `item`: a view, a refusal string, or `None`.
+
+    `produced_by_item_dispatch_only` drops the body-mention tier whatever the item's
+    status: a caller that publishes ONTO the pull request (the host-record primitive)
+    needs one an item's own dispatch produced, identified by head branch or title.
+    """
     viewed = run_stage(
         runner=runner,
         journal=journal,
@@ -90,7 +100,9 @@ def resolve_merged_pr(
         item=item,
         branch=plan.branch,
         default_branch=default_branch,
-        include_body_mentions=item.status not in _LOCALLY_BUILT_ENTRY_STATUSES,
+        include_body_mentions=(
+            not produced_by_item_dispatch_only and item.status not in _LOCALLY_BUILT_ENTRY_STATUSES
+        ),
     )
     if len(candidates) == 1:
         return candidates[0]

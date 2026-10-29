@@ -113,6 +113,9 @@ class _Runner:
     comment_exit: int = 0
     comments_exit: int = 0
     merged: bool = True
+    # A merged pull request that only MENTIONS the item in its body: neither its head
+    # branch nor its title names the item, so no dispatch of the item produced it.
+    body_mention_only: bool = False
     # The proof-asset store's upload leg. Defaults to SUCCEEDING, so a test that is
     # not about the store does not have to stub one; the failure arm is what the
     # upload-refusal case sets.
@@ -156,6 +159,20 @@ class _Runner:
         """The merge search's payload: the item's merged pull request, or none at all."""
         if not self.merged:
             return "[]"
+        if self.body_mention_only:
+            return json.dumps(
+                [
+                    {
+                        "number": _PR_NUMBER,
+                        "title": "chore: register the project-scoped plugins",
+                        "body": f"Unrelated change that mentions {_ITEM_ID} in passing.",
+                        "headRefName": "chore-plugin-registration",
+                        "baseRefName": "master",
+                        "state": "MERGED",
+                        "mergeCommit": {"oid": _MERGE_SHA},
+                    }
+                ]
+            )
         return json.dumps(
             [
                 {
@@ -795,6 +812,32 @@ def test_an_item_with_no_merged_pull_request_is_refused(tmp_path: Path) -> None:
 
     assert exit_code != 0
     assert "no single merged pull request" in emitted
+    assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
+
+
+def test_a_merged_pull_request_that_only_mentions_the_item_is_not_a_target(
+    tmp_path: Path,
+) -> None:
+    """A body-only mention is not a pull request any dispatch of the item produced.
+
+    The merge search matches bodies server-side, so an unrelated merge that merely names
+    the item comes back as the lone candidate. Publishing onto it puts a record on a pull
+    request the acceptance pass would then grade as the item's own, so the primitive
+    refuses before posting and names the item and what was missing.
+    """
+    _file_item(repo=tmp_path)
+    runner = _Runner(comments=_comments(), body_mention_only=True)
+
+    exit_code, emitted = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_RECORDED,
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+    )
+
+    assert exit_code != 0
+    assert _ITEM_ID in emitted
+    assert "no merged pull request produced by the item's own dispatches" in emitted
     assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
 
 
