@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.258.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.5...v0.258.6) (2026-10-29)
+
+
+### Bug Fixes
+
+* **groom:** mint cross-repo slice ids with the target tenant prefix and resolve their dependencies ([a2be7c0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a2be7c07a660de5f2e7b5bcc4b06a19ef947a113))
+
 ## [0.258.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.4...v0.258.5) (2026-10-29)
 
 
