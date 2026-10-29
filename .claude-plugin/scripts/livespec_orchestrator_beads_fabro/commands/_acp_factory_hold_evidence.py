@@ -91,6 +91,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe import (
+    is_availability_probe_run,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_clearance_records import is_clearance_run
 from livespec_orchestrator_beads_fabro.commands._acp_factory_clearance_evidence import (
     recorded_clearance,
@@ -380,11 +383,28 @@ def _observation_instant(*, row: FabroRunSummary, now_iso: str) -> datetime | No
 
 
 def _confirmation_instant(*, row: FabroRunSummary, now_iso: str) -> datetime | None:
-    """When this row's run BEGAN, if a confirmation from it could still matter."""
+    """When this row's run BEGAN, if a confirmation from it could still matter.
+
+    AN AVAILABILITY CONFIRMATION TURN IS NEVER AGED OUT. The window below exists
+    because a confirmation an ordinary dispatch happened to make could only
+    retire a record that had expired on its own, and a listing of 1626 rows makes
+    reading every old one unaffordable. Neither reason holds for a probe: since
+    the post-expiry confirmation an EXPIRED record governs selection until a
+    success satisfies it, and a probe is the one run whose whole purpose is to
+    satisfy it. Ageing its success out after `HOLD_INTERVAL` would leave a
+    low-traffic tenant owing the same confirmation again at its next admission,
+    and running another turn to satisfy it -- indefinitely. Probes are rare and
+    carry a label the listing row already shows, so reading every one costs one
+    `inspect` per probe, not per run.
+    """
     if row.start_time is None:
         return None
     started = parse_hold_instant(text=_SUBSECOND.sub("", row.start_time))
-    if started is None or not _within_hold_window(occurred=started, now_iso=now_iso):
+    if started is None:
+        return None
+    if is_availability_probe_run(labels=row.labels):
+        return started
+    if not _within_hold_window(occurred=started, now_iso=now_iso):
         return None
     return started
 

@@ -40,8 +40,16 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import Ac
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_confirmation import (
+    confirmation_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibility import (
     filter_eligible_candidates,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_slots import (
+    auto_approve_governing_settings,
+    budget_left,
+    ready_free_slots,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_capacity_deferred import (
     CapacitySnapshot,
@@ -222,11 +230,11 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
         wip_cap=wip_cap,
     )
     occupied = accounting.active_count + len(reworked.admitted)
-    free_slots = _ready_free_slots(
+    free_slots = ready_free_slots(
         admittable=admittable,
         occupied=occupied,
         wip_cap=wip_cap,
-        budget_left=_budget_left(rework=rework_pass, taken=len(reworked.admitted)),
+        budget_left=budget_left(rework=rework_pass, taken=len(reworked.admitted)),
     )
     plan = plan_admissions(
         ready_items=admittable,
@@ -245,7 +253,7 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
             record=auto_disposition_journal_record(
                 work_item_id=item.id,
                 disposition="auto-approve",
-                governing_settings=_auto_approve_governing_settings(item=item),
+                governing_settings=auto_approve_governing_settings(item=item),
             )
         )
     for item, assignee in plan.admitted:
@@ -338,20 +346,25 @@ def _eligible_legs(  # noqa: PLR0913 — kw-only; `screened` is the pre-dispatch
     cannot be proven to name the same file.
     """
     reused = reusable_verdict(screened=screened)
-    verdict = reused if reused is not None else admission_acp_verdict(repo=repo, journal=journal)
+    rework_candidates = list(
+        rework_pending_candidates(
+            items=items,
+            accounting=accounting,
+            rework=rework,
+            # The same aging inputs the ready queue this pass drains was
+            # ordered by, resolved off the same repository root.
+            ready_aging=ready_aging_order(project_root=repo),
+        )
+    )
+    verdict = reused
+    if verdict is None:
+        verdict = admission_acp_verdict(
+            repo=repo, journal=journal, evaluated=(*rework_candidates, *candidates)
+        )
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,
         preflight=verdict,
-        candidates=list(
-            rework_pending_candidates(
-                items=items,
-                accounting=accounting,
-                rework=rework,
-                # The same aging inputs the ready queue this pass drains was
-                # ordered by, resolved off the same repository root.
-                ready_aging=ready_aging_order(project_root=repo),
-            )
-        ),
+        candidates=rework_candidates,
         journal=journal,
     )
     admittable, ready_refused = filter_eligible_candidates(
@@ -364,7 +377,9 @@ def _eligible_legs(  # noqa: PLR0913 — kw-only; `screened` is the pre-dispatch
     return verdict, rework_admittable, admittable, refused
 
 
-def admission_acp_verdict(*, repo: Path, journal: JournalFile) -> AcpPreflightVerdict:
+def admission_acp_verdict(
+    *, repo: Path, journal: JournalFile, evaluated: tuple[WorkItem, ...] = ()
+) -> AcpPreflightVerdict:
     """One admission evaluation's ACP verdict, session-headroom assessment included.
 
     The policy is built here, once per call, which is what makes its memo the "one
@@ -378,6 +393,16 @@ def admission_acp_verdict(*, repo: Path, journal: JournalFile) -> AcpPreflightVe
     The pre-dispatch session-headroom screen calls this too, so the screen and the
     valve resolve the verdict through ONE builder and cannot disagree about what
     an evaluation assesses.
+
+    `evaluated` are the items this evaluation grades, and it is what turns the
+    confirmation seam ON: a candidate an expired hold leaves owing a confirmation
+    is then confirmed by a bounded factory run before the evaluation refuses it,
+    charged to the first of them. With none, no turn can be charged, so none is
+    run. Every admission entry point -- `dispatch --item`, `loop --item` and the
+    unattended drain -- reaches this builder with its items, and the screen MUST
+    supply them too, because the valve reuses the screen's verdict while it is
+    fresh and a verdict taken without the seam would be reused as the refusal the
+    seam exists to prevent.
     """
     now_iso = utc_now_iso()
     journal_path = getattr(journal, "path", None)
@@ -387,38 +412,8 @@ def admission_acp_verdict(*, repo: Path, journal: JournalFile) -> AcpPreflightVe
         now_iso=now_iso,
         headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
         factory_runs=FactoryRunReader(repo=repo),
+        confirmation=confirmation_for(journal=journal, evaluated=evaluated),
     )
-
-
-def _budget_left(*, rework: ReworkPass, taken: int) -> int | None:
-    """What is left of the pass's `--budget` after the rework leg took its share.
-
-    `None` means unbounded — the `dispatch --item` override carries no budget,
-    and the ready candidate list a `loop` hands in was already truncated to the
-    budget upstream, so this only ever REMOVES the slots rework already spent.
-    """
-    if rework.budget is None:
-        return None
-    return max(0, rework.budget - taken)
-
-
-def _ready_free_slots(
-    *,
-    admittable: list[WorkItem],
-    occupied: int,
-    wip_cap: int | None,
-    budget_left: int | None,
-) -> int:
-    slots = len(admittable) if wip_cap is None else max(0, wip_cap - occupied)
-    if budget_left is None:
-        return slots
-    return min(slots, budget_left)
-
-
-def _auto_approve_governing_settings(*, item: WorkItem) -> tuple[str, ...]:
-    if item.admission_policy == "auto":
-        return ("admission:auto",)
-    return ("auto_approve_ready",)
 
 
 def admission_held_outcome(*, item: WorkItem, reason: str) -> DispatchOutcome:

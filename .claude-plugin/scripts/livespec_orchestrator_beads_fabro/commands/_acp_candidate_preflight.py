@@ -165,7 +165,7 @@ def filter_node_candidates(
     chain: ResolvedAcpChain,
     inputs: PreflightInputs,
     assessed: dict[str, str],
-    confirmed: dict[str, str] | None = None,
+    confirmed: dict[str, str | None] | None = None,
 ) -> NodePreflight:
     """Filter this node's chain, retaining configured order.
 
@@ -189,7 +189,7 @@ def filter_node_candidates(
     skipped: list[SkippedCandidate] = []
     assessments: list[SessionHeadroomReading] = []
     codex_assessments: list[CodexHeadroomReading] = []
-    turns: dict[str, str] = {} if confirmed is None else confirmed
+    turns: dict[str, str | None] = {} if confirmed is None else confirmed
     for candidate in ordered:
         skip = _skip_for(
             candidate=candidate,
@@ -220,7 +220,7 @@ def _skip_for(
     assessed: dict[str, str],
     assessments: list[SessionHeadroomReading],
     codex_assessments: list[CodexHeadroomReading],
-    confirmed: dict[str, str],
+    confirmed: dict[str, str | None],
 ) -> SkippedCandidate | None:
     """The first filter this candidate fails, or `None` when it survives all five."""
     for hold in inputs.holds:
@@ -255,7 +255,7 @@ def _skip_for(
 
 
 def _confirmation_turn(
-    *, candidate: AcpCandidate, inputs: PreflightInputs, confirmed: dict[str, str]
+    *, candidate: AcpCandidate, inputs: PreflightInputs, confirmed: dict[str, str | None]
 ) -> str | None:
     """The ending one confirmation turn reached for this candidate, or `None`.
 

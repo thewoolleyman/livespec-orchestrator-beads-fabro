@@ -1732,6 +1732,32 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   faithfully run, and a repository declaring no participating factory — which
   is NOT a fallback to a host-side probe, because such a repository has no
   authoritative source for the confirmation to become evidence in.
+- `_dispatcher_acp_confirmation_seam.py` — the production supplier of the
+  filter's `confirm` seam (`bd-ib-i4nert`): what admission RUNS for a candidate
+  an expired hold leaves owing a post-expiry confirmation. The filter, the
+  probe's shape and its performing half all existed and NOTHING handed the
+  filter a seam, so a tenant with no successful dispatch refused every admission
+  indefinitely with an empty `confirmation_turn_endings` — neither a
+  configuration gate nor one entry point, since `dispatch` and `loop --item`
+  reach the same valve. Four properties an editor must not invert. The seam is
+  built from the evaluation's OWN `PreflightInputs`, so the expired observations
+  a turn names are the ones the filter skipped for. Every turn is journaled and
+  its attempt-cost record is charged to the ONE first-evaluated item. The pre-
+  dispatch session-headroom screen MUST supply it too, because the valve reuses
+  the screen's verdict while fresh and a verdict taken without the seam would be
+  reused as the refusal the seam exists to prevent. And a probe run's success is
+  exempt from the factory read's `HOLD_INTERVAL` window
+  (`_acp_factory_hold_evidence._confirmation_instant`), since otherwise the next
+  admission after fifteen minutes owes the same confirmation again. Snapshot
+  composers (wait attention, idle-factory) still supply no seam. The seam module
+  imports NOTHING from the performing half: the preflight sits inside the
+  engine's import closure, which `_acp_availability_probe_run` re-enters through
+  `_dispatcher_shell_runner`, so the real performer is INJECTED as
+  `ConfirmationTurns.perform` by `_dispatcher_admission_confirmation` -- the one
+  module the valve imports. Importing it directly closed a circular import that
+  only the `tests/bin` fresh-interpreter payload tests could see.
+  `_dispatcher_admission_slots.py` is the pure slot arithmetic that left the
+  valve for size.
 - `_acp_preflight_skips.py` — the VALUES one preflight evaluation is made of,
   split out of `_acp_candidate_preflight` by cohesion when the confirmation
   seam took that module past the LLOC ceiling: what a skip IS, the three

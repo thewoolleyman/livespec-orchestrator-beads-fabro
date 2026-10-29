@@ -80,7 +80,7 @@ could not be proven to agree with the first.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
@@ -127,6 +127,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_chain_sources import (
     repository_acp_chain_sources,
     workflow_scoped_dispatcher_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_confirmation_seam import (
+    ConfirmationTurns,
+    with_confirmation_seam,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
@@ -183,19 +187,19 @@ def resolve_acp_preflight(
     repo: Path,
     journal_path: Path | None,
     now_iso: str,
-    probe: Callable[[str], str] | None = None,
     headroom: SessionHeadroomPolicy | None = None,
     factory_runs: FactoryRunReader | None = None,
+    confirmation: ConfirmationTurns | None = None,
 ) -> AcpPreflightVerdict:
     """Grade every ACP node's candidate chain for this repository, once.
 
-    `probe` is the admission-time credential assessment seam. It defaults to
-    ABSENT rather than to the host credential probe, because no per-candidate
-    credential channel is ratified yet -- "A new provider credential channel
-    requires its own ratified change" -- so supplying one here would invent the
-    entitlement mapping the contract reserves. Wait attention and idle-factory
-    leave it absent by the same default, which is what makes their verdict
-    free of any external call.
+    No admission-time credential assessment seam is accepted here: no
+    per-candidate credential channel is ratified yet -- "A new provider
+    credential channel requires its own ratified change" -- so supplying one
+    would invent the entitlement mapping the contract reserves, and no caller
+    ever did. `PreflightInputs.probe` still carries it for the filter itself.
+    Wait attention and idle-factory therefore resolve a verdict free of any
+    external call on that axis.
 
     `headroom` is the admission session-headroom policy, and it defaults to
     ABSENT for exactly the same reason one clause over: "Snapshot composition
@@ -210,6 +214,14 @@ def resolve_acp_preflight(
     to ABSENT on the same reasoning: it is the only input here that reaches a
     factory, and a default that read every declared one would put two round
     trips on every verdict a snapshot composes.
+
+    `confirmation` is the seam that RUNS the availability confirmation turn an
+    expired hold leaves owing, and it defaults to ABSENT on the same reasoning:
+    a turn is a real factory run spending a real allowance, and "Snapshot
+    composition MUST NOT execute ... availability confirmation turns". Only the
+    admission pass supplies one, so every candidate a snapshot composer finds
+    owing a confirmation stays skipped exactly as it was before the seam had a
+    caller.
     """
     timeout = resolve_availability_probe_timeout_seconds(cwd=repo)
     if not is_successful(timeout):
@@ -237,20 +249,23 @@ def resolve_acp_preflight(
         repo=repo, journal_path=journal_path, now_iso=now_iso, factory_runs=factory_runs
     )
     ledger = host_wide.ledger
-    return build_acp_preflight_verdict(
-        chains=chains,
-        graph_text=graph_text,
-        ledger=ledger,
+    inputs = with_confirmation_seam(
         inputs=PreflightInputs(
             holds=ledger.holds,
             expired_holds=ledger.expired_holds,
             legacy_providers=_legacy_providers(journal_path=journal_path, now_iso=now_iso),
             builtin_pairs=builtin_pairs,
-            probe=probe,
             headroom=headroom,
             unconfirmed_keys=ledger.unconfirmed_keys,
             confirmations=host_wide.confirmations,
         ),
+        turns=confirmation,
+        repo=repo,
+        now_iso=now_iso,
+        timeout_seconds=unsafe_perform_io(timeout.unwrap()),
+    )
+    return build_acp_preflight_verdict(
+        chains=chains, graph_text=graph_text, ledger=ledger, inputs=inputs
     )
 
 

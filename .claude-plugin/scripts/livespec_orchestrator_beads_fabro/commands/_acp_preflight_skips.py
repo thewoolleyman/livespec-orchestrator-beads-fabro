@@ -214,8 +214,11 @@ class PreflightInputs:
     # IT RETURNS AN ENDING RATHER THAN A BOOLEAN, which is the same shape
     # `probe` above takes and for the same reason: the skip has to record WHAT
     # the turn did, because a terminated probe and a measured refusal take
-    # different routes and a boolean cannot tell a reader which happened.
-    confirm: Callable[[AcpCandidate], str] | None = None
+    # different routes and a boolean cannot tell a reader which happened. It
+    # returns `None` when it could not run a turn at all -- the clause's "any
+    # other probe failure" -- which skips the candidate exactly as an absent seam
+    # does and records no ending, because nothing was measured.
+    confirm: Callable[[AcpCandidate], str | None] | None = None
     headroom: SessionHeadroomPolicy | None = None
     # The domain hold keys an UNREAD evidence source leaves unconfirmed. It is
     # a key set rather than the unobservable entries themselves because the

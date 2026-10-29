@@ -69,7 +69,7 @@ def session_headroom_screen_refusal(
     """
     if not items:
         return None
-    verdict = admission_acp_verdict(repo=repo, journal=journal)
+    verdict = admission_acp_verdict(repo=repo, journal=journal, evaluated=tuple(items))
     if verdict.viable or not headroom_refusal_fields(verdict=verdict):
         setattr(args, SCREENED_VERDICT_ARG, stamp_screened_verdict(verdict=verdict))
         return None

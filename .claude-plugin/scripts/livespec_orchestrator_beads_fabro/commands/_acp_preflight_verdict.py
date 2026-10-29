@@ -307,7 +307,7 @@ def _graded(
     # spending a real allowance, and the contract lets one entitlement be
     # "repeated across nodes when that identity is truly shared" -- so a
     # per-node memo would probe one candidate once per node it appears on.
-    confirmed: dict[str, str] = {}
+    confirmed: dict[str, str | None] = {}
     preflights = tuple(
         filter_node_candidates(
             chain=chains[node], inputs=inputs, assessed=assessed, confirmed=confirmed
