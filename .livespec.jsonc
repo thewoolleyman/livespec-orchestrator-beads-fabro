@@ -875,6 +875,7 @@
       "node_timeouts": {
         "implement": 14400,
         "implement_completion": 600,
+        "dod_gate": 600,
         "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200,

@@ -261,6 +261,18 @@ bound of 1300000 still sits above both shipped figures with 20220 seconds of
 headroom, so it is unchanged, and the freshness gate still demands 111600
 seconds because the window governs it and not the graph.
 
+LOWERING `dod_gate` TO 600 SECONDS (work-item bd-ib-pscdok) MOVES BOTH FIGURES
+DOWN, and the bound is unchanged. `dispatcher.node_timeouts.dod_gate` is now 600
+rather than the graph's 1800-second default, because the measured grading turns
+take 0.7 to 1.6 minutes and the one outlier ran two 30-minute turns after its
+agent left the grading role. The gate carries `max_retries=1`, so the derivation
+bills it at two attempts, and the allowance falls by the 1200 seconds per attempt
+the lowering removes, which is exactly the 2400-second move measured below.
+Re-measured against this tree: 1277380 shipped and 1990180 at the retired
+`"15m"`, down from 1279780 and 1992580. The 1300000 bound still sits above the
+shipped figure with 22620 seconds of headroom and below the retired control, so
+it is unchanged.
+
 THE EXACT PINS WERE REPLACED BY INVARIANTS (work-item bd-ib-nvhqyq). Every move
 recorded above forced an edit to this module, including moves that changed no
 graph at all: raising `fix` from 3600 to 7200 in `dispatcher.node_timeouts`
