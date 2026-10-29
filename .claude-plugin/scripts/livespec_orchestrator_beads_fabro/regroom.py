@@ -56,9 +56,18 @@ def require_backlog_target(*, path: StoreConfig, item_id: str) -> None:
 
 
 def close_regroomed_out(
-    *, path: StoreConfig, item_id: str, replacement_slice_ids: list[str]
+    *,
+    path: StoreConfig,
+    item_id: str,
+    replacement_slice_ids: list[str],
+    cross_repo_slice_ids: list[str] | None = None,
 ) -> None:
-    """Close a backlog grooming target with an explicit replacement disposition."""
+    """Close a backlog grooming target with an explicit replacement disposition.
+
+    `replacement_slice_ids` are the slices filed in this tenant, and at least one
+    is required; `cross_repo_slice_ids` are replacements filed in other tenants,
+    named in the close reason alongside them but never sufficient on their own.
+    """
     require_backlog_target(path=path, item_id=item_id)
     if not replacement_slice_ids:
         raise GroomExitRefusedError(
@@ -70,7 +79,9 @@ def close_regroomed_out(
         item,
         status="done",
         resolution=_REGROOMED_OUT_RESOLUTION,
-        reason=_regroomed_out_reason(replacement_slice_ids=replacement_slice_ids),
+        reason=_regroomed_out_reason(
+            replacement_slice_ids=[*replacement_slice_ids, *(cross_repo_slice_ids or [])]
+        ),
         audit=None,
     )
     append_work_item(path=path, item=closed)

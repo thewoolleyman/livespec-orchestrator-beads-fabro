@@ -34,6 +34,7 @@ as `sibling_work_item` so the Dispatcher can gate on it.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -85,12 +86,54 @@ def _config() -> StoreConfig:
 _LOCAL_REPO = "livespec-orchestrator-beads-fabro"
 _LOCAL_REPO_ROOT = Path("tests/nonexistent-groom-policy-cwd")
 _CROSS_REPO = "livespec-runtime"
+_CROSS_PREFIX = "lr"
+_SECOND_CROSS_REPO = "livespec-dev-tooling"
+_SECOND_CROSS_PREFIX = "ldt"
 # The approval every filing case is made under: who approved the cut, and the
 # route the approval arrived on. Filing refuses without it.
 _APPROVAL = GroomApproval(
     approver="thewoolleyman",
     route="resolve-blocked:li-epic:ready ledger comment 41",
 )
+
+
+def _cut_config(*, tmp_path: Path) -> StoreConfig:
+    """A connection descriptor whose project resolves both cross-repo targets.
+
+    The target tenants' create-prefixes are read off each sibling clone's own
+    configuration, so a cut naming a cross-repo target needs a project root that
+    declares the targets and sibling clones that carry their connection.
+    """
+    repo = tmp_path / _LOCAL_REPO
+    repo.mkdir()
+    targets = {_CROSS_REPO: _CROSS_PREFIX, _SECOND_CROSS_REPO: _SECOND_CROSS_PREFIX}
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "cross_repo_targets": {
+                    name: {"github_url": f"https://github.com/thewoolleyman/{name}"}
+                    for name in targets
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    for name, prefix in targets.items():
+        clone = tmp_path / name
+        clone.mkdir()
+        _ = (clone / ".livespec.jsonc").write_text(
+            json.dumps({"livespec-orchestrator-beads-fabro": {"connection": {"prefix": prefix}}}),
+            encoding="utf-8",
+        )
+    return StoreConfig(
+        tenant="livespec-impl-beads",
+        prefix="livespec-impl-beads",
+        server_user="livespec-impl-beads",
+        database="livespec-impl-beads",
+        bd_path="bd",
+        fake=True,
+        repo_root=repo,
+    )
 
 
 def _seed_backlog_item(*, issue_id: str, title: str = "", description: str = "") -> None:
@@ -146,13 +189,15 @@ def _factory_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> Candidate
     )
 
 
-def _cross_repo_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> CandidateSlice:
+def _cross_repo_slice(
+    *, title: str, depends_on: tuple[str, ...] = (), repo_target: str = _CROSS_REPO
+) -> CandidateSlice:
     return CandidateSlice(
         title=title,
         description=_slice_description(title=title),
         acceptance="done when filed in the target repo",
         autonomy_tier="factory",
-        repo_target=_CROSS_REPO,
+        repo_target=repo_target,
         depends_on=depends_on,
     )
 
@@ -593,12 +638,12 @@ def test_groom_unknown_target_raises_not_found() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_cross_repo_slice_not_filed_in_local_tenant() -> None:
+def test_cross_repo_slice_not_filed_in_local_tenant(tmp_path: Path) -> None:
     """A slice targeting a different repo must NOT be filed in the local tenant."""
     _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
-        path=_config(),
+        path=_cut_config(tmp_path=tmp_path),
         regroom_item_id="li-epic",
         local_repo=_LOCAL_REPO,
         approval=_APPROVAL,
@@ -622,12 +667,12 @@ def test_cross_repo_slice_not_filed_in_local_tenant() -> None:
     assert result.cross_repo_slices[0].candidate.repo_target == _CROSS_REPO
 
 
-def test_cross_repo_slice_carries_minted_id() -> None:
+def test_cross_repo_slice_carries_minted_id(tmp_path: Path) -> None:
     """The returned CrossRepoSlice carries a non-empty minted id."""
     _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
-        path=_config(),
+        path=_cut_config(tmp_path=tmp_path),
         regroom_item_id="li-epic",
         local_repo=_LOCAL_REPO,
         approval=_APPROVAL,
@@ -640,12 +685,12 @@ def test_cross_repo_slice_carries_minted_id() -> None:
     assert result.cross_repo_slices[0].minted_id != ""
 
 
-def test_local_slice_dep_on_cross_repo_blocker_uses_sibling_work_item_kind() -> None:
+def test_local_slice_dep_on_cross_repo_blocker_uses_sibling_work_item_kind(tmp_path: Path) -> None:
     """A local slice depending on a cross-repo blocker records sibling_work_item dep."""
     _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
-        path=_config(),
+        path=_cut_config(tmp_path=tmp_path),
         regroom_item_id="li-epic",
         local_repo=_LOCAL_REPO,
         approval=_APPROVAL,
@@ -672,12 +717,12 @@ def test_local_slice_dep_on_cross_repo_blocker_uses_sibling_work_item_kind() -> 
     )
 
 
-def test_cross_repo_slice_still_regrooms_out_original() -> None:
+def test_cross_repo_slice_still_regrooms_out_original(tmp_path: Path) -> None:
     """Original backlog item is disposed even when some slices are cross-repo."""
     _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
-        path=_config(),
+        path=_cut_config(tmp_path=tmp_path),
         regroom_item_id="li-epic",
         local_repo=_LOCAL_REPO,
         approval=_APPROVAL,
@@ -689,6 +734,148 @@ def test_cross_repo_slice_still_regrooms_out_original() -> None:
 
     assert result.regroomed_out is True
     assert _item_status(issue_id="li-epic") == "done"
+
+
+def test_cross_repo_slice_id_carries_the_target_tenant_prefix(tmp_path: Path) -> None:
+    """The id is minted so the TARGET tenant accepts it, not the local one."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_cut_config(tmp_path=tmp_path),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[
+            _factory_slice(title="local"),
+            _cross_repo_slice(title="runtime slice"),
+            _cross_repo_slice(title="tooling slice", repo_target=_SECOND_CROSS_REPO),
+        ],
+    )
+
+    runtime, tooling = result.cross_repo_slices
+    assert runtime.minted_id.startswith(f"{_CROSS_PREFIX}-")
+    assert tooling.minted_id.startswith(f"{_SECOND_CROSS_PREFIX}-")
+    (local_id,) = result.filed_slice_ids
+    assert local_id.startswith("livespec-impl-beads-")
+
+
+def test_cross_repo_target_with_no_resolvable_tenant_is_refused_before_any_write(
+    tmp_path: Path,
+) -> None:
+    """A prefix cannot be invented: an unresolvable target refuses the whole cut."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    with pytest.raises(GroomDraftError, match="no-such-repo"):
+        file_approved_slices(
+            path=_cut_config(tmp_path=tmp_path),
+            regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
+            approval=_APPROVAL,
+            slices=[
+                _factory_slice(title="local"),
+                _cross_repo_slice(title="orphan", repo_target="no-such-repo"),
+            ],
+        )
+
+    assert set(_all_items()) == {"li-epic"}
+    assert _item_status(issue_id="li-epic") == "backlog"
+
+
+def test_cross_repo_slice_depending_on_another_repos_slice_is_returned_blocked_by_it(
+    tmp_path: Path,
+) -> None:
+    """In a two-repo cut the second repo's slice is filed blocked by the first's."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_cut_config(tmp_path=tmp_path),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[
+            _factory_slice(title="local"),
+            _cross_repo_slice(title="first repo slice"),
+            _cross_repo_slice(
+                title="second repo slice",
+                repo_target=_SECOND_CROSS_REPO,
+                depends_on=("first repo slice",),
+            ),
+        ],
+    )
+
+    first, second = result.cross_repo_slices
+    assert first.dep_entries == ()
+    assert second.dep_entries == (
+        {"kind": "sibling_work_item", "repo": _CROSS_REPO, "work_item_id": first.minted_id},
+    )
+
+
+def test_cross_repo_slice_dependencies_are_typed_from_its_own_tenant(tmp_path: Path) -> None:
+    """A same-repo blocker is local in that tenant; a local-repo blocker is a sibling."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_cut_config(tmp_path=tmp_path),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[
+            _factory_slice(title="local"),
+            _cross_repo_slice(title="runtime base"),
+            _cross_repo_slice(title="runtime top", depends_on=("runtime base", "local")),
+        ],
+    )
+
+    (local_id,) = result.filed_slice_ids
+    base, top = result.cross_repo_slices
+    assert top.dep_entries == (
+        {"kind": "local", "work_item_id": base.minted_id},
+        {"kind": "sibling_work_item", "repo": _LOCAL_REPO, "work_item_id": local_id},
+    )
+
+
+def test_cross_repo_depends_on_naming_no_earlier_slice_is_refused_before_any_write(
+    tmp_path: Path,
+) -> None:
+    """A mistyped cross-repo handle fails as loudly as a mistyped local one."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    with pytest.raises(GroomDraftError, match="no such slice"):
+        file_approved_slices(
+            path=_cut_config(tmp_path=tmp_path),
+            regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
+            approval=_APPROVAL,
+            slices=[
+                _factory_slice(title="local"),
+                _cross_repo_slice(title="remote", depends_on=("no such slice",)),
+            ],
+        )
+
+    assert set(_all_items()) == {"li-epic"}
+    assert _item_status(issue_id="li-epic") == "backlog"
+
+
+def test_regroomed_out_reason_names_the_cross_repo_replacement_slices(tmp_path: Path) -> None:
+    """The original's close reason lists every replacement, wherever it was filed."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_cut_config(tmp_path=tmp_path),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[
+            _factory_slice(title="local"),
+            _cross_repo_slice(title="runtime slice"),
+            _cross_repo_slice(title="tooling slice", repo_target=_SECOND_CROSS_REPO),
+        ],
+    )
+
+    reason = _all_items()["li-epic"].reason
+    assert reason is not None
+    for slice_id in (*result.filed_slice_ids, *(one.minted_id for one in result.cross_repo_slices)):
+        assert slice_id in reason
 
 
 def test_empty_repo_target_on_factory_slice_raises_draft_error() -> None:

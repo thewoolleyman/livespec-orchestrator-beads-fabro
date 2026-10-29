@@ -172,6 +172,9 @@ result = file_approved_slices(
 # result.filed_slice_ids        — factory slices filed through intake routing, deps linked.
 # result.criteria_parses        — each filed slice's effective-criteria parse (display it).
 # result.spec_change_slices     — the human-gated slices to route (Step 4).
+# result.cross_repo_slices      — factory slices for ANOTHER repo's tenant, NOT filed
+#                                 here; each carries `minted_id` (already prefixed for
+#                                 its target tenant) and `dep_entries` (Step 4a).
 # result.regroomed_out is True  — the original backlog item was closed explicitly.
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
@@ -251,11 +254,27 @@ the propose-change operation --spec-target SPECIFICATION/ \
     --topic <slug> --body "<slice scope + acceptance>"
 ```
 
+### Step 4a — File the cross-repo slices into their target tenants
+
+For each entry in `result.cross_repo_slices`, file the slice into the tenant of
+`entry.candidate.repo_target`, run from that repository's root, under EXACTLY
+`entry.minted_id` — the id already carries the target tenant's own prefix, so
+the tenant accepts it and `--force` is never needed (never pass it). Apply
+`entry.dep_entries` as the slice's dependency edges when filing it: they are
+typed from the target tenant's point of view (`local` for a blocker in the same
+repo, `sibling_work_item` for a blocker in another repo), and skipping them files
+the slice UNBLOCKED, eligible to drain before its blockers ship. A cross-repo
+target that resolves to no tenant prefix, or a `depends_on` handle naming no
+earlier slice, is refused with `GroomDraftError` before anything is filed. The
+original's regroomed-out close reason names these slices alongside the locally
+filed ones.
+
 ### Step 5 — Summary
 
 Report: the original item id (now explicitly regroomed-out), the filed
-slice ids with their routed lifecycle statuses and dependency layers, and the
-spec-change slices routed to the `propose-change` operation. The Dispatcher
+slice ids with their routed lifecycle statuses and dependency layers, the
+cross-repo slices filed into their target tenants (id, repo, and dependency
+edges), and the spec-change slices routed to the `propose-change` operation. The Dispatcher
 then drains eligible factory slices by dependency layer.
 
 ## Important properties

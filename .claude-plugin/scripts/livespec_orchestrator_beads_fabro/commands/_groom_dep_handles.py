@@ -26,9 +26,10 @@ __all__: list[str] = [
 def resolve_dep_entries(
     *,
     slice_title: str,
+    owner_repo: str,
     handles: tuple[str, ...],
     id_by_title: dict[str, str],
-    cross_repo_title_to_repo: dict[str, str],
+    repo_by_title: dict[str, str],
     spec_change_titles: frozenset[str],
 ) -> tuple[DependsOnRaw, ...]:
     """Resolve a slice's draft-local title handles to typed dependency entries.
@@ -39,10 +40,11 @@ def resolve_dep_entries(
     surfaced as `GroomDraftError` so the front-end re-drafts rather than
     filing a dangling edge.
 
-    A handle that resolves to a cross-repo slice (tracked in
-    `cross_repo_title_to_repo`) emits a `sibling_work_item` dep entry so the
-    Dispatcher can gate on it via `resolve_ref`. All other handles emit a
-    `local` dep entry (same-tenant beads `blocks` edge).
+    Entries are typed from the point of view of the tenant the slice is filed
+    into, `owner_repo`: a handle naming a slice of another repo (per
+    `repo_by_title`) emits a `sibling_work_item` dep entry so the Dispatcher can
+    gate on it via `resolve_ref`, and a handle naming a slice of the same repo
+    emits a `local` dep entry (same-tenant beads `blocks` edge).
     """
     resolved: list[DependsOnRaw] = []
     for handle in handles:
@@ -53,8 +55,8 @@ def resolve_dep_entries(
                     slice_title=slice_title, handle=handle, spec_change_titles=spec_change_titles
                 )
             )
-        repo = cross_repo_title_to_repo.get(handle)
-        if repo is not None:
+        repo = repo_by_title[handle]
+        if repo != owner_repo:
             resolved.append({"kind": "sibling_work_item", "repo": repo, "work_item_id": dep_id})
         else:
             resolved.append({"kind": "local", "work_item_id": dep_id})

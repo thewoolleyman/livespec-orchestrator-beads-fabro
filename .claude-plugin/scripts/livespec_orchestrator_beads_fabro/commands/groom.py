@@ -31,7 +31,6 @@ Expected failures raise typed errors from `errors.py` (`WorkItemNotFoundError`,
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -39,7 +38,6 @@ from typing import TYPE_CHECKING
 from livespec_runtime.work_items.rank import key_between
 
 from livespec_orchestrator_beads_fabro import regroom
-from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     record_size_justification,
 )
@@ -64,7 +62,10 @@ from livespec_orchestrator_beads_fabro.commands._groom_context import (
     GroomContext,
     load_groom_context,
 )
-from livespec_orchestrator_beads_fabro.commands._groom_dep_handles import resolve_dep_entries
+from livespec_orchestrator_beads_fabro.commands._groom_plan import (
+    PlannedLocalSlice,
+    plan_approved_slices,
+)
 from livespec_orchestrator_beads_fabro.commands._groom_spec_change_classification import (
     classified_candidate_slices,
 )
@@ -130,19 +131,21 @@ def file_approved_slices(
       dependency edges. Local slices that depend (by draft-title handle) on a
       cross-repo blocker carry a `sibling_work_item` dep so the Dispatcher can
       gate on it.
-    - If `repo_target != local_repo` (a CROSS-REPO slice): mint an id but
-      do NOT file locally (the one-slice/one-ledger model). The slice is
-      returned in `GroomResult.cross_repo_slices` with its minted id for
-      the SKILL.md prose to route to the target repo.
+    - If `repo_target != local_repo` (a CROSS-REPO slice): mint an id with the
+      TARGET tenant's prefix but do NOT file locally (the one-slice/one-ledger
+      model). The slice is returned in `GroomResult.cross_repo_slices` with its
+      minted id and its resolved dependency entries for the SKILL.md prose to
+      route to the target repo.
 
     After all slices are processed, the original backlog item is explicitly
-    closed against the filed LOCAL slice ids.
+    closed against the filed LOCAL slice ids and the cross-repo slice ids.
 
     Raises `GroomApprovalRequiredError` — before any slice is filed — if the
     approval record is absent or names no approver identity or route.
     Raises `GroomDraftError` — also before any slice is filed — if any factory
     slice has an empty `repo_target` or if a `depends_on` handle names no
-    earlier factory slice in the draft.
+    earlier factory slice in the draft — local and cross-repo slices alike — or
+    if a cross-repo slice's target resolves to no tenant id prefix.
     Raises `GroomExitRefusedError` if no local factory slice was filed.
     Raises `WorkItemNotFoundError` if `regroom_item_id` is absent.
     """
@@ -164,10 +167,10 @@ def file_approved_slices(
     # the filer", and at groom the filer is this draft. It runs BEFORE the plan
     # is built, because the plan SORTS each candidate on `is_spec_change` — a
     # classification applied afterwards would re-route nothing.
-    plan = _plan_approved_slices(
+    plan = plan_approved_slices(
         slices=classified_candidate_slices(slices=slices, repo=path.repo_root or Path.cwd()),
         local_repo=local_repo,
-        prefix=path.prefix,
+        path=path,
     )
     prepared = _prepare_local_slices(planned=plan.local)
     if detail := consensus_groom_cut_size_refusal(
@@ -188,7 +191,12 @@ def file_approved_slices(
             )
         )
         filed_ids.append(planned.slice_id)
-    regroom.close_regroomed_out(path=path, item_id=regroom_item_id, replacement_slice_ids=filed_ids)
+    regroom.close_regroomed_out(
+        path=path,
+        item_id=regroom_item_id,
+        replacement_slice_ids=filed_ids,
+        cross_repo_slice_ids=[entry.minted_id for entry in plan.cross_repo],
+    )
     record_groom_approval(path=path, work_item_id=regroom_item_id, approval=approved)
     return GroomResult(
         filed_slice_ids=tuple(filed_ids),
@@ -199,86 +207,11 @@ def file_approved_slices(
     )
 
 
-@dataclass(frozen=True, kw_only=True)
-class _PlannedLocalSlice:
-    """One local factory slice, fully resolved and awaiting only its writes."""
-
-    candidate: CandidateSlice
-    slice_id: str
-    dep_entries: tuple[DependsOnRaw, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class _GroomPlan:
-    """The whole approved cut, decided before the first slice is filed."""
-
-    local: tuple[_PlannedLocalSlice, ...]
-    spec_change: tuple[CandidateSlice, ...]
-    cross_repo: tuple[CrossRepoSlice, ...]
-
-
-def _plan_approved_slices(
-    *, slices: list[CandidateSlice], local_repo: str, prefix: str
-) -> _GroomPlan:
-    """Mint every id and resolve every dependency handle, writing nothing.
-
-    Pure with respect to the ledger: it walks the draft in order, sorts each
-    slice into its route (spec-change, cross-repo, local), and resolves each
-    local slice's `depends_on` handles against the slices that PRECEDE it. Any
-    malformed draft raises here, where the ledger has not yet been touched.
-    """
-    # A spec-change slice routes to propose-change and is never minted, so no
-    # id can ever exist for it. Its title is carried separately purely so the
-    # refusal can say WHY the handle is unresolvable rather than merely that it
-    # is — the two are the same observation to a maintainer re-drafting a cut.
-    spec_change_titles = frozenset(
-        candidate.title for candidate in slices if candidate.is_spec_change
-    )
-    local: list[_PlannedLocalSlice] = []
-    spec_change: list[CandidateSlice] = []
-    cross_repo: list[CrossRepoSlice] = []
-    # Maps each factory slice's draft title -> its minted id so that a later
-    # slice's `depends_on` title handles resolve to real ids. Populated for
-    # both local and cross-repo slices as they are processed in draft order.
-    id_by_title: dict[str, str] = {}
-    # Maps a cross-repo slice's draft title -> its repo_target so that a
-    # local slice depending on it can emit a sibling_work_item dep entry.
-    cross_repo_title_to_repo: dict[str, str] = {}
-    for candidate in slices:
-        if candidate.is_spec_change:
-            spec_change.append(candidate)
-            continue
-        if not candidate.repo_target:
-            raise GroomDraftError(detail=f"slice {candidate.title!r} has an empty repo_target")
-        slice_id = new_work_item_id(prefix=prefix)
-        if candidate.repo_target != local_repo:
-            # Cross-repo slice: mint id, track for dep resolution, return for
-            # external routing. NOT filed in the local tenant.
-            id_by_title[candidate.title] = slice_id
-            cross_repo_title_to_repo[candidate.title] = candidate.repo_target
-            cross_repo.append(CrossRepoSlice(candidate=candidate, minted_id=slice_id))
-            continue
-        dep_entries = resolve_dep_entries(
-            slice_title=candidate.title,
-            handles=candidate.depends_on,
-            id_by_title=id_by_title,
-            cross_repo_title_to_repo=cross_repo_title_to_repo,
-            spec_change_titles=spec_change_titles,
-        )
-        local.append(
-            _PlannedLocalSlice(candidate=candidate, slice_id=slice_id, dep_entries=dep_entries)
-        )
-        id_by_title[candidate.title] = slice_id
-    return _GroomPlan(
-        local=tuple(local), spec_change=tuple(spec_change), cross_repo=tuple(cross_repo)
-    )
-
-
 def _prepare_local_slices(
-    *, planned: tuple[_PlannedLocalSlice, ...]
-) -> tuple[tuple[_PlannedLocalSlice, WorkItem], ...]:
+    *, planned: tuple[PlannedLocalSlice, ...]
+) -> tuple[tuple[PlannedLocalSlice, WorkItem], ...]:
     """Build every local work-item before the filing's first ledger write."""
-    prepared: list[tuple[_PlannedLocalSlice, WorkItem]] = []
+    prepared: list[tuple[PlannedLocalSlice, WorkItem]] = []
     prev_rank: str | None = None
     for entry in planned:
         rank = key_between(a=prev_rank, b=None)
