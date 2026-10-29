@@ -595,6 +595,17 @@ destructive_cli_allowlist = [
 #   rewritten. No in-process call can stand in, because the head under decision
 #   does not exist until the shipped shell has produced it. It scrubs the child
 #   env exactly as an allowlisted spawn must, by passing an explicit `env`.
+# - test_sandbox_commit_runner_scenario179.py runs the MATERIALIZED sandbox
+#   commit runner, for the reason `test_dispatcher_publication_head.py` gives
+#   and one of its own: the runner starts the commit in a detached session of
+#   its own and answers later waits from records that process writes, so what
+#   the scenario claims -- a hook outlasting one call, a signal death reading as
+#   no verdict, a second start refused while one is live -- exists only across
+#   separate invocations of a real program over a real repository and a real
+#   hook. An in-process call would drive neither the detachment nor the
+#   process-group liveness reading. It scrubs the child env exactly as an
+#   allowlisted spawn must, dropping every GIT_ and COV_CORE_ variable and
+#   COVERAGE_PROCESS_START.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -623,6 +634,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_scripted_refresh_execution.py",
     "tests/integration/test_pr_refresh_carry_forward_scenario178.py",
     "tests/integration/test_empty_checkpoint_commits_dropped.py",
+    "tests/integration/test_sandbox_commit_runner_scenario179.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

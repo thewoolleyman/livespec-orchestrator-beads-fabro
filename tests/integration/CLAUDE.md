@@ -1666,6 +1666,29 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   "the wall treats the citation as stated" is a claim about what it does NOT
   refuse.
 
+- `test_sandbox_commit_runner_scenario179.py` — binds the runner sub-scenarios of
+  `SPECIFICATION/scenarios.md` Scenario 179 and the `contracts.md` paragraph "A
+  commit leg completes past one tool call" (work-item `bd-ib-sufca7`): a slow
+  hook, a refusing hook, a signal death and a second start while one is live, each
+  against REAL processes. The runner is materialized by EXECUTING the prepare step
+  the plugin renders, so the bytes under test are the ones a sandbox receives, and
+  the repository is a real `git init` clone with real `pre-commit` and
+  `commit-msg` shell hooks. The slow hook waits for a RELEASE FILE rather than
+  sleeping, so "outlasts the first bounded wait" holds on any host load and the
+  running report is not a race. Three things an editor must not weaken. The
+  passing case reads the trailers off the commit itself and the `head` off the
+  report AGAINST `git rev-parse HEAD`, because a report naming a commit that is
+  not HEAD satisfies a state-only assertion. The refusal and signal cases assert
+  HEAD unchanged, since "no commit" is the claim and an exit code cannot show it.
+  And the signal case ends the whole process group of the recorded worker and
+  asserts `no-verdict` on TWO successive waits with no passed report between, so a
+  reader that reported the verdict once and then drifted is excluded. The
+  needs-human sub-scenario is the Dispatcher's replay of a recorded verdict and
+  stays at the unit tier, in `test_dispatcher_commit_runner_replay.py`. Every
+  child is spawned with all `GIT_` and coverage variables removed: this suite can
+  itself run under a commit hook, whose `GIT_INDEX_FILE` would otherwise point the
+  fixture's commits at the outer repository.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
