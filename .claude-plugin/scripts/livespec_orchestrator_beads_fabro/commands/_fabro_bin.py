@@ -55,9 +55,17 @@ def default_fabro_bin() -> str:
     names a real, actionable target rather than a bare name. Computed at call
     time (not import time) so a test that monkeypatches `Path.home()` /
     `shutil.which` observes the redirected values.
+
+    A home candidate that cannot be probed (`OSError`, e.g. EACCES under an
+    unreadable `$HOME`, which `Path.is_file` does not swallow) degrades to the
+    same fallbacks as a missing one instead of aborting the Dispatcher.
     """
     home_candidate = Path.home() / ".fabro" / "bin" / "fabro"
-    if home_candidate.is_file() and os.access(home_candidate, os.X_OK):
+    try:
+        usable = home_candidate.is_file() and os.access(home_candidate, os.X_OK)
+    except OSError:
+        usable = False
+    if usable:
         return str(home_candidate)
     found = shutil.which("fabro")
     if found is not None:
