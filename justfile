@@ -468,6 +468,7 @@ check:
         check-no-workflow-edits
         check-fresh-clone-setup
         check-doctor-static
+        check-acp-preflight-config
     )
     LIVESPEC_AGGREGATE_TARGETS
     # `SKIP_TARGETS` is the fleet's recognised skip contract, the one livespec's
@@ -908,6 +909,20 @@ install-ci-fabro:
 # heals the track; on a clean tree it never fires.
 check-doctor-static:
     bash dev-tooling/just-check-doctor-static.sh
+
+# `check-acp-preflight-config` — evaluates the committed `.livespec.jsonc`
+# through the Dispatcher's own `resolve_acp_preflight` and fails, printing the
+# refusal text, when a node's candidate chain cannot resolve (a fallback model
+# the model catalog does not declare, for instance). Moves the Scenario 129
+# refusal from dispatch admission to commit time: the Codex-first routing
+# rollout copied `acp_nodes` into 13 fleet repositories whose catalogs lacked
+# the Claude fallback, and every one refused every dispatch while each hook and
+# CI run on the copying change passed. Supplies no probe, headroom policy,
+# factory reader or journal, so the verdict is deterministic and needs no
+# network. Fails only on a CONFIGURATION refusal, never on an availability wait.
+# Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
+check-acp-preflight-config:
+    uv run python dev-tooling/checks/acp_preflight_config.py
 
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).

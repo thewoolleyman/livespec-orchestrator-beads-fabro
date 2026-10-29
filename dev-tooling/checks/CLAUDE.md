@@ -236,3 +236,17 @@ Current checks:
   `blocked ⟹ blocked_reason ∈ {needs-human, infra-external}` ERRORS
   (exit non-zero). No git / network I/O; passes trivially on the empty
   hermetic-fake tenant.
+- `acp_preflight_config.py` — moves the Dispatcher's ACP preflight refusal
+  (Scenario 129, "Mixed, unknown or unresolvable entries refuse before claim")
+  from dispatch admission to commit time. It evaluates the committed
+  `.livespec.jsonc` through the Dispatcher's OWN `resolve_acp_preflight` and
+  fails, printing the refusal text, when the verdict carries a configuration
+  `refusal` -- a fallback model the model catalog does not declare, for
+  instance. Measured cause: the Codex-first routing rollout copied this
+  repository's `acp_nodes` block into 13 fleet repositories whose catalogs lacked
+  the Claude fallback, and every one refused every dispatch while each hook and
+  CI run on the copying change passed. It supplies no probe, headroom policy,
+  factory reader, confirmation turn or journal (`journal_path=None`), so the
+  verdict is deterministic and needs no network; only `refusal` is consulted, so
+  an availability wait or a live hold never turns a commit red. The optional
+  first argument points it at a fixture repository root.
