@@ -95,6 +95,7 @@ _GUARD_MARKERS: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = (
         "authentication",
         (
             ("401 unauthorized",),
+            ("authentication required",),
             ("authentication_error",),
             ("invalid api key",),
             ("invalid bearer token",),

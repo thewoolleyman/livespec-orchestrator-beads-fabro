@@ -17,15 +17,26 @@ ending produces, and `_acp_availability_probe_run` performs the turn and fills
 the observation this grades. One concern each, and the direction of every edge
 between them is what keeps the four acyclic.
 
-THE FIVE UNCONFIRMED ENDINGS ARE KEPT APART RATHER THAN COLLAPSED, which is the
+THE SIX UNCONFIRMED ENDINGS ARE KEPT APART RATHER THAN COLLAPSED, which is the
 one decision an editor is most likely to undo on the grounds that the clause
 treats them alike. It does not: downstream they take THREE routes. An eligible
 REFUSAL mints a hold whose expiry runs from the probe's own occurrence time; a
 TIMEOUT must mint nothing, because a turn the Dispatcher terminated measured no
-provider; and a process exit, a bare session and a cancellation are neither.
-Returning one boolean would make a terminated probe indistinguishable from a
-measured outage, and the hold it then minted would skip the candidate for
-fifteen minutes on evidence nobody gathered.
+provider; and a process exit, a bare session, a cancellation and an
+authentication failure are neither. Returning one boolean would make a
+terminated probe indistinguishable from a measured outage, and the hold it then
+minted would skip the candidate for fifteen minutes on evidence nobody gathered.
+
+THE AUTHENTICATION FAILURE IS ITS OWN ENDING because the cause is the
+Dispatcher's rather than the provider's (`bd-ib-3pfauo`). The adapter answered
+`session/prompt` with "Authentication required" because the turn carried no
+usable credential, the graph routed the failed stage to `exit`, and the run
+read SUCCEEDED with the turn recorded as a process exit -- a label that sends an
+operator after an adapter that never misbehaved. It ranks below the bound, the
+completed turn and the cancellation, and ABOVE the refusal: a rejected
+credential after a session was created has both halves of a refusal, and a hold
+minted on it would skip a healthy provider for fifteen minutes. The clause's own
+non-eligible list names authentication for exactly that reason.
 
 THE PRECEDENCE IS NOT ARBITRARY, and three of its five steps are load-bearing.
 
@@ -71,6 +82,7 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
 
 __all__: list[str] = [
+    "PROBE_AUTHENTICATION_FAILED",
     "PROBE_CANCELLED",
     "PROBE_ENDINGS",
     "PROBE_PROCESS_EXIT",
@@ -87,13 +99,14 @@ __all__: list[str] = [
 # The ONE ending that confirms availability.
 PROBE_TURN_COMPLETED = "turn-completed"
 
-# The five that do not, each spelled for the clause's own word for it so a
+# The six that do not, each spelled for the clause's own word for it so a
 # journal row reads back as the sentence it was graded against.
 PROBE_SESSION_CREATED = "session-created"
 PROBE_PROCESS_EXIT = "process-exit"
 PROBE_TIMED_OUT = "timed-out"
 PROBE_CANCELLED = "cancelled"
 PROBE_REFUSED = "acp-refusal"
+PROBE_AUTHENTICATION_FAILED = "authentication-failure"
 
 # The closed vocabulary, confirming member first. Ordered so a reader of the
 # tuple meets the one ending that confirms before the five that do not.
@@ -104,6 +117,7 @@ PROBE_ENDINGS: tuple[str, ...] = (
     PROBE_TIMED_OUT,
     PROBE_CANCELLED,
     PROBE_REFUSED,
+    PROBE_AUTHENTICATION_FAILED,
 )
 
 # Derived rather than restated, so the two can never disagree about whether an
@@ -117,7 +131,7 @@ PROBE_UNCONFIRMED_ENDINGS: tuple[str, ...] = tuple(
 class AcpProbeObservation:
     """One launched confirmation turn's ending, as the launcher read it.
 
-    FIVE FIELDS AND NOTHING ELSE, which is the contract's "never an arbitrary
+    SIX FIELDS AND NOTHING ELSE, which is the contract's "never an arbitrary
     exec-output tail, prompt, tool/test/review output, or run log" made
     structural: a caller holding a run log has nowhere to put it.
 
@@ -128,6 +142,9 @@ class AcpProbeObservation:
     `timed_out` is the probe's own bound having fired, client-side or
     node-side. `failure` is the run's recorded failure block, read for its
     provider sentence by the refusal arm and by nothing else here.
+    `authentication_failed` is whether the probe node's OWN recorded failure is
+    an authentication rejection, read from the node rather than the run because
+    the graph absorbs a failed turn and the run then carries no failure block.
     """
 
     turn_completed: bool
@@ -135,6 +152,7 @@ class AcpProbeObservation:
     cancelled: bool
     timed_out: bool
     failure: FabroFailureDetail | None
+    authentication_failed: bool = False
 
 
 def probe_confirms(*, ending: str) -> bool:
@@ -149,9 +167,9 @@ def probe_confirms(*, ending: str) -> bool:
 
 
 def probe_ending(*, observation: AcpProbeObservation) -> str:
-    """Which of the six endings this observation is.
+    """Which of the seven endings this observation is.
 
-    Total over the six, in the precedence the module docstring argues for. The
+    Total over the seven, in the precedence the module docstring argues for. The
     final arm is the PROCESS EXIT rather than a fallback: an attempt that
     neither completed a turn, nor was terminated or cancelled, nor opened a
     session, is the adapter having exited before the protocol completed.
@@ -162,11 +180,11 @@ def probe_ending(*, observation: AcpProbeObservation) -> str:
         return PROBE_TURN_COMPLETED
     if observation.cancelled:
         return PROBE_CANCELLED
+    if observation.authentication_failed:
+        return PROBE_AUTHENTICATION_FAILED
     if _refused(observation=observation):
         return PROBE_REFUSED
-    if observation.acp_started:
-        return PROBE_SESSION_CREATED
-    return PROBE_PROCESS_EXIT
+    return PROBE_SESSION_CREATED if observation.acp_started else PROBE_PROCESS_EXIT
 
 
 def _refused(*, observation: AcpProbeObservation) -> bool:

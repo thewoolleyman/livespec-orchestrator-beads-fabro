@@ -40,7 +40,14 @@ from livespec_orchestrator_beads_fabro.commands._acp_availability_probe import (
 from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_outcome import (
     AcpProbeObservation,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_failure_signals import (
+    AcpFailureSignal,
+    non_eligible_reason,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_event_types import ACP_STARTED_EVENT
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
+    routing_stage_failure,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 from livespec_orchestrator_beads_fabro.commands._fabro_port_node_outcomes import (
     fabro_node_outcomes,
@@ -59,6 +66,8 @@ __all__: list[str] = [
 # The statuses that are a run CANCELLATION, both spellings the engine uses.
 _CANCELLED_STATUS_KINDS: frozenset[str] = frozenset({"cancelled", "canceled"})
 _SUCCEEDED_STATUS = "succeeded"
+# The guard class `_acp_failure_signals` names an authentication rejection.
+_AUTHENTICATION_REASON = "authentication"
 
 # Generous for one `inspect`, `events` or `rm` against a reachable factory, and
 # bounded so an unresponsive one leaves the probe unconfirmed instead of
@@ -97,9 +106,37 @@ def probe_run_observation(
             cancelled=(inspected.status_kind or "") in _CANCELLED_STATUS_KINDS,
             timed_out=False,
             failure=inspected.failure,
+            authentication_failed=_authentication_failed(
+                inspect_payload=inspected.payload, events_payload=events.payload
+            ),
         ),
         _cost(payload=inspected.payload),
     )
+
+
+def _authentication_failed(*, inspect_payload: object, events_payload: object) -> bool:
+    """Whether the probe node's own recorded failure is an authentication rejection.
+
+    READ FROM THE NODE, NOT FROM THE RUN. The graph routes a failed `confirm`
+    stage to `exit`, so the run reads SUCCEEDED and carries no failure block of
+    its own; the sentence lives in the stage's recorded output or its failure
+    event, whichever the engine generation writes, and the shared stage reader
+    answers both. The classification is the ONE the failure classifier applies
+    to a dispatch, so a probe and a dispatch cannot disagree about what counts
+    as authentication.
+    """
+    detail = routing_stage_failure(
+        observed=None,
+        inspect_payload=inspect_payload,
+        events_payload=events_payload,
+        stage=AVAILABILITY_PROBE_NODE,
+    )
+    if detail is None or detail.cause is None:
+        return False
+    signal = AcpFailureSignal(
+        original_identity=AVAILABILITY_PROBE_NODE, protocol_message=detail.cause
+    )
+    return non_eligible_reason(signal=signal) == _AUTHENTICATION_REASON
 
 
 def _turn_completed(*, record: dict[str, Any] | None) -> bool:
