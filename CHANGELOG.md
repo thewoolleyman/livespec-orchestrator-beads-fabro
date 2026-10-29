@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.256.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.1...v0.256.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* journal an authentication-rejected confirmation turn as an authentication failure ([c6d9141](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6d9141ef60afa5bdc550ff8e81c782712c98198))
+* project the dispatch worker credential into the availability confirmation turn ([5590e08](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5590e08b62a5b6bd167de9ecb2256a14f8539500))
+
 ## [0.256.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.0...v0.256.1) (2026-10-29)
 
 
