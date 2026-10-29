@@ -156,6 +156,7 @@ def test_every_ending_is_enumerated_and_exactly_one_of_them_confirms() -> None:
         module.PROBE_TIMED_OUT,
         module.PROBE_CANCELLED,
         module.PROBE_REFUSED,
+        module.PROBE_AUTHENTICATION_FAILED,
     }
     assert len(module.PROBE_ENDINGS) == len(set(module.PROBE_ENDINGS))
     confirming = [one for one in module.PROBE_ENDINGS if module.probe_confirms(ending=one)]

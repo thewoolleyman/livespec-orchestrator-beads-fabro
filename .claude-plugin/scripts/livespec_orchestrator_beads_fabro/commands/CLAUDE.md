@@ -1624,14 +1624,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   ACP refusal do not confirm availability." PURE, and the grading only; the
   vocabulary is CLOSED (`PROBE_ENDINGS`) so a consumer can exhaust it, and
   exactly one member confirms.
-  THE FIVE UNCONFIRMED ENDINGS ARE KEPT APART rather than collapsed into one
+  THE SIX UNCONFIRMED ENDINGS ARE KEPT APART rather than collapsed into one
   boolean, which is the decision an editor is most likely to undo on the
   grounds that the clause treats them alike. It does not: downstream they take
   THREE routes — an eligible REFUSAL mints a hold at the probe's own occurrence
   time, a TIMEOUT must mint nothing because a turn the Dispatcher terminated
-  measured no provider, and a process exit, a bare session and a cancellation
-  are neither. One boolean makes a terminated probe indistinguishable from a
-  measured outage.
+  measured no provider, and a process exit, a bare session, a cancellation and
+  an authentication failure are neither. One boolean makes a terminated probe
+  indistinguishable from a measured outage. The authentication failure
+  (`bd-ib-3pfauo`) is the Dispatcher's own missing credential, not the
+  provider's: it ranks below the bound, the completed turn and the cancellation
+  but ABOVE the refusal, and it is read from the probe NODE's recorded failure,
+  because the graph routes a failed turn to `exit` and the run then reads
+  succeeded with no failure block of its own.
   THREE PRECEDENCE STEPS ARE LOAD-BEARING. The BOUND is read FIRST, before any
   recorded text: a killed turn's record can carry the provider's last sentence,
   so a text-first grader would mint a hold from a measurement it interrupted.

@@ -401,6 +401,12 @@ def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for name in [name for name in os.environ if name.startswith(_FACTORY_CREDENTIAL_SLOT_PREFIX)]:
         monkeypatch.delenv(name, raising=False)
+    # The unnumbered token too: the availability confirmation turn projects whatever
+    # `select_factory_credential` names into the factory's environment, so an
+    # AMBIENT one (this suite runs under the credential wrapper in the post-merge
+    # janitor) would change which launch a probe test reaches. A test that needs a
+    # token sets it itself.
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]

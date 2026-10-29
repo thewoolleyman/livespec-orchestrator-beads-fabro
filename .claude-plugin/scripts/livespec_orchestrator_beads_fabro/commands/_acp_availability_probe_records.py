@@ -30,7 +30,7 @@ The clause is equally explicit about the OTHER probe: "No hold may come from
 ... the admission-time credential-usability probe", which is a different
 mechanism entirely and reaches none of this.
 
-THE REFUSAL ARM IS THE ONLY ARM. Five of the six endings mint nothing, and the
+THE REFUSAL ARM IS THE ONLY ARM. Six of the seven endings mint nothing, and the
 TIMED-OUT one is the reason this is a lookup on the ending rather than on the
 recorded text: a terminated turn's record can carry the provider's last
 sentence, so a builder reading the text first mints a hold from a measurement
@@ -62,7 +62,7 @@ outcome, occurrence time and, where observable, its cost" -- and the breadth is
 the part an implementation narrows. A row written only on refusal makes the
 measurement that found a provider HEALTHY invisible, which is exactly what an
 operator asks while a chain is waiting, and an absent row reads downstream as a
-probe nobody ran. So the five endings that mint nothing and the one that
+probe nobody ran. So the six endings that mint nothing and the one that
 confirms are all recorded, under one stage, with the ending itself as a field.
 
 "WHERE OBSERVABLE" IS A STATEMENT ABOUT THE MEASUREMENT AND NOT ABOUT THE KEY.
