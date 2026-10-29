@@ -84,6 +84,8 @@ _WARNING_STAGE = "acp-model-fallback-observed"
 _CLEARED_STAGE = "acp-model-fallback-cleared"
 _SUPERSEDED_STAGE = "acp-model-fallback-superseded"
 _UNAVAILABLE_STAGE = "acp-selection-outcomes-unavailable"
+_READ_STAGE = "acp-selection-outcomes-read"
+_SECOND_RUN = "01SECOND"
 _FACT_ID = f"hygiene:model-fallback:target:{_NODE}"
 
 _WARNED_AT = "2026-10-22T08:00:00Z"
@@ -241,6 +243,17 @@ def _unavailable(*, run_id: str, at: str = _WARNED_AT) -> dict[str, Any]:
 def _stages(*, state: str = "succeeded") -> str:
     """One `fabro inspect` record whose stage map is keyed `<node>@<visit>`."""
     return json.dumps([{"run_id": _FALLBACK_RUN, "stages": {f"{_NODE}@1": {"state": state}}}])
+
+
+def _inspected(*, status: object, run_id: str = _FALLBACK_RUN) -> str:
+    """One Petri-shaped `fabro inspect` record that also carries the run's own status."""
+    return json.dumps(
+        [{"run_id": run_id, "status": status, "stages": {f"{_NODE}@1": {"state": "succeeded"}}}]
+    )
+
+
+def _inspect_count(*, runner: _Runner) -> int:
+    return [call[1] for call in runner.calls].count("inspect")
 
 
 def _checkpoint_outcomes(*, status: str = "succeeded") -> str:
@@ -859,3 +872,134 @@ def test_the_pass_folds_the_warning_ledger_from_the_journal_at_most_once(
     assert _stages_written(journal_path=journal_path).count(_WARNING_STAGE) == first.count(
         _WARNING_STAGE
     )
+
+
+def test_a_terminal_run_s_outcomes_are_read_once_and_not_again_on_a_later_pass(
+    tmp_path: Path,
+) -> None:
+    """Both terminal spellings are read on the first pass and never inspected again.
+
+    A terminal run's node outcomes cannot change, so re-reading them every ten
+    minutes for the whole replay window is the waste this case ends. The two
+    runs spell their status the two ways the engine does (a bare string and a
+    `kind` object), so a build recognising only one still spends a read on the
+    other. The third pass is the control that the skip survives repeated passes
+    and that the warning the first read minted is neither lost nor minted again.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-2", index=1, identity="selection-2"),
+            _run_stamp(dispatch_id="dispatch-2", run_id=_SECOND_RUN),
+        ),
+    )
+    runner = _Runner(
+        inspect_by_run={
+            _FALLBACK_RUN: _inspected(status="succeeded"),
+            _SECOND_RUN: _inspected(status={"kind": "failed"}, run_id=_SECOND_RUN),
+        }
+    )
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    for _ in range(3):
+        _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert _inspect_count(runner=runner) == 2
+    assert written.count(_READ_STAGE) == 2
+    assert written.count(_WARNING_STAGE) == 2
+
+
+def test_the_read_record_on_the_journal_not_a_process_tally_ends_the_re_read(
+    tmp_path: Path,
+) -> None:
+    """The read is remembered on the journal, so a fresh process spends no inspect.
+
+    The timer starts a new process every ten minutes, so a tally held in memory
+    would satisfy the multi-pass case above and bound nothing. Here the record
+    is already ON the journal and this process takes its first pass.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            {
+                "at": _WARNED_AT,
+                "stage": _READ_STAGE,
+                "work_item_id": _ITEM,
+                "run_id": _FALLBACK_RUN,
+                "factory_name": _HP.name,
+                "factory_server_url": _HP.server,
+            },
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _inspected(status="succeeded")})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _inspect_count(runner=runner) == 0
+    assert _WARNING_STAGE not in _stages_written(journal_path=journal_path)
+
+
+@pytest.mark.parametrize("status", ["running", {"kind": "blocked"}, None, "an-unrecognised-kind"])
+def test_a_run_that_was_not_terminal_when_read_is_read_again(
+    tmp_path: Path, status: object
+) -> None:
+    """A run still moving, or whose status cannot be recognised as terminal, is re-read.
+
+    Its outcomes can still change, so recording the read would freeze a partial
+    reading. A missing or unrecognised status is treated as not terminal for the
+    same reason: the conservative direction is the extra read, never a skipped
+    run. No read record is written for it.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _inspected(status=status)})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _inspect_count(runner=runner) == 2
+    assert _READ_STAGE not in _stages_written(journal_path=journal_path)
+
+
+def test_a_run_unreadable_on_an_earlier_pass_is_read_until_it_is_readable(
+    tmp_path: Path,
+) -> None:
+    """An unreadable pass records no read, so the retry continues until a read lands.
+
+    The first two passes find no record and journal the run unavailable; the
+    factory then answers with a terminal record. That pass reads it and records
+    the read, and the pass after it spends nothing.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    assert _READ_STAGE not in _stages_written(journal_path=journal_path)
+    runner.inspect_by_run[_FALLBACK_RUN] = _inspected(status="failed")
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert written.count(_UNAVAILABLE_STAGE) == 2
+    assert written.count(_READ_STAGE) == 1
+    assert _inspect_count(runner=runner) == 3
