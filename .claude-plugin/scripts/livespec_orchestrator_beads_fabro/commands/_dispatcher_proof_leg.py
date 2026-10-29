@@ -75,6 +75,11 @@ class ProofLeg:
     `host` is the host leg's own verdict, carried rather than recomputed: the pointer
     needs the `host_verified` record it rested on, the parking record needs the
     pending set, and a second grading could disagree with the one the verdict used.
+
+    `captured` is the newest `captured` record attributed to the merging dispatch. It
+    grades nothing, because a `captured` record carries no per-assertion
+    `Reproduced:` verdict; it is carried so that a factory assertion left UNOBSERVED
+    for want of a `verified` record can NAME the record the pull request does hold.
     """
 
     assertions: tuple[AssertionEvidence, ...]
@@ -82,6 +87,7 @@ class ProofLeg:
     records: tuple[ProofRecord, ...]
     reason: str
     host: HostLeg
+    captured: ProofRecord | None = None
 
     @property
     def checks(self) -> tuple[CriterionCheck, ...]:
