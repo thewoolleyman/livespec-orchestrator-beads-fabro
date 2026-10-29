@@ -95,11 +95,20 @@ class _Cursor:
 
 
 @dataclass(kw_only=True)
+class _Flight:
+    """One factory-and-run reading, in flight or settled."""
+
+    done: threading.Event = field(default_factory=threading.Event)
+    value: object = None
+    settled: bool = False
+
+
+@dataclass(kw_only=True)
 class _Scope:
     depth: int = 0
     live: bool = True
     cursors: dict[Path, _Cursor] = field(default_factory=dict)
-    inspections: dict[tuple[str, str], object] = field(default_factory=dict)
+    inspections: dict[tuple[str, str], _Flight] = field(default_factory=dict)
 
 
 @dataclass(kw_only=True)
@@ -140,15 +149,53 @@ def release_pass_snapshot() -> None:
 
 
 def memoized_inspection(*, factory: str, run_id: str, read: Callable[[], _Reading]) -> _Reading:
-    """`read()` once per factory and run inside a live pass; every call outside one reads."""
-    with _LOCK:
-        scope = _HOLDER.scope
-        if scope is None or not scope.live:
+    """`read()` once per factory and run inside a live pass; every call outside one reads.
+
+    The lock is held only to claim or look up the pair's flight, never across
+    `read()`: a slow inspect of one run must not hold back another run's, and the
+    selection-replay lane fans its inspects out across worker threads. A second
+    reader of a pair in flight waits for the first; if that reading raised, the
+    waiter takes the reading itself.
+    """
+    while True:
+        with _LOCK:
+            scope = _HOLDER.scope
+            key = (factory, run_id)
+            flight = None
+            leads = False
+            if scope is not None and scope.live:
+                flight = scope.inspections.get(key)
+                leads = flight is None
+                if leads:
+                    flight = _Flight()
+                    scope.inspections[key] = flight
+        if scope is None or flight is None:
             return read()
-        key = (factory, run_id)
-        if key not in scope.inspections:
-            scope.inspections[key] = read()
-        return cast("_Reading", scope.inspections[key])
+        if leads:
+            return _lead(scope=scope, key=key, flight=flight, read=read)
+        _ = flight.done.wait()
+        if flight.settled:
+            return cast("_Reading", flight.value)
+
+
+def _lead(
+    *,
+    scope: _Scope,
+    key: tuple[str, str],
+    flight: _Flight,
+    read: Callable[[], _Reading],
+) -> _Reading:
+    """Take the one reading for `flight`, and wake its waiters whether or not it raised."""
+    try:
+        reading = read()
+        flight.value = reading
+        flight.settled = True
+    finally:
+        if not flight.settled:
+            with _LOCK:
+                _ = scope.inspections.pop(key, None)
+        flight.done.set()
+    return reading
 
 
 def forget_inspection(*, factory: str, run_id: str) -> None:
