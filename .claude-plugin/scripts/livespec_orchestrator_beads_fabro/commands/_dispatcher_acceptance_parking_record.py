@@ -48,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     PROOF_RECORD_TITLE,
+    VERDICT_CAPTURED,
     VERDICT_HOST_RECORDED,
     VERDICT_HOST_VERIFIED,
     VERDICT_HUMAN_ATTESTED,
@@ -58,6 +59,8 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
         AcceptancePassResult,
     )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import ProofLeg
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import ProofRecord
 
 __all__: list[str] = [
     "PARKING_RECORD_TITLE",
@@ -202,7 +205,7 @@ def _evidence_legs(*, result: AcceptancePassResult) -> tuple[EvidenceLeg, ...]:
             EvidenceLeg(
                 name=PROOF_RECORD_EVIDENCE_LEG,
                 observed=result.proof.record is not None,
-                detail=result.proof.reason,
+                detail=result.proof.reason + _captured_note(proof=result.proof),
             )
         )
     return tuple(legs)
@@ -220,8 +223,12 @@ def _pending_legs(
     this record could not name. They are listed in the order the deliverable policy
     ranks the modes, host before human.
     """
+    captured = _captured_only(proof=result.proof)
     legs = [
-        PendingLeg(name=leg, action=_action(leg=leg, item_id=item_id, pull_request=pull_request))
+        PendingLeg(
+            name=leg,
+            action=_action(leg=leg, item_id=item_id, pull_request=pull_request, captured=captured),
+        )
         for leg in result.absent_evidence
     ]
     if result.proof is not None:
@@ -246,7 +253,30 @@ def _pending_legs(
     return tuple(legs)
 
 
-def _action(*, leg: str, item_id: str, pull_request: int | None) -> str:
+def _captured_only(*, proof: ProofLeg | None) -> ProofRecord | None:
+    """The `captured` record, when it is the only factory record the merge has.
+
+    A `verified` record that is present but lacks an assertion's verdict is a
+    different fault with a different remedy, so it is excluded here.
+    """
+    if proof is None or proof.record is not None:
+        return None
+    return proof.captured
+
+
+def _captured_note(*, proof: ProofLeg) -> str:
+    captured = _captured_only(proof=proof)
+    if captured is None:
+        return ""
+    return (
+        f"; the only factory record is the {VERDICT_CAPTURED} record {captured.url},"
+        " which carries no per-assertion verdict and grades nothing"
+    )
+
+
+def _action(
+    *, leg: str, item_id: str, pull_request: int | None, captured: ProofRecord | None = None
+) -> str:
     """What would move the item past one named leg.
 
     Named per leg rather than as one generic "re-run the pass" line, because the
@@ -275,6 +305,15 @@ def _action(*, leg: str, item_id: str, pull_request: int | None) -> str:
         return (
             "The item's Definition of Done parses to no gradeable assertion. Repair the"
             f" section, then {_reaccept(item_id=item_id)}"
+        )
+    if captured is not None:
+        return (
+            f"UNOBSERVED: the only {PROOF_RECORD_TITLE} record for the merging dispatch is the"
+            f" {VERDICT_CAPTURED} record {captured.url}, which carries no per-assertion"
+            " `Reproduced:` verdict, so no record grades this assertion. Run the proof-only"
+            f" resume arm on {_pull_request_phrase(pull_request=pull_request)}"
+            f" (`dispatcher.py resume --item {item_id}`), which publishes a"
+            f" {VERDICT_VERIFIED} record graded per assertion, then {_reaccept(item_id=item_id)}"
         )
     return (
         f"Publish a {PROOF_RECORD_TITLE} record whose first line names {VERDICT_VERIFIED}"

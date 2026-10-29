@@ -100,7 +100,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import DispatchPlan
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
     PROOF_RECORD_EVIDENCE_LEG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence impor
     ProofLeg,
     read_proof_leg,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import pointer_in
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -170,7 +171,7 @@ def run_acceptance_pass(
         read_proof_leg(
             repo=repo,
             criteria=criteria,
-            outcome=outcome,
+            outcome=_outcome_with_pointed_pull_request(item=item, outcome=outcome),
             runner=active_runner,
             dispatch=_merging_dispatch(outcome=outcome, journal_path=journal_path),
             merged_head=(
@@ -208,6 +209,26 @@ def run_acceptance_pass(
         classification=classification,
         proof=proof,
     )
+
+
+def _outcome_with_pointed_pull_request(
+    *, item: WorkItem, outcome: DispatchOutcome
+) -> DispatchOutcome:
+    """The outcome the proof leg reads its records through, resolving the merge off the pointer.
+
+    A pass whose outcome recorded no pull request — a later dispatch that found the
+    work already merged and opened none — would otherwise read the proof leg as
+    "pull request number unavailable" and report the merge as unknown. The pointer
+    section the item already carries names the merged pull request, so it stands in
+    for the missing number on the PROOF read only; the telemetry leg still reports
+    that this outcome itself recorded no merge.
+    """
+    if outcome.pr_number is not None:
+        return outcome
+    pointer = pointer_in(description=item.description)
+    if pointer is None:
+        return outcome
+    return replace(outcome, pr_number=pointer.pull_request)
 
 
 def _merging_dispatch(*, outcome: DispatchOutcome, journal_path: Path | None) -> MergingDispatch:
