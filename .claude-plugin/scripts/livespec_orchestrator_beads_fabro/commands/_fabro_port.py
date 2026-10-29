@@ -8,12 +8,17 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import DispatchCorrelation
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
+    forget_inspection,
+    memoized_inspection,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_auth import fabro_auth_login
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
     UrllibFabroHttpTransport,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_inspection import fabro_inspect_result
 from livespec_orchestrator_beads_fabro.commands._fabro_port_payload import (
     fabro_events_payload,
     fabro_json_payload,
@@ -21,10 +26,8 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_payload import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroFailureDetail,
     FabroRunSummary,
-    fabro_failure_detail_from_payload,
     fabro_run_summaries_from_payload,
     fabro_run_summaries_from_stdout,
-    fabro_status_kind_from_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_run_launch import (
     launch_fabro_run,
@@ -148,16 +151,15 @@ class FabroPort:
         )
 
     def inspect(self, *, run_id: str, timeout_seconds: float) -> FabroInspectResult:
-        command = self._run(
-            argv=[self.fabro_bin, "inspect", run_id, "--json", *self._server_suffix()],
-            timeout_seconds=timeout_seconds,
-        )
-        payload = fabro_json_payload(command=command)
-        return FabroInspectResult(
-            command=command,
-            payload=payload,
-            status_kind=fabro_status_kind_from_payload(payload=payload),
-            failure=fabro_failure_detail_from_payload(payload=payload),
+        return memoized_inspection(
+            factory=self.target.server_url or "",
+            run_id=run_id,
+            read=lambda: fabro_inspect_result(
+                command=self._run(
+                    argv=[self.fabro_bin, "inspect", run_id, "--json", *self._server_suffix()],
+                    timeout_seconds=timeout_seconds,
+                )
+            ),
         )
 
     def events(self, *, run_id: str, timeout_seconds: float) -> FabroEventsResult:
@@ -230,6 +232,7 @@ class FabroPort:
         )
 
     def rm(self, *, run_id: str, timeout_seconds: float) -> FabroCommandResult:
+        forget_inspection(factory=self.target.server_url or "", run_id=run_id)
         command = self._run(
             argv=[self.fabro_bin, "rm", "-f", run_id, *self._server_suffix()],
             timeout_seconds=timeout_seconds,
