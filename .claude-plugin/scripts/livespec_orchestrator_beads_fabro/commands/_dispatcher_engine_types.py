@@ -16,6 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import NodeTimeoutCut
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     ProviderLimitRelease,
+    ReclassifiedTurn,
 )
 
 if TYPE_CHECKING:
@@ -197,6 +198,11 @@ class DispatchOutcome:
     # candidate identity, neither of which the post-run disposition holds, so a
     # second derivation there could only re-read the rendered detail prose.
     provider_limit_release: ProviderLimitRelease | None = None
+    # The succeeded agent turns of this run that ended with a measured provider
+    # refusal and so count as failed attempts of their candidates, whether or not
+    # one of them ended the run. `None` rather than empty when none matched, so
+    # the journal payload drops it with every other unset observation.
+    reclassified_turns: tuple[ReclassifiedTurn, ...] | None = None
     # The merged-reconcile ending this run took, if it took one. Carried on the
     # outcome because the sandbox that printed it is gone by the time the
     # acceptance pass needs the merged head, and a record of what the ending

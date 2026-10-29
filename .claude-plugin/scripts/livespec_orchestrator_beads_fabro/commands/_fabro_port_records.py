@@ -63,6 +63,13 @@ class FabroFailureDetail:
     by `_fabro_executed_candidate` from the run's own labels, because a
     provider read off a recorded identity and an entitlement read off anything
     else would be two answers about one attempt.
+
+    `succeeded_turn_output` is the one field that does not describe an
+    engine-recorded failure: it carries the recorded output of an agent turn the
+    engine booked as SUCCEEDED, for the case where the contract treats that turn
+    as a failed attempt of its candidate ("A provider refusal booked as a
+    successful turn is a failed attempt"). It is `None` on every ordinary
+    failure, and only a `turn.final_output` signature ever reads it.
     """
 
     cause: str | None
@@ -71,6 +78,7 @@ class FabroFailureDetail:
     provider_usage_limit: bool = False
     provider_usage_limit_provider: str | None = None
     provider_usage_limit_entitlement: str | None = None
+    succeeded_turn_output: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
