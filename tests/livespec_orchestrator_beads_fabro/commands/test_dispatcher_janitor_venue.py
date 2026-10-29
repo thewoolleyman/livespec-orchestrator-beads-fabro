@@ -136,6 +136,7 @@ def test_janitor_venue_module_owns_provisioning_and_old_privates_are_gone() -> N
         "JanitorVenue",
         "fleet_toolchain_is_the_host_janitor_premise",
         "provision_janitor_checkout",
+        "remove_janitor_core_checkout",
         "resolve_janitor_venue",
     }
 

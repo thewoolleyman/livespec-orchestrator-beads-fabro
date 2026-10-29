@@ -1664,7 +1664,7 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         "--branch",
         "master",
         "https://github.com/thewoolleyman/livespec.git",
-        str(tmp_path / "janitor-co" / ".livespec-core"),
+        str(tmp_path / "janitor-co-livespec-core"),
     ]
 
 
@@ -2662,7 +2662,7 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
     # verdict is about the merge rather than about how this dispatch was routed
     # and attributed.
     assert runner.envs[12] == {
-        "LIVESPEC_CORE_PLUGIN_ROOT": str(checkout / ".livespec-core" / ".claude-plugin"),
+        "LIVESPEC_CORE_PLUGIN_ROOT": str(tmp_path / "janitor-co-livespec-core" / ".claude-plugin"),
         "LIVESPEC_FABRO_FACTORY": None,
         "LIVESPEC_INVOKER": None,
     }

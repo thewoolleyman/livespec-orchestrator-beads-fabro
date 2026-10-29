@@ -312,8 +312,15 @@ def janitor_checkout_path(*, repo: Path, work_item_id: str) -> Path:
 
 
 def janitor_core_checkout_path(*, janitor_checkout: Path) -> Path:
-    """Livespec core clone provisioned inside the fresh janitor checkout."""
-    return janitor_checkout / ".livespec-core"
+    """Livespec core clone provisioned BESIDE the fresh janitor checkout, never in it.
+
+    An untracked directory inside the checkout is part of the tree the governed
+    repository's own formatter and lint gates scan, so a clean committed tree
+    would fail its own suite on files the repository never carried. The sibling
+    path keeps core out of that tree without asking any adopter to declare an
+    ignore entry for it.
+    """
+    return janitor_checkout.with_name(f"{janitor_checkout.name}-livespec-core")
 
 
 def janitor_reconcile_checkout_path(*, repo: Path, work_item_id: str) -> Path:
