@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.257.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.13...v0.257.0) (2026-10-29)
+
+
+### Features
+
+* map the Claude weekly-limit refusal as a measured provider-limit form ([d89d716](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d89d716469698d869abf9739812faedc853d3e09))
+
 ## [0.256.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.256.12...v0.256.13) (2026-10-29)
 
 
