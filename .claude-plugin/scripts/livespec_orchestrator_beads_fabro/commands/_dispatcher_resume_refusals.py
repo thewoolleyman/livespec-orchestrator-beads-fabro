@@ -137,6 +137,16 @@ class ResumeObservation:
     assertions the anchoring record does not carry, rather than a boolean, so the
     refusal can name the difference the clause requires it to name.
 
+    `earlier_run_succeeded` and `own_route` decide which remedy an `active` item is
+    offered, because `reconcile-runs` releases only a claim whose run did NOT
+    succeed. A claim whose run succeeded is HELD by it (`run-succeeded`), so naming
+    it there sends the operator to a valve that reports nothing reconciled and
+    leaves the item as it was. `own_route` names the label (`rework:pending`,
+    `merge-hold`, or `labels-unreadable` when the labels could not be read) that
+    gives an `active` item a route of its own, which no status move may bypass.
+    Both default to the posture that predates them: the run did not succeed and the
+    item keeps no route of its own.
+
     `unanchoring_cancel_stage` is the stage of a `watchdog-stall-cancel` record
     that NAMES A HEAD and still could not anchor — the rework-stage case, whose
     head "would not carry the rework". It is carried for the refusal's sake and
@@ -162,6 +172,8 @@ class ResumeObservation:
     changed_assertions: tuple[str, ...] = ()
     earlier_resumes: tuple[str, ...] = field(default=())
     unanchoring_cancel_stage: str | None = None
+    earlier_run_succeeded: bool = False
+    own_route: str | None = None
 
 
 def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
@@ -187,21 +199,17 @@ def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
 def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     """The not-`ready` refusal, with the remedy its status actually calls for.
 
-    The two remedies answer two different situations and the status alone
-    discriminates them. An item resting at `blocked` carries a human decision in
+    The remedies answer different situations and the status alone discriminates
+    only the first two. An item resting at `blocked` carries a human decision in
     the ledger, which `resolve-blocked` is the valve for; an `active` item carries
-    a CLAIM whose run has ended, which is what `reconcile-runs` releases. Naming
-    either remedy for the other sends the operator to a valve that will refuse.
+    a CLAIM whose run has ended, and which valve releases it depends on the run
+    (`_active_refusal`). Naming a remedy for the wrong situation sends the operator
+    to a valve that will refuse or change nothing.
     """
     if observation.status == _READY_STATUS:
         return ()
     if observation.status == _ACTIVE_STATUS:
-        stranded = (
-            f"the item is {observation.status}, not ready; a resume never steps around"
-            " the ledger's own disposition — release the stranded claim with"
-            " `dispatcher.py reconcile-runs` first"
-        )
-        return (stranded,)
+        return (_active_refusal(observation=observation),)
     reason = "" if observation.blocked_reason is None else f" / {observation.blocked_reason}"
     parked = (
         f"the item is {observation.status}{reason}, not ready; a resume never steps"
@@ -209,6 +217,54 @@ def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
         f" `resolve-blocked:{observation.work_item_id}:ready` first"
     )
     return (parked,)
+
+
+def _active_refusal(*, observation: ResumeObservation) -> str:
+    """The refusal for an `active` item, naming a remedy that CHANGES it or none.
+
+    THE NAMED REMEDY MUST ACT ON THE ITEM AS IT STANDS. `reconcile-runs` holds a
+    claim whose run succeeded, so it is named only when the run is not known to
+    have succeeded. For a succeeded run the remedy follows what the forge says:
+    a merged pull request closes out through `reconcile-merged`, an unmerged one
+    through the terminal-claim release `move:<id>:ready`, and a forge that could
+    not be read names no status move at all, because releasing a claim whose
+    pull request may have merged re-queues merged work. A route-keeping label and
+    a live ownership lock each withhold every status move first, since a move
+    would bypass the route or race the dispatch that owns the item.
+    """
+    head = f"the item is {observation.status}, not ready; a resume never steps around"
+    if observation.own_route is not None:
+        return (
+            f"{head} the ledger's own disposition — it keeps its own route"
+            f" ({observation.own_route}), which no status move may bypass, so none is offered"
+        )
+    if observation.lock_age_seconds is not None:
+        return (
+            f"{head} the ledger's own disposition — a live process holds its dispatch-scoped"
+            " ownership lock, so no status move is offered while that dispatch may still own it"
+        )
+    if not observation.earlier_run_succeeded:
+        return (
+            f"{head} the ledger's own disposition — release the stranded claim with"
+            " `dispatcher.py reconcile-runs` first"
+        )
+    if not observation.forge_observed:
+        return (
+            f"{head} the ledger's own disposition — its run succeeded, but the forge could"
+            " not be read to say whether its pull request merged, so no status move is offered;"
+            " retry once the forge answers"
+        )
+    if observation.pull_request_state == PR_STATE_MERGED:
+        return (
+            f"{head} the ledger's own disposition — its run succeeded and its pull request"
+            " merged; close it out with"
+            f" `dispatcher.py reconcile-merged --item {observation.work_item_id}`"
+        )
+    return (
+        f"{head} the ledger's own disposition — its run succeeded and the forge reports no"
+        " merged pull request, so the claim is terminal; release it with"
+        f" `move:{observation.work_item_id}:ready` first"
+    )
 
 
 def anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
