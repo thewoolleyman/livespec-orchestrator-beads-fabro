@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.258.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.1...v0.258.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* approve admits a pending-approval item whose admission policy was flipped to auto ([b6e67f6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b6e67f609ee3312a0d7cf5d3c1f98e10dab4e98a))
+
 ## [0.258.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.258.0...v0.258.1) (2026-10-29)
 
 
