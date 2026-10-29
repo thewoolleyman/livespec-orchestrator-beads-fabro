@@ -1698,6 +1698,19 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   itself run under a commit hook, whose `GIT_INDEX_FILE` would otherwise point the
   fixture's commits at the outer repository.
 
+- `test_dod_gate_mutation_guard.py` — binds work-item `bd-ib-al54tl`: a
+  `dod_gate` turn that edits, writes into the working tree or commits ends the
+  run at needs-human with a reason naming the mutation, while a grading turn
+  that changes nothing proceeds to `implement`. The `dod_gate_mutation_guard`
+  node's own script is extracted from the committed graph, unescaped and run by
+  `sh` in a throwaway repository whose run branch carries engine-shaped
+  `fabro(<run>): <node> (<status>)` checkpoint commits, because the starting
+  state it compares against is read off that chain. Each mutation arm (an edited
+  file committed by the checkpoint, a new untracked file, an agent commit even
+  when empty) sits beside the clean-turn control, and a run with no checkpoint
+  before the node must fail closed rather than pass. The prompt half and the
+  edge shape are asserted beside it.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

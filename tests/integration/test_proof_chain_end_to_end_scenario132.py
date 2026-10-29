@@ -887,6 +887,9 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
     assert run.visited == [
         _START,
         "dod_gate",
+        # The post-turn mutation guard (bd-ib-al54tl) sits on `dod_gate`'s
+        # fallthrough.
+        "dod_gate_mutation_guard",
         "implement",
         # The commit-run settle (bd-ib-xj3qqb) precedes the completion gate on
         # `implement`'s fallthrough.

@@ -50,6 +50,9 @@ _NATIVE_INSPECT = _REPO_ROOT / "tests/fixtures/fabro_native_inspect/background.j
 _SUCCESSFUL_NODES = (
     "start",
     "dod_gate",
+    # The post-turn mutation guard (bd-ib-al54tl) sits on `dod_gate`'s
+    # fallthrough, so every green run passes through it.
+    "dod_gate_mutation_guard",
     "implement",
     # The commit-run settle (bd-ib-xj3qqb) sits on `implement`'s fallthrough
     # ahead of the completion gate, so every green run passes through it.
