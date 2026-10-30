@@ -40,6 +40,7 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -432,6 +433,23 @@ def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     # janitor) would change which launch a probe test reaches. A test that needs a
     # token sets it itself.
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_admission_slot_chooser() -> Iterator[None]:
+    """Clear the process-wide admission slot chooser around every test.
+
+    `session_headroom_policy` registers the slot its pass chose so every credential
+    consumer follows it; left installed, one test's admission choice would decide
+    which slot the next test's `select_factory_credential` returns.
+    """
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+        register_admission_slot_chooser,
+    )
+
+    register_admission_slot_chooser(chooser=None)
+    yield
+    register_admission_slot_chooser(chooser=None)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]

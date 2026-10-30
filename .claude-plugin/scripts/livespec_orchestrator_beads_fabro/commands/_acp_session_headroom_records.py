@@ -191,7 +191,7 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
     entry rather than a record of its own, which is what lets a reader see both
     windows of one credential at one instant without a join.
     """
-    return {
+    fields: dict[str, object] = {
         "credential_identity": reading.credential_identity,
         "utilization_percent": reading.utilization_percent,
         "remaining_percent": reading.remaining_percent,
@@ -202,6 +202,14 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         "unverified_provider_reset_claim": reading.provider_reset_claim,
         "seven_day": seven_day_reading_fields(reading=reading.seven_day),
     }
+    if reading.slot is not None:
+        fields["slot"] = {
+            "name": reading.slot.slot,
+            "skip_kind": reading.slot.skip_kind,
+            "chosen": reading.slot.chosen,
+            "not_chosen_reason": reading.slot.not_chosen_reason,
+        }
+    return fields
 
 
 def seven_day_reading_fields(*, reading: SevenDayReading) -> dict[str, object]:
