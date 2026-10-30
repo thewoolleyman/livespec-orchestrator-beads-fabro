@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.261.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.260.2...v0.261.0) (2026-10-30)
+
+
+### Features
+
+* a Claude Stop hook runs the host session-wait check before a turn ends ([b79f4e8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b79f4e878f567987255c4dc94be675f10bef5638))
+* the host check summary lists each wait mismatch distinctly ([f5a5d5d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f5a5d5d0faa51a224c6d669d253f079ece6fb4ba))
+* the host check verifies launch obligations and recovery coverage with no wait ([fd315ef](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fd315efd0e3555115d00a93fbd984676ca4381d5))
+
+
+### Bug Fixes
+
+* an acknowledged completed wait leaves the host check healthy ([8660e66](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8660e66a5a5b4347f287cbcda45cb21457d53415))
+
 ## [0.260.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.260.1...v0.260.2) (2026-10-30)
 
 
