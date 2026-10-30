@@ -929,5 +929,166 @@
     "heading": "## Scenario 258 \u2014 A review or proof_verify turn that succeeds without a verdict label is retried once before it reaches needs_human",
     "work_item": "bd-ib-wg5zyt",
     "first_seen": "2026-10-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 259 \u2014 A run export distinguishes a refused ACP turn from a completed one",
+    "work_item": "bd-ib-rmaxqf",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## ACP turn stop reasons are recorded",
+    "work_item": "bd-ib-rmaxqf",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 260 \u2014 A committed configuration whose candidate chain cannot resolve fails just check",
+    "work_item": "bd-ib-aqrdhl",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 261 \u2014 A declared merge-gate suite runs inside the factory run",
+    "work_item": "bd-ib-ckocwc",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 262 \u2014 A staged type error is refused before the pre-commit aggregate runs",
+    "work_item": "bd-ib-rqdqkb",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Pre-commit staged pre-check",
+    "work_item": "bd-ib-rqdqkb",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 263 \u2014 Exactly one writer changes a dispatch claim, and every other writer stands down",
+    "work_item": "bd-ib-jjws2",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 264 \u2014 A filing shows the non-closed items it may duplicate",
+    "work_item": "bd-ib-igeoe6",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 265 \u2014 approve releases an auto-admission item whose repaired Definition of Done now passes, and refuses one that still fails",
+    "work_item": "bd-ib-idpr32",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 266 \u2014 A complete implement turn with no diff ends as already satisfied, not as a dead implementer",
+    "work_item": "bd-ib-mvws23",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 267 \u2014 A parked plan child acquires its spec-change tier without being dispatched, so its disposition can proceed",
+    "work_item": "bd-ib-sappap",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Dispatcher classify-tier invocation surface",
+    "work_item": "bd-ib-sappap",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 268 \u2014 A work-item rider reaches only the stages it names",
+    "work_item": "bd-ib-rczglr",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 269 \u2014 The lifecycle guard harness waits for a slow capture server and names a failed one",
+    "work_item": "bd-ib-qbwd7n",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 270 \u2014 A successor retires a dead owner's terminal wait without rewriting it",
+    "work_item": "bd-ib-jk5npz",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 271 \u2014 A session finds its project's registered plugin build and is told when it is stale",
+    "work_item": "bd-ib-uyg266",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 272 \u2014 A factory-captured assertion whose proof surface no sandbox capability provides is named in the gate's finding",
+    "work_item": "bd-ib-vhx5vl",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 273 \u2014 The run goal omits a filing-time advisory finding comment and still lists a later operator comment",
+    "work_item": "bd-ib-2dwxbu",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 274 \u2014 One query by run id says why each factory step ended",
+    "work_item": "livespec-dev-tooling-ipcm33",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Factory step span attributes",
+    "work_item": "livespec-dev-tooling-ipcm33",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 275 \u2014 A factory ACP node loads only the instruction files, skills, plugins and MCP tools its declaration names",
+    "work_item": "bd-ib-crtnzx",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 276 \u2014 A mirror records the sandbox image it was measured on",
+    "work_item": "bd-ib-o23n2x",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 277 \u2014 A merged pull request with no finished factory run, or whose run died after the merge, is re-proven by the proof-only arm",
+    "work_item": "bd-ib-hbt5b6",
+    "first_seen": "2026-10-30"
   }
 ]

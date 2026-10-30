@@ -2373,5 +2373,189 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal unlabeled-verdict-turn-retries-once, and the owning work-item bd-ib-wg5zyt adds the single unlabeled-verdict retry to the review and proof_verify routing, together with the test that binds this entry.",
     "work_item": "bd-ib-wg5zyt"
+  },
+  {
+    "heading": "## Scenario 259 \u2014 A run export distinguishes a refused ACP turn from a completed one",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal acp-turn-stop-reason-recorded, and the owning work-item bd-ib-rmaxqf makes the Petri engine record each ACP turn's stop reason on the step-closing event and stage outcome record, proven by a host-captured gmktec run on a Petri engine build carrying it, together with the test that binds this entry.",
+    "work_item": "bd-ib-rmaxqf"
+  },
+  {
+    "heading": "## ACP turn stop reasons are recorded",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal acp-turn-stop-reason-recorded, and the owning work-item bd-ib-rmaxqf makes the Petri engine record each ACP turn's stop reason on the step-closing event and stage outcome record, proven by a host-captured gmktec run on a Petri engine build carrying it, together with the test that binds this entry.",
+    "work_item": "bd-ib-rmaxqf"
+  },
+  {
+    "heading": "## Scenario 260 \u2014 A committed configuration whose candidate chain cannot resolve fails just check",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal fail-just-check-when-acp, and the owning work-item bd-ib-aqrdhl adds the check-acp-preflight-config target to just check, together with the test that binds this entry.",
+    "work_item": "bd-ib-aqrdhl"
+  },
+  {
+    "heading": "## Scenario 261 \u2014 A declared merge-gate suite runs inside the factory run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal declared-merge-gate-suite-runs-in-the-sandbox, and the owning work-item bd-ib-ckocwc makes the in-sandbox janitor gate and pr_refresh run a declared dispatcher.janitor.merge_gate_suite with the dispatch base, together with the test that binds this entry.",
+    "work_item": "bd-ib-ckocwc"
+  },
+  {
+    "heading": "## Scenario 262 \u2014 A staged type error is refused before the pre-commit aggregate runs",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal pre-commit-staged-precheck, and the owning work-item bd-ib-rqdqkb wires livespec-dev-tooling's staged_precheck into the pre-commit hook ahead of the aggregate, together with the test that binds this entry.",
+    "work_item": "bd-ib-rqdqkb"
+  },
+  {
+    "heading": "## Pre-commit staged pre-check",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal pre-commit-staged-precheck, and the owning work-item bd-ib-rqdqkb wires livespec-dev-tooling's staged_precheck into the pre-commit hook ahead of the aggregate, together with the test that binds this entry.",
+    "work_item": "bd-ib-rqdqkb"
+  },
+  {
+    "heading": "## Scenario 263 \u2014 Exactly one writer changes a dispatch claim, and every other writer stands down",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal server-enforced-dispatch-claim-generation, and the owning work-item bd-ib-jjws2 implements the server-enforced rotating claim token protocol, together with the test that binds this entry.",
+    "work_item": "bd-ib-jjws2"
+  },
+  {
+    "heading": "## Scenario 264 \u2014 A filing shows the non-closed items it may duplicate",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal filing-surfaces-duplicate-candidates, and the owning work-item bd-ib-igeoe6 makes every filing front-end display deterministic duplicate candidates before confirmation, together with the test that binds this entry.",
+    "work_item": "bd-ib-igeoe6"
+  },
+  {
+    "heading": "## Scenario 265 \u2014 approve releases an auto-admission item whose repaired Definition of Done now passes, and refuses one that still fails",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal an-auto-admission-item-held, and the owning work-item bd-ib-idpr32 makes approve re-run the intake Definition-of-Done check for an auto-admission item held at pending-approval, together with the test that binds this entry.",
+    "work_item": "bd-ib-idpr32"
+  },
+  {
+    "heading": "## Scenario 266 \u2014 A complete implement turn with no diff ends as already satisfied, not as a dead implementer",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal an-item-whose-factory-captured, and the owning work-item bd-ib-mvws23 ends a complete no-diff implement turn as already satisfied instead of dead_implementer, together with the test that binds this entry.",
+    "work_item": "bd-ib-mvws23"
+  },
+  {
+    "heading": "## Scenario 267 \u2014 A parked plan child acquires its spec-change tier without being dispatched, so its disposition can proceed",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for these headings: ratified with proposal a-parked-plan-child-that, and the owning work-item bd-ib-sappap adds the dispatcher classify-tier verb, together with the test that binds this entry.",
+    "work_item": "bd-ib-sappap"
+  },
+  {
+    "heading": "## Dispatcher classify-tier invocation surface",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for these headings: ratified with proposal a-parked-plan-child-that, and the owning work-item bd-ib-sappap adds the dispatcher classify-tier verb, together with the test that binds this entry.",
+    "work_item": "bd-ib-sappap"
+  },
+  {
+    "heading": "## Scenario 268 \u2014 A work-item rider reaches only the stages it names",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal a-work-item-rider-reaches, and the owning work-item bd-ib-rczglr scopes riders to the stages they name in each goal brief, together with the test that binds this entry.",
+    "work_item": "bd-ib-rczglr"
+  },
+  {
+    "heading": "## Scenario 269 \u2014 The lifecycle guard harness waits for a slow capture server and names a failed one",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal bd-guard-capture-server-startup, and the owning work-item bd-ib-qbwd7n makes the lifecycle guard harness wait a bounded 30 seconds for its capture server and name a failed start, together with the test that binds this entry.",
+    "work_item": "bd-ib-qbwd7n"
+  },
+  {
+    "heading": "## Scenario 270 \u2014 A successor retires a dead owner's terminal wait without rewriting it",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal session-wait-tool-gives-a, and the owning work-item bd-ib-jk5npz adds the session-wait retire operation for terminal waits, together with the test that binds this entry.",
+    "work_item": "bd-ib-jk5npz"
+  },
+  {
+    "heading": "## Scenario 271 \u2014 A session finds its project's registered plugin build and is told when it is stale",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal snippets-and-helper-scripts-bind, and the owning work-item bd-ib-uyg266 adds the registered-root command and the session-start staleness warning, together with the test that binds this entry.",
+    "work_item": "bd-ib-uyg266"
+  },
+  {
+    "heading": "## Scenario 272 \u2014 A factory-captured assertion whose proof surface no sandbox capability provides is named in the gate's finding",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal dod-gate-check-5-names, and the owning work-item bd-ib-vhx5vl makes the dod_gate node name the credential, kubeconfig and operator-host proof surfaces of a factory-captured assertion in its finding, together with the test that binds this entry.",
+    "work_item": "bd-ib-vhx5vl"
+  },
+  {
+    "heading": "## Scenario 273 \u2014 The run goal omits a filing-time advisory finding comment and still lists a later operator comment",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal run-goal-omits-advisory-definition-of-done-finding-comments, and the owning work-item bd-ib-2dwxbu makes the rendered run goal omit filing-time advisory Definition-of-Done finding comments while still listing later operator comments, together with the test that binds this entry.",
+    "work_item": "bd-ib-2dwxbu"
+  },
+  {
+    "heading": "## Scenario 274 \u2014 One query by run id says why each factory step ended",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal factory-step-span-attributes, and the owning work-item livespec-dev-tooling-ipcm33 emits the factory step spans; the exercising proof is a host-captured Honeycomb query over spans from a real factory run, and the stop-reason attribute additionally waits on bd-ib-rmaxqf.",
+    "work_item": "livespec-dev-tooling-ipcm33"
+  },
+  {
+    "heading": "## Factory step span attributes",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal factory-step-span-attributes, and the owning work-item livespec-dev-tooling-ipcm33 emits the factory step spans; the exercising proof is a host-captured Honeycomb query over spans from a real factory run, and the stop-reason attribute additionally waits on bd-ib-rmaxqf.",
+    "work_item": "livespec-dev-tooling-ipcm33"
+  },
+  {
+    "heading": "## Scenario 275 \u2014 A factory ACP node loads only the instruction files, skills, plugins and MCP tools its declaration names",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal factory-agent-nodes-load-only, and the owning work-item bd-ib-crtnzx makes factory ACP nodes load only their declared instruction files, skills, plugins and MCP tools, together with the test that binds this entry.",
+    "work_item": "bd-ib-crtnzx"
+  },
+  {
+    "heading": "## Scenario 276 \u2014 A mirror records the sandbox image it was measured on",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal sandbox-capabilities-mirror-records-measured-image, and the owning work-item bd-ib-o23n2x adds the measured-image key beside the capability mirror, the stale-mirror and unverifiable-mirror reports, and the repository check, together with the test that binds this entry.",
+    "work_item": "bd-ib-o23n2x"
+  },
+  {
+    "heading": "## Scenario 277 \u2014 A merged pull request with no finished factory run, or whose run died after the merge, is re-proven by the proof-only arm",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal hand-finished-merge-factory-proof-pointer, and the owning work-item bd-ib-hbt5b6 lets the proof-only arm re-prove a merged pull request that no finished factory run produced, so that a hand-finished merge or a run that died after the merge obtains a counted verified record and a Proof of Done pointer, together with the test that binds this entry.",
+    "work_item": "bd-ib-hbt5b6"
   }
 ]

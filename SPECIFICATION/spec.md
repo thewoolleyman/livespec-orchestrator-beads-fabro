@@ -129,6 +129,18 @@ Persistent Agent Knowledge store as these files plus the harness
 instruction files that load them progressively. (This slot is
 substrate-independent and identical to the plaintext sibling's.)
 
+**Spec-change tier classification stage** — A point at which a work-item's
+spec-change tier is decided by the spec-stated judgement
+(`contracts.md` §"Grooming and slice-size calibration" → "The four
+maintainer touchpoints", touchpoint 1, "An autonomy tier is assigned") and recorded in a `livespec-spec-change-tier` record on the item.
+The record carries a `stage`. The stages are filing, groom, the pre-dispatch
+wall, and `classify`. `classify` is a
+standalone classification of one work-item, requested by an operator or session
+through the Dispatcher's `classify-tier` verb. It decides the tier through the
+same spec-stated judgement as the other stages, records the result in the same
+`livespec-spec-change-tier` record shape with `stage: classify`, and is never a
+dispatch.
+
 **Truly-unresolvable decision** — Under §"Dispatcher policy settings", a
 human-delegable decision the Dispatcher MUST NOT auto-dispose under any
 policy setting — either because it is human-gated BY DESIGN (the

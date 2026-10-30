@@ -331,6 +331,19 @@ Scenario: A dispatched worker receives non-rotatable snapshots for every project
   Then the Dispatcher projects each provider's credential as a non-rotatable snapshot into the same sandbox such that the worker cannot rotate any shared refresh credential
   And the worker authenticates its coding-agent runtimes from those projected snapshots
   And no refresh performed or attempted inside the sandbox invalidates the host's or any peer worker's credential for any provider
+
+Scenario: A sandbox driver delivers a large command and the projected credentials through the exec stream
+  Given a factory sandbox driver that opens exec sessions over a request URL
+  And a command whose single argument is 200000 bytes and whose environment holds 40 entries of 1000 bytes each, including the projected Claude and GitHub credentials
+  When the driver starts that command inside the sandbox
+  Then the request that opens the exec session is under 8192 bytes long
+  And no argument value and no environment value appears in that request URL
+  And the command runs inside the sandbox with exactly that argument and that environment
+
+Scenario: A command that reads standard input still receives it after the driver's framing
+  Given a factory sandbox driver that delivers program, arguments and environment through the exec stream
+  When the driver starts a command that forwards its own standard input
+  Then the command receives the caller's standard input byte for byte, with none of the driver's framing in it
 ```
 
 ## Scenario 19 — Dispatcher refuses dispatch when the credential freshness gate fails
@@ -1214,6 +1227,25 @@ Feature: A ready work-item whose `factory_safety` is non-null is refused at
     Then the action is refused because the reason is not one of `needs-host-secrets`, `mutates-host-machinery`, `needs-privileged-host`, or `needs-host-only-input`
     And the item's `factory_safety` remains null
 
+  Scenario: clear-factory-safety journals its rationale and returns the item to factory eligibility
+    Given a `ready` work-item whose `factory_safety` is `needs-host-secrets`
+    When the operator invokes `clear-factory-safety:<work-item-id>:host secrets no longer needed`
+    Then the rationale, the invoker and the removed reason `needs-host-secrets` are recorded in the item's ledger comments and in the journal before the field changes
+    And the item's `factory_safety` is null
+    And the item's lifecycle status and `admission_policy` are unchanged
+
+  Scenario: clear-factory-safety refuses an empty rationale
+    Given a `backlog` work-item whose `factory_safety` is `mutates-host-machinery`
+    When the operator attempts `clear-factory-safety:<work-item-id>:` with an empty rationale
+    Then the action is refused, naming the missing rationale
+    And the item's `factory_safety` remains `mutates-host-machinery`
+
+  Scenario: clear-factory-safety refuses an item that carries no hold
+    Given a `ready` work-item whose `factory_safety` is null
+    When the operator attempts `clear-factory-safety:<work-item-id>:no reason needed`
+    Then the action is refused, saying no hold is set
+    And nothing is written to the item's ledger comments or to the journal
+
   Scenario: A ready item editing .github/actions/ is NOT refused
     Given a `ready` work-item whose scope edits a composite action under
       `.github/actions/` and no file under `.github/workflows/`
@@ -1611,11 +1643,52 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And the reset instant is not used for the skip and, if journaled, only as an unverified provider claim
     And all other admission conditions are still applied
 
-  Scenario: A credential with no baseline in this checkout is governed by the floor alone
+  Scenario: A credential with no baseline and no carried rate in this checkout is governed by the floor alone
     Given a covered candidate whose remaining headroom passes the floor
     And this checkout's dispatch journal holds no assessment of its credential identity between 15 and 90 minutes earlier
+    And the host session-headroom history holds no assessment of its credential identity between 15 and 90 minutes earlier
+    And no assessment of that credential within the preceding 90 minutes carried a drain rate
     When admission is evaluated
     Then the projection is journaled as unavailable with its reason
+    And no projection skip applies to that candidate
+
+  Scenario: A baseline journaled from another checkout on the host supplies the projection
+    Given dispatcher.session_headroom_floor_percent is 20
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the host session-headroom history holds an assessment of that credential identity journaled 40 minutes earlier from another checkout at 45 percent utilization
+    And the current reading is 61 percent utilization, so its remaining headroom of 39 percent passes the floor
+    When the Dispatcher evaluates admission
+    Then the journal records a drain rate of 24 percentage points per hour with baseline source host-history naming the other checkout
+    And the projected exhaustion is about 98 minutes after the observation
+    And the primary is skipped by projection, not by the floor
+
+  Scenario: An unreadable host history fails open with its own reason
+    Given this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the host session-headroom history cannot be read
+    And no assessment of that credential within the preceding 90 minutes carried a drain rate
+    When admission is evaluated
+    Then the projection is journaled as unavailable with the unreadable-host-history reason, distinct from no-baseline
+    And no projection skip applies to that candidate
+
+  Scenario: Readings bunched inside 15 minutes carry the last measured drain rate forward
+    Given dispatcher.session_headroom_floor_percent is 20
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And an assessment of that credential 5 minutes earlier read 59 percent utilization and journaled a drain rate of 23 percentage points per hour
+    And the current reading is 61 percent utilization, so its remaining headroom of 39 percent passes the floor
+    When the Dispatcher evaluates admission
+    Then the journal records the drain rate of 23 percentage points per hour with rate source carried and the earlier assessment's observation time
+    And the projected exhaustion is about 102 minutes after the observation
+    And the primary is skipped by projection, not by the floor
+
+  Scenario: A reset since the carried assessment withholds the carried rate
+    Given this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And an assessment of that credential 40 minutes earlier journaled a drain rate at 80 percent utilization
+    And a later assessment of that credential read 5 percent utilization
+    When admission is evaluated
+    Then no carried rate is used
+    And the projection is journaled as unavailable with its reason
     And no projection skip applies to that candidate
 
   Scenario: A reading no higher than its baseline has no projection
@@ -4850,6 +4923,24 @@ Feature: Proof steps are tied to the scenario that states the behaviour
     Given an item whose assertion names a behaviour no scenario heading states and whose reference line names a contracts heading
     When the dod_gate node evaluates the rendered goal
     Then no scenario-reference finding is reported
+  Scenario: A scenario whose title names the behaviour but whose steps do not exercise it does not govern the assertion
+    Given an item whose assertion names a behaviour that the title of a scenario heading of scenarios.md names
+    And no Given, When, Then or And step under that heading exercises that behaviour
+    And whose reference line names only a non-scenario heading whose clauses govern the behaviour
+    When the dod_gate node evaluates the rendered goal
+    Then no scenario-reference finding is reported for that assertion
+  Scenario: A scenario whose steps exercise the behaviour governs the assertion whatever its title says
+    Given an item whose assertion names a behaviour that a Then step under a scenario heading of scenarios.md states
+    And that heading's title does not name the behaviour
+    And whose reference line names only a non-scenario heading
+    When the dod_gate node evaluates the rendered goal
+    Then the run ends through the structured needs-human ending naming that scenario heading
+    And the finding quotes the step line that states the behaviour
+  Scenario: One unchanged reference line receives the same ruling at the pre-dispatch judgement and at every dispatch
+    Given an item whose reference line names only non-scenario headings
+    And whose subject digest and rubric digest are the same at the pre-dispatch judgement and at two successive dod_gate runs
+    When each of those three takings grades the reference line
+    Then all three report the same scenario-reference findings for that reference line
   Scenario: The record names the governing scenario
     Given an assertion whose reference line names a scenario heading
     When the proof_capture node publishes its record
@@ -6961,10 +7052,33 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
   Scenario: An armed pull request overtaken by a conflicting commit rests at needs-human with a named cause
     Given a run that armed auto-merge for head H and terminated through exit
     And a later default-branch commit conflicts with the pull request
+    And at least one conflicted path is not a declared record file
     When two consecutive merge-wait polls report the pull request OPEN and conflicting with the default branch
     Then the dispatch ends blocked at stage merge-poll with the cause base-advanced-after-arming and exit code 4
     And the item rests at blocked with blocked_reason needs-human, with one livespec-base-advanced-after-arming comment and one needs-human-blocked journal row
     And the outcome detail names resolve-blocked for the item and then resume
+
+  Scenario: An armed pull request overtaken only in declared record files is resumed without a human step
+    Given a run that armed auto-merge for head H and terminated through exit
+    And a later default-branch commit conflicts with the pull request only in paths declared in dispatcher.record_files
+    When two consecutive merge-wait polls report the pull request OPEN and conflicting with the default branch
+    Then the Dispatcher journals one base-advanced-record-files-resume row naming every conflicted path
+    And the item is resolved to ready and resumed in the same invocation, whose outcome and exit code are those of the resumed dispatch
+    And the Dispatcher does not disarm, close or rewrite the pull request
+
+  Scenario: A refused automatic resume rests the overtaken pull request at needs-human naming the refusal
+    Given an armed pull request overtaken only in declared record files
+    And the item's pull request has already taken its two resumes
+    When the merge wait attempts the automatic resume
+    Then the item rests at blocked with blocked_reason needs-human and the cause base-advanced-after-arming
+    And the livespec-base-advanced-after-arming comment and the outcome detail name the resume's refusal
+
+  Scenario: An unmeasurable conflict set rests the overtaken pull request at needs-human
+    Given an armed pull request reported OPEN and conflicting on two consecutive merge-wait polls
+    And the Dispatcher cannot compute the conflicted paths
+    When the merge wait ends
+    Then the item rests at blocked with blocked_reason needs-human and the cause base-advanced-after-arming
+    And the livespec-base-advanced-after-arming comment names the measurement that failed, and no resume is attempted
 
   Scenario: Resuming an overtaken armed pull request disarms it before refreshing
     Given that item resolved to ready and resumed
@@ -7714,10 +7828,35 @@ Feature: An agent stage does not act on instructions its stage prompt never gave
     Then the turn has pushed no ref to origin and has opened or changed no pull request
     And publication happens only in publish_draft, pr_refresh or pr
 
-  Scenario: The stage prompts state the three rules
+  Scenario: A run that changed the spec tree is not published
+    Given an implement-kind run whose committed change includes a path under the governed repository's spec root
+    When publish_draft prepares to publish it
+    Then publish_draft pushes nothing and opens no pull request
+    And the run ends at needs_human with a reason naming every spec-root path it changed
+    And the reason names filing the spec change through propose-change as the remedy
+
+  Scenario: A spec change that arrived through the default branch is not refused
+    Given an implement-kind run whose own commits change no spec-root path
+    And the default branch gained a ratified spec revision after the run started
+    When publish_draft refreshes the run onto the default branch and prepares to publish
+    Then no spec-root refusal applies
+
+  Scenario: Spec-root and workflow refusals are reported separately
+    Given an implement-kind run whose change includes a path under the spec root and a file under .github/workflows
+    When publish_draft prepares to publish it
+    Then publish_draft pushes nothing
+    And its needs-human reason names the spec-root path and the workflow file, each under its own refusal
+
+  Scenario: The host-side drift run still files proposed changes
+    Given a Dispatcher reconcile pass whose drift run finds a merge adding behaviour the spec does not state
+    When the drift run files its proposed change
+    Then its proposed change is filed through the propose-change handoff
+    And no publication refusal applies, because the drift run is not a factory run
+
+  Scenario: The stage prompts state the three rules and the spec-tree rule
     Given the implement, fix and review_fix prompts of the released implement-work-item workflow
     When each prompt is read
-    Then each states that the stage prompt is the turn's only instruction, that the turn never pushes or publishes, and that commits are ordinary git commits through the repository hooks unless the stage prompt names another mechanism
+    Then each states that the stage prompt is the turn's only instruction, that the turn never pushes or publishes, and that commits are ordinary git commits through the repository hooks unless the stage prompt names another mechanism, and that the turn never changes a path under the spec root
 
   Scenario: An agent stage's publication attempt is refused mechanically
     Given an agent stage of a run, whichever node it is
@@ -9511,6 +9650,17 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     Then the effective criteria render each assertion as its own bullet in Definition-of-Done order
     And the first assertion renders above every proof-mode sub-heading
     And the second renders under the Host-captured sub-heading with its Reason line
+
+  Scenario: A judgement every candidate's bound ends records each candidate's input size
+    Given a governed repository whose resolved dod_gate chain has one candidate
+    When the pre-dispatch Definition-of-Done judgement is taken and that candidate's requests together report 140,000 input tokens
+    Then the judgement did not run
+    And the did-not-run record names that candidate, its total of 140,000 input tokens marked complete, and the 100,000-token bound that ended it
+
+  Scenario: Every host taking appends a journal row with its input size
+    Given any host taking of the Definition-of-Done judgement
+    When the taking ends, whether a candidate decided it or it did not run
+    Then the dispatch journal carries one row for it naming its stage, the deciding or bound-ended candidates, and each one's total input tokens with its marking
 ```
 
 ## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
@@ -10388,4 +10538,496 @@ Feature: A verdict turn that forgets its verdict gets one more chance before a h
     Given a review turn that records preferred_label fix, and another that ends failed
     When the run routes each turn
     Then the first routes to disposition and the second to needs_human, with no retry
+```
+
+## Scenario 259 — A run export distinguishes a refused ACP turn from a completed one
+
+```gherkin
+Feature: An ACP turn's stop reason survives into the run's own record
+  As a triager reading a factory run export
+  I want each ACP turn's stop reason recorded where the step ends
+  So that a refusal or a ceiling is not read as a normal turn end
+
+  Scenario: Each ACP step records its turn's stop reason
+    Given a factory run with two ACP stages
+    And the first stage's agent ends its turn with stop reason end_turn
+    And the second stage's agent ends its turn with stop reason refusal
+    When the run is exported with fabro dump
+    Then the event closing the first stage's step records stop reason end_turn
+    And the event closing the second stage's step records stop reason refusal
+    And each stage's outcome record carries its last turn's stop reason
+
+  Scenario: A response with no stop reason is recorded as absent
+    Given a factory run whose ACP agent answers session/prompt without a stopReason field
+    When the run is exported with fabro dump
+    Then that step's closing event records the stop reason as absent
+    And the export does not record end_turn for that turn
+```
+
+## Scenario 260 — A committed configuration whose candidate chain cannot resolve fails just check
+
+```gherkin
+Feature: A candidate chain that cannot resolve is refused at commit time, not at the first dispatch
+  As a factory operator
+  I want just check to evaluate the committed ACP node configuration the way the Dispatcher will
+  So that a configuration every dispatch would refuse never passes the commit gates
+
+  Scenario: An undeclared fallback model fails the check
+    Given a committed .livespec.jsonc whose acp_nodes names claude-sonnet-5-5 as a node's first fallback model
+    And its model_catalog declares no anthropic/claude-sonnet-5-5 entry
+    When check-acp-preflight-config runs
+    Then it exits non-zero
+    And its output names that node's fallbacks[0].model field and claude-sonnet-5-5
+
+  Scenario: A resolvable configuration passes with no network
+    Given a committed .livespec.jsonc whose every node's candidate chain resolves through the catalogs
+    And the host has no network access and no provider credential
+    When check-acp-preflight-config runs
+    Then it exits zero
+
+  Scenario: An availability hold is not a configuration failure
+    Given a resolvable committed configuration
+    And a dispatch journal recording an unexpired availability hold on a node's primary candidate
+    When check-acp-preflight-config runs
+    Then it exits zero, because it reads no journal and judges configuration only
+```
+
+## Scenario 261 — A declared merge-gate suite runs inside the factory run
+
+```gherkin
+Feature: A declared merge-gate suite runs inside the factory run
+  Scenario: A changeset that fails a declared merge-gate check fails in the janitor stage
+    Given a repository that declares a merge_gate_suite running its mutation check against LIVESPEC_MERGE_GATE_BASE
+    And a work item whose change passes the declared check suite but leaves a surviving mutant
+    When the factory runs the item
+    Then the janitor stage fails with the mutation check's output in its stage log
+    And the run routes to fix as it does for a failing check suite
+    And no pull request is opened for a head that failed the merge-gate suite
+
+  Scenario: A repository that declares no merge-gate suite is unchanged
+    Given a repository that does not declare merge_gate_suite
+    When the factory runs a work item
+    Then the janitor stage runs only the declared check suite, exactly as before
+
+  Scenario: A refreshed head that fails the merge-gate suite takes the refresh-repair route
+    Given a repository that declares a merge_gate_suite and a run whose default branch moved before publication
+    When pr_refresh rebases and the refreshed head passes the check suite but fails the merge-gate command
+    Then pr_refresh pushes nothing and takes the refresh-repair route with the merge-gate output
+
+  Scenario: A missing base fails the gate with a named cause
+    Given a repository that declares a merge_gate_suite and a run whose clone cannot resolve origin of its default branch
+    When the janitor gate reaches the merge-gate command
+    Then the janitor gate fails naming the unresolved base and the command is not run
+
+  Scenario: The merge-gate suite is a command step, not an agent instruction
+    Given a repository that declares a merge_gate_suite
+    When the implement, fix and review_fix prompts of the run are read
+    Then none of them directs the turn to run the merge-gate suite
+```
+
+## Scenario 262 — A staged type error is refused before the pre-commit aggregate runs
+
+```gherkin
+Feature: Staged Python files are checked before the pre-commit aggregate
+  Scenario: A staged type error is refused before the pre-commit aggregate runs
+    Given a commit that stages a Python file carrying a type-checker error the repository's pyright configuration covers
+    When the pre-commit hook runs
+    Then the commit is refused, naming the file, line and rule, before any member of the pre-commit aggregate starts
+
+  Scenario: A staged lint error the autofix step does not fix is refused first
+    Given a commit that stages a Python file carrying a lint error the lint autofix step does not fix
+    When the pre-commit hook runs
+    Then the commit is refused, naming the file, line and rule, before the pre-commit aggregate starts
+
+  Scenario: A clean staged change runs the aggregate as before
+    Given a commit whose staged Python files pass the pre-check
+    When the pre-commit hook runs
+    Then the pre-commit aggregate runs exactly as before
+```
+
+## Scenario 263 — Exactly one writer changes a dispatch claim, and every other writer stands down
+
+```gherkin
+Feature: Exactly one writer changes a dispatch claim
+  Scenario: Two hosts race to change one active claim
+    Given claim tokens are enabled and an active item whose current token is T
+    And a recovery on host A and a resolve-blocked valve on host B both read the item
+    When both close T with their own reasons
+    Then exactly one close reason is recorded on T
+    And only the writer whose reason was recorded writes to the item, naming its successor token
+    And the other writes nothing, discards its own successor and reports claim-changed
+
+  Scenario: Intake and a valve race to move one backlog item to ready
+    Given claim tokens are enabled and a backlog item whose current token is T
+    When intake and a move valve both try to move it to ready
+    Then exactly one of them wins T and writes the item
+    And the other writes nothing to the item
+
+  Scenario: A writer that cannot read the close outcome writes nothing
+    Given a writer that closed the item's current token but cannot read its close reason back
+    When it decides whether to write
+    Then it writes nothing to the item and reports claim-unobservable
+
+  Scenario: A crashed winner does not leave the item unwritable
+    Given an item naming closed token T whose close reason names successor S, and the item does not name S
+    And another claim writer has observed that state for 200 seconds on its own clock
+    When that writer reads the item again and the state is unchanged
+    Then it treats S as the current token and applies the protocol to S
+
+  Scenario: A recent unapplied transition is waited out, not taken over
+    Given an item naming closed token T whose close reason names successor S, and the item does not name S
+    And another claim writer first observed that state 30 seconds ago on its own clock
+    When that writer reads the item again
+    Then it writes nothing and reports claim-transition-pending
+
+  Scenario: A winner past its lease does not write
+    Given a writer that won its token 130 seconds of its own elapsed clock time after starting its close
+    When it is about to write the item
+    Then it writes nothing and reports claim-lease-expired
+
+  Scenario: A takeover stands down when the original transition lands first
+    Given a takeover writer that has won successor token S of an item whose closed token T named S
+    And the original winner's item write naming S lands before the takeover's re-read
+    When the takeover writer re-reads the item immediately before its write
+    Then it writes nothing, discards its own successor and reports claim-changed
+
+  Scenario: After cutover, an item with no token is refused, not written blind
+    Given dispatcher.claim_tokens is committed true
+    And a non-closed item names no current token
+    When a claim writer tries to change it
+    Then it writes nothing, reports claim-token-missing, and needs-attention surfaces the item
+
+  Scenario: An interrupted migration can be run again
+    Given a migration pass that named tokens on half of the tenant's non-closed items and stopped
+    When the migration pass is run again with every claim writer stopped
+    Then the items already naming an open token are left unchanged
+    And every other non-closed item now names one
+```
+
+## Scenario 264 — A filing shows the non-closed items it may duplicate
+
+```gherkin
+Feature: A filing shows the non-closed items it may duplicate
+  Scenario: A same-parent item with overlapping vocabulary is displayed
+    Given a non-closed item under epic E whose description shares a quarter of a new filing's significant terms
+    And the new filing names E as its parent and shares no phrase with that item's title
+    When the capture front-end displays the filing before confirmation
+    Then the display lists that item among its duplicate candidates with its id, title, status and shared terms
+    And the filing is not refused
+
+  Scenario: No candidate is reported with its scope
+    Given a tenant with 40 non-closed items none of which overlaps a new filing by 0.1 or more
+    When the capture front-end displays the filing
+    Then the display reads duplicate-candidates none and names the 40 non-closed items compared
+
+  Scenario: A filing with no significant terms is not reported as clear
+    Given a filing whose title and description contain no word of four or more characters outside the stop-word list
+    When the capture front-end displays the filing
+    Then the display reads duplicate-candidates not computed with that reason
+    And it does not read duplicate-candidates none
+
+  Scenario: An unreadable ledger is not reported as no candidates
+    Given the tenant's non-closed items cannot be read
+    When the capture front-end displays the filing
+    Then the display reads duplicate-candidates unobservable with the cause
+    And it does not read duplicate-candidates none
+
+  Scenario: Confirming a filing with candidates records them
+    Given a filing whose display listed two duplicate candidates
+    When the filer confirms the filing
+    Then the filed item carries one ledger comment naming both candidate ids
+    And intake does not withhold ready on them
+```
+
+## Scenario 265 — approve releases an auto-admission item whose repaired Definition of Done now passes, and refuses one that still fails
+
+```gherkin
+Feature: approve re-checks an auto-admission item that intake held on a mechanical Definition-of-Done finding
+  As an operator whose auto-admission item was held at pending-approval by intake
+  I want approve to re-run the intake Definition-of-Done check against the repaired text
+  So that a repaired item is released through the single journaled door and an unrepaired one stays held with its findings recorded
+
+  Scenario: an auto-admission item whose repaired Definition of Done now passes is released
+    Given a work-item in `pending-approval` whose effective `admission_policy` is `auto`, held there by intake on a mechanical Definition-of-Done finding
+    And its description has since been repaired so the intake Definition-of-Done check reports no mechanical finding
+    When the operator drives `approve:<id>`
+    Then the item moves to `ready` and the transition is journaled with its actor
+
+  Scenario: an auto-admission item whose Definition of Done still fails stays held
+    Given a work-item in `pending-approval` whose effective `admission_policy` is `auto`, whose description still carries a mechanical Definition-of-Done finding
+    When the operator drives `approve:<id>`
+    Then the item stays in `pending-approval`
+    And the result names the mechanical finding
+    And the finding is recorded on the item as a ledger comment
+```
+
+## Scenario 266 — A complete implement turn with no diff ends as already satisfied, not as a dead implementer
+
+```gherkin
+Feature: A complete implement turn with no diff is already satisfied, not a dead implementer
+  As an operator dispatching an item whose assertions are already true on the default branch
+  I want the run to end as already satisfied and rest the item for its Proof of Done
+  So that a correct no-op turn is not read as a failed attempt and leaves no stranded claim
+
+  Scenario: a complete implement turn with an unchanged tree ends as already satisfied
+    Given a work-item whose factory_captured assertions are already true on the default branch
+    When its dispatch's `implement` turn reports the Definition of Done complete and the run's tree is unchanged against the dispatch base
+    Then the run ends with an already-satisfied outcome naming the item, not at `dead_implementer`
+    And the item rests in `acceptance` with no stranded factory claim, and `needs-attention` names the route to its Proof of Done
+
+  Scenario: an incomplete implement turn with no diff is still a dead implementer
+    Given a dispatch whose `implement` turn reports the Definition of Done incomplete and leaves the tree unchanged
+    When the run evaluates the implementer's outcome
+    Then the run ends at `dead_implementer` with today's truncation record
+```
+
+## Scenario 267 — A parked plan child acquires its spec-change tier without being dispatched, so its disposition can proceed
+
+```gherkin
+Feature: A parked plan child can be classified without being dispatched
+  As an operator disposing a plan child that was parked before the tier guard existed
+  I want to record its spec-change tier without dispatching it
+  So that plan-child disposition can proceed while still refusing a held spec-change tier
+
+  Scenario: classify-tier records the tier once and dispatches nothing
+    Given a plan child that carries no `livespec-spec-change-tier` record and is parked so that it is never dispatched
+    And `reparent_plan_child` refuses it as undeterminable
+    When an operator runs `dispatcher.py classify-tier --repo <repo> --item <child>`
+    Then exactly one `livespec-spec-change-tier` record with `stage: classify` is appended
+    And no Fabro run is created and the child's assignee is unchanged
+
+  Scenario: a tier that is not spec-change leaves the child movable
+    Given the recorded tier is not spec-change
+    Then the child's status and labels are unchanged
+    And a following `reparent_plan_child` moves it and records the disposition
+
+  Scenario: a held spec-change tier keeps the disposition refused
+    Given the recorded tier is a held spec-change tier
+    Then the disposition stays refused, exactly as the constraint requires
+
+  Scenario: a second classify-tier run appends nothing
+    Given the child already carries a `livespec-spec-change-tier` record
+    When an operator runs `classify-tier` for it again
+    Then nothing is appended and the existing classification is reported
+```
+
+## Scenario 268 — A work-item rider reaches only the stages it names
+
+```gherkin
+Feature: Riders instruct only the stages they are written for
+  As an operator leaving an implement-directed rider on a work item
+  I want grading stages never to receive a rider that does not name them
+  So that a rider cannot make a review or proof turn narrate an implement turn
+
+  Scenario: a rider naming implement reaches only the implement brief
+    Given a work item carrying a rider whose first line is `FOR implement ONLY:`
+    When the Dispatcher renders the goal briefs for its run
+    Then the implement brief carries that rider
+    And the review, proof_capture and proof_verify briefs do not
+
+  Scenario: a rider that names no stage reaches only the tree-changing stages
+    Given a work item carrying a rider that names no stage
+    When the Dispatcher renders the goal briefs for its run
+    Then the implement and review_fix briefs carry that rider
+    And the review, proof_capture and proof_verify briefs do not
+```
+
+## Scenario 269 — The lifecycle guard harness waits for a slow capture server and names a failed one
+
+```gherkin
+Feature: The lifecycle guard's test harness starts its telemetry capture server on a bounded, diagnosable wait
+
+  Scenario: A capture server slower than two seconds does not fail a telemetry case
+    Given the guard harness starts its telemetry capture server
+    And the server writes its port file after more than two seconds and before 30 seconds
+    When the harness runs a telemetry case against that server
+    Then the harness MUST wait for the port file rather than failing the case
+    And the case's outcome MUST reflect the guard's telemetry behaviour, not the start delay
+
+  Scenario: A capture server that exits before writing its port file is named
+    Given the guard harness starts its telemetry capture server
+    And the server process exits before writing its port file
+    When the harness's start wait ends
+    Then the harness MUST end the wait when the process exits, without waiting for the 30-second bound
+    And the failure line MUST name the server's exit status and its captured standard error
+
+  Scenario: A capture server still silent at the bound is stopped and named
+    Given the guard harness starts its telemetry capture server
+    And the server has neither written its port file nor exited after 30 seconds
+    When the harness's start wait ends
+    Then the failure line MUST state that the server was still running at the bound and include its captured standard error
+    And the harness MUST stop the capture server process it started
+```
+
+## Scenario 270 — A successor retires a dead owner's terminal wait without rewriting it
+
+```gherkin
+Feature: A successor session disposes of a dead owner's terminal wait through the tool
+  Scenario: Retiring a terminal unacknowledged wait keeps the owner's record intact
+    Given a wait record in the session-wait store whose owning session has ended, whose targets have all ended, and which was never acknowledged
+    When a different session runs retire with its own session id and a reason
+    Then the record keeps its original owner, targets and observations
+    And the record gains a retirement disposition naming the retiring session, the reason and each target's terminal state
+    And inventory no longer reports the record as ended-but-unacknowledged
+
+  Scenario: A wait with a still-running target is refused
+    Given a wait record with a target that is still running
+    When a session runs retire on that wait
+    Then the operation refuses as target-not-terminal
+    And the record is unchanged
+```
+
+## Scenario 271 — A session finds its project's registered plugin build and is told when it is stale
+
+```gherkin
+Feature: A session resolves its project's registered plugin build and is told when it is stale
+  Scenario: The registered-root command prints the governed project's install root
+    Given a host whose installed-plugins record holds installs of this plugin for two projects at different builds
+    When the registered-root command runs for the second project
+    Then it prints the plugin root of the second project's install
+    And it does not print the first project's root or the invoking session's own bound root
+
+  Scenario: A project with no registered install is refused
+    Given a project path with no install of this plugin in the installed-plugins record
+    When the registered-root command runs for it
+    Then it exits non-zero naming the missing install
+
+  Scenario: Session start warns about a registered install older than the latest release
+    Given a governed project whose registered install is older than the latest released version
+    When the plugin's session-start hook runs
+    Then it prints a warning naming the registered install's version and the latest released version
+    And the session start succeeds
+```
+
+## Scenario 272 — A factory-captured assertion whose proof surface no sandbox capability provides is named in the gate's finding
+
+```gherkin
+Feature: A factory-captured assertion whose proof surface no sandbox capability provides is a gate finding that names the surface
+  Scenario Outline: The gate names the surface class an assertion's proof needs
+    Given an item whose factory-captured assertion's proof needs <surface>
+    When the dod_gate node evaluates the rendered goal
+    Then the run ends through the structured needs-human ending
+    And the finding names the assertion and names <surface> as its proof surface
+
+    Examples:
+      | surface                                                                          |
+      | an external cluster or service                                                   |
+      | a credential or kubeconfig not given to the sandbox                              |
+      | operator-host state                                                              |
+      | the released-build effects of a prompt or workflow file the item itself changes  |
+
+  Scenario: A prompt or workflow file under .claude-plugin/.fabro/ that the item changes names the released-build requirement
+    Given an item that changes a stage prompt file under .claude-plugin/.fabro/
+    And a factory-captured assertion naming behaviour of that stage prompt
+    When the dod_gate node evaluates the rendered goal
+    Then the run ends through the structured needs-human ending
+    And the finding names the released-build requirement
+```
+
+## Scenario 273 — The run goal omits a filing-time advisory finding comment and still lists a later operator comment
+
+```gherkin
+Feature: The rendered goal omits filing-time advisory findings and keeps later operator riders
+  Scenario: A filing-time advisory finding comment is left out of the goal and a later rider stays
+    Given an item whose ledger carries a comment whose first line begins with `definition-of-done finding (advisory):`
+    And an operator comment added after filing
+    When the Dispatcher renders the node's goal for the item
+    Then the operator-rider section lists the operator comment
+    And the operator-rider section does not carry the advisory finding comment
+    And the advisory finding comment remains on the item's ledger
+```
+
+## Scenario 274 — One query by run id says why each factory step ended
+
+```gherkin
+Feature: Factory step spans say why each step ended
+  As a triager of a factory run
+  I want each step's span to carry why the step ended
+  So that one telemetry query replaces a run dump
+
+  Scenario: An ACP step that stopped mid-tool-call and a failed gate step
+    Given a factory run of a work item
+    And its implement step's agent ends its turn with stop reason end_turn while a just check tool call is still running
+    And its janitor gate step fails on the targets check-types and check-lint
+    When the run's spans are queried in Honeycomb filtered by the run id
+    Then the implement step's span carries the work item id, the run id, the node name and visit, the model, the candidate index and the duration
+    And it carries stop reason end_turn, last tool call state in_flight, and context used tokens against context window tokens
+    And the janitor step's span carries gate verdict fail with failed targets check-types and check-lint
+
+  Scenario: An unobservable value is named rather than fabricated
+    Given a factory ACP step whose agent made no tool call
+    When the step's span is exported
+    Then the span carries no last tool call attributes
+    And the span names them in its unavailable fields
+```
+
+## Scenario 275 — A factory ACP node loads only the instruction files, skills, plugins and MCP tools its declaration names
+
+```gherkin
+Feature: Per-node context declaration
+
+  Scenario: A factory ACP node loads only the instruction files, skills, plugins and MCP tools its declaration names
+    Given the implement-work-item workflow's defaults set loads on the implement node to instruction_files ["AGENTS.md"] and on the review node to four empty arrays
+    And the governed repository carries an AGENTS.md instruction file, a CLAUDE.md symlink to it, and a project MCP server configuration
+    When an implementation run is dispatched
+    Then the first request of the implement node session carries the text of AGENTS.md
+    And the first request of the review node session carries no text of AGENTS.md
+    And neither session lists a tool of the project MCP server
+    And the dispatch record journals each node's resolved loads declaration and the layer that supplied it
+
+  Scenario: A repository layer that sets loads replaces the workflow default whole
+    Given the implement-work-item workflow's defaults set loads on the review node to four empty arrays
+    And the dispatch target's dispatcher.acp_nodes sets loads on the review node to instruction_files ["AGENTS.md"]
+    When an implementation run is dispatched
+    Then the first request of the review node session carries the text of AGENTS.md
+    And the dispatch record journals the review node's loads as supplied by the repository layer
+
+  Scenario: A declared item the node's agent cannot be given refuses the dispatch before claim
+    Given the dispatch target's dispatcher.acp_nodes sets loads on the review node to plugins ["no-such-plugin"]
+    When a dispatch of an implementation item is requested
+    Then the dispatch is refused before the item is claimed
+    And the refusal names the review node and no-such-plugin
+```
+
+## Scenario 276 — A mirror records the sandbox image it was measured on
+
+
+```gherkin
+Feature: The capability mirror records the sandbox image it was measured on
+  Scenario: A mirror measured on an older image is reported stale and the check fails
+    Given a repository whose committed dispatcher.sandbox_capabilities_measured_image names image A
+    And a committed configuration whose dispatcher.fabro_sandbox_image resolves to image B
+    When the filing display and the host-side Definition-of-Done judgement read the mirror
+    Then each reports a stale-mirror configuration mismatch naming image A and image B
+    And the Dispatcher journals the mismatch and neither refuses the admission nor fails the dod_gate node
+    And the repository check check-sandbox-capabilities-measured-image fails naming image A and image B
+  Scenario: A mirror that records no measured image is reported unverifiable
+    Given a repository with a committed dispatcher.sandbox_capabilities array and no measured-image key
+    When the approve display reads the mirror
+    Then it reports an unverifiable-mirror configuration mismatch with the cause no-measured-image
+    And the grading set is still the committed array alone
+  Scenario: A catalog launch is unverifiable and never stale
+    Given a factory declaring catalog environment livespec-ci and a committed measured image that differs from the catalog's image
+    When a dispatch to that factory is judged
+    Then the report is an unverifiable-mirror mismatch with the cause catalog_environment naming livespec-ci
+    And no stale-mirror mismatch is reported
+```
+
+## Scenario 277 — A merged pull request with no finished factory run, or whose run died after the merge, is re-proven by the proof-only arm
+
+```gherkin
+Feature: A merged pull request that no finished factory run proved is re-proven by the proof-only arm
+  Scenario: A hand-finished merge is re-proven on its merged head
+    Given an item whose pull request was merged by hand with no factory run, and whose latest reconcile-merged moved it into acceptance parked NEEDS_ATTENTION on its proof leg
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm anchored on that pull request and its head commit at merge, and the refusal for a live earlier run does not fire for the want of an earlier run
+    And the arm's verified record is posted on that pull request, after which reconcile-merged writes the item's Proof of Done pointer
+    And no host_verified record is read as proof of a factory_captured assertion
+
+  Scenario: A merged pull request whose run died after the merge is re-proven, not re-implemented
+    Given an item whose pull request merged and whose run ended in publish_draft or refresh_repair after the merge, so the pull request carries no Proof of Done comment
+    And the item rests in acceptance parked NEEDS_ATTENTION on its proof leg
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm against the pull request's head commit at merge
+    And it does not re-enter the implement path and does not end at a dead implementer
 ```
