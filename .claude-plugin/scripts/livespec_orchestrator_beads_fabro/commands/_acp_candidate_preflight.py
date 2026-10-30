@@ -360,8 +360,10 @@ def _headroom_skip(
     ):
         return None
     reading = policy.read()
-    if reading not in assessments:
-        assessments.append(reading)
+    pooled = () if policy.pool_read is None else policy.pool_read()
+    for assessed in (*pooled, reading):
+        if assessed not in assessments:
+            assessments.append(assessed)
     kind = headroom_skip_kind(reading=reading, floor_percent=policy.floor_percent)
     if kind is None:
         return None

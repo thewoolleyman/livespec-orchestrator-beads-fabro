@@ -136,9 +136,12 @@ def filter_eligible_candidates(
     # provider gate is scoped on. They belong to the pass for the same reason
     # the rendered candidates do: one admission evaluation takes at most one
     # reading per distinct projected credential, so every row of the wave is
-    # graded against the very accounts that reading named.
+    # graded against the very accounts that reading named. A pool slot admission
+    # passed over is assessed but NOT projected, so only the chosen one counts.
     projected_identities = frozenset(
-        reading.credential_identity for reading in preflight.headroom_assessments
+        reading.credential_identity
+        for reading in preflight.headroom_assessments
+        if reading.slot is None or reading.slot.chosen
     )
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []

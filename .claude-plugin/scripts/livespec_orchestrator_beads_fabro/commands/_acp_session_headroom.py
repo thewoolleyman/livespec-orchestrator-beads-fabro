@@ -86,6 +86,7 @@ __all__: list[str] = [
     "SessionHeadroomProjection",
     "SessionHeadroomReading",
     "SevenDayReading",
+    "SlotSelection",
     "headroom_covers_candidate",
     "headroom_skips_candidate",
     "session_headroom_reading",
@@ -217,6 +218,24 @@ class SessionHeadroomProjection:
 
 
 @dataclass(frozen=True, kw_only=True)
+class SlotSelection:
+    """How admission treated ONE injected pool slot: its name, skip kind and fate.
+
+    `slot` is the environment-variable NAME of the injected slot, never its
+    value, so it is as non-secret as the opaque identity beside it. `skip_kind`
+    is the headroom shortfall that disqualified the slot (`None` when it
+    qualified). `not_chosen_reason` is `None` on the chosen slot and otherwise
+    names why this slot was passed over: a `<kind>-skip` for a disqualified
+    slot, or the ranking reason for a qualifying one that lost.
+    """
+
+    slot: str
+    skip_kind: str | None
+    chosen: bool
+    not_chosen_reason: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class SessionHeadroomReading:
     """One assessment of one projected credential, at one observation time.
 
@@ -229,8 +248,9 @@ class SessionHeadroomReading:
     `provider_reset_claim` is the ONE field the provider itself asserts, and it
     is named for what it is. The clause permits journaling "a reset instant the
     response carries" as "an unverified provider claim" and forbids it from
-    changing the projection skip -- so it is carried, never read by any
-    decision here or in the projection, and rendered under a record key that
+    changing the projection skip -- so no skip decision here or in the projection
+    reads it. The only reader is the slot-pool ranking, which orders slots that
+    already qualify by it (Scenario 278), and it is rendered under a record key that
     says it is unverified. A field called `resets_at` would invite exactly the
     reasoning the prohibition exists to prevent.
     """
@@ -244,6 +264,7 @@ class SessionHeadroomReading:
     projection: SessionHeadroomProjection | None = None
     provider_reset_claim: str | None = None
     seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY
+    slot: SlotSelection | None = None
 
     @property
     def observable(self) -> bool:
@@ -275,12 +296,17 @@ class SessionHeadroomPolicy:
     `codex_read` is the Codex clause's reading seam, memoized the same way and
     governed by the same two dials. It defaults to ABSENT, which leaves every
     Codex candidate unassessed exactly as before the clause existed.
+
+    `pool_read` is the whole injected slot pool's readings, memoized with `read`
+    (which returns the one slot admission chose out of them). It defaults to
+    ABSENT, which leaves a single-reading policy exactly as it was.
     """
 
     floor_percent: int
     horizon_minutes: int
     read: Callable[[], SessionHeadroomReading]
     codex_read: Callable[[], CodexHeadroomReading] | None = None
+    pool_read: Callable[[], tuple[SessionHeadroomReading, ...]] | None = None
 
 
 def session_headroom_reading(
