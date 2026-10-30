@@ -64,7 +64,7 @@ def candidates(
     is what keeps one held item at the head of the ranking from stopping the
     queue behind it: the wall row that carries the same decision refuses the
     WHOLE selection, so without this filter the drain would keep picking a row
-    that cannot run until a human ratifies a proposal.
+    that cannot run until its linked proposal ratifies.
 
     A NAMED id is narrowed to and deliberately NOT filtered. The clause keeps the
     hand-picked path protected by the wall "even when candidate enumerations
