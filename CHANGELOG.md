@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.260.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.260.1...v0.260.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* embed the Dispatcher's stderr tail in drive's Markdown summary ([598987a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/598987a2c6419d7d1b5841da149cb6e8c32f3b91))
+
 ## [0.260.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.260.0...v0.260.1) (2026-10-29)
 
 
