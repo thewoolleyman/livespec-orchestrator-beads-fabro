@@ -165,7 +165,11 @@ def complete_command(
 
 
 def completion_check(
-    *, primary: Path, telemetry: EventSink, wall_clock: Callable[[], float]
+    *,
+    primary: Path,
+    telemetry: EventSink,
+    wall_clock: Callable[[], float],
+    session_id: str | None = None,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     """The completion verdict `check` folds in, with the findings it contributes.
 
@@ -174,7 +178,9 @@ def completion_check(
     nothing for an owner to cover, and flagging every idle turn on an undeclared
     host would train sessions to ignore the check.
     """
-    verdict = _completion_verdict(primary=primary, telemetry=telemetry, wall_clock=wall_clock)
+    verdict = _completion_verdict(
+        primary=primary, telemetry=telemetry, wall_clock=wall_clock, session_id=session_id
+    )
     findings: list[dict[str, object]] = []
     if not verdict.protected:
         findings = [
@@ -202,13 +208,18 @@ def _finding(*, identity: str, finding: str, record_state: str) -> dict[str, obj
 
 
 def _completion_verdict(
-    *, primary: Path, telemetry: EventSink, wall_clock: Callable[[], float]
+    *,
+    primary: Path,
+    telemetry: EventSink,
+    wall_clock: Callable[[], float],
+    session_id: str | None = None,
 ) -> CompletionVerdict:
     return protected_completion(
         coverage=host_coverage_reading(path=coverage_declaration_path(primary=primary)),
         obligation_store_root=obligation_store_root(primary=primary),
         telemetry=telemetry,
         now=wall_clock(),
+        session_id=session_id,
     )
 
 

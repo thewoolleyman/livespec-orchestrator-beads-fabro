@@ -1,10 +1,13 @@
 """Stop hook: run the shared host session-wait check before a Claude turn ends.
 
-The check lists ended-but-unacknowledged targets, overdue waits, missing waiter
-processes, unavailable inventory, and launch obligations whose independent
-recovery owner is missing — including work launched with no wait at all. The
-hook blocks the stop when the check reports findings, so the owning session
-reads them before parking.
+The check runs scoped to the stopping session (the `session_id` of the Stop
+hook input), so another session's waits never block this one; the unscoped
+`check --repo <repo>` remains the audit surface. The check lists
+ended-but-unacknowledged targets, overdue waits, missing waiter processes,
+unavailable inventory, and launch obligations whose independent recovery owner
+is missing — including work launched with no wait at all. The hook blocks the
+stop when the check reports findings, so the owning session reads them before
+parking.
 
 It blocks ONCE: Claude Code sets `stop_hook_active` on the continuation a block
 produced, and a second block there would trap the session in a loop. A check
@@ -51,14 +54,15 @@ class CheckOutcome:
     stdout: str
 
 
-def check_command(*, plugin_root: Path, project: Path) -> list[str]:
-    return [
+def check_command(*, plugin_root: Path, project: Path, session_id: str | None = None) -> list[str]:
+    command = [
         sys.executable,
         str(plugin_root / "scripts" / "bin" / "session_wait.py"),
         "check",
         "--repo",
         str(project),
     ]
+    return [*command, "--session-id", session_id] if session_id else command
 
 
 def run_check(*, command: list[str], timeout_seconds: float) -> CheckOutcome | None:
@@ -97,15 +101,17 @@ def _finding_lines(*, outcome: CheckOutcome | None) -> list[str]:
         return []
 
 
-def _stop_hook_active() -> bool:
+def _hook_input() -> dict[str, object]:
     try:
         payload = json.loads(sys.stdin.read())
     except ValueError:
-        return False
-    return (
-        isinstance(payload, dict)
-        and cast("dict[str, object]", payload).get("stop_hook_active") is True
-    )
+        return {}
+    return cast("dict[str, object]", payload) if isinstance(payload, dict) else {}
+
+
+def _stopping_session_id(*, payload: dict[str, object]) -> str | None:
+    session_id = payload.get("session_id")
+    return session_id if isinstance(session_id, str) and session_id else None
 
 
 def main() -> int:
@@ -113,10 +119,15 @@ def main() -> int:
     project = os.environ.get("CLAUDE_PROJECT_DIR")
     if os.environ.get("CODEX_THREAD_ID") or not plugin_root or not project:
         return 0
-    if _stop_hook_active():
+    payload = _hook_input()
+    if payload.get("stop_hook_active") is True:
         return 0
     outcome = run_check(
-        command=check_command(plugin_root=Path(plugin_root), project=Path(project)),
+        command=check_command(
+            plugin_root=Path(plugin_root),
+            project=Path(project),
+            session_id=_stopping_session_id(payload=payload),
+        ),
         timeout_seconds=_CHECK_TIMEOUT_SECONDS,
     )
     reason = block_reason(outcome=outcome)

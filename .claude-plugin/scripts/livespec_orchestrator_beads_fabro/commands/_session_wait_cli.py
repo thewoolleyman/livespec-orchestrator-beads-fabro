@@ -90,6 +90,8 @@ def _build_parser() -> argparse.ArgumentParser:
     for command in ("inventory", "check"):
         inventory = subparsers.add_parser(command)
         _ = inventory.add_argument("--repo", required=True)
+        if command == "check":
+            _ = inventory.add_argument("--session-id", default=None)
     wait = subparsers.add_parser("wait")
     _ = wait.add_argument("--repo", required=True)
     _ = wait.add_argument("--session-id", required=True)
@@ -141,6 +143,7 @@ def _wait_command(
 def _inventory_command(
     *,
     command: str,
+    session_id: str | None,
     primary: Path,
     wait_store_root: Path,
     seams: SessionWaitCliSeams,
@@ -153,10 +156,13 @@ def _inventory_command(
         process_generation=seams.process_generation,
     )
     payload = snapshot_payload(snapshot=snapshot)
-    summary: dict[str, object] = check_summary(snapshot=snapshot)
+    summary: dict[str, object] = check_summary(snapshot=snapshot, session_id=session_id)
     if command == "check":
         payload["completion"], obligation_findings = completion_check(
-            primary=primary, telemetry=publisher.sink, wall_clock=seams.wall_clock
+            primary=primary,
+            telemetry=publisher.sink,
+            wall_clock=seams.wall_clock,
+            session_id=session_id,
         )
         summary = {
             "findings": [*cast("list[object]", summary["findings"]), *obligation_findings],
@@ -258,6 +264,7 @@ def _dispatch_command(*, parser: argparse.ArgumentParser, invocation: _Invocatio
     if command in {"inventory", "check"}:
         return _inventory_command(
             command=command,
+            session_id=getattr(args, "session_id", None),
             primary=primary,
             wait_store_root=wait_store_root,
             seams=seams,
