@@ -2557,5 +2557,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal hand-finished-merge-factory-proof-pointer, and the owning work-item bd-ib-hbt5b6 lets the proof-only arm re-prove a merged pull request that no finished factory run produced, so that a hand-finished merge or a run that died after the merge obtains a counted verified record and a Proof of Done pointer, together with the test that binds this entry.",
     "work_item": "bd-ib-hbt5b6"
+  },
+  {
+    "heading": "## Scenario 278 \u2014 A factory dispatch takes its credential from the whole slot pool, preferring the sooner window reset, and refuses only when no slot qualifies",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal factory-credential-from-whole-slot-pool, and the owning work-item bd-ib-5d6ewf selects the factory credential from the whole slot pool, together with the test that binds this entry.",
+    "work_item": "bd-ib-5d6ewf"
   }
 ]
