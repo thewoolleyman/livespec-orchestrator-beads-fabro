@@ -32,6 +32,7 @@ __all__: list[str] = [
     "SiblingClones",
     "core_plugin_env_line",
     "sibling_clone_steps_block",
+    "sibling_clones_root_env_line",
 ]
 
 SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
@@ -79,6 +80,13 @@ def core_plugin_env_line(*, siblings: SiblingClones | None) -> str:
         return ""
     core_plugin_root = f"{siblings.clones_root}/{_CORE_SIBLING_SLUG}/.claude-plugin"
     return f"{CORE_PLUGIN_ROOT_ENV_VAR} = {json.dumps(core_plugin_root)}\n"
+
+
+def sibling_clones_root_env_line(*, siblings: SiblingClones | None) -> str:
+    """Project LIVESPEC_SIBLING_CLONES_ROOT, or the empty string with no siblings."""
+    if siblings is None:
+        return ""
+    return f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
 
 
 def sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
