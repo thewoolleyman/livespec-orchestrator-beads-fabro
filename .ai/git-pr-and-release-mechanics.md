@@ -22,6 +22,22 @@ worktree, because `git push --delete` from the primary checkout is refused by
 the commit-refuse hook. Verify every landing with a content grep on master,
 never with the PR's merged state.
 
+## An opened pull request is an armed one: "held" means not opened yet
+
+Fleet repositories carry `.github/workflows/auto-enable-merge.yml`, and
+`app/thewoolleyman-factory-bot` arms rebase auto-merge on every newly opened
+pull request. A PR opened WITHOUT `gh pr merge --auto` therefore still merges
+the moment its checks pass. Measured 2026-10-30: six Codex-routing PRs opened
+"ready but held" for a coordinator GO merged within minutes (driver-claude
+#935, driver-codex #880, orchestrator-git-jsonl #1053, runtime #800, driver-pi
+#426, livespec #3008), putting config live against a stale credential and
+costing six reverts.
+
+When a change must wait for a go-ahead, stop at a committed branch and open
+the pull request only at GO. If one must exist early, run
+`gh pr merge <n> --disable-auto` right after `gh pr create` and read
+`autoMergeRequest` back, since the workflow can arm it on later events.
+
 ## `CLAUDE.md` is a symlink: stage `AGENTS.md`
 
 The root `CLAUDE.md` (and `.claude/CLAUDE.md`) is a symlink to `AGENTS.md`.
