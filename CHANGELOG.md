@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.261.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.261.0...v0.261.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* keep the scripted publication stages' bodies out of the agent prompt ([8aa9009](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8aa9009896476820ae3ad534fcea4cd8bdc54406))
+* scope the Claude Stop hook's session-wait check to the stopping session ([1bb539e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1bb539e3fb1169500c7ab645ee290f48a20ec178))
+
 ## [0.261.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.260.2...v0.261.0) (2026-10-30)
 
 
