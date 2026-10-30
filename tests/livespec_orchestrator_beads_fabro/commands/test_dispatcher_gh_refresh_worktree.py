@@ -18,8 +18,9 @@ These tests execute the RENDERED prepare scripts for real inside a
 throwaway git clone, because the rendering is where the repair lives and
 a test that asserts the text a renderer emits has never been shown to
 repair anything. The lever `LIVESPEC_SANDBOX_GH_REFRESH_ROOT` points the
-bundle root into that clone, which is what makes the fixture faithful:
-in production the root IS inside the run's worktree.
+bundle root into that clone. The production default now lives outside the
+run's worktree (see `test_dispatcher_gh_refresh_location.py`); these cases keep
+the exclusion honest for a root a lever places inside it.
 """
 
 import os

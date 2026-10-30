@@ -37,13 +37,16 @@ _GITHUB_APP_ENV_KEYS = (
     "GITHUB_API_URL",
 )
 # The in-sandbox bundle root the dispatcher materializes the refreshing `gh`
-# wrapper into. `/workspace` is the fabro sandbox's own mount, so this absolute
-# path is correct in production and WRONG anywhere else -- on a CI runner it
-# resolves to the runner's filesystem root, where `rm -rf` + `mkdir` either is
-# refused (uid 1000: `mkdir: Permission denied`) or, worse, succeeds under uid 0
-# and destroys a real /workspace. The lever below exists so a test can execute
-# the rendered script for real against a temporary root; production never sets
-# it. Mirrors `LIVESPEC_SANDBOX_OTEL_ENDPOINT` in `_dispatcher_projection`.
+# wrapper into. It holds the code that mints the run's forge credential, so it
+# lives beside the other Dispatcher-materialized sandbox tooling under the
+# sandbox plugins root and OUTSIDE the run's working tree: an agent stage edits
+# and commits the working tree, and anything it writes there could act with the
+# credential when a publication stage next runs. The value is a shell
+# expression, expanded by the bash that runs each prepare step, and it is the
+# same spelling the workflows' push helpers resolve. The lever below exists so
+# a test can execute the rendered script for real against a temporary root;
+# production never sets it. Mirrors `LIVESPEC_SANDBOX_OTEL_ENDPOINT` in
+# `_dispatcher_projection`.
 SANDBOX_GH_REFRESH_ROOT_ENV_VAR = "LIVESPEC_SANDBOX_GH_REFRESH_ROOT"
 
 # Base64 chunk size. Each chunk rides one prepare step's own `env` value, which
@@ -53,7 +56,9 @@ SANDBOX_GH_REFRESH_ROOT_ENV_VAR = "LIVESPEC_SANDBOX_GH_REFRESH_ROOT"
 # dispatch in two repos. `_dispatcher_prepare_payload.MAX_PAYLOAD_VALUE_BYTES`
 # enforces the cap; this chunk size stays well under it.
 _B64_CHUNK_CHARS = 48000
-DEFAULT_SANDBOX_GH_REFRESH_ROOT = "/workspace/.livespec-gh-refresh"
+DEFAULT_SANDBOX_GH_REFRESH_ROOT = (
+    "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-gh-refresh"
+)
 
 
 def resolve_sandbox_gh_refresh_root(*, environ: Mapping[str, str]) -> str:
@@ -217,11 +222,12 @@ def refreshing_gh_prepare_steps_block() -> str:
     `bash -c <script>`, so a step is a single argv argument and is bounded by
     MAX_ARG_STRLEN, not by the much larger ARG_MAX total (bd-ib-gnli).
 
-    The FIRST step hides the bundle from the run's git worktree, and its
-    position is load-bearing: the Petri-era engine runs each prepare step as a
-    graph node and checkpoints after it, so a step that writes a byte of the
-    bundle before the exclusion is in place is a step whose checkpoint commits
-    it (bd-ib-dud2ww).
+    The default root is outside the run's working tree, so the exclusion below
+    only matters for a root a lever places inside it. The FIRST step hides the
+    bundle from the run's git worktree, and its position is load-bearing: the
+    Petri-era engine runs each prepare step as a graph node and checkpoints
+    after it, so a step that writes a byte of the bundle before the exclusion
+    is in place is a step whose checkpoint commits it (bd-ib-dud2ww).
 
     BOTH bundle paths are excluded, and the payload is not an afterthought: the
     chunk steps stream the base64 archive to `<bundle_root>.b64` and only the

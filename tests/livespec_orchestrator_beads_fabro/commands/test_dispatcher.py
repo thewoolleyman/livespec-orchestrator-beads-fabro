@@ -1912,7 +1912,7 @@ def test_render_run_config_overlay_projects_gh_mint_helper_for_target_without_sc
     assert rendered is not None
     env_table_at = rendered.index("[environments.livespec-ci.env]")
     prepare_steps = rendered[:env_table_at]
-    assert "/workspace/.livespec-gh-refresh/bin/mint_app_token.py" in prepare_steps
+    assert f"{DEFAULT_SANDBOX_GH_REFRESH_ROOT}/bin/mint_app_token.py" in prepare_steps
     assert "$PWD/.claude-plugin/scripts/bin/mint_app_token.py" not in prepare_steps
     steps = steps_in(block=rendered)
     # The wrapper's fixed tail is a helper source, so it rides a step's env; the
@@ -1945,7 +1945,7 @@ def test_render_run_config_overlay_ignores_target_repo_mint_helper_when_present(
     env_table_at = rendered.index("[environments.livespec-ci.env]")
     prepare_steps = rendered[:env_table_at]
     assert str(target_helper) not in prepare_steps
-    assert "/workspace/.livespec-gh-refresh/bin/mint_app_token.py" in prepare_steps
+    assert f"{DEFAULT_SANDBOX_GH_REFRESH_ROOT}/bin/mint_app_token.py" in prepare_steps
 
 
 def test_projected_gh_wrapper_publishes_for_target_without_scripts(
@@ -1980,13 +1980,9 @@ def _assert_projected_gh_wrapper_publishes(
 ) -> None:
     monkeypatch.setenv("GITHUB_APP_ID", "42")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
-    # The production bundle root is the absolute in-sandbox path
-    # /workspace/.livespec-gh-refresh. This test EXECUTES the rendered prepare
-    # script for real, so without redirecting that root the script would
-    # `rm -rf` and `mkdir` at the RUNNER's filesystem root: refused under uid
-    # 1000 (`mkdir: Permission denied`, measured), and under uid 0 it would
-    # succeed by deleting a real /workspace. Redirect it into tmp_path so the
-    # script stays hermetic under both uids.
+    # The production bundle root lives under the sandbox plugins root. This test
+    # EXECUTES the rendered prepare script for real, so redirect that root into
+    # tmp_path to keep the script hermetic under both uid 0 and uid 1000.
     sandbox_root = tmp_path / "sandbox-bundle"
     monkeypatch.setenv(SANDBOX_GH_REFRESH_ROOT_ENV_VAR, str(sandbox_root))
     if target_helper_source is not None:
