@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.262.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.261.1...v0.262.0) (2026-10-30)
+
+
+### Features
+
+* **dispatcher:** rank the whole injected slot pool for session-headroom admission ([22c506b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/22c506be0853a4b9d097cffad305a2806111ffd7))
+
+
+### Bug Fixes
+
+* **dispatch:** revert stage script prepare block (workflow.toml over Fabro 512 KiB) ([21a1065](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21a10653ef899cb874195ce1e35aa1a1c1ae8cc4))
+
 ## [0.261.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.261.0...v0.261.1) (2026-10-30)
 
 
