@@ -11,10 +11,13 @@ wait rows alone could pass.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import session_wait
+from livespec_orchestrator_beads_fabro.commands._session_obligation_cli import completion_check
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import SessionEvent
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     process_generation_token,
 )
@@ -175,4 +178,26 @@ def test_check_reports_an_unreadable_obligation_store_as_unobservable(
             "record_state": "unavailable",
             "source": "obligation",
         }
+    ]
+
+
+@dataclass(kw_only=True)
+class _Sink:
+    events: list[SessionEvent] = field(default_factory=list)
+
+    @property
+    def exporting(self) -> bool:
+        return True
+
+    def emit(self, *, event: SessionEvent) -> None:
+        self.events.append(event)
+
+
+def test_check_publishes_the_coverage_grade_it_reads_at_the_seam_clock(tmp_path: Path) -> None:
+    sink = _Sink()
+
+    _ = completion_check(primary=tmp_path, telemetry=sink, wall_clock=lambda: 100.0)
+
+    assert [(event.name, event.at) for event in sink.events] == [
+        ("session.recovery.coverage", 100.0)
     ]

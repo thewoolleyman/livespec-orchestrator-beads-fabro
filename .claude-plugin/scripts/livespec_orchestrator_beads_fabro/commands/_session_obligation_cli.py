@@ -157,14 +157,16 @@ def complete_command(
     *, primary: Path, telemetry: EventSink, wall_clock: Callable[[], float]
 ) -> int:
     """Verify this host's durable obligations before a turn reports completion."""
-    verdict = _completion_verdict(primary=primary)
+    verdict = _completion_verdict(primary=primary, telemetry=telemetry, wall_clock=wall_clock)
     _ = write_stdout(
         text=json.dumps(_completion_payload(verdict=verdict), indent=2, sort_keys=True) + "\n"
     )
     return int(not verdict.protected)
 
 
-def completion_check(*, primary: Path) -> tuple[dict[str, object], list[dict[str, object]]]:
+def completion_check(
+    *, primary: Path, telemetry: EventSink, wall_clock: Callable[[], float]
+) -> tuple[dict[str, object], list[dict[str, object]]]:
     """The completion verdict `check` folds in, with the findings it contributes.
 
     A host that declares no recovery owner is a finding only when work is left
@@ -172,7 +174,7 @@ def completion_check(*, primary: Path) -> tuple[dict[str, object], list[dict[str
     nothing for an owner to cover, and flagging every idle turn on an undeclared
     host would train sessions to ignore the check.
     """
-    verdict = _completion_verdict(primary=primary)
+    verdict = _completion_verdict(primary=primary, telemetry=telemetry, wall_clock=wall_clock)
     findings: list[dict[str, object]] = []
     if not verdict.protected:
         findings = [
@@ -199,7 +201,9 @@ def _finding(*, identity: str, finding: str, record_state: str) -> dict[str, obj
     }
 
 
-def _completion_verdict(*, primary: Path) -> CompletionVerdict:
+def _completion_verdict(
+    *, primary: Path, telemetry: EventSink, wall_clock: Callable[[], float]
+) -> CompletionVerdict:
     return protected_completion(
         coverage=host_coverage_reading(path=coverage_declaration_path(primary=primary)),
         obligation_store_root=obligation_store_root(primary=primary),
