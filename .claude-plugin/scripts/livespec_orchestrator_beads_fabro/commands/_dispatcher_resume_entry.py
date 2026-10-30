@@ -65,7 +65,6 @@ tree nobody proved.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import shlex
 from dataclasses import dataclass
@@ -83,7 +82,6 @@ __all__: list[str] = [
     "graph_entered_at",
     "resume_checkout_for",
     "resume_checkout_prepare_steps_block",
-    "resume_published_head_env_line",
 ]
 
 # The `argparse.Namespace` attributes a resume or a seeded recovery carries into
@@ -305,18 +303,6 @@ def _spliced(*, text: str, edits: list[tuple[int, int, str]]) -> str:
         cursor = end
     pieces.append(text[cursor:])
     return "".join(pieces)
-
-
-def resume_published_head_env_line(*, checkout: ResumeCheckout | None) -> str:
-    """The run-scoped env line carrying a resumed run's validated published head.
-
-    A resumed clone has no publication file from the earlier run, so both
-    publication stages read this anchor as their fallback; it is never inferred
-    from a branch tip that may have moved since validation. Empty with no resume.
-    """
-    if checkout is None:
-        return ""
-    return f"LIVESPEC_RESUME_PUBLISHED_HEAD = {json.dumps(checkout.head)}\n"
 
 
 def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> str:
