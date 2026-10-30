@@ -9,11 +9,12 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._session_obligation_cli import (
     add_obligation_parsers,
     complete_command,
+    completion_check,
     launch_command,
 )
 from livespec_orchestrator_beads_fabro.commands._session_telemetry_export import (
@@ -140,6 +141,7 @@ def _wait_command(
 def _inventory_command(
     *,
     command: str,
+    primary: Path,
     wait_store_root: Path,
     seams: SessionWaitCliSeams,
     publisher: SessionWaitPublisher,
@@ -151,8 +153,15 @@ def _inventory_command(
         process_generation=seams.process_generation,
     )
     payload = snapshot_payload(snapshot=snapshot)
-    summary = check_summary(snapshot=snapshot)
+    summary: dict[str, object] = check_summary(snapshot=snapshot)
     if command == "check":
+        payload["completion"], obligation_findings = completion_check(
+            primary=primary, telemetry=publisher.sink, wall_clock=seams.wall_clock
+        )
+        summary = {
+            "findings": [*cast("list[object]", summary["findings"]), *obligation_findings],
+            "healthy": bool(summary["healthy"]) and not obligation_findings,
+        }
         payload["summary"] = summary
     _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
     publisher.inventory(snapshot=snapshot)
@@ -249,6 +258,7 @@ def _dispatch_command(*, parser: argparse.ArgumentParser, invocation: _Invocatio
     if command in {"inventory", "check"}:
         return _inventory_command(
             command=command,
+            primary=primary,
             wait_store_root=wait_store_root,
             seams=seams,
             publisher=publisher,
