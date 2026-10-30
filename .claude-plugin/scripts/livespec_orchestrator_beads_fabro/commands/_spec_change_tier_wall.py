@@ -18,7 +18,8 @@ THE FILTER EXISTS BECAUSE THE ROW ALONE WOULD STOP THE QUEUE. A wave-level
 refusal refuses the WHOLE selection, so one held item at the head of the ranking
 would refuse every dispatch behind it — and the drain would keep picking it
 every pass, reporting a factory that cannot run while the work it could run sat
-behind one item waiting on a human to ratify a proposal. That is the same reason
+behind one item waiting for its linked proposal to ratify through the governed
+revise path. That is the same reason
 the Definition-of-Done judgement has a filter beside its row.
 
 THE HOLD ITSELF SPENDS NO MODEL CALL, and that is what the ratified "needs no
