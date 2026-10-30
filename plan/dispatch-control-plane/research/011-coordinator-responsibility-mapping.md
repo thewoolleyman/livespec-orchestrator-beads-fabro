@@ -5,6 +5,8 @@ Detailed responsibility mapping · 27 October 2026 · authority correction 28 Oc
 Current coordinator: **gitops-fleet-capacity-monitoring**, `livespec-dev-tooling-dfixhe`.
 Proposed replacement infrastructure: **dispatch-control-plane**, `bd-ib-k6dqwc`.
 
+**30 October follow-up:** [Spec-side obligations and the autonomy repair](012-spec-side-obligations-and-autonomy-followup.md) adds the missing proposal/revision responsibilities, corrects the prior-art survey, and records the independent stopgap started before this plan update.
+
 **Correction, 28 October:** this report originally treated R121 as an agreed
 restriction. That was wrong: it was a coordinator-authored restriction following
 a peer objection, not a verified maintainer decision. The maintainer has now
