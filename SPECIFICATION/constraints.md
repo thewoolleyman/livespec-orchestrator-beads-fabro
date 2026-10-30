@@ -44,6 +44,12 @@ This section refines the pre-push step ordering inherited from livespec; it adds
 
 **A green aggregate on the exact tree carries to its push.** When the `just check` aggregate passes, it MUST record a green verdict for the tree it checked, keyed on that commit's tree object id, even when it skipped declared targets. A verdict whose aggregate skipped targets MUST name them. A verdict vouches only for the targets that ran and passed and whose result the committed tree alone decides, the tree-pure members; a member that reads state outside the tree is never covered by a verdict. The pre-push gate MUST honour a recorded green verdict whose tree is byte-identical to the tree being pushed, with a clean worktree, in place of running again the members that verdict covers, MUST still run every member of the pre-push check set that reads state outside the tree and refuse the push when one fails, and MUST print one line naming the honoured verdict and every target the verdict skipped. A push whose tree differs from the recorded verdict's tree, such as a `publish_draft` push after its own refresh rebase onto a moved default branch, MUST run the full pre-push gate exactly as before. Like the deletion-only skip, honouring a verdict MUST NOT be reachable by `--no-verify`, by an environment variable or by any flag; the recorded verdict and the tree are its only inputs. Measured 2026-10-26: the factory janitor skips targets that cannot run in the sandbox, so it recorded no verdict, and each `publish_draft` pre-push re-ran the whole aggregate, about 24 minutes at two test workers, on the tree the janitor had just passed. Scenario 253 in `scenarios.md` exercises this paragraph.
 
+## Pre-commit staged pre-check
+
+This section refines the pre-commit step ordering inherited from livespec; it adds one leading step and reorders nothing else.
+
+**Staged Python files are linted and type-checked before the pre-commit aggregate.** The repository's pre-commit hook MUST run `python -m livespec_dev_tooling.workflow_checks.staged_precheck` after any early exit for a commit that stages no Python file, and before any member of its pre-commit aggregate starts. That pre-check lints the staged added or modified Python files and type-checks those the repository's pyright configuration covers. When it reports a type-checker error, or a lint error the lint autofix step does not fix, the hook MUST refuse the commit, naming each file, line and rule, before the pre-commit aggregate starts. When the staged Python files pass, the commit MUST proceed to the pre-commit aggregate, which runs exactly as before. Like the pre-push refinements above, the pre-check MUST NOT be skippable by an environment variable or a flag. The full aggregate still runs at pre-push and in CI, so the pre-check moves a refusal earlier without narrowing what gates a merge.
+
 ## Beads substrate constraints
 
 - The plugin reaches its tenant DB ONLY through the pinned `bd` CLI in
@@ -67,6 +73,16 @@ This section refines the pre-push step ordering inherited from livespec; it adds
   guard's private delegate executable. A repository's mise configuration
   MUST NOT declare or install `bd`, because an activated mise tool or
   regenerated shim can shadow the guard.
+- The lifecycle guard's test harness starts a throwaway loopback capture
+  server for its telemetry cases. When starting it, the harness MUST wait
+  until the server has written its port file, the server process has exited,
+  or 30 seconds have elapsed, whichever comes first; it MUST NOT fail a
+  telemetry case only because the server took longer than two seconds to
+  write its port file. When the server has not written its port file by the
+  end of that wait, the harness MUST fail the case with a line naming the
+  capture server's exit status (or that it was still running at the bound)
+  and its captured standard error, and MUST stop any capture server process
+  it started.
 - Server-mode auto-commit stays OFF and `bd config dolt.auto-start` is
   `false`. The plugin MUST NOT re-enable per-write commits and MUST NOT
   start, stop, or otherwise own the externally-managed server lifecycle
@@ -387,6 +403,29 @@ on the same host as a queue drain, so both are bound identically.
   verdict.** An item whose scope only PARTLY requires a withheld capability
   SHOULD be considered for decomposition, so the portion the sandbox can
   publish is not refused along with the portion it cannot.
+- **A command's program, arguments and environment reach the sandbox
+  through the exec stream, never through the exec request URL.** A
+  "sandbox driver" here means any execution backend the factory uses to
+  start a command inside a factory sandbox on the engine's behalf (a
+  Docker driver, a Kubernetes driver, or any later one). Every sandbox
+  driver the factory uses MUST deliver each command's program, its
+  arguments and its environment entries, including every projected
+  credential, through the exec session's input stream, or through a file
+  the driver writes over that stream before the command starts. A driver
+  MUST NOT carry any of them in the URL, query string or other request
+  line of the call that opens the exec session. Two properties follow
+  and both are REQUIRED: the length of that request MUST NOT grow with
+  the size of the command's program, arguments or environment values, so
+  a large prepare step is not bounded by any proxy or API-server URL
+  limit; and no credential value appears in a request URI, which is what
+  API-server audit logs and proxy access logs record. A command that
+  reads its own standard input MUST still receive that input unchanged
+  after the driver's framing. When a driver fails to open an exec session
+  without an HTTP status, its error MUST carry the underlying transport
+  error text rather than only a generic "could not reach the API"
+  message. A driver observed placing a credential value in an exec
+  request URL is a violation of this section regardless of whether the
+  run subsequently succeeded.
 
 **Verification.** For each capability withheld under this section, the
 governing check is that the factory sandbox's credential does not hold it and
