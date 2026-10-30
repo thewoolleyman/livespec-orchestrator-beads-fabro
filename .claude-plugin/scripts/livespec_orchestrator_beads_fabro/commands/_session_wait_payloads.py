@@ -8,6 +8,8 @@ __all__: list[str] = [
     "check_summary",
 ]
 
+_WAITER_FINDINGS_MOOT_ONCE_ACKNOWLEDGED = frozenset({"waiter-missing", "waiter-replaced"})
+
 
 def check_summary(*, snapshot: InventorySnapshot) -> dict[str, object]:
     """Every outstanding mismatch as its own entry, so none hides in a row scan."""
@@ -20,5 +22,6 @@ def check_summary(*, snapshot: InventorySnapshot) -> dict[str, object]:
         }
         for record in snapshot.records
         for finding in sorted(record.findings)
+        if not (record.acknowledged and finding in _WAITER_FINDINGS_MOOT_ONCE_ACKNOWLEDGED)
     ]
     return {"findings": findings, "healthy": not findings}
