@@ -30,13 +30,14 @@ def _write_wait(
     wait_id: str,
     waiter_pid: int = _LIVE_PID,
     deadline_at: float = 1000.0,
+    acknowledged: bool = False,
 ) -> None:
     wait_root.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {
         "acknowledgement": {
-            "acknowledged": False,
-            "acknowledged_at": None,
-            "kind": None,
+            "acknowledged": acknowledged,
+            "acknowledged_at": 20.0 if acknowledged else None,
+            "kind": "receipt-only" if acknowledged else None,
             "session_id": None,
         },
         "armed_at": 10.0,
@@ -144,6 +145,24 @@ def test_check_summary_distinguishes_overdue_missing_waiter_and_unavailable_from
         ("wait-corrupt", "invalid-record", "unavailable"),
     }
     assert all(entry["source"] == "wait" for entry in findings)
+
+
+def test_check_summary_of_an_acknowledged_completed_wait_is_healthy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_wait(
+        wait_root=tmp_path / "tmp" / "session-waits",
+        wait_id="wait-acked",
+        waiter_pid=0,
+        acknowledged=True,
+    )
+
+    code, payload = _check(
+        primary=tmp_path, seams=_seams(target_state="FAILED", now=500.0), capsys=capsys
+    )
+
+    assert code == 0
+    assert _summary(payload=payload) == {"findings": [], "healthy": True}
 
 
 def test_check_summary_of_an_empty_store_is_healthy(
