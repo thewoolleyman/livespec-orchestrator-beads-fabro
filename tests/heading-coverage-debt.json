@@ -1090,5 +1090,12 @@
     "heading": "## Scenario 277 \u2014 A merged pull request with no finished factory run, or whose run died after the merge, is re-proven by the proof-only arm",
     "work_item": "bd-ib-hbt5b6",
     "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 278 \u2014 A factory dispatch takes its credential from the whole slot pool, preferring the sooner window reset, and refuses only when no slot qualifies",
+    "work_item": "bd-ib-5d6ewf",
+    "first_seen": "2026-10-30"
   }
 ]

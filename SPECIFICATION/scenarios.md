@@ -1574,6 +1574,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And every other admission-required node retains an eligible candidate
     And every other admission-valve condition is satisfied
     And the primary credential's remaining five-hour headroom reads below 20 percent
+    And the credential pool holds only that one slot
     When the Dispatcher evaluates admission
     Then the reading is journaled with the work-item id and the opaque credential identity
     And the fallback candidate is selected for the implement node
@@ -1624,6 +1625,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And dispatcher.session_headroom_floor_percent is 20
     And dispatcher.session_headroom_horizon_minutes is 180
     And the earliest assessment of the primary credential journaled between 15 and 90 minutes earlier, for any work-item, read 64.5 percent utilization 30 minutes earlier
+    And the credential pool holds only that one slot
     And its current reading is 75 percent utilization, so its remaining headroom of 25 percent passes the floor
     And that node lists an uncovered eligible fallback candidate
     And every other admission condition is satisfied
@@ -1656,6 +1658,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     Given dispatcher.session_headroom_floor_percent is 20
     And dispatcher.session_headroom_horizon_minutes is 180
     And this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
     And the host session-headroom history holds an assessment of that credential identity journaled 40 minutes earlier from another checkout at 45 percent utilization
     And the current reading is 61 percent utilization, so its remaining headroom of 39 percent passes the floor
     When the Dispatcher evaluates admission
@@ -1665,6 +1668,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
 
   Scenario: An unreadable host history fails open with its own reason
     Given this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
     And the host session-headroom history cannot be read
     And no assessment of that credential within the preceding 90 minutes carried a drain rate
     When admission is evaluated
@@ -1675,6 +1679,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     Given dispatcher.session_headroom_floor_percent is 20
     And dispatcher.session_headroom_horizon_minutes is 180
     And this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
     And an assessment of that credential 5 minutes earlier read 59 percent utilization and journaled a drain rate of 23 percentage points per hour
     And the current reading is 61 percent utilization, so its remaining headroom of 39 percent passes the floor
     When the Dispatcher evaluates admission
@@ -1684,6 +1689,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
 
   Scenario: A reset since the carried assessment withholds the carried rate
     Given this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
     And an assessment of that credential 40 minutes earlier journaled a drain rate at 80 percent utilization
     And a later assessment of that credential read 5 percent utilization
     When admission is evaluated
@@ -6247,10 +6253,9 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     And the dispatch is refused before any factory run is created
     And exactly one new verdict comment is appended to the item
   Scenario Outline: The judgement authenticates with the account a dispatch would use
-    Given the account-selection process has published a selected account whose credential is present in the environment
-    And the environment's unnumbered Claude credential names a different account
+    Given the pool's admission choice is slot X while the account-selection process published a different account
     When the <phase> judgement runs its Claude model on the host
-    Then the judge is started with the selected account's credential
+    Then the judge is started with slot X's credential
 
     Examples:
       | phase         |
@@ -6265,11 +6270,11 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     And one stderr line names that fallback and its reason
 
     Examples:
-      | phase         | selection state                                                                 |
-      | pre-admission | no account selection is published                                               |
-      | pre-dispatch  | no account selection is published                                               |
-      | pre-admission | a selected account is published but its credential is absent from the environment |
-      | pre-dispatch  | a selected account is published but its credential is absent from the environment |
+      | phase         | selection state              |
+      | pre-admission | no numbered slot is injected |
+      | pre-dispatch  | no numbered slot is injected |
+      | pre-admission | no pool slot qualifies       |
+      | pre-dispatch  | no pool slot qualifies       |
 
   Scenario: The held-items listing reads the ledger a bounded number of times per snapshot
     Given a snapshot holding many heldable items, some held by a recorded pre-admission verdict and some with no recorded verdict
@@ -11030,4 +11035,59 @@ Feature: A merged pull request that no finished factory run proved is re-proven 
     When the operator drives resume for the item
     Then the resume takes the proof-only arm against the pull request's head commit at merge
     And it does not re-enter the implement path and does not end at a dead implementer
+```
+
+## Scenario 278 — A factory dispatch takes its credential from the whole slot pool, preferring the sooner window reset, and refuses only when no slot qualifies
+
+```gherkin
+Feature: Factory credential from the whole slot pool
+  As a factory operator whose interactive account is short of headroom
+  I want a dispatch to take the best-qualifying credential from the whole injected slot pool
+  So that the factory is not starved while other slots sit unused, and quota does not expire unused
+
+  Background:
+    Given the credential wrapper injects the pool slots "ANTHROPIC_2", "ANTHROPIC_3" and "ANTHROPIC_4"
+    And dispatcher.session_headroom_floor_percent is 20
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And an item whose implement node's candidate is covered by the admission session-headroom clause
+    And every other admission-valve condition is satisfied
+
+  Scenario: The interactive account is short while another slot qualifies, so the other slot is used
+    Given the account-selection process published "anthropic-2" for interactive spend
+    And slot "ANTHROPIC_2" reads 90 percent utilization
+    And slot "ANTHROPIC_3" reads 0 percent utilization
+    When the Dispatcher evaluates admission
+    Then the item is admitted with slot "ANTHROPIC_3" projected
+    And the assessment record names the chosen slot's opaque credential identity
+    And the assessment record names the "ANTHROPIC_2" identity as not chosen with the reason floor skip
+
+  Scenario: Two slots qualify and the sooner window reset wins
+    Given slot "ANTHROPIC_3" reads 10 percent utilization with a five-hour window reset 4 hours away
+    And slot "ANTHROPIC_4" reads 30 percent utilization with a five-hour window reset 1 hour away
+    And slot "ANTHROPIC_2" reads 95 percent utilization
+    When the Dispatcher evaluates admission
+    Then slot "ANTHROPIC_4" is projected
+    And the record names "ANTHROPIC_3" as qualifying but ranked lower on its later reset
+
+  Scenario: A measured qualifying projection outranks an unavailable one
+    Given slot "ANTHROPIC_3" qualifies with a projection that is unavailable and a window reset 1 hour away
+    And slot "ANTHROPIC_4" qualifies with a measured projection and a window reset 3 hours away
+    When the Dispatcher evaluates admission
+    Then slot "ANTHROPIC_4" is projected
+
+  Scenario: No slot qualifies, so the existing refusal applies
+    Given slot "ANTHROPIC_2" reads 85 percent utilization
+    And slot "ANTHROPIC_3" reads an unobservable result
+    And slot "ANTHROPIC_4" reads 40 percent utilization projected to exhaust within the horizon
+    When the Dispatcher evaluates admission
+    Then the item stays ready with no dispatch claim and no blocked_reason
+    And its containment refusal record names every slot's opaque credential identity with its reading or unobservable result and its skip kind
+    And the refusal names the admission-required node and scheduled reevaluation instant
+
+  Scenario: The interactive selection is not changed by the factory's choice
+    Given the account-selection process published "anthropic-2" for interactive spend
+    And the Dispatcher chooses slot "ANTHROPIC_3" for a dispatch
+    When admission completes
+    Then the account-selection process's published selection is unchanged
+    And the Dispatcher read neither that selection nor that process's trigger to choose the slot
 ```
