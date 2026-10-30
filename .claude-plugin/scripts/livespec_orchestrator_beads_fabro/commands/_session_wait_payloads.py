@@ -11,8 +11,13 @@ __all__: list[str] = [
 _WAITER_FINDINGS_MOOT_ONCE_ACKNOWLEDGED = frozenset({"waiter-missing", "waiter-replaced"})
 
 
-def check_summary(*, snapshot: InventorySnapshot) -> dict[str, object]:
-    """Every outstanding mismatch as its own entry, so none hides in a row scan."""
+def check_summary(
+    *, snapshot: InventorySnapshot, session_id: str | None = None
+) -> dict[str, object]:
+    """Every outstanding mismatch as its own entry, so none hides in a row scan.
+
+    With `session_id`, only waits that session owns are reported.
+    """
     findings = [
         {
             "finding": finding,
@@ -21,6 +26,7 @@ def check_summary(*, snapshot: InventorySnapshot) -> dict[str, object]:
             "source": "wait",
         }
         for record in snapshot.records
+        if session_id is None or record.session_id == session_id
         for finding in sorted(record.findings)
         if not (record.acknowledged and finding in _WAITER_FINDINGS_MOOT_ONCE_ACKNOWLEDGED)
     ]

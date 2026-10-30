@@ -260,9 +260,16 @@ def protected_completion(
     obligation_store_root: Path,
     telemetry: EventSink | None = None,
     now: float | None = None,
+    session_id: str | None = None,
 ) -> CompletionVerdict:
-    """Verify this turn's durable obligations and their independent owner."""
-    verdict = _completion_verdict(coverage=coverage, obligation_store_root=obligation_store_root)
+    """Verify this turn's durable obligations and their independent owner.
+
+    With `session_id`, only obligations whose launch authority names that
+    session count as outstanding; without it every session's do.
+    """
+    verdict = _completion_verdict(
+        coverage=coverage, obligation_store_root=obligation_store_root, session_id=session_id
+    )
     publish_coverage(telemetry=telemetry, intent=None, state=verdict.coverage_state, at=now)
     return verdict
 
@@ -271,9 +278,15 @@ def _completion_verdict(
     *,
     coverage: CoverageReading,
     obligation_store_root: Path,
+    session_id: str | None,
 ) -> CompletionVerdict:
     census = outstanding_obligations(obligation_store_root=obligation_store_root)
-    outstanding = tuple(cast("str", record["operation_id"]) for record in census.records)
+    outstanding = tuple(
+        cast("str", record["operation_id"])
+        for record in census.records
+        if session_id is None
+        or cast("dict[str, object]", record["authority"]).get("session_id") == session_id
+    )
     if census.diagnostics:
         return CompletionVerdict(
             state=COMPLETION_UNOBSERVABLE,

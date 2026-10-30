@@ -182,6 +182,54 @@ def test_a_continued_stop_is_never_blocked_twice(
     assert capsys.readouterr().out == ""
 
 
+def test_the_check_is_scoped_to_the_stopping_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    hook = _load_hook()
+    _environment(
+        monkeypatch=monkeypatch, stdin=json.dumps({"session_id": "session-a", "cwd": "/project"})
+    )
+    commands = _record_runs(
+        hook=hook, monkeypatch=monkeypatch, outcome=hook.CheckOutcome(returncode=0, stdout="{}")
+    )
+
+    assert hook.main() == 0
+
+    assert commands == [
+        [
+            sys.executable,
+            "/plugin/scripts/bin/session_wait.py",
+            "check",
+            "--repo",
+            "/project",
+            "--session-id",
+            "session-a",
+        ]
+    ]
+
+
+@pytest.mark.parametrize(
+    "stdin",
+    [
+        json.dumps({"session_id": ""}),
+        json.dumps({"session_id": 7}),
+        json.dumps({"stop_hook_active": False}),
+    ],
+)
+def test_a_missing_session_id_falls_back_to_the_repository_wide_check(
+    stdin: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hook = _load_hook()
+    _environment(monkeypatch=monkeypatch, stdin=stdin)
+    commands = _record_runs(
+        hook=hook, monkeypatch=monkeypatch, outcome=hook.CheckOutcome(returncode=0, stdout="{}")
+    )
+
+    assert hook.main() == 0
+
+    assert commands == [
+        [sys.executable, "/plugin/scripts/bin/session_wait.py", "check", "--repo", "/project"]
+    ]
+
+
 @pytest.mark.parametrize("stdin", ["not json", "[]", ""])
 def test_unreadable_hook_input_still_runs_the_check(
     stdin: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
