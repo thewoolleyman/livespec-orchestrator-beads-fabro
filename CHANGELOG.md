@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.264.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.6...v0.264.7) (2026-10-31)
+
+
+### Bug Fixes
+
+* **bd-guard:** prove the detached OTLP emit by ordering, not a wall-clock budget ([3da35b8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3da35b8bde00559ce5b48e1376ec57a044bcee3e))
+
 ## [0.264.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.5...v0.264.6) (2026-10-31)
 
 
