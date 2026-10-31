@@ -148,6 +148,10 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
     def log_message(self, *a):  # silence access log
         return
+fail_status = os.environ.get("CAPTURE_SERVER_FAIL_STATUS")
+if fail_status:
+    print(os.environ.get("CAPTURE_SERVER_FAIL_STDERR", "capture server failed"), file=sys.stderr)
+    sys.exit(int(fail_status))
 time.sleep(float(os.environ.get("CAPTURE_START_DELAY_SECONDS", "0")))
 srv = http.server.HTTPServer(("127.0.0.1", 0), H)
 with open(PORTF, "w") as f:
@@ -179,18 +183,53 @@ VERIFYPY
 
 CAP_PID=""
 CAP_PORT=""
+CAP_EXIT_STATUS=""
+CAP_BOUND_REACHED=0
+CAP_ERR_FILE=""
+
+# capture_start_detail — explain why start_capture returned without a port.
+capture_start_detail() {
+    local captured_stderr
+    captured_stderr="$(tr '\n' ' ' < "$CAP_ERR_FILE" 2>/dev/null || true)"
+    if [ "$CAP_BOUND_REACHED" -eq 1 ]; then
+        printf 'still running at 30-second bound; stderr=%s' "$captured_stderr"
+    else
+        printf 'exit status %s; stderr=%s' "$CAP_EXIT_STATUS" "$captured_stderr"
+    fi
+}
+
 # start_capture <out-file> <port-file> — launch the capture server and block
-# (up to 30s) until it has published its port into CAP_PORT.
+# until it has published its port, exits, or the 30-second bound elapses.
 start_capture() {
-    rm -f "$1" "$2"
-    python3 "$CAP_PY" "$1" "$2" &
+    CAP_PORT=""
+    CAP_EXIT_STATUS=""
+    CAP_BOUND_REACHED=0
+    CAP_ERR_FILE="${2}.stderr"
+    rm -f "$1" "$2" "$CAP_ERR_FILE"
+    python3 "$CAP_PY" "$1" "$2" 2>"$CAP_ERR_FILE" &
     CAP_PID=$!
     local i=0
     while [ ! -s "$2" ] && [ "$i" -lt 600 ]; do
+        if ! kill -0 "$CAP_PID" 2>/dev/null; then
+            wait "$CAP_PID"
+            CAP_EXIT_STATUS=$?
+            CAP_PID=""
+            break
+        fi
         sleep 0.05
         i=$((i + 1))
     done
     CAP_PORT="$(cat "$2" 2>/dev/null || echo "")"
+    if [ -z "$CAP_PORT" ] && [ -n "$CAP_PID" ]; then
+        if kill -0 "$CAP_PID" 2>/dev/null; then
+            CAP_BOUND_REACHED=1
+            stop_capture
+        else
+            wait "$CAP_PID"
+            CAP_EXIT_STATUS=$?
+            CAP_PID=""
+        fi
+    fi
 }
 # stop_capture — kill the capture server if running.
 stop_capture() {
@@ -602,7 +641,7 @@ if [ -n "$CAP_PORT" ]; then
         fail "telemetry: emit/payload shape (rc=$TRC, stdout=$(cat "$OUT_FILE"), cap=$(cat "$TCAP" 2>/dev/null))"
     fi
 else
-    fail "telemetry: capture server did not start (9.1)"
+    fail "telemetry: capture server did not start (9.1): $(capture_start_detail)"
 fi
 stop_capture
 
@@ -637,7 +676,7 @@ if [ -n "$CAP_PORT" ]; then
         fail "telemetry: disabled still emitted (rc=$TRC, cap=$(cat "$TCAP" 2>/dev/null))"
     fi
 else
-    fail "telemetry: capture server did not start (9.3)"
+    fail "telemetry: capture server did not start (9.3): $(capture_start_detail)"
 fi
 stop_capture
 
@@ -659,7 +698,7 @@ if [ -n "$CAP_PORT" ]; then
         fail "telemetry: exit-code fidelity (rc=$TRC expected 1, cap=$(cat "$TCAP" 2>/dev/null))"
     fi
 else
-    fail "telemetry: capture server did not start (9.4)"
+    fail "telemetry: capture server did not start (9.4): $(capture_start_detail)"
 fi
 stop_capture
 
