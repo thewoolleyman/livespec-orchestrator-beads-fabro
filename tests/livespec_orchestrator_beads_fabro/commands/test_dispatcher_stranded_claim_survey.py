@@ -150,8 +150,9 @@ def _journal(*, repo: Path, launches: int = 1) -> JournalFile:
 class _Runner:
     """A fake subprocess seam; the forge reports no merged pull request."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, stdout: str = "[]") -> None:
         self.argvs: list[list[str]] = []
+        self.stdout = stdout
 
     def run(
         self,
@@ -164,7 +165,7 @@ class _Runner:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.argvs.append(argv)
-        return CommandResult(exit_code=0, stdout="[]", stderr="")
+        return CommandResult(exit_code=0, stdout=self.stdout, stderr="")
 
 
 def _inputs(
@@ -382,6 +383,30 @@ def test_a_dry_projection_writes_nothing_and_reports_the_route_it_would_take(
     assert [projected.status for projected in survey.recovered] == ["active"]
     assert _stages(journal=journal) == []
     assert next(iter(read_work_items(path=_config()))).status == "active"
+
+
+def test_a_succeeded_run_with_a_closed_unmerged_pull_request_names_its_release(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    _seed(item=item, stamp=_stamp())
+    journal = _journal(repo=repo)
+
+    survey = module.survey_stranded_claims(
+        inputs=_inputs(
+            module=module,
+            repo=repo,
+            items=(item,),
+            runner=_Runner(stdout='[{"number": 7, "state": "CLOSED"}]'),
+            journal=journal,
+            status_kinds={_RUN_ID: "succeeded"},
+        )
+    )
+
+    assert [held.hold_reason for held in survey.held] == ["run-succeeded"]
+    assert [held.remedy for held in survey.held] == [f"move:{item.id}:ready"]
 
 
 def test_a_dry_projection_journals_no_hold_either(tmp_path: Path) -> None:

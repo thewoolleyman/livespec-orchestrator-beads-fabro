@@ -199,6 +199,7 @@ class ClaimHold:
     """One graded reason this claim was left exactly as it was."""
 
     reason: str
+    remedy: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -309,6 +310,13 @@ def grade_claim(*, measurements: ClaimMeasurements) -> ClaimRoute | ClaimHold:
         return ClaimHold(reason=observation)
     if measurements.run_state == RUN_ABSENT:
         return _absent_run_grade(measurements=measurements)
+    if measurements.run_state == RUN_SUCCEEDED:
+        return ClaimHold(
+            reason=HOLD_RUN_SUCCEEDED,
+            remedy=(
+                "move:<work-item-id>:ready" if measurements.forge == FORGE_NO_MERGED_PR else None
+            ),
+        )
     if not measurements.terminal_evidence_readable:
         return ClaimHold(reason=HOLD_TERMINAL_EVIDENCE_UNAVAILABLE)
     return ClaimRoute(action=ACTION_TERMINAL_COMPLETION)
@@ -324,8 +332,6 @@ def _observation_hold(*, measurements: ClaimMeasurements) -> str | None:
         return HOLD_LIVENESS_UNOBSERVABLE
     if measurements.owner_liveness == OWNER_LIVE:
         return HOLD_DISPATCH_LIVE
-    if measurements.run_state == RUN_SUCCEEDED:
-        return HOLD_RUN_SUCCEEDED
     return None
 
 

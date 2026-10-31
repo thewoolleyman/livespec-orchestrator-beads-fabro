@@ -192,9 +192,9 @@ def test_the_forge_reading_never_reports_a_failure_as_a_negative(
     )
 
     assert observed == expected
-    # Searched BY WORK-ITEM ID and restricted to merged pull requests: a query
-    # pinned to anything else would answer about the wrong population.
-    assert runner.argvs[0][:6] == ["gh", "pr", "list", "--state", "merged", "--search"]
+    # Searched BY WORK-ITEM ID across all pull-request states: a closed,
+    # unmerged pull request is evidence for the release remedy.
+    assert runner.argvs[0][:6] == ["gh", "pr", "list", "--state", "all", "--search"]
     assert runner.argvs[0][6] == _ITEM_ID
 
 

@@ -83,6 +83,13 @@ def test_a_succeeded_run_with_a_merged_pull_request_is_offered_reconcile_merged(
     assert "reconcile-runs" not in refusal
 
 
+def test_a_succeeded_run_with_a_closed_pull_request_is_offered_the_release_move() -> None:
+    refusal = _status_refusal(observation=_active(state="CLOSED"))
+
+    assert f"move:{_ITEM_ID}:ready" in refusal
+    assert "reconcile-runs" not in refusal
+
+
 def test_a_live_ownership_lock_withholds_every_status_move() -> None:
     refusal = _status_refusal(observation=_active(lock_age_seconds=42.0))
 

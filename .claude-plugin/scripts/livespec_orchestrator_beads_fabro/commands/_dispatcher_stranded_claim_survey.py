@@ -198,7 +198,12 @@ def _measure_and_act(
     )
     graded = grade_claim(measurements=measured.measurements)
     if isinstance(graded, ClaimHold):
-        return _held_claim(item=item, stamp=attributed.stamp, reason=graded.reason)
+        return _held_claim(
+            item=item,
+            stamp=attributed.stamp,
+            reason=graded.reason,
+            remedy=graded.remedy,
+        )
     if inputs.dry_run:
         return _projected(
             item=item, attributed=attributed, inventory=inventory, action=graded.action
@@ -262,7 +267,13 @@ def _claim_stamp(*, repo: Path, work_item_id: str) -> ClaimStamp | None:
     return None if isinstance(row, AttemptFailure) else row.stamp
 
 
-def _held_claim(*, item: WorkItem, stamp: ClaimStamp | None, reason: str) -> HeldClaim:
+def _held_claim(
+    *,
+    item: WorkItem,
+    stamp: ClaimStamp | None,
+    reason: str,
+    remedy: str | None = None,
+) -> HeldClaim:
     return HeldClaim(
         work_item_id=item.id,
         run_id=None if stamp is None else stamp.run_id,
@@ -270,5 +281,11 @@ def _held_claim(*, item: WorkItem, stamp: ClaimStamp | None, reason: str) -> Hel
         factory_server_url=None if stamp is None else stamp.factory_server,
         dispatching_host=None if stamp is None else stamp.dispatching_host,
         hold_reason=reason,
-        remedy=ATTRIBUTION_PENDING_REMEDY if reason == HOLD_ATTRIBUTION_PENDING else None,
+        remedy=(
+            ATTRIBUTION_PENDING_REMEDY
+            if reason == HOLD_ATTRIBUTION_PENDING
+            else None
+            if remedy is None
+            else remedy.replace("<work-item-id>", item.id)
+        ),
     )

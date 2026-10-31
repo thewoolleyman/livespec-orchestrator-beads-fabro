@@ -128,7 +128,7 @@ def observe_merged_pull_request(
             "pr",
             "list",
             "--state",
-            "merged",
+            "all",
             "--search",
             work_item_id,
             "--json",

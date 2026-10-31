@@ -176,6 +176,18 @@ def test_each_observation_that_cannot_prove_the_claim_stranded_holds(
     assert graded.reason == reason
 
 
+def test_a_succeeded_run_without_a_merged_pull_request_is_releasable() -> None:
+    module = _module()
+
+    graded = module.grade_claim(
+        measurements=_measurements(module=module, run_state=module.RUN_SUCCEEDED)
+    )
+
+    assert isinstance(graded, module.ClaimHold)
+    assert graded.reason == module.HOLD_RUN_SUCCEEDED
+    assert graded.remedy == "move:<work-item-id>:ready"
+
+
 def test_a_proven_absent_run_earns_the_release_route() -> None:
     module = _module()
 
