@@ -8474,6 +8474,14 @@ Feature: Implementation that outruns the specification is caught at every merge
     When a reconcile pass runs
     Then no drift pass runs and no model judgement is invoked
     And the drift frontier and the detection-coverage anchor are unchanged
+
+  Scenario: The drift-run subcommand is the drift job, and a dry run writes nothing
+    Given default-branch merges after the recorded drift frontier
+    When dispatcher.py drift-run --json runs
+    Then the drift pass runs over those merges and stdout carries the drift lane outcome as one JSON object
+    When dispatcher.py drift-run --dry-run runs instead
+    Then no drift pass runs and no model judgement is invoked
+    And the drift frontier and the detection-coverage anchor are unchanged
 ```
 
 ## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget
