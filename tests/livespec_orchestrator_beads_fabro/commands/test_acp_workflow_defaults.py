@@ -47,20 +47,56 @@ _CLAUDE = "npx -y @agentclientprotocol/claude-agent-acp"
 _V107_IMPLEMENTER = f"ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
 
 # The ratified built-in entry per input, from the contract's own table.
-_STRUCTURED_DEFAULTS: dict[str, tuple[dict[str, str], str]] = {
+_WRITING_LOADS: dict[str, list[str]] = {
+    "instruction_files": ["AGENTS.md"],
+    "skills": [],
+    "plugins": [],
+    "mcp_servers": [],
+}
+_EMPTY_LOADS: dict[str, list[str]] = {
+    "instruction_files": [],
+    "skills": [],
+    "plugins": [],
+    "mcp_servers": [],
+}
+
+_STRUCTURED_DEFAULTS: dict[str, tuple[dict[str, object], str]] = {
     "implement_adapter": (
-        {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"},
+        {
+            "agent": "claude-acp",
+            "model": "claude-opus-5",
+            "effort": "high",
+            "loads": _WRITING_LOADS,
+        },
         _V107_IMPLEMENTER,
     ),
     "fix_adapter": (
-        {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"},
+        {
+            "agent": "claude-acp",
+            "model": "claude-opus-5",
+            "effort": "high",
+            "loads": _WRITING_LOADS,
+        },
         _V107_IMPLEMENTER,
     ),
     "review_fix_adapter": (
-        {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"},
+        {
+            "agent": "claude-acp",
+            "model": "claude-opus-5",
+            "effort": "high",
+            "loads": _WRITING_LOADS,
+        },
         _V107_IMPLEMENTER,
     ),
 }
+
+_EMPTY_DEFAULT_INPUTS = (
+    "dod_gate_adapter",
+    "proof_capture_adapter",
+    "proof_verify_adapter",
+    "review_adapter",
+    "disposition_adapter",
+)
 
 
 def _module(*, name: str) -> Any:
@@ -102,6 +138,25 @@ def test_the_committed_workflow_declares_the_implementation_defaults_structurall
         assert (
             json.loads(value) == entry
         ), f"{name} must declare the ratified built-in entry {entry!r}; got {value!r}"
+
+
+def test_every_agent_node_default_declares_its_context_loads() -> None:
+    """Scenario 275: every agent node has an explicit context declaration.
+
+    The three writing nodes preserve the governed instruction file.  Every
+    other ACP node is deliberately context-empty, so the declaration proves
+    that an absent value cannot silently restore ambient project context.
+    """
+    declared = _committed_adapter_inputs()
+
+    for name, (entry, _) in _STRUCTURED_DEFAULTS.items():
+        assert json.loads(declared[name])["loads"] == entry["loads"]
+    for name in _EMPTY_DEFAULT_INPUTS:
+        assert name in declared, f"the committed workflow declares no {name}"
+        raw = declared[name]
+        assert raw.lstrip().startswith("{"), f"{name} must be a structured entry, got {raw!r}"
+        value = json.loads(raw)
+        assert value["loads"] == _EMPTY_LOADS
 
 
 def test_each_structured_default_renders_the_v107_bytes_exactly() -> None:
