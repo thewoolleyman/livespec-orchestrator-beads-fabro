@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.262.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.1...v0.262.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **dispatch:** externalize publication stage scripts ([e944b7a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e944b7a92a7a902bdea41245730ac012661fb19d))
+
 ## [0.262.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.0...v0.262.1) (2026-10-31)
 
 
