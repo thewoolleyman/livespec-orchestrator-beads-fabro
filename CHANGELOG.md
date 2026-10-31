@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.264.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.2...v0.264.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* keep stranded claim holds label-free ([9ce1404](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9ce1404b6887629bfd08195a7e034f49f69c406b))
+* respect committed admission policy ([2e5c71a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e5c71a742d6372fb2d9900d2c2c15c0342549e9))
+
 ## [0.264.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.1...v0.264.2) (2026-10-31)
 
 
