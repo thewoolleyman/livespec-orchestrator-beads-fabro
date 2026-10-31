@@ -158,8 +158,8 @@ def _arms(*, source: str) -> list[tuple[str, dict[str, str]]]:
     ]
 
 
-def _routed(*, source: str, outcome: str) -> str:
-    """The successor the graph DETERMINES for one node's reported outcome.
+def _routed(*, source: str, condition: str) -> str:
+    """The successor the graph DETERMINES for one reported routing condition.
 
     A matching conditional arm outranks the unconditional fallthrough, and the
     match must be UNIQUE. Declaration order is not something the engine reads,
@@ -171,20 +171,17 @@ def _routed(*, source: str, outcome: str) -> str:
     fix exactly as readily as after it, which makes the refusal the
     load-bearing half of this function rather than a guard on it.
 
-    Nothing here models a term beyond `outcome=`, because the two nodes this
-    grades -- a command stage and the classifier -- report nothing else, and a
-    richer evaluator would be an evaluator this module never exercises.
+    The callers name the exact condition their node reports. This keeps the
+    helper focused on the routing rule rather than pretending to be an engine.
     """
     arms = _arms(source=source)
     conditional = [
-        destination
-        for destination, attributes in arms
-        if attributes.get("condition") == f"outcome={outcome}"
+        destination for destination, attributes in arms if attributes.get("condition") == condition
     ]
     fallthrough = [destination for destination, attributes in arms if "condition" not in attributes]
     assert fallthrough, f"{source} declares no unconditional fallthrough"
     assert len(conditional) <= 1, (
-        f"{source} declares {len(conditional)} arms carrying outcome={outcome}, "
+        f"{source} declares {len(conditional)} arms carrying {condition}, "
         f"so this graph determines no route for that outcome: {arms}"
     )
     return conditional[0] if conditional else fallthrough[0]
@@ -1026,19 +1023,19 @@ def test_a_conflicted_pr_refresh_resolves_through_the_classifier_to_fix(tmp_path
     brief = world.state_dir() / _BRIEF_FILENAME
     assert brief.is_file()
 
-    assert _routed(source="pr_refresh", outcome="failed") == _REPAIR_NODE
+    assert _routed(source="pr_refresh", condition="outcome=failed") == _REPAIR_NODE
 
     classifier = _run_refresh_repair(world=world)
     assert classifier.returncode == 0, classifier.stderr
     assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
-    assert _routed(source=_REPAIR_NODE, outcome="succeeded") == "fix"
+    assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
 
     # The control: the brief gone, everything else identical.
     brief.unlink()
     absent = _run_refresh_repair(world=world)
     assert absent.returncode != 0
     assert "LIVESPEC_REFRESH_REPAIR_ABSENT" in absent.stderr
-    assert _routed(source=_REPAIR_NODE, outcome="failed") == "needs_human"
+    assert _routed(source=_REPAIR_NODE, condition="outcome=failed") == "needs_human"
 
 
 def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
@@ -1325,8 +1322,14 @@ def test_a_repaired_refresh_republishes_over_this_run_s_own_published_head(
     assert world.head() == repaired.repaired_head
     assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{repaired.repaired_head}\n"
     assert world.state(name=_BRIEF_FILENAME) is None
-    assert _routed(source="publish_draft", outcome="succeeded") == "publish_merged_reconcile_route"
-    assert _routed(source="publish_merged_reconcile_route", outcome="failed") == "proof_capture"
+    assert (
+        _routed(source="publish_draft", condition="outcome=succeeded")
+        == "publish_merged_reconcile_route"
+    )
+    assert (
+        _routed(source="publish_merged_reconcile_route", condition="preferred_label=continue")
+        == "proof_capture"
+    )
 
 
 def test_a_repair_round_may_establish_its_published_head_from_resume_provenance(
