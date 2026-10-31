@@ -7992,6 +7992,20 @@ Each entry MUST name its repository. With `--json`, the command MUST print one J
 
 Scenario 212 in `scenarios.md` exercises this subsection.
 
+### Sandbox retention and collection
+
+This subsection governs the sandbox of a factory run that has ENDED and whose sandbox is provided by a registered sandbox provider, such as the Kubernetes provider. A run's sandbox is its provider-held driver record together with the node workspace directory that provider allocated for the run.
+
+While the run's work-item rests at `blocked` or `needs-human`, the Dispatcher MUST NOT delete, and MUST NOT cause the deletion of, that run's sandbox, because a human resolving the item may need the run's workspace. Retention MUST NOT depend on how long the item has rested there.
+
+Once the run's work-item is closed, the Dispatcher MUST delete that run's sandbox through its provider's own delete operation, so that the driver record and the node workspace directory are both gone. The Dispatcher MUST NOT remove either one by any route other than that provider operation, because a workspace removed behind the provider leaves a driver record naming a directory that no longer exists. A deletion the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass; it MUST NOT reopen, block or otherwise transition the closed item.
+
+A run whose work-item is at any other status keeps today's behaviour; this subsection neither retains nor collects its sandbox.
+
+Collection MUST be idempotent: a later pass finding a closed item's sandbox already gone MUST record nothing further for it and MUST NOT fail.
+
+Scenario 281 in `scenarios.md` exercises this subsection.
+
 ### Sandbox test-worker parallelism
 
 The Dispatcher MUST project `LIVESPEC_TEST_PARALLELISM` into every dispatched sandbox's environment, beside the harness shell policy it already projects there. The value MUST be a positive integer that does not exceed the CPU limit of the sandbox it is projected into. This repository projects 4, for its 4-CPU factory sandboxes. Four workers fit the sandbox's 7630 MiB memory limit: measured on 2026-10-26, a full per-file-coverage gate run at four workers peaked at 2748 MiB of cgroup memory, with no worker above 467 MiB resident. A gate run in the sandbox that sizes its test workers from this variable therefore follows the sandbox's CPU limit, not the node's visible CPUs.
@@ -10344,6 +10358,25 @@ This subsection extends the shared attribute vocabulary above to the Dispatcher'
 Every `fabro run` the Dispatcher launches MUST pass the correlation triple as run labels: `--label work.item.id=<work-item id>`, `--label livespec.dispatch.id=<dispatch id>` and `--label livespec.dispatch.factory=<factory name>`, each carrying that dispatch's own value. A correlation value is identifier-shaped when, after surrounding whitespace is removed, it is 1 to 128 bytes long and every byte is an ASCII letter, an ASCII digit, `.`, `_`, `:` or `-`, so hyphenated work-item ids such as `bd-ib-5jvgfr` and factory names such as `hp-candidate` are identifier-shaped. A value that is not identifier-shaped MUST be left out of the argv, and leaving it out MUST NOT fail the dispatch.
 
 The Dispatcher MUST emit one dispatch span per dispatch through its existing OTLP export path, carrying the correlation triple as span attributes. The span's trace id and span id MUST be derived from the dispatch id alone. Re-deriving the ids for the same dispatch id MUST yield the same trace id and span id. The derivation MUST use domain-separated SHA-256 outputs truncated to the required widths, with a deterministic non-zero fallback. Collisions in the resulting truncated identifiers are permitted. Emitting and exporting the dispatch span follows this section's bounded asynchronous telemetry and scrubbing rules, and an export failure MUST NOT fail the dispatch. The Dispatcher MUST set `TRACEPARENT` in the `fabro run` environment to `00-<trace id>-<span id>-01`, where the trace id is 32 and the span id 16 lowercase hexadecimal digits and neither is all zeros, using that dispatch span's ids, so that a factory which honours the run labels and the caller's trace parent places its run spans under the dispatch span. A factory that ignores either MUST NOT cause the dispatch to fail.
+
+### Host model-judgement caller labelling
+
+This subsection extends the shared attribute vocabulary above to the model-judgement subprocesses the plugin launches on the host. A host model-judgement spawn is any subprocess the plugin starts on the host to obtain a model judgement, whichever agent runtime or model the resolved judge chain selects; a module that only wraps a caller-supplied model runner, or only reads verdict types, launches nothing and is not a spawn site.
+
+Every host model-judgement spawn MUST carry a `livespec.caller=<caller>` entry in the `OTEL_RESOURCE_ATTRIBUTES` of the child's environment, naming the judgement that launched it. The caller value MUST be supplied by the launching judgement through the launch seam, and MUST NOT be inferred from the prompt, the model or the call stack, so that two judgements sharing one prompt and one launch seam are still told apart. The caller values are:
+
+- `drift_run` for the drift run's spec-stated judgement;
+- `dod_governing_heading` for the host governing-heading verdict, although it reaches the judge through the same launch seam as the drift run;
+- `dod_judgement_pre_admission` and `dod_judgement_pre_dispatch` for the Definition-of-Done judgement taken before admission and before dispatch respectively;
+- `ledger_intent_scan` for the ledger-intent scan's operator-supplied judge command.
+
+A new spawn site MUST add its own caller value to this list in the same change that introduces it. Every caller value MUST be identifier-shaped as defined in §"Dispatch trace correlation".
+
+When the launching environment already carries `OTEL_RESOURCE_ATTRIBUTES`, the child MUST receive every existing entry unchanged, in its original order, with the `livespec.caller` entry appended as a further comma-separated entry. When it carries none, the child's `OTEL_RESOURCE_ATTRIBUTES` MUST consist of the `livespec.caller` entry alone. Labelling MUST NOT add, remove or rewrite any other environment variable of the child, and a failure to compose the label MUST NOT fail or alter the judgement.
+
+The receiver allowlist MUST admit `livespec.caller` as a resource attribute, so that judge spend can be grouped by caller downstream. The attribute carries the caller identifier only; it MUST NOT carry the prompt, the subject under judgement or any environment value, per the curated-field rule above.
+
+Scenario 280 in `scenarios.md` exercises this subsection.
 
 ### Launch obligations and consumed recovery
 
