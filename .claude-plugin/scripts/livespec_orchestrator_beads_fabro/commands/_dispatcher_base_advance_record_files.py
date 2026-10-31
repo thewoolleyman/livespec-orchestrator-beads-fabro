@@ -8,16 +8,78 @@ are eligible once the Dispatcher has them.
 
 from __future__ import annotations
 
-from typing import cast
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc
 
-__all__: list[str] = ["record_file_resume_paths"]
+__all__: list[str] = [
+    "ConflictMeasurement",
+    "measure_conflicted_paths",
+    "record_file_resume_paths",
+]
 
 _PLUGIN = "livespec-orchestrator-beads-fabro"
 _DISPATCHER = "dispatcher"
 _RECORD_FILES = "record_files"
 _PATH = "path"
+_MERGE_TREE = ["git", "merge-tree", "--write-tree", "--name-only"]
+
+
+class _CommandRunner(Protocol):
+    """The Dispatcher command seam used for the read-only Git measurement."""
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> object:
+        """Run one command through the Dispatcher's authenticated process seam."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class ConflictMeasurement:
+    """Either the complete conflict set or the failed measurement's detail."""
+
+    paths: tuple[str, ...] | None
+    failure: str | None
+
+
+def measure_conflicted_paths(
+    *,
+    repo: Path,
+    runner: _CommandRunner,
+    pr_head: str,
+    default_branch_tip: str,
+) -> ConflictMeasurement:
+    """Measure the two heads' conflicts without changing a ref or working tree.
+
+    `merge-tree --write-tree --name-only` writes an ephemeral Git object only;
+    it does not update a ref or checkout. Git exits one when it found conflicts,
+    so that status is the successful measurement arm, not a failure.
+    """
+    result = runner.run(
+        argv=[*_MERGE_TREE, pr_head, default_branch_tip],
+        cwd=repo,
+        timeout_seconds=30.0,
+    )
+    exit_code = getattr(result, "exit_code", None)
+    stdout = getattr(result, "stdout", None)
+    stderr = getattr(result, "stderr", None)
+    if exit_code != 1 or not isinstance(stdout, str):
+        detail = stderr.strip() if isinstance(stderr, str) else ""
+        return ConflictMeasurement(
+            paths=None,
+            failure=detail or f"git merge-tree exited {exit_code}",
+        )
+    paths = tuple(path for path in stdout.splitlines() if path)
+    if not paths:
+        return ConflictMeasurement(paths=None, failure="git merge-tree named no conflicted paths")
+    return ConflictMeasurement(paths=paths, failure=None)
 
 
 def record_file_resume_paths(
