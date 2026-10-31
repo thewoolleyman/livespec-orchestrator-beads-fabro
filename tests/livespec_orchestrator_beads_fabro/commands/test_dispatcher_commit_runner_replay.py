@@ -126,6 +126,30 @@ def test_a_refusal_reported_by_a_later_wait_is_the_recorded_verdict() -> None:
     )
 
 
+def test_a_runner_report_keeps_failed_targets_that_scrolled_out_of_its_output_tail() -> None:
+    """The worker's structured target list outranks a wait report's truncated output."""
+    verdict = _verdict(
+        _call(10, "c1", _START, _RUN_ID + "\n"),
+        _call(
+            20,
+            "c2",
+            _wait(_RUN_ID),
+            _report(
+                run_id=_RUN_ID,
+                state="failed",
+                hook_ran=True,
+                exit_code=1,
+                failed_targets=["check-types", "check-tests"],
+                output_tail="later parallel hook output only\n",
+            ),
+        ),
+    )
+
+    assert verdict == HookVerdict(
+        node="implement", exit_code=1, failed_targets=("check-types", "check-tests")
+    )
+
+
 def test_a_commit_still_running_when_the_turn_ends_is_no_refusal() -> None:
     """A `running` report is an observation, not a failed commit."""
     verdict = _verdict(
