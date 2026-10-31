@@ -11097,3 +11097,31 @@ Feature: Factory credential from the whole slot pool
     Then the account-selection process's published selection is unchanged
     And the Dispatcher read neither that selection nor that process's trigger to choose the slot
 ```
+
+## Scenario 279 — A materialized workflow.toml over the engine's limit is caught at build time and refused before claim
+
+```gherkin
+Feature: The materialized workflow.toml never reaches the engine over its size limit
+  As the maintainer of a repository whose dispatches the factory runs
+  I want workflow.toml growth caught before release and any overrun refused before claim
+  So that no dispatch claims an item and then fails at fabro-run on the engine's file-size limit
+
+  Scenario: The build-time check fails above 90 percent of the limit
+    Given a build whose representative materialized workflow.toml is 471,860 bytes
+    When the just check aggregate runs check-materialized-workflow-toml-size
+    Then the check fails
+    And its output names the measured size 471,860, the 471,859-byte threshold and the 524,288-byte limit
+
+  Scenario: The build-time check passes at or below the threshold and prints the size
+    Given a build whose representative materialized workflow.toml is 463,547 bytes
+    When the just check aggregate runs check-materialized-workflow-toml-size
+    Then the check passes
+    And its output names the measured size 463,547
+
+  Scenario: A dispatch whose materialized workflow.toml exceeds the limit is refused before claim
+    Given a ready work item whose materialized workflow.toml for this dispatch is 526,975 bytes
+    When the Dispatcher dispatches it
+    Then the Dispatcher refuses the dispatch before any claim is written and before any Fabro run exists
+    And the journaled refusal names the measured size 526,975 and the 524,288-byte limit
+    And the work item keeps the status it held before the dispatch, with no dispatch claim
+```
