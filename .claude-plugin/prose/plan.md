@@ -25,6 +25,31 @@ Report a specific unresolved input, refusal, or outage as incomplete work. Never
 Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime
 binding only maps its tools to it.
 
+## Plugin Package Imports
+
+Before running any Python snippet in this operation that imports
+`livespec_orchestrator_beads_fabro`, resolve the governed project's registered
+install. Use this bootstrap once in the Python process before those imports:
+
+```python
+import os
+import subprocess
+import sys
+
+_registered_plugin_root = subprocess.run(
+    [
+        "python3",
+        f"{os.environ['CLAUDE_PLUGIN_ROOT']}/scripts/bin/registered_plugin_root.py",
+        "--repo",
+        os.getcwd(),
+    ],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.strip()
+sys.path.insert(0, f"{_registered_plugin_root}/scripts")
+```
+
 ## Bounded Host Waits
 
 When planning delegates long-running commands through detached gates, arm ONE bounded first-event wait over all of them
