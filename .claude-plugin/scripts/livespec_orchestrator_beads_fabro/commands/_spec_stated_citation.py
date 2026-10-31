@@ -77,6 +77,7 @@ _HEADING = re.compile(r"^(#{2,6}[ \t][^\n]*?)[ \t]*$", re.MULTILINE)
 # which therefore travels with the citation. Stripping it is what lets a
 # subsection cited as `## Title` match the `### Title` the tree carries.
 _MARKER = re.compile(r"^#+[ \t]*")
+_INLINE_MARKUP = re.compile(r"`+|\*+|(?<!\w)_{1,3}|_{1,3}(?!\w)")
 
 _GOVERNING_LEVEL = 2
 _STATED_BY = "stated_by"
@@ -111,7 +112,7 @@ class _ResolvingRunner:
     """
 
     run_model: ModelRunner
-    governing: frozenset[str]
+    governing: Mapping[str, str]
     enclosing: Mapping[str, str]
 
     def __call__(self, prompt: str) -> str:
@@ -122,14 +123,14 @@ class _ResolvingRunner:
         )
 
 
-def _governing_clauses(*, spec_tree: Mapping[str, str]) -> frozenset[str]:
-    """Every H2 heading the tree carries: the clause set a verdict may cite."""
-    return frozenset(
-        heading
-        for path in sorted(spec_tree)
-        for heading in _HEADING.findall(spec_tree[path])
-        if _level_of(heading=heading) == _GOVERNING_LEVEL
-    )
+def _governing_clauses(*, spec_tree: Mapping[str, str]) -> dict[str, str]:
+    """Each unambiguous normalized H2 title mapped to its exact heading."""
+    found: dict[str, set[str]] = {}
+    for path in sorted(spec_tree):
+        for heading in _HEADING.findall(spec_tree[path]):
+            if _level_of(heading=heading) == _GOVERNING_LEVEL:
+                found.setdefault(_citation_key(heading=heading), set()).add(heading)
+    return {key: next(iter(headings)) for key, headings in found.items() if len(headings) == 1}
 
 
 def _enclosing_clauses(*, spec_tree: Mapping[str, str]) -> dict[str, str]:
@@ -147,12 +148,12 @@ def _enclosing_clauses(*, spec_tree: Mapping[str, str]) -> dict[str, str]:
             if _level_of(heading=heading) == _GOVERNING_LEVEL:
                 governing = heading
             elif governing is not None:
-                found.setdefault(_title_of(heading=heading), set()).add(governing)
-    return {title: next(iter(clauses)) for title, clauses in found.items() if len(clauses) == 1}
+                found.setdefault(_citation_key(heading=heading), set()).add(governing)
+    return {key: next(iter(clauses)) for key, clauses in found.items() if len(clauses) == 1}
 
 
 def _resolved_response(
-    *, text: str, governing: frozenset[str], enclosing: Mapping[str, str]
+    *, text: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
 ) -> str:
     """One response's citations resolved, or the response returned verbatim.
 
@@ -184,11 +185,10 @@ def _resolved_response(
     return json.dumps(payload)
 
 
-def _resolved(*, citation: str, governing: frozenset[str], enclosing: Mapping[str, str]) -> str:
+def _resolved(*, citation: str, governing: Mapping[str, str], enclosing: Mapping[str, str]) -> str:
     """One citation read at the level that governs, or carried through as it is."""
-    if citation in governing:
-        return citation
-    return enclosing.get(_title_of(heading=citation), citation)
+    key = _citation_key(heading=citation)
+    return governing.get(key, enclosing.get(key, citation))
 
 
 def _level_of(*, heading: str) -> int:
@@ -196,6 +196,7 @@ def _level_of(*, heading: str) -> int:
     return len(heading) - len(heading.lstrip("#"))
 
 
-def _title_of(*, heading: str) -> str:
-    """One heading line with its leading marker removed, so levels compare."""
-    return _MARKER.sub("", heading)
+def _citation_key(*, heading: str) -> str:
+    """A deterministic heading identity ignoring case and inline markup."""
+    title = _MARKER.sub("", heading)
+    return " ".join(_INLINE_MARKUP.sub("", title).casefold().split())
