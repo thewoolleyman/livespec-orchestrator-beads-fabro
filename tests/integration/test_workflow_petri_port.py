@@ -609,6 +609,36 @@ def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_vis
     assert "max_visits=" in bodies["disposition"]
 
 
+def test_merged_reconcile_routes_emit_successful_routing_labels_for_both_branches() -> None:
+    """A normal not-merged answer must not be a deterministic command failure."""
+    text = _graph_text()
+    bodies = _node_bodies(text=text)
+    scripts = _raw_node_scripts(text=text)
+    routes = (
+        "publish_merged_reconcile_route",
+        "pr_refresh_merged_reconcile_route",
+    )
+
+    for route in routes:
+        assert 'output_schema="routing"' in bodies[route]
+        assert '"preferred_next_label":"merged"' in scripts[route]
+        assert '"preferred_next_label":"not_merged"' in scripts[route]
+        assert "exit 1" not in scripts[route]
+        assert scripts[route].count("exit 0") == 2
+
+    outgoing = {
+        (edge.group("src"), edge.group("dst")): edge.group("attrs")
+        for edge in _EDGE_RE.finditer(text)
+        if edge.group("src") in routes
+    }
+    assert outgoing["publish_merged_reconcile_route", "verify_pr"] == ' [label="merged"]'
+    assert outgoing["publish_merged_reconcile_route", "proof_capture"] == ' [label="not_merged"]'
+    assert outgoing["pr_refresh_merged_reconcile_route", "verify_pr"] == ' [label="merged"]'
+    assert (
+        outgoing["pr_refresh_merged_reconcile_route", "pr_refresh_head"] == ' [label="not_merged"]'
+    )
+
+
 def test_the_needs_human_script_reads_the_run_id_from_the_engine_context() -> None:
     """`FABRO_RUN_ID` is exported to hooks only; the Petri-era source is the context."""
     body = _node_bodies(text=_graph_text())["needs_human"]
