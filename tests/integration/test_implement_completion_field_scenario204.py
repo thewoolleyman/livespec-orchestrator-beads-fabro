@@ -149,7 +149,7 @@ def _recorded(*, repo: Path, field: str) -> None:
     _ = (repo / ".git" / _RECORD_GIT_PATH).write_text(f"{field}\n", encoding="utf-8")
 
 
-def _graded(*, repo: Path) -> subprocess.CompletedProcess[str]:
+def _graded(*, repo: Path, response: str | None = None) -> subprocess.CompletedProcess[str]:
     """Execute the gate's script in one clone and report what it decided."""
     return subprocess.run(
         ["sh", "-c", _gate_script()],
@@ -157,6 +157,7 @@ def _graded(*, repo: Path) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         text=True,
+        input=response,
     )
 
 
@@ -343,6 +344,18 @@ def test_a_turn_whose_field_reports_the_work_complete_keeps_its_routing(tmp_path
         assert result.returncode == 0, (name, result.stderr)
         assert _COMPLETE_SENTINEL in result.stderr, name
         assert not (repo / ".git" / _STAGE_CAUSE_GIT_PATH).exists(), name
+
+
+def test_a_complete_structured_final_reply_succeeds_without_a_completion_record(
+    tmp_path: Path,
+) -> None:
+    """The gate reads the final reply's structured field before the legacy record."""
+    repo = _clone(tmp_path=tmp_path)
+
+    result = _graded(repo=repo, response=_COMPLETE_FIELD)
+
+    assert result.returncode == 0, result.stderr
+    assert _COMPLETE_SENTINEL in result.stderr
 
 
 def test_a_stale_cause_from_an_earlier_stage_does_not_survive_a_passing_gate(
