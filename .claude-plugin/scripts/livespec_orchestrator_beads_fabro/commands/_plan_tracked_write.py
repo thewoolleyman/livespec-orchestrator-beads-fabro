@@ -63,7 +63,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._plan_continuation import (
+    current_continuation_ruling,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     COMMITTED,
     ChainHead,
@@ -78,11 +80,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     MISSING_TRACKING,
     ChainFinding,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
-    NextAction,
-    next_action_metadata,
-    plan_record_metadata,
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
+    write_tracked_projection,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
 from livespec_orchestrator_beads_fabro.commands._plan_next_action_admission import (
     admit_next_action,
 )
@@ -106,10 +107,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_supersession_evidence impo
 )
 from livespec_orchestrator_beads_fabro.commands._plan_supersession_replacement import (
     supersession_replacement_observation,
-)
-from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
-    PLAN_HANDOFF_PREFIX,
-    plan_comment_body,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_tracked_observation import (
     prior_observation,
@@ -229,6 +226,11 @@ def _tracked_write(
         ),
         recovery=request.recovery,
         supersession=request.supersession,
+        continuation_ruling=current_continuation_ruling(
+            config=request.config,
+            epic_id=request.epic_id,
+            now=request.now,
+        ),
         evidence=supersession_evidence(
             config=request.config,
             epic_id=request.epic_id,
@@ -248,6 +250,8 @@ def _tracked_write(
             event_kind=decision.event_kind,
             author=request.author,
             now=request.now,
+            continuation_ruling_by=decision.continuation_ruling_by,
+            continuation_ruling_recorded_at=decision.continuation_ruling_recorded_at,
         ),
     )
     if isinstance(committed, StaleEpochRefusal):
@@ -298,7 +302,7 @@ def _persist(
         authority=authority,
         epoch=committed.payload.new_epoch,
     )
-    _project_write(request=request, action=action)
+    _write_projection(request=request, action=action)
     return TrackedWrite(
         action=action,
         epoch=committed.payload.new_epoch,
@@ -334,33 +338,11 @@ def _recovered_write(
     )
 
 
-def _project_write(*, request: TrackedWriteRequest, action: NextAction) -> None:
-    """Append the handoff entry, if any, and store the pointer one write lands.
-
-    Shared by the chain-committed arm and the legacy arm because both land the
-    SAME two records against the same epic; a second copy is how the two paths
-    come to write pointers that differ in a field nobody compared.
-    """
-    client = make_beads_client(config=request.config)
-    if request.is_handoff:
-        client.add_comment(
-            issue_id=request.epic_id,
-            body=plan_comment_body(
-                prefix=PLAN_HANDOFF_PREFIX,
-                author=request.author,
-                now=request.now,
-                body=request.body or "",
-            ),
-        )
-    record = client.show_issue(issue_id=request.epic_id)
-    client.update_issue(
-        issue_id=request.epic_id,
-        metadata=next_action_metadata(
-            existing_metadata=plan_record_metadata(record=record),
-            action=action,
-            session=request.author,
-            now=request.now,
-        ),
+def _write_projection(*, request: TrackedWriteRequest, action: NextAction) -> None:
+    """Keep request-shaped writer inputs at this module's public boundary."""
+    write_tracked_projection(
+        request=request,
+        action=action,
     )
 
 
@@ -371,7 +353,7 @@ def _legacy_write(*, request: TrackedWriteRequest) -> TrackedWrite:
     pointer acquires its five-field shape, and every reader keeps reporting
     missing tracking until the sanctioned migration establishes the chain.
     """
-    _project_write(request=request, action=request.action)
+    _write_projection(request=request, action=request.action)
     return TrackedWrite(
         action=request.action,
         epoch=0,

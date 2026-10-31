@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, IssueDraft
@@ -174,6 +175,19 @@ def test_a_progress_event_carries_the_readable_lines_and_the_canonical_payload()
     assert "{" + "{" not in body
     assert "{%" not in body
     assert "{#" not in body
+
+
+def test_a_progress_event_names_the_continuation_ruling_that_authorized_it() -> None:
+    payload = replace(
+        _payload(),
+        continuation_ruling_by="Chad Woolley",
+        continuation_ruling_recorded_at="2026-10-15T08:00:00Z",
+    )
+
+    body = progress_event_body(payload=payload, now="2026-10-15T09:00:00Z")
+
+    assert "continuation-ruling-recorded-at: 2026-10-15T08:00:00Z" in body
+    assert "continuation-ruling-by: Chad Woolley" in body
 
 
 def test_a_written_progress_event_reads_back_with_its_payload() -> None:

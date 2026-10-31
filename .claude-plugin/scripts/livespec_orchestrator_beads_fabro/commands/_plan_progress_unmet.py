@@ -51,6 +51,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
 )
 
 if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._plan_continuation import ContinuationRuling
     from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import ChainHead
     from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
     from livespec_orchestrator_beads_fabro.commands._plan_obligation import Obligation
@@ -76,6 +77,7 @@ def continuation_decision(  # noqa: PLR0913 -- continuation needs every prior an
     unobservable: bool,
     is_handoff: bool,
     recovery: CausalRecovery | None,
+    continuation_ruling: ContinuationRuling | None,
     now: str,
 ) -> TrackedDecision | TrackedRefusal:
     """Continue an unmet obligation, preserving both of its original limits.
@@ -91,7 +93,7 @@ def continuation_decision(  # noqa: PLR0913 -- continuation needs every prior an
     expiry = obligation_expiry(obligation=prior, now=now)
     if expiry is None and recovery is not None:
         return TrackedRefusal(detail="causal recovery is invalid: the obligation is not expired")
-    if expiry is not None and recovery is None:
+    if expiry is not None and recovery is None and continuation_ruling is None:
         return TrackedRefusal(
             detail=(
                 f"the obligation {prior.original_deadline} is expired at its {expiry} limit;"
@@ -120,6 +122,16 @@ def continuation_decision(  # noqa: PLR0913 -- continuation needs every prior an
             attempt=head.authority.last_recovery_attempt if attempt is None else attempt,
         ),
         event_kind=_event_kind(recovery=recovery, is_handoff=is_handoff),
+        continuation_ruling_by=(
+            continuation_ruling.by
+            if expiry is not None and recovery is None and continuation_ruling is not None
+            else None
+        ),
+        continuation_ruling_recorded_at=(
+            continuation_ruling.created_at
+            if expiry is not None and recovery is None and continuation_ruling is not None
+            else None
+        ),
     )
 
 

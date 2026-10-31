@@ -172,3 +172,28 @@ def test_a_payload_whose_event_kind_is_not_text_fails_closed() -> None:
         parse_payload(text=json.dumps({key: whole[key] for key in whole if key != "event_kind"}))
         is None
     )
+
+
+def test_continuation_ruling_evidence_round_trips_and_partial_evidence_fails_closed() -> None:
+    """An acted-on ruling records both its identity and its timestamp together."""
+    payload = _payload(
+        continuation_ruling_by="Chad Woolley",
+        continuation_ruling_recorded_at="2026-10-15T08:00:00Z",
+    )
+    whole = json.loads(render_payload(payload=payload))
+    legacy = {
+        key: value
+        for key, value in whole.items()
+        if key not in {"continuation_ruling_by", "continuation_ruling_recorded_at"}
+    }
+
+    assert parse_payload(text=render_payload(payload=payload)) == payload
+    assert parse_payload(text=json.dumps(legacy)) == _payload()
+    assert parse_payload(text=json.dumps({**whole, "continuation_ruling_by": None})) is None
+    assert (
+        parse_payload(text=json.dumps({**whole, "continuation_ruling_recorded_at": None})) is None
+    )
+    assert parse_payload(text=json.dumps({**whole, "continuation_ruling_by": 7})) is None
+    assert parse_payload(text=json.dumps({**whole, "continuation_ruling_recorded_at": 7})) is None
+    assert parse_payload(text=json.dumps({**whole, "continuation_ruling_by": " "})) is None
+    assert parse_payload(text=json.dumps({**whole, "continuation_ruling_recorded_at": " "})) is None

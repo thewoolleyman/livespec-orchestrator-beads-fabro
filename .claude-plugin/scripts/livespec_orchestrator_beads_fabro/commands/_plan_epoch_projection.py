@@ -33,15 +33,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
     TransitionPayload,
     parse_payload,
     render_payload,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
+    next_action_metadata,
+    plan_record_metadata,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import plan_comment_body
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
+    from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
+    from livespec_orchestrator_beads_fabro.commands._plan_tracked_write import TrackedWriteRequest
 
 __all__: list[str] = [
     "CHAIN_METADATA_KEY",
@@ -56,6 +63,7 @@ __all__: list[str] = [
     "read_progress_events",
     "write_chain_cache",
     "write_progress_event",
+    "write_tracked_projection",
 ]
 
 CHAIN_METADATA_KEY = "plan_epoch_chain"
@@ -176,6 +184,14 @@ def progress_event_body(*, payload: TransitionPayload, now: str) -> str:
     differs from the one the transition committed.
     """
     state = payload.authority
+    ruling = (
+        ()
+        if payload.continuation_ruling_by is None
+        else (
+            f"continuation-ruling-recorded-at: {payload.continuation_ruling_recorded_at}",
+            f"continuation-ruling-by: {payload.continuation_ruling_by}",
+        )
+    )
     return "\n".join(
         (
             f"{_OPERATION_LABEL}{payload.operation_id}",
@@ -187,6 +203,7 @@ def progress_event_body(*, payload: TransitionPayload, now: str) -> str:
             f"max-handoffs: {state.max_handoffs}",
             f"consumed-handoffs: {state.consumed_handoffs}",
             f"recorded: {now}",
+            *ruling,
             f"{_PAYLOAD_LABEL}{render_payload(payload=payload)}",
         )
     )
@@ -208,6 +225,35 @@ def write_progress_event(
             author=author,
             now=now,
             body=progress_event_body(payload=payload, now=now),
+        ),
+    )
+
+
+def write_tracked_projection(
+    *,
+    request: TrackedWriteRequest,
+    action: NextAction,
+) -> None:
+    """Project one committed chain transition onto its pointer and handoff entry."""
+    client = make_beads_client(config=request.config)
+    if request.is_handoff:
+        client.add_comment(
+            issue_id=request.epic_id,
+            body=plan_comment_body(
+                prefix="plan-handoff-entry",
+                author=request.author,
+                now=request.now,
+                body=request.body or "",
+            ),
+        )
+    record = client.show_issue(issue_id=request.epic_id)
+    client.update_issue(
+        issue_id=request.epic_id,
+        metadata=next_action_metadata(
+            existing_metadata=plan_record_metadata(record=record),
+            action=action,
+            session=request.author,
+            now=request.now,
         ),
     )
 

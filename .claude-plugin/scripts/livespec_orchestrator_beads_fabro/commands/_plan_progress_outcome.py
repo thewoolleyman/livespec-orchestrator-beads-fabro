@@ -53,6 +53,8 @@ class TrackedDecision:
     action: NextAction
     authority: AuthorityState
     event_kind: str
+    continuation_ruling_by: str | None = None
+    continuation_ruling_recorded_at: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

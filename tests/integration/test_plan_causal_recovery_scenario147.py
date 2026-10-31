@@ -56,12 +56,18 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
     PLAN_PROGRESS_PREFIX,
     chain_cache_metadata,
+    read_progress_events,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import create_token
 from livespec_orchestrator_beads_fabro.commands._plan_handoff import append_handoff
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     NextAction,
     set_next_action,
+)
+from livespec_orchestrator_beads_fabro.commands.plan import (
+    PlanContinuationAuthorization,
+    PlanContinuationRevocation,
+    record_scope_event,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -72,6 +78,10 @@ _ORIGINAL_DEADLINE = "2026-10-14T09:00:00Z"
 _AFTER_DEADLINE = "2026-10-15T09:00:00Z"
 _ATTEMPT_DEADLINE = "2026-10-15T12:00:00Z"
 _BEFORE_DEADLINE = "2026-10-13T09:00:00Z"
+_RULING_RECORDED_AT = "2026-10-15T08:00:00Z"
+_RULING_UNTIL = "2026-10-16T09:00:00Z"
+_AFTER_RULING_UNTIL = "2026-10-17T09:00:00Z"
+_RULING_BY = "Chad Woolley"
 _EVIDENCE = "hp run 01M4HQQZJCNP5HZ89M80PYCHXK ended: provider usageLimitExceeded at 18:13:14Z"
 _MODULE = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_recovery.py"
@@ -190,6 +200,40 @@ def _handoff_comments(*, config: StoreConfig) -> list[dict[str, Any]]:
     ]
 
 
+def _record_current_continuation(*, config: StoreConfig) -> None:
+    assert (
+        record_scope_event(
+            config=config,
+            epic_id=_EPIC_ID,
+            requirements=(),
+            deferrals=(),
+            author="maintainer-session",
+            now=_RULING_RECORDED_AT,
+            continuation=PlanContinuationAuthorization(
+                until=_RULING_UNTIL,
+                by=_RULING_BY,
+                directive="Continue through the plan archive.",
+            ),
+        )
+        is None
+    )
+
+
+def _record_continuation_revocation(*, config: StoreConfig) -> None:
+    assert (
+        record_scope_event(
+            config=config,
+            epic_id=_EPIC_ID,
+            requirements=(),
+            deferrals=(),
+            author="maintainer-session",
+            now=_RULING_RECORDED_AT,
+            continuation=PlanContinuationRevocation(by=_RULING_BY),
+        )
+        is None
+    )
+
+
 def _recovery(
     *,
     cause: str,
@@ -237,6 +281,101 @@ def test_an_expired_obligation_refuses_plain_continuation_before_any_write(
     assert "expired" in refusal.detail
     assert len(_handoff_comments(config=config)) == comments_before
     assert _authority(config=config).consumed_handoffs == 0
+
+
+def test_a_current_continuation_ruling_authorizes_an_expired_pointer_write(
+    tmp_path: Path,
+) -> None:
+    """A ruling admits one same-obligation pointer without moving either limit."""
+    config = _seed(tmp_path=tmp_path)
+    _record_current_continuation(config=config)
+
+    refusal = set_next_action(
+        config=config,
+        epic_id=_EPIC_ID,
+        action=_action(deadline="2099-01-01T00:00:00Z", max_handoffs=99),
+        session="relay-session",
+        now=_AFTER_DEADLINE,
+    )
+
+    assert refusal is None
+    authority = _authority(config=config)
+    assert authority.original_deadline == _ORIGINAL_DEADLINE
+    assert authority.max_handoffs == 5
+    event = read_progress_events(client=_fake(config=config), epic_id=_EPIC_ID)[-1]
+    assert event.payload is not None
+    assert event.payload.continuation_ruling_by == _RULING_BY
+    assert event.payload.continuation_ruling_recorded_at == _RULING_RECORDED_AT
+
+
+def test_a_current_continuation_ruling_authorizes_an_expired_handoff(
+    tmp_path: Path,
+) -> None:
+    """A ruling admits one handoff, consuming its unit without moving its limits."""
+    config = _seed(tmp_path=tmp_path)
+    _record_current_continuation(config=config)
+    comments_before = len(_handoff_comments(config=config))
+
+    refusal = append_handoff(
+        config=config,
+        epic_id=_EPIC_ID,
+        body="Continue through the archive.",
+        author="relay-session",
+        now=_AFTER_DEADLINE,
+        next_action=_action(deadline="2099-01-01T00:00:00Z", max_handoffs=99),
+    )
+
+    assert refusal is None
+    authority = _authority(config=config)
+    assert authority.original_deadline == _ORIGINAL_DEADLINE
+    assert authority.max_handoffs == 5
+    assert authority.consumed_handoffs == 1
+    assert len(_handoff_comments(config=config)) == comments_before + 1
+    event = read_progress_events(client=_fake(config=config), epic_id=_EPIC_ID)[-1]
+    assert event.payload is not None
+    assert event.payload.continuation_ruling_by == _RULING_BY
+    assert event.payload.continuation_ruling_recorded_at == _RULING_RECORDED_AT
+
+
+def test_expired_writers_refuse_when_no_current_continuation_ruling_remains(
+    tmp_path: Path,
+) -> None:
+    """No, revoked, and elapsed rulings leave both writers at the expiry gate."""
+    for ruling in ("none", "revoked", "elapsed"):
+        reset_fake_singleton()
+        case_path = tmp_path / ruling
+        case_path.mkdir()
+        config = _seed(tmp_path=case_path)
+        if ruling != "none":
+            _record_current_continuation(config=config)
+        if ruling == "revoked":
+            _record_continuation_revocation(config=config)
+        now = _AFTER_RULING_UNTIL if ruling == "elapsed" else _AFTER_DEADLINE
+
+        comments_before = len(_handoff_comments(config=config))
+        pointer_refusal = set_next_action(
+            config=config,
+            epic_id=_EPIC_ID,
+            action=_action(deadline="2099-01-01T00:00:00Z", max_handoffs=99),
+            session="relay-session",
+            now=now,
+        )
+        handoff_refusal = append_handoff(
+            config=config,
+            epic_id=_EPIC_ID,
+            body="Continue without a current ruling.",
+            author="relay-session",
+            now=now,
+            next_action=_action(deadline="2099-01-01T00:00:00Z", max_handoffs=99),
+        )
+
+        assert pointer_refusal is not None
+        assert handoff_refusal is not None
+        assert len(_handoff_comments(config=config)) == comments_before
+        authority = _authority(config=config)
+        assert authority.original_deadline == _ORIGINAL_DEADLINE
+        assert authority.max_handoffs == 5
+        assert authority.consumed_handoffs == 0
 
 
 def test_an_exhausted_handoff_ceiling_refuses_the_next_continuation(
