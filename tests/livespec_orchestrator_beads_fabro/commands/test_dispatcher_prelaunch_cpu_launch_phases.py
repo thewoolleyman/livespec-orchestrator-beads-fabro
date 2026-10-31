@@ -102,6 +102,39 @@ def test_every_launch_phase_has_a_row_before_the_run_is_submitted(
     ]
 
 
+@pytest.mark.parametrize(
+    ("failing", "rows"),
+    [
+        ("run_fabro_factory_auth_login", ["launch-factory-auth"]),
+        ("fabro_port_for_plan", ["launch-factory-auth", "fabro-port"]),
+        ("release_pass_snapshot", ["launch-factory-auth", "fabro-port", "release-pass-snapshot"]),
+    ],
+)
+def test_a_launch_phase_that_raises_still_closes_its_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str, rows: list[str]
+) -> None:
+    events: list[str] = []
+
+    def checkpoint(*, name: str) -> None:
+        events.append(name)
+
+    def boom(**_: object) -> object:
+        raise RuntimeError(failing)
+
+    monkeypatch.setattr(launcher_module, "run_fabro_factory_auth_login", lambda **_: None)
+    monkeypatch.setattr(launcher_module, "fabro_port_for_plan", lambda **_: object())
+    monkeypatch.setattr(launcher_module, "release_pass_snapshot", lambda: None)
+    monkeypatch.setattr(launcher_module, failing, boom)
+    anything: Any = object()
+
+    with pytest.raises(RuntimeError, match=failing):
+        _ = launcher_module.WatchedFabroLauncher(prelaunch_checkpoint=checkpoint).launch(
+            plan=_plan(repo=tmp_path), runner=anything, journal=anything
+        )
+
+    assert events == rows
+
+
 def test_the_vault_release_takes_no_checkpoint_of_its_own() -> None:
     released: list[str] = []
     checkpoint = Mock()

@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
     PrelaunchCheckpoint,
     ignore_prelaunch_checkpoint,
+    prelaunch_phase,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
@@ -125,12 +126,12 @@ class WatchedFabroLauncher:
         runner: CommandRunner,
         journal: JournalWriter,
     ) -> FabroRunResult:
-        run_fabro_factory_auth_login(plan=plan, runner=runner)
-        self.prelaunch_checkpoint(name="launch-factory-auth")
-        port = fabro_port_for_plan(plan=plan, runner=runner)
-        self.prelaunch_checkpoint(name="fabro-port")
-        release_pass_snapshot()
-        self.prelaunch_checkpoint(name="release-pass-snapshot")
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="launch-factory-auth"):
+            run_fabro_factory_auth_login(plan=plan, runner=runner)
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="fabro-port"):
+            port = fabro_port_for_plan(plan=plan, runner=runner)
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="release-pass-snapshot"):
+            release_pass_snapshot()
         holder: dict[str, CommandResult] = {}
         run_id_holder: dict[str, str | None] = {}
         # Set once this dispatch's `fabro run` call has RETURNED, which is
