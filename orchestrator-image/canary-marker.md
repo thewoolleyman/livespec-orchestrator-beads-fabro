@@ -20,3 +20,4 @@ being a measurement of the engine and becomes a measurement of the change.
 - 2026-10-17 — canary `bd-ib-d3h677` on factory `hp`, run `01M55GKWZ05JB53JTX14Q86597`.
 - 2026-10-17 — `bd-ib-djbwai` on factory `hp-candidate`, run `01M55FJXTN15DR6DV85ZHBX00R`.
 - 2026-10-31 — canary `bd-ib-ijfyvw` on factory `petri`, run `01M68SE6VBPSHY63RFRJAP3VTG`.
+- 2026-10-31 — canary `bd-ib-n5a5qh` on factory `petri`, run `01M68ZXAEHA79FMYP0WP3DZSQY`.
