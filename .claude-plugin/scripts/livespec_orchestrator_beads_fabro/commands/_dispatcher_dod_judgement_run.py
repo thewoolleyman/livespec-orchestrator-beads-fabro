@@ -59,6 +59,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
     unavailable_report,
 )
@@ -89,6 +90,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt
     resolve_judge_timeout_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
+    BASELINE_CAPABILITY,
+    mirrored_sandbox_capabilities,
+)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
 )
@@ -159,9 +164,16 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     if gate_prompt is None:
         return DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_PROMPT_UNREADABLE)
     active_runner = ShellCommandRunner() if runner is None else runner
+    configured_capabilities = mirrored_sandbox_capabilities(block=dispatcher_block(cwd=cwd))
+    sandbox_capabilities = (
+        configured_capabilities
+        if isinstance(configured_capabilities, tuple) and configured_capabilities
+        else (BASELINE_CAPABILITY,)
+    )
     prompt = judgement_prompt(
         gate_prompt=gate_prompt,
         subject=judgement_subject(item=item, cwd=cwd, comments=comments, governing=governing),
+        sandbox_capabilities=sandbox_capabilities,
     )
     result = run_dod_gate_prompt(
         prompt=prompt,

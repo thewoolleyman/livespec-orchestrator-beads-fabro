@@ -126,6 +126,18 @@ def judgement_prompt(
 def _host_safe_rubric(*, gate_prompt: str) -> str:
     """Remove file-exploration directions the tool-less host candidate cannot obey."""
     result = gate_prompt
+    before_capabilities, capability_heading, after_capabilities = result.partition(
+        "## The sandbox capability set — read it, never infer it"
+    )
+    if capability_heading:
+        _capabilities, what_to_check, remainder = after_capabilities.partition("\n## What to check")
+        if what_to_check:
+            result = (
+                f"{before_capabilities}## The sandbox capability set\n\n"
+                "Use only the inline host candidate capability set supplied after this rubric.\n"
+                "It is the capability set to apply to every check below.\n"
+                f"{what_to_check}{remainder}"
+            )
     for source, replacement in (
         (
             "Read /etc/livespec/sandbox-capabilities, then search SPECIFICATION/ before deciding.",
@@ -134,11 +146,36 @@ def _host_safe_rubric(*, gate_prompt: str) -> str:
         (
             """Work through all six. Read files in the repository freely to settle a
 question of fact — the spec tree above all.""",
-            "Work through all six using the inline subject.",
+            "Work through all six using only the rubric and inline subject.",
         ),
         (
-            "Search `scenarios.md` for a scenario stating the behaviour",
-            "Use the inline governing-heading verdict for the stated behaviour",
+            "against the spec files themselves; do not check it against a test fixture",
+            "; ".join(
+                (
+                    "against the governing specification content supplied in the subject",
+                    "do not check it against a test fixture",
+                )
+            ),
+        ),
+        (
+            "Read each assertion against the item's title, its description, and the",
+            "Judge each assertion against the item's title, its description, and the",
+        ),
+        (
+            "The referenced heading you read is the named H2 together with",
+            "The supplied referenced heading is the named H2 together with",
+        ),
+        (
+            "Read the whole of that section\n   before judging any assertion against it.",
+            "Treat that whole section as supplied before judging any assertion against it.",
+        ),
+        (
+            "Do not choose by reading a scenario's title.",
+            "Do not choose from a scenario's title alone.",
+        ),
+        (
+            "**Search `scenarios.md`** for a scenario stating the behaviour",
+            "Use only governing specification content supplied in the subject",
         ),
     ):
         result = result.replace(source, replacement)
