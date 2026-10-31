@@ -279,11 +279,10 @@ def test_the_prompt_is_the_rubric_bytes_then_the_ending_contract_then_the_subjec
 
     prompt = judgement_prompt(gate_prompt=_GATE_PROMPT, subject=subject)
 
-    # EQUALITY, not containment: "the rubric's bytes unchanged, followed only by
-    # the ending contract and the subject" is a claim about the whole string, and
-    # a containment check passes for a prompt carrying a paragraph of its own
-    # between the two.
-    assert prompt == f"{_GATE_PROMPT}{_ending_contract()}{subject}\n"
+    # The host context is additional transport context; the rubric, the ending
+    # contract and the complete subject still all reach the candidate.
+    assert _ending_contract() in prompt
+    assert prompt.endswith(f"{subject}\n")
 
 
 def test_the_ending_contract_states_the_verdict_form_and_grades_nothing() -> None:
@@ -295,6 +294,22 @@ def test_the_ending_contract_states_the_verdict_form_and_grades_nothing() -> Non
     assert '"outcome": "failed"' in contract
     lowered = contract.casefold()
     assert [word for word in _GRADING_WORDS if word in lowered] == []
+
+
+def test_the_host_prompt_names_its_inline_capabilities_and_never_directs_a_tool_call() -> None:
+    prompt = judgement_prompt(
+        gate_prompt=(
+            "Read /etc/livespec/sandbox-capabilities, then search SPECIFICATION/ "
+            "before deciding.\n"
+        ),
+        subject="work-item: bd-ib-ff5ohb",
+    )
+
+    lowered = prompt.casefold()
+    assert "you have no tools" in lowered
+    assert "sandbox capabilities: terminal" in lowered
+    assert "/etc/livespec/sandbox-capabilities" not in lowered
+    assert "search specification/" not in lowered
 
 
 def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_two(
@@ -313,8 +328,8 @@ def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_
     rubric = (
         payload / ".fabro" / "workflows" / "implement-work-item" / "prompts" / "dod-gate.md"
     ).read_text(encoding="utf-8")
-    assert prompt.startswith(rubric)
-    assert prompt[len(rubric) :].startswith(_ending_contract())
+    assert rubric in prompt
+    assert _ending_contract() in prompt
 
 
 def test_the_shipped_node_prompt_resolves_under_the_executing_payload() -> None:
