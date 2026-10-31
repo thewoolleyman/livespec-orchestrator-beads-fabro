@@ -138,7 +138,10 @@ def _journal(*, repo: Path) -> JournalFile:
 
 
 class _Runner:
-    """A fake subprocess seam answering the forge with no merged pull request."""
+    """A fake subprocess seam answering the forge with one scripted pull-request list."""
+
+    def __init__(self, *, stdout: str = "[]") -> None:
+        self.stdout = stdout
 
     def run(
         self,
@@ -150,7 +153,7 @@ class _Runner:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (argv, cwd, timeout_seconds, env, stdin)
-        return CommandResult(exit_code=0, stdout="[]", stderr="")
+        return CommandResult(exit_code=0, stdout=self.stdout, stderr="")
 
 
 def test_a_first_absent_run_with_no_live_owner_is_released(tmp_path: Path) -> None:
@@ -206,18 +209,17 @@ def test_a_first_absent_run_with_no_live_owner_is_released(tmp_path: Path) -> No
     assert REASON_RUN_ABSENT in bodies[0]
 
 
-def test_a_succeeded_run_with_no_merged_pull_request_names_its_release(tmp_path: Path) -> None:
+def _survey_succeeded_run(*, tmp_path: Path, forge_stdout: str) -> object:
     module = importlib.import_module(_MODULE_NAME)
     repo = _repo(tmp_path=tmp_path)
     item = _item()
     _seed_claim(item=item)
-
-    survey = module.survey_stranded_claims(
+    return module.survey_stranded_claims(
         inputs=module.StrandedClaimInputs(
             repo=repo,
             items=(item,),
             journal=_journal(repo=repo),
-            runner=_Runner(),
+            runner=_Runner(stdout=forge_stdout),
             inventories=(
                 module.FactoryInventory(
                     name=_FACTORY,
@@ -233,7 +235,22 @@ def test_a_succeeded_run_with_no_merged_pull_request_names_its_release(tmp_path:
         )
     )
 
+
+@pytest.mark.parametrize(
+    ("forge_stdout", "expected_remedy"),
+    [
+        ('[{"number": 4008, "state": "CLOSED", "title": "x"}]', f"move:{_ITEM_ID}:ready"),
+        ('[{"number": 4008, "state": "OPEN", "title": "x"}]', None),
+        ('[{"number": 4008, "state": "MERGED", "title": "x"}]', None),
+        ("[]", None),
+    ],
+)
+def test_a_succeeded_run_names_a_release_only_when_its_pull_request_closed_unmerged(
+    tmp_path: Path, forge_stdout: str, expected_remedy: str | None
+) -> None:
+    survey = _survey_succeeded_run(tmp_path=tmp_path, forge_stdout=forge_stdout)
+
     assert survey.recovered == ()
     assert [(held.hold_reason, held.remedy) for held in survey.held] == [
-        ("run-succeeded", f"move:{_ITEM_ID}:ready")
+        ("run-succeeded", expected_remedy)
     ]

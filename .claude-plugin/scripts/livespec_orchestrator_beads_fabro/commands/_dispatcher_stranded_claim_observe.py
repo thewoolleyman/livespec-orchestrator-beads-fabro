@@ -38,8 +38,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
+    FORGE_CLOSED_UNMERGED_PR,
     FORGE_MERGED_PR,
     FORGE_NO_MERGED_PR,
+    FORGE_OPEN_PR,
     FORGE_UNOBSERVABLE,
     HISTORY_ABSENT_RUN_RELEASE,
     HISTORY_NO_PREDECESSOR,
@@ -63,10 +65,13 @@ __all__: list[str] = [
     "observe_merged_pull_request",
     "observe_owner_liveness",
     "observe_predecessor_history",
+    "observe_succeeded_run_pull_request",
 ]
 
 _GH_TIMEOUT_SECONDS = 120.0
 _MERGED_STATE = "MERGED"
+_OPEN_STATE = "OPEN"
+_CLOSED_STATE = "CLOSED"
 
 # The stage every dispatch writes at launch, which is what delimits one
 # dispatch's journal segment from the next. Spelled here rather than imported
@@ -122,13 +127,59 @@ def observe_merged_pull_request(
     whose work has already merged, because the recovery for THAT item is
     `reconcile-merged` and a release would send it back through the factory.
     """
+    states = _pull_request_states(
+        repo=repo, runner=runner, work_item_id=work_item_id, state_filter="merged"
+    )
+    if states is None:
+        return FORGE_UNOBSERVABLE
+    return FORGE_MERGED_PR if _MERGED_STATE in states else FORGE_NO_MERGED_PR
+
+
+def observe_succeeded_run_pull_request(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    work_item_id: str,
+) -> str:
+    """What became of the pull request a SUCCEEDED run published.
+
+    A merged pull request is `reconcile-merged`'s, and a still-open one is
+    awaiting its own CI or merge, so neither may be released. Only a pull
+    request that is closed unmerged, with none merged or open, names a claim
+    whose work will never land and whose remedy is a return to `ready`. This
+    reads every state because that distinction cannot be drawn from the merged
+    list alone: an open pull request and a closed one both look like "no merged
+    pull request" there.
+    """
+    states = _pull_request_states(
+        repo=repo, runner=runner, work_item_id=work_item_id, state_filter="all"
+    )
+    if states is None:
+        return FORGE_UNOBSERVABLE
+    if _MERGED_STATE in states:
+        return FORGE_MERGED_PR
+    if _OPEN_STATE in states:
+        return FORGE_OPEN_PR
+    if _CLOSED_STATE in states:
+        return FORGE_CLOSED_UNMERGED_PR
+    return FORGE_NO_MERGED_PR
+
+
+def _pull_request_states(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    work_item_id: str,
+    state_filter: str,
+) -> set[object] | None:
+    """The states of every pull request matching the id, or None when unreadable."""
     result = runner.run(
         argv=[
             "gh",
             "pr",
             "list",
             "--state",
-            "merged",
+            state_filter,
             "--search",
             work_item_id,
             "--json",
@@ -140,17 +191,17 @@ def observe_merged_pull_request(
         timeout_seconds=_GH_TIMEOUT_SECONDS,
     )
     if result.exit_code != 0:
-        return FORGE_UNOBSERVABLE
+        return None
     parsed = parse_json(text=result.stdout)
     if not isinstance(parsed, list):
-        return FORGE_UNOBSERVABLE
+        return None
     entries = cast("list[object]", parsed)
+    states: set[object] = set()
     for entry in entries:
         if not isinstance(entry, dict):
-            return FORGE_UNOBSERVABLE
-        if cast("dict[str, Any]", entry).get("state") == _MERGED_STATE:
-            return FORGE_MERGED_PR
-    return FORGE_NO_MERGED_PR
+            return None
+        states.add(cast("dict[str, Any]", entry).get("state"))
+    return states
 
 
 def journal_records_or_none(*, journal_path: Path) -> tuple[Mapping[str, object], ...] | None:

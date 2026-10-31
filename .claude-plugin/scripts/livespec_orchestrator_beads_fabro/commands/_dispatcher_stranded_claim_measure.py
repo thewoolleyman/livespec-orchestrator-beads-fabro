@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_obser
     observe_merged_pull_request,
     observe_owner_liveness,
     observe_predecessor_history,
+    observe_succeeded_run_pull_request,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_terminal import (
     TerminalObservation,
@@ -149,7 +150,11 @@ def measure_claim(
                 observe_merged_pull_request(
                     repo=inputs.repo, runner=inputs.runner, work_item_id=work_item_id
                 )
-                if run_state in (RUN_ABSENT, RUN_SUCCEEDED)
+                if run_state == RUN_ABSENT
+                else observe_succeeded_run_pull_request(
+                    repo=inputs.repo, runner=inputs.runner, work_item_id=work_item_id
+                )
+                if run_state == RUN_SUCCEEDED
                 else FORGE_NO_MERGED_PR
             ),
             predecessor=(

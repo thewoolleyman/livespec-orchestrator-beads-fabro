@@ -46,7 +46,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     ACTION_ABSENT_RUN_REPEATED,
     ACTION_TERMINAL_COMPLETION,
     ATTRIBUTION_PENDING_REMEDY,
-    FORGE_NO_MERGED_PR,
+    FORGE_CLOSED_UNMERGED_PR,
     HOLD_ATTRIBUTION_PENDING,
     HOLD_RUN_SUCCEEDED,
     AttributedClaim,
@@ -283,7 +283,7 @@ def _held_claim(
             ATTRIBUTION_PENDING_REMEDY
             if reason == HOLD_ATTRIBUTION_PENDING
             else f"move:{item.id}:ready"
-            if reason == HOLD_RUN_SUCCEEDED and forge == FORGE_NO_MERGED_PR
+            if reason == HOLD_RUN_SUCCEEDED and forge == FORGE_CLOSED_UNMERGED_PR
             else None
         ),
     )
