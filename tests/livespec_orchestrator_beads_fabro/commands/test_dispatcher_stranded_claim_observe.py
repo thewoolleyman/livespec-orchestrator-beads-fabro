@@ -198,6 +198,39 @@ def test_the_forge_reading_never_reports_a_failure_as_a_negative(
     assert runner.argvs[0][6] == _ITEM_ID
 
 
+@pytest.mark.parametrize(
+    ("exit_code", "stdout", "expected"),
+    [
+        (7, "", "unobservable"),
+        (0, "not json", "unobservable"),
+        (0, "[7]", "unobservable"),
+        (0, "[]", "no-merged-pr"),
+        (0, '[{"number": 1, "state": "CLOSED"}]', "closed-unmerged-pr"),
+        (0, '[{"number": 1, "state": "OPEN"}]', "open-pr"),
+        (0, '[{"number": 1, "state": "MERGED"}]', "merged-pr"),
+        (0, '[{"number": 1, "state": "CLOSED"}, {"number": 2, "state": "OPEN"}]', "open-pr"),
+        (0, '[{"number": 1, "state": "OPEN"}, {"number": 2, "state": "MERGED"}]', "merged-pr"),
+    ],
+)
+def test_a_succeeded_runs_pull_request_is_told_apart_by_its_state(
+    *,
+    tmp_path: Path,
+    exit_code: int,
+    stdout: str,
+    expected: str,
+) -> None:
+    module = _module()
+    runner = _Runner(exit_code=exit_code, stdout=stdout)
+
+    observed = module.observe_succeeded_run_pull_request(
+        repo=tmp_path, runner=runner, work_item_id=_ITEM_ID
+    )
+
+    assert observed == expected
+    assert runner.argvs[0][:6] == ["gh", "pr", "list", "--state", "all", "--search"]
+    assert runner.argvs[0][6] == _ITEM_ID
+
+
 def test_an_absent_journal_is_readable_and_empty_rather_than_unavailable(*, tmp_path: Path) -> None:
     module = _module()
 
