@@ -391,3 +391,32 @@ def test_a_stale_cause_from_an_earlier_stage_does_not_survive_a_passing_gate(
 
     assert result.returncode == 0, result.stderr
     assert not (repo / ".git" / _STAGE_CAUSE_GIT_PATH).exists()
+
+
+def test_a_nonempty_reply_without_the_field_falls_back_to_the_completion_record(
+    tmp_path: Path,
+) -> None:
+    """A reply that carries no completion field does not hide a present record.
+
+    The schema permits `{}` and a turn can end in prose, so the reply being
+    non-empty says nothing about whether it stated the field; the record is read
+    whenever the reply lacks the field, and "stated no completion field" is
+    reserved for a reply AND a record that both lack it.
+    """
+    complete = _clone(tmp_path=tmp_path / "complete")
+    incomplete = _clone(tmp_path=tmp_path / "incomplete")
+    absent = _clone(tmp_path=tmp_path / "absent")
+    _recorded(repo=complete, field=_COMPLETE_FIELD)
+    _recorded(repo=incomplete, field='{"definition_of_done_complete": false}')
+
+    passed = _graded(repo=complete, response="{}")
+    failed = _graded(repo=incomplete, response="Partial work only. {}")
+    neither = _graded(repo=absent, response="{}")
+
+    assert passed.returncode == 0, passed.stderr
+    assert _COMPLETE_SENTINEL in passed.stderr
+    assert failed.returncode != 0, failed.stderr
+    assert "does not state the work-item Definition of Done complete" in failed.stderr
+    assert '"definition_of_done_complete": false' in failed.stderr
+    assert neither.returncode != 0, neither.stderr
+    assert "stated no completion field" in neither.stderr
