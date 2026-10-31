@@ -1366,14 +1366,16 @@ digraph ImplementWorkItem {
         label="Route a landed draft publication to final verification"
         shape=parallelogram
         timeout="600s"
-        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; exit 0; fi; exit 1"
+        output_schema="routing"
+        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"continue\"}'; exit 0"
     ]
 
     pr_refresh_merged_reconcile_route [
         label="Route a landed refreshed publication to final verification"
         shape=parallelogram
         timeout="600s"
-        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; exit 0; fi; exit 1"
+        output_schema="routing"
+        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"continue\"}'; exit 0"
     ]
 
     // The refresh's own postcondition breaker, and the node that owns the
@@ -1540,7 +1542,8 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         max_visits=5
-        script="set -u; state=$(git rev-parse --git-path livespec-publication); if test -z \"$state\"; then echo 'LIVESPEC_PR_ROUTE_NO_STATE_DIR: this run publication state directory could not be resolved, so no refresh-route marker could be read or consumed; proceeding to the publish breaker rather than refreshing on an unreadable answer' >&2; exit 0; fi; marker=\"$state/livespec-pr-refresh-route\"; raw=$(cat \"$marker\" 2>/dev/null || true); rm -f \"$marker\"; routed=${raw%%:*}; kind=advance; case \"$raw\" in *:conflict) kind=conflict ;; esac; visit=$(cat \"$state/livespec-pr-visit-count\" 2>/dev/null || true); if test -n \"$routed\" && test \"$routed\" = \"$visit\"; then if test \"$kind\" = conflict; then : > \"$state/livespec-pr-refresh-conflict-entry\"; fi; echo \"LIVESPEC_PR_ROUTE_REFRESH: pr visit $visit recorded a $kind refresh-route marker, so the default branch advanced past the proof-verified head after this run published and before the arming; re-entering pr_refresh, which counts one refresh toward the three-refresh bound only when the marker names a forge-reported conflict, and consumes no refresh-repair round when the refresh applies cleanly\" >&2; exit 1; fi; if test -n \"$routed\"; then echo \"LIVESPEC_PR_ROUTE_STALE_MARKER: a refresh-route marker naming pr visit $routed was found while this run is at pr visit $visit, so it was left by an earlier visit and is consumed without routing\" >&2; fi; echo \"LIVESPEC_PR_ROUTE_NONE: pr visit $visit recorded no refresh-route marker for this visit, so publication proceeds to the publish breaker\" >&2; exit 0"
+        output_schema="routing"
+        script="set -u; state=$(git rev-parse --git-path livespec-publication); if test -z \"$state\"; then echo 'LIVESPEC_PR_ROUTE_NO_STATE_DIR: this run publication state directory could not be resolved, so no refresh-route marker could be read or consumed; proceeding to the publish breaker rather than refreshing on an unreadable answer' >&2; printf '%s\\n' '{\"preferred_next_label\":\"verify\"}'; exit 0; fi; marker=\"$state/livespec-pr-refresh-route\"; raw=$(cat \"$marker\" 2>/dev/null || true); rm -f \"$marker\"; routed=${raw%%:*}; kind=advance; case \"$raw\" in *:conflict) kind=conflict ;; esac; visit=$(cat \"$state/livespec-pr-visit-count\" 2>/dev/null || true); if test -n \"$routed\" && test \"$routed\" = \"$visit\"; then if test \"$kind\" = conflict; then : > \"$state/livespec-pr-refresh-conflict-entry\"; fi; echo \"LIVESPEC_PR_ROUTE_REFRESH: pr visit $visit recorded a $kind refresh-route marker, so the default branch advanced past the proof-verified head after this run published and before the arming; re-entering pr_refresh, which counts one refresh toward the three-refresh bound only when the marker names a forge-reported conflict, and consumes no refresh-repair round when the refresh applies cleanly\" >&2; printf '%s\\n' '{\"preferred_next_label\":\"refresh\"}'; exit 0; fi; if test -n \"$routed\"; then echo \"LIVESPEC_PR_ROUTE_STALE_MARKER: a refresh-route marker naming pr visit $routed was found while this run is at pr visit $visit, so it was left by an earlier visit and is consumed without routing\" >&2; fi; echo \"LIVESPEC_PR_ROUTE_NONE: pr visit $visit recorded no refresh-route marker for this visit, so publication proceeds to the publish breaker\" >&2; printf '%s\\n' '{\"preferred_next_label\":\"verify\"}'; exit 0"
     ]
 
     // Publish breaker (bd-ib-b6zc, re-landing bd-ib-32xd's intent): this guard
@@ -2283,7 +2286,7 @@ digraph ImplementWorkItem {
     // same two-outcomes-three-ways shape `pr_refresh_head` already uses.
     publish_draft -> refresh_repair [label="Blocked", condition="outcome=failed"]
     publish_draft -> publish_merged_reconcile_route
-    publish_merged_reconcile_route -> verify_pr [label="publication already merged", condition="outcome=succeeded"]
+    publish_merged_reconcile_route -> verify_pr [label="publication already merged", condition="preferred_label=merged"]
     publish_merged_reconcile_route -> proof_capture
 
     // Refresh-repair routing. The `fix` arm is CONDITIONAL and the needs_human
@@ -2541,7 +2544,7 @@ digraph ImplementWorkItem {
     // GRAPH rather than of a script's good intentions.
     pr_refresh -> refresh_repair [label="Blocked", condition="outcome=failed"]
     pr_refresh -> pr_refresh_merged_reconcile_route
-    pr_refresh_merged_reconcile_route -> verify_pr [label="publication already merged", condition="outcome=succeeded"]
+    pr_refresh_merged_reconcile_route -> verify_pr [label="publication already merged", condition="preferred_label=merged"]
     pr_refresh_merged_reconcile_route -> pr_refresh_head
     pr_refresh_head -> proof_capture [label="head changed: fresh proof owed", condition="outcome=failed"]
     pr_refresh_head -> pr
@@ -2578,7 +2581,7 @@ digraph ImplementWorkItem {
     // publication that armed, merged or held reaches the breaker unchanged.
     pr -> needs_human [label="Blocked", condition="outcome=failed"]
     pr -> pr_route
-    pr_route -> pr_refresh [label="default branch advanced after the refresh", condition="outcome=failed"]
+    pr_route -> pr_refresh [label="default branch advanced after the refresh", condition="preferred_label=refresh"]
     pr_route -> verify_pr
     verify_pr -> exit        [label="published", condition="outcome=succeeded"]
     verify_pr -> needs_human [label="not published or unprovable"]

@@ -699,7 +699,7 @@ def test_an_advanced_default_branch_routes_the_rejected_arming_back_to_pr_refres
     Both halves are asserted because either alone passes while the requirement is
     unmet. A `pr` that exits zero without recording the marker reaches the
     publish breaker and finishes the run GREEN with an unarmed pull request; a
-    `pr_route` that exits non-zero on no marker would send every healthy
+    `pr_route` that selected refresh on no marker would send every healthy
     publication back through a refresh it does not owe.
     """
     box = _build(root=tmp_path)
@@ -716,7 +716,8 @@ def test_an_advanced_default_branch_routes_the_rejected_arming_back_to_pr_refres
 
     route = _run(box=box, node="pr_route")
 
-    assert route.returncode == 1, route.stdout
+    assert route.returncode == 0, route.stderr
+    assert route.stdout == '{"preferred_next_label":"refresh"}\n'
     assert "LIVESPEC_PR_ROUTE_REFRESH" in route.stderr
     # Consumed on the visit that read it, so it can never route a later one.
     assert box.state(name=_ROUTE_MARKER_FILENAME) is None
@@ -834,7 +835,8 @@ def test_a_successful_arming_records_no_marker_and_pr_route_proceeds(tmp_path: P
 
     Asserted end to end rather than by inspection: a marker written on the happy
     path would send every green run back through a refresh, and a `pr_route`
-    that failed on an absent marker would do the same without any marker at all.
+    that selected refresh on an absent marker would do the same without any
+    marker at all.
     """
     box = _build(root=tmp_path, reject_merge=None)
 
@@ -853,6 +855,7 @@ def test_a_successful_arming_records_no_marker_and_pr_route_proceeds(tmp_path: P
 
     assert route.returncode == 0, route.stderr
     assert "LIVESPEC_PR_ROUTE_NONE" in route.stderr
+    assert route.stdout == '{"preferred_next_label":"verify"}\n'
 
 
 def test_a_marker_left_by_an_earlier_pr_visit_can_never_route_a_later_one(
@@ -901,7 +904,8 @@ def test_before_the_clean_refresh_any_advance_routes_whatever_the_mergeability(
 
     route = _run(box=box, node="pr_route")
 
-    assert route.returncode == 1, route.stdout
+    assert route.returncode == 0, route.stderr
+    assert route.stdout == '{"preferred_next_label":"refresh"}\n'
     assert box.state(name=_CONFLICT_ENTRY_FILENAME) is None
 
 
@@ -920,7 +924,8 @@ def test_after_the_clean_refresh_a_forge_reported_conflict_routes_as_a_conflict_
 
     route = _run(box=box, node="pr_route")
 
-    assert route.returncode == 1, route.stdout
+    assert route.returncode == 0, route.stderr
+    assert route.stdout == '{"preferred_next_label":"refresh"}\n'
     assert "LIVESPEC_PR_ROUTE_REFRESH" in route.stderr
     assert box.state(name=_ROUTE_MARKER_FILENAME) is None
     assert box.state(name=_CONFLICT_ENTRY_FILENAME) == ""
