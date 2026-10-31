@@ -16,6 +16,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import 
     ShellCommandRunner,
 )
 
+# A deadline no passing run approaches: the real-child cases below end on an
+# EVENT (the child's own exit, or a refused line), never on this clock. It sits
+# far above interpreter startup on a loaded host, so a slow start cannot turn a
+# passing case into a timeout; a wall-clock bound near startup time did exactly
+# that at a load average of 85.
+_UNREACHED_DEADLINE_SECONDS = 300.0
+
 
 def test_streaming_runner_returns_complete_output_after_an_unrejected_stream(
     tmp_path: Path,
@@ -29,7 +36,7 @@ def test_streaming_runner_returns_complete_output_after_an_unrejected_stream(
             "import sys; print('one'); print('two'); sys.stderr.write('problem')",
         ],
         cwd=tmp_path,
-        timeout_seconds=2.0,
+        timeout_seconds=_UNREACHED_DEADLINE_SECONDS,
         on_stdout_line=lambda line: seen.append(line) and False,
     )
 
@@ -47,14 +54,17 @@ def test_streaming_runner_ends_the_child_when_the_callback_refuses_a_line(
         argv=[
             sys.executable,
             "-c",
-            "import sys, time; print('limit', flush=True); time.sleep(10); print('late')",
+            "import sys, time; print('limit', flush=True); time.sleep(3600); print('late')",
         ],
         cwd=tmp_path,
-        timeout_seconds=2.0,
+        timeout_seconds=_UNREACHED_DEADLINE_SECONDS,
         on_stdout_line=lambda line: line == "limit\n",
     )
 
-    assert result.exit_code != 0
+    # The child would sleep past the deadline, so only the refusal can end it
+    # with something other than the timeout result.
+    assert result.exit_code not in (0, 124)
+    assert "timeout after" not in result.stderr
     assert result.stdout == "limit\n"
     assert "late" not in result.stdout
 
@@ -97,10 +107,10 @@ def test_streaming_runner_ends_only_the_candidates_own_session_group(
         argv=[
             sys.executable,
             "-c",
-            "import os, time; print(os.getpgrp(), flush=True); time.sleep(30)",
+            "import os, time; print(os.getpgrp(), flush=True); time.sleep(3600)",
         ],
         cwd=tmp_path,
-        timeout_seconds=10.0,
+        timeout_seconds=_UNREACHED_DEADLINE_SECONDS,
         on_stdout_line=refuse_once_the_group_is_known,
     )
 
