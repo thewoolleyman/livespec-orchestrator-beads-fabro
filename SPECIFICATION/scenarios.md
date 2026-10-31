@@ -8482,6 +8482,29 @@ Feature: Implementation that outruns the specification is caught at every merge
     When dispatcher.py drift-run --dry-run runs instead
     Then no drift pass runs and no model judgement is invoked
     And the drift frontier and the detection-coverage anchor are unchanged
+
+  Scenario: A merge already judged against the same spec revision is not judged again
+    Given a merge after the frontier that a drift-job run judged against ratified spec revision vN
+    And the frontier is stopped behind an earlier merge
+    When the drift job runs again while vN is still the newest ratified revision
+    Then that merge's recorded verdict is reused and no model judgement is invoked for it
+    When a newer ratified revision exists and the drift job runs
+    Then that merge is judged again against the newer revision
+
+  Scenario: Several merges share one rendering of the spec tree
+    Given three merges after the frontier whose combined content fits the judgement's input limit
+    When the drift job runs
+    Then the ratified spec tree is rendered into one judge prompt for all three merges
+    And one proposed change is filed per unstated behaviour per merge under its usual finding identity
+    And the outcome reports one prompt sent
+
+  Scenario: Merges whose content exceeds the input limit are split across the fewest prompts that fit
+    Given merges after the frontier whose combined content with the ratified spec tree exceeds the judgement's input limit
+    And those merges fit within two prompts but not within one
+    When the drift job runs
+    Then the merges are judged across exactly two judge prompts
+    And the outcome reports two prompts sent
+    And one proposed change is filed per unstated behaviour per merge under its usual finding identity
 ```
 
 ## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget
@@ -11132,4 +11155,38 @@ Feature: The materialized workflow.toml never reaches the engine over its size l
     Then the Dispatcher refuses the dispatch before any claim is written and before any Fabro run exists
     And the journaled refusal names the measured size 526,975 and the 524,288-byte limit
     And the work item keeps the status it held before the dispatch, with no dispatch claim
+```
+
+## Scenario 280 — Each host model-judgement spawn names its caller in OTEL_RESOURCE_ATTRIBUTES, appended to any inherited entries
+
+```gherkin
+Feature: Host model-judgement caller labelling
+
+  Scenario: Two judgements sharing one launch seam are told apart, appended to inherited entries
+    Given the launching environment carries `OTEL_RESOURCE_ATTRIBUTES=service.namespace=livespec-family`
+    When the drift run and the host governing-heading verdict each launch a judge subprocess through the shared spec-stated launch seam
+    Then the drift run's child receives `OTEL_RESOURCE_ATTRIBUTES=service.namespace=livespec-family,livespec.caller=drift_run`
+    And the governing-heading verdict's child receives `OTEL_RESOURCE_ATTRIBUTES=service.namespace=livespec-family,livespec.caller=dod_governing_heading`
+    And no other environment variable of either child differs from the launching environment
+
+  Scenario: A launch with no inherited resource attributes carries the caller entry alone
+    Given the launching environment carries no `OTEL_RESOURCE_ATTRIBUTES`
+    When the Definition-of-Done judgement launches its judge subprocess before dispatch
+    Then the child receives `OTEL_RESOURCE_ATTRIBUTES=livespec.caller=dod_judgement_pre_dispatch`
+```
+
+## Scenario 281 — An ended run's Kubernetes sandbox survives while its item awaits a human and is deleted through its provider once the item closes
+
+```gherkin
+Feature: Sandbox retention and collection
+
+  Scenario: Retained while awaiting a human, collected through the provider once closed
+    Given two ended factory runs on the Kubernetes provider, run A whose work-item rests at `needs-human` and run B whose work-item rests at `blocked`
+    When the Dispatcher's next pass runs
+    Then run A's and run B's driver records and node workspace directories still exist
+    When run A's work-item is closed and the Dispatcher's next pass runs
+    Then run A's sandbox is deleted through the provider's delete operation, and its driver record and node workspace directory no longer exist
+    And run B's driver record and node workspace directory still exist
+    When a further pass runs
+    Then nothing further is recorded for run A and the pass does not fail
 ```

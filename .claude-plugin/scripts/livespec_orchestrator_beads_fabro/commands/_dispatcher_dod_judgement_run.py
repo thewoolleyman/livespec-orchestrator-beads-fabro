@@ -59,6 +59,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
     unavailable_report,
 )
@@ -89,6 +90,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt
     resolve_judge_timeout_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
+    mirrored_sandbox_capabilities,
+)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
 )
@@ -162,6 +166,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     prompt = judgement_prompt(
         gate_prompt=gate_prompt,
         subject=judgement_subject(item=item, cwd=cwd, comments=comments, governing=governing),
+        sandbox_capabilities=_configured_capabilities(cwd=cwd),
     )
     result = run_dod_gate_prompt(
         prompt=prompt,
@@ -191,6 +196,16 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
         bound_ended_candidates=result.bound_ended_candidates,
         attempts=result.attempts,
     )
+
+
+def _configured_capabilities(*, cwd: Path) -> tuple[str, ...]:
+    """The governed repository's committed capability mirror, or `()` when unknown.
+
+    A malformed mirror is refused before dispatch by the preamble, so here it
+    reads as unknown rather than as a guessed baseline.
+    """
+    resolved = mirrored_sandbox_capabilities(block=dispatcher_block(cwd=cwd))
+    return resolved if isinstance(resolved, tuple) else ()
 
 
 def run_dod_gate_prompt(

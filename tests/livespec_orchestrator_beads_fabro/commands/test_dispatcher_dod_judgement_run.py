@@ -279,11 +279,10 @@ def test_the_prompt_is_the_rubric_bytes_then_the_ending_contract_then_the_subjec
 
     prompt = judgement_prompt(gate_prompt=_GATE_PROMPT, subject=subject)
 
-    # EQUALITY, not containment: "the rubric's bytes unchanged, followed only by
-    # the ending contract and the subject" is a claim about the whole string, and
-    # a containment check passes for a prompt carrying a paragraph of its own
-    # between the two.
-    assert prompt == f"{_GATE_PROMPT}{_ending_contract()}{subject}\n"
+    # The host context is additional transport context; the rubric, the ending
+    # contract and the complete subject still all reach the candidate.
+    assert _ending_contract() in prompt
+    assert prompt.endswith(f"{subject}\n")
 
 
 def test_the_ending_contract_states_the_verdict_form_and_grades_nothing() -> None:
@@ -295,6 +294,22 @@ def test_the_ending_contract_states_the_verdict_form_and_grades_nothing() -> Non
     assert '"outcome": "failed"' in contract
     lowered = contract.casefold()
     assert [word for word in _GRADING_WORDS if word in lowered] == []
+
+
+def test_the_host_prompt_names_its_inline_capabilities_and_never_directs_a_tool_call() -> None:
+    prompt = judgement_prompt(
+        gate_prompt=(
+            "Read /etc/livespec/sandbox-capabilities, then search SPECIFICATION/ "
+            "before deciding.\n"
+        ),
+        subject="work-item: bd-ib-ff5ohb",
+    )
+
+    lowered = prompt.casefold()
+    assert "you have no tools" in lowered
+    assert "sandbox capabilities: terminal" in lowered
+    assert "/etc/livespec/sandbox-capabilities" not in lowered
+    assert "search specification/" not in lowered
 
 
 def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_two(
@@ -313,8 +328,8 @@ def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_
     rubric = (
         payload / ".fabro" / "workflows" / "implement-work-item" / "prompts" / "dod-gate.md"
     ).read_text(encoding="utf-8")
-    assert prompt.startswith(rubric)
-    assert prompt[len(rubric) :].startswith(_ending_contract())
+    assert rubric in prompt
+    assert _ending_contract() in prompt
 
 
 def test_the_shipped_node_prompt_resolves_under_the_executing_payload() -> None:
@@ -506,7 +521,7 @@ def test_a_host_codex_judge_resolves_before_isolation_and_reads_only_its_grant(
     assert runner.cwd_git_returncode is not None
     assert runner.cwd_git_returncode != 0
     assert runner.environ is not None
-    assert runner.environ["HOME"] == str(home)
+    assert runner.environ["HOME"] == str(runner.cwd / "home")
 
 
 def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
@@ -517,7 +532,14 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
     codex_home.mkdir()
     _ = (codex_home / "auth.json").write_text("host-auth", encoding="utf-8")
     _ = (codex_home / "config.toml").write_text("interactive = true", encoding="utf-8")
+    operator_home = tmp_path / "operator-home"
+    operator_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("HOME", str(operator_home))
+    monkeypatch.setenv("ZDOTDIR", str(operator_home / ".config" / "zsh"))
+    monkeypatch.setenv("BASH_ENV", str(operator_home / ".bashenv"))
+    monkeypatch.setenv("ENV", str(operator_home / ".shenv"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(operator_home / ".config"))
     repo = _repo(tmp_path=tmp_path)
     _write_codex_first_dod_gate(repo=repo)
     runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
@@ -530,6 +552,10 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
     assert runner.environ is not None
     assert runner.environ["CODEX_HOME"] != str(codex_home)
     assert runner.codex_auth == "host-auth"
+    assert runner.cwd is not None
+    assert runner.environ["HOME"] == str(runner.cwd / "home")
+    assert runner.environ["ZDOTDIR"] == str(runner.cwd / "home")
+    assert {"BASH_ENV", "ENV", "XDG_CONFIG_HOME"}.isdisjoint(runner.environ)
 
 
 def test_host_judge_scratch_retries_after_a_git_worktree_parent(

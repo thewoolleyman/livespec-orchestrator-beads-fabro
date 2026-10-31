@@ -1,4 +1,8 @@
-# How others solve agent-fleet capacity and control state
+# 006 — How others solve agent-fleet capacity and control state
+
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
+
+**Archived — supporting research, 25 October 2026.** Retained as evidence for the current reports. Observations and source checks describe that date, not a fresh assessment of the running system.
 
 The strongest prior art supports a deterministic admission service over shared, durable state, with separate inference routing and metering beneath it: gateways already pool endpoints and credentials, enforce scoped budgets, and perform fallback; job and workflow systems already provide queues, priorities, leases, retries, and recovery. This is a synthesis of [LiteLLM's distributed-state documentation](https://docs.litellm.ai/docs/proxy/redis_requirements) (accessed 2026-10-25), [Kueue's admission design](https://kueue.sigs.k8s.io/docs/concepts/admission_fair_sharing/) (updated 2026-09-22), and [Temporal's downstream-rate-limit pattern](https://temporal.io/blog/rate-limit-downstream-apis) (2026-07-16). For this factory, adapt those mechanisms to typed capacity pools: hosted accounts have scoped, replenishing or resetting entitlements; local models have finite concurrent serving capacity; money has separate spending and pacing constraints. Keep LLMs responsible for task decomposition, diagnosis, and proposed policy changes, while code owns claims, holds, counters, and routine resumption. [Stripe's production account](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents-part-2) (2026-02-19) supports this division. None of the sources examined establishes a complete, independently validated scheduler combining subscription-account windows, hosted APIs, local models, and autonomous coding runs; assembling that control policy remains our work.
 

@@ -1090,5 +1090,19 @@
     "heading": "## Scenario 279 \u2014 A materialized workflow.toml over the engine's limit is caught at build time and refused before claim",
     "work_item": "bd-ib-37wvsk",
     "first_seen": "2026-10-31"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 280 \u2014 Each host model-judgement spawn names its caller in OTEL_RESOURCE_ATTRIBUTES, appended to any inherited entries",
+    "work_item": "bd-ib-h23kbx",
+    "first_seen": "2026-10-31"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 281 \u2014 An ended run's Kubernetes sandbox survives while its item awaits a human and is deleted through its provider once the item closes",
+    "work_item": "bd-ib-u5facl",
+    "first_seen": "2026-10-31"
   }
 ]
