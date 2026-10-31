@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_install_registry import (
-    plugin_install_records,
+    registered_plugin_root,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_core_roots import version_key
 from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoption import (
@@ -131,8 +131,4 @@ def _registered_install_path(*, repo: Path, install_record: Path) -> Path | None
     the other kept it would make this currency finding and the host-wide
     sandbox-image enumeration disagree about which repositories exist.
     """
-    target = repo.resolve()
-    for record in plugin_install_records(install_record=install_record):
-        if record.project_path.resolve() == target:
-            return record.install_path
-    return None
+    return registered_plugin_root(repo=repo, install_record=install_record)
