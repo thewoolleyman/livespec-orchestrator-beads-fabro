@@ -432,7 +432,9 @@ def test_the_refresh_stage_re_enters_the_gate_before_it_pushes() -> None:
     module = importlib.import_module(_MODULE_NAME)
     graph = parse_dot_graph(text=_WORKFLOW_PATH.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
-    script = graph.nodes["pr_refresh"]["script"]
+    invocation = graph.nodes["pr_refresh"]["script"]
+    assert "sh /livespec-stage-scripts/pr_refresh.sh" in invocation
+    script = (_WORKFLOW_PATH.parent / "stages" / "pr_refresh.sh").read_text(encoding="utf-8")
 
     command_index = script.index(module.plugin_pin_gate_command())
     push_index = script.index('"$push_program"')

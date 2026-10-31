@@ -47,7 +47,7 @@ _CHECK_PATH = REPO_ROOT / "dev-tooling" / "checks" / "seam_equivalence.py"
 # without disturbing any other token.
 _SINGLE_POSITION_INPUT = "merge_mode"
 _MERGE_MODE_DECLARATION = 'merge_mode = "rebase"\n'
-_MERGE_METHOD_TOKEN = "--{{ inputs.merge_mode }}"
+_MERGE_METHOD_TOKEN = "LIVESPEC_STAGE_INPUT_MERGE_MODE='{{ inputs.merge_mode }}'"
 _A_NODE_TIMEOUT = 'timeout="1800s"'
 _TEMPLATED_TIMEOUT = 'timeout="{{ inputs.sandbox_check_suite }}"'
 
@@ -131,7 +131,9 @@ def test_the_seam_check_reports_each_way_the_integration_input_surfaces_disagree
     unread = _seed(root=tmp_path / "input", check=check, governed=governed)
     publication = unread / "workflow.fabro"
     _ = publication.write_text(
-        publication.read_text(encoding="utf-8").replace(_MERGE_METHOD_TOKEN, "--rebase", 1),
+        publication.read_text(encoding="utf-8").replace(
+            _MERGE_METHOD_TOKEN, "LIVESPEC_STAGE_INPUT_MERGE_MODE=rebase", 1
+        ),
         encoding="utf-8",
     )
 

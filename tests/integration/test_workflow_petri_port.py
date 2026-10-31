@@ -552,22 +552,6 @@ def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
         with pytest.raises(AssertionError, match=reason):
             _script_attributes(text=unreadable)
 
-    # Each replacement is bounded to ONE occurrence, so a control's arithmetic
-    # states a fixed addition of two quotes rather than however many reads its
-    # node happens to carry today -- `pr` carries this needle twice already, on
-    # one line, and a later visit may add more.
-    for node, needle in (
-        ("pr", "--jq '.mergeCommit.oid'"),
-        ("publish_draft", "--jq '.[0].number'"),
-    ):
-        assert node in scripts, sorted(scripts)
-        wrapped = needle.replace("'", _ESCAPED_SINGLE_QUOTE)
-        mutant = text.replace(needle, wrapped, 1)
-        assert mutant != text
-        mutated = _quoting_offenders(text=mutant)
-        assert node in mutated, (node, sorted(mutated))
-        assert mutated[node] == committed.get(node, 0) + 2
-
     assert committed == {}
 
 

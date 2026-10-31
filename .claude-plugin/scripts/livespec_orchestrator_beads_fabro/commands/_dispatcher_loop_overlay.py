@@ -71,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_pac
     fleet_toolchain_is_the_sandbox_gate_premise,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import VaultSecretSink
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stage_scripts import (
+    resolve_stage_scripts_build_sha,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -160,6 +163,7 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         provision_worktree_pack=fleet_toolchain_is_the_sandbox_gate_premise(
             resolved=plan.integration
         ),
+        stage_scripts_build_sha=resolve_stage_scripts_build_sha(),
         git_author=overlay.recorded.git_author,
         # This repository's proof-asset rendering, as the pre-dispatch gate
         # MEASURED and journaled it. Read back from that record rather than

@@ -105,7 +105,8 @@ def _node_script(*, node: str) -> str:
     """
     body = _node_body(text=_dot(payload=_BUNDLE), node=node)
     assert body is not None, node
-    return body
+    stage = _BUNDLE / "stages" / f"{node}.sh"
+    return body if not stage.is_file() else body + "\n" + stage.read_text(encoding="utf-8")
 
 
 def _prompt(*, name: str) -> str:
@@ -141,7 +142,7 @@ def test_publish_draft_is_a_command_node_that_pushes_the_publish_branch() -> Non
     publish-branch name and a script node cannot read the rendered goal the way
     the `pr` prompt does.
     """
-    body = _node_body(text=_dot(payload=_BUNDLE), node=_PUBLISH)
+    body = _node_script(node=_PUBLISH)
 
     assert body is not None, "the reserved workflow declares no publish_draft node"
     assert _ACP_BACKEND not in body
@@ -164,7 +165,7 @@ def test_publish_draft_opens_a_draft_only_when_no_pull_request_exists() -> None:
     ready would be merged by the repository's automation before any proof was
     captured on it, which is the one outcome the draft exists to prevent.
     """
-    body = _node_body(text=_dot(payload=_BUNDLE), node=_PUBLISH)
+    body = _node_script(node=_PUBLISH)
 
     assert body is not None
     assert "gh pr list" in body

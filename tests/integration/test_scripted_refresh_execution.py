@@ -110,6 +110,7 @@ _IMPLEMENT_GRAPH = (
     / "implement-work-item"
     / "workflow.fabro"
 )
+_REFRESH_STAGE = _IMPLEMENT_GRAPH.parent / "stages" / "pr_refresh.sh"
 
 _BRANCH = "feat/bd-ib-c3txja"
 _DEFAULT_BRANCH = "master"
@@ -204,62 +205,21 @@ _RENDERINGS = (
 )
 
 
-def _bind_engine_tokens(*, script: str, check_suite: str) -> str:
-    """Bind the engine's OWN tokens, and nothing else the stage carries."""
-    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
-        "{{ inputs.sandbox_check_suite }}", check_suite
-    )
-
-
 def _declared_refresh_script() -> str:
-    """The shipped `pr_refresh` node's `script` attribute, through the canonical parser."""
-    graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
-    assert not isinstance(graph, str), graph
-    return graph.nodes["pr_refresh"]["script"]
-
-
-def _raw_refresh_script() -> str:
-    """The `pr_refresh` `script` value as the FILE carries it, its escapes UNDECODED.
-
-    Attributed by DECODE rather than by position: the candidate kept is the one
-    whose pinned decode equals what `parse_dot_graph` returned for this node, so
-    a line read that missed the value, or sliced it wrongly, leaves no candidate
-    and fails here instead of quietly rendering something else.
-    """
-    text = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
-    declared = _declared_refresh_script()
-    candidates = [
-        raw
-        for raw in (
-            line.strip()[len(_SCRIPT_ATTRIBUTE_PREFIX) : -1]
-            for line in text.splitlines()
-            if line.strip().startswith(_SCRIPT_ATTRIBUTE_PREFIX)
-        )
-        if _PINNED_UNESCAPE_RE.sub(r"\1", raw) == declared
-    ]
-    assert len(candidates) == 1, f"pr_refresh: {len(candidates)} raw candidates, expected 1"
-    return candidates[0]
+    """The shipped `pr_refresh` helper bytes, never a copied test recipe."""
+    return _REFRESH_STAGE.read_text(encoding="utf-8")
 
 
 def _refresh_script(*, check_suite: str) -> str:
-    """The shipped `pr_refresh` node's script, with only the engine's own tokens bound."""
-    return _bind_engine_tokens(script=_declared_refresh_script(), check_suite=check_suite)
+    """Execute the committed helper with the node's rendered inputs."""
+    return (
+        f"LIVESPEC_STAGE_INPUT_DEFAULT_BRANCH={_DEFAULT_BRANCH} sh {_REFRESH_STAGE} {check_suite}"
+    )
 
 
 def _petri_refresh_script(*, check_suite: str) -> str:
-    """The shipped `pr_refresh` node's script as a PETRI-ERA engine renders it.
-
-    The raw value is decoded as a DOT escString -- a backslash before a backslash
-    or a double quote, and nothing else -- so every other backslash reaches the
-    shell exactly as the candidate engine delivers it.
-    """
-    return _bind_engine_tokens(
-        script=_raw_refresh_script()
-        .replace("\\\\", _DECODED_BACKSLASH)
-        .replace('\\"', '"')
-        .replace(_DECODED_BACKSLASH, "\\"),
-        check_suite=check_suite,
-    )
+    """The helper is a file, so Petri's DOT escape handling cannot alter it."""
+    return _refresh_script(check_suite=check_suite)
 
 
 def _rendered_refresh_script(*, petri: bool, check_suite: str) -> str:
@@ -1732,9 +1692,10 @@ def test_the_executed_bytes_are_the_committed_bytes(tmp_path: Path) -> None:
     assert "{{ inputs.sandbox_check_suite }}" in committed
     executed = _refresh_script(check_suite=_PASSING_GATE)
     assert "{{" not in executed
-    assert executed == committed.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
-        "{{ inputs.sandbox_check_suite }}", _PASSING_GATE
-    )
+    assert "sh /livespec-stage-scripts/pr_refresh.sh" in committed
+    assert _REFRESH_STAGE.read_text(encoding="utf-8") == _declared_refresh_script()
+    assert str(_REFRESH_STAGE) in executed
+    assert _PASSING_GATE in executed
     # And the one program the stage re-enters is the production one, written from
     # its own source rather than restated: a control whose push helper was a
     # local stand-in would prove nothing about the shipped lease.

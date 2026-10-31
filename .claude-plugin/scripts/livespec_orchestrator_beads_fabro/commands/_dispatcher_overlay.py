@@ -72,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     hook_limit_graph_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_env import otel_env_lines
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_input_tokens import (
     substitute_input_tokens,
 )
@@ -106,12 +107,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_pack import (
     sandbox_worktree_pack_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stage_scripts import (
+    stage_scripts_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tmux_socket_root import (
     tmux_tmpdir_env_lines,
     tmux_tmpdir_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
     toml_section_string,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_graph_path import (
+    absolute_workflow_graph_path,
+    workflow_graph_path,
 )
 
 __all__: list[str] = [
@@ -129,25 +137,7 @@ CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
 CURRENCY_GATE_ENV_VALUE = "fail"
 
 
-def workflow_graph_path(*, committed_text: str, workflow_dir: Path) -> Path | None:
-    """The absolute graph path a committed run config declares; None when absent.
-
-    Shared with the payload materializer, which renders that graph's
-    timeouts into the per-dispatch payload — so both readers resolve the
-    same declared file rather than each assuming the conventional name.
-    """
-    graph_value = toml_section_string(text=committed_text, section="workflow", key="graph")
-    if graph_value is None:
-        return None
-    return _absolute_graph(graph_value=graph_value, workflow_dir=workflow_dir)
-
-
-def _absolute_graph(*, graph_value: str, workflow_dir: Path) -> Path:
-    graph_path = Path(graph_value)
-    return graph_path if graph_path.is_absolute() else workflow_dir / graph_path
-
-
-def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input.
+def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input and each early return is an independent malformed-config refusal.
     *,
     committed_text: str,
     workflow_dir: Path,
@@ -190,6 +180,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # here; False for a direct caller, which renders exactly the overlay it did
     # before the step existed (bd-ib-tlmq3m).
     provision_worktree_pack: bool = False,
+    stage_scripts_build_sha: str | None = "",
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -280,7 +271,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     if graph_value is None or environment_id is None:
         return None
     resolved_graph = (
-        _absolute_graph(graph_value=graph_value, workflow_dir=workflow_dir)
+        absolute_workflow_graph_path(graph_value=graph_value, workflow_dir=workflow_dir)
         if graph_override is None
         else graph_override
     )
@@ -315,7 +306,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     )
     currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
     core_plugin_env = core_plugin_env_line(siblings=siblings)
-    otel_env_lines = _otel_env_lines(otel_env=otel_env)
+    otel_environment_lines = otel_env_lines(otel_env=otel_env)
     tmux_steps = tmux_tmpdir_prepare_steps_block()
     tmux_env_line = tmux_tmpdir_env_lines()
     harness_shell_env = harness_shell_env_lines()
@@ -384,6 +375,9 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # renders the empty string, so no other dispatch sees a byte of it.
     resume_checkout_steps = resume_checkout_prepare_steps_block(checkout=resume_checkout)
     credential_use_steps = credential_use_guard_prepare_steps_block(projection=credential_use)
+    stage_script_steps = stage_scripts_prepare_steps_block(build_sha=stage_scripts_build_sha)
+    if stage_script_steps is None:
+        return None
     credential_use_env = credential_use_env_lines(projection=credential_use)
     # The publish branch the `publish_draft` COMMAND node pushes, plus the resolved
     # proof asset store the `proof_capture` node uploads through. A command node
@@ -397,6 +391,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + worktree_pack_steps
         + factory_provenance_steps
         + sibling_steps
+        + stage_script_steps
         + tmux_steps
         + harness_settings_steps
         + gh_refresh_steps
@@ -425,7 +420,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + sibling_env_line
         + core_plugin_env
         + currency_gate_env_line
-        + otel_env_lines
+        + otel_environment_lines
         + codex_env_lines
         + codex_otel_env
         + credential_use_env
@@ -451,19 +446,3 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         # mode-600 overlay the credential set above already rides (S8).
         + proof_credentials_env
     )
-
-
-def _otel_env_lines(*, otel_env: dict[str, str] | None) -> str:
-    """Render the in-sandbox CC OTel env keys as `[environments.<id>.env]` lines.
-
-    Empty string when `otel_env` is None (the pre-29f.3 token-only shape).
-    Keys are sorted for a stable overlay and each value is `json.dumps`-ed
-    so any special character (e.g. the `=`/`,` in OTEL_RESOURCE_ATTRIBUTES,
-    the `:` in the endpoint, the `/` in `http/json`) is TOML-quoted
-    correctly. These are all NON-secret values — the Honeycomb ingest key
-    is never among them (the sandbox ships plaintext to the host-local
-    receiver; telemetry design §3.5).
-    """
-    if otel_env is None:
-        return ""
-    return "".join(f"{key} = {json.dumps(otel_env[key])}\n" for key in sorted(otel_env))

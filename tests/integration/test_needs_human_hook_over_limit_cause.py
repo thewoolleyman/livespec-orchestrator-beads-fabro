@@ -147,4 +147,5 @@ def test_the_over_limit_push_routes_to_the_terminal_that_preserves_the_tree() ->
     assert "LIVESPEC_NEEDS_HUMAN_PRESERVED" in graph
     # And the arm that reaches that edge: the bounded push returns non-zero
     # after naming the event, rather than falling through to proof capture.
-    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_OVER_LIMIT" in graph
+    stage = _WORKFLOW.parent / "stages" / "publish_draft.sh"
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_OVER_LIMIT" in stage.read_text(encoding="utf-8")

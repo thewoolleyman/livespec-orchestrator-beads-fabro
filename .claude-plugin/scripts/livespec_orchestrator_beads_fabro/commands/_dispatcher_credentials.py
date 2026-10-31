@@ -147,6 +147,10 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # resolve-once reason the integration contract gives; False is the posture a
     # caller that wires nothing rendered before the step existed (bd-ib-tlmq3m).
     provision_worktree_pack: bool = False,
+    # Direct callers that only exercise overlay composition preserve the legacy
+    # no-step shape. The actual dispatch loop resolves the running build and
+    # passes its SHA, so a launched sandbox can fetch the matching files.
+    stage_scripts_build_sha: str | None = "",
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -355,6 +359,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The pack-provisioning premise, forwarded unchanged: it was decided from
         # the same resolved contract the inputs above come from.
         provision_worktree_pack=provision_worktree_pack,
+        stage_scripts_build_sha=stage_scripts_build_sha,
         # The publish branch the `publish_draft` command node pushes, plus this
         # repository's resolved proof asset store. The branch and the tag are
         # resolved HERE, from the single shared derivation and the committed

@@ -355,8 +355,10 @@ def _publish_draft_script(*, check_suite: str) -> str:
     graph = parse_dot_graph(text=_graph_text())
     assert not isinstance(graph, str), graph
     script: str = graph.nodes["publish_draft"]["script"]
-    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
-        "{{ inputs.sandbox_check_suite }}", check_suite
+    assert "sh /livespec-stage-scripts/publish_draft.sh" in script
+    return (
+        f"LIVESPEC_STAGE_INPUT_DEFAULT_BRANCH={_DEFAULT_BRANCH} "
+        f"sh {_GRAPH_PATH.parent / 'stages' / 'publish_draft.sh'} {check_suite}"
     )
 
 

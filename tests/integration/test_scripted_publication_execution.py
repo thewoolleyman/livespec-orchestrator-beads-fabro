@@ -98,6 +98,7 @@ _IMPLEMENT_GRAPH = (
     / "implement-work-item"
     / "workflow.fabro"
 )
+_STAGES = _IMPLEMENT_GRAPH.parent / "stages"
 
 _BRANCH = "feat/bd-ib-c3txja"
 _PR_NUMBER = 4242
@@ -206,7 +207,7 @@ sys.exit(2)
 
 
 def _pr_script(*, merge_mode: str = "rebase", merge_hold: str = "false") -> str:
-    """The shipped `pr` node's script, with only the engine's own tokens bound.
+    """Execute the committed `pr` helper after checking the node invokes it.
 
     Read through the canonical parser so the bytes under execution are the
     bytes under version control. The two substitutions stand in for the pinned
@@ -215,8 +216,11 @@ def _pr_script(*, merge_mode: str = "rebase", merge_hold: str = "false") -> str:
     graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     script = graph.nodes["pr"]["script"]
-    return script.replace("{{ inputs.merge_mode }}", merge_mode).replace(
-        "{{ inputs.merge_hold }}", merge_hold
+    assert "sh /livespec-stage-scripts/pr.sh" in script
+    return (
+        f"LIVESPEC_STAGE_INPUT_DEFAULT_BRANCH=master "
+        f"LIVESPEC_STAGE_INPUT_MERGE_HOLD={merge_hold} "
+        f"LIVESPEC_STAGE_INPUT_MERGE_MODE={merge_mode} sh {_STAGES / 'pr.sh'}"
     )
 
 

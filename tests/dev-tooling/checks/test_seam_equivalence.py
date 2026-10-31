@@ -257,7 +257,11 @@ def test_declaring_an_integration_input_no_position_reads_fails_the_payload(
     # it, so the edit lands in the graph.
     graph = payload / "workflow.fabro"
     _ = graph.write_text(
-        graph.read_text(encoding="utf-8").replace("--{{ inputs.merge_mode }}", "--rebase", 1),
+        graph.read_text(encoding="utf-8").replace(
+            "LIVESPEC_STAGE_INPUT_MERGE_MODE='{{ inputs.merge_mode }}'",
+            "LIVESPEC_STAGE_INPUT_MERGE_MODE=rebase",
+            1,
+        ),
         encoding="utf-8",
     )
 

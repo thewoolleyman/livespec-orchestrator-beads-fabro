@@ -81,6 +81,16 @@ settings.load_profile("livespec")
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_stage_scripts_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep dispatch tests independent of a content-addressed plugin install."""
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_overlay."
+        "resolve_stage_scripts_build_sha",
+        lambda: "",
+    )
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
         ClaudeCredentialStatus,

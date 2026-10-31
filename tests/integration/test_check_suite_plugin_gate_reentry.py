@@ -392,6 +392,7 @@ def test_pr_refresh_re_enters_the_plugin_gate_before_it_runs_the_declared_suite(
     re-entry after the suite observes the mutation too late to stop it.
     """
     script = _node_script(node="pr_refresh")
+    script = (_WORKFLOW.parent / "stages" / "pr_refresh.sh").read_text(encoding="utf-8")
     assert script.count(_GATE_PROGRAM) == 1
     invocation = "gate_out=$(livespec_declared_gate"
     assert script.count(invocation) == 1

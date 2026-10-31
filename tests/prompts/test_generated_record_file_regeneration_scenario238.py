@@ -120,12 +120,16 @@ def _node_scripts() -> dict[str, str]:
         attr = _SCRIPT_ATTR.search(block.group("body"))
         if attr is None:
             continue
-        found[block.group("name")] = (
+        script = (
             attr.group("script")
             .replace("\\\\", "\x00")
             .replace('\\"', '"')
             .replace("\\n", "\n")
             .replace("\x00", "\\")
+        )
+        stage = _WORKFLOW_DIR / "stages" / f"{block.group('name')}.sh"
+        found[block.group("name")] = (
+            stage.read_text(encoding="utf-8") if stage.is_file() else script
         )
     return found
 

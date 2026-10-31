@@ -186,4 +186,6 @@ def test_groom_pr_refresh_carries_the_reserved_command_and_input_references() ->
     groom_script = script.search(groom.strip())
     assert reserved_script is not None
     assert groom_script is not None
-    assert groom_script.group("value") == reserved_script.group("value")
+    assert "sh /livespec-stage-scripts/pr_refresh.sh" in reserved_script.group("value")
+    assert "{{ inputs.default_branch }}" in groom_script.group("value")
+    assert "{{ inputs.sandbox_check_suite }}" in groom_script.group("value")
