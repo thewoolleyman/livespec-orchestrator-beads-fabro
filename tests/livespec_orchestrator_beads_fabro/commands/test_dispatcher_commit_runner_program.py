@@ -331,6 +331,7 @@ def test_the_worker_records_the_commit_s_own_exit_status_and_head(tmp_path: Path
         "state": "failed",
         "exit_code": 1,
         "hook_ran": True,
+        "failed_targets": ["check-types"],
     }
     assert "check-types" in path.with_suffix(".output").read_text(encoding="utf-8")
 
