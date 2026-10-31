@@ -40,6 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import Dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
     PrelaunchCheckpoint,
     ignore_prelaunch_checkpoint,
+    prelaunch_phase,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
     revoke_proof_credentials,
@@ -83,16 +84,16 @@ def run_dispatch_with_watchdog(
     # Emitted BEFORE the launch, because the launch projects a traceparent
     # naming this span: a parent published after the child it parents is a
     # span a receiver has already resolved as a root.
-    emit_dispatch_span(
-        correlation=dispatch_correlation(
-            work_item_id=context.plan.work_item_id,
-            dispatch_id=context.dispatch_id,
-            factory=context.plan.fabro_factory_name,
-        ),
-        spans_path=dispatch_spans_path(args=context.args, repo=context.repo),
-        now_ns=time.time_ns(),
-    )
-    context.prelaunch_checkpoint(name="dispatch-span")
+    with prelaunch_phase(checkpoint=context.prelaunch_checkpoint, name="dispatch-span"):
+        emit_dispatch_span(
+            correlation=dispatch_correlation(
+                work_item_id=context.plan.work_item_id,
+                dispatch_id=context.dispatch_id,
+                factory=context.plan.fabro_factory_name,
+            ),
+            spans_path=dispatch_spans_path(args=context.args, repo=context.repo),
+            now_ns=time.time_ns(),
+        )
     runner = GithubTokenEnvRunner(inner=ShellCommandRunner(), token=context.token_supplier)
     with ExitStack() as stack:
         # Registered FIRST so it runs LAST: a provider-minted proof credential is

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, TypeVar
@@ -15,6 +16,7 @@ __all__: list[str] = [
     "PrelaunchCpuProfile",
     "drive_tree_cpu_seconds",
     "ignore_prelaunch_checkpoint",
+    "prelaunch_phase",
     "process_tree_cpu_seconds",
 ]
 
@@ -60,10 +62,12 @@ class PrelaunchCpuProfile:
 
     def phase(self, *, name: str, action: Callable[[], _Result]) -> _Result:
         """Run one phase and append its whole-process-tree CPU delta."""
-        try:
+        with self.during(name=name):
             return action()
-        finally:
-            self.checkpoint(name=name)
+
+    def during(self, *, name: str) -> AbstractContextManager[None]:
+        """Bracket one phase so its row is appended whether it returns or raises."""
+        return prelaunch_phase(checkpoint=self.checkpoint, name=name)
 
     def checkpoint(self, *, name: str) -> None:
         """Record CPU since the preceding pre-launch phase boundary."""
@@ -78,6 +82,15 @@ class PrelaunchCpuProfile:
             }
         )
         self._last_cpu_seconds = current
+
+
+@contextmanager
+def prelaunch_phase(*, checkpoint: PrelaunchCheckpoint, name: str) -> Iterator[None]:
+    """Close the named phase's row when the body returns or raises."""
+    try:
+        yield
+    finally:
+        checkpoint(name=name)
 
 
 def ignore_prelaunch_checkpoint(*, name: str) -> None:
