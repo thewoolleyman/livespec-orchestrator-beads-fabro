@@ -2573,5 +2573,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal guard-the-materialized-workflow-toml, and the owning work-item bd-ib-37wvsk implements check-materialized-workflow-toml-size and the pre-claim workflow.toml size refusal, together with the test that binds this entry.",
     "work_item": "bd-ib-37wvsk"
+  },
+  {
+    "heading": "## Scenario 280 \u2014 Each host model-judgement spawn names its caller in OTEL_RESOURCE_ATTRIBUTES, appended to any inherited entries",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal label-every-host-model-judgement, and the owning work-item bd-ib-h23kbx labels every host model-judgement spawn with a livespec.caller resource attribute, together with the test that binds this entry.",
+    "work_item": "bd-ib-h23kbx"
+  },
+  {
+    "heading": "## Scenario 281 \u2014 An ended run's Kubernetes sandbox survives while its item awaits a human and is deleted through its provider once the item closes",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal ended-runs-kubernetes-sandboxes-are, and the owning work-item bd-ib-u5facl retains an ended run's Kubernetes sandbox while its item awaits a human and deletes it through its provider once the item closes, together with the test that binds this entry.",
+    "work_item": "bd-ib-u5facl"
   }
 ]
