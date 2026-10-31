@@ -8482,6 +8482,29 @@ Feature: Implementation that outruns the specification is caught at every merge
     When dispatcher.py drift-run --dry-run runs instead
     Then no drift pass runs and no model judgement is invoked
     And the drift frontier and the detection-coverage anchor are unchanged
+
+  Scenario: A merge already judged against the same spec revision is not judged again
+    Given a merge after the frontier that a drift-job run judged against ratified spec revision vN
+    And the frontier is stopped behind an earlier merge
+    When the drift job runs again while vN is still the newest ratified revision
+    Then that merge's recorded verdict is reused and no model judgement is invoked for it
+    When a newer ratified revision exists and the drift job runs
+    Then that merge is judged again against the newer revision
+
+  Scenario: Several merges share one rendering of the spec tree
+    Given three merges after the frontier whose combined content fits the judgement's input limit
+    When the drift job runs
+    Then the ratified spec tree is rendered into one judge prompt for all three merges
+    And one proposed change is filed per unstated behaviour per merge under its usual finding identity
+    And the outcome reports one prompt sent
+
+  Scenario: Merges whose content exceeds the input limit are split across the fewest prompts that fit
+    Given merges after the frontier whose combined content with the ratified spec tree exceeds the judgement's input limit
+    And those merges fit within two prompts but not within one
+    When the drift job runs
+    Then the merges are judged across exactly two judge prompts
+    And the outcome reports two prompts sent
+    And one proposed change is filed per unstated behaviour per merge under its usual finding identity
 ```
 
 ## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget

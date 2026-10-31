@@ -221,7 +221,20 @@ remembered:
   `--dry-run` it MUST NOT run the drift lane, MUST NOT invoke any model
   judgement, and MUST NOT write the drift frontier or the
   detection-coverage anchor. No repository installer MAY install or
-  enable a schedule that invokes `drift-run`.
+  enable a schedule that invokes `drift-run`. A drift-job run MUST NOT
+  invoke a model judgement for a merge it has already judged against the
+  same ratified spec revision: it MUST reuse that merge's recorded
+  verdict, and it MUST judge the merge again only once a newer ratified
+  spec revision exists. A held or failed finding that stops the frontier
+  MUST NOT cause any merge behind it to be judged again against an
+  unchanged ratified spec revision. A drift-job run MUST render the
+  ratified spec tree into one judge prompt for all the merges it judges,
+  and MUST NOT send it once per merge; only when that content exceeds the
+  judgement's input limit MUST it split the merges across the fewest
+  prompts that fit, and its `--json` outcome MUST report the count of
+  prompts it sent. Batching MUST NOT change what is filed: the run MUST
+  still file one proposed change per `partial` or `unstated` behaviour
+  per merge, under the same finding identity.
 - **`dispatcher.drift_capture_merge_threshold`** (sourced from this
   repo's `.livespec.jsonc`, positive integer, default **1**) — the
   merge-count trigger. Declared **API-configurable**: it appears in the console
