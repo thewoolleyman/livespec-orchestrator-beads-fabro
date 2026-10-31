@@ -469,6 +469,7 @@ check:
         check-fresh-clone-setup
         check-doctor-static
         check-acp-preflight-config
+        check-materialized-workflow-toml-size
     )
     LIVESPEC_AGGREGATE_TARGETS
     # `SKIP_TARGETS` is the fleet's recognised skip contract, the one livespec's
@@ -832,6 +833,10 @@ check-factory-provenance:
 # Pure-filesystem (no beads / no store / no network).
 check-seam-equivalence:
     uv run python dev-tooling/checks/seam_equivalence.py
+
+# Measures the bundled implement-work-item run-config on every aggregate run.
+check-materialized-workflow-toml-size:
+    PYTHONPATH=.claude-plugin/scripts uv run python -m livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_toml_size
 
 # The two repo-local integration gates above are ratified as running in CI
 # and on pre-push, but ci.yml enumerates its batches by hand and a

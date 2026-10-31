@@ -30,6 +30,27 @@ def test_build_guard_refuses_a_representative_config_above_ninety_percent() -> N
     )
 
 
+def test_representative_measurement_renders_the_launch_overlay() -> None:
+    """The build guard measures the config Fabro receives, not its source manifest."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_toml_size"
+    )
+    committed = (
+        _MODULE_PATH.parents[3] / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
+    )
+    measured = module.representative_materialized_workflow_toml_size(workflow_toml=committed)
+    assert measured > committed.stat().st_size
+
+
+def test_main_reports_the_rendered_measurement(capsys: pytest.CaptureFixture[str]) -> None:
+    """The aggregate target prints a measurement from the representative render."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_toml_size"
+    )
+    assert module.main() == 0
+    assert "materialized workflow.toml is" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("measured_bytes", [0, 463_547, 471_859])
 def test_build_guard_reports_and_accepts_a_representative_config_at_or_below_threshold(
     measured_bytes: int,
