@@ -69,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
 )
 
 if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._plan_continuation import ContinuationRuling
     from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import ChainHead
     from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
     from livespec_orchestrator_beads_fabro.commands._plan_obligation import Obligation
@@ -98,6 +99,7 @@ def decide_tracked_write(  # noqa: PLR0911, PLR0913 -- one refusal ladder; a mer
     recovery: CausalRecovery | None = None,
     supersession: CausalSupersession | None = None,
     evidence: SupersessionEvidence | None = None,
+    continuation_ruling: ContinuationRuling | None = None,
 ) -> TrackedDecision | TrackedRefusal:
     """Decide what one write may do, preserving an unmet obligation's budget.
 
@@ -158,6 +160,7 @@ def decide_tracked_write(  # noqa: PLR0911, PLR0913 -- one refusal ladder; a mer
         unobservable=observation.status == OBSERVATION_UNOBSERVABLE,
         is_handoff=is_handoff,
         recovery=recovery,
+        continuation_ruling=continuation_ruling,
         now=now,
     )
 
