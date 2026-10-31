@@ -211,7 +211,17 @@ remembered:
   reconcile pass: a reconcile pass MUST NOT run the drift pass and MUST
   NOT invoke any model judgement. The drift job MUST run only on a
   schedule an operator explicitly enables; nothing MAY enable it
-  implicitly.
+  implicitly. One drift-job run is the Dispatcher subcommand
+  `dispatcher.py drift-run --repo <path> --invoker <role:name>`, which
+  MUST run the drift pass over every default-branch merge after the
+  recorded frontier exactly as this bullet states, and which is the one
+  command an enabled schedule invokes. With `--json` it MUST print the
+  drift lane outcome as one JSON object on stdout, the outcome a reconcile
+  pass carried under its `drift` key before the drift pass left it. With
+  `--dry-run` it MUST NOT run the drift lane, MUST NOT invoke any model
+  judgement, and MUST NOT write the drift frontier or the
+  detection-coverage anchor. No repository installer MAY install or
+  enable a schedule that invokes `drift-run`.
 - **`dispatcher.drift_capture_merge_threshold`** (sourced from this
   repo's `.livespec.jsonc`, positive integer, default **1**) — the
   merge-count trigger. Declared **API-configurable**: it appears in the console
