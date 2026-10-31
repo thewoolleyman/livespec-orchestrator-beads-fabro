@@ -239,6 +239,37 @@ def test_the_settle_node_removes_a_stale_brief_when_no_commit_run_is_live(tmp_pa
     assert not _git_file(repo=repo, name=_LIVE_GIT_PATH).exists()
 
 
+def test_a_terminal_runner_refusal_reenters_even_when_the_commit_left_nothing_staged(
+    tmp_path: Path,
+) -> None:
+    """A recorded hook refusal is the latest gate even after Git leaves no staged diff."""
+    repo = _clone(tmp_path)
+    plugins = _plugins(tmp_path)
+    path = _run_record(
+        repo=repo,
+        record={"state": "failed", "exit_code": 1, "hook_ran": True},
+    )
+    _ = path.with_suffix(".output").write_text(
+        (
+            f"lefthook hook: pre-commit\nFailed targets (1):\n  - {_FAILED_TARGET}\n"
+            + "later hook output\n" * 100
+            + _ERROR_LINE
+            + "\n"
+        ),
+        encoding="utf-8",
+    )
+
+    settled = _run_node(repo=repo, node=_IMPLEMENT_SETTLE, plugins=plugins)
+    result = _routed(repo=repo)
+
+    assert settled.returncode == 0, settled.stderr
+    assert result.returncode == 0, result.stderr
+    assert _FAILED_REENTER in result.stderr
+    brief = _git_file(repo=repo, name=_REFUSAL_GIT_PATH).read_text(encoding="utf-8")
+    assert brief.startswith(f"failed targets: {_FAILED_TARGET}\n")
+    assert _ERROR_LINE in brief
+
+
 def test_the_review_fix_settle_writes_its_own_brief_and_exits_zero(tmp_path: Path) -> None:
     """The review-fix wait never touches the implement brief the hook route reads."""
     repo = _clone(tmp_path)
