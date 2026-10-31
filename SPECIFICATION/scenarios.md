@@ -10902,6 +10902,12 @@ Feature: A session resolves its project's registered plugin build and is told wh
     When the plugin's session-start hook runs
     Then it prints a warning naming the registered install's version and the latest released version
     And the session start succeeds
+
+  Scenario: An operation-prose snippet imports the package through the registered root
+    Given an operation-prose step that has an agent import this plugin's package from a snippet
+    When the agent follows that step for a governed project
+    Then the snippet puts on its import path the plugin root the registered-root command prints for that project
+    And the step names no literal plugin cache-build path
 ```
 
 ## Scenario 272 — A factory-captured assertion whose proof surface no sandbox capability provides is named in the gate's finding
