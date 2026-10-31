@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.264.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.7...v0.264.8) (2026-10-31)
+
+
+### Bug Fixes
+
+* read verified proof records on plan epics ([f819b14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f819b147f34e76a69755d747217875947eb250fa))
+
 ## [0.264.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.6...v0.264.7) (2026-10-31)
 
 
