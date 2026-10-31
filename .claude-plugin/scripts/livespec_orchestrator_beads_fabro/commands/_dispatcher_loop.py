@@ -178,23 +178,23 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     profile = PrelaunchCpuProfile.for_drive(
         journal=journal, work_item_id=item.id, dispatch_id=identity.dispatch_id
     )
-    recorded = record_dispatch(
-        args=args,
-        repo=repo,
-        item=item,
-        journal=journal,
-        janitor=janitor,
-        identity=identity,
-        verdict=verdict,
-    )
-    profile.checkpoint(name="record-dispatch")
+    with profile.during(name="record-dispatch"):
+        recorded = record_dispatch(
+            args=args,
+            repo=repo,
+            item=item,
+            journal=journal,
+            janitor=janitor,
+            identity=identity,
+            verdict=verdict,
+        )
     if isinstance(recorded, DispatchOutcome):
         return recorded
     plan = recorded.plan
     goal_file = goal_file_path(work_item_id=item.id)
     overlay_file = getattr(plan, "workflow_toml", overlay_file_path(work_item_id=item.id))
-    token_supplier = selfup.github_token_supplier()
-    profile.checkpoint(name="github-app-auth")
+    with profile.during(name="github-app-auth"):
+        token_supplier = selfup.github_token_supplier()
     if isinstance(token_supplier, str):
         return failed_dispatch_outcome(
             journal=journal,
@@ -208,10 +208,10 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # committed content is read, so an unmerged reflector proposal never
     # influences a brief.
     lessons = read_ratified_lessons(lessons_root=repo)
-    findings = minijinja_openers_in_goal_sources(
-        item=item, comments=recorded.comments, lessons=lessons
-    )
-    profile.checkpoint(name="goal-minijinja-preflight")
+    with profile.during(name="goal-minijinja-preflight"):
+        findings = minijinja_openers_in_goal_sources(
+            item=item, comments=recorded.comments, lessons=lessons
+        )
     if findings:
         return failed_dispatch_outcome(
             journal=journal,
@@ -231,8 +231,8 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # first `fabro secret set`; a fresh candidate host otherwise fails while the
     # dev token is still waiting in the launcher's later auth step.
     factory_runner = ShellCommandRunner()
-    run_fabro_factory_auth_login(plan=plan, runner=factory_runner)
-    profile.checkpoint(name="factory-auth")
+    with profile.during(name="factory-auth"):
+        run_fabro_factory_auth_login(plan=plan, runner=factory_runner)
     secret_sink = fabro_vault_sink_for_plan(plan=plan, runner=factory_runner, journal=journal)
     # Fallback for every pre-launch refusal and exception. On the normal path
     # the watched launcher releases much earlier, at RUNNING, immediately after
@@ -244,20 +244,20 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # REFUSAL stays here, beside the other pre-launch refusals, because the
     # order of returns in this window is load-bearing — see the comment above
     # and `_dispatcher_proof_credential_lease`.
-    overlay_error = materialize_dispatch_overlay(
-        overlay=DispatchOverlay(
-            args=args,
-            repo=repo,
-            item=item,
-            journal=journal,
-            recorded=recorded,
-            overlay_file=overlay_file,
-            dispatch_id=identity.dispatch_id,
-            token=token_supplier,
-            secret_sink=secret_sink,
+    with profile.during(name="run-config-overlay"):
+        overlay_error = materialize_dispatch_overlay(
+            overlay=DispatchOverlay(
+                args=args,
+                repo=repo,
+                item=item,
+                journal=journal,
+                recorded=recorded,
+                overlay_file=overlay_file,
+                dispatch_id=identity.dispatch_id,
+                token=token_supplier,
+                secret_sink=secret_sink,
+            )
         )
-    )
-    profile.checkpoint(name="run-config-overlay")
     if overlay_error is not None:
         return failed_dispatch_outcome(
             journal=journal,
@@ -265,19 +265,19 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             stage="run-config-overlay",
             detail=overlay_error,
         )
-    goal_text = render_goal(
-        item=item,
-        repo=repo,
-        branch=plan.branch,
-        comments=recorded.comments,
-        lessons=lessons,
-        # The recovery placement is read off THIS item's own argument copy, which
-        # is the namespace `recovery_launch_args` pinned the route onto — never a
-        # wave-shared one, for the reason the clause forbids route state there.
-        interrupted=interrupted_attempt_for(args=args),
-    )
-    _ = goal_file.write_text(goal_text, encoding="utf-8")
-    profile.checkpoint(name="goal-render-and-write")
+    with profile.during(name="goal-render-and-write"):
+        goal_text = render_goal(
+            item=item,
+            repo=repo,
+            branch=plan.branch,
+            comments=recorded.comments,
+            lessons=lessons,
+            # The recovery placement is read off THIS item's own argument copy, which
+            # is the namespace `recovery_launch_args` pinned the route onto — never a
+            # wave-shared one, for the reason the clause forbids route state there.
+            interrupted=interrupted_attempt_for(args=args),
+        )
+        _ = goal_file.write_text(goal_text, encoding="utf-8")
     started_at, outcome = run_dispatch_with_watchdog(
         context=DispatchRunContext(
             args=args,
