@@ -114,7 +114,12 @@ def test_plan_flow_precedes_a_compact_reference_and_mutation_check() -> None:
     # without leaving a reader able to record a relay they cannot then discharge:
     # a plan session that fills the third leg itself, or re-records its own relay
     # under a longer deadline, produces well-formed records at every surface.
-    assert len(lines) <= 465
+    # RE-CALIBRATED from 465 to 490 for Scenario 271's registered-plugin-root
+    # bootstrap. It prevents a stale cache build from silently importing the
+    # package in a planning session, and its command invocation plus sys.path
+    # setup must remain explicit in every operation's prose. This is ratified
+    # behavior, not general prose headroom.
+    assert len(lines) <= 490
 
 
 def test_other_operations_name_their_done_state_before_prerequisites() -> None:
