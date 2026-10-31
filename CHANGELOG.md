@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.264.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.3...v0.264.4) (2026-10-31)
+
+
+### Bug Fixes
+
+* normalize spec-stated citations ([6ea6ed7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ea6ed77cfb1ed8c1c85e5436fc28b27ff8d864a))
+* reask unreadable spec-stated citations ([928d508](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/928d508fe17f447000911a5665047dd519b10a3c))
+* refuse unreadable citation targets ([1117e02](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1117e020dea5ead77fda96a820e14a61c85aed8b))
+
 ## [0.264.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.2...v0.264.3) (2026-10-31)
 
 
