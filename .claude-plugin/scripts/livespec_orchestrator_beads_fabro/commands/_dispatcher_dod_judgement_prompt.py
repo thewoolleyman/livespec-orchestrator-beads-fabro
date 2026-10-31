@@ -38,11 +38,12 @@ _TIMEOUT_ENV = "LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS"
 _DEFAULT_TIMEOUT_SECONDS = 600.0
 _JUDGE_EXECUTABLE = "claude"
 _CONVENTIONAL_JUDGE_PATH = "~/.local/bin/claude"
-# The prompt carries every referenced clause, so the host candidate needs only
-# direct file reads. Recursive search/listing would inflate its model context
-# from the governed repository or `/etc/livespec` without improving a judgement
-# whose complete subject is already supplied.
-_ALLOWED_TOOLS = "Read"
+# The prompt carries every referenced clause, so the host candidate needs no
+# tools.  `--allowedTools` only pre-approves named default tools; `--tools` is
+# the Claude flag that replaces the available set.  An empty set prevents a
+# candidate from spending another request exploring the governed repository or
+# `/etc/livespec` after it already has the complete judgement subject.
+_AVAILABLE_TOOLS = ""
 _STREAM_OUTPUT_FORMAT = "stream-json"
 
 # The ONE thing a host taking appends, and the whole of it: the verdict form.
@@ -130,10 +131,10 @@ def judgement_argv(
     argv = [
         judge_path,
         "-p",
-        "--allowedTools",
-        _ALLOWED_TOOLS,
         "--model",
         model,
+        "--tools",
+        _AVAILABLE_TOOLS,
     ]
     argv.extend(
         (

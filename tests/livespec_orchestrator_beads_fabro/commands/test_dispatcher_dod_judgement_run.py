@@ -397,7 +397,8 @@ def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decid
     assert verdict.input_usage == "complete"
     assert verdict.bound_ended_candidates == ("codex-acp:gpt-5.6-terra",)
     assert runner.calls[0][0] == "codex"
-    assert runner.calls[1][1:3] == ["-p", "--allowedTools"]
+    assert runner.calls[1][1:3] == ["-p", "--model"]
+    assert runner.calls[1][runner.calls[1].index("--tools") + 1] == ""
 
 
 def test_the_claude_judge_reports_usage_and_its_reply_is_read_from_the_stream(

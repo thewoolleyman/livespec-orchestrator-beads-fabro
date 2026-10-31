@@ -64,8 +64,9 @@ def candidate_command(
     What the candidate resolved still reaches the CLI: its adapter environment
     (effort, endpoint and auth overrides) and, for Codex, every string
     `CODEX_CONFIG` setting as a `-c` override. The factory's sandbox and
-    approval settings do not carry over; a host judge only reads, so Codex runs
-    `-s read-only`, the counterpart of the Claude judge's read-only tool list.
+    approval settings do not carry over. Codex's shell tool is disabled, and
+    Claude receives an empty available-tool set, because the complete subject
+    is in the prompt rather than in either host filesystem.
 
     Each CLI is resolved from the invoking environment and declines the
     interactive setup the invoking profile would load (project instructions,
