@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget impo
     run_wall_budget_from_block,
     run_wall_budget_journal_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stage_scripts import (
+    externalize_stage_scripts,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     node_timeouts_from_block,
@@ -274,8 +277,11 @@ def _rendered_graph(
             f"workflow graph {committed_graph} declares no node {entry_node!r} to"
             " resume at, or carries no unconditional `start` edge to move onto it"
         )
+    stages = externalize_stage_scripts(graph_text=entered)
+    if isinstance(stages, str):
+        return stages
     return _RenderedGraph(
-        text=entered, node_seconds=rendered.node_seconds, node_commands=commands.node_commands
+        text=stages.text, node_seconds=rendered.node_seconds, node_commands=commands.node_commands
     )
 
 
