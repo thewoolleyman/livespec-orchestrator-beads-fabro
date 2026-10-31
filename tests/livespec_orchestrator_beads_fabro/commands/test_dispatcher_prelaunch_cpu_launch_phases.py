@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_io_fabro_launcher as launcher_module,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_run as run_module
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    DispatchOutcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
@@ -53,47 +59,62 @@ def test_a_caller_with_no_profile_ignores_the_checkpoint() -> None:
     assert ignore_prelaunch_checkpoint(name="anything") is None
 
 
-def test_the_launch_names_its_factory_auth_and_port_phases(
-    monkeypatch: pytest.MonkeyPatch,
+def test_every_launch_phase_has_a_row_before_the_run_is_submitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    seen: list[str] = []
-
-    def checkpoint(*, name: str) -> None:
-        seen.append(name)
-
-    class _StopError(Exception):
-        pass
-
-    def stop() -> None:
-        raise _StopError
-
-    monkeypatch.setattr(launcher_module, "run_fabro_factory_auth_login", lambda **_: None)
-    monkeypatch.setattr(launcher_module, "fabro_port_for_plan", lambda **_: object())
-    monkeypatch.setattr(launcher_module, "release_pass_snapshot", stop)
-    anything: Any = object()
-
-    with pytest.raises(_StopError):
-        _ = launcher_module.WatchedFabroLauncher(prelaunch_checkpoint=checkpoint).launch(
-            plan=anything, runner=anything, journal=anything
-        )
-
-    assert seen == ["launch-factory-auth", "fabro-port"]
-
-
-def test_the_run_reaching_running_is_a_phase_boundary_before_the_vault_is_released() -> None:
     events: list[str] = []
 
     def checkpoint(*, name: str) -> None:
         events.append(name)
 
+    class _StopError(Exception):
+        pass
+
+    class _Port:
+        def run(self, **_: object) -> object:
+            events.append("run-submitted")
+            return SimpleNamespace(
+                command=CommandResult(exit_code=0, stdout="", stderr=""), run_id="r"
+            )
+
+    def watch(_self: object, *, thread: threading.Thread, **_: object) -> None:
+        thread.join()
+        raise _StopError
+
+    monkeypatch.setattr(launcher_module, "run_fabro_factory_auth_login", lambda **_: None)
+    monkeypatch.setattr(launcher_module, "fabro_port_for_plan", lambda **_: _Port())
+    monkeypatch.setattr(launcher_module, "release_pass_snapshot", lambda: None)
+    monkeypatch.setattr(launcher_module, "dispatch_fabro_run_inputs", lambda **_: {})
+    monkeypatch.setattr(launcher_module, "dispatch_run_label_pairs", lambda **_: ())
+    monkeypatch.setattr(launcher_module.WatchedFabroLauncher, "_watch", watch)
+    anything: Any = object()
+
+    with pytest.raises(_StopError):
+        _ = launcher_module.WatchedFabroLauncher(prelaunch_checkpoint=checkpoint).launch(
+            plan=_plan(repo=tmp_path), runner=anything, journal=anything
+        )
+
+    assert events == [
+        "launch-factory-auth",
+        "fabro-port",
+        "release-pass-snapshot",
+        "run-submitted",
+    ]
+
+
+def test_the_vault_release_takes_no_checkpoint_of_its_own() -> None:
+    released: list[str] = []
+    checkpoint = Mock()
+
     launcher = launcher_module.WatchedFabroLauncher(
         prelaunch_checkpoint=checkpoint,
-        on_worker_running=lambda: events.append("released"),
+        on_worker_running=lambda: released.append("released"),
     )
 
     launcher._notify_worker_running()  # noqa: SLF001 - the exact boundary under test.
 
-    assert events == ["fabro-run-running", "released"]
+    assert released == ["released"]
+    checkpoint.assert_not_called()
 
 
 def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
