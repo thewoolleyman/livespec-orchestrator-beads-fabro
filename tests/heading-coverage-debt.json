@@ -1090,5 +1090,12 @@
     "heading": "## Scenario 278 \u2014 A factory dispatch takes its credential from the whole slot pool, preferring the sooner window reset, and refuses only when no slot qualifies",
     "work_item": "bd-ib-5d6ewf",
     "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 279 \u2014 A materialized workflow.toml over the engine's limit is caught at build time and refused before claim",
+    "work_item": "bd-ib-37wvsk",
+    "first_seen": "2026-10-31"
   }
 ]
