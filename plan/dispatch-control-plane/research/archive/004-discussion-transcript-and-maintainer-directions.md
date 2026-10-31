@@ -1,5 +1,9 @@
 # 004 — Discussion transcript, maintainer directions and rulings (2026-10-25)
 
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
+
+**Archived — discussion record, 25 October 2026.** Preserved as the source of the quoted directions. Later rulings and corrections are covered by the current reports in the index.
+
 This note is the durable record of the maintainer-driven design discussion for plan `dispatch-control-plane`
 (epic `bd-ib-k6dqwc`). The maintainer asked for it on 2026-10-25 at 13:36:58Z: "I want you to go ahead and record a
 transcript of this conversation and its findings in the plan's research notes. Make sure you land all of the

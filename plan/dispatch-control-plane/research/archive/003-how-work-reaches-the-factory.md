@@ -1,5 +1,9 @@
 # 003 — How work reaches the factory, and which host holds the controls
 
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
+
+**Archived — supporting research, 25 October 2026.** Retained as evidence for the current reports. Observations and source checks describe that date, not a fresh assessment of the running system.
+
 Research for `dispatch-control-plane`, plan anchor `bd-ib-k6dqwc`. Read-only observations on **2026-10-25, starting 01:30 UTC**. This note is the only authored artifact. Paths below describe the system observed, not a proposed replacement.
 
 ## Answer

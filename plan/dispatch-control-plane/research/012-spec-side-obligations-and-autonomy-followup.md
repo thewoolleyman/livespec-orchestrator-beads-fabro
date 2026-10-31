@@ -1,13 +1,6 @@
-# Spec-side progress: immediate repair and the missing control-plane responsibility
+# 012 — Spec-side progress: immediate repair and the missing control-plane responsibility
 
-## Related reports and planning documents
-
-Latest versions on GitHub:
-
-- [Plan charter](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/001-charter-dispatch-control-plane.md)
-- [Portable coordination: research and proposed direction](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/009-portable-coordination-research-summary.md)
-- [Interactive and headless plan sessions](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/010-interactive-and-headless-plan-sessions.md)
-- [Coordinator responsibilities: current and proposed roles](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/011-coordinator-responsibility-mapping.md)
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
 30 October 2026. This extends the [responsibility mapping](011-coordinator-responsibility-mapping.md) and the [portable coordination direction](009-portable-coordination-research-summary.md). It records verified source findings and the maintainer-authorized sequence. The service behavior below is proposed design, not deployed enforcement or permission to ratify the production backlog.
 

@@ -1,4 +1,8 @@
-# Human attention and driving an autonomous software factory
+# 007 — Human attention and driving an autonomous software factory
+
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
+
+**Archived — supporting research, 25 October 2026.** Retained as evidence for the current reports. Observations and source checks describe that date, not a fresh assessment of the running system.
 
 Research date: **2026-10-25**. Publication dates below describe the cited work; “observed 2026-10-25” describes an undated, changeable documentation page. Evidence labels distinguish experiments, observational research, practitioner reports, and product documentation. Recommendations are research inferences, not changes to this repository or its operating policy.
 

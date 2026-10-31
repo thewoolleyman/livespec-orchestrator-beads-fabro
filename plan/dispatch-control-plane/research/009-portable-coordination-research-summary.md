@@ -1,13 +1,6 @@
-# Livespec coordination across hosts, containers and agent tools
+# 009 — Livespec coordination across hosts, containers and agent tools
 
-## Related reports and planning documents
-
-Latest versions on GitHub:
-
-- [Plan charter](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/001-charter-dispatch-control-plane.md)
-- [Interactive and headless plan sessions](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/010-interactive-and-headless-plan-sessions.md)
-- [Coordinator responsibilities: current and proposed roles](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/011-coordinator-responsibility-mapping.md)
-- [Spec-side obligations and autonomy follow-up](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/012-spec-side-obligations-and-autonomy-followup.md)
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
 Research summary and proposed direction · 26 October 2026; corrected 27 October 2026
 
@@ -379,13 +372,13 @@ their differences rather than treating agreement as proof of implementation.
 
 Earlier research:
 
-- [Journal history](002-dispatch-journal-genesis.md) and
-  [how work reaches the factory](003-how-work-reaches-the-factory.md).
-- [Recorded discussion and directions](004-discussion-transcript-and-maintainer-directions.md).
-- [Other factory designs](005-external-dark-factories.md),
-  [capacity and control approaches](006-external-how-others-solve-capacity-and-control.md),
-  and [human attention](007-external-human-attention.md).
-- [The first design draft](008-first-pass-control-plane-design-draft.md) is historical;
+- [Journal history](archive/002-dispatch-journal-genesis.md) and
+  [how work reaches the factory](archive/003-how-work-reaches-the-factory.md).
+- [Recorded discussion and directions](archive/004-discussion-transcript-and-maintainer-directions.md).
+- [Other factory designs](archive/005-external-dark-factories.md),
+  [capacity and control approaches](archive/006-external-how-others-solve-capacity-and-control.md),
+  and [human attention](archive/007-external-human-attention.md).
+- [The first design draft](archive/008-first-pass-control-plane-design-draft.md) is historical;
   its single-coordinator and storage proposals are superseded where they conflict
   with later rulings.
 - [Measured ledger concurrency](../../../.ai/ledger-writers-are-multi-host.md),
