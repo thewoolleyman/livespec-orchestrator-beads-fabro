@@ -307,6 +307,7 @@ def test_workflow_payload_directory_encodes_dotted_work_item_ids_injectively() -
         "SiblingClones",
         "core_plugin_env_line",
         "sibling_clone_steps_block",
+        "sibling_clones_root_env_line",
     }
     assert set(_dispatcher_goal.__all__) == {
         "GoalBriefMiniJinjaFinding",

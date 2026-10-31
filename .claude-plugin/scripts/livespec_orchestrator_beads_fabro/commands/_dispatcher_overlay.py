@@ -79,10 +79,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_imag
     resolve_sandbox_image,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
-    SIBLING_CLONES_ROOT_ENV_VAR,
     SiblingClones,
     core_plugin_env_line,
     sibling_clone_steps_block,
+    sibling_clones_root_env_line,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_cache_gate_prepare_steps_block,
@@ -95,6 +95,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
     resume_checkout_prepare_steps_block,
+    resume_published_head_env_line,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
     review_guard_prepare_steps_block,
@@ -105,6 +106,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_pack import (
     sandbox_worktree_pack_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stage_scripts import (
+    stage_script_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tmux_socket_root import (
     tmux_tmpdir_env_lines,
@@ -296,7 +300,14 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     if rewritten is None:
         return None
     rewritten = resolve_workflow_git_author(committed_text=rewritten, author=git_author)
-    if rewritten is None:
+    # The scripted publication stages' bodies, written as helper files the
+    # per-dispatch graph invokes so the compact preamble never carries them. None
+    # is a graph pair that cannot be split, refused with the other unusable shapes.
+    stage_script_steps = stage_script_prepare_steps_block(
+        committed_graph=_absolute_graph(graph_value=graph_value, workflow_dir=workflow_dir),
+        rendered_graph=graph_artifact,
+    )
+    if rewritten is None or stage_script_steps is None:
         return None
     # WHICH environment the run-scoped env table is keyed on, as distinct from
     # the id the image table above was addressed by. The factory's declared
@@ -308,11 +319,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     token_literal = json.dumps(token)
     github_token_literal = json.dumps(github_token)
     sibling_steps = "" if siblings is None else sibling_clone_steps_block(siblings=siblings)
-    sibling_env_line = (
-        ""
-        if siblings is None
-        else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
-    )
+    sibling_env_line = sibling_clones_root_env_line(siblings=siblings)
     currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
     core_plugin_env = core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
@@ -353,6 +360,8 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # The review-turn guard rides the commit runner's slot: both are small stdlib
     # programs written below the same plugins root before any ACP stage runs.
     commit_runner_steps = commit_runner_prepare_steps_block() + review_guard_prepare_steps_block()
+    # The scripted publication stages' bodies, written as helper files the
+    # per-dispatch graph invokes so the compact preamble never carries them.
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     # Rendered FIRST among the Dispatcher-materialized steps, which puts it
     # immediately after the committed `git fetch --unshallow` whose single-branch
@@ -405,6 +414,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_otel_steps
         + plugin_cache_steps
         + commit_runner_steps
+        + stage_script_steps
         + resume_checkout_steps
         + credential_use_steps
         # The pull-request body, materialized as a FILE because the stage hands
@@ -435,11 +445,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         # A resumed clone has no publication file from the earlier run. Both
         # publication stages consume this validated anchor as their fallback;
         # never infer it from a branch tip that may have moved since validation.
-        + (
-            ""
-            if resume_checkout is None
-            else f"LIVESPEC_RESUME_PUBLISHED_HEAD = {json.dumps(resume_checkout.head)}\n"
-        )
+        + resume_published_head_env_line(checkout=resume_checkout)
         # The rendered pull-request TITLE, beside the publish branch the same
         # stage reads. Both are facts about this dispatch that a command node
         # cannot read off the rendered goal, which is why this table is the
