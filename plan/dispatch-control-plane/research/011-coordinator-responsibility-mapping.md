@@ -1,5 +1,14 @@
 # What the coordinator does today, and who would do it next
 
+## Related reports and planning documents
+
+Latest versions on GitHub:
+
+- [Plan charter](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/001-charter-dispatch-control-plane.md)
+- [Portable coordination: research and proposed direction](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/009-portable-coordination-research-summary.md)
+- [Interactive and headless plan sessions](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/010-interactive-and-headless-plan-sessions.md)
+- [Spec-side obligations and autonomy follow-up](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/012-spec-side-obligations-and-autonomy-followup.md)
+
 Detailed responsibility mapping · 27 October 2026 · authority correction 28 October 2026
 
 Current coordinator: **gitops-fleet-capacity-monitoring**, `livespec-dev-tooling-dfixhe`.

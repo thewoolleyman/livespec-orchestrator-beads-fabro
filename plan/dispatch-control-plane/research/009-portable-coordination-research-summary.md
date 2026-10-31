@@ -1,5 +1,14 @@
 # Livespec coordination across hosts, containers and agent tools
 
+## Related reports and planning documents
+
+Latest versions on GitHub:
+
+- [Plan charter](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/001-charter-dispatch-control-plane.md)
+- [Interactive and headless plan sessions](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/010-interactive-and-headless-plan-sessions.md)
+- [Coordinator responsibilities: current and proposed roles](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/011-coordinator-responsibility-mapping.md)
+- [Spec-side obligations and autonomy follow-up](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/012-spec-side-obligations-and-autonomy-followup.md)
+
 Research summary and proposed direction · 26 October 2026; corrected 27 October 2026
 
 Plan: **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`)
