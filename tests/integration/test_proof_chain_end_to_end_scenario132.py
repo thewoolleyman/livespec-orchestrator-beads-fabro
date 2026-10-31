@@ -268,7 +268,7 @@ class _Edge:
     source: str
     target: str
     condition: str | None
-    label: str | None
+    label: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
