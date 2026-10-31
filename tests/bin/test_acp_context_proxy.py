@@ -80,3 +80,49 @@ def test_proxy_applies_leading_env_assignments_to_the_adapter(tmp_path: Path) ->
 
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == "from-assignment\n"
+
+
+def _run_with_instruction_files(
+    root: Path, files: list[str], cwd: Path
+) -> subprocess.CompletedProcess[str]:
+    node = shutil.which("node")
+    assert node is not None
+    return subprocess.run(
+        [node, str(_PROXY), "--", node, "-e", _ECHO_ADAPTER],
+        check=False,
+        cwd=cwd,
+        env={
+            "LIVESPEC_ACP_CONTEXT_ROOT": str(root),
+            "LIVESPEC_ACP_CONTEXT_LOADS": json.dumps({"instruction_files": files}),
+        },
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
+def test_proxy_refuses_instruction_files_outside_the_governed_root(tmp_path: Path) -> None:
+    """Absolute, `..`-escaping and symlink-escaping instruction files are refused."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("outside text", encoding="utf-8")
+    (root / "link.md").symlink_to(outside)
+
+    for declared in (str(outside), "../secret.txt", "link.md"):
+        completed = _run_with_instruction_files(root, [declared], tmp_path)
+        assert completed.returncode != 0, declared
+        assert "governed repository root" in completed.stderr, declared
+        assert "outside text" not in completed.stdout, declared
+
+
+def test_proxy_accepts_a_nested_instruction_file_inside_the_root(tmp_path: Path) -> None:
+    """A relative path inside the governed root still loads."""
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "rules.md").write_text("nested", encoding="utf-8")
+
+    completed = _run_with_instruction_files(root, ["docs/rules.md"], tmp_path)
+
+    assert completed.returncode == 0, completed.stderr

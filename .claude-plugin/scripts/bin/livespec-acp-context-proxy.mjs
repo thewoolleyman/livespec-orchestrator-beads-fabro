@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 
 const separator = process.argv.indexOf("--");
 if (separator < 0 || separator === process.argv.length - 1) {
@@ -11,9 +11,26 @@ if (separator < 0 || separator === process.argv.length - 1) {
 
 const loads = JSON.parse(process.env.LIVESPEC_ACP_CONTEXT_LOADS ?? "{}");
 const root = process.env.LIVESPEC_ACP_CONTEXT_ROOT ?? process.cwd();
-const instructionText = (loads.instruction_files ?? [])
-  .map((path) => readFileSync(resolve(root, path), "utf8"))
-  .join("\n\n");
+const realRoot = realpathSync(root);
+const readInstructionFile = (path) => {
+  const escapes = (target) => {
+    const from = relative(realRoot, target);
+    return from === ".." || from.startsWith("../") || isAbsolute(from);
+  };
+  if (isAbsolute(path) || escapes(resolve(realRoot, path))) {
+    throw new Error(
+      `livespec ACP context proxy refuses instruction file ${JSON.stringify(path)}: it must be a path inside the governed repository root`,
+    );
+  }
+  const real = realpathSync(resolve(realRoot, path));
+  if (escapes(real)) {
+    throw new Error(
+      `livespec ACP context proxy refuses instruction file ${JSON.stringify(path)}: it resolves outside the governed repository root`,
+    );
+  }
+  return readFileSync(real, "utf8");
+};
+const instructionText = (loads.instruction_files ?? []).map(readInstructionFile).join("\n\n");
 const adapter = process.argv.slice(separator + 1);
 const adapterEnv = { ...process.env };
 while (adapter.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(adapter[0])) {
