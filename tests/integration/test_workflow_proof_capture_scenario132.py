@@ -204,8 +204,9 @@ def test_publish_draft_fails_closed_to_needs_human_and_falls_through_to_capture(
         "refresh_repair -> needs_human"
     ]
     landed = _edges_from(text=_dot(payload=_BUNDLE), node="publish_merged_reconcile_route")
-    assert [edge for edge in landed if "condition=" not in edge] == [
-        "publish_merged_reconcile_route -> proof_capture"
+    assert landed == [
+        'publish_merged_reconcile_route -> verify_pr [label="merged"]',
+        'publish_merged_reconcile_route -> proof_capture [label="not_merged"]',
     ]
 
 
