@@ -2482,8 +2482,8 @@
     "heading": "## Scenario 269 \u2014 The lifecycle guard harness waits for a slow capture server and names a failed one",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal bd-guard-capture-server-startup, and the owning work-item bd-ib-qbwd7n makes the lifecycle guard harness wait a bounded 30 seconds for its capture server and name a failed start, together with the test that binds this entry.",
+    "test": "tests.integration.test_bd_guard_capture_start_scenario269.test_scenario269_binds_the_declared_check_to_capture_start_observations",
+    "reason": "Integration-tier binding: the declared check reaches the black-box shell regression that exercises Scenario 269's slow-start and failed-start telemetry harness behaviours.",
     "work_item": "bd-ib-qbwd7n"
   },
   {

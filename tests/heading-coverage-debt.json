@@ -1024,13 +1024,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 269 \u2014 The lifecycle guard harness waits for a slow capture server and names a failed one",
-    "work_item": "bd-ib-qbwd7n",
-    "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 270 \u2014 A successor retires a dead owner's terminal wait without rewriting it",
     "work_item": "bd-ib-jk5npz",
     "first_seen": "2026-10-30"
