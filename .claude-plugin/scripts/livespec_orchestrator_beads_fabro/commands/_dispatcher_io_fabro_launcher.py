@@ -29,6 +29,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
+    PrelaunchCheckpoint,
+    ignore_prelaunch_checkpoint,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
 )
@@ -110,6 +114,9 @@ class WatchedFabroLauncher:
     on_worker_running: Callable[[], None] | None = None
     # A run-only source venue; watchdog and auth commands retain the ordinary runner.
     run_runner: CommandRunner | None = None
+    # Receives the name of each launch-side phase as it ends, so the drive's
+    # pre-launch CPU profile covers the phases that run inside the launch too.
+    prelaunch_checkpoint: PrelaunchCheckpoint = ignore_prelaunch_checkpoint
 
     def launch(
         self,
@@ -119,7 +126,9 @@ class WatchedFabroLauncher:
         journal: JournalWriter,
     ) -> FabroRunResult:
         run_fabro_factory_auth_login(plan=plan, runner=runner)
+        self.prelaunch_checkpoint(name="launch-factory-auth")
         port = fabro_port_for_plan(plan=plan, runner=runner)
+        self.prelaunch_checkpoint(name="fabro-port")
         release_pass_snapshot()
         holder: dict[str, CommandResult] = {}
         run_id_holder: dict[str, str | None] = {}
@@ -334,5 +343,6 @@ class WatchedFabroLauncher:
         stale-item reap moved out: the loop's job is to decide, and a caller
         with no transaction to release is not a decision.
         """
+        self.prelaunch_checkpoint(name="fabro-run-running")
         if self.on_worker_running is not None:
             self.on_worker_running()

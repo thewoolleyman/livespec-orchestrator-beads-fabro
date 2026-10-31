@@ -37,6 +37,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
     remove_workflow_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
+    PrelaunchCheckpoint,
+    ignore_prelaunch_checkpoint,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
     revoke_proof_credentials,
 )
@@ -66,6 +70,7 @@ class DispatchRunContext:
     # watchdog's heartbeat probe can look beats up by the SAME id
     # `cc_otel_overlay_env` projected into the sandbox.
     dispatch_id: str | None = None
+    prelaunch_checkpoint: PrelaunchCheckpoint = ignore_prelaunch_checkpoint
 
 
 def run_dispatch_with_watchdog(
@@ -87,6 +92,7 @@ def run_dispatch_with_watchdog(
         spans_path=dispatch_spans_path(args=context.args, repo=context.repo),
         now_ns=time.time_ns(),
     )
+    context.prelaunch_checkpoint(name="dispatch-span")
     runner = GithubTokenEnvRunner(inner=ShellCommandRunner(), token=context.token_supplier)
     with ExitStack() as stack:
         # Registered FIRST so it runs LAST: a provider-minted proof credential is
@@ -144,6 +150,7 @@ def run_dispatch_with_watchdog(
                 ),
                 heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
                 dispatch_id=context.dispatch_id,
+                prelaunch_checkpoint=context.prelaunch_checkpoint,
             ),
         )
     return started_at, outcome

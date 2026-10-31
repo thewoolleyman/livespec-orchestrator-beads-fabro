@@ -4483,6 +4483,7 @@ def test_dispatch_green_closes_item_and_journals(
         "pre-launch-cpu",
         "pre-launch-cpu",
         "pre-launch-cpu",
+        "pre-launch-cpu",
         "ledger-complete",
         "acceptance-ai-pass",
         # The pointer write runs on every disposition; this fake pass carries no
@@ -4503,7 +4504,8 @@ def test_dispatch_green_closes_item_and_journals(
         "goal-minijinja-preflight",
         "factory-auth",
         "run-config-overlay",
-        "goal-render",
+        "goal-render-and-write",
+        "dispatch-span",
     ]
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
