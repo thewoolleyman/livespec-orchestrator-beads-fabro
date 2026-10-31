@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.262.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.2...v0.262.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **dispatch:** revert stage script externalization (sandbox prepare step cannot run) ([561c529](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/561c52970c0f94a81071467a65f89ecbba5d24f5))
+
 ## [0.262.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.1...v0.262.2) (2026-10-31)
 
 
