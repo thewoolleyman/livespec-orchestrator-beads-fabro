@@ -17,14 +17,14 @@ _registered_plugin_root = subprocess.run(
     [
         "python3",
         f"{os.environ['CLAUDE_PLUGIN_ROOT']}/scripts/bin/registered_plugin_root.py",
-        "--repo",
-        os.getcwd(),
+        "--repo", os.getcwd(),
     ],
     check=True,
     capture_output=True,
     text=True,
 ).stdout.strip()
 sys.path.insert(0, f"{_registered_plugin_root}/scripts")
+sys.path.insert(0, f"{_registered_plugin_root}/scripts/_vendor")
 ```
 
 ## What done looks like
