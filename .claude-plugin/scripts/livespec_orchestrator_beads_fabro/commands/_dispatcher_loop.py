@@ -19,7 +19,6 @@ in `_dispatcher_proof_credential_lease`.
 from __future__ import annotations
 
 import argparse
-import os
 from contextlib import ExitStack
 from dataclasses import dataclass
 from functools import partial
@@ -176,11 +175,8 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     lifetime: _DispatchLifetime,
 ) -> DispatchOutcome:
     identity = lifetime.identity
-    profile = PrelaunchCpuProfile(
-        journal=journal,
-        work_item_id=item.id,
-        dispatch_id=identity.dispatch_id,
-        cpu_seconds=lambda: sum(os.times()[:2]) + sum(os.times()[2:4]),
+    profile = PrelaunchCpuProfile.for_drive(
+        journal=journal, work_item_id=item.id, dispatch_id=identity.dispatch_id
     )
     recorded = record_dispatch(
         args=args,
@@ -280,8 +276,8 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
         # wave-shared one, for the reason the clause forbids route state there.
         interrupted=interrupted_attempt_for(args=args),
     )
-    profile.checkpoint(name="goal-render")
     _ = goal_file.write_text(goal_text, encoding="utf-8")
+    profile.checkpoint(name="goal-render-and-write")
     started_at, outcome = run_dispatch_with_watchdog(
         context=DispatchRunContext(
             args=args,
@@ -292,6 +288,7 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             payload_dir=recorded.payload.payload_dir,
             token_supplier=token_supplier,
             dispatch_id=identity.dispatch_id,
+            prelaunch_checkpoint=profile.checkpoint,
         ),
         run_dispatch_func=run_dispatch,
         fabro_launcher_type=partial(

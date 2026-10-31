@@ -25,6 +25,7 @@ def test_the_launch_path_names_the_profiled_prelaunch_phases() -> None:
         "goal-minijinja-preflight",
         "factory-auth",
         "run-config-overlay",
-        "goal-render",
+        "goal-render-and-write",
     ):
         assert f'name="{phase}"' in source
+    assert "PrelaunchCpuProfile.for_drive(" in source
