@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.265.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.9...v0.265.0) (2026-10-31)
+
+
+### Features
+
+* add classify-tier command ([f687fba](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f687fba75628743df52012bef9bd3b79224fef1f))
+
+
+### Bug Fixes
+
+* classify-tier reports a standing record and writes nothing on failure ([dce6027](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dce602793480771956d8588212c3c5f3ee658912))
+* honor plan continuation rulings for expired writes ([1877691](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1877691b3839c128ddee60dcf1abef7b5a7d0ac3))
+
 ## [0.264.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.8...v0.264.9) (2026-10-31)
 
 
