@@ -1,3 +1,9 @@
+# 001 — Charter — dispatch-control-plane
+
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
+
+Founding charter · 25 October 2026. The original requirements and discussion questions are preserved below. The current reports and later direction are listed in the index; the ledger remains the source of live plan status.
+
 ## The maintainer's statement of what done means
 
 2026-10-25 ~00:3xZ, verbatim: "I still don't even know where this data store came from. It was not part of my original design and it is something that the agents must have evolved themselves. I want you to trace the history and genesis of it because I never would have made such a decision to have this critical path be stored in a temporary file like this. The bigger question is how this relates to the dispatcher and I recognize that this is a hole in the design that I have been ignoring and hand-waving around. There was a vague plan that the factory would just auto-dispatch work items but that has fallen apart because the number of work items always exceeds the number of tokens (and compute capacity) that I have available, or at least tokens anyway. And the other path was to have this driven through the livespec console applications, the current CLI, and eventually a web application so that the automation would be driven through there. But my guess is that this is something that has evolved through the third way of driving these through interactive LLM sessions. There therefore remains the main question of where this should live in the official livespec ecosystem. I think it seems like it needs to be related to the foreman skill. Or somewhere in the overseer app but it should definitely be anchored to some sort of skill or official thing. I know. I think somewhere in the console app there was a plan that was retiring the supervisor skills and possibly leaving the foreman skill around, but migrating to the console. You can look there for some context. I know that's pretty hand-wavy but the bottom line here is we need to anchor this in real API surface mechanisms (whether it's the overseer skills like the foreman or the supervisor or the console or otherwise). We need to not just have it randomly floating and not be clearly specified, and have a solid UX stance."
@@ -12,17 +18,6 @@ Earlier the same evening, verbatim: "I am really worried that we are dependent u
 - The governing specification states where every piece of state a dispatch decision depends on lives, and states that none of it is a host-local file.
 - With the dispatch journal absent, a dispatch from a fresh checkout on another host makes the same admission, hold and recovery decisions as on the primary host.
 - The chosen surface has a specified operator UX: the commands or views through which dispatch is started, held and observed.
-
-# Charter — dispatch-control-plane
-
-## Related reports and planning documents
-
-Latest versions on GitHub:
-
-- [Portable coordination: research and proposed direction](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/009-portable-coordination-research-summary.md)
-- [Interactive and headless plan sessions](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/010-interactive-and-headless-plan-sessions.md)
-- [Coordinator responsibilities: current and proposed roles](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/011-coordinator-responsibility-mapping.md)
-- [Spec-side obligations and autonomy follow-up](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/012-spec-side-obligations-and-autonomy-followup.md)
 
 ## Topic
 

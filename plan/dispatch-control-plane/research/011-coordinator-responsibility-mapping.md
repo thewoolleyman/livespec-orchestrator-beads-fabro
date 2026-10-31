@@ -1,13 +1,6 @@
-# What the coordinator does today, and who would do it next
+# 011 — What the coordinator does today, and who would do it next
 
-## Related reports and planning documents
-
-Latest versions on GitHub:
-
-- [Plan charter](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/001-charter-dispatch-control-plane.md)
-- [Portable coordination: research and proposed direction](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/009-portable-coordination-research-summary.md)
-- [Interactive and headless plan sessions](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/010-interactive-and-headless-plan-sessions.md)
-- [Spec-side obligations and autonomy follow-up](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/012-spec-side-obligations-and-autonomy-followup.md)
+[Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
 Detailed responsibility mapping · 27 October 2026 · authority correction 28 October 2026
 
@@ -53,7 +46,7 @@ portability and delegation rulings applied. These are descriptive names for this
 comparison, not implemented command names or four mandatory permanent processes.
 Different roles can use different agents or models. A role's obligations persist
 even when no model is running. [Proposed direction](009-portable-coordination-research-summary.md),
-[original approved split](004-discussion-transcript-and-maintainer-directions.md#the-coordinator-with-grants).
+[original approved split](archive/004-discussion-transcript-and-maintainer-directions.md#the-coordinator-with-grants).
 
 | Proposed owner | Responsibility | What it must leave to someone else |
 | --- | --- | --- |
@@ -440,10 +433,10 @@ above; October 27 observability report at 19:39:17. These support keeping uncert
 or corrected observations distinct from established facts.
 
 <a id="n1"></a>
-**N1 — Approved new responsibility split.** [Discussion and rulings, report 004](004-discussion-transcript-and-maintainer-directions.md),
+**N1 — Approved new responsibility split.** [Discussion and rulings, report 004](archive/004-discussion-transcript-and-maintainer-directions.md),
 especially the second pass at 04:27:53 on October 25 and the subsequent approval;
 phase-two role-agent scope event at 2026-10-26 13:04:26 on `bd-ib-k6dqwc`.
-[Report 008](008-first-pass-control-plane-design-draft.md) is historical and is
+[Report 008](archive/008-first-pass-control-plane-design-draft.md) is historical and is
 superseded where it assigns everything to one standing coordinator or uses a
 Beads fleet tenant for shared operational state.
 
