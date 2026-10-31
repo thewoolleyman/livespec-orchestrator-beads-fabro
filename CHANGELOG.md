@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.263.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.4...v0.263.0) (2026-10-31)
+
+
+### Features
+
+* **dev-tooling:** fail just check when an ACP candidate chain cannot resolve ([e623e2f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e623e2f21534ddc9fa264fef69a488e86fc5d653))
+
 ## [0.262.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.3...v0.262.4) (2026-10-31)
 
 
