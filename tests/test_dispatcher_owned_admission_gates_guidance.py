@@ -33,6 +33,10 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _AGENT_INSTRUCTIONS = (_REPO_ROOT / "AGENTS.md").read_text()
+# Since the 2026-10-30 AGENTS.md split (plan epic bd-ib-raqyki) the section lives
+# word for word in this `.ai/` file, and AGENTS.md routes to it by a trigger line.
+_GUIDANCE_RELPATH = ".ai/dispatcher-owned-admission-conditions.md"
+_GUIDANCE = (_REPO_ROOT / _GUIDANCE_RELPATH).read_text()
 
 # The distinguishing phrase of the section's own H2 heading. Matched on the heading
 # LINE rather than anywhere in the body, so a section merely mentioning the subject
@@ -47,7 +51,8 @@ def _section() -> str:
     section is absent or when more than one heading matches, since "one section
     carries this" is itself an assertion of the Definition of Done.
     """
-    chunks = ("\n" + _AGENT_INSTRUCTIONS).split("\n## ")
+    assert _GUIDANCE_RELPATH in _AGENT_INSTRUCTIONS
+    chunks = ("\n" + _GUIDANCE).split("\n## ")
     matches = [chunk for chunk in chunks if _HEADING_MARKER in chunk.split("\n", 1)[0]]
     assert len(matches) == 1, (
         f"expected exactly one AGENTS.md H2 heading containing {_HEADING_MARKER!r}, "

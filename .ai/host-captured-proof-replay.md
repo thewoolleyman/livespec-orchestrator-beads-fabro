@@ -165,7 +165,7 @@ capture then records a "publish accepted" observation that is perfectly true and
 carries no information — it is equally consistent with "the reclaim worked" and
 with "there was never anything to reclaim", and nothing in the output
 distinguishes them. This is the instrument-aim failure the trap catalogue in
-AGENTS.md §"Beads runtime prerequisites" describes, arriving through a seed
+`.ai/instrument-aim-traps.md` describes, arriving through a seed
 rather than through a typo.
 
 **A seeded branch has to point at a commit master does not contain.** That is
@@ -184,7 +184,7 @@ was lost:
   surviving branch standing. The absence of both rows is a third, silent
   outcome; on a first dispatch it is the designed behaviour, not a fault. Read
   the held row's `reason` before clearing a publish branch by hand — see
-  AGENTS.md §"Proof-of-Done, publish-branch reclaim, and drive action-id traps".
+  `.ai/proof-of-done-reclaim-and-action-id-traps.md`.
 - Do not re-seed the SAME branch for a second attempt against a DIFFERENT item.
   The independent replay for `bd-ib-ht4c2m` hit the seed left at
   `refs/heads/feat/bd-ib-andmpe` with `bd-ib-dk3u2p`, whose first run
