@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.264.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.1...v0.264.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* cover delayed bd guard capture startup ([f7d713d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f7d713d7e51a830e6fd28e934612f634ee43e392))
+* report failed bd guard capture startup ([f7c9992](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f7c99926719bb6cf9d130878823b918b22c36510))
+
 ## [0.264.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.0...v0.264.1) (2026-10-31)
 
 
