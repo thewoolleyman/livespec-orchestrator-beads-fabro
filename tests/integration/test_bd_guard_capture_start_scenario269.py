@@ -29,3 +29,17 @@ def test_scenario269_binds_the_declared_check_to_capture_start_observations() ->
     assert "exit status 23; stderr=synthetic capture startup failure" in regression_body
     assert '[ "$i" -lt 600 ]' in harness_body
     assert "capture_start_detail" in harness_body
+    assert "still running at 30-second bound" in regression_body
+
+
+def test_scenario269_failure_diagnostic_is_bounded_on_an_event_not_host_speed() -> None:
+    """The failed-server check never races host load with a wall-clock bound.
+
+    Timing the whole harness measured 8-26 s under normal host load, so a
+    wall-clock ceiling on it fails for reasons unrelated to the startup
+    contract. The bound is the harness's own 30-second startup bound, observed
+    through the diagnostic it emits.
+    """
+    regression_body = _REGRESSION.read_text(encoding="utf-8")
+
+    assert "< 5.0" not in regression_body

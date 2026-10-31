@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dod_governing_heading_judge as judge_module
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     governing_heading_verdict,
@@ -30,6 +32,8 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge imp
     unjudged_governing_heading,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.spec_stated import SpecStatedVerdict
+from returns.result import Success
 
 _GOVERNING = "## Scenario 206 — The spec-change tier is decided by the spec-stated judgement"
 _CITED = "## Scenario 141 — The referenced scenario governs the proof"
@@ -230,6 +234,27 @@ def test_a_response_the_shared_parser_refuses_answers_no_verdict(tmp_path: Path)
     """A judge that answered, unreadably, is a failure to measure like any other."""
     verdict = governing_heading_verdict(
         item=_item(), repo=_repo(tmp_path=tmp_path), run_model=lambda _prompt: "not a verdict"
+    )
+
+    assert verdict is None
+
+
+def test_a_multiline_generalization_target_answers_no_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A receipt field must remain one line after the shared parser accepts it."""
+    result = Success(
+        SpecStatedVerdict(
+            kind="partial",
+            stated_by=(_GOVERNING,),
+            generalization_target=f"{_GOVERNING}\nextra",
+            rationale="The scenario states part of it.",
+        )
+    )
+    monkeypatch.setattr(judge_module, "judge_within_ceiling", lambda **_kwargs: result)
+
+    verdict = governing_heading_verdict(
+        item=_item(), repo=_repo(tmp_path=tmp_path), run_model=lambda _prompt: _VERDICT_REPLY
     )
 
     assert verdict is None
