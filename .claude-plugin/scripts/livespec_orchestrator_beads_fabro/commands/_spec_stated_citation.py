@@ -225,16 +225,21 @@ def _resolved_response(
         ]
     target = payload.get(_GENERALIZATION_TARGET)
     if isinstance(target, str):
-        payload[_GENERALIZATION_TARGET] = _resolved(
-            citation=target, governing=governing, enclosing=enclosing
-        )
+        resolved_target = _resolved(citation=target, governing=governing, enclosing=enclosing)
+        payload[_GENERALIZATION_TARGET] = resolved_target
+        if _is_unresolvable(
+            citation=resolved_target,
+            governing=governing,
+            enclosing=enclosing,
+        ):
+            _refuse_target_through_stated_by(payload=payload)
     return json.dumps(payload)
 
 
 def _refused_headings(
     *, text: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
 ) -> tuple[str, ...]:
-    """The first response's unresolvable `stated_by` citations, if readable."""
+    """The first response's unresolvable citation fields, if readable."""
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
@@ -252,6 +257,13 @@ def _refused_headings(
         if isinstance(citation, str)
         and _resolved(citation=citation, governing=governing, enclosing=enclosing) not in valid
     ]
+    target = payload.get(_GENERALIZATION_TARGET)
+    if isinstance(target, str) and _is_unresolvable(
+        citation=target,
+        governing=governing,
+        enclosing=enclosing,
+    ):
+        refused.append(target)
     return tuple(dict.fromkeys(refused))
 
 
@@ -261,7 +273,8 @@ def _correction_prompt(*, prompt: str, refused: tuple[str, ...], headings: tuple
     heading_list = "\n".join("- " + heading for heading in headings)
     instruction = " ".join(
         (
-            "Reply once with a replacement JSON verdict whose stated_by only cites",
+            "Reply once with a replacement JSON verdict whose stated_by and",
+            "generalization_target only cite",
             "these valid H2 headings:",
         )
     )
@@ -280,6 +293,22 @@ def _correction_prompt(*, prompt: str, refused: tuple[str, ...], headings: tuple
 def _bounded_refused(*, refused: tuple[str, ...]) -> tuple[str, ...]:
     """The rejected citation text that can safely be echoed into one retry."""
     return ("\n".join(refused)[:_REFUSED_ECHO_CHARACTER_LIMIT],)
+
+
+def _is_unresolvable(
+    *, citation: str, governing: Mapping[str, str], enclosing: Mapping[str, str]
+) -> bool:
+    """Whether a citation cannot name one governing H2 after resolution."""
+    return (
+        _resolved(citation=citation, governing=governing, enclosing=enclosing)
+        not in governing.values()
+    )
+
+
+def _refuse_target_through_stated_by(*, payload: dict[str, object]) -> None:
+    """Route a still-invalid target through the shared parser's refusal path."""
+    target = payload[_GENERALIZATION_TARGET]
+    payload[_STATED_BY] = [target]
 
 
 def _resolved(*, citation: str, governing: Mapping[str, str], enclosing: Mapping[str, str]) -> str:

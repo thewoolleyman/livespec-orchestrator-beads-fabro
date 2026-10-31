@@ -142,3 +142,63 @@ def test_the_correction_prompt_stays_within_the_ceiling_for_an_oversized_citatio
     assert len(model.prompts) == 2
     assert len(model.prompts[1]) <= 20_000
     assert refused not in model.prompts[1]
+
+
+def test_an_unreadable_generalization_target_gets_one_correction_request() -> None:
+    """Both citation fields use the bounded retry and resolve the replacement."""
+    refused = "## A heading that is nowhere"
+    model = _Responses(
+        responses=(
+            json.dumps(
+                {
+                    "kind": "unstated",
+                    "stated_by": [_GOVERNING],
+                    "generalization_target": refused,
+                    "rationale": "first answer",
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "unstated",
+                    "stated_by": [_GOVERNING],
+                    "generalization_target": _GOVERNING,
+                    "rationale": "corrected answer",
+                }
+            ),
+        )
+    )
+
+    verdict = judge_within_ceiling(
+        spec_tree=_TREE,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert is_successful(verdict)
+    assert verdict.unwrap().generalization_target == _GOVERNING
+    assert len(model.prompts) == 2
+
+
+def test_a_second_unreadable_target_is_refused_without_a_third_request() -> None:
+    """The correction attempt is bounded even when a target remains unreadable."""
+    refused = "## A heading that is nowhere"
+    response = json.dumps(
+        {
+            "kind": "unstated",
+            "stated_by": [_GOVERNING],
+            "generalization_target": refused,
+            "rationale": "still invalid",
+        }
+    )
+    model = _Responses(responses=(response, response, response))
+
+    verdict = judge_within_ceiling(
+        spec_tree=_TREE,
+        statement=_STATEMENT,
+        run_model=model,
+        ceiling=20_000,
+    )
+
+    assert not is_successful(verdict)
+    assert len(model.prompts) == 2
