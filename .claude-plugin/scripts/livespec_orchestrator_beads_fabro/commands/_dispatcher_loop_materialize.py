@@ -212,6 +212,11 @@ def materialize_dispatch(
         journal=journal,
         work_item_id=work_item_id,
         adapters=guarded_adapter_commands(run_inputs=acp_nodes.run_inputs),
+        context_loads={
+            node: resolved.loads.as_dict()
+            for node, resolved in acp_nodes.nodes.items()
+            if resolved.loads is not None
+        },
         # The RESUMED-AT stage, when this dispatch is a resume. Read defensively
         # for the same reason `acp_node` above is: only the resume entry point
         # ever sets it, and every other command reaches this code with a

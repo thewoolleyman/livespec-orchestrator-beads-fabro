@@ -17,6 +17,7 @@ an `--input` name its own workflow does not declare, which fabro rejects.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -27,12 +28,15 @@ from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
     resolve_acp_catalogs,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import AcpChainResolution
+from livespec_orchestrator_beads_fabro.commands._acp_context_loads import context_load_refusal
 from livespec_orchestrator_beads_fabro.commands._acp_factory_capabilities import (
     factory_capability_reader,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     NODE_INPUT_CANDIDATES,
+    AcpNodeLoads,
     AcpNodeOverlay,
+    loads_from_object,
     overlay_from_string,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
@@ -54,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
+    workflow_context_loads,
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget, dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_chain_attachment import (
@@ -182,7 +187,15 @@ def _dispatch_overlay(*, node: str, value: str, catalogs: AcpCatalogs) -> AcpNod
     )
     if refusal is not None:
         return refusal
-    return overlay_from_string(text=rendered, replaces_env=True)
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as error:
+        return f"--acp-node {node} is not valid JSON: {error.msg}"
+    loads = loads_from_object(value=parsed.get("loads"), key=f"--acp-node {node}.loads")
+    if isinstance(loads, str):
+        return loads
+    overlay = overlay_from_string(text=rendered, replaces_env=True)
+    return replace(overlay, loads=loads)
 
 
 def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one INDEPENDENT operand of the one resolution, and grouping any pair into a carrier would invent a relationship the dispatch does not have.
@@ -235,6 +248,9 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
         selected.resolution,
         candidates=selected_candidate_identities(selected=selected.selected),
     )
+    context_refusal = context_load_refusal(resolution=resolution)
+    if context_refusal is not None:
+        return context_refusal
     record: dict[str, object] = {
         "stage": ACP_NODES_STAGE,
         "work_item_id": work_item_id,
@@ -287,7 +303,7 @@ def _layered_acp_nodes(
     configured = _dispatch_workflow_configuration(block=block, committed=committed)
     if isinstance(configured, str):
         return configured
-    catalogs, workflow_inputs, workflow_kind = configured
+    catalogs, workflow_inputs, workflow_loads, workflow_kind = configured
     scoped_block, not_applied = scoped_repository_block(block=block, workflow_kind=workflow_kind)
     layers = _overlay_layers(block=scoped_block, catalogs=catalogs, overrides=overrides)
     if isinstance(layers, str):
@@ -295,6 +311,7 @@ def _layered_acp_nodes(
     repository, dispatch = layers
     resolution = resolve_acp_nodes(
         workflow_inputs=workflow_inputs,
+        workflow_loads=workflow_loads,
         repository=repository,
         dispatch=dispatch,
     )
@@ -335,7 +352,7 @@ def _overlay_layers(
 
 def _dispatch_workflow_configuration(
     *, block: dict[str, object], committed: Path
-) -> tuple[AcpCatalogs, Mapping[str, str], str] | str:
+) -> tuple[AcpCatalogs, Mapping[str, str], Mapping[str, AcpNodeLoads], str] | str:
     """Catalogs and rendered workflow defaults, from ONE read of each source.
 
     The catalogs come back WITH the workflow layer because the chain reader
@@ -351,8 +368,8 @@ def _dispatch_workflow_configuration(
     configured = _workflow_configuration(committed=committed, catalogs=catalogs)
     if isinstance(configured, str):
         return configured
-    workflow_inputs, workflow_kind = configured
-    return catalogs, workflow_inputs, workflow_kind
+    workflow_inputs, workflow_loads, workflow_kind = configured
+    return catalogs, workflow_inputs, workflow_loads, workflow_kind
 
 
 def workflow_layer(*, committed: Path, catalogs: AcpCatalogs) -> Mapping[str, str] | str:
@@ -376,7 +393,7 @@ def workflow_layer(*, committed: Path, catalogs: AcpCatalogs) -> Mapping[str, st
 
 def _workflow_configuration(
     *, committed: Path, catalogs: AcpCatalogs
-) -> tuple[Mapping[str, str], str] | str:
+) -> tuple[Mapping[str, str], Mapping[str, AcpNodeLoads], str] | str:
     """The rendered adapter defaults AND the workflow kind, from one read.
 
     THE KIND IS WHAT RETIRES AN ADAPTER INPUT RATHER THAN THE INPUT'S ABSENCE.
@@ -404,7 +421,10 @@ def _workflow_configuration(
         retired = {name for node in GROOM_ONLY_ACP_NODES for name in NODE_INPUT_CANDIDATES[node]}
         declared = {name: value for name, value in declared.items() if name not in retired}
     rendered = rendered_workflow_defaults(declared=declared, catalogs=catalogs)
-    return rendered if isinstance(rendered, str) else (rendered, kind)
+    if isinstance(rendered, str):
+        return rendered
+    loads = workflow_context_loads(declared=declared)
+    return loads if isinstance(loads, str) else (rendered, loads, kind)
 
 
 def _select_and_gate(

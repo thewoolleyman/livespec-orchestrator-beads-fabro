@@ -50,7 +50,9 @@ received rather than what the attribute carried.
 
 from __future__ import annotations
 
+import json
 import re
+import shlex
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -147,7 +149,12 @@ def guarded_adapter_commands(*, run_inputs: Sequence[str]) -> Mapping[str, str]:
 
 
 def render_acp_commands(
-    *, graph_text: str, adapters: Mapping[str, str], stages: Mapping[str, str] | None = None
+    *,
+    graph_text: str,
+    adapters: Mapping[str, str],
+    stages: Mapping[str, str] | None = None,
+    loads: Mapping[str, Mapping[str, object]] | None = None,
+    context_root: str | None = None,
 ) -> RenderedAcpCommands | str:
     """Rewrite every ACP node's `acp.command` to its resolved literal command.
 
@@ -168,6 +175,8 @@ def render_acp_commands(
                 body=body,
                 adapters=adapters,
                 stage=(stages or {}).get(name),
+                loads=(loads or {}).get(name),
+                context_root=context_root,
             )
             if isinstance(rendered, str):
                 return rendered
@@ -182,7 +191,13 @@ def render_acp_commands(
 
 
 def _rendered_node(
-    *, node: str, body: str, adapters: Mapping[str, str], stage: str | None
+    *,
+    node: str,
+    body: str,
+    adapters: Mapping[str, str],
+    stage: str | None,
+    loads: Mapping[str, object] | None,
+    context_root: str | None,
 ) -> _NodeRender | str | None:
     """This node's rewritten body, a refusal, or None when it is not an ACP node."""
     declared = _ACP_COMMAND_RE.search(body)
@@ -199,6 +214,10 @@ def _rendered_node(
         return command
     if stage is not None:
         command = _agent_stage_command(command=command, stage=stage)
+    if loads is not None:
+        command = _context_load_command(
+            command=command, loads=loads, context_root=context_root or "."
+        )
     rewritten = f'{body[: declared.start()]}acp.command="{command.written}"{body[declared.end() :]}'
     if _OPENER_RE.search(rewritten) is not None:
         return (
@@ -217,6 +236,22 @@ def _agent_stage_command(*, command: _Command, stage: str) -> _Command:
     the workflow node and cannot receive an agent's replacement value.
     """
     value = f"LIVESPEC_AGENT_STAGE={stage} {command.value}"
+    return _Command(value=value, written=_dot_escaped(value=value))
+
+
+def _context_load_command(
+    *, command: _Command, loads: Mapping[str, object], context_root: str
+) -> _Command:
+    """Route a node through the ACP request proxy that owns its context."""
+    declaration = json.dumps(loads, sort_keys=True, separators=(",", ":"))
+    value = " ".join(
+        (
+            f"LIVESPEC_ACP_CONTEXT_LOADS={shlex.quote(declaration)}",
+            f"LIVESPEC_ACP_CONTEXT_ROOT={shlex.quote(context_root)}",
+            "node .claude-plugin/scripts/bin/livespec-acp-context-proxy.mjs --",
+            command.value,
+        )
+    )
     return _Command(value=value, written=_dot_escaped(value=value))
 
 

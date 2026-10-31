@@ -51,7 +51,9 @@ __all__: list[str] = [
     "ACP_NODES",
     "NODE_INPUT_CANDIDATES",
     "AcpAdapter",
+    "AcpNodeLoads",
     "AcpNodeOverlay",
+    "loads_from_object",
     "overlay_from_string",
     "overlay_from_table",
     "parse_adapter_string",
@@ -122,6 +124,25 @@ class AcpAdapter:
 
 
 @dataclass(frozen=True, kw_only=True)
+class AcpNodeLoads:
+    """The complete, replace-not-merge context declaration for one node."""
+
+    instruction_files: tuple[str, ...] = ()
+    skills: tuple[str, ...] = ()
+    plugins: tuple[str, ...] = ()
+    mcp_servers: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, list[str]]:
+        """Return the stable JSON-shaped form carried to the launch proxy."""
+        return {
+            "instruction_files": list(self.instruction_files),
+            "skills": list(self.skills),
+            "plugins": list(self.plugins),
+            "mcp_servers": list(self.mcp_servers),
+        }
+
+
+@dataclass(frozen=True, kw_only=True)
 class AcpNodeOverlay:
     """One layer's contribution to one node's adapter.
 
@@ -153,6 +174,7 @@ class AcpNodeOverlay:
     env: Mapping[str, str] = field(default_factory=dict)
     args: tuple[str, ...] | None = None
     env_replaces: bool = False
+    loads: AcpNodeLoads | None = None
 
 
 def parse_adapter_string(*, text: str) -> AcpAdapter:
@@ -258,7 +280,36 @@ def overlay_from_table(*, entry: Mapping[str, Any], key: str) -> AcpNodeOverlay 
     env = _string_map(value=entry.get("env"))
     if env is None:
         return f"{key}.env must be a table of string to string; got {entry.get('env')!r}"
-    return AcpNodeOverlay(command=command_raw, env=env, args=args)
+    loads = loads_from_object(value=entry.get("loads"), key=f"{key}.loads")
+    if isinstance(loads, str):
+        return loads
+    return AcpNodeOverlay(command=command_raw, env=env, args=args, loads=loads)
+
+
+def loads_from_object(*, value: object, key: str) -> AcpNodeLoads | str | None:
+    """Parse one optional context declaration without accepting partial shapes."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return f"{key} must be a table; got {value!r}"
+    table = cast("dict[str, Any]", value)
+    fields = ("instruction_files", "skills", "plugins", "mcp_servers")
+    unknown = sorted(set(table) - set(fields))
+    if unknown:
+        return f"{key} has unknown field {unknown[0]!r}"
+    parsed: dict[str, tuple[str, ...]] = {}
+    for field_name in fields:
+        raw = table.get(field_name, [])
+        items = _string_tuple(value=raw)
+        if items is None:
+            return f"{key}.{field_name} must be an array of strings; got {raw!r}"
+        parsed[field_name] = items
+    return AcpNodeLoads(
+        instruction_files=parsed["instruction_files"],
+        skills=parsed["skills"],
+        plugins=parsed["plugins"],
+        mcp_servers=parsed["mcp_servers"],
+    )
 
 
 def resolve_node_inputs(*, declared: Mapping[str, str]) -> Mapping[str, str]:

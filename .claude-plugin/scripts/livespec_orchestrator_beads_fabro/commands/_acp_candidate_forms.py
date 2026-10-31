@@ -65,7 +65,9 @@ CONFIG_OPTIONS_KEY = "config_options"
 # metadata objects a candidate may declare for itself.
 _OVERRIDE_KEYS: frozenset[str] = frozenset({"availability_signatures", "pricing", *IDENTITY_FIELDS})
 
-STRUCTURED_CANDIDATE_KEYS: frozenset[str] = frozenset(STRUCTURED_FIELDS) | _OVERRIDE_KEYS
+STRUCTURED_CANDIDATE_KEYS: frozenset[str] = (
+    frozenset(STRUCTURED_FIELDS) | _OVERRIDE_KEYS | frozenset({"loads"})
+)
 
 _AGENT_FIELD = "agent"
 

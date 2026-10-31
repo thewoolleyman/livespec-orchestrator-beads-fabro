@@ -31,10 +31,16 @@ which node\'s posture each one renders under.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import AcpCatalogs
-from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import NODE_INPUT_CANDIDATES
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
+    NODE_INPUT_CANDIDATES,
+    AcpNodeLoads,
+    loads_from_object,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_structured_render import READ_ONLY_NODES
 from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
     is_structured_text,
@@ -43,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
 
 __all__: list[str] = [
     "rendered_workflow_defaults",
+    "workflow_context_loads",
 ]
 
 
@@ -77,6 +84,27 @@ def rendered_workflow_defaults(
             return refusal
         rendered[name] = adapter
     return rendered
+
+
+def workflow_context_loads(*, declared: Mapping[str, str]) -> Mapping[str, AcpNodeLoads] | str:
+    """Read each structured workflow declaration's optional context loads."""
+    result: dict[str, AcpNodeLoads] = {}
+    for name, value in sorted(declared.items()):
+        if not is_structured_text(value=value):
+            continue
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as error:
+            return f"workflow input {name} is not valid JSON: {error.msg}"
+        if not isinstance(parsed, dict):
+            return f"workflow input {name} must be a JSON object"
+        table = cast("dict[str, Any]", parsed)
+        loads = loads_from_object(value=table.get("loads"), key=f"workflow input {name}.loads")
+        if isinstance(loads, str):
+            return loads
+        if loads is not None:
+            result[name] = loads
+    return result
 
 
 def _read_only(*, name: str) -> bool:

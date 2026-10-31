@@ -38,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     ACP_NODES,
     NODE_INPUT_CANDIDATES,
     AcpAdapter,
+    AcpNodeLoads,
     AcpNodeOverlay,
     parse_adapter_string,
     render_adapter,
@@ -96,6 +97,8 @@ class ResolvedAcpNode:
     command_layer: str
     args_layer: str
     env_layers: Mapping[str, str]
+    loads: AcpNodeLoads | None = None
+    loads_layer: str | None = None
 
     @property
     def rendered(self) -> str:
@@ -134,6 +137,7 @@ class AcpNodeResolution:
 def resolve_acp_nodes(
     *,
     workflow_inputs: Mapping[str, str],
+    workflow_loads: Mapping[str, AcpNodeLoads] | None = None,
     repository: Mapping[str, AcpNodeOverlay],
     dispatch: Mapping[str, AcpNodeOverlay],
 ) -> AcpNodeResolution | str:
@@ -160,6 +164,7 @@ def resolve_acp_nodes(
         node: _resolve_one(
             node=node,
             workflow_default=workflow_inputs[name],
+            workflow_loads=(workflow_loads or {}).get(name),
             overlays=overlays,
         )
         for node, name in inputs.items()
@@ -334,6 +339,11 @@ def acp_nodes_journal_record(
                     "args": resolved.args_layer,
                     "env": dict(sorted(resolved.env_layers.items())),
                 },
+                **(
+                    {"loads": resolved.loads.as_dict(), "loads_layer": resolved.loads_layer}
+                    if resolved.loads is not None
+                    else {}
+                ),
             }
             for node, resolved in sorted(resolution.nodes.items())
         }
@@ -344,6 +354,7 @@ def _resolve_one(
     *,
     node: str,
     workflow_default: str,
+    workflow_loads: AcpNodeLoads | None,
     overlays: Mapping[str, Mapping[str, AcpNodeOverlay]],
 ) -> ResolvedAcpNode:
     """Fold every layer's overlay for one node onto the workflow default."""
@@ -354,6 +365,8 @@ def _resolve_one(
     command_layer = WORKFLOW_LAYER
     args_layer = WORKFLOW_LAYER
     env_layers = dict.fromkeys(env, WORKFLOW_LAYER)
+    loads = workflow_loads
+    loads_layer = WORKFLOW_LAYER if loads is not None else None
     for layer in _OVERLAY_LAYERS:
         overlay = overlays[layer].get(node)
         if overlay is None:
@@ -369,9 +382,14 @@ def _resolve_one(
             env_layers = {}
         env.update(overlay.env)
         env_layers.update(dict.fromkeys(overlay.env, layer))
+        if overlay.loads is not None:
+            loads = overlay.loads
+            loads_layer = layer
     return ResolvedAcpNode(
         adapter=AcpAdapter(command=command, env=env, args=args),
         command_layer=command_layer,
         args_layer=args_layer,
         env_layers=env_layers,
+        loads=loads,
+        loads_layer=loads_layer,
     )
