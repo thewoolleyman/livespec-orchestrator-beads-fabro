@@ -130,6 +130,7 @@ class WatchedFabroLauncher:
         port = fabro_port_for_plan(plan=plan, runner=runner)
         self.prelaunch_checkpoint(name="fabro-port")
         release_pass_snapshot()
+        self.prelaunch_checkpoint(name="release-pass-snapshot")
         holder: dict[str, CommandResult] = {}
         run_id_holder: dict[str, str | None] = {}
         # Set once this dispatch's `fabro run` call has RETURNED, which is
@@ -343,6 +344,5 @@ class WatchedFabroLauncher:
         stale-item reap moved out: the loop's job is to decide, and a caller
         with no transaction to release is not a decision.
         """
-        self.prelaunch_checkpoint(name="fabro-run-running")
         if self.on_worker_running is not None:
             self.on_worker_running()
