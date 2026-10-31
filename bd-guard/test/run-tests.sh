@@ -134,7 +134,7 @@ log_has() { [ -f "$CLOG" ] && grep -qF -- "$1" "$CLOG"; }
 # killed. Stdlib http.server only — no network, no external deps.
 CAP_PY="${WORK}/capture.py"
 cat > "$CAP_PY" <<'CAPPY'
-import http.server, sys
+import http.server, os, sys, time
 OUT, PORTF = sys.argv[1], sys.argv[2]
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -148,6 +148,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
     def log_message(self, *a):  # silence access log
         return
+time.sleep(float(os.environ.get("CAPTURE_START_DELAY_SECONDS", "0")))
 srv = http.server.HTTPServer(("127.0.0.1", 0), H)
 with open(PORTF, "w") as f:
     f.write(str(srv.server_address[1]))
@@ -179,13 +180,13 @@ VERIFYPY
 CAP_PID=""
 CAP_PORT=""
 # start_capture <out-file> <port-file> — launch the capture server and block
-# (up to ~2s) until it has published its port into CAP_PORT.
+# (up to 30s) until it has published its port into CAP_PORT.
 start_capture() {
     rm -f "$1" "$2"
     python3 "$CAP_PY" "$1" "$2" &
     CAP_PID=$!
     local i=0
-    while [ ! -s "$2" ] && [ "$i" -lt 40 ]; do
+    while [ ! -s "$2" ] && [ "$i" -lt 600 ]; do
         sleep 0.05
         i=$((i + 1))
     done
