@@ -263,6 +263,7 @@ def start(command, program):
         if record is not None and current_state(path, record) == RUNNING:
             raise RunnerRefusal("commit run " + path.stem + " is still running; wait on it first")
     run_id = "commit-" + uuid.uuid4().hex
+    (directory / "latest").write_text(run_id + "\n", encoding="utf-8")
     path = state_path(directory, run_id)
     write_record(path, {"state": RUNNING, "command": command, "root": root})
     with path.with_suffix(".launch.log").open("w", encoding="utf-8") as log:

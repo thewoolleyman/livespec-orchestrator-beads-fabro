@@ -46,6 +46,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
     COMMIT_RUNNER_PROGRAM_FILENAME,
     REPORT_EXIT_CODE_KEY,
+    REPORT_FAILED_TARGETS_KEY,
     REPORT_HOOK_RAN_KEY,
     REPORT_OUTPUT_TAIL_KEY,
     REPORT_RUN_ID_KEY,
@@ -157,7 +158,21 @@ class CommitRunnerReplay:
             return
         exit_code = report.get(REPORT_EXIT_CODE_KEY)
         tail = report.get(REPORT_OUTPUT_TAIL_KEY)
-        process.output = tail if isinstance(tail, str) else ""
+        reported_targets = report.get(REPORT_FAILED_TARGETS_KEY)
+        targets = (
+            [target for target in cast("list[object]", reported_targets) if isinstance(target, str)]
+            if isinstance(reported_targets, list)
+            else []
+        )
+        target_summary = (
+            "Failed targets ("
+            + str(len(targets))
+            + "):\n"
+            + "".join("  - " + target + "\n" for target in targets)
+            if targets
+            else ""
+        )
+        process.output = target_summary + (tail if isinstance(tail, str) else "")
         if (
             state != NO_VERDICT_STATE
             and isinstance(exit_code, int)

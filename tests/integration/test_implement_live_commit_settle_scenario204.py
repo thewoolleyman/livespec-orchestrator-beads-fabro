@@ -362,6 +362,31 @@ def test_a_terminal_runner_refusal_reenters_even_when_nothing_remains_staged(
     assert _ERROR_LINE in brief
 
 
+def test_a_terminal_runner_refusal_with_budget_spent_names_its_full_output_targets(
+    tmp_path: Path,
+) -> None:
+    """A needs-human cause retains targets that scrolled out of the runner report tail."""
+    repo = _clone(tmp_path)
+    _run_record(
+        repo=repo,
+        record={"state": "failed", "exit_code": 1, "hook_ran": True},
+    ).with_suffix(".output").write_text(
+        f"lefthook hook: pre-commit\nFailed targets (1):\n  - {_FAILED_TARGET}\n"
+        + f"{_ERROR_LINE}\n" * 81,
+        encoding="utf-8",
+    )
+    runs = _git_file(repo=repo, name="livespec-commit-runs")
+    _ = (runs / "latest").write_text(f"{_RUN_ID}\n", encoding="utf-8")
+    _ = _git_file(repo=repo, name=_REENTRIES_GIT_PATH).write_text("1\n", encoding="utf-8")
+
+    result = _routed(repo=repo)
+
+    assert result.returncode != 0, result.stderr
+    assert _FAILED_TARGET in result.stderr
+    cause = _git_file(repo=repo, name=_STAGE_CAUSE_GIT_PATH).read_text(encoding="utf-8")
+    assert _FAILED_TARGET in cause
+
+
 def test_a_commit_run_that_ended_without_a_verdict_is_briefed_as_having_made_no_commit(
     tmp_path: Path,
 ) -> None:
