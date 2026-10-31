@@ -304,7 +304,7 @@ def test_a_human_release_routes_an_auto_item_to_ready_and_the_wall_stops_refusin
     assert _wall(repo=repo, tmp_path=tmp_path) is None
 
 
-def test_a_human_release_leaves_a_manual_admission_policy_in_force(
+def test_a_human_release_respects_committed_auto_approval(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _held(tmp_path=tmp_path, monkeypatch=monkeypatch, admission_policy="manual")
@@ -312,8 +312,8 @@ def test_a_human_release_leaves_a_manual_admission_policy_in_force(
     result = _release(repo=repo)
 
     assert result["status"] == "green", result
-    assert result["target_status"] == "pending-approval"
-    assert _stored(repo=repo).status == "pending-approval"
+    assert result["target_status"] == "ready"
+    assert _stored(repo=repo).status == "ready"
     assert "tier: none" in _comments(repo=repo)
     assert _wall(repo=repo, tmp_path=tmp_path) is None
 

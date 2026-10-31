@@ -214,8 +214,8 @@ def test_all_six_enumerated_waits_compose_and_the_admitted_item_does_not(
         "valve:accept:bd-parked",
         # 3. blocked on a needs-human reason
         "valve:resolve-blocked:bd-blocked",
-        # 4. pending-approval under an effective manual admission policy
-        "valve:approve:bd-approval",
+        # 4. pending-approval awaiting the automatic admission pass
+        "hygiene:awaiting-admission:bd-approval",
         # 5. factory-unsafe ready work awaiting host routing
         "host-only:needs-host-secrets:bd-host",
         # 6. ready work held by an unexpired provider-exhaustion record
@@ -252,7 +252,6 @@ def test_every_advertised_drive_handoff_is_accepted_by_drive(
     assert [item.handoff.action_id for item in advertised] == [
         "accept:bd-parked",
         "resolve-blocked:bd-blocked:ready",
-        "approve:bd-approval",
     ]
 
     results: dict[str, dict[str, Any]] = {
@@ -265,7 +264,6 @@ def test_every_advertised_drive_handoff_is_accepted_by_drive(
     assert {action: result["status"] for action, result in results.items()} == {
         "accept:bd-parked": "green",
         "resolve-blocked:bd-blocked:ready": "green",
-        "approve:bd-approval": "green",
     }
 
 
