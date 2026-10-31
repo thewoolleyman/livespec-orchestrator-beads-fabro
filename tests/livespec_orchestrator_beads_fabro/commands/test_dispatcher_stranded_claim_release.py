@@ -204,3 +204,36 @@ def test_a_first_absent_run_with_no_live_owner_is_released(tmp_path: Path) -> No
     assert _RUN_ID in bodies[0]
     assert _FACTORY in bodies[0]
     assert REASON_RUN_ABSENT in bodies[0]
+
+
+def test_a_succeeded_run_with_no_merged_pull_request_names_its_release(tmp_path: Path) -> None:
+    module = importlib.import_module(_MODULE_NAME)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    _seed_claim(item=item)
+
+    survey = module.survey_stranded_claims(
+        inputs=module.StrandedClaimInputs(
+            repo=repo,
+            items=(item,),
+            journal=_journal(repo=repo),
+            runner=_Runner(),
+            inventories=(
+                module.FactoryInventory(
+                    name=_FACTORY,
+                    server_url=_SERVER,
+                    fabro_bin="fabro",
+                    surveyed=True,
+                    status_kinds={_RUN_ID: "succeeded"},
+                ),
+            ),
+            this_host=_HOST,
+            now_iso="2026-10-18T09:00:00Z",
+            dry_run=True,
+        )
+    )
+
+    assert survey.recovered == ()
+    assert [(held.hold_reason, held.remedy) for held in survey.held] == [
+        ("run-succeeded", f"move:{_ITEM_ID}:ready")
+    ]
