@@ -1,5 +1,14 @@
 # Plan sessions in Herdr and headless workers
 
+## Related reports and planning documents
+
+Latest versions on GitHub:
+
+- [Plan charter](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/001-charter-dispatch-control-plane.md)
+- [Portable coordination: research and proposed direction](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/009-portable-coordination-research-summary.md)
+- [Coordinator responsibilities: current and proposed roles](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/011-coordinator-responsibility-mapping.md)
+- [Spec-side obligations and autonomy follow-up](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/012-spec-side-obligations-and-autonomy-followup.md)
+
 Research and recommendation · 27 October 2026
 
 Plan: **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`).

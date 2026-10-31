@@ -15,6 +15,15 @@ Earlier the same evening, verbatim: "I am really worried that we are dependent u
 
 # Charter — dispatch-control-plane
 
+## Related reports and planning documents
+
+Latest versions on GitHub:
+
+- [Portable coordination: research and proposed direction](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/009-portable-coordination-research-summary.md)
+- [Interactive and headless plan sessions](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/010-interactive-and-headless-plan-sessions.md)
+- [Coordinator responsibilities: current and proposed roles](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/011-coordinator-responsibility-mapping.md)
+- [Spec-side obligations and autonomy follow-up](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/012-spec-side-obligations-and-autonomy-followup.md)
+
 ## Topic
 
 Where dispatch control, and the state dispatch decisions depend on, should live in the official livespec
