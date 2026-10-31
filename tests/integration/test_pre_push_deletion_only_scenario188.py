@@ -57,6 +57,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+from tests.integration.fixture_check_env import fixture_check_environment
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-pre-push.sh"
 _LEFTHOOK = _REPO_ROOT / "lefthook.yml"
@@ -105,8 +107,11 @@ def _run_pre_push(*, tmp_path: Path, stdin: str) -> tuple[int, str, list[str]]:
         _ = stub.write_text(body, encoding="utf-8")
         stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
     log = tmp_path / "invocations.log"
-    env = os.environ.copy()
-    env.update({"PATH": f"{stub_dir}{os.pathsep}{env['PATH']}", "STUB_LOG": str(log)})
+    # The gate Job exports SKIP_TARGETS, which the script now forwards onto the
+    # aggregate's skip list; an inherited one would change the invocation under test.
+    env = fixture_check_environment(
+        overrides={"PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}", "STUB_LOG": str(log)}
+    )
     completed = subprocess.run(
         ["bash", str(_SCRIPT)],
         cwd=str(tmp_path),
