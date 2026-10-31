@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.262.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.0...v0.262.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* constrain host judgement tools ([9114ec7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9114ec7f5295c8dd0a89d3dfcd3f7ce62ed8bf8c))
+* isolate Claude judgement home ([c69419f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c69419f8cb3600733973388ffb91fc72489cdd50))
+
 ## [0.262.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.261.1...v0.262.0) (2026-10-30)
 
 
