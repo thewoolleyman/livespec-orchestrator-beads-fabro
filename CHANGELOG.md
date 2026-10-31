@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.264.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.8...v0.264.9) (2026-10-31)
+
+
+### Bug Fixes
+
+* isolate the Codex host judgement environment ([88f4915](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/88f4915cbd0f3b59d819ef1bce4926bed62a29f3))
+* make host judgement prompts toolless ([95a474a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/95a474a655a26b94498c7d771846092ad08e8114))
+* state the configured sandbox capability set to the host judge ([16920d4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/16920d4d119cf4527c73edfae625a6b08f9dffa6))
+
 ## [0.264.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.7...v0.264.8) (2026-10-31)
 
 
