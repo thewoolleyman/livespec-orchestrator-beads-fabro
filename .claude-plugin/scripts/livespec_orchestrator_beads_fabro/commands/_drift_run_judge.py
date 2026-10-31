@@ -49,8 +49,8 @@ from livespec_runtime import spec_stated
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
     candidate_report,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
-    run_dod_gate_prompt,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
+    run_candidate_chain,
 )
 from livespec_orchestrator_beads_fabro.effects import FloatParseFailure, parse_float
 
@@ -89,6 +89,7 @@ def drift_judge(
     runner: CommandRunner,
     payload_root: Path | None = None,
     reply: ReplyShape = "verdict",
+    caller: str = "drift_run",
 ) -> spec_stated.ModelRunner:
     """A `ModelRunner` that puts one rendered prompt to the headless judge.
 
@@ -113,6 +114,7 @@ def drift_judge(
         cwd=project_root,
         runner=runner,
         reply=reply,
+        caller=caller,
     )
 
 
@@ -122,6 +124,7 @@ def _judged(
     cwd: Path,
     runner: CommandRunner,
     reply: ReplyShape,
+    caller: str,
 ) -> str:
     """One prompt through the shared chain, or no reply when every candidate fails.
 
@@ -129,12 +132,13 @@ def _judged(
     pass and a governing-heading read write no ledger record of their own.
     """
     is_reply = _looks_like_item_class if reply == "item_class" else _looks_like_spec_stated_verdict
-    chain = run_dod_gate_prompt(
+    chain = run_candidate_chain(
         prompt=prompt,
         cwd=cwd,
         runner=runner,
         is_verdict=lambda text: is_reply(text=text),
         timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
+        caller=caller,
     )
     for ran in chain.attempts:
         _ = sys.stderr.write(f"{candidate_report(attempt=ran)}\n")

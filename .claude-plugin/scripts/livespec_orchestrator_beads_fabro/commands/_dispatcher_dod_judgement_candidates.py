@@ -131,6 +131,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
     timeout_seconds: float | None = None,
     candidate_resolver: Callable[..., tuple[AcpCandidate, ...] | None] = dod_gate_candidates,
     bound_input: bool = False,
+    caller: str | None = None,
 ) -> CandidateChainResult:
     """Run the resolved candidates in order, closing stdin for each.
 
@@ -145,7 +146,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
     resolved = candidate_resolver(cwd=cwd)
     if resolved is None:
         return CandidateChainResult(reply=None, cause=CAUSE_NO_ELIGIBLE_MODEL)
-    environ = dict(os.environ)
+    environ = _caller_environ(caller=caller, environ=dict(os.environ))
     resolved_timeout = (
         resolve_judge_timeout_seconds(environ=environ)
         if timeout_seconds is None
@@ -259,3 +260,15 @@ def _invocation_cause(*, exit_code: int) -> str:
     if exit_code == _EXIT_TIMED_OUT:
         return CAUSE_JUDGEMENT_TIMED_OUT
     return CAUSE_JUDGE_COMMAND_FAILED
+
+
+def _caller_environ(*, caller: str | None, environ: dict[str, str]) -> dict[str, str]:
+    """Append the launching judgement's caller label when one is supplied."""
+    if caller is None:
+        return environ
+    label = f"livespec.caller={caller}"
+    inherited = environ.get("OTEL_RESOURCE_ATTRIBUTES")
+    return {
+        **environ,
+        "OTEL_RESOURCE_ATTRIBUTES": label if inherited is None else f"{inherited},{label}",
+    }

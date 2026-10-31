@@ -91,6 +91,7 @@ class _Runner:
     exit_code: int = 0
     reply: str = '{"kind": "stated"}'
     argvs: list[list[str]] = field(default_factory=list)
+    environs: list[dict[str, str] | None] = field(default_factory=list)
     stdin_text: list[str] = field(default_factory=list)
     timeouts: list[float] = field(default_factory=list)
 
@@ -103,8 +104,9 @@ class _Runner:
         env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
     ) -> CommandResult:
-        _ = (cwd, env)
+        _ = cwd
         self.argvs.append(argv)
+        self.environs.append(None if env is None else dict(env))
         self.timeouts.append(timeout_seconds)
         # Read unconditionally: this seam ALWAYS hands the child a descriptor,
         # so a guard here would be an arm no call can reach — and an
@@ -138,6 +140,22 @@ def test_the_judge_is_invoked_headless_with_no_prompt_argument(tmp_path: Path) -
     argv = runner.argvs[0]
     assert argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
     assert "a prompt" not in argv
+
+
+def test_the_drift_judge_appends_its_caller_to_inherited_resource_attributes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=livespec-family")
+    runner = _Runner()
+    project, payload = _project_root(tmp_path=tmp_path)
+
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
+
+    assert runner.environs[0] is not None
+    assert (
+        runner.environs[0]["OTEL_RESOURCE_ATTRIBUTES"]
+        == "service.namespace=livespec-family,livespec.caller=drift_run"
+    )
 
 
 def test_a_non_zero_exit_answers_the_empty_string(tmp_path: Path) -> None:
