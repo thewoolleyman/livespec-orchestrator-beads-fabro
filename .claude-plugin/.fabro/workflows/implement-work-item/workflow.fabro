@@ -194,6 +194,7 @@ digraph ImplementWorkItem {
         label="Implement (Red-Green-Replay)"
         backend="acp"
         acp.command="{{ inputs.implement_adapter }}"
+        output_schema="{\"type\":\"object\",\"properties\":{\"definition_of_done_complete\":{\"type\":\"boolean\"}}}"
         timeout="1800s"
         max_retries=1
         goal_gate=true
@@ -220,18 +221,14 @@ digraph ImplementWorkItem {
     // proof_capture found the feature absent and routed to `fix` — which then
     // had to build the whole feature in one turn and died at its ceiling.
     //
-    // WHY A FILE AND NOT THE REPLY TEXT. The field the clause names rides in
-    // the turn's final reply, and the only ACP reply field the ENGINE decides a
-    // node's outcome from is the structured ending itself: a reply that states
-    // the work incomplete but omits that ending still succeeds, and a reply
-    // that states NOTHING cannot be distinguished from a conforming one at all.
-    // No node sees another node's reply text, so the carrier has to be
-    // something this clone holds. The prompt therefore directs the turn to
-    // record the SAME field at `$GIT_DIR/livespec-implement-completion` as the
-    // last thing it does, and this gate reads that record — the same per-clone
-    // convention `publish_draft` and `pr_refresh` already use for state one
-    // stage writes and another reads, and deliberately inside `$GIT_DIR` so no
-    // checkpoint commit can carry it into the published tree.
+    // WHY THE FINAL REPLY AND THE FILE BOTH MATTER. Petri validates the final
+    // reply against `implement`'s output schema and exposes its parsed object
+    // to this command through stdin. The prompt also directs the turn to write
+    // the same field at `$GIT_DIR/livespec-implement-completion` as its last
+    // action; the gate reads that record whenever the reply carries no field
+    // (empty, prose, or `{}`), and a later node can read it from this clone.
+    // Both carriers are deliberately outside the
+    // published tree, so no checkpoint commit can carry them into the branch.
     //
     // FAIL-CLOSED IN THE ONE DIRECTION THAT MATTERS. An absent record, an empty
     // one, or one that does not state the Definition of Done COMPLETE is read
@@ -264,7 +261,8 @@ digraph ImplementWorkItem {
         label="Implement completion gate: did the turn state the Definition of Done complete?"
         shape=parallelogram
         timeout="600s"
-        script="record=$(git rev-parse --git-path livespec-implement-completion); cause_path=$(git rev-parse --git-path livespec-stage-cause); rm -f \"$cause_path\"; livespec_partial_progress() { printf 'stage: %s\\ncause: %s\\n' implement \"$1\" > \"$cause_path\"; printf '%s\\n' \"$1\" >&2; }; if test ! -s \"$record\"; then livespec_partial_progress 'LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn stated no completion field, so it never said whether the work-item Definition of Done is complete on the committed branch; an unstated completion is read as partial progress rather than as a success, so this run publishes and proves nothing'; exit 1; fi; if tr -d ' \\t' < \"$record\" | grep -qF '\"definition_of_done_complete\":true'; then echo 'LIVESPEC_IMPLEMENT_COMPLETE: the implement turn completion field states the work-item Definition of Done is complete on the committed branch, so the implement stage succeeded and the run proceeds to implementation_diff' >&2; exit 0; fi; livespec_partial_progress \"LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn completion field does not state the work-item Definition of Done complete on the committed branch, so the implement stage failed rather than publishing and proving partial progress. The recorded field was: $(head -c 500 \"$record\" | tr '\\n' ' ')\"; exit 1"
+        stdin_source="context.output.implement"
+        script="record=$(git rev-parse --git-path livespec-implement-completion); cause_path=$(git rev-parse --git-path livespec-stage-cause); response=$(cat); completion=$response; rm -f \"$cause_path\"; livespec_partial_progress() { printf 'stage: %s\\ncause: %s\\n' implement \"$1\" > \"$cause_path\"; printf '%s\\n' \"$1\" >&2; }; compact=$(printf %s \"$completion\" | tr -d ' \\t\\r\\n'); if ! printf %s \"$compact\" | grep -qF '\"definition_of_done_complete\":'; then completion=$(cat \"$record\" 2>/dev/null || true); compact=$(printf %s \"$completion\" | tr -d ' \\t\\r\\n'); fi; if test -z \"$compact\" || ! printf %s \"$compact\" | grep -qF '\"definition_of_done_complete\":'; then livespec_partial_progress 'LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn stated no completion field, so it never said whether the work-item Definition of Done is complete on the committed branch; an unstated completion is read as partial progress rather than as a success, so this run publishes and proves nothing'; exit 1; fi; if printf %s \"$compact\" | grep -qF '\"definition_of_done_complete\":true'; then echo 'LIVESPEC_IMPLEMENT_COMPLETE: the implement turn completion field states the work-item Definition of Done is complete on the committed branch, so the implement stage succeeded and the run proceeds to implementation_diff' >&2; exit 0; fi; livespec_partial_progress \"LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn completion field does not state the work-item Definition of Done complete on the committed branch, so the implement stage failed rather than publishing and proving partial progress. The recorded field was: $(printf %s \"$completion\" | head -c 500 | tr '\\n' ' ')\"; exit 1"
     ]
 
     // Explicit-failed-output classifier (bd-ib-uk3fop; Scenarios 131 and 204).
