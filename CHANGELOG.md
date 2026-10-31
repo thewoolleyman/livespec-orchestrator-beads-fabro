@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.264.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.263.1...v0.264.0) (2026-10-31)
+
+
+### Features
+
+* bootstrap prose imports from registered plugin roots ([08833db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/08833dbd834de5c7d76d0e6907b8959218c0e22d))
+* report registered plugin currency ([bc902a2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bc902a2e1d264dc1bd105a5091337a1330612a50))
+* resolve a governed project's registered plugin root ([473b082](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/473b08279d92c3915d610110b92c8ad7f8e8f441))
+* warn at session start when the registered build is stale ([bea0615](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bea06155d2b75e0f7d9746a70eb17b781dbba8fd))
+
 ## [0.263.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.263.0...v0.263.1) (2026-10-31)
 
 
