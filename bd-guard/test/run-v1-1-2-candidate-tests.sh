@@ -513,12 +513,39 @@ test_otlp_fail_open() {
     repo="$(setup_repo otlp)"
     (
         cd "$repo"
-        start_s="$(date +%s)"
+        # The emit is detached: the wrapper returns BEFORE its emit child
+        # exits. A held stub emitter proves that by ordering, not by timing
+        # the call, which measured host load rather than the detach contract.
+        held="$(pwd)/held-emit"
+        mkdir -p "$held"
+        cat >"${held}/held-emit.py" <<'HELDPY'
+import os
+import pathlib
+import time
+
+held = pathlib.Path(os.environ["BDG_HELD_DIR"])
+(held / "started").write_text("1")
+for _ in range(1200):  # safety cap only (60 s); the test releases it first
+    if (held / "release").exists():
+        break
+    time.sleep(0.05)
+(held / "exited").write_text("1")
+HELDPY
+        BDG_HELD_DIR="$held" \
+        LIVESPEC_BD_GUARD_EMIT="${held}/held-emit.py" \
         LIVESPEC_BD_GUARD_OTLP=on \
         LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:1/v1/traces" \
             run_guard_otlp list --status all --limit 0 --json >otlp-list.json 2>otlp-list.err
-        elapsed=$(( "$(date +%s)" - start_s ))
-        [ "$elapsed" -lt 2 ] || fail "OTLP dead endpoint delayed candidate passthrough"
+        [ ! -f "${held}/exited" ] || fail "OTLP emit child exited before the candidate wrapper returned"
+        i=0
+        while [ ! -f "${held}/started" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+        [ -f "${held}/started" ] || fail "OTLP emit child never started for the candidate wrapper"
+        : >"${held}/release"
+        i=0
+        while [ ! -f "${held}/exited" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+        LIVESPEC_BD_GUARD_OTLP=on \
+        LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:1/v1/traces" \
+            run_guard_otlp list --status all --limit 0 --json >otlp-list.json 2>otlp-list.err
         [ ! -s otlp-list.err ] || fail "OTLP dead endpoint changed stderr"
         assert_json_array otlp-list.json
 

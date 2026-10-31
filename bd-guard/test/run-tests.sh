@@ -645,20 +645,65 @@ else
 fi
 stop_capture
 
-# 9.2 fail-open when the endpoint is dead. Point at a refused port; the emit is
-#     detached, so the wrapper returns immediately and bd is unaffected — no
-#     multi-second hang regardless of the collector being down.
-T92_START=$(date +%s)
+# 9.2 fail-open when the endpoint is dead. Point at a refused port: bd's
+#     stdout, stderr and exit are unchanged. No wall-clock bound is asserted
+#     here: timing the wrapper measures host load, not the detach contract,
+#     which 9.2b proves by ordering instead.
 LIVESPEC_BD_REAL=/bin/echo \
 LIVESPEC_BD_GUARD_OTLP=on \
 LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:1/v1/traces" \
     "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
 T92_RC=$?
-T92_ELAPSED=$(( $(date +%s) - T92_START ))
-if [ "$T92_RC" -eq 0 ] && stdout_is "list" && stderr_empty && [ "$T92_ELAPSED" -lt 2 ]; then
-    pass "telemetry: dead endpoint is fail-open (bd stdout/exit unchanged, returns promptly in ${T92_ELAPSED}s)"
+if [ "$T92_RC" -eq 0 ] && stdout_is "list" && stderr_empty; then
+    pass "telemetry: dead endpoint is fail-open (bd stdout/stderr/exit unchanged)"
 else
-    fail "telemetry: dead-endpoint fail-open (rc=$T92_RC, elapsed=${T92_ELAPSED}s, stdout=$(cat "$OUT_FILE"), stderr=$(cat "$ERR_FILE"))"
+    fail "telemetry: dead-endpoint fail-open (rc=$T92_RC, stdout=$(cat "$OUT_FILE"), stderr=$(cat "$ERR_FILE"))"
+fi
+
+# 9.2b the emit is DETACHED: the wrapper returns BEFORE its emit child exits.
+#      A held stub emitter records that it started, then blocks until this
+#      test releases it. When the wrapper has returned, the stub must have
+#      started and must NOT yet have exited: an ordering event, not a timing.
+HELD_DIR="${WORK}/held-emit"
+rm -rf "$HELD_DIR"
+mkdir -p "$HELD_DIR"
+HELD_EMIT="${HELD_DIR}/held-emit.py"
+cat >"$HELD_EMIT" <<'HELDPY'
+import os
+import pathlib
+import time
+
+held = pathlib.Path(os.environ["BDG_HELD_DIR"])
+(held / "started").write_text("1")
+for _ in range(1200):  # safety cap only (60 s); the test releases it first
+    if (held / "release").exists():
+        break
+    time.sleep(0.05)
+(held / "exited").write_text("1")
+HELDPY
+BDG_HELD_DIR="$HELD_DIR" \
+LIVESPEC_BD_REAL=/bin/echo \
+LIVESPEC_BD_GUARD_OTLP=on \
+LIVESPEC_BD_GUARD_EMIT="$HELD_EMIT" \
+LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:1/v1/traces" \
+    "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
+T92B_RC=$?
+held_poll() {
+    local i=0
+    while [ ! -f "$1" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+    [ -f "$1" ]
+}
+T92B_EXITED_AT_RETURN=0
+[ -f "${HELD_DIR}/exited" ] && T92B_EXITED_AT_RETURN=1
+T92B_STARTED=0
+held_poll "${HELD_DIR}/started" && T92B_STARTED=1
+: >"${HELD_DIR}/release"
+held_poll "${HELD_DIR}/exited" || true
+if [ "$T92B_RC" -eq 0 ] && stdout_is "list" && [ "$T92B_STARTED" -eq 1 ] \
+        && [ "$T92B_EXITED_AT_RETURN" -eq 0 ]; then
+    pass "telemetry: wrapper returns before its detached emit child exits (emit started, still held at return)"
+else
+    fail "telemetry: emit not detached (rc=$T92B_RC, started=$T92B_STARTED, exited-at-return=$T92B_EXITED_AT_RETURN, stdout=$(cat "$OUT_FILE"))"
 fi
 
 # 9.3 disabled -> transparent passthrough, NO emit attempted.
