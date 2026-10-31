@@ -45,6 +45,7 @@ _CODEX_ISOLATION_SETTINGS = (
     "project_doc_max_bytes=0",
     "features.skills=false",
     "features.multi_agent=false",
+    "features.shell_tool=false",
 )
 
 
@@ -68,9 +69,12 @@ def candidate_command(
 
     Each CLI is resolved from the invoking environment and declines the
     interactive setup the invoking profile would load (project instructions,
-    skills, settings, MCP servers, slash commands, session persistence); the
+    skills, settings, MCP servers, slash commands, session persistence). The
     governed repository is readable only through `allowed_directory`, which the
-    caller's scratch working directory does not contain.
+    caller's scratch working directory does not contain. Codex's shell tool is
+    disabled because the prompt already carries the item and every referenced
+    clause it must judge, so recursive discovery of the repository or
+    `/etc/livespec` is neither needed nor permitted.
 
     Under `bound_input` each CLI is also asked for its usage-reporting output
     form, because a candidate that reports no usage can be neither measured nor

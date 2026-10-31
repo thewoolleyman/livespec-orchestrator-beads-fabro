@@ -112,6 +112,8 @@ def _codex_argv(*, model: str, cwd: Path, settings: list[str] | None = None) -> 
         "features.skills=false",
         "-c",
         "features.multi_agent=false",
+        "-c",
+        "features.shell_tool=false",
         "--add-dir",
         str(cwd),
         "-s",
@@ -376,7 +378,7 @@ def test_a_claude_candidate_carries_its_adapter_environment(
     assert runner.argvs[0][1:] == [
         "-p",
         "--allowedTools",
-        "Read,Grep,Glob",
+        "Read",
         "--model",
         "claude-opus-5",
         "--add-dir",
