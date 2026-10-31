@@ -1326,7 +1326,10 @@ def test_a_repaired_refresh_republishes_over_this_run_s_own_published_head(
     assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{repaired.repaired_head}\n"
     assert world.state(name=_BRIEF_FILENAME) is None
     assert _routed(source="publish_draft", outcome="succeeded") == "publish_merged_reconcile_route"
-    assert _routed(source="publish_merged_reconcile_route", outcome="failed") == "proof_capture"
+    assert _arms(source="publish_merged_reconcile_route") == [
+        ("verify_pr", {"label": "merged"}),
+        ("proof_capture", {"label": "not_merged"}),
+    ]
 
 
 def test_a_repair_round_may_establish_its_published_head_from_resume_provenance(
