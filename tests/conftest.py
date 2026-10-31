@@ -174,6 +174,60 @@ def _hermetic_dod_judgement_judge(
     )
 
 
+@pytest.fixture(scope="session")
+def _codex_free_shims(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    """Each inherited `PATH` entry holding `codex`, mapped to a shim without it.
+
+    Each shim links every other name in its entry, so tools sharing the
+    directory (`herdr` in `~/.local/bin`) stay resolvable.
+    """
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    hidden = sorted(
+        {entry for entry in entries if entry and os.access(Path(entry) / "codex", os.X_OK)}
+    )
+    shims = {entry: tmp_path_factory.mktemp("path-without-codex") for entry in hidden}
+    # Expressions rather than statements, so the fixture has no branch that only
+    # one kind of host takes and per-file coverage reads the same everywhere.
+    _ = [
+        (shim / program.name).symlink_to(program)
+        for entry, shim in shims.items()
+        for program in Path(entry).iterdir()
+        if program.name != "codex"
+    ]
+    return {entry: str(shim) for entry, shim in shims.items()}
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_host_codex_resolution(
+    monkeypatch: pytest.MonkeyPatch, _codex_free_shims: dict[str, str]
+) -> None:
+    """Hide a host-installed `codex` from the inherited `PATH`, as on CI.
+
+    `resolve_codex_path` resolves the Codex judge on the invoking `PATH` before
+    isolation, so a host judgement still starts when `codex` is a wrapper under
+    the user's home (bd-ib-a3aqie). Tests that build a candidate from the real
+    process environment then expect the bare name `codex`, which is what CI,
+    the delegated cluster gate and every factory sandbox resolve, because none
+    of them installs Codex. On a host that does — this repository's own
+    development hosts, with `~/.local/bin/codex` — the same tests received the
+    absolute path and eleven of them failed, so `just check` refused every local
+    commit that ran the full aggregate. Measured 2026-10-30 at master cd02e38f5.
+
+    Unlike the Claude judge above, the Codex leg has no override variable, so
+    this fixture rewrites the CURRENT `PATH` entry by entry, replacing each
+    codex-holding entry with its shim and keeping every other entry, including
+    any a sibling fixture prepended for this test. Two narrower forms were
+    measured to break other tests: dropping the whole entry hid `herdr`, and
+    restoring a session-captured `PATH` discarded the per-test `gh` stub that
+    hundreds of dispatch tests depend on. Tests of the resolver itself hand it
+    an explicit `environ` carrying their own `PATH` and are untouched.
+    """
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join(_codex_free_shims.get(entry, entry) for entry in entries)
+    )
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_definition_of_done_workflow_shape(
     monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest

@@ -71,8 +71,8 @@ Immediately before every `drive --action impl:<id>` or
 `~/.claude/plugins/installed_plugins.json`. If it differs from the build your
 session's lease is under, update and rebind first
 (`.ai/plugin-cache-lease-and-rebind.md`). Treat any `lags latest release`
-line in dispatcher stderr as a stop, not a warning; AGENTS.md §"Stop the line
-for breakages" governs.
+line in dispatcher stderr as a stop, not a warning; §"Stop the line for breakages"
+in `.ai/stale-plugin-build-and-stop-the-line.md` governs.
 
 The dispatching session takes these halt-gate reads itself, and a helper never
 gates its own dispatch (fleet capacity coordinator

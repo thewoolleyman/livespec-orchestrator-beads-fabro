@@ -109,7 +109,7 @@ evidence.
 
 ## A false prior-art hit closes the question (measured 2026-08-22)
 
-AGENTS.md's trap catalogue covers instruments that cannot return a hit
+`.ai/instrument-aim-traps.md` covers instruments that cannot return a hit
 reporting no hits. The mirror image is worse: a prior-art query that returns a
 plausible, non-empty, WRONG hit. A bad measurement is contradicted by the next
 reader, but a gap declared "already tracked" is never re-tested, so it
