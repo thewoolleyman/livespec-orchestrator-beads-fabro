@@ -2,9 +2,8 @@
 
 The executable is resolved from the invoking environment BEFORE the candidate is
 isolated.  That order is material: a host's Codex command can be a wrapper in
-the operator's home directory, and replacing ``HOME`` before resolving or
-starting it turns an otherwise valid judge into an exit-127 fallback.  So
-``HOME`` is never replaced here.
+the operator's home directory.  The candidate can then use its private home
+without preventing the launcher from finding that executable.
 
 The candidate itself runs from an empty scratch directory that is not inside any
 Git worktree.  The governed repository is therefore available only through the
@@ -125,9 +124,13 @@ def _isolated_environ(
     ambient_environ: dict[str, str],
     scratch: Path,
 ) -> dict[str, str]:
-    """Return one candidate environment without replacing its executable's HOME."""
+    """Return one candidate environment with the required private state."""
     isolated = dict(environ)
     if not is_codex:
+        private_home = scratch / "home"
+        private_home.mkdir()
+        isolated["HOME"] = str(private_home)
+        isolated["ZDOTDIR"] = str(private_home)
         return isolated
     codex_home = scratch / "codex-home"
     codex_home.mkdir()
