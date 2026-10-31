@@ -63,6 +63,7 @@ from livespec_runtime.spec_stated import JUDGE_PROMPT, judge
 from typing_extensions import override
 
 from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
+    correction_prompt_headroom,
     resolving_subsection_citations,
 )
 
@@ -306,7 +307,11 @@ def judge_within_ceiling(
     return judge(
         spec_tree=cast(
             "Mapping[str, str]",
-            condensed_spec_tree(spec_tree=spec_tree, statement=statement, ceiling=ceiling),
+            condensed_spec_tree(
+                spec_tree=spec_tree,
+                statement=statement,
+                ceiling=ceiling - correction_prompt_headroom(spec_tree=spec_tree),
+            ),
         ),
         statement=f"{statement}{rubric}",
         run_model=resolving_subsection_citations(run_model=run_model, spec_tree=spec_tree),
