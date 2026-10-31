@@ -85,6 +85,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
 from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
     ITEM_COMMENT_KIND,
     ITEM_STATUS_KIND,
+    VERIFIED_PROOF_KIND,
 )
 
 if TYPE_CHECKING:
@@ -102,8 +103,11 @@ __all__: list[str] = [
 # The two target kinds a plan-level leg's own obligation is ever written as: a
 # comment on the epic for the proof and review legs, and the epic's closed
 # status for the archive leg.
-_ITEM_TARGET_KINDS: tuple[str, ...] = (ITEM_COMMENT_KIND, ITEM_STATUS_KIND)
-_ITEM_ID_FIELD = "item_id"
+_PLAN_OWNED_TARGETS: tuple[tuple[str, str], ...] = (
+    (ITEM_COMMENT_KIND, "item_id"),
+    (ITEM_STATUS_KIND, "item_id"),
+    (VERIFIED_PROOF_KIND, "subject_id"),
+)
 
 
 def read_plan_owned_result(
@@ -166,6 +170,7 @@ def names_plan_epic(*, required_result: object, epic_id: str) -> bool:
     """
     fields = cast("dict[str, Any]", required_result) if isinstance(required_result, dict) else {}
     return any(
-        isinstance(target, dict) and cast("dict[str, Any]", target).get(_ITEM_ID_FIELD) == epic_id
-        for target in (fields.get(kind) for kind in _ITEM_TARGET_KINDS)
+        isinstance(target, dict) and cast("dict[str, Any]", target).get(field) == epic_id
+        for kind, field in _PLAN_OWNED_TARGETS
+        for target in (fields.get(kind),)
     )
