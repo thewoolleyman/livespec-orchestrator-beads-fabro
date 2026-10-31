@@ -68,7 +68,7 @@ def _resolve(
     """Resolve every node's adapter through all three layers."""
     layers = _module(name="_acp_node_layers")
     repo_module = _module(name="_acp_node_repository")
-    seam = _module(name="_dispatcher_acp_nodes")
+    seam = _module(name="_acp_node_dispatch")
     repo_overlays = repo_module.repository_acp_overlays(
         block=repository or {},
         catalogs=_module(name="_acp_catalogs").builtin_catalogs(),
@@ -98,6 +98,51 @@ def test_render_order_is_sorted_env_then_command_then_args() -> None:
         )
     )
     assert rendered == "ALPHA=2 MIKE=3 ZULU=1 npx -y some-acp -c model=local"
+
+
+def test_context_declarations_reject_malformed_shapes_and_replace_by_layer() -> None:
+    """The complete declaration is validated and the higher layer replaces it."""
+    adapters = _module(name="_acp_node_adapters")
+    assert "must be a table" in adapters.loads_from_object(value="no", key="loads")
+    assert "unknown field" in adapters.loads_from_object(value={"unknown": []}, key="loads")
+    assert "must be an array" in adapters.loads_from_object(
+        value={"instruction_files": "AGENTS.md"}, key="loads"
+    )
+    assert "must be a table" in adapters.overlay_from_table(
+        entry={"loads": "no"}, key="dispatcher.acp_nodes.implement"
+    )
+    repository = _module(name="_acp_node_repository")
+    malformed_repository_loads = repository.repository_acp_overlays(
+        block={
+            "acp_nodes": {
+                "review": {
+                    "agent": "claude-acp",
+                    "model": "claude-opus-5",
+                    "loads": {"skills": "no"},
+                }
+            }
+        },
+        catalogs=_module(name="_acp_catalogs").builtin_catalogs(),
+    )
+    assert isinstance(malformed_repository_loads, str)
+    assert "loads.skills" in malformed_repository_loads
+    resolution = _resolve(
+        repository={
+            "acp_nodes": {
+                "implement": {
+                    "loads": {
+                        "instruction_files": [],
+                        "skills": [],
+                        "plugins": [],
+                        "mcp_servers": [],
+                    }
+                }
+            }
+        }
+    )
+    assert resolution.nodes["implement"].loads is not None
+    assert resolution.nodes["implement"].loads.instruction_files == ()
+    assert resolution.nodes["implement"].loads_layer == "repository"
 
 
 def test_parsing_an_adapter_string_round_trips_through_rendering() -> None:

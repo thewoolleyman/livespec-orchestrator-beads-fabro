@@ -141,12 +141,7 @@ def test_toml_declares_no_publication_adapter_default() -> None:
 
 
 def test_toml_declares_disposition_adapter_defaulting_to_claude() -> None:
-    toml = _WORKFLOW_TOML.read_text(encoding="utf-8")
-    assert re.search(
-        r'^\s*disposition_adapter\s*=\s*"' + re.escape(_CLAUDE_ADAPTER) + r'"',
-        toml,
-        re.MULTILINE,
-    )
+    assert _rendered_defaults()["disposition_adapter"] == _CLAUDE_ADAPTER
 
 
 def test_toml_declares_review_adapter_pinned_to_opus_high_thinking() -> None:
@@ -156,10 +151,7 @@ def test_toml_declares_review_adapter_pinned_to_opus_high_thinking() -> None:
     nodes, so the model is pinned through the Claude Code adapter's own env
     (ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL), prefixed onto the command.
     """
-    toml = _WORKFLOW_TOML.read_text(encoding="utf-8")
-    review_line = re.search(r'^\s*review_adapter\s*=\s*"(.+)"', toml, re.MULTILINE)
-    assert review_line is not None
-    value = review_line.group(1)
+    value = _rendered_defaults()["review_adapter"]
     assert "ANTHROPIC_MODEL=claude-opus-4-8" in value
     assert "CLAUDE_CODE_EFFORT_LEVEL=high" in value
 

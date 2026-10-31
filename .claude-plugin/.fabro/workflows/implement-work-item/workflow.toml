@@ -164,9 +164,9 @@ pull_requests = "write"
 # defaulted to Haiku. The first dispatch after this default switch lands must
 # verify the resolved model in the run transcript; an adapter string assertion
 # does not prove runtime behavior.
-implement_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
-fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
-review_fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
+implement_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "loads": {"instruction_files": ["AGENTS.md"], "skills": [], "plugins": [], "mcp_servers": []}}'
+fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "loads": {"instruction_files": ["AGENTS.md"], "skills": [], "plugins": [], "mcp_servers": []}}'
+review_fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "loads": {"instruction_files": ["AGENTS.md"], "skills": [], "plugins": [], "mcp_servers": []}}'
 
 # NO PUBLICATION ADAPTER INPUT, AND ITS ABSENCE IS THE DECLARATION
 # (contracts.md section "Definition-of-Done and Proof-of-Done stages" ->
@@ -219,7 +219,7 @@ review_fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort"
 # since, but "the review node actually runs on Opus 4.8" is only provable from a
 # real run — verify the model in the transcript of the next dispatch. A green CI
 # run does not substitute; CI never runs the review node.
-review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+review_adapter = '{"agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high", "loads": {"instruction_files": [], "skills": [], "plugins": [], "mcp_servers": []}}'
 
 # ACP adapter for the DISPOSITION node. Defaults to a MODEL-un-pinned
 # Claude adapter — the same PACKAGE as `implement_adapter`, but
@@ -229,7 +229,7 @@ review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=h
 # ANTHROPIC_MODEL / CLAUDE_CODE_EFFORT_LEVEL mechanism as `review_adapter`. The
 # package version is pinned by the sandbox image, as for every Claude adapter
 # here; see the version-less rationale in the adapter-defaults block above.
-disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
+disposition_adapter = '{"adapter": "npx -y @agentclientprotocol/claude-agent-acp", "loads": {"instruction_files": [], "skills": [], "plugins": [], "mcp_servers": []}}'
 
 # ACP adapter for the DOD_GATE node (S3 / bd-ib-s5fj5e). Its built-in default is
 # the entry this workflow declares for its REVIEW input — contracts.md section
@@ -246,7 +246,7 @@ disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 # pin's model-versus-adapter rationale, the API-only-attribute constraint that
 # forces the model into the adapter's own env, and the version-less package
 # rationale all live on `review_adapter` — they are not restated here.
-dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+dod_gate_adapter = '{"agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high", "loads": {"instruction_files": [], "skills": [], "plugins": [], "mcp_servers": []}}'
 
 # ACP adapter for the PROOF_CAPTURE node (S5 / bd-ib-b4u6b7). Its built-in
 # default is the entry this workflow declares for its IMPLEMENT input —
@@ -263,7 +263,7 @@ dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL
 # graded against, so pinning the capture is a decision of its own rather than a
 # consequence of an implementer tier moving. The shared `acp_adapter` is
 # deliberately not a candidate for it.
-proof_capture_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
+proof_capture_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "loads": {"instruction_files": [], "skills": [], "plugins": [], "mcp_servers": []}}'
 
 # ACP adapter for the PROOF_VERIFY node (S6 / bd-ib-msnlnv). Its built-in default
 # is the entry this workflow declares for its REVIEW input — the same table that
@@ -281,7 +281,7 @@ proof_capture_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effo
 # model-versus-adapter rationale, the API-only-attribute constraint that forces
 # the model into the adapter's own env, and the version-less package rationale all
 # live on `review_adapter` — they are not restated here.
-proof_verify_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+proof_verify_adapter = '{"agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high", "loads": {"instruction_files": [], "skills": [], "plugins": [], "mcp_servers": []}}'
 
 # Review fix rounds count implementer repair rounds, not review visits. The
 # workflow guard reads review node visits, so the default three fix rounds render

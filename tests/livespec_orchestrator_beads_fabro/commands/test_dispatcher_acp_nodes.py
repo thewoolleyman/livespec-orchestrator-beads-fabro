@@ -22,6 +22,9 @@ from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
+    _acp_workflow_defaults as workflow_defaults,
+)
+from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_acp_chain_attachment as chain_attachment,
 )
 from livespec_orchestrator_beads_fabro.commands import (
@@ -32,6 +35,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     drive,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
+from livespec_orchestrator_beads_fabro.commands._acp_node_dispatch import dispatch_acp_overlays
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     DISPATCH_LAYER,
     REPOSITORY_LAYER,
@@ -39,7 +43,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     ACP_NODES_STAGE,
-    dispatch_acp_overlays,
     prepare_acp_nodes,
     workflow_adapter_inputs,
     workflow_layer,
@@ -148,6 +151,12 @@ def test_the_committed_workflow_declares_an_adapter_input_for_every_acp_node() -
         "agent": "claude-acp",
         "model": "claude-opus-5",
         "effort": "high",
+        "loads": {
+            "instruction_files": ["AGENTS.md"],
+            "skills": [],
+            "plugins": [],
+            "mcp_servers": [],
+        },
     }
 
 
@@ -234,6 +243,68 @@ def test_prepare_resolves_journals_and_names_the_layer_per_node(tmp_path: Path) 
     assert nodes["disposition"]["layers"]["command"] == DISPATCH_LAYER
     assert nodes["fix"]["layers"]["command"] == WORKFLOW_LAYER
     assert set(nodes) == set(_ACP_NODES)
+
+
+def test_committed_context_declarations_reach_the_dispatch_record(tmp_path: Path) -> None:
+    """Scenario 275: the launch record carries each node's complete declaration.
+
+    The instruction-bearing and context-empty nodes differ in exactly one
+    declaration field, which proves the record is the resolved per-node value
+    rather than a hard-coded default copied to every node.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    journal = _RecordingJournal()
+
+    resolution = prepare_acp_nodes(
+        repo=repo,
+        committed=_COMMITTED_WORKFLOW,
+        overrides=(),
+        journal=journal,
+        work_item_id="bd-ib-crtnzx",
+    )
+
+    assert not isinstance(resolution, str), resolution
+    [record] = [entry for entry in journal.records if entry["stage"] == ACP_NODES_STAGE]
+    nodes: Any = record["acp_nodes"]
+    assert nodes["implement"]["loads"] == {
+        "instruction_files": ["AGENTS.md"],
+        "skills": [],
+        "plugins": [],
+        "mcp_servers": [],
+    }
+    assert nodes["review"]["loads"] == {
+        "instruction_files": [],
+        "skills": [],
+        "plugins": [],
+        "mcp_servers": [],
+    }
+    assert nodes["implement"]["loads_layer"] == WORKFLOW_LAYER
+    assert nodes["review"]["loads_layer"] == WORKFLOW_LAYER
+
+
+def test_prepare_refuses_a_context_declaration_the_proxy_cannot_deliver(tmp_path: Path) -> None:
+    """A declared plugin is refused rather than silently omitted at launch."""
+    committed = _write_workflow(
+        tmp_path=tmp_path,
+        text=_WORKFLOW_TOML.replace(
+            'implement_adapter = "ANTHROPIC_MODEL=claude-opus-5 npx -y claude-acp"',
+            'implement_adapter = \'{"agent":"claude-acp","model":"claude-opus-5","loads":{"plugins":["declared"]}}\'',
+        ),
+    )
+    journal = _RecordingJournal()
+
+    refusal = prepare_acp_nodes(
+        repo=tmp_path,
+        committed=committed,
+        overrides=(),
+        journal=journal,
+        work_item_id="bd-ib-crtnzx",
+    )
+
+    assert isinstance(refusal, str)
+    assert "plugins" in refusal
+    assert journal.records == []
 
 
 def test_implementation_ignores_repository_pr_and_journals_not_applied(
@@ -390,6 +461,14 @@ def test_dispatch_overlays_cover_duplicate_and_structured_forms() -> None:
     )
     assert not isinstance(structured, str), structured
     assert structured["review"].env_replaces is True
+    malformed_loads = dispatch_acp_overlays(
+        overrides=(
+            'review={"agent":"claude-acp","model":"claude-opus-5","loads":{"skills":"no"}}',
+        ),
+        catalogs=catalogs,
+    )
+    assert isinstance(malformed_loads, str)
+    assert "loads.skills" in malformed_loads
 
 
 def test_workflow_layer_returns_rendered_defaults_or_an_unreadable_refusal(
@@ -402,6 +481,47 @@ def test_workflow_layer_returns_rendered_defaults_or_an_unreadable_refusal(
     refusal = workflow_layer(committed=tmp_path / "absent.toml", catalogs=catalogs)
     assert isinstance(refusal, str)
     assert "unreadable" in refusal
+    malformed = _write_workflow(
+        tmp_path=tmp_path,
+        text=_WORKFLOW_TOML.replace(
+            'implement_adapter = "ANTHROPIC_MODEL=claude-opus-5 npx -y claude-acp"',
+            "implement_adapter = '{'",
+        ),
+    )
+    assert isinstance(workflow_layer(committed=malformed, catalogs=catalogs), str)
+
+
+def test_contextual_manual_default_preserves_its_unpinned_adapter_bytes() -> None:
+    """A context declaration does not synthesize a model pin onto a manual default."""
+    rendered = workflow_layer(committed=_COMMITTED_WORKFLOW, catalogs=builtin_catalogs())
+    assert not isinstance(rendered, str), rendered
+    assert rendered["disposition_adapter"] == _CLAUDE
+
+
+def test_contextual_manual_declaration_rejects_invalid_shapes() -> None:
+    """A manual declaration must carry exactly a string adapter and valid loads."""
+    catalogs = builtin_catalogs()
+    for value in (
+        '{"adapter": 1, "loads": {}}',
+        '{"adapter": "agent", "loads": {}, "extra": true}',
+        '{"adapter": "agent", "loads": {"skills": "no"}}',
+    ):
+        assert isinstance(
+            workflow_defaults.rendered_workflow_defaults(
+                declared={"disposition_adapter": value}, catalogs=catalogs
+            ),
+            str,
+        )
+    assert "not valid JSON" in workflow_defaults.workflow_context_loads(declared={"adapter": "{"})
+    assert "loads.skills" in workflow_defaults.workflow_context_loads(
+        declared={"adapter": '{"loads":{"skills":"no"}}'}
+    )
+    assert (
+        workflow_defaults.workflow_context_loads(
+            declared={"adapter": '{"agent":"claude-acp","model":"claude-opus-5"}'}
+        )
+        == {}
+    )
 
 
 def test_prepare_routes_catalog_and_chain_refusals(

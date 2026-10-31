@@ -54,12 +54,10 @@ import time
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
+from livespec_orchestrator_beads_fabro.commands._acp_node_dispatch import dispatch_acp_overlays
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
-    dispatch_acp_overlays,
-    workflow_layer,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import workflow_layer
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,

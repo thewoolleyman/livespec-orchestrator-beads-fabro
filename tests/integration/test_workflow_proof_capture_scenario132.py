@@ -33,6 +33,7 @@ variant is compared against the BUNDLE rather than against a list restated here.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -353,7 +354,13 @@ def test_the_bundle_declares_the_capture_adapter_at_the_implementer_default() ->
 
     assert implement is not None
     assert capture is not None, "the reserved workflow declares no proof_capture_adapter input"
-    assert capture == implement
+    capture_entry = json.loads(capture)
+    implement_entry = json.loads(implement)
+    assert {key: capture_entry[key] for key in ("agent", "model", "effort")} == {
+        key: implement_entry[key] for key in ("agent", "model", "effort")
+    }
+    assert capture_entry["loads"]["instruction_files"] == []
+    assert implement_entry["loads"]["instruction_files"] == ["AGENTS.md"]
     # The control that makes the two assertions above mean anything: the reader
     # CAN return None, so "is not None" is evidence the input is declared rather
     # than evidence the helper never reports an absence.

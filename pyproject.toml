@@ -628,6 +628,7 @@ destructive_cli_allowlist = [
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
 subprocess_spawn_allowlist = [
+    "tests/bin/test_acp_context_proxy.py",
     "tests/bin/test_host_side_self_contained_import.py",
     "tests/bin/test_bootstrap_unattended_marker_forwarding.py",
     "tests/bin/test_payload_retention_after_eviction.py",

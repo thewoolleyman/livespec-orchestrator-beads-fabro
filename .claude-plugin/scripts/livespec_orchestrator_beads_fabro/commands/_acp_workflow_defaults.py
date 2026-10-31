@@ -31,10 +31,16 @@ which node\'s posture each one renders under.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import AcpCatalogs
-from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import NODE_INPUT_CANDIDATES
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
+    NODE_INPUT_CANDIDATES,
+    AcpNodeLoads,
+    loads_from_object,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_structured_render import READ_ONLY_NODES
 from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
     is_structured_text,
@@ -43,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
 
 __all__: list[str] = [
     "rendered_workflow_defaults",
+    "workflow_context_loads",
 ]
 
 
@@ -67,6 +74,10 @@ def rendered_workflow_defaults(
         if not is_structured_text(value=value):
             rendered[name] = value
             continue
+        manual = _contextual_manual_adapter(value=value, key=f"workflow input {name}")
+        if isinstance(manual, str):
+            rendered[name] = manual
+            continue
         adapter, refusal = rendered_structured_text(
             value=value,
             key=f"workflow input {name}",
@@ -77,6 +88,49 @@ def rendered_workflow_defaults(
             return refusal
         rendered[name] = adapter
     return rendered
+
+
+def workflow_context_loads(*, declared: Mapping[str, str]) -> Mapping[str, AcpNodeLoads] | str:
+    """Read each structured workflow declaration's optional context loads."""
+    result: dict[str, AcpNodeLoads] = {}
+    for name, value in sorted(declared.items()):
+        if not is_structured_text(value=value):
+            continue
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as error:
+            return f"workflow input {name} is not valid JSON: {error.msg}"
+        table = cast("dict[str, Any]", parsed)
+        loads = loads_from_object(value=table.get("loads"), key=f"workflow input {name}.loads")
+        if isinstance(loads, str):
+            return loads
+        if loads is not None:
+            result[name] = loads
+    return result
+
+
+def _contextual_manual_adapter(*, value: str, key: str) -> str | None:
+    """Return the manual adapter in a load-bearing declaration, when present.
+
+    The unpinned adapter defaults are manual forms by contract.  Giving one a
+    context declaration must not turn it into a catalog candidate, because that
+    would inject a model environment that the original manual form deliberately
+    omits.
+    """
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(decoded, dict) or "adapter" not in decoded:
+        return None
+    table = cast("dict[str, Any]", decoded)
+    if set(table) != {"adapter", "loads"}:
+        return None
+    adapter = table["adapter"]
+    if not isinstance(adapter, str):
+        return None
+    loads = loads_from_object(value=table["loads"], key=f"{key}.loads")
+    return adapter if not isinstance(loads, str) else None
 
 
 def _read_only(*, name: str) -> bool:

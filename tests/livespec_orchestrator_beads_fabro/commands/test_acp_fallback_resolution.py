@@ -143,7 +143,7 @@ def _resolve(
     declared_inputs = _WORKFLOW_INPUTS if workflow_inputs is None else workflow_inputs
     repository = _module(name="_acp_node_repository")
     layers = _module(name="_acp_node_layers")
-    seam = _module(name="_dispatcher_acp_nodes")
+    seam = _module(name="_acp_node_dispatch")
     catalogs = _module(name="_acp_catalogs").builtin_catalogs()
     overlays = repository.repository_acp_overlays(block=block, catalogs=catalogs)
     assert not isinstance(overlays, str), overlays

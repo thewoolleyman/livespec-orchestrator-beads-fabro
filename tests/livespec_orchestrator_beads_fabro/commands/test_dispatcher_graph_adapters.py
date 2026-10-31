@@ -195,6 +195,30 @@ def test_a_stage_is_projected_by_the_graph_node_not_the_adapter_input() -> None:
     assert f'acp.command="{expected}"' in rendered.text
 
 
+def test_a_context_declaration_routes_the_agent_through_the_isolating_proxy() -> None:
+    """The payload command carries only this node's declared context."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    declaration = {
+        "instruction_files": [],
+        "skills": [],
+        "plugins": [],
+        "mcp_servers": [],
+    }
+    rendered = module.render_acp_commands(  # pyright: ignore[reportAttributeAccessIssue]
+        graph_text=_synthetic(command=_TOKEN),
+        adapters={"probe_adapter": _CLAUDE},
+        loads={"agent": declaration},
+        context_root="/governed/repository",
+    )
+    assert not isinstance(rendered, str), rendered
+    command = rendered.node_commands["agent"]
+    assert "LIVESPEC_ACP_CONTEXT_LOADS='{" in command
+    assert "LIVESPEC_ACP_CONTEXT_ROOT=/governed/repository" in command
+    assert "node .claude-plugin/scripts/bin/livespec-acp-context-proxy.mjs --" in command
+    assert command.endswith(_CLAUDE)
+
+
 def test_an_already_literal_command_is_left_exactly_as_declared() -> None:
     """A graph carrying no indirection renders to itself, not to a refusal."""
     assert _MODULE_PATH.is_file()

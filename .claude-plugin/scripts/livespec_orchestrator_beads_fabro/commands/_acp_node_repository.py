@@ -35,6 +35,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_codex_models_retired import
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     AcpNodeOverlay,
+    loads_from_object,
     overlay_from_string,
     overlay_from_table,
 )
@@ -175,9 +176,13 @@ def _structured_overlay(
     )
     if isinstance(rendered, str):
         return rendered
+    loads = loads_from_object(value=table.get("loads"), key=f"{key}.loads")
+    if isinstance(loads, str):
+        return loads
     return AcpNodeOverlay(
         command=rendered.adapter.command,
         env=rendered.adapter.env,
         args=rendered.adapter.args,
         env_replaces=True,
+        loads=loads,
     )

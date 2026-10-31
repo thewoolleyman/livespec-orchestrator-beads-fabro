@@ -185,12 +185,22 @@ def test_the_bundle_declares_the_gate_adapter_default() -> None:
     literal would drift the moment the review pin moved.
     """
     toml = _toml(payload=_BUNDLE)
-    gate = re.search(rf'^\s*{_ADAPTER_INPUT}\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
-    review = re.search(r'^\s*review_adapter\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
+    gate = re.search(
+        rf"^\s*{_ADAPTER_INPUT}\s*=\s*(?:\"(?P<basic>.+)\"|'(?P<literal>.+)')",
+        toml,
+        re.MULTILINE,
+    )
+    review = re.search(
+        r"^\s*review_adapter\s*=\s*(?:\"(?P<basic>.+)\"|'(?P<literal>.+)')",
+        toml,
+        re.MULTILINE,
+    )
 
     assert review is not None
     assert gate is not None, "the reserved workflow declares no dod_gate_adapter input"
-    assert gate.group("value") == review.group("value")
+    assert (gate.group("basic") or gate.group("literal")) == (
+        review.group("basic") or review.group("literal")
+    )
 
 
 def test_the_gate_is_a_registered_acp_node_with_its_own_input_candidate() -> None:

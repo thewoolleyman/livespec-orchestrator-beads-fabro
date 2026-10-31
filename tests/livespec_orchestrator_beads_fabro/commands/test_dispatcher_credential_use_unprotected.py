@@ -371,7 +371,7 @@ def test_an_adapter_declaring_itself_unprotected_refuses_the_dispatch() -> None:
     """
     layers = importlib.import_module(f"{_PACKAGE}._acp_node_layers")
     catalogs = importlib.import_module(f"{_PACKAGE}._acp_catalogs")
-    nodes = importlib.import_module(f"{_PACKAGE}._dispatcher_acp_nodes")
+    nodes = importlib.import_module(f"{_PACKAGE}._acp_node_dispatch")
     name = _UNPROTECTED_ENV_VAR
 
     overlays = nodes.dispatch_acp_overlays(

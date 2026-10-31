@@ -110,6 +110,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     journal: JournalWriter,
     work_item_id: str,
     adapters: Mapping[str, str],
+    context_loads: Mapping[str, Mapping[str, object]] | None = None,
     entry_node: str | None = None,
     run_wall_budget_argument: str | None = None,
 ) -> WorkflowPayload | str:
@@ -156,6 +157,8 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
         payload_dir=payload_dir,
         timeouts=timeouts,
         adapters=adapters,
+        context_loads=context_loads,
+        context_root=str(repo),
         entry_node=entry_node,
         run_wall_budget=budget,
     )
@@ -176,12 +179,14 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     return payload
 
 
-def materialize_workflow_payload(
+def materialize_workflow_payload(  # noqa: PLR0913 — independent payload rendering operands.
     *,
     committed: Path,
     payload_dir: Path,
     timeouts: NodeTimeouts,
     adapters: Mapping[str, str],
+    context_loads: Mapping[str, Mapping[str, object]] | None = None,
+    context_root: str | None = None,
     entry_node: str | None = None,
     run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
 ) -> WorkflowPayload | str:
@@ -201,6 +206,8 @@ def materialize_workflow_payload(
         committed_graph=committed_graph,
         timeouts=timeouts,
         adapters=adapters,
+        context_loads=context_loads,
+        context_root=context_root,
         entry_node=entry_node,
     )
     if isinstance(rendered, str):
@@ -244,6 +251,8 @@ def _rendered_graph(
     committed_graph: Path,
     timeouts: NodeTimeouts,
     adapters: Mapping[str, str],
+    context_loads: Mapping[str, Mapping[str, object]] | None,
+    context_root: str | None,
     entry_node: str | None,
 ) -> _RenderedGraph | str:
     """Read the committed graph and apply the three renders in their fixed order.
@@ -265,6 +274,8 @@ def _rendered_graph(
         graph_text=rendered.text,
         adapters=adapters,
         stages={node: node for node in ACP_NODES},
+        loads=context_loads,
+        context_root=context_root,
     )
     if isinstance(commands, str):
         return commands
