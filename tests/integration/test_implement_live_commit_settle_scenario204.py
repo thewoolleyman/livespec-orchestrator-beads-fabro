@@ -71,6 +71,7 @@ _FAILED_REENTER = "LIVESPEC_IMPLEMENT_COMMIT_RUN_FAILED_REENTER"
 _NO_VERDICT_REENTER = "LIVESPEC_IMPLEMENT_COMMIT_RUN_NO_VERDICT_REENTER"
 _INCOMPLETE_REENTER = "LIVESPEC_IMPLEMENT_INCOMPLETE_REENTER"
 _REENTRY_EXHAUSTED = "LIVESPEC_IMPLEMENT_REENTRY_BUDGET_EXHAUSTED"
+_HOOK_REFUSED_EXHAUSTED = "LIVESPEC_IMPLEMENT_HOOK_REFUSED_BUDGET_EXHAUSTED"
 _CONFIGURED_DELTA = 137
 _SETTLE_VISITS = 3
 
@@ -385,6 +386,30 @@ def test_a_terminal_runner_refusal_with_budget_spent_names_its_full_output_targe
     assert _FAILED_TARGET in result.stderr
     cause = _git_file(repo=repo, name=_STAGE_CAUSE_GIT_PATH).read_text(encoding="utf-8")
     assert _FAILED_TARGET in cause
+
+
+def test_a_terminal_runner_refusal_naming_no_targets_with_budget_spent_is_still_a_refusal(
+    tmp_path: Path,
+) -> None:
+    """A hook refusal that printed no failed-targets block is not 'no refused commit attempt'."""
+    repo = _clone(tmp_path)
+    _run_record(
+        repo=repo,
+        record={"state": "failed", "exit_code": 1, "hook_ran": True},
+    ).with_suffix(".output").write_text(
+        f"lefthook hook: pre-commit\n{_ERROR_LINE}\n", encoding="utf-8"
+    )
+    runs = _git_file(repo=repo, name="livespec-commit-runs")
+    _ = (runs / "latest").write_text(f"{_RUN_ID}\n", encoding="utf-8")
+    _ = _git_file(repo=repo, name=_REENTRIES_GIT_PATH).write_text("1\n", encoding="utf-8")
+
+    result = _routed(repo=repo)
+
+    assert result.returncode != 0, result.stderr
+    assert _HOOK_REFUSED_EXHAUSTED in result.stderr
+    assert "no refused commit attempt" not in result.stderr
+    cause = _git_file(repo=repo, name=_STAGE_CAUSE_GIT_PATH).read_text(encoding="utf-8")
+    assert _HOOK_REFUSED_EXHAUSTED in cause
 
 
 def test_a_commit_run_that_ended_without_a_verdict_is_briefed_as_having_made_no_commit(
