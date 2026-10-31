@@ -148,6 +148,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     ResultObservation,
     unobservable,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_result_plan_proof import (
+    observe_plan_verified_proof,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_result_proof_grade import (
     ProofReading,
     factory_leg,
@@ -205,6 +208,11 @@ class _SubjectRefusal:
 
     source: str
     detail: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class _PlanEpic:
+    """A verified-proof subject whose evidence is its plan timeline."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -288,6 +296,8 @@ def observe_verified_proof(
             now=now,
             detail=subject.detail,
         )
+    if isinstance(subject, _PlanEpic):
+        return observe_plan_verified_proof(repository=repository, target=target, now=now)
     pull_request = subject.pull_request
     records = read_pull_request_records(
         repo=repository.clone, pr_number=pull_request, runner=runner
@@ -385,7 +395,9 @@ def _authoritative_containment(
     return _Containment(requested=contains_requested, host=contains_both)
 
 
-def _subject_proof(*, repository: ResultRepository, subject_id: str) -> _Subject | _SubjectRefusal:
+def _subject_proof(
+    *, repository: ResultRepository, subject_id: str
+) -> _Subject | _PlanEpic | _SubjectRefusal:
     """What the subject's ledger record says about its proof, or why it said nothing.
 
     ONE READ supplies all three answers — the pull request, the pointer's run id
@@ -393,6 +405,52 @@ def _subject_proof(*, repository: ResultRepository, subject_id: str) -> _Subject
     reads could straddle a ledger write and grade a pull request's records against
     another state's attribution.
     """
+    read = _subject_record(repository=repository, subject_id=subject_id)
+    if isinstance(read, _SubjectRefusal):
+        return read
+    if read.get("issue_type") == "epic":
+        return _PlanEpic()
+    return _work_item_subject_proof(record=read, subject_id=subject_id)
+
+
+def _work_item_subject_proof(*, record: BeadsRecord, subject_id: str) -> _Subject | _SubjectRefusal:
+    """Read the ordinary work-item pointer that anchors pull-request proof."""
+    description: object = record.get(_DESCRIPTION_FIELD)
+    if not isinstance(description, str):
+        return _SubjectRefusal(
+            source=SOURCE_LEDGER,
+            detail=f"the ledger record for subject {subject_id} carries no description",
+        )
+    pointer = pointer_in(description=description)
+    if pointer is None:
+        return _SubjectRefusal(
+            source=SOURCE_PROOF_RECORD,
+            detail=(
+                f"subject {subject_id} carries no Proof of Done pointer naming a pull"
+                " request, so there is no published record to validate"
+            ),
+        )
+    merge = _recorded_merge(record=record)
+    if isinstance(merge, _MalformedAudit):
+        return _SubjectRefusal(
+            source=SOURCE_LEDGER,
+            detail=(
+                f"the ledger record for subject {subject_id} carries {merge.field} as"
+                f" a {merge.found}, so the merge a verified build must contain could"
+                " not be read"
+            ),
+        )
+    return _Subject(
+        pull_request=pointer.pull_request,
+        run_id=pointer.run_id,
+        merge_sha=merge,
+    )
+
+
+def _subject_record(
+    *, repository: ResultRepository, subject_id: str
+) -> BeadsRecord | _SubjectRefusal:
+    """Read one proof subject, naming the ledger failure before it is parsed."""
     config = result_store_config(repository=repository)
     if config is None:
         return _SubjectRefusal(
@@ -411,36 +469,7 @@ def _subject_proof(*, repository: ResultRepository, subject_id: str) -> _Subject
                 f" {type(read.error).__name__}: {read.error}"
             ),
         )
-    description: object = read.get(_DESCRIPTION_FIELD)
-    if not isinstance(description, str):
-        return _SubjectRefusal(
-            source=SOURCE_LEDGER,
-            detail=f"the ledger record for subject {subject_id} carries no description",
-        )
-    pointer = pointer_in(description=description)
-    if pointer is None:
-        return _SubjectRefusal(
-            source=SOURCE_PROOF_RECORD,
-            detail=(
-                f"subject {subject_id} carries no Proof of Done pointer naming a pull"
-                " request, so there is no published record to validate"
-            ),
-        )
-    merge = _recorded_merge(record=read)
-    if isinstance(merge, _MalformedAudit):
-        return _SubjectRefusal(
-            source=SOURCE_LEDGER,
-            detail=(
-                f"the ledger record for subject {subject_id} carries {merge.field} as"
-                f" a {merge.found}, so the merge a verified build must contain could"
-                " not be read"
-            ),
-        )
-    return _Subject(
-        pull_request=pointer.pull_request,
-        run_id=pointer.run_id,
-        merge_sha=merge,
-    )
+    return read
 
 
 def _mapping_at(
