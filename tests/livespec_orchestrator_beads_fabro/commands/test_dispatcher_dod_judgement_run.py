@@ -597,7 +597,10 @@ def test_a_host_claude_judge_has_no_interactive_settings_or_session(
 ) -> None:
     """Claude's host invocation explicitly declines every interactive input."""
     claude = tmp_path / "operator-home" / ".local" / "bin" / "claude"
+    operator_home = tmp_path / "operator-home"
     monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(claude))
+    monkeypatch.setenv("HOME", str(operator_home))
+    monkeypatch.setenv("ZDOTDIR", str(operator_home / ".config" / "zsh"))
     runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
     repo = _repo(tmp_path=tmp_path)
 
@@ -621,6 +624,9 @@ def test_a_host_claude_judge_has_no_interactive_settings_or_session(
     assert runner.cwd is not None
     assert runner.cwd != repo
     assert not (runner.cwd / ".git").exists()
+    assert runner.environ is not None
+    assert runner.environ["HOME"] == str(runner.cwd / "home")
+    assert runner.environ["ZDOTDIR"] == str(runner.cwd / "home")
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
