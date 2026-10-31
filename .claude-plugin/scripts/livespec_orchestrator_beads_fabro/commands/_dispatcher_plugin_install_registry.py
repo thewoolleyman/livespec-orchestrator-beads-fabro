@@ -40,6 +40,7 @@ __all__: list[str] = [
     "PluginInstallRecord",
     "default_plugin_install_registry",
     "plugin_install_records",
+    "registered_plugin_root",
 ]
 
 # The plugin whose records are read -- this one, wherever the dispatcher happens
@@ -80,6 +81,15 @@ def plugin_install_records(*, install_record: Path) -> tuple[PluginInstallRecord
         if _names_this_plugin(key=key) and isinstance(entries, list):
             records.extend(_records_of(entries=cast("list[Any]", entries)))
     return tuple(records)
+
+
+def registered_plugin_root(*, repo: Path, install_record: Path) -> Path | None:
+    """The install root that the registry resolves for one governed repository."""
+    target = repo.resolve()
+    for record in plugin_install_records(install_record=install_record):
+        if record.project_path.resolve() == target:
+            return record.install_path
+    return None
 
 
 def _names_this_plugin(*, key: str) -> bool:
