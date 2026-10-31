@@ -621,8 +621,8 @@ def test_merged_reconcile_routes_emit_successful_routing_labels_for_both_branche
 
     for route in routes:
         assert 'output_schema="routing"' in bodies[route]
-        assert '"preferred_next_label":"merged"' in scripts[route]
-        assert '"preferred_next_label":"not_merged"' in scripts[route]
+        assert '\\"preferred_next_label\\":\\"merged\\"' in scripts[route]
+        assert '\\"preferred_next_label\\":\\"not_merged\\"' in scripts[route]
         assert "exit 1" not in scripts[route]
         assert scripts[route].count("exit 0") == 2
 
