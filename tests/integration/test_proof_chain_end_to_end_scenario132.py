@@ -535,7 +535,7 @@ def _next_node(*, outgoing: Sequence[_Edge], state: _State, inputs: dict[str, st
         ):
             return edge.target
     for edge in outgoing:
-        if edge.label == state.preferred_label:
+        if state.preferred_label is not None and edge.label == state.preferred_label:
             return edge.target
     for edge in outgoing:
         if edge.condition is None:
