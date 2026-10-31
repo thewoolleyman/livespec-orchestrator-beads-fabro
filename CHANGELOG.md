@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.264.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.5...v0.264.6) (2026-10-31)
+
+
+### Bug Fixes
+
+* distinguish missing implement completion field ([a2f64eb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a2f64ebbcf1c94f479b43f9589fb977a17497f3f))
+* **implement:** read the completion record whenever the reply carries no field ([370abf7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/370abf774dcb6f835822b94b7c932133774296c5))
+* read implement completion from final reply ([4f66ca1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4f66ca1bd360a32f17098698d0c8ecbd4003a132))
+
 ## [0.264.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.4...v0.264.5) (2026-10-31)
 
 
