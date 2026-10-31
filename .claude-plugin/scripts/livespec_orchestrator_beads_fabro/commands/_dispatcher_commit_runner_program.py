@@ -78,6 +78,7 @@ REPORT_STATE_KEY = "state"
 REPORT_EXIT_CODE_KEY = "exit_code"
 REPORT_HEAD_KEY = "head"
 REPORT_HOOK_RAN_KEY = "hook_ran"
+REPORT_FAILED_TARGETS_KEY = "failed_targets"
 REPORT_OUTPUT_TAIL_KEY = "output_tail"
 
 _PROGRAM_SOURCE = r'''#!/usr/bin/env python3
@@ -301,6 +302,8 @@ def worker(run_id):
     terminal = {"state": "passed" if result.returncode == 0 else "failed"}
     terminal["exit_code"] = result.returncode
     terminal["hook_ran"] = HOOK_BANNER.search(text) is not None
+    if result.returncode != 0:
+        terminal["failed_targets"] = failed_targets(text)
     if result.returncode == 0:
         terminal["head"] = git_output("rev-parse", "HEAD")
     write_record(path, terminal)
@@ -314,6 +317,11 @@ def report(run_id, path, record):
         payload["exit_code"] = record.get("exit_code")
         payload["head"] = record.get("head")
         payload["hook_ran"] = record.get("hook_ran") is True
+        if state == "failed":
+            targets = record.get("failed_targets")
+            payload["failed_targets"] = (
+                targets if isinstance(targets, list) else failed_targets(full_output(path))
+            )
         payload["output_tail"] = output_tail(path)
     print(json.dumps(payload, sort_keys=True))
     return 0
@@ -386,16 +394,36 @@ def brief_text(run_id, path, record, state, timeout_seconds):
 
 
 def settle(timeout_seconds, brief_file):
-    """Wait out every commit run recorded as running, then brief on the least settled one."""
+    """Wait live runs and brief the latest terminal hook refusal exactly once."""
     directory = runs_directory()
     brief = Path(brief_file)
-    live = []
+    live, records = [], []
     for path in sorted(directory.glob("*.json")):
         record = read_record(path)
-        if record is not None and recorded_state(record) == RUNNING:
+        if record is None:
+            continue
+        records.append((path, record))
+        if recorded_state(record) == RUNNING:
             live.append(path)
     if not live:
-        brief.unlink(missing_ok=True)
+        if not records:
+            brief.unlink(missing_ok=True)
+            return 0
+        path, record = max(records, key=lambda item: item[0].stat().st_mtime_ns)
+        if (
+            recorded_state(record) != "failed"
+            or record.get("hook_ran") is not True
+            or record.get("settled") is True
+        ):
+            brief.unlink(missing_ok=True)
+            return 0
+        write_record(path, {**record, "settled": True})
+        brief.parent.mkdir(parents=True, exist_ok=True)
+        brief.write_text(
+            "failed\n" + brief_text(path.stem, path, record, "failed", timeout_seconds),
+            encoding="utf-8",
+        )
+        print(json.dumps({"settled": [{"run_id": path.stem, "state": "failed"}]}, sort_keys=True))
         return 0
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     outcomes = []
@@ -411,6 +439,8 @@ def settle(timeout_seconds, brief_file):
             write_record(path, {"state": NO_VERDICT})
         outcomes.append((path, record, state))
     path, record, state = min(outcomes, key=lambda one: SETTLE_ORDER.index(one[2]))
+    if state == "failed" and record.get("hook_ran") is True:
+        write_record(path, {**record, "settled": True})
     brief.parent.mkdir(parents=True, exist_ok=True)
     brief.write_text(
         state + "\n" + brief_text(path.stem, path, record, state, timeout_seconds),
