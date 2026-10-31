@@ -34,6 +34,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     HISTORY_NO_PREDECESSOR,
     RUN_ABSENT,
     RUN_FAILED,
+    RUN_SUCCEEDED,
     AttributedClaim,
     ClaimMeasurements,
     run_state_from_inventory,
@@ -148,7 +149,7 @@ def measure_claim(
                 observe_merged_pull_request(
                     repo=inputs.repo, runner=inputs.runner, work_item_id=work_item_id
                 )
-                if run_state == RUN_ABSENT
+                if run_state in (RUN_ABSENT, RUN_SUCCEEDED)
                 else FORGE_NO_MERGED_PR
             ),
             predecessor=(

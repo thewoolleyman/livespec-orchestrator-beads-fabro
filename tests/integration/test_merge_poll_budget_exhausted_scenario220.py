@@ -114,7 +114,7 @@ def _plan(*, repo: Path) -> DispatchPlan:
     )
 
 
-def _view(*, state: str, merge_state: str) -> str:
+def _view(*, state: str, merge_state: str, failed_check: str | None = None) -> str:
     return json.dumps(
         {
             "number": 3913,
@@ -122,7 +122,9 @@ def _view(*, state: str, merge_state: str) -> str:
             "autoMergeRequest": {"enabledAt": "now"},
             "mergeStateStatus": merge_state,
             "mergeCommit": {"oid": "cafe05"} if state == "MERGED" else None,
-            "statusCheckRollup": [],
+            "statusCheckRollup": (
+                [] if failed_check is None else [{"name": failed_check, "conclusion": "failure"}]
+            ),
             "headRefOid": "8ad6cd7b2",
             "baseRefOid": "1c0ffee",
         }
@@ -140,6 +142,7 @@ class _Forge:
     open_reads: int
     final_state: str
     merge_state: str = "BLOCKED"
+    failed_required_check: str | None = None
     views: int = 0
     calls: list[list[str]] = field(default_factory=list)
 
@@ -154,12 +157,52 @@ class _Forge:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
+        if argv[:3] == ["gh", "api", "graphql"]:
+            check = self.failed_required_check or ""
+            return CommandResult(
+                exit_code=0,
+                stdout=json.dumps(
+                    {
+                        "data": {
+                            "repository": {
+                                "pullRequest": {
+                                    "commits": {
+                                        "nodes": [
+                                            {
+                                                "commit": {
+                                                    "statusCheckRollup": {
+                                                        "contexts": {
+                                                            "nodes": [
+                                                                {
+                                                                    "name": check,
+                                                                    "isRequired": check != "",
+                                                                }
+                                                            ]
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ),
+                stderr="",
+            )
         if argv[:3] != ["gh", "pr", "view"]:
             return CommandResult(exit_code=0, stdout="", stderr="")
         self.views += 1
         state = "OPEN" if self.views <= self.open_reads else self.final_state
         return CommandResult(
-            exit_code=0, stdout=_view(state=state, merge_state=self.merge_state), stderr=""
+            exit_code=0,
+            stdout=_view(
+                state=state,
+                merge_state=self.merge_state,
+                failed_check=self.failed_required_check,
+            ),
+            stderr="",
         )
 
 
@@ -258,3 +301,26 @@ def test_a_conflicting_pull_request_keeps_the_overtaken_arming_ending_and_its_ca
 
     assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
     assert "base-advanced-after-arming" in outcome.detail
+
+
+def test_a_terminal_required_check_failure_rests_the_item_for_rework(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    forge = _Forge(
+        open_reads=99,
+        final_state="OPEN",
+        failed_required_check="check-per-file-coverage (nonroot)",
+    )
+
+    outcome, journal = _journey(repo=tmp_path, forge=forge)
+
+    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
+    assert "required check failed terminally: check-per-file-coverage (nonroot)" in outcome.detail
+    assert f"`resolve-blocked:{_ITEM_ID}:ready`" in outcome.detail
+    assert f"`resume --item {_ITEM_ID}`" in outcome.detail
+    assert dispatch_exit_code(outcomes=[outcome]) == 4
+    assert (_rested().status, _rested().blocked_reason) == ("blocked", "needs-human")
+    assert [
+        record["stage"] for record in journal.records if record["stage"] == "needs-human-blocked"
+    ] == ["needs-human-blocked"]

@@ -243,11 +243,17 @@ def _required_check_failure(
         return None
     return outcome_type(
         work_item_id=plan.work_item_id,
-        status="failed",
+        status="blocked",
         stage="merge-poll",
         pr_number=view.number,
         merge_sha=view.merge_sha,
-        detail=f"required check failed terminally: {', '.join(failed)}",
+        detail=(
+            f"required check failed terminally: {', '.join(failed)}; the factory run "
+            "succeeded but its pull request cannot merge. Recover with "
+            f"`resolve-blocked:{plan.work_item_id}:ready`, then "
+            f"`resume --item {plan.work_item_id}`, which checks out the pull request's "
+            "published head for rework."
+        ),
     )
 
 

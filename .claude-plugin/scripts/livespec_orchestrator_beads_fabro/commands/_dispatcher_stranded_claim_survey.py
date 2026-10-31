@@ -46,7 +46,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     ACTION_ABSENT_RUN_REPEATED,
     ACTION_TERMINAL_COMPLETION,
     ATTRIBUTION_PENDING_REMEDY,
+    FORGE_NO_MERGED_PR,
     HOLD_ATTRIBUTION_PENDING,
+    HOLD_RUN_SUCCEEDED,
     AttributedClaim,
     ClaimHold,
     attribute_claim,
@@ -198,7 +200,12 @@ def _measure_and_act(
     )
     graded = grade_claim(measurements=measured.measurements)
     if isinstance(graded, ClaimHold):
-        return _held_claim(item=item, stamp=attributed.stamp, reason=graded.reason)
+        return _held_claim(
+            item=item,
+            stamp=attributed.stamp,
+            reason=graded.reason,
+            forge=measured.measurements.forge,
+        )
     if inputs.dry_run:
         return _projected(
             item=item, attributed=attributed, inventory=inventory, action=graded.action
@@ -262,7 +269,9 @@ def _claim_stamp(*, repo: Path, work_item_id: str) -> ClaimStamp | None:
     return None if isinstance(row, AttemptFailure) else row.stamp
 
 
-def _held_claim(*, item: WorkItem, stamp: ClaimStamp | None, reason: str) -> HeldClaim:
+def _held_claim(
+    *, item: WorkItem, stamp: ClaimStamp | None, reason: str, forge: str | None = None
+) -> HeldClaim:
     return HeldClaim(
         work_item_id=item.id,
         run_id=None if stamp is None else stamp.run_id,
@@ -270,5 +279,11 @@ def _held_claim(*, item: WorkItem, stamp: ClaimStamp | None, reason: str) -> Hel
         factory_server_url=None if stamp is None else stamp.factory_server,
         dispatching_host=None if stamp is None else stamp.dispatching_host,
         hold_reason=reason,
-        remedy=ATTRIBUTION_PENDING_REMEDY if reason == HOLD_ATTRIBUTION_PENDING else None,
+        remedy=(
+            ATTRIBUTION_PENDING_REMEDY
+            if reason == HOLD_ATTRIBUTION_PENDING
+            else f"move:{item.id}:ready"
+            if reason == HOLD_RUN_SUCCEEDED and forge == FORGE_NO_MERGED_PR
+            else None
+        ),
     )
