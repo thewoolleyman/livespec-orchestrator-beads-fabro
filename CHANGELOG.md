@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.264.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.4...v0.264.5) (2026-10-31)
+
+
+### Bug Fixes
+
+* **bd-guard:** bound the failed capture-server diagnostic on its startup-bound event, not host speed ([7084564](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7084564e183bc3d1188d31740fe657f3119f06fd))
+
 ## [0.264.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.3...v0.264.4) (2026-10-31)
 
 
