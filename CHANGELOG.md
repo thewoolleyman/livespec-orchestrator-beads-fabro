@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.264.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.0...v0.264.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* release a succeeded run's claim only when its pull request closed unmerged ([f46ce14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f46ce144a84dca68a93ec7fbe4b66ddcf8365bf8))
+* rest a failed required-check merge poll ([3df7bdb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3df7bdbddf2a96cc1bda56f9b261e59d159c63ed))
+
 ## [0.264.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.263.1...v0.264.0) (2026-10-31)
 
 
