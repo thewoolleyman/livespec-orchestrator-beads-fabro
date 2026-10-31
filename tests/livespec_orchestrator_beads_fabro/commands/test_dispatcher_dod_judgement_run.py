@@ -312,6 +312,36 @@ def test_the_host_prompt_names_its_inline_capabilities_and_never_directs_a_tool_
     assert "search specification/" not in lowered
 
 
+def test_host_judgement_inlines_the_configured_capabilities_without_file_exploration(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    config = repo / ".livespec.jsonc"
+    _ = config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            '"acp_nodes": {',
+            '"sandbox_capabilities": ["terminal", "headless_browser"],\n' '      "acp_nodes": {',
+        ),
+        encoding="utf-8",
+    )
+    payload = _payload(tmp_path=tmp_path)
+    prompt_path = (
+        payload / ".fabro" / "workflows" / "implement-work-item" / "prompts" / "dod-gate.md"
+    )
+    _ = prompt_path.write_text(dod_gate_prompt_path().read_text(encoding="utf-8"), encoding="utf-8")
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+
+    _ = run_dod_judgement(item=_item(), cwd=repo, runner=runner, payload_root=payload)
+
+    prompt = runner.stdin_text[0]
+    lowered = prompt.casefold()
+    assert "sandbox capabilities: terminal, headless_browser" in lowered
+    assert "/etc/livespec/sandbox-capabilities" not in lowered
+    assert "read files in the repository" not in lowered
+    assert "against the spec files themselves" not in lowered
+    assert "search `scenarios.md`" not in lowered
+
+
 def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_two(
     tmp_path: Path,
 ) -> None:
