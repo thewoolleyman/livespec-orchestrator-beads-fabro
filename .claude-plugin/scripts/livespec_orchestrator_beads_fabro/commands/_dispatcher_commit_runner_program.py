@@ -55,6 +55,7 @@ __all__: list[str] = [
     "COMMIT_RUNNER_PROGRAM_FILENAME",
     "HOOK_BANNER_PATTERN",
     "REPORT_EXIT_CODE_KEY",
+    "REPORT_FAILED_TARGETS_KEY",
     "REPORT_HEAD_KEY",
     "REPORT_HOOK_RAN_KEY",
     "REPORT_OUTPUT_TAIL_KEY",
@@ -76,6 +77,7 @@ HOOK_BANNER_PATTERN = r"\blefthook\b.*\bhook: "
 REPORT_RUN_ID_KEY = "run_id"
 REPORT_STATE_KEY = "state"
 REPORT_EXIT_CODE_KEY = "exit_code"
+REPORT_FAILED_TARGETS_KEY = "failed_targets"
 REPORT_HEAD_KEY = "head"
 REPORT_HOOK_RAN_KEY = "hook_ran"
 REPORT_OUTPUT_TAIL_KEY = "output_tail"
@@ -314,6 +316,8 @@ def report(run_id, path, record):
         payload["exit_code"] = record.get("exit_code")
         payload["head"] = record.get("head")
         payload["hook_ran"] = record.get("hook_ran") is True
+        if state == "failed":
+            payload["failed_targets"] = failed_targets(full_output(path))
         payload["output_tail"] = output_tail(path)
     print(json.dumps(payload, sort_keys=True))
     return 0

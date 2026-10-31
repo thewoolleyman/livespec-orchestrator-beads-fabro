@@ -152,6 +152,22 @@ def test_the_report_keys_the_dispatcher_reads_are_the_ones_the_program_prints(
     }
 
 
+def test_a_failed_report_names_targets_parsed_from_the_full_recorded_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The target list survives even when later output pushes it past the report tail."""
+    program = _program(tmp_path)
+    path = _record(tmp_path, _RUN_ID, {"state": "failed", "exit_code": 1}, None)
+    _ = path.with_suffix(".output").write_text(
+        "Failed targets (1):\n  - check-types\n" + "later ordinary output\n" * 61,
+        encoding="utf-8",
+    )
+
+    assert program["wait"](_RUN_ID, 0) == 0
+
+    assert _last_report(capsys)["failed_targets"] == ["check-types"]
+
+
 def test_a_running_commit_is_reported_running_when_the_bound_expires(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
