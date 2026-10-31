@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import executing_payload_root
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
+    UNPUBLISHED_REPORT,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import RESERVED_WORKFLOW_NAME
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
@@ -75,10 +78,15 @@ It follows verbatim.
 
 """
 
+# The rubric section a tool-less host candidate cannot follow, and the heading
+# that ends it; `_inline_capability_section` swaps the span between them.
+_CAPABILITY_SECTION_HEADING = "## The sandbox capability set — read it, never infer it"
+_NEXT_SECTION_HEADING = "\n## What to check"
+
 _HOST_TOOLLESS_CONTEXT = """
 ## Host candidate capability set
 
-You have no tools. Sandbox capabilities: {capabilities}.
+You have no tools. {capabilities}.
 Judge only the rubric and subject supplied in this prompt; do not attempt a tool
 call or an external lookup.
 
@@ -115,17 +123,26 @@ def judgement_rubric(*, payload_root: Path | None = None) -> str | None:
 def judgement_prompt(
     *, gate_prompt: str, subject: str, sandbox_capabilities: tuple[str, ...] = ("terminal",)
 ) -> str:
-    """The host-safe rubric, its inline context, ending contract and subject."""
+    """The host-safe rubric, its inline context, ending contract and subject.
+
+    An EMPTY `sandbox_capabilities` means the set is unknown, and the judge is
+    told so in the rubric's own words rather than handed a guessed baseline.
+    """
     return (
         f"{_host_safe_rubric(gate_prompt=gate_prompt)}"
-        f"{_HOST_TOOLLESS_CONTEXT.format(capabilities=', '.join(sandbox_capabilities))}"
+        f"{_HOST_TOOLLESS_CONTEXT.format(capabilities=_capability_line(names=sandbox_capabilities))}"
         f"{HOST_ENDING_CONTRACT}{subject}\n"
     )
 
 
+def _capability_line(*, names: tuple[str, ...]) -> str:
+    """The inline capability statement, or the rubric's unknown-set report."""
+    return f"Sandbox capabilities: {', '.join(names)}" if names else UNPUBLISHED_REPORT
+
+
 def _host_safe_rubric(*, gate_prompt: str) -> str:
     """Remove file-exploration directions the tool-less host candidate cannot obey."""
-    result = gate_prompt
+    result = _inline_capability_section(gate_prompt=gate_prompt)
     for source, replacement in (
         (
             "Read /etc/livespec/sandbox-capabilities, then search SPECIFICATION/ before deciding.",
@@ -143,6 +160,26 @@ question of fact — the spec tree above all.""",
     ):
         result = result.replace(source, replacement)
     return result
+
+
+def _inline_capability_section(*, gate_prompt: str) -> str:
+    """Replace the rubric's resolve-the-set section with a pointer to the inline set.
+
+    That section tells the judge to read the image's published file and the
+    committed mirror. A host candidate has no tools to read either, and the
+    Dispatcher already resolved the mirror into the inline statement, so the
+    section would only invite an imagined read.
+    """
+    before, heading, after = gate_prompt.partition(_CAPABILITY_SECTION_HEADING)
+    _section, next_heading, rest = after.partition(_NEXT_SECTION_HEADING)
+    if not heading or not next_heading:
+        return gate_prompt
+    return (
+        f"{before}## The sandbox capability set\n\n"
+        "Use only the host candidate capability set stated after this rubric. Where it\n"
+        f"reads `{UNPUBLISHED_REPORT}`, the set is unknown.\n"
+        f"{next_heading}{rest}"
+    )
 
 
 def judgement_argv(
