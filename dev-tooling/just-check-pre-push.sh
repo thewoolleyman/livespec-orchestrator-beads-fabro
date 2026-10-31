@@ -117,4 +117,13 @@ if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
 fi
 
 echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
-just check-skipping check-codex-skill-picker
+# Inside the delegated gate Job this fall-through IS the Job's gate, and the
+# shared client exports into `SKIP_TARGETS` the members that read authority
+# held outside the tree (the work-items ledger, the forge's settings), running
+# them on the pushing host instead. Dropping the variable here ran them in a pod
+# holding no credential, where `check-no-workflow-edits` fails closed on every
+# tree carrying an approved workflow edit (gate Job
+# gate-livespec-orchestrator-beads-fabro-44vss, 2026-10-31). Unset, nothing
+# extra is skipped.
+read -ra delegated_skip_targets <<< "${SKIP_TARGETS:-}"
+just check-skipping check-codex-skill-picker "${delegated_skip_targets[@]}"

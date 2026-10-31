@@ -104,7 +104,9 @@ def _run_delegate_probe(
     return returncode, capsys.readouterr().err
 
 
-def _run_pre_push(*, tmp_path: Path, enabled_exit: int, run_exit: int) -> tuple[int, list[str]]:
+def _run_pre_push(
+    *, tmp_path: Path, enabled_exit: int, run_exit: int, skip_targets: str | None = None
+) -> tuple[int, list[str]]:
     """Run the shipped gate script on an ordinary publish, for one delegated-client answer.
 
     The script is executed as the SHIPPED BYTES, with `uv` and `just` replaced
@@ -132,6 +134,9 @@ def _run_pre_push(*, tmp_path: Path, enabled_exit: int, run_exit: int) -> tuple[
             "STUB_RUN_EXIT": str(run_exit),
         }
     )
+    _ = env.pop("SKIP_TARGETS", None)
+    if skip_targets is not None:
+        env["SKIP_TARGETS"] = skip_targets
     completed = subprocess.run(
         ["bash", str(_SCRIPT)],
         cwd=str(tmp_path),
@@ -306,3 +311,34 @@ def test_a_delegated_run_that_reaches_no_verdict_refuses_the_push(*, tmp_path: P
 
     assert code != 0, f"a delegated run that did not pass must refuse the push; invoked={invoked}"
     assert _invocation_index(invoked=invoked, needle=_AGGREGATE) < 0, f"invoked={invoked}"
+
+
+def test_the_local_fall_through_honours_the_delegated_clients_skip_targets(
+    *, tmp_path: Path
+) -> None:
+    """The gate Job's own pre-push forwards the members the client left to the host.
+
+    Inside the gate pod nothing re-delegates, so the Job's `check-pre-push` takes
+    this same local fall-through. The client exports the members that read
+    authority held outside the tree into `SKIP_TARGETS` and runs them on the
+    pushing host instead; a fall-through that drops the variable runs them in a
+    pod holding no ledger credential, where `check-no-workflow-edits` fails
+    closed on every tree that carries a workflow edit — measured on gate Job
+    `gate-livespec-orchestrator-beads-fabro-44vss` (2026-10-31), which refused
+    an approved edit for bd-ib-aqrdhl.
+    """
+    code, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        enabled_exit=1,
+        run_exit=0,
+        skip_targets="check-branch-protection-alignment check-no-workflow-edits",
+    )
+
+    assert code == 0, f"invoked={invoked}"
+    aggregate = [line for line in invoked if _AGGREGATE in line]
+    assert aggregate, f"the local fall-through must still run; invoked={invoked}"
+    assert aggregate[0].split()[2:] == [
+        "check-codex-skill-picker",
+        "check-branch-protection-alignment",
+        "check-no-workflow-edits",
+    ], f"every exported skip target must reach the aggregate's skip list; invoked={invoked}"
