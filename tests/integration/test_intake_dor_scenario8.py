@@ -213,7 +213,7 @@ def test_global_auto_approve_single_acceptance_item_lands_ready(tmp_path: Path) 
     assert _item(issue_id="li-global-ready").status == "ready"
 
 
-def test_manual_label_holds_pending_despite_global_auto_approve(tmp_path: Path) -> None:
+def test_committed_auto_approve_releases_a_manual_label_to_ready(tmp_path: Path) -> None:
     _write_dispatcher_config(repo_root=tmp_path, setting='"auto_approve_ready": true')
     _seed_issue(issue_id="li-manual", labels=["admission:manual"])
 
@@ -223,8 +223,8 @@ def test_manual_label_holds_pending_despite_global_auto_approve(tmp_path: Path) 
         ).unwrap()
     )
 
-    assert verdict == "pending-approval"
-    assert _item(issue_id="li-manual").status == "pending-approval"
+    assert verdict == "ready"
+    assert _item(issue_id="li-manual").status == "ready"
 
 
 def test_a_commitment_hint_alone_does_not_hold_an_item_pending(

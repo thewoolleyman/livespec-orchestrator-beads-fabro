@@ -264,7 +264,7 @@ def test_scenario206_ratification_releases_the_hold_to_ready_with_no_human_valve
     assert "tier: none" in "\n".join(_comments(repo=repo))
 
 
-def test_scenario206_a_released_manual_item_rests_at_pending_approval(
+def test_scenario206_a_released_manual_item_respects_committed_auto_approval(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
@@ -277,9 +277,9 @@ def test_scenario206_a_released_manual_item_rests_at_pending_approval(
     assert _route(repo=repo) == "pending-approval"
 
     _ratify(repo=repo)
-    # The spec hold is gone — the record says so — and the item's OWN manual
-    # admission policy is what now rests it for the approve valve.
-    assert _route(repo=repo) == "pending-approval"
+    # The spec hold is gone — the committed admission policy now decides every
+    # item, so the stale manual label does not create an approve valve.
+    assert _route(repo=repo) == "ready"
     assert "tier: none" in "\n".join(_comments(repo=repo))
 
 

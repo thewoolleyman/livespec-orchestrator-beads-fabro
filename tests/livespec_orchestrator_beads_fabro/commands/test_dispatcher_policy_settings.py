@@ -84,6 +84,22 @@ def test_boolean_setting_reads_explicit_false(tmp_path: Path) -> None:
     assert _read(resolve_auto_approve_ready(cwd=cwd)) is False
 
 
+def test_a_committed_auto_approval_setting_wins_over_a_manual_item_label(
+    tmp_path: Path,
+) -> None:
+    """A committed setting governs every item's pending-approval admission."""
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": ' '{"dispatcher": {"auto_approve_ready": true}}}'
+        ),
+    )
+
+    assert (
+        _read(effective_admission_policy(item=_item(admission_policy="manual"), cwd=cwd)) == "auto"
+    )
+
+
 def test_availability_probe_timeout_is_committed_only_and_defaults_to_120(tmp_path: Path) -> None:
     """The confirmation probe uses a committed positive-integer timeout dial."""
     resolver_name = "resolve_availability_probe_timeout_seconds"

@@ -36,7 +36,7 @@ rather than pattern-matching:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from returns.io import IOResult, IOSuccess
 
@@ -48,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_ANSWER_DISPOSITION,
     DEFAULT_GROOM_CUT_APPROVAL,
     PolicySettingUnreadable,
+    read_dispatcher_config_value,
     resolve_acceptance_mode,
     resolve_acceptance_rework_cap,
     resolve_answer_disposition,
@@ -106,7 +107,7 @@ def review_fix_visit_cap_for(*, review_fix_cap: int) -> int:
 def effective_admission_policy(
     *, item: WorkItem, cwd: Path
 ) -> IOResult[str, PolicySettingUnreadable]:
-    """The item's effective admission policy with per-item-over-global precedence.
+    """The item's effective admission policy with committed-setting precedence.
 
     IT NO LONGER PINS A HINT-CARRYING ITEM TO `manual`, and that removal is the
     repair rather than a relaxation. `spec.md` says a spec-change-tier item "is
@@ -125,10 +126,28 @@ def effective_admission_policy(
     `_spec_change_tier_wall.classify_and_hold`, and both withhold `ready` from a
     held item. Scenario 10 is unaffected, because its subject is an item whose
     effective `admission_policy` is `manual` — which this function still rests
-    at `pending-approval` through the ordinary per-item precedence below.
+    at `pending-approval` when no repository setting is committed.
+
+    A committed `dispatcher.auto_approve_ready` is the exception to the
+    ordinary per-item-over-global rule: its value governs every item, so a
+    stale admission label cannot countermand the repository's committed policy.
     """
-    if item.admission_policy is not None:
-        return IOSuccess(item.admission_policy)
+    return cast(
+        "IOResult[str, PolicySettingUnreadable]",
+        read_dispatcher_config_value(cwd=cwd, key="auto_approve_ready").bind_ioresult(
+            lambda configured: _admission_policy_from_config(
+                configured=configured, item=item, cwd=cwd
+            )
+        ),
+    )
+
+
+def _admission_policy_from_config(
+    *, configured: object, item: WorkItem, cwd: Path
+) -> IOResult[str, PolicySettingUnreadable]:
+    """Resolve a committed admission value, or use the label when it is absent."""
+    if configured is None:
+        return IOSuccess(item.admission_policy or DEFAULT_ADMISSION_POLICY)
     return resolve_auto_approve_ready(cwd=cwd).map(
         lambda auto: _AUTO_ADMISSION if auto else DEFAULT_ADMISSION_POLICY
     )
