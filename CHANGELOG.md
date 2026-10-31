@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.262.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.3...v0.262.4) (2026-10-31)
+
+
+### Bug Fixes
+
+* **dev-tooling:** the pre-push fall-through forwards the delegated client's SKIP_TARGETS ([a8b5db2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8b5db23b54fbf0a14c4ccfd8b3a79506a45e824))
+
 ## [0.262.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.262.2...v0.262.3) (2026-10-31)
 
 
