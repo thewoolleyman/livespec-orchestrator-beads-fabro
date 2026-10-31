@@ -38,12 +38,11 @@ _TIMEOUT_ENV = "LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS"
 _DEFAULT_TIMEOUT_SECONDS = 600.0
 _JUDGE_EXECUTABLE = "claude"
 _CONVENTIONAL_JUDGE_PATH = "~/.local/bin/claude"
-# The read-only grant check 6 needs to search `scenarios.md` for a governing
-# scenario before concluding none does. A headless call grants no tool at all by
-# default, so without this the judge can only report what it was handed — and
-# "no scenario governs this" is exactly the conclusion the prompt forbids it
-# from reaching by recollection.
-_ALLOWED_TOOLS = "Read,Grep,Glob"
+# The prompt carries every referenced clause, so the host candidate needs only
+# direct file reads. Recursive search/listing would inflate its model context
+# from the governed repository or `/etc/livespec` without improving a judgement
+# whose complete subject is already supplied.
+_ALLOWED_TOOLS = "Read"
 _STREAM_OUTPUT_FORMAT = "stream-json"
 
 # The ONE thing a host taking appends, and the whole of it: the verdict form.
