@@ -1360,20 +1360,24 @@ digraph ImplementWorkItem {
 
     // A landed publication is terminal evidence, not an unchanged head waiting
     // for `pr`: entering that stage would try to arm a pull request the forge
-    // has already merged. Each source owns a distinct fallthrough because a
-    // missing marker has a different normal successor at each stage.
+    // has already merged. Each source owns a distinct `not_merged` label because
+    // a missing marker has a different normal successor at each stage. Both
+    // answers exit successfully: a normal route is not a deterministic failure
+    // for Petri's circuit breaker to count.
     publish_merged_reconcile_route [
         label="Route a landed draft publication to final verification"
         shape=parallelogram
         timeout="600s"
-        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; exit 0; fi; exit 1"
+        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"not_merged\"}'; exit 0"
+        output_schema="routing"
     ]
 
     pr_refresh_merged_reconcile_route [
         label="Route a landed refreshed publication to final verification"
         shape=parallelogram
         timeout="600s"
-        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; exit 0; fi; exit 1"
+        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"not_merged\"}'; exit 0"
+        output_schema="routing"
     ]
 
     // The refresh's own postcondition breaker, and the node that owns the
@@ -2283,8 +2287,8 @@ digraph ImplementWorkItem {
     // same two-outcomes-three-ways shape `pr_refresh_head` already uses.
     publish_draft -> refresh_repair [label="Blocked", condition="outcome=failed"]
     publish_draft -> publish_merged_reconcile_route
-    publish_merged_reconcile_route -> verify_pr [label="publication already merged", condition="outcome=succeeded"]
-    publish_merged_reconcile_route -> proof_capture
+    publish_merged_reconcile_route -> verify_pr [label="merged"]
+    publish_merged_reconcile_route -> proof_capture [label="not_merged"]
 
     // Refresh-repair routing. The `fix` arm is CONDITIONAL and the needs_human
     // arm is the unconditional fallthrough, deliberately in that order: a
@@ -2541,8 +2545,8 @@ digraph ImplementWorkItem {
     // GRAPH rather than of a script's good intentions.
     pr_refresh -> refresh_repair [label="Blocked", condition="outcome=failed"]
     pr_refresh -> pr_refresh_merged_reconcile_route
-    pr_refresh_merged_reconcile_route -> verify_pr [label="publication already merged", condition="outcome=succeeded"]
-    pr_refresh_merged_reconcile_route -> pr_refresh_head
+    pr_refresh_merged_reconcile_route -> verify_pr [label="merged"]
+    pr_refresh_merged_reconcile_route -> pr_refresh_head [label="not_merged"]
     pr_refresh_head -> proof_capture [label="head changed: fresh proof owed", condition="outcome=failed"]
     pr_refresh_head -> pr
 

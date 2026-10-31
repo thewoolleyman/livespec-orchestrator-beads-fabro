@@ -31,7 +31,9 @@ TEXT's properties, which is the half a sandbox can check.
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -607,6 +609,68 @@ def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_vis
     bodies = _node_bodies(text=text)
     assert "max_visits=" in bodies["review_fix"]
     assert "max_visits=" in bodies["disposition"]
+
+
+def test_merged_reconcile_routes_emit_successful_routing_labels_for_both_branches(
+    tmp_path: Path,
+) -> None:
+    """Both successful script branches emit Petri's routing directive.
+
+    The factory's pinned Petri revision, `e92b191`, handles a command node's
+    `output_schema="routing"` in `crates/attractor/steps/src/command.rs`: after
+    an exit-zero script it parses the combined output as a directive and applies
+    its preferred label before edge selection.  Execute each committed script in
+    both state arrangements here, rather than treating its printed JSON as a
+    source-text convention the engine is assumed to honour.
+    """
+    text = _graph_text()
+    bodies = _node_bodies(text=text)
+    scripts = _raw_node_scripts(text=text)
+    routes = (
+        "publish_merged_reconcile_route",
+        "pr_refresh_merged_reconcile_route",
+    )
+
+    for route in routes:
+        assert 'output_schema="routing"' in bodies[route]
+        assert '\\"preferred_next_label\\":\\"merged\\"' in scripts[route]
+        assert '\\"preferred_next_label\\":\\"not_merged\\"' in scripts[route]
+        assert "exit 1" not in scripts[route]
+        assert scripts[route].count("exit 0") == 2
+
+    outgoing = {
+        (edge.group("src"), edge.group("dst")): edge.group("attrs")
+        for edge in _EDGE_RE.finditer(text)
+        if edge.group("src") in routes
+    }
+    assert outgoing["publish_merged_reconcile_route", "verify_pr"] == ' [label="merged"]'
+    assert outgoing["publish_merged_reconcile_route", "proof_capture"] == ' [label="not_merged"]'
+    assert outgoing["pr_refresh_merged_reconcile_route", "verify_pr"] == ' [label="merged"]'
+    assert (
+        outgoing["pr_refresh_merged_reconcile_route", "pr_refresh_head"] == ' [label="not_merged"]'
+    )
+
+    for route in routes:
+        script = scripts[route].replace(r"\\", "\\").replace(r"\"", '"')
+        for merged, expected_label in ((False, "not_merged"), (True, "merged")):
+            # A temporary Git checkout makes the script's durable state path
+            # real without mutating this checkout's run state.
+            sandbox = tmp_path / route / expected_label
+            subprocess.run(["git", "init", "--quiet", str(sandbox)], check=True)
+            state = sandbox / ".git" / "livespec-publication"
+            state.mkdir()
+            if merged:
+                (state / "livespec-merged-reconcile").touch()
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=sandbox,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            assert result.returncode == 0, (route, merged, result.stderr)
+            assert json.loads(result.stdout) == {"preferred_next_label": expected_label}
 
 
 def test_the_needs_human_script_reads_the_run_id_from_the_engine_context() -> None:

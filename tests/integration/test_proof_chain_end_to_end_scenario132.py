@@ -166,6 +166,7 @@ _FAILED = "failed"
 _LABEL_FIX = "fix"
 _LABEL_APPROVE = "approve"
 _LABEL_ALL_REJECTED = "all_rejected"
+_LABEL_NOT_MERGED = "not_merged"
 
 # The closed context vocabulary the committed graph's conditions read. It is
 # exactly `outcome` and `preferred_label` since plan `fabro-currency` P4: the
@@ -205,6 +206,7 @@ _EDGE_LINE = re.compile(
     r"(?m)^[ \t]*(?P<source>\w+)[ \t]*->[ \t]*(?P<target>\w+)[ \t]*(?:\[(?P<attrs>[^\]]*)\])?[ \t]*$"
 )
 _CONDITION_ATTRIBUTE = re.compile(r'condition="(?P<condition>[^"]*)"')
+_LABEL_ATTRIBUTE = re.compile(r'label="(?P<label>[^"]*)"')
 _GRAPH_KEY = re.compile(r'(?m)^graph = "(?P<path>[^"]+)"')
 _ASSERTION_HEADING = re.compile(r"(?m)^## Assertion \d+ — (?P<text>.+)$")
 _SIGNIFICANT_TERM = re.compile(r"[a-z0-9_]{4,}")
@@ -261,11 +263,12 @@ class _DriveRefusedError(Exception):
 
 @dataclass(frozen=True, kw_only=True)
 class _Edge:
-    """One committed edge: where it goes, and the condition guarding it."""
+    """One committed edge: where it goes, and its condition or routing label."""
 
     source: str
     target: str
     condition: str | None
+    label: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -445,12 +448,13 @@ class _Forge:
 
 
 def _edges(*, text: str) -> tuple[_Edge, ...]:
-    """Every declared edge, in declaration order, with its condition."""
+    """Every declared edge, in declaration order, with routing attributes."""
     return tuple(
         _Edge(
             source=match.group("source"),
             target=match.group("target"),
             condition=_condition_of(attrs=match.group("attrs")),
+            label=_label_of(attrs=match.group("attrs")),
         )
         for match in _EDGE_LINE.finditer(text)
     )
@@ -461,6 +465,13 @@ def _condition_of(*, attrs: str | None) -> str | None:
         return None
     found = _CONDITION_ATTRIBUTE.search(attrs)
     return None if found is None else found.group("condition")
+
+
+def _label_of(*, attrs: str | None) -> str | None:
+    if attrs is None:
+        return None
+    found = _LABEL_ATTRIBUTE.search(attrs)
+    return None if found is None else found.group("label")
 
 
 def _resolve(*, term: str, state: _State, inputs: dict[str, str]) -> str:
@@ -511,17 +522,20 @@ def _condition_holds(*, condition: str, state: _State, inputs: dict[str, str]) -
 def _next_node(*, outgoing: Sequence[_Edge], state: _State, inputs: dict[str, str]) -> str:
     """The successor the graph's own routing picks for one node's report.
 
-    Conditional edges outrank the unconditional fallthrough, in declaration
-    order, which is the routing the pinned engine applies and the reason every
-    inserted node leaves its ordinary route unconditional. A node with no
-    unconditional route and nothing matching is the `all_conditional_edges`
-    shape the engine rejects outright, so the drive refuses rather than
-    inventing a successor.
+    Conditional edges outrank an emitted routing label, which outranks the
+    unconditional fallthrough. This is the pinned engine's routing order: a
+    command node can exit successfully and select an edge by its label, while
+    ordinary nodes retain the unconditional route. A node with no unconditional
+    route and nothing matching is the `all_conditional_edges` shape the engine
+    rejects outright, so the drive refuses rather than inventing a successor.
     """
     for edge in outgoing:
         if edge.condition is not None and _condition_holds(
             condition=edge.condition, state=state, inputs=inputs
         ):
+            return edge.target
+    for edge in outgoing:
+        if state.preferred_label is not None and edge.label == state.preferred_label:
             return edge.target
     for edge in outgoing:
         if edge.condition is None:
@@ -585,8 +599,10 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
     A moving default branch is the HOST-CAPTURED assertion of `bd-ib-c3txja`,
     taken against the released build on a real factory run, because a sandboxed
     journey cannot advance the branch it is publishing onto. The two
-    merged-reconcile route classifiers report failure: their state marker is absent
-    in this ordinary unmerged journey, so each takes its normal fallthrough.
+    merged-reconcile route classifiers report the `not_merged` label with a
+    successful outcome: their state marker is absent in this ordinary unmerged
+    journey, so each selects its normal labelled route without creating a
+    deterministic failure for the circuit breaker.
     """
 
     def _act(*, node: str, visit: int) -> tuple[str, str | None]:
@@ -609,7 +625,7 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
             _PUBLISH_MERGED_RECONCILE_ROUTE,
             _PR_REFRESH_MERGED_RECONCILE_ROUTE,
         }:
-            return _FAILED, None
+            return _SUCCEEDED, _LABEL_NOT_MERGED
         return _SUCCEEDED, None
 
     return _act
