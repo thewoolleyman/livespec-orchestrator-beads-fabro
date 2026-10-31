@@ -75,6 +75,15 @@ It follows verbatim.
 
 """
 
+_HOST_TOOLLESS_CONTEXT = """
+## Host candidate capability set
+
+You have no tools. Sandbox capabilities: {capabilities}.
+Judge only the rubric and subject supplied in this prompt; do not attempt a tool
+call or an external lookup.
+
+"""
+
 
 def dod_gate_prompt_path(*, payload_root: Path | None = None) -> Path:
     """Where the `dod_gate` node's own prompt sits under a payload root.
@@ -103,9 +112,37 @@ def judgement_rubric(*, payload_root: Path | None = None) -> str | None:
     return None if isinstance(read, AttemptFailure) else read
 
 
-def judgement_prompt(*, gate_prompt: str, subject: str) -> str:
-    """The node's prompt, the host ending contract, then the item's subject."""
-    return f"{gate_prompt}{HOST_ENDING_CONTRACT}{subject}\n"
+def judgement_prompt(
+    *, gate_prompt: str, subject: str, sandbox_capabilities: tuple[str, ...] = ("terminal",)
+) -> str:
+    """The host-safe rubric, its inline context, ending contract and subject."""
+    return (
+        f"{_host_safe_rubric(gate_prompt=gate_prompt)}"
+        f"{_HOST_TOOLLESS_CONTEXT.format(capabilities=', '.join(sandbox_capabilities))}"
+        f"{HOST_ENDING_CONTRACT}{subject}\n"
+    )
+
+
+def _host_safe_rubric(*, gate_prompt: str) -> str:
+    """Remove file-exploration directions the tool-less host candidate cannot obey."""
+    result = gate_prompt
+    for source, replacement in (
+        (
+            "Read /etc/livespec/sandbox-capabilities, then search SPECIFICATION/ before deciding.",
+            "Use the inline sandbox capability set before deciding.",
+        ),
+        (
+            """Work through all six. Read files in the repository freely to settle a
+question of fact — the spec tree above all.""",
+            "Work through all six using the inline subject.",
+        ),
+        (
+            "Search `scenarios.md` for a scenario stating the behaviour",
+            "Use the inline governing-heading verdict for the stated behaviour",
+        ),
+    ):
+        result = result.replace(source, replacement)
+    return result
 
 
 def judgement_argv(
