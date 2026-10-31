@@ -14,7 +14,15 @@ const root = process.env.LIVESPEC_ACP_CONTEXT_ROOT ?? process.cwd();
 const instructionText = (loads.instruction_files ?? [])
   .map((path) => readFileSync(resolve(root, path), "utf8"))
   .join("\n\n");
-const child = spawn(process.argv[separator + 1], process.argv.slice(separator + 2), {
+const adapter = process.argv.slice(separator + 1);
+const adapterEnv = { ...process.env };
+while (adapter.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(adapter[0])) {
+  const assignment = adapter.shift();
+  const equals = assignment.indexOf("=");
+  adapterEnv[assignment.slice(0, equals)] = assignment.slice(equals + 1);
+}
+const child = spawn(adapter[0], adapter.slice(1), {
+  env: adapterEnv,
   stdio: ["pipe", "pipe", "inherit"],
 });
 

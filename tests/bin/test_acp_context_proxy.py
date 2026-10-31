@@ -51,3 +51,32 @@ def test_proxy_replaces_ambient_context_with_declared_instruction_text(tmp_path:
     assert options["settingSources"] == []
     assert options["strictMcpConfig"] is True
     assert options["systemPrompt"]["append"] == "declared instruction text"
+
+
+def test_proxy_applies_leading_env_assignments_to_the_adapter(tmp_path: Path) -> None:
+    """An adapter command that opens with `NAME=value` words launches with them set."""
+    node = shutil.which("node")
+    assert node is not None
+    script = "process.stdout.write(process.env.LIVESPEC_PROXY_PROBE + '\\n');"
+    completed = subprocess.run(
+        [
+            node,
+            str(_PROXY),
+            "--",
+            "LIVESPEC_PROXY_PROBE=from-assignment",
+            "OTHER_PROBE=a=b",
+            node,
+            "-e",
+            script,
+        ],
+        check=False,
+        cwd=tmp_path,
+        env={"LIVESPEC_ACP_CONTEXT_ROOT": str(tmp_path)},
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == "from-assignment\n"
