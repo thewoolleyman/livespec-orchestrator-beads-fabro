@@ -150,6 +150,8 @@ def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
     assert runner.argvs[1][runner.argvs[1].index("--model") :] == [
         "--model",
         "claude-opus-5",
+        "--tools",
+        "",
         "--add-dir",
         str(repo),
         "--setting-sources",
@@ -377,10 +379,10 @@ def test_a_claude_candidate_carries_its_adapter_environment(
     assert reply == "accepted"
     assert runner.argvs[0][1:] == [
         "-p",
-        "--allowedTools",
-        "Read",
         "--model",
         "claude-opus-5",
+        "--tools",
+        "",
         "--add-dir",
         str(tmp_path),
         "--setting-sources",

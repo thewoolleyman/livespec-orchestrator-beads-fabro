@@ -30,12 +30,10 @@ repository's own items is the same shape one layer up, so the discipline is the
 point: a sentence that changes an answer belongs in the one file both takings
 read.
 
-WHY THE SUBJECT CARRIES THE REFERENCED HEADING BODIES. A headless `claude -p`
-grants no tools by default, so the judge is given a read-only grant AND the
-heading bodies inline: the grant lets it search `scenarios.md` as the
-reference-coverage check requires, and the inline bodies mean the assertion can
-still be judged against its governing heading on a host where that search
-returns nothing.
+WHY THE SUBJECT CARRIES THE REFERENCED HEADING BODIES. The host judge receives
+an empty tool set, so the heading bodies travel inline: it can grade the
+assertion against its governing heading without a repository search, and no
+exploratory tool call can turn one judgement into a multi-request session.
 
 WHY EVERY FAILURE CAUSE IS MEASURED RATHER THAN PROBED. The runner already maps
 an absent executable to exit 127, a timeout to exit 124 and a launch the
