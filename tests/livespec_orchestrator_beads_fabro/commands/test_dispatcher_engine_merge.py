@@ -211,8 +211,11 @@ def test_await_merge_fails_fast_when_ci_green_failed_and_rollup_has_no_required_
     )
 
     assert isinstance(outcome, DispatchOutcome)
-    assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
-    assert outcome.detail == "required check failed terminally: ci-green"
+    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
+    assert outcome.detail == (
+        "required check failed terminally: ci-green; recover with "
+        "`resolve-blocked:x-1:ready`, then `resume --item x-1`"
+    )
 
 
 def test_await_merge_reads_required_checks_from_the_forge_not_the_rollup(

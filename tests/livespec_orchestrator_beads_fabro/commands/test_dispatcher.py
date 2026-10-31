@@ -3000,9 +3000,12 @@ def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) 
         ]
     )
     outcome, journal, naps = _dispatch(runner=runner, repo=tmp_path, attempts=80)
-    assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
+    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
     assert outcome.pr_number == 7
-    assert outcome.detail == "required check failed terminally: check-coverage"
+    assert outcome.detail == (
+        "required check failed terminally: check-coverage; recover with "
+        "`resolve-blocked:x-1:ready`, then `resume --item x-1`"
+    )
     assert naps == []
     assert [record["stage"] for record in journal.records] == [
         "fabro-run",
