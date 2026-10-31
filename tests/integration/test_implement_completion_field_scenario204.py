@@ -358,6 +358,18 @@ def test_a_complete_structured_final_reply_succeeds_without_a_completion_record(
     assert _COMPLETE_SENTINEL in result.stderr
 
 
+def test_a_structured_reply_that_only_mentions_the_field_is_not_a_completion_record(
+    tmp_path: Path,
+) -> None:
+    """Only the field itself, rather than a string containing its name, states completion."""
+    repo = _clone(tmp_path=tmp_path)
+
+    result = _graded(repo=repo, response='{"note": "definition_of_done_complete"}')
+
+    assert result.returncode != 0, result.stderr
+    assert "stated no completion field" in result.stderr
+
+
 def test_a_stale_cause_from_an_earlier_stage_does_not_survive_a_passing_gate(
     tmp_path: Path,
 ) -> None:
