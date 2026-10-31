@@ -4373,7 +4373,8 @@ def test_dispatch_green_closes_item_and_journals(
     goal_text = (tmp_path / f"fabro-goal-{item.id}.md").read_text(encoding="utf-8")
     assert "A ready task" in goal_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
-    stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
+    records = [json.loads(line) for line in journal_text.splitlines()]
+    stages = [record["stage"] for record in records]
     # The master-CI preflight records its PASS first, before anything is admitted:
     # a pre-dispatch step has exactly three sanctioned outcomes and a pass is a
     # journaled one, so the evidence the step ran precedes the first state write.
@@ -4476,6 +4477,13 @@ def test_dispatch_green_closes_item_and_journals(
         "node-timeouts",
         "conformance-premise-undeclared",
         "dispatch-id",
+        "pre-launch-cpu",
+        "pre-launch-cpu",
+        "pre-launch-cpu",
+        "pre-launch-cpu",
+        "pre-launch-cpu",
+        "pre-launch-cpu",
+        "pre-launch-cpu",
         "ledger-complete",
         "acceptance-ai-pass",
         # The pointer write runs on every disposition; this fake pass carries no
@@ -4489,6 +4497,15 @@ def test_dispatch_green_closes_item_and_journals(
         "self-update-skipped",
         "run-turn-telemetry-check",
         "reflection",
+    ]
+    assert [record["phase"] for record in records if record["stage"] == "pre-launch-cpu"] == [
+        "record-dispatch",
+        "github-app-auth",
+        "goal-minijinja-preflight",
+        "factory-auth",
+        "run-config-overlay",
+        "goal-render-and-write",
+        "dispatch-span",
     ]
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)

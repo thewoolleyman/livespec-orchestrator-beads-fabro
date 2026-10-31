@@ -29,6 +29,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
+    PrelaunchCheckpoint,
+    ignore_prelaunch_checkpoint,
+    prelaunch_phase,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
 )
@@ -110,6 +115,9 @@ class WatchedFabroLauncher:
     on_worker_running: Callable[[], None] | None = None
     # A run-only source venue; watchdog and auth commands retain the ordinary runner.
     run_runner: CommandRunner | None = None
+    # Receives the name of each launch-side phase as it ends, so the drive's
+    # pre-launch CPU profile covers the phases that run inside the launch too.
+    prelaunch_checkpoint: PrelaunchCheckpoint = ignore_prelaunch_checkpoint
 
     def launch(
         self,
@@ -118,9 +126,12 @@ class WatchedFabroLauncher:
         runner: CommandRunner,
         journal: JournalWriter,
     ) -> FabroRunResult:
-        run_fabro_factory_auth_login(plan=plan, runner=runner)
-        port = fabro_port_for_plan(plan=plan, runner=runner)
-        release_pass_snapshot()
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="launch-factory-auth"):
+            run_fabro_factory_auth_login(plan=plan, runner=runner)
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="fabro-port"):
+            port = fabro_port_for_plan(plan=plan, runner=runner)
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="release-pass-snapshot"):
+            release_pass_snapshot()
         holder: dict[str, CommandResult] = {}
         run_id_holder: dict[str, str | None] = {}
         # Set once this dispatch's `fabro run` call has RETURNED, which is

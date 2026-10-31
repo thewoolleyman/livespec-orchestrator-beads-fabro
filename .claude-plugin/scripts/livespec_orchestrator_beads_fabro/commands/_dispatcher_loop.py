@@ -19,7 +19,6 @@ in `_dispatcher_proof_credential_lease`.
 from __future__ import annotations
 
 import argparse
-import time
 from contextlib import ExitStack
 from dataclasses import dataclass
 from functools import partial
@@ -45,7 +44,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_fabro_factory_auth_login,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
-    GithubTokenEnvRunner,
     JournalFile,
     ShellCommandRunner,
     WatchedFabroLauncher,
@@ -53,6 +51,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
     read_ratified_lessons,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_finish import finish_dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
@@ -73,9 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     post_run_dispositions,
     run_id,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
-    spans_path,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import spans_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     interrupted_attempt_for,
     minijinja_findings_detail,
@@ -85,8 +82,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import (
     release_pre_run_claim_if_needed,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import PrelaunchCpuProfile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
-    ReviewGateEmission,
     emit_review_gate_from_fabro_events,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import (
@@ -94,9 +91,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import 
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
-__all__: list[str] = [
-    "dispatch_one",
-]
+__all__: list[str] = ["dispatch_one"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -180,21 +175,27 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     lifetime: _DispatchLifetime,
 ) -> DispatchOutcome:
     identity = lifetime.identity
-    recorded = record_dispatch(
-        args=args,
-        repo=repo,
-        item=item,
-        journal=journal,
-        janitor=janitor,
-        identity=identity,
-        verdict=verdict,
+    profile = PrelaunchCpuProfile.for_drive(
+        journal=journal, work_item_id=item.id, dispatch_id=identity.dispatch_id
     )
+    with profile.during(name="record-dispatch"):
+        recorded = record_dispatch(
+            args=args,
+            repo=repo,
+            item=item,
+            journal=journal,
+            janitor=janitor,
+            identity=identity,
+            verdict=verdict,
+        )
     if isinstance(recorded, DispatchOutcome):
         return recorded
     plan = recorded.plan
     goal_file = goal_file_path(work_item_id=item.id)
     overlay_file = getattr(plan, "workflow_toml", overlay_file_path(work_item_id=item.id))
-    if isinstance(token_supplier := selfup.github_token_supplier(), str):
+    with profile.during(name="github-app-auth"):
+        token_supplier = selfup.github_token_supplier()
+    if isinstance(token_supplier, str):
         return failed_dispatch_outcome(
             journal=journal,
             work_item_id=item.id,
@@ -207,9 +208,10 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # committed content is read, so an unmerged reflector proposal never
     # influences a brief.
     lessons = read_ratified_lessons(lessons_root=repo)
-    findings = minijinja_openers_in_goal_sources(
-        item=item, comments=recorded.comments, lessons=lessons
-    )
+    with profile.during(name="goal-minijinja-preflight"):
+        findings = minijinja_openers_in_goal_sources(
+            item=item, comments=recorded.comments, lessons=lessons
+        )
     if findings:
         return failed_dispatch_outcome(
             journal=journal,
@@ -229,7 +231,8 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # first `fabro secret set`; a fresh candidate host otherwise fails while the
     # dev token is still waiting in the launcher's later auth step.
     factory_runner = ShellCommandRunner()
-    run_fabro_factory_auth_login(plan=plan, runner=factory_runner)
+    with profile.during(name="factory-auth"):
+        run_fabro_factory_auth_login(plan=plan, runner=factory_runner)
     secret_sink = fabro_vault_sink_for_plan(plan=plan, runner=factory_runner, journal=journal)
     # Fallback for every pre-launch refusal and exception. On the normal path
     # the watched launcher releases much earlier, at RUNNING, immediately after
@@ -241,19 +244,20 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # REFUSAL stays here, beside the other pre-launch refusals, because the
     # order of returns in this window is load-bearing — see the comment above
     # and `_dispatcher_proof_credential_lease`.
-    overlay_error = materialize_dispatch_overlay(
-        overlay=DispatchOverlay(
-            args=args,
-            repo=repo,
-            item=item,
-            journal=journal,
-            recorded=recorded,
-            overlay_file=overlay_file,
-            dispatch_id=identity.dispatch_id,
-            token=token_supplier,
-            secret_sink=secret_sink,
+    with profile.during(name="run-config-overlay"):
+        overlay_error = materialize_dispatch_overlay(
+            overlay=DispatchOverlay(
+                args=args,
+                repo=repo,
+                item=item,
+                journal=journal,
+                recorded=recorded,
+                overlay_file=overlay_file,
+                dispatch_id=identity.dispatch_id,
+                token=token_supplier,
+                secret_sink=secret_sink,
+            )
         )
-    )
     if overlay_error is not None:
         return failed_dispatch_outcome(
             journal=journal,
@@ -261,18 +265,19 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             stage="run-config-overlay",
             detail=overlay_error,
         )
-    goal_text = render_goal(
-        item=item,
-        repo=repo,
-        branch=plan.branch,
-        comments=recorded.comments,
-        lessons=lessons,
-        # The recovery placement is read off THIS item's own argument copy, which
-        # is the namespace `recovery_launch_args` pinned the route onto — never a
-        # wave-shared one, for the reason the clause forbids route state there.
-        interrupted=interrupted_attempt_for(args=args),
-    )
-    _ = goal_file.write_text(goal_text, encoding="utf-8")
+    with profile.during(name="goal-render-and-write"):
+        goal_text = render_goal(
+            item=item,
+            repo=repo,
+            branch=plan.branch,
+            comments=recorded.comments,
+            lessons=lessons,
+            # The recovery placement is read off THIS item's own argument copy, which
+            # is the namespace `recovery_launch_args` pinned the route onto — never a
+            # wave-shared one, for the reason the clause forbids route state there.
+            interrupted=interrupted_attempt_for(args=args),
+        )
+        _ = goal_file.write_text(goal_text, encoding="utf-8")
     started_at, outcome = run_dispatch_with_watchdog(
         context=DispatchRunContext(
             args=args,
@@ -283,6 +288,7 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             payload_dir=recorded.payload.payload_dir,
             token_supplier=token_supplier,
             dispatch_id=identity.dispatch_id,
+            prelaunch_checkpoint=profile.checkpoint,
         ),
         run_dispatch_func=run_dispatch,
         fabro_launcher_type=partial(
@@ -293,26 +299,18 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     # REBOUND, not merely called: the post-merge acceptance valve runs inside, and
     # the outcome it returns is the one the dispatch RESULT must report — a park
     # reported as the janitor's own `green at done` is finding F7(b).
-    outcome = post_run_dispositions(
+    return finish_dispatch(
         args=args,
         repo=repo,
         item=item,
-        outcome=outcome,
         journal=journal,
-        wall_clock_seconds=time.monotonic() - started_at,
-        dispatch_context_size=len(goal_text),
+        plan=plan,
+        outcome=outcome,
+        started_at=started_at,
+        goal_text=goal_text,
         token_supplier=token_supplier,
+        identity=identity,
+        spans=spans_path(args=args, repo=repo),
+        dispose=post_run_dispositions,
+        emit_review=emit_review_gate_from_fabro_events,
     )
-    emit_review_gate_from_fabro_events(
-        emission=ReviewGateEmission(
-            plan=plan,
-            runner=GithubTokenEnvRunner(inner=ShellCommandRunner(), token=token_supplier),
-            journal=journal,
-            spans_path=spans_path(args=args, repo=repo),
-            work_item_id=item.id,
-            dispatch_id=identity.dispatch_id,
-            run_id=outcome.fabro_run_id,
-            dispatch_factory=identity.dispatch_factory,
-        )
-    )
-    return outcome
