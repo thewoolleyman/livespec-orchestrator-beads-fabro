@@ -304,6 +304,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_canary import (
     add_file_canary_arguments,
     run_file_canary_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_classify_tier import (
+    add_classify_tier_arguments,
+    run_classify_tier_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_command import (
     run_claude_cred_status,
 )
@@ -438,6 +442,7 @@ __all__: list[str] = [
     "ready_items",
     "reflector_oob_after_verdict",
     "requested_items_preflight_error",
+    "run_classify_tier_command",
     "run_claude_cred_status",
     "run_clear_acp_availability_hold_command",
     "run_clear_provider_exhaustion_command",
@@ -460,6 +465,7 @@ __all__: list[str] = [
 
 _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "claude-cred-status": run_claude_cred_status,
+    "classify-tier": run_classify_tier_command,
     "clear-acp-availability-hold": run_clear_acp_availability_hold_command,
     "clear-provider-exhaustion": run_clear_provider_exhaustion_command,
     "codex-cred-refresh": run_codex_cred_refresh,
@@ -492,6 +498,7 @@ def main(*, argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    add_classify_tier_arguments(parser=subparsers.add_parser("classify-tier"))
     add_ledger_check_arguments(parser=subparsers.add_parser("ledger-check"))
     add_ledger_normalize_arguments(parser=subparsers.add_parser("ledger-normalize"))
     add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
@@ -514,12 +521,10 @@ def _build_parser() -> argparse.ArgumentParser:
     add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
     add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
-    dispatch = subparsers.add_parser("dispatch")
-    add_dispatch_common(parser=dispatch)
+    add_dispatch_common(parser=(dispatch := subparsers.add_parser("dispatch")))
     _ = dispatch.add_argument("--item", dest="item", required=True)
     add_resume_arguments(parser=subparsers.add_parser("resume"))
-    loop = subparsers.add_parser("loop")
-    add_dispatch_common(parser=loop)
+    add_dispatch_common(parser=(loop := subparsers.add_parser("loop")))
     _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
     _ = loop.add_argument("--parallel", dest="parallel", type=int, default=1)
     _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")
