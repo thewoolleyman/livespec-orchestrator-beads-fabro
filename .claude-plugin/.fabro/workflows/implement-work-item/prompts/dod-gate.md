@@ -99,10 +99,26 @@ Then report, in your own output, what you resolved:
   `sandbox-capabilities: unpublished` verbatim, so a reader can tell an
   unknown set from an empty one.
 
+**When the subject carries its own capability block.** A host taking offers
+you no tool, so it reads the committed mirror for you. If the subject below
+carries a `## Sandbox capabilities (resolved for you)` block, that block IS the
+resolved set: use it in place of both sources above and do not look for the
+published file. A block listing names is the committed mirror; there is no
+published file beside it to compare, so report no CONFIGURATION MISMATCH. A
+block reading `sandbox-capabilities: unpublished` is the UNKNOWN set, reported
+verbatim as above.
+
 ## What to check
 
 Work through all six. Read files in the repository freely to settle a
 question of fact — the spec tree above all.
+
+Where the subject carries a `## Referenced heading: <heading>` body, that body is
+the whole section the reference line names, and it is the text checks 2 and 4
+read: a body reading `(this heading does not resolve in the governed spec tree)`
+is an unresolved reference (check 2's finding). If you hold no tool that can read
+the repository, those bodies are all the spec text you have; do not guess at the
+rest.
 
 1. **The section exists and parses.** The item's description must carry, as
    its **first heading**, one whose title is `Definition of Done` (prose may
@@ -306,7 +322,9 @@ question of fact — the spec tree above all.
      the finding and nothing downstream re-tests it, so recollection cannot
      establish it. Name the scenario heading that governs the assertion and
      give the same remedy; the same rule applies, so it is a finding only when
-     the reference line names no heading that governs any assertion.
+     the reference line names no heading that governs any assertion. If you
+     hold no tool that can search, you cannot establish that none governs, so
+     withhold this finding and say so in your pass paragraph.
 
    A non-scenario H2 remains a perfectly **valid reference for an assertion no
    scenario states**, and a reference the verdict did not return is not a

@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     DefinitionOfDone,
     definition_of_done,
@@ -59,6 +60,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     effective_criteria,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import read_ratified_lessons
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
+    UNPUBLISHED_REPORT,
+    mirrored_sandbox_capabilities,
+)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
     governing_heading_block,
@@ -69,9 +74,11 @@ from livespec_orchestrator_beads_fabro.effects import (
     attempt,
     parse_json,
 )
+from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "CAPABILITIES_HEADING",
     "CAUSE_UNPARSEABLE_VERDICT",
     "JUDGEMENT_ADMITTED",
     "JUDGEMENT_HELD",
@@ -109,6 +116,11 @@ _LESSONS_LABEL = (
 # riders distinguishable from one whose riders were dropped, which is the
 # difference between a brief that is complete and one that was truncated.
 _RIDERS_HEADING = "## Ledger comments (operator riders; part of the brief)"
+# The capability set the rubric tells the judge to read from the sandbox image,
+# resolved from the committed mirror because a host taking has neither the image
+# nor a tool to read it with. An unreadable or unusable mirror is the unknown
+# set, which withholds only the missing-capability finding.
+CAPABILITIES_HEADING = "## Sandbox capabilities (resolved for you)"
 _ABSENT_RIDERS_BODY = "(this item carries no operator rider)"
 # The governed spec tree, named where `_heading_body` names it, and the two
 # halves of the identity the reuse digest folds in.
@@ -192,9 +204,23 @@ def judgement_subject(
                 _heading_body(repo=cwd, reference=reference),
             )
         )
+    blocks.extend(("", CAPABILITIES_HEADING, _capabilities_body(cwd=cwd)))
     blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
     blocks.extend(("", governing_heading_block(verdict=governing)))
     return "\n".join(blocks)
+
+
+def _capabilities_body(*, cwd: Path) -> str:
+    """The committed capability mirror as the rubric reports it, else the unknown set."""
+    read = attempt(
+        action=lambda: dispatcher_block(cwd=cwd), exceptions=(LivespecConfigUnreadableError,)
+    )
+    if isinstance(read, AttemptFailure):
+        return UNPUBLISHED_REPORT
+    resolved = mirrored_sandbox_capabilities(block=read)
+    if isinstance(resolved, str) or not resolved:
+        return UNPUBLISHED_REPORT
+    return f"committed dispatcher.sandbox_capabilities: {', '.join(resolved)}"
 
 
 def _effective_criteria_body(*, criteria: EffectiveCriteria, section: DefinitionOfDone) -> str:

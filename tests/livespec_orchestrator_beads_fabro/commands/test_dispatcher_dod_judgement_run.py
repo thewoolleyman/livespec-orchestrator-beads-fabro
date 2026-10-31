@@ -506,7 +506,7 @@ def test_a_host_codex_judge_resolves_before_isolation_and_reads_only_its_grant(
     assert runner.cwd_git_returncode is not None
     assert runner.cwd_git_returncode != 0
     assert runner.environ is not None
-    assert runner.environ["HOME"] == str(home)
+    assert runner.environ["HOME"] != str(home)
 
 
 def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
@@ -517,7 +517,13 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
     codex_home.mkdir()
     _ = (codex_home / "auth.json").write_text("host-auth", encoding="utf-8")
     _ = (codex_home / "config.toml").write_text("interactive = true", encoding="utf-8")
+    operator_home = tmp_path / "operator-profile"
+    operator_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("HOME", str(operator_home))
+    monkeypatch.setenv("BASH_ENV", str(operator_home / "bashrc"))
+    monkeypatch.setenv("ENV", str(operator_home / "shrc"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(operator_home / ".config"))
     repo = _repo(tmp_path=tmp_path)
     _write_codex_first_dod_gate(repo=repo)
     runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
@@ -530,6 +536,13 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
     assert runner.environ is not None
     assert runner.environ["CODEX_HOME"] != str(codex_home)
     assert runner.codex_auth == "host-auth"
+    private_home = Path(runner.environ["HOME"])
+    assert private_home != operator_home
+    assert Path(runner.environ["CODEX_HOME"]).parent == private_home.parent
+    assert "BASH_ENV" not in runner.environ
+    assert "ENV" not in runner.environ
+    assert runner.environ["ZDOTDIR"] == str(private_home)
+    assert Path(runner.environ["XDG_CONFIG_HOME"]).is_relative_to(private_home)
 
 
 def test_host_judge_scratch_retries_after_a_git_worktree_parent(

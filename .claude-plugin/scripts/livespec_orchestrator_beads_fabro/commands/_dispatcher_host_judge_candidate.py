@@ -7,9 +7,11 @@ without preventing the launcher from finding that executable.
 
 The candidate itself runs from an empty scratch directory that is not inside any
 Git worktree.  The governed repository is therefore available only through the
-explicit ``--add-dir`` grant.  Codex receives a fresh ``CODEX_HOME`` containing
-at most its copied ``auth.json``, so none of the invoking profile's
-configuration, skills or project instructions reach the judgement.
+explicit ``--add-dir`` grant.  Both candidates receive a private ``HOME`` (and
+XDG directories) and no shell start-up hook variable; Codex also receives a
+fresh ``CODEX_HOME`` containing at most its copied ``auth.json``, so none of
+the invoking profile's configuration, MCP servers, skills or project
+instructions reach the judgement.
 """
 
 from __future__ import annotations
@@ -33,6 +35,15 @@ __all__: list[str] = ["IsolatedLaunch", "isolated_launch", "resolve_codex_path"]
 _CODEX_EXECUTABLE = "codex"
 _PROMPT_FILE_PREFIX = "livespec-dod-gate-"
 _SCRATCH_PARENT_NAMES = ("tmp", "var/tmp")
+# Variables a non-interactive shell sources on startup; a candidate's own shell
+# tool must not run the invoking user's profile through any of them.
+_SHELL_HOOK_VARIABLES = frozenset({"BASH_ENV", "ENV"})
+_XDG_DIRECTORIES = (
+    ("XDG_CONFIG_HOME", ".config"),
+    ("XDG_DATA_HOME", ".local/share"),
+    ("XDG_CACHE_HOME", ".cache"),
+    ("XDG_STATE_HOME", ".local/state"),
+)
 _NO_SCRATCH_DIRECTORY = "no non-repository scratch directory is available for host judgement"
 
 
@@ -125,12 +136,14 @@ def _isolated_environ(
     scratch: Path,
 ) -> dict[str, str]:
     """Return one candidate environment with the required private state."""
-    isolated = dict(environ)
+    isolated = {key: value for key, value in environ.items() if key not in _SHELL_HOOK_VARIABLES}
+    private_home = scratch / "home"
+    private_home.mkdir()
+    isolated["HOME"] = str(private_home)
+    isolated["ZDOTDIR"] = str(private_home)
+    for variable, directory in _XDG_DIRECTORIES:
+        isolated[variable] = str(private_home / directory)
     if not is_codex:
-        private_home = scratch / "home"
-        private_home.mkdir()
-        isolated["HOME"] = str(private_home)
-        isolated["ZDOTDIR"] = str(private_home)
         return isolated
     codex_home = scratch / "codex-home"
     codex_home.mkdir()
