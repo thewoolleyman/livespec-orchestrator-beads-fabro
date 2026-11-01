@@ -1104,5 +1104,12 @@
     "heading": "## Scenario 281 \u2014 An ended run's Kubernetes sandbox survives while its item awaits a human and is deleted through its provider once the item closes",
     "work_item": "bd-ib-u5facl",
     "first_seen": "2026-10-31"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 285 \u2014 Red and Green run as separate nodes and every implement commit is made by a command node",
+    "work_item": "livespec-dev-tooling-sv6m5p",
+    "first_seen": "2026-11-01"
   }
 ]
