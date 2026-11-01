@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.266.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.265.1...v0.266.0) (2026-11-01)
+
+
+### Features
+
+* label definition of done judgements ([924d775](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/924d77534547ca2b182281ea057b9ef4230b8826))
+* label drift judge subprocesses ([d2a8ef9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d2a8ef9715bb804f6b3f358164a81f4efdab6216))
+* label governing heading judgements ([e1a9686](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e1a9686c12a6983c8cf3e483e71d5b5fac32a6f6))
+
+
+### Bug Fixes
+
+* label groom and tier-gate judgements with their own caller ([35f25b8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/35f25b890bcf48ef620fe8b3bcb766991b60e29b))
+
 ## [0.265.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.265.0...v0.265.1) (2026-11-01)
 
 
