@@ -87,3 +87,52 @@ exit 99
     )
 
     assert consumer.returncode == 0
+
+
+def test_standalone_coverage_gate_fails_when_the_suite_fails(tmp_path: Path) -> None:
+    """With no canonical verdict, a failing suite still fails check-coverage."""
+    repo = tmp_path / "repo"
+    tooling = repo / "dev-tooling"
+    tooling.mkdir(parents=True)
+    for source in (
+        _PER_FILE_RECIPE,
+        _COVERAGE_RECIPE,
+        _ROOT / "dev-tooling" / "just-test-nprocs.sh",
+    ):
+        _ = shutil.copy2(source, tooling / source.name)
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    _ = fake_uv.write_text(
+        """#!/usr/bin/env bash
+if [[ \"$2\" == pytest ]]; then
+    echo 'a test failed' >&2
+    exit 1
+fi
+if [[ \"$2\" == python ]]; then
+    echo 'coverage verifier passed'
+    exit 0
+fi
+exit 99
+""",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    env = {
+        **os.environ,
+        "LIVESPEC_TEST_PARALLELISM": "1",
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+
+    standalone = subprocess.run(
+        ["bash", str(tooling / _COVERAGE_RECIPE.name)],
+        cwd=repo,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert standalone.returncode == 1
+    assert not (repo / ".coverage-gates").exists()
