@@ -2629,5 +2629,29 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the exercising proof is a host-captured Honeycomb query over spans from a real Kubernetes-backend factory dispatch whose pod ran off the factory host; owned by work-item bd-ib-motuct (run_turn spans), with the step-span half riding livespec-dev-tooling-ipcm33.",
     "work_item": "bd-ib-motuct"
+  },
+  {
+    "heading": "## Scenario 292 \u2014 A factory Codex response span keeps its measured cache-token counts",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the exercising proof is a host-captured Honeycomb query after a real dispatch, in which a factory Codex dispatch's handle_responses span is queried in Honeycomb and must carry both measured cache-token keys; owned by work-item bd-ib-3k3nxw.",
+    "work_item": "bd-ib-3k3nxw"
+  },
+  {
+    "heading": "## Scenario 293 \u2014 A factory Claude API-request record carries its cache-write lifetimes and dispatch id",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the exercising proof is a host-captured Honeycomb query after a real dispatch, in which a factory Claude dispatch's API-request records are queried in Honeycomb and must carry the lifetime split, dispatch id and request id; owned by work-item bd-ib-t7yjrb.",
+    "work_item": "bd-ib-t7yjrb"
+  },
+  {
+    "heading": "## Scenario 294 \u2014 A terminated dispatch emits one terminal span with its outcome and one span per attempt",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the exercising proof is a host-captured Honeycomb query after a real dispatch, in which a terminated factory dispatch is queried in dataset livespec-dispatcher and must show one terminal span with its outcome and one attempt span per attempt; owned by work-item bd-ib-welwbc.",
+    "work_item": "bd-ib-welwbc"
   }
 ]

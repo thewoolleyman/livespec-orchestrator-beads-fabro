@@ -11331,3 +11331,82 @@ Feature: Factory spans name the cluster node of a pod sandbox
     Then no span of the run carries k8s.node.name
     And no step span names k8s.node.name in its unavailable fields
 ```
+
+## Scenario 292 — A factory Codex response span keeps its measured cache-token counts
+
+```gherkin
+Feature: Factory Codex response spans keep their measured cache-token counts
+  As the host pricing factory Codex spend
+  I want each factory Codex response span to carry the cached-input count Codex measured
+  So that cost is priced from the measurement rather than an assumed cached share
+
+  Scenario: A handle_responses span carrying both cache counts
+    Given a factory Codex run whose handle_responses span records gen_ai.usage.cache_read.input_tokens and gen_ai.usage.cache_write.input_tokens
+    When the receiver forwards the span to Honeycomb
+    Then the forwarded span carries both keys with the integer values Codex recorded
+
+  Scenario: A handle_responses span with no cache counts
+    Given a factory Codex handle_responses span that records neither cache key
+    When the receiver forwards the span
+    Then the forwarded span carries neither key
+```
+
+## Scenario 293 — A factory Claude API-request record carries its cache-write lifetimes and dispatch id
+
+```gherkin
+Feature: Factory Claude cache writes are split by lifetime
+  As the host pricing factory Claude spend
+  I want each factory Claude API-request record to carry its 5-minute and 1-hour cache-write counts and its dispatch id
+  So that each lifetime is priced at its own rate and the spend is attributed to its dispatch
+
+  Scenario: A response reporting both lifetimes
+    Given a factory Claude run whose API response reports 5-minute and 1-hour cache-write tokens
+    When the record is forwarded to Honeycomb
+    Then it carries cache_creation_5m_tokens and cache_creation_1h_tokens with the reported values
+    And their sum equals its cache_creation_tokens
+    And it carries livespec.dispatch.id and request_id
+
+  Scenario: A response reporting only the 5-minute lifetime
+    Given a factory Claude API response whose usage reports 5-minute cache-write tokens and no 1-hour count
+    When the record is forwarded
+    Then it carries cache_creation_5m_tokens with the reported value
+    And it carries no cache_creation_1h_tokens
+
+  Scenario: A response reporting no lifetime split
+    Given a factory Claude API response whose usage carries no lifetime split
+    When the record is forwarded
+    Then it carries neither lifetime key
+```
+
+## Scenario 294 — A terminated dispatch emits one terminal span with its outcome and one span per attempt
+
+```gherkin
+Feature: Terminal dispatch span
+  As the host reporting factory cost by run outcome
+  I want each terminated dispatch to emit its outcome and its attempts
+  So that spend can be grouped by how the run ended and by fallback
+
+  Scenario: A dispatch whose second attempt ran on a fallback model and merged
+    Given a dispatch whose first attempt failed on its primary model and whose second attempt ran on the next candidate and merged
+    When the dispatch terminates
+    Then dataset livespec-dispatcher holds exactly one livespec.dispatch.terminal span for its dispatch id, carrying livespec.dispatch.outcome succeeded and livespec.dispatch.attempt_count 2
+    And it holds two livespec.dispatch.attempt spans under it, with index 0 carrying fallback false and index 1 carrying fallback true, each naming its acp.model
+
+  Scenario Outline: Each terminal disposition is recorded as its outcome
+    Given a dispatch whose final disposition is <disposition>
+    When the dispatch terminates
+    Then its terminal span carries livespec.dispatch.outcome <outcome>
+
+    Examples:
+      | disposition                                                  | outcome   |
+      | its run is cancelled                                         | cancelled |
+      | its run fails and no acceptance verdict follows              | failed    |
+      | its work merges but acceptance returns the item for rework   | rework    |
+      | its run never starts and is reaped as an orphan              | abandoned |
+
+  Scenario: An attempt whose model cannot be observed
+    Given a dispatch with one attempt whose model the Dispatcher cannot observe
+    When the dispatch terminates
+    Then the attempt span carries no acp.model
+    And livespec.dispatch.unavailable_fields on that span names acp.model
+```

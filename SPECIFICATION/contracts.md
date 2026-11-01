@@ -9534,6 +9534,14 @@ that run, giving why the step ended (its outcome, its stop reason, its last
 tool call and that call's state, its gate verdict and failed targets, and
 its context used against window size) without a run dump.
 
+### Factory Codex response token counts
+
+A Codex `handle_responses` span that a factory run exports MUST reach the Honeycomb export with `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cache_write.input_tokens` present whenever the Codex runtime recorded them, each as the non-negative integer it recorded. The receiver allowlist MUST admit both keys beside `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`. The forwarding stage MUST NOT rename, sum, default or derive either value. A span on which the runtime recorded neither key MUST pass through with neither key, and MUST NOT be given a zero.
+
+### Factory Claude cache-write lifetimes
+
+The host-owned enrichment stage MUST attach `cache_creation_5m_tokens` and `cache_creation_1h_tokens` to every Claude API-request record that a factory run exports, before the record reaches the Honeycomb export. It takes their values from the `ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens` fields of the `cache_creation` object in that API response's usage block, as non-negative integers. The same stage MUST attach `livespec.dispatch.id`, with the value of the run's correlation label, and MUST keep the record's existing `request_id`, which is the key that joins it to its API call. When the usage block reports both lifetimes, the sum of the two counts MUST equal the record's `cache_creation_tokens`. When the usage block reports only one lifetime, the stage MUST carry that one and MUST NOT carry the other. When it reports neither, the record MUST omit both lifetime keys rather than assign the undivided count to either. The receiver allowlist MUST admit `cache_creation_5m_tokens` and `cache_creation_1h_tokens`, beside the `livespec.dispatch.id` and `request_id` it already admits.
+
 ## Provider-limit permanence and root-cause surfacing
 
 A model provider that refuses on a usage or spend ceiling has not failed
@@ -10391,6 +10399,18 @@ This subsection extends the shared attribute vocabulary above to the Dispatcher'
 Every `fabro run` the Dispatcher launches MUST pass the correlation triple as run labels: `--label work.item.id=<work-item id>`, `--label livespec.dispatch.id=<dispatch id>` and `--label livespec.dispatch.factory=<factory name>`, each carrying that dispatch's own value. A correlation value is identifier-shaped when, after surrounding whitespace is removed, it is 1 to 128 bytes long and every byte is an ASCII letter, an ASCII digit, `.`, `_`, `:` or `-`, so hyphenated work-item ids such as `bd-ib-5jvgfr` and factory names such as `hp-candidate` are identifier-shaped. A value that is not identifier-shaped MUST be left out of the argv, and leaving it out MUST NOT fail the dispatch.
 
 The Dispatcher MUST emit one dispatch span per dispatch through its existing OTLP export path, carrying the correlation triple as span attributes. The span's trace id and span id MUST be derived from the dispatch id alone. Re-deriving the ids for the same dispatch id MUST yield the same trace id and span id. The derivation MUST use domain-separated SHA-256 outputs truncated to the required widths, with a deterministic non-zero fallback. Collisions in the resulting truncated identifiers are permitted. Emitting and exporting the dispatch span follows this section's bounded asynchronous telemetry and scrubbing rules, and an export failure MUST NOT fail the dispatch. The Dispatcher MUST set `TRACEPARENT` in the `fabro run` environment to `00-<trace id>-<span id>-01`, where the trace id is 32 and the span id 16 lowercase hexadecimal digits and neither is all zeros, using that dispatch span's ids, so that a factory which honours the run labels and the caller's trace parent places its run spans under the dispatch span. A factory that ignores either MUST NOT cause the dispatch to fail.
+
+When a dispatch reaches a terminal state, the Dispatcher MUST emit exactly one terminal span named `livespec.dispatch.terminal` to service `livespec-dispatcher`. Its parent MUST be the dispatch span, and it MUST carry the correlation triple. It MUST carry `livespec.dispatch.outcome`, exactly one of:
+
+- `succeeded`: the dispatch's work merged or was accepted;
+- `failed`: the run ended in a terminal failure;
+- `cancelled`: the run was cancelled;
+- `rework`: acceptance returned the item for rework;
+- `abandoned`: the dispatch ended without a terminal run outcome, for example a run that never started or was reaped as an orphan.
+
+The outcome is the dispatch's final disposition: a dispatch whose run failed and whose item acceptance then returned for rework carries `rework`, and `failed` means the run failed with no acceptance verdict following it.
+
+The terminal span MUST also carry `livespec.dispatch.attempt_count`. An attempt, in this paragraph, is one run of the dispatch's implementing turn on one candidate of its ACP fallback chain; it is not a rework attempt. For each attempt the dispatch made, the Dispatcher MUST emit one child span of the terminal span, named `livespec.dispatch.attempt`. Its start and end times MUST be the attempt's start and end. It MUST carry `livespec.dispatch.id`, `livespec.dispatch.attempt.index` (0-based), `acp.model` naming the model the attempt ran on, and `livespec.dispatch.attempt.fallback`, which is true exactly when the attempt ran on a candidate after the first in its fallback chain. A value the Dispatcher cannot observe MUST be omitted, never fabricated, and named in `livespec.dispatch.unavailable_fields` on the span that omits it. The receiver allowlist MUST admit every attribute this paragraph names. Emitting these spans follows this section's bounded asynchronous telemetry rules: an export failure MUST NOT fail, delay or alter the dispatch's recorded outcome.
 
 ### Host model-judgement caller labelling
 
