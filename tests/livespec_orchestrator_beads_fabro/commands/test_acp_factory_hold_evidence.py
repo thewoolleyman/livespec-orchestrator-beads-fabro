@@ -872,6 +872,7 @@ def test_the_derived_record_concern_is_its_own_module_beneath_the_host_wide_read
 
 
 _CONCURRENT_RUNS = 12
+_SATURATION_HANG_GUARD_SECONDS = 30.0
 _INSPECT_CEILING = 8
 
 
@@ -879,7 +880,7 @@ _INSPECT_CEILING = 8
 class _ConcurrentReader:
     """A reader that measures how many `inspect` reads are in flight at once.
 
-    Every read waits (briefly) for the in-flight count to reach the ceiling, so
+    Every read waits for the in-flight count to reach the ceiling, so
     a sequential scan never gets there and a bounded concurrent one always does.
     """
 
@@ -901,7 +902,11 @@ class _ConcurrentReader:
             self.peak = max(self.peak, self.in_flight)
             if self.in_flight >= _INSPECT_CEILING:
                 self.saturated.set()
-        self.saturated.wait(timeout=0.3)
+        # Wait on the ordering, not a stopwatch: a bounded concurrent scan
+        # saturates however loaded the host is. A scan that never saturates
+        # gives up once, after the hang guard, and fails on its peak.
+        _ = self.saturated.wait(timeout=_SATURATION_HANG_GUARD_SECONDS)
+        self.saturated.set()
         with self.lock:
             self.in_flight -= 1
         return None if run_id in self.unreadable else self.payloads[run_id]

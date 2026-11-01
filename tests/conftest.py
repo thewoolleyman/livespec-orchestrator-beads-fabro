@@ -407,6 +407,23 @@ def _hermetic_agent_stage_publication_guard(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("LIVESPEC_AGENT_STAGE", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_plan_unattended_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the overseer's unattended-resume marker out of the test process.
+
+    The overseer daemon sets `LIVESPEC_PLAN_UNATTENDED=1` on the plan session it
+    restarts, and every commit that session makes runs this suite under that
+    environment. Ambient, it makes `record_scope_event` refuse a continuation
+    ruling as "an unattended plan session cannot record a continuation ruling",
+    so cases that record one fail on a tree that passes on a developer host and
+    in continuous integration, where the marker is absent. Measured 2026-11-01:
+    three Scenario 147 continuation-ruling cases failed with it ambient. The
+    cases that exercise the marker set it explicitly through `monkeypatch` or in
+    their own child environment.
+    """
+    monkeypatch.delenv("LIVESPEC_PLAN_UNATTENDED", raising=False)
+
+
 _SERVING_APP_ENV = (
     "GITHUB_APP_ID",
     "GITHUB_PRIVATE_KEY",
