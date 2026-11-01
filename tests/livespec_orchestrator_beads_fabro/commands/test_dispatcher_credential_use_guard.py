@@ -681,6 +681,18 @@ def test_the_hang_guard_reports_a_condition_that_never_holds() -> None:
     assert not _eventually(condition=lambda: False, guard_seconds=0.0)
 
 
+def test_a_process_with_no_proc_entry_is_not_executing() -> None:
+    """A pid the kernel cannot hold reads as stopped, never as an unreadable error.
+
+    Which branch of `_executing` the guard cases reach depends on whether the
+    reaper ran before the probe, so on a fast host none of them reads a pid whose
+    `/proc` entry is already gone (CI coverage, PR 4096). One past `pid_max` has
+    no entry on any host.
+    """
+    pid_max = int(Path("/proc/sys/kernel/pid_max").read_text(encoding="utf-8"))
+    assert not _executing(pid=pid_max + 1)
+
+
 @pytest.mark.parametrize("start_fraction", [0.65, 0.95])
 def test_a_fractional_start_still_stops_by_the_absolute_epoch(
     tmp_path: Path, start_fraction: float
