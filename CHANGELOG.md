@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.267.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.266.2...v0.267.0) (2026-11-01)
+
+
+### Features
+
+* journal pre-launch CPU phases (bd-ib-5d5aue) ([1659a67](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1659a67e28432c88fe9c2a433ed9814430b9f061))
+* measure live descendants in pre-launch CPU profile (bd-ib-5d5aue) ([88fcf66](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/88fcf666c47494902c82f50267ea8a2761eb8d9e))
+* profile dispatch launch phases (bd-ib-5d5aue) ([572faf6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/572faf61e981140b39ad0c5019367d3a9b74ada1))
+
+
+### Bug Fixes
+
+* checkpoint the launch right before the Fabro run is submitted (bd-ib-5d5aue) ([59668c8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/59668c8f29f1abc20b50e0bb8b04a308ccd9ac07))
+* close a raising launch phase's pre-launch CPU row (bd-ib-5d5aue) ([ac04330](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac04330013f7f0942e14bc6fa9286fcebfdbbd05))
+
 ## [0.266.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.266.1...v0.266.2) (2026-11-01)
 
 
