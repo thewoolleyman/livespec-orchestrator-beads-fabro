@@ -170,7 +170,7 @@ def test_the_gate_falls_through_to_implement_and_routes_a_failure_to_needs_human
         for edge in _edges(text=_dot(payload=_BUNDLE))
         if edge.startswith("dod_gate_mutation_guard ->") and "condition=" not in edge
     ]
-    assert guard_fallthrough == ["dod_gate_mutation_guard -> implement"]
+    assert guard_fallthrough == ["dod_gate_mutation_guard -> red"]
     blocked = [edge for edge in edges if edge.startswith(f"{_GATE} -> needs_human")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]
@@ -251,7 +251,9 @@ def test_the_registered_variant_declares_the_bundles_acp_node_set() -> None:
     # The ONE asymmetry runs the other way: since v121 the bundle publishes
     # through COMMAND stages and declares no ACP `pr` node, while the groom
     # variant keeps one for its filing plan.
-    assert _acp_node_names(payload=_VARIANT) == bundle | GROOM_ONLY_ACP_NODES
+    assert _acp_node_names(payload=_VARIANT) == (
+        (bundle - {"red", "green"}) | GROOM_ONLY_ACP_NODES | {"implement"}
+    )
     assert re.search(rf'^\s*{_ADAPTER_INPUT}\s*=\s*"', _toml(payload=_VARIANT), re.MULTILINE)
 
 

@@ -140,12 +140,26 @@ _COMMIT_SETTLE_ADDED = {
     "fix_commit_settle",
     "review_fix_commit_settle",
 }
+_ACTIVE_COMMIT_SETTLE_ADDED = {"fix_commit_settle", "review_fix_commit_settle"}
 _IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
 # The `dod_gate` post-turn mutation guard (work-item bd-ib-al54tl), kept as its
 # own constant for the reason every set above gives. It sits on `dod_gate`'s
 # single fallthrough, closes no cycle and is reached once, so it moves no other
 # node's count.
 _DOD_GATE_GUARD_ADDED = {"dod_gate_mutation_guard"}
+_RED_GREEN_ADDED = {
+    "already_satisfied",
+    "commit_green",
+    "commit_red",
+    "green",
+    "red",
+    "test_wrong_reset",
+}
+# A successful Green commit is now the only route into the existing diff
+# breaker, so its visit count moves with the Red/Green loop even though the
+# node itself predates this change.
+_RED_GREEN_LOOP = _RED_GREEN_ADDED | {"implementation_diff"}
+_RETIRED_IMPLEMENT_NODES = {"implement"}
 _IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
     "implement",
     "implement_completion",
@@ -707,14 +721,12 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REFRESH_REPAIR_ADDED
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
-        | _IMPLEMENT_COMPLETION_ADDED
         | _RECAPTURE_ADDED
-        | _HOOK_ROUTE_ADDED
-        | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
-        | _COMMIT_SETTLE_ADDED
+        | _ACTIVE_COMMIT_SETTLE_ADDED
         | _DOD_GATE_GUARD_ADDED
+        | _RED_GREEN_ADDED
     )
-    assert set(pre_port.node_visits) - set(ported.node_visits) == set()
+    assert set(pre_port.node_visits) - set(ported.node_visits) == _RETIRED_IMPLEMENT_NODES
 
     # The visit TABLE, not just its sum: two different tables can total the same
     # seconds, and it is the per-node figure the credential deadline and the
@@ -733,12 +745,11 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REFRESH_REPAIR_LOOP
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
-        | _IMPLEMENT_COMPLETION_ADDED
         | _RECAPTURE_LOOP
-        | _HOOK_ROUTE_LOOP
-        | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
-        | _COMMIT_SETTLE_ADDED
+        | _ACTIVE_COMMIT_SETTLE_ADDED
         | _DOD_GATE_GUARD_ADDED
+        | _RED_GREEN_LOOP
+        | _RETIRED_IMPLEMENT_NODES
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

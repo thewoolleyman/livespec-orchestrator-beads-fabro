@@ -47,6 +47,7 @@ __all__: list[str] = [
 
 _NODE_TIMEOUTS_KEY = "node_timeouts"
 _STALL_TIMEOUT_KEY = "stall_timeout_seconds"
+_IMPLEMENT_STAGE_NODES: frozenset[str] = frozenset({"red", "green"})
 
 DEFAULT_NODE_TIMEOUT_SECONDS = 1800
 DEFAULT_STALL_TIMEOUT_SECONDS = 7200
@@ -70,32 +71,14 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # `fabro run` subprocess ceiling comes from, so an omitted node is a node the
 # Dispatcher can kill the CLI out from under.
 #
-# `implementation_diff` after `implement` carries the budget of the retryable
-# node it guards, because it can be reached once per attempt of it. It is cheap
-# in practice (one `git` call) and budgeting it at the guarded node's count is
-# what keeps the ceiling ABOVE the graph rather than level with an optimistic
-# reading of it.
-#
-# `implement_completion` (v165, Scenario 204; work-item bd-ib-ahxcjx) is the
-# OTHER postcondition of that same turn and is budgeted identically for the
-# identical reason: it sits on `implement`'s single fallthrough, so each attempt
-# of the turn can reach it once. It is cheaper still than the diff breaker --
-# one file read -- and this repository declares it DOWNWARD at 600 s in
-# `.livespec.jsonc`, which is the credential floor's own documented remedy
-# applied to work that genuinely takes milliseconds.
-#
-# `implement_hook_route` (v208, Scenario 204; work-item bd-ib-y7372n) sits on
-# `implement_completion`'s failure edge and can send an incomplete turn back to
-# `implement` ONCE, when the commit hook refused what the turn left staged, and
-# (bd-ib-xj3qqb) ONCE MORE without spending that budget when the turn ended while
-# a commit run it started was still running and that run passed. So `implement`
-# is reached by three visits of two attempts each, SIX, and the route, the
-# completion gate, the diff breaker and `implement_commit_settle` once per
-# visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three and
-# `fix_commit_settle` follows `fix`'s two. The
-# route runs the repository's pre-commit hook, which can take the better part
-# of its timeout, so it is billed at its full visit count like any node that can
-# spend its ceiling.
+# `red` and `green` each inherit the implement stage's timeout and can make
+# three visits with one retry each, so both are billed at six attempts. Each
+# successful Red and Green turn passes through its dedicated command node;
+# command refusal returns to the producing turn. `test_wrong_reset` can return
+# to Red twice before it emits the terminal failure carrying the handoff.
+# `implementation_diff` now follows a successful Green command exactly once.
+# `review_fix_commit_settle` follows `review_fix`'s three and
+# `fix_commit_settle` follows `fix`'s two.
 #
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
@@ -161,11 +144,12 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "implement": 6,
-    "implement_commit_settle": 3,
-    "implement_completion": 3,
-    "implement_hook_route": 3,
-    "implementation_diff": 3,
+    "red": 6,
+    "commit_red": 3,
+    "green": 6,
+    "commit_green": 3,
+    "test_wrong_reset": 2,
+    "implementation_diff": 1,
     "janitor": 3,
     "fix": 2,
     "fix_commit_settle": 2,
@@ -208,11 +192,13 @@ class NodeTimeouts:
 
     def seconds_for(self, *, node: str) -> int:
         """The resolved timeout in seconds for `node`."""
-        return self.configured.get(node, DEFAULT_NODE_TIMEOUT_SECONDS)
+        key = "implement" if node in _IMPLEMENT_STAGE_NODES else node
+        return self.configured.get(key, DEFAULT_NODE_TIMEOUT_SECONDS)
 
     def layer_for(self, *, node: str) -> str:
         """Which layer supplied `node`'s timeout."""
-        return REPOSITORY_LAYER if node in self.configured else WORKFLOW_DEFAULT_LAYER
+        key = "implement" if node in _IMPLEMENT_STAGE_NODES else node
+        return REPOSITORY_LAYER if key in self.configured else WORKFLOW_DEFAULT_LAYER
 
 
 def default_node_timeouts() -> NodeTimeouts:

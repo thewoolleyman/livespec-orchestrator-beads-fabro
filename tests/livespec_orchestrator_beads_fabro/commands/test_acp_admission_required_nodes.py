@@ -198,9 +198,10 @@ def test_the_committed_graph_requires_every_reachable_acp_node() -> None:
         "disposition",
         "dod_gate",
         "fix",
-        "implement",
+        "green",
         "proof_capture",
         "proof_verify",
+        "red",
         "review",
         "review_fix",
     }
@@ -214,7 +215,8 @@ def test_derive_success_critical_excludes_the_optional_proof_cycle() -> None:
 
     assert set(critical.nodes) == {
         "dod_gate",
-        "implement",
+        "green",
+        "red",
     }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"

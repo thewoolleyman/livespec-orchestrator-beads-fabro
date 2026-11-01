@@ -373,38 +373,30 @@ def test_candidate_dispatcher_bin_honors_env_override(
     assert candidate_dispatcher_bin() == tmp_path / "scripts" / "bin" / "dispatcher.py"
 
 
-def test_implement_and_review_prompts_enforce_scope_and_acceptance() -> None:
-    """The shipped prompts carry the stage-consumption discipline."""
-    implement_text = (_PROMPTS_DIR / "implement.md").read_text(encoding="utf-8")
+def test_red_green_and_review_prompts_enforce_scope_and_acceptance() -> None:
+    """The split implementation prompts and review prompt state their own duties."""
+    red_text = (_PROMPTS_DIR / "red.md").read_text(encoding="utf-8")
+    green_text = (_PROMPTS_DIR / "green.md").read_text(encoding="utf-8")
     review_text = (_PROMPTS_DIR / "review.md").read_text(encoding="utf-8")
 
-    assert "SCOPE-MINIMALISM" in implement_text
-    assert "edit ONLY what the work-item requires" in implement_text
-    assert "unrelated files, unrelated docs" in implement_text
+    assert "Write one failing test" in red_text
+    assert "Do not make a commit." in red_text
+    assert "Make the Red test pass" in green_text
+    assert "Never change the Red test file." in green_text
     assert "acceptance criteria" in review_text
     assert "satisfies the work-item" in review_text
     assert "minimal scope" in review_text
 
 
-def test_implement_prompt_leads_with_one_red_green_cycle_per_assertion() -> None:
-    """The implementer reads the test-first loop before secondary guidance."""
-    prompt = (_PROMPTS_DIR / "implement.md").read_text(encoding="utf-8")
-    sections = [line for line in prompt.splitlines() if line.startswith("## ")]
+def test_red_and_green_prompts_keep_commits_outside_agent_turns() -> None:
+    """The command nodes, rather than either fresh agent, own the commits."""
+    red = (_PROMPTS_DIR / "red.md").read_text(encoding="utf-8")
+    green = (_PROMPTS_DIR / "green.md").read_text(encoding="utf-8")
 
-    assert sections[0] == "## Test-first assertion loop — start here"
-    ordered_steps = (
-        "1. Pick exactly one acceptance assertion.",
-        "2. Write one failing test for that assertion.",
-        "3. Red-commit that test alone.",
-        "4. While HEAD is that open Red, write the minimum product implementation",
-        "5. Repeat from step 1 for the next assertion.",
-    )
-    positions = tuple(prompt.index(step) for step in ordered_steps)
-    assert positions == tuple(sorted(positions))
-    assert prompt.index(sections[0]) < prompt.index("### Refactoring for size")
-    assert "One assertion gets one\n   observable Red-Green cycle." in prompt
-    assert "in as few cohesive commits as the work naturally splits into" not in prompt
-    assert "test+impl land atomically in one commit" not in prompt
+    assert "Do not make a commit." in red
+    assert "Do not make a commit." in green
+    assert "commit runner" not in red
+    assert "commit runner" not in green
 
 
 def test_registered_workflow_prompts_use_the_single_injected_goal_and_stub_carveout() -> None:
@@ -420,7 +412,7 @@ def test_registered_workflow_prompts_use_the_single_injected_goal_and_stub_carve
         path for directory in _REGISTERED_PROMPT_DIRS for path in sorted(directory.glob("*.md"))
     )
 
-    assert len(prompt_paths) == 16
+    assert len(prompt_paths) == 15
     for directory in _REGISTERED_PROMPT_DIRS:
         graph = (directory.parent / "workflow.fabro").read_text(encoding="utf-8")
         assert 'default_fidelity="full"' not in graph, directory
@@ -430,13 +422,10 @@ def test_registered_workflow_prompts_use_the_single_injected_goal_and_stub_carve
         assert "{{ goal }}" not in text, path
         assert _GOAL_PREAMBLE_REFERENCE in text, path
 
-    implement = (_PROMPTS_DIR / "implement.md").read_text(encoding="utf-8")
-    assert "no product file may be created or\nmodified before the first Red commit" in implement
-    assert "every later product write\nrequires HEAD to be an open Red" in implement
-    assert "The ONLY carveout is a new-module\nfailing stub" in implement
-    assert "file that does not exist at HEAD" in implement
-    assert "The stub must make that\nassertion FAIL; it must never satisfy it." in implement
-    assert "Modifying an existing product\nfile outside an open Red" in implement
+    red = (_PROMPTS_DIR / "red.md").read_text(encoding="utf-8")
+    green = (_PROMPTS_DIR / "green.md").read_text(encoding="utf-8")
+    assert "failing test" in red
+    assert "Red test pass" in green
 
 
 def test_dispatch_target_credential_wrapper_reads_configured_prefix(tmp_path: Path) -> None:

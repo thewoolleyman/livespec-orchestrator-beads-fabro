@@ -60,13 +60,13 @@ _CLAUDE_ROUTED_NODES = {
     node: {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}
     for node in (
         "dod_gate",
-        "implement",
+        "red",
+        "green",
         "fix",
         "review_fix",
         "proof_capture",
         "proof_verify",
         "review",
-        "pr",
         "disposition",
     )
 }

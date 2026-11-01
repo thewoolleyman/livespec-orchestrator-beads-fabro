@@ -696,7 +696,7 @@ def test_discovery_control_fails_when_the_graph_scan_finds_no_adapter_token(
     payload = _seed_repo(repo_root=tmp_path, check=check)
     graph = payload / "workflow.fabro"
     _ = graph.write_text(
-        graph.read_text(encoding="utf-8").replace("{{ inputs.implement_adapter }}", "acp", 1),
+        graph.read_text(encoding="utf-8").replace("{{ inputs.implement_adapter }}", "acp"),
         encoding="utf-8",
     )
 

@@ -264,7 +264,11 @@ def _rendered_graph(
     commands = render_acp_commands(
         graph_text=rendered.text,
         adapters=adapters,
-        stages={node: node for node in ACP_NODES},
+        stages={
+            **{node: node for node in ACP_NODES},
+            "red": "implement",
+            "green": "implement",
+        },
     )
     if isinstance(commands, str):
         return commands

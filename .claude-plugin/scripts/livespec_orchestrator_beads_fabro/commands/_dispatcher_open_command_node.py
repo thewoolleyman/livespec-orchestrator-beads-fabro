@@ -67,13 +67,12 @@ __all__: list[str] = [
 # not running, and `tests/.../test_dispatcher_open_command_node.py` asserts
 # this tuple against the committed graph so the set cannot drift away from it.
 COMMAND_NODES: tuple[str, ...] = (
+    "already_satisfied",
+    "commit_green",
+    "commit_red",
     "dead_implementer",
     "dod_gate_mutation_guard",
     "fix_commit_settle",
-    "implement_amendment_route",
-    "implement_commit_settle",
-    "implement_completion",
-    "implement_hook_route",
     "implementation_diff",
     "janitor",
     "needs_human",
@@ -90,6 +89,7 @@ COMMAND_NODES: tuple[str, ...] = (
     "recapture_route",
     "refresh_repair",
     "review_fix_commit_settle",
+    "test_wrong_reset",
     "verify_pr",
 )
 

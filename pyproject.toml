@@ -521,6 +521,7 @@ neutral_hook_body_path = { not_applicable = "no neutral hook body is installed i
 # spell the flag somewhere; the alternative to this entry is a second indirection
 # whose innermost layer spells it anyway and is no longer the one place to read.
 destructive_cli_allowlist = [
+    "dev-tooling/reset-test-wrong-to-dispatch-base.sh",
     ".claude-plugin/.fabro/workflows/implement-work-item/prompts/",
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_publication_push.py",
     "orchestrator-image/acceptance-live-golden-master.sh",

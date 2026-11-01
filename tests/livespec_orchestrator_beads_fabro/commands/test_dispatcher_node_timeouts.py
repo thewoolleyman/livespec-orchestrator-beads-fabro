@@ -104,6 +104,19 @@ def test_configured_node_keeps_its_value_and_others_take_the_default(tmp_path: P
     assert timeouts.stall_layer == "repository"
 
 
+def test_red_and_green_resolve_the_implement_stage_timeout() -> None:
+    """Separate ACP turns retain the established implement timeout policy."""
+    timeouts = NodeTimeouts(
+        configured={"implement": 7200},
+        stall_seconds=7200,
+        stall_layer="default",
+    )
+
+    for node in ("red", "green"):
+        assert timeouts.seconds_for(node=node) == 7200
+        assert timeouts.layer_for(node=node) == "repository"
+
+
 def test_rendered_timeouts_carry_no_template_opener(tmp_path: Path) -> None:
     """Neither a configured nor a default target renders a templated timeout."""
     _write_dispatcher_config(cwd=tmp_path, dispatcher={"node_timeouts": {"implement": 7200}})
@@ -135,7 +148,7 @@ def test_committed_graph_renders_every_declared_timeout(tmp_path: Path) -> None:
     )
     assert not isinstance(rendered, str)
     assert set(_rendered_timeouts(text=rendered.text)) == {"1800s"}
-    assert "implement" in rendered.node_seconds
+    assert {"red", "green"} <= set(rendered.node_seconds)
     assert 'stall_timeout="7200s"' in rendered.text
 
 
@@ -177,10 +190,9 @@ def test_subprocess_ceiling_follows_the_resolved_graph() -> None:
         stall_seconds=7200,
         stall_layer="default",
     )
-    # `implement` carries six worst-case attempts (three visits since the
-    # commit-run settle re-entry, two attempts each), so the ceiling grows by six
-    # times the increase over the 1800-second default.
-    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 6 * (14400 - 1800)
+    # Red and Green each resolve the implement-stage timeout independently:
+    # three visits with one retry each makes twelve affected attempts.
+    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 12 * (14400 - 1800)
 
 
 def test_ceiling_never_falls_below_the_stall_watchdog() -> None:

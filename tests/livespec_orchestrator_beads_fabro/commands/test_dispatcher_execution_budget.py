@@ -625,4 +625,4 @@ def test_the_shipped_graph_derives_a_finite_budget() -> None:
     # Every node the graph declares a timeout for is billed at least one visit:
     # a zero would mean the parse lost a reachable node rather than bounded it.
     assert all(visits >= 1 for visits in budget.node_visits.values())
-    assert {"implement", "janitor", "fix", "review", "pr"} <= set(budget.node_visits)
+    assert {"red", "green", "janitor", "fix", "review", "pr"} <= set(budget.node_visits)

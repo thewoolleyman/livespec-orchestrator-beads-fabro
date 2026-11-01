@@ -196,7 +196,7 @@ _INPUT_REFERENCE = re.compile(r"\{\{\s*inputs\.(?P<name>\w+)\s*\}\}")
 # A bare literal: the only term shape that is neither a context read nor an
 # input reference. Anchored whole, so `context.internal.attempt` and an
 # unresolved `{{ inputs.unknown }}` both fall through to the refusal.
-_LITERAL = re.compile(r"\w+")
+_LITERAL = re.compile(r"[A-Za-z0-9_-]+")
 # An edge line and, when it carries one, its attribute block. The source name is
 # `^`-anchored and must be followed directly by the arrow, so a `//` comment line
 # describing an edge cannot match; the case below cross-checks the whole set
@@ -890,15 +890,10 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         # The post-turn mutation guard (bd-ib-al54tl) sits on `dod_gate`'s
         # fallthrough.
         "dod_gate_mutation_guard",
-        "implement",
-        # The commit-run settle (bd-ib-xj3qqb) precedes the completion gate on
-        # `implement`'s fallthrough.
-        "implement_commit_settle",
-        # Scenario 204's completion gate (v165) sits on `implement`'s own
-        # fallthrough, so every run passes through it on the way to the diff
-        # breaker; a turn that stated its Definition of Done complete is the
-        # only one that proceeds, which is what this green journey is.
-        "implement_completion",
+        "red",
+        "commit_red",
+        "green",
+        "commit_green",
         "implementation_diff",
         "janitor",
         _PUBLISH_DRAFT,

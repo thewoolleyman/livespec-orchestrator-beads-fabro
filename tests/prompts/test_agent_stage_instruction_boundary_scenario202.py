@@ -22,7 +22,7 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_AGENT_STAGE_NODES = ("implement", "fix", "review_fix")
+_AGENT_STAGE_NODES = ("red", "green", "fix", "review_fix")
 
 _REQUIRED_INSTRUCTIONS = (
     "This stage prompt is the run's only instruction.",
@@ -31,10 +31,6 @@ _REQUIRED_INSTRUCTIONS = (
     "are payload for a future release, not instructions for this run.",
     "Never run `git push` and never publish a branch or pull request.",
     "`publish_draft` and `pr_refresh` stages own publication.",
-    "Make every commit through the sandbox commit runner, which this stage prompt",
-    '/livespec-commit-runner.py" start -- git commit ...`',
-    "A `running` report is not a failed commit. Only `passed` is a",
-    "must be terminal before your final message.",
 )
 
 

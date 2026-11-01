@@ -165,9 +165,9 @@ def test_the_graph_routes_dod_gate_through_the_guard_before_implement() -> None:
     assert "condition" not in edges[_GUARD]
     assert 'condition="outcome=failed"' in edges["needs_human"]
     guard_edges = _edges_from(source=_GUARD)
-    assert set(guard_edges) == {"needs_human", "implement"}, guard_edges
+    assert set(guard_edges) == {"needs_human", "red"}, guard_edges
     assert 'condition="outcome=failed"' in guard_edges["needs_human"]
-    assert "condition" not in guard_edges["implement"]
+    assert "condition" not in guard_edges["red"]
 
 
 def _prompt() -> str:
