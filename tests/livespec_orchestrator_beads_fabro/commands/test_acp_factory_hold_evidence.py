@@ -955,6 +955,31 @@ def test_the_per_run_inspect_reads_are_issued_concurrently_at_most_eight_at_a_ti
     ]
 
 
+def test_concurrent_reader_timeout_releases_follow_on_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed saturation wait drains later reads instead of holding the pool."""
+    reader = _concurrent_reader()
+
+    def never_saturates(*, timeout: float) -> bool:
+        assert timeout == 20
+        return False
+
+    monkeypatch.setattr(reader.saturated, "wait", never_saturates)
+
+    with pytest.raises(
+        AssertionError,
+        match="the scan must start eight inspect reads before one may return",
+    ):
+        reader.inspect_payload(factory="hp", run_id=reader.rows[0].run_id)
+
+    assert reader.timed_out.is_set()
+    assert (
+        reader.inspect_payload(factory="hp", run_id=reader.rows[1].run_id)
+        == reader.payloads[reader.rows[1].run_id]
+    )
+
+
 def test_one_unreadable_concurrent_read_leaves_the_other_runs_evidence_in_use(
     tmp_path: Path,
 ) -> None:
