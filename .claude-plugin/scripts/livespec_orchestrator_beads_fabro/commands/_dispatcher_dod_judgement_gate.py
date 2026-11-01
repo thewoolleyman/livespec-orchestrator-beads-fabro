@@ -217,6 +217,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             runner=runner,
             payload_root=payload_root,
             governing=governing,
+            caller=f"dod_judgement_{stage.replace('-', '_')}",
         ),
         governing=governing,
     )

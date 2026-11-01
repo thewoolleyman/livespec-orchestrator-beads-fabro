@@ -356,6 +356,23 @@ def test_a_passing_reply_admits_the_item_and_the_judge_is_given_the_gate_prompt(
     assert "The judgement runs before admission." in runner.stdin_text[0]
 
 
+def test_the_pre_admission_judgement_labels_its_judge_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=livespec-family")
+
+    _verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+    )
+
+    assert runner.environ is not None
+    assert (
+        runner.environ.get("OTEL_RESOURCE_ATTRIBUTES")
+        == "service.namespace=livespec-family,livespec.caller=dod_judgement_pre_admission"
+    )
+
+
 def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_claude(
     tmp_path: Path,
 ) -> None:

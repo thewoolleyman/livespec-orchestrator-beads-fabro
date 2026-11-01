@@ -132,6 +132,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
     governing: GoverningHeadingVerdict | None = None,
+    caller: str = "dod_judgement_pre_admission",
 ) -> DodJudgement:
     """Take the judgement for ONE item, or report why it could not be taken.
 
@@ -174,6 +175,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
         runner=active_runner,
         is_verdict=lambda text: parse_judgement_reply(reply=text).outcome != JUDGEMENT_UNAVAILABLE,
         bound_input=True,
+        caller=caller,
     )
     if result.reply is not None:
         parsed = parse_judgement_reply(reply=result.reply)
@@ -208,7 +210,7 @@ def _configured_capabilities(*, cwd: Path) -> tuple[str, ...]:
     return resolved if isinstance(resolved, tuple) else ()
 
 
-def run_dod_gate_prompt(
+def run_dod_gate_prompt(  # noqa: PLR0913 - each argument is an independent seam input.
     *,
     prompt: str,
     cwd: Path,
@@ -216,6 +218,7 @@ def run_dod_gate_prompt(
     is_verdict: Callable[[str], bool],
     timeout_seconds: float | None = None,
     bound_input: bool = False,
+    caller: str | None = None,
 ) -> CandidateChainResult:
     """Run the resolved `dod_gate` candidates in order, closing stdin for each.
 
@@ -235,4 +238,5 @@ def run_dod_gate_prompt(
         timeout_seconds=timeout_seconds,
         candidate_resolver=dod_gate_candidates,
         bound_input=bound_input,
+        caller=caller,
     )

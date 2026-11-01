@@ -12,11 +12,13 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands import _orchestrator_ledger_intent as ledger_module
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._detection_coverage import (
     ATTEMPT_MARKER_PREFIX,
@@ -270,6 +272,28 @@ def _answering(*, text: str, exit_code: int = 0) -> list[str]:
         f"sys.exit({exit_code})\n"
     )
     return [sys.executable, "-c", code]
+
+
+def test_the_injected_judge_preserves_resource_attributes_and_appends_its_caller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, str] = {}
+
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = args
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        received.update(env)
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="reply", stderr="")
+
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=livespec-family")
+    monkeypatch.setattr(ledger_module.subprocess, "run", run)
+
+    assert ledger_module.InjectedJudge(judge_cli=["judge"])("prompt") == "reply"
+    assert (
+        received["OTEL_RESOURCE_ATTRIBUTES"]
+        == "service.namespace=livespec-family,livespec.caller=ledger_intent_scan"
+    )
 
 
 def test_an_unreadable_latest_cut_refuses_rather_than_scanning(tmp_path: Path) -> None:

@@ -51,6 +51,7 @@ failed from one that was never run.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -122,6 +123,7 @@ class InjectedJudge:
             capture_output=True,
             text=True,
             check=False,
+            env=_ledger_intent_environ(environ=dict(os.environ)),
         )
         if completed.returncode != 0:
             raise InjectedCliError(
@@ -134,6 +136,16 @@ class InjectedJudge:
 def judge_runner(*, judge_cli: list[str]) -> ModelRunner:
     """The injected judge, as the callable the shared judgement runs through."""
     return InjectedJudge(judge_cli=judge_cli)
+
+
+def _ledger_intent_environ(*, environ: dict[str, str]) -> dict[str, str]:
+    """Preserve inherited telemetry attributes and label the injected judge."""
+    inherited = environ.get("OTEL_RESOURCE_ATTRIBUTES")
+    label = "livespec.caller=ledger_intent_scan"
+    return {
+        **environ,
+        "OTEL_RESOURCE_ATTRIBUTES": label if inherited is None else f"{inherited},{label}",
+    }
 
 
 def run_ledger_intent_scan(
