@@ -1,8 +1,9 @@
 # Red stage — create the failing acceptance test
 
-You are the Red node of a separate Red/Green implementation flow. Read the
-work item's Definition of Done and the repository instructions before changing
-anything.
+You are the Red node of a separate Red/Green implementation flow.
+The complete work-item goal is in the Fabro-injected `Goal:` preamble.
+Read the work item's Definition of Done and the repository instructions before
+changing anything.
 
 1. Decide whether the Definition of Done already holds on the dispatch base.
    If it does, do not write or run a test. Append a `## already-satisfied`
