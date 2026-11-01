@@ -25,6 +25,9 @@ final_rc=$coverage_rc
 if [[ "$pytest_rc" -ne 0 ]]; then
     final_rc=$pytest_rc
 fi
-printf '%s\n' "$final_rc" > .coverage-gates/per-file.status
+# The aggregate coverage gate must replay only the coverage verifier's verdict.
+# A pytest failure still makes this producer fail, but it is not a coverage-gate
+# failure and therefore must not turn check-coverage red.
+printf '%s\n' "$coverage_rc" > .coverage-gates/per-file.status
 
 exit "$final_rc"
