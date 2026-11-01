@@ -10374,6 +10374,11 @@ Feature: The check aggregate does not wait for the pytest lane to run its indepe
     Given a factory sandbox with a 7630 MiB memory limit and LIVESPEC_TEST_PARALLELISM of 4
     When the just check aggregate runs
     Then the sandbox's peak memory stays under its memory limit
+
+  Scenario: Every whole-suite coverage run names its slowest test phases
+    Given a just check aggregate run, or a CI check-coverage job that finds no coverage data and runs the suite itself
+    When the target that runs the whole test suite with coverage finishes
+    Then its output lists the thirty slowest test phases of that run with their durations
 ```
 
 ## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
@@ -11182,4 +11187,63 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     When the run evaluates the implement stage's outcome
     Then the implement stage's outcome is failed
     And the cause carries the latest red and green sections of the handoff file
+```
+
+## Scenario 289 — A Green amend whose staged test fails is refused before the rest of its gate's tests run
+
+```gherkin
+Feature: A Green amend fails fast on its own tests and still runs its whole gate once
+  As the operator of a factory
+  I want a Green amend whose own test still fails to be refused before the whole suite runs
+  So that a failing Green amend does not pay for a whole-suite coverage run before it is refused
+
+  Scenario: A failing staged test refuses the amend before the whole suite runs
+    Given a Green amend made by hand on a host, staging an implementation file whose Red test still fails
+    When the pre-commit hook runs
+    Then the commit is refused naming that test
+    And no whole-suite coverage member of the pre-commit aggregate started
+    And the hook's output names the staged-test phase as the phase that refused
+
+  Scenario: Passing staged tests are followed by the whole gate once
+    Given a Green amend made by hand on a host whose staged tests pass
+    When the pre-commit hook runs
+    Then the pre-commit aggregate runs its whole-suite coverage members once, after the staged tests
+
+  Scenario: Independent targets still run beside the staged tests
+    Given the check aggregate runs its independent targets concurrently
+    And a Green amend whose staged tests fail
+    When the pre-commit hook runs
+    Then the lint, type and static targets run beside the staged tests and their verdicts are reported
+    And no further test-running member starts
+
+  Scenario: commit_green's amend runs its staged tests before the affected-tests gate
+    Given commit_red has made the Red commit and the green turn has ended
+    When commit_green amends and its staged tests pass
+    Then the commit hook runs the affected-tests gate's scoped tests once, after the staged tests
+```
+
+## Scenario 290 — With no projected parallelism the test worker count follows the CPUs the process may use
+
+```gherkin
+Feature: The worker-count resolver sizes test workers from the CPU allowance
+  As the operator of a CI runner or the dev host
+  I want the test worker count to follow the CPUs the process may use
+  So that a process on a large node does not start more coverage-traced workers than its CPU allowance
+
+  Scenario: A cgroup CPU quota bounds the worker count
+    Given LIVESPEC_TEST_PARALLELISM is unset and the CI lane is not hosted
+    And a container whose cgroup v2 CPU quota allows 4 CPUs on a 32-core host
+    When the worker-count resolver runs
+    Then it prints 1, the count the divisor gives for 4 CPUs
+
+  Scenario: An affinity mask bounds the worker count when no quota is set
+    Given LIVESPEC_TEST_PARALLELISM is unset and the CI lane is not hosted
+    And a process with no CPU quota whose affinity mask holds 8 of a 32-core host's CPUs
+    When the worker-count resolver runs
+    Then it prints 2
+
+  Scenario: A projected parallelism still wins
+    Given LIVESPEC_TEST_PARALLELISM is 3 on a 32-core host with no CPU quota
+    When the worker-count resolver runs
+    Then it prints 3
 ```

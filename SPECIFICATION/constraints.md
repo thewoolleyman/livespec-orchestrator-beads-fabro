@@ -22,8 +22,10 @@ Inherited (verbatim, NOT re-stated here):
   point.
 - Ruff rule set; Pyright strict mode plus the seven strict-plus
   diagnostics.
-- 100% line + branch coverage; pytest discipline; hypothesis
-  property-based test coverage on pure modules.
+- 100% line + branch coverage of first-party source; the coverage
+  `omit` list MUST exclude the test modules under `tests/`, as
+  livespec's omit-only blocklist excludes test scaffolding; pytest
+  discipline; hypothesis property-based test coverage on pure modules.
 - Conventional Commits subjects; rebase-merge-only master.
 - Lefthook pre-commit / commit-msg / pre-push step ordering.
 - Comment discipline (Ruff ERA; no historical references inline).
@@ -46,9 +48,11 @@ This section refines the pre-push step ordering inherited from livespec; it adds
 
 ## Pre-commit staged pre-check
 
-This section refines the pre-commit step ordering inherited from livespec; it adds one leading step and reorders nothing else.
+This section refines the pre-commit step ordering inherited from livespec; it adds one leading step, runs a Green amend's staged tests ahead of the other tests its gate runs, and reorders nothing else.
 
 **Staged Python files are linted and type-checked before the pre-commit aggregate.** The repository's pre-commit hook MUST run `python -m livespec_dev_tooling.workflow_checks.staged_precheck` after any early exit for a commit that stages no Python file, and before any member of its pre-commit aggregate starts. That pre-check lints the staged added or modified Python files and type-checks those the repository's pyright configuration covers. When it reports a type-checker error, or a lint error the lint autofix step does not fix, the hook MUST refuse the commit, naming each file, line and rule, before the pre-commit aggregate starts. When the staged Python files pass, the commit MUST proceed to the pre-commit aggregate, which runs exactly as before. Like the pre-push refinements above, the pre-check MUST NOT be skippable by an environment variable or a flag. The full aggregate still runs at pre-push and in CI, so the pre-check moves a refusal earlier without narrowing what gates a merge.
+
+**A Green amend runs its staged tests before the rest of its gate's tests.** A commit is a Green amend when it stages at least one implementation file and `HEAD` carries Red-only red-green-replay trailers, whoever makes it: the implement stage's `commit_green` node or a commit made by hand on a host. For a Green amend the pre-commit hook MUST, after the staged pre-check passes, run the test files the amend stages together with the test files `HEAD`'s commit adds or modifies, and these staged tests MUST finish before any other test-running member of the gate the commit runs starts: the whole-suite members of the pre-commit aggregate, or the scoped tests of the affected-tests gate where "An implement or review_fix turn's commits run the affected-tests gate" in `contracts.md` selects that gate. The staged tests run as the first step of the gate's pytest lane, so where the aggregate runs its independent targets concurrently, per "The check aggregate runs its independent targets concurrently" in `contracts.md`, those targets still run beside them and only the remaining test-running members wait for them. When any staged test fails, the hook MUST refuse the commit naming each failing test, MUST NOT start any further test-running member, and MUST still report the verdict of every independent target that ran beside the staged tests. When they pass, the hook MUST run the rest of that gate exactly as before, once, so a Green amend whose gate is the pre-commit aggregate still runs its whole-suite coverage members once. The hook's output MUST state which phase refused a commit: the staged pre-check, the staged tests, or the gate. Like the pre-check, this phase MUST NOT be skippable by an environment variable or a flag, and it narrows nothing: every test-running member the commit's gate ran before still runs once the staged tests pass. Scenario 289 in `scenarios.md` exercises this paragraph.
 
 ## Beads substrate constraints
 

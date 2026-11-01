@@ -2597,5 +2597,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal implement-red-green-node-split (v262); livespec-dev-tooling-sv6m5p (plan implement-test-performance) owns it; the implementation children are filed under that plan.",
     "work_item": "livespec-dev-tooling-sv6m5p"
+  },
+  {
+    "heading": "## Scenario 289 \u2014 A Green amend whose staged test fails is refused before the rest of its gate's tests run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal test-performance-gates (v263); the owning work-item bd-ib-v3iw35 makes the pre-commit hook run a Green amend's staged tests before the rest of its gate's tests, together with the test that binds this entry.",
+    "work_item": "bd-ib-v3iw35"
+  },
+  {
+    "heading": "## Scenario 290 \u2014 With no projected parallelism the test worker count follows the CPUs the process may use",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal test-performance-gates (v263); the owning work-item bd-ib-zneh24 makes dev-tooling/just-test-nprocs.sh derive the worker count from the cgroup CPU quota or affinity mask, together with the test that binds this entry.",
+    "work_item": "bd-ib-zneh24"
   }
 ]
