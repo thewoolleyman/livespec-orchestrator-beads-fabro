@@ -105,6 +105,9 @@ def _run_janitor(*, repo: Path) -> subprocess.CompletedProcess[str]:
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         'if [[ "$1" == sync ]]; then exit 0; fi\n'
+        'if [[ "$1 $2 $3 $4" == "run python -m livespec_dev_tooling.parallel_check_dispatcher" ]]; then\n'
+        "    exit 0\n"
+        "fi\n"
         "if [[ \"$1 $2 $3\" == 'run bash dev-tooling/green-token-scope.sh' ]]; then\n"
         "    shift 2\n"
         '    exec bash "$@"\n'

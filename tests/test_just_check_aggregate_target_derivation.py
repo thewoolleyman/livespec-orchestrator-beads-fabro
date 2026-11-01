@@ -223,7 +223,9 @@ def test_a_slug_added_to_the_declaration_reaches_the_executed_set(*, tmp_path: P
     assert _extracted_targets(repo=repo) == ["check-first", "check-newly-declared"]
 
 
-def test_the_runner_reports_the_count_it_actually_executed(*, tmp_path: Path) -> None:
+def test_the_runner_delegates_the_declared_list_to_the_parallel_dispatcher(
+    *, tmp_path: Path
+) -> None:
     slugs = ("check-first", "check-second", "check-newly-declared")
     repo = _seed_repo(tmp_path=tmp_path, slugs=slugs)
     env = _install_fakes(repo=repo)
@@ -231,13 +233,15 @@ def test_the_runner_reports_the_count_it_actually_executed(*, tmp_path: Path) ->
     result = _run(argv=["bash", str(repo / _RUNNER)], cwd=repo, env=env)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"All {len(slugs)} targets passed." in result.stdout
-    assert (repo / "just.log").read_text(encoding="utf-8").split() == list(slugs)
+    assert (repo / "uv.log").read_text(encoding="utf-8").splitlines() == [
+        "sync --all-groups",
+        "run python -m livespec_dev_tooling.parallel_check_dispatcher --skip  -- "
+        "check-first check-second check-newly-declared",
+        "run bash dev-tooling/green-token-scope.sh write",
+    ]
 
 
-def test_the_count_excludes_skipped_targets_and_says_how_many_were_skipped(
-    *, tmp_path: Path
-) -> None:
+def test_the_runner_delegates_the_skip_list_to_the_parallel_dispatcher(*, tmp_path: Path) -> None:
     """A skipped target is not a passed target.
 
     `check-skipping` is the route pre-commit takes, so this is the summary a
@@ -252,10 +256,11 @@ def test_the_count_excludes_skipped_targets_and_says_how_many_were_skipped(
     result = _run(argv=["bash", str(repo / _RUNNER), "check-second"], cwd=repo, env=env)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "All 2 targets passed (1 of 3 declared skipped)." in result.stdout
-    assert (repo / "just.log").read_text(encoding="utf-8").split() == [
-        "check-first",
-        "check-third",
+    assert (repo / "uv.log").read_text(encoding="utf-8").splitlines() == [
+        "sync --all-groups",
+        "run python -m livespec_dev_tooling.parallel_check_dispatcher --skip check-second -- "
+        "check-first check-second check-third",
+        "run bash dev-tooling/green-token-scope.sh write check-second",
     ]
 
 
@@ -272,8 +277,28 @@ def test_a_successful_skipping_aggregate_records_its_skipped_target_in_the_green
     assert result.returncode == 0, result.stdout + result.stderr
     assert (repo / "uv.log").read_text(encoding="utf-8").splitlines() == [
         "sync --all-groups",
+        "run python -m livespec_dev_tooling.parallel_check_dispatcher --skip check-second -- "
+        "check-first check-second check-third",
         "run bash dev-tooling/green-token-scope.sh write check-second",
     ]
+
+
+def test_the_runner_delegates_every_target_to_the_parallel_dispatcher(*, tmp_path: Path) -> None:
+    """The aggregate keeps reporting skips while the shared dispatcher fans out work."""
+    slugs = ("check-first", "check-second", "check-third")
+    repo = _seed_repo(tmp_path=tmp_path, slugs=slugs)
+    env = _install_fakes(repo=repo)
+
+    result = _run(argv=["bash", str(repo / _RUNNER), "check-second"], cwd=repo, env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (repo / "uv.log").read_text(encoding="utf-8").splitlines() == [
+        "sync --all-groups",
+        "run python -m livespec_dev_tooling.parallel_check_dispatcher --skip check-second -- "
+        "check-first check-second check-third",
+        "run bash dev-tooling/green-token-scope.sh write check-second",
+    ]
+    assert not (repo / "just.log").exists()
 
 
 def test_the_runner_refuses_a_justfile_whose_aggregate_declares_nothing(*, tmp_path: Path) -> None:
