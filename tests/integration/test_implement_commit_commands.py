@@ -196,3 +196,40 @@ def test_commit_red_refuses_when_the_latest_red_section_names_no_test_file(tmp_p
     assert _git(repo=repo, argv=["rev-parse", "HEAD"]) == before
     recorded = handoff.read_text(encoding="utf-8")
     assert "Cause: latest red section names no test file" in recorded
+
+
+def test_commit_red_refuses_naming_every_changed_product_path_after_the_fold(
+    tmp_path: Path,
+) -> None:
+    """A red turn's product writes, tracked or new, are refused and left uncommitted."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    _ = (repo / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = [\n    "src/pkg",  # comment\n]\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "pkg").mkdir(parents=True)
+    _ = (repo / "src" / "pkg" / "existing.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo=repo, argv=["add", "--all"])
+    _git(repo=repo, argv=["commit", "--quiet", "-m", "chore: product layout"])
+    base = _git(repo=repo, argv=["rev-parse", "HEAD"])
+    (repo / "tests").mkdir()
+    _ = (repo / "tests" / "test_feature.py").write_text(
+        "def test_feature() -> None:\n    assert False\n", encoding="utf-8"
+    )
+    _ = (repo / "src" / "pkg" / "existing.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _checkpoint(repo=repo, name="red")
+    _ = (repo / "src" / "pkg" / "created.py").write_text("NEW = 1\n", encoding="utf-8")
+    _ = (repo / "implementation.py").write_text("VALUE = 3\n", encoding="utf-8")
+    handoff = _handoff(repo=repo, text="## red\nRed test file: tests/test_feature.py\n")
+
+    completed = _run(repo=repo, argv=["bash", str(_RED)], check=False)
+
+    assert completed.returncode == 3
+    assert _git(repo=repo, argv=["rev-parse", "HEAD"]) == base
+    recorded = handoff.read_text(encoding="utf-8")
+    assert "## commit_red" in recorded
+    assert "Exit status: 3" in recorded
+    assert "src/pkg/existing.py" in recorded
+    assert "src/pkg/created.py" in recorded
+    assert "tests/test_feature.py" not in recorded.split("## commit_red")[1]
+    assert "implementation.py" not in recorded.split("## commit_red")[1]

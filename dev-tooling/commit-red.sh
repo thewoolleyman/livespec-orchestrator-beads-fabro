@@ -9,6 +9,7 @@ readonly CHECKPOINT_LIMIT=500
 readonly CHECKPOINT_SUBJECT='^fabro\([^)]*\): '
 readonly HANDOFF_NAME="livespec-implement-handoff.md"
 readonly OUTPUT_NAME="livespec-commit-red-output"
+readonly FLEET_PRODUCT_PREFIXES=(".claude-plugin/scripts/" ".claude-plugin/hooks/" ".claude/hooks/" "dev-tooling/")
 
 checkpoint_commit() {
     local ref="$1"
@@ -30,6 +31,53 @@ fold_checkpoints() {
         git reset --soft "HEAD~${depth}"
     fi
     printf '%s\n' "$depth"
+}
+
+product_prefixes() {
+    local declared=""
+    if [[ -f pyproject.toml ]]; then
+        declared="$(awk '
+            /^\[/ { in_table = ($0 ~ /^\[tool\.livespec_dev_tooling\][[:space:]]*$/); in_array = 0 }
+            in_table && /^(source_trees|source_tree_prefixes)[[:space:]]*=/ { in_array = 1 }
+            in_table && in_array {
+                line = $0
+                sub(/#.*/, "", line)
+                while (match(line, /"[^"]*"/)) {
+                    value = substr(line, RSTART + 1, RLENGTH - 2)
+                    sub(/\/+$/, "", value)
+                    print value "/"
+                    line = substr(line, RSTART + RLENGTH)
+                }
+                if ($0 ~ /\]/) { in_array = 0 }
+            }
+        ' pyproject.toml)"
+    fi
+    if [[ -n "$declared" ]]; then
+        printf '%s\n' "$declared"
+    else
+        printf '%s\n' "${FLEET_PRODUCT_PREFIXES[@]}"
+    fi
+}
+
+changed_product_paths() {
+    local allowed="$1"
+    local prefixes=""
+    local path=""
+    local prefix=""
+    prefixes="$(product_prefixes)"
+    {
+        git diff --name-only --no-renames HEAD --
+        git ls-files --others --exclude-standard
+    } | sort -u | while IFS= read -r path; do
+        [[ "$path" == "$allowed" || "$path" != *.py || "$path" == tests/* ]] && continue
+        [[ "$path" == */_vendor/* || "$path" == */__pycache__/* ]] && continue
+        while IFS= read -r prefix; do
+            if [[ "$path" == "$prefix"* ]]; then
+                printf '%s\n' "$path"
+                break
+            fi
+        done <<<"$prefixes"
+    done
 }
 
 latest_red_test_file() {
@@ -71,7 +119,7 @@ append_verdict() {
         if [[ -n "$cause" ]]; then
             printf 'Cause: %s\n' "$cause"
         fi
-        if (( status != 0 )) && [[ -f "$output" ]]; then
+        if (( status != 0 )) && [[ -z "$cause" ]] && [[ -f "$output" ]]; then
             append_failure_details "$output"
         fi
     } >> "$handoff"
@@ -81,6 +129,7 @@ main() {
     local handoff=""
     local output=""
     local test_file=""
+    local product_paths=""
     local status=0
     handoff="$(git rev-parse --git-path "$HANDOFF_NAME")"
     output="$(git rev-parse --git-path "$OUTPUT_NAME")"
@@ -92,6 +141,14 @@ main() {
         return 2
     fi
     fold_checkpoints >/dev/null
+    product_paths="$(changed_product_paths "$test_file")"
+    if [[ -n "$product_paths" ]]; then
+        : > "$output"
+        append_verdict "$handoff" 3 "$output" \
+            "red turn changed product paths: ${product_paths//$'\n'/ }"
+        printf '%s\n' "commit_red: red turn changed product paths: ${product_paths//$'\n'/ }" >&2
+        return 3
+    fi
     git reset
     git add -- "$test_file"
     set +e
