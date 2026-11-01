@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+producer_rc=0
 if [[ ! -f .coverage-gates/per-file.status || ! -f .coverage-gates/per-file.log ]]; then
     echo ":: check-coverage: no canonical per-file verdict; running the suite"
     set +e
@@ -21,4 +22,6 @@ status=$(<.coverage-gates/per-file.status)
 rm -f .coverage .coverage-gates/per-file.log .coverage-gates/per-file.status
 rmdir .coverage-gates 2>/dev/null || true
 
+# A standalone run owns its own suite, so a suite failure fails it as before.
+[ "$producer_rc" -eq 0 ] || exit "$producer_rc"
 [ "$status" -eq 0 ] || exit "$status"
