@@ -175,7 +175,16 @@ def _route_intake(*, repo: Path) -> str:
 def _judgement_rows(*, repo: Path) -> list[dict[str, object]]:
     journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
     return [
-        record
+        {
+            key: record[key]
+            for key in (
+                "stage",
+                "work_item_id",
+                "judgement_stage",
+                "candidate",
+                "total_input_tokens",
+            )
+        }
         for record in (
             json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()
         )
