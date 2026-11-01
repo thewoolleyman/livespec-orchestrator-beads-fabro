@@ -24,11 +24,19 @@ while still passing every fixed-size assertion.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     ELIDED_BODY_MARKER,
     PROMPT_CHARACTER_CEILING,
     CondensedClause,
     condensed_spec_tree,
+)
+from livespec_runtime.spec_stated import judge
+
+_UNSTATED_REPLY = (
+    '{"kind": "unstated", "stated_by": [], '
+    '"generalization_target": null, "rationale": "not stated"}'
 )
 
 _PREAMBLE_FILE = "with-preamble.md"
@@ -51,6 +59,17 @@ _TREE = {
 # Measured against this fixture: the four budgets at which one more clause body
 # fits than at the one before it, plus a budget under which none does.
 _GRADED_CEILINGS = (0, 9900, 10300, 11500, 13000)
+
+
+@dataclass(kw_only=True)
+class _PromptRecorder:
+    """A model seam that preserves the actual rendered judgement prompt."""
+
+    prompts: list[str] = field(default_factory=list)
+
+    def __call__(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return _UNSTATED_REPLY
 
 
 def _withheld(*, ceiling: int) -> int:
@@ -177,3 +196,33 @@ def test_a_larger_budget_never_withholds_more_clause_bodies() -> None:
         "can no longer tell a monotone selection from a constant one"
     )
     assert _withheld(ceiling=PROMPT_CHARACTER_CEILING) == 0
+
+
+def test_an_oversized_relevant_section_contributes_a_marked_leading_body_portion() -> None:
+    """A relevant section too large for the remainder is partly, not wholly, withheld."""
+    heading = "## Oversized governing section"
+    body = "The governing detail the statement needs to judge. " * 1000
+    tree = {"contracts.md": f"{heading}\n\n{body}"}
+    ceiling = 20_000
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="governing detail statement",
+        ceiling=ceiling,
+    )
+    rendered_section = condensed["contracts.md"]
+
+    assert heading in rendered_section
+    assert body[:100] in rendered_section
+    assert body not in rendered_section
+    assert "partially withheld" in rendered_section
+
+    recorder = _PromptRecorder()
+    _ = judge(
+        spec_tree=condensed,
+        statement="governing detail statement",
+        run_model=recorder,
+    )
+
+    assert len(recorder.prompts) == 1
+    assert len(recorder.prompts[0]) < ceiling

@@ -1,0 +1,30 @@
+"""Partial rendering for a relevant spec section that exceeds its prompt budget."""
+
+from __future__ import annotations
+
+__all__: list[str] = ["partially_selected_section"]
+
+_PARTIALLY_WITHHELD_BODY_MARKER = (
+    "\n\n(body partially withheld from this prompt: the displayed leading text was selected "
+    "for this judgement, but its remainder is not shown)\n"
+)
+_MINIMUM_BODY_CHARS = 2
+
+
+def partially_selected_section(
+    *,
+    heading: str | None,
+    body: str,
+    full: str,
+    elided: str,
+    remaining: int,
+) -> str | None:
+    """Return leading body text and an in-band marker within `remaining` budget."""
+    prefix = heading or ""
+    source = body if heading is not None else full
+    marker_cost = len(prefix) + len(_PARTIALLY_WITHHELD_BODY_MARKER) - len(elided)
+    body_budget = remaining - marker_cost
+    if body_budget <= 0 or len(source) < _MINIMUM_BODY_CHARS:
+        return None
+    portion = source[: min(body_budget, len(source) - 1)]
+    return f"{prefix}{portion}{_PARTIALLY_WITHHELD_BODY_MARKER}"

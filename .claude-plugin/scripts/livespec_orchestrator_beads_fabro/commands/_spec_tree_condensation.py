@@ -66,6 +66,9 @@ from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
     correction_prompt_headroom,
     resolving_subsection_citations,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_partial import (
+    partially_selected_section,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
@@ -197,9 +200,17 @@ class _Section:
         prompt section from a headed clause while retaining its full bytes as
         the reuse key.
         """
+        return self.prompt_provenance_for(rendered=self.full)
+
+    def prompt_provenance_for(self, *, rendered: str) -> CondensedClause:
+        """The provenance of this section as it appears in a condensed prompt."""
         if self.heading is None:
-            return CondensedClause(heading="", body=self.full, path=self.path)
-        return CondensedClause(heading=self.heading, body=self.body, path=self.path)
+            return CondensedClause(heading="", body=rendered, path=self.path)
+        return CondensedClause(
+            heading=self.heading,
+            body=rendered.removeprefix(self.heading),
+            path=self.path,
+        )
 
 
 def condensed_spec_tree(
@@ -218,7 +229,7 @@ def condensed_spec_tree(
         for path in sorted(spec_tree)
         for section in _sections_of(path=path, text=spec_tree[path])
     ]
-    skeleton = _condensed(sections=sections, chosen=frozenset(), paths=spec_tree)
+    skeleton = _condensed(sections=sections, selected={}, paths=spec_tree)
     remaining = (
         ceiling
         - _SAFETY_MARGIN
@@ -226,19 +237,36 @@ def condensed_spec_tree(
         - len(statement)
         - _rendered_length(tree=skeleton)
     )
-    chosen: set[tuple[str, int]] = set()
+    selected: dict[tuple[str, int], str] = {}
+    complete: set[tuple[str, int]] = set()
     for section in _relevance_order(sections=sections, statement=statement):
         cost = len(section.full) - len(section.elided)
         if cost <= remaining:
-            chosen.add(section.key)
+            selected[section.key] = section.full
+            complete.add(section.key)
             remaining -= cost
+            continue
+        partial = (
+            partially_selected_section(
+                heading=section.heading,
+                body=section.body,
+                full=section.full,
+                elided=section.elided,
+                remaining=remaining,
+            )
+            if not complete
+            else None
+        )
+        if partial is not None:
+            selected[section.key] = partial
+            remaining -= len(partial) - len(section.elided)
     return CondensedSpecTree(
-        tree=_condensed(sections=sections, chosen=chosen, paths=spec_tree),
+        tree=_condensed(sections=sections, selected=selected, paths=spec_tree),
         clauses=tuple(
             section.prompt_provenance
             for path in spec_tree
             for section in sections
-            if section.path == path and section.key in chosen
+            if section.path == path and section.key in complete
         ),
     )
 
@@ -398,13 +426,13 @@ def _relevance_order(*, sections: list[_Section], statement: str) -> list[_Secti
 def _condensed(
     *,
     sections: list[_Section],
-    chosen: Collection[tuple[str, int]],
+    selected: Mapping[tuple[str, int], str],
     paths: Collection[str],
 ) -> dict[str, str]:
-    """The tree these sections render into, with only `chosen` bodies carried."""
+    """The tree these sections render into, with only selected bodies carried."""
     parts: dict[str, list[str]] = {path: [] for path in paths}
     for section in sections:
-        parts[section.path].append(section.full if section.key in chosen else section.elided)
+        parts[section.path].append(selected.get(section.key, section.elided))
     return {path: "".join(pieces) for path, pieces in parts.items()}
 
 
