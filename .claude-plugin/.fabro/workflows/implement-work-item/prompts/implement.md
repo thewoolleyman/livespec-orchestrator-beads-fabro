@@ -130,8 +130,8 @@ must be terminal before your final message.
   to satisfy the assignment and its acceptance criteria.
 - ACCEPTANCE-CRITERIA SCOPE — downstream review is NOT yours to run.
   Satisfy only the acceptance conditions you can verify YOURSELF in this
-  sandbox: the code/behavior change, its tests, and a green run of the
-  repository's check suite (through `livespec-implement-check-suite`). An acceptance line that names a DOWNSTREAM gate — an
+  sandbox: the code/behavior change, its tests, and a commit whose hook ran the
+  repository's check suite to a pass. An acceptance line that names a DOWNSTREAM gate — an
   "independent"/"external"/"adversarial" reviewer, a separate NO-BLOCKERS
   review "before acceptance", a human sign-off, a ratification step — is
   handled AFTER this stage by a later `review` node and by the external
@@ -282,33 +282,38 @@ Every commit message body MUST end with the trailer line:
 
     Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
-## Coverage before Green — run the per-file coverage check FIRST
+## The commit hook is the full check — run only targeted tests yourself
 
-Before you attempt ANY Green commit or amend, run this repository's
-per-file coverage check over the FULL test suite and close every gap it
-reports. Run it BEFORE the commit, never after a hook has refused one.
+This repository's commit hook runs its whole declared check suite,
+`{{ inputs.sandbox_check_suite }}`, on every Green commit and Green amend, and
+that suite contains the per-file coverage gate. That hook run IS this stage's
+one full check. Before a commit, run only the targeted tests: every test file
+the change touches (the rule above), plus any single-file lint or type check
+of a file you edited. Never run the full suite, the per-file coverage check or
+any other whole-suite command yourself, neither before a commit nor after one
+the hook passed.
 
-- The installed commit hook runs the repository's whole declared check
-  suite and the per-file coverage gate fails at its END, so one
-  uncovered line found there costs a full suite run, a test, and a
-  second full suite run. Measured on a production implement stage: four
-  Green amends each drove the ~11.5-minute aggregate to completion and
-  were then refused at that gate — about 46 minutes of a 2h10m stage
-  spent discovering gaps one up-front run would have named.
-- Invoke the check the way THIS repository exposes it: its own per-file
-  coverage target if it declares one, otherwise the declared check
-  suite through `livespec-implement-check-suite`, which runs
-  `{{ inputs.sandbox_check_suite }}` and contains that gate.
-  Read the repository's binding rules and its task-runner targets to
-  find the name; never carry a target name or a path over from another
-  repository.
-- Measure coverage over the WHOLE suite. Do NOT narrow it to the files
-  this change touched: a logic change drops coverage in files it never
-  edits, so a reading scoped to the touched files reports green for a
-  tree the hook then refuses.
+- Measured on three implement runs of 2026-10-31 that ended in partial
+  progress (overseer-e6bvmt, overseer-uzvcbn.9, bd-ib-37wvsk): the implementer
+  started its own full-suite and per-file-coverage runs before the hook ran
+  the same aggregate again. Those self-started runs and the sleep and `ps`
+  loops polling them took 57 of overseer-e6bvmt's 95 implement minutes and 14
+  of overseer-uzvcbn.9's 62; one 62-minute turn started its own suite four
+  times, and the hook ran it twice more, around about seven minutes of
+  editing.
+- When the hook refuses a commit, read EVERY failed target and EVERY uncovered
+  line it names from the commit runner's recorded output, and close all of
+  them before the next commit. One refusal names every gap at once. Fixing them
+  one per commit is what once cost about 46 minutes of a 2h10m stage, four
+  Green amends each refused at the same gate.
+- Coverage is measured over the WHOLE suite, which is why it belongs to the
+  hook: a logic change drops coverage in files it never edits, so a reading
+  scoped to the touched files reports green for a tree the hook then refuses.
+- Only when this repository installs no commit hook that runs the declared
+  suite, run it once yourself before your final commit, through
+  `livespec-implement-check-suite`.
 - This relaxes NOTHING. The hook, the gate and every check keep running
-  exactly as they are; running the check yourself only moves a failure
-  you would hit anyway to where it is cheap to fix.
+  exactly as they are; the hook's verdict is simply the one full run.
 
 ## A commit hook outlasts a tool call — a return is not a verdict
 
@@ -421,8 +426,8 @@ do before that reply — where this stage's completion gate reads it:
   that same JSON object on the last line. The stage succeeds and the run
   proceeds as before.
 - INCOMPLETE. Anything of the Definition of Done is still owed — an
-  assertion not implemented, a test not written, the check suite not run
-  green, work you intended to continue. Record
+  assertion not implemented, a test not written, the last commit's hook
+  run not passed, work you intended to continue. Record
   `{"definition_of_done_complete": false}` and end your final reply with
   one JSON object carrying BOTH the completion field and the structured
   failed ending, on the last line:
@@ -445,10 +450,12 @@ question, which is the cheap ending.
 
 After every acceptance assertion has completed its own loop:
 
-1. Run the repo's check suite yourself through `livespec-implement-check-suite` and
-   fix what it surfaces — a later janitor stage re-runs it as a hard
-   gate, so hand it a green tree. Green must be earned honestly — see
-   the HONEST checks rule above; a check-vs-legitimate-pattern conflict
+1. Hand the later janitor stage, which re-runs the check suite as a hard
+   gate, a green tree: your last Green commit's hook run already ran the
+   whole suite on exactly the tree it committed, so when it passed and
+   nothing changed since, do not run the suite again. Anything changed
+   after it goes through one more commit. Green must be earned honestly —
+   see the HONEST checks rule above; a check-vs-legitimate-pattern conflict
    is a needs-human `failed` outcome, not something to evade.
 2. In your final reply, summarize what you changed, list the commits
    (`git log --oneline origin/{{ inputs.default_branch }}..HEAD`), and report any deviation

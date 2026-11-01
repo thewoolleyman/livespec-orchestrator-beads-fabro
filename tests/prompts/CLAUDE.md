@@ -128,16 +128,19 @@ instead.
   pins the slice both ways, naming a sentence only check 4 carries and one
   each from checks 3, 5 and 6 that it must not.
 
-- `test_implement_coverage_before_green.py` — bd-ib-z6fmp: the implement-stage
-  prompt requires the repository's per-file coverage check to be run over the
-  FULL suite, with every gap closed, BEFORE any Green commit or amend — the hook
-  runs the whole declared check suite and fails at that gate LAST, so a gap
-  found there costs two full suite runs. The prompt is DERIVED from the graph's
-  `implement` node rather than named, with a control asserting the derivation
-  found exactly one such node whose prompt is on disk. The changed-files-only
-  prohibition is pinned POSITIVELY (both physical lines of the sentence are
-  required) because a probe for the absence of a narrowing phrase could never
-  return a hit and would read clean over a prompt that said nothing. This tier
+- `test_implement_hook_is_the_full_check.py` — the implement-stage prompt makes
+  the commit hook's run of the declared check suite (coverage gate included) the
+  stage's ONE full check: the implementer runs only targeted tests, never a
+  whole-suite or per-file-coverage command of its own, and when the hook refuses
+  it closes EVERY gap the refusal names before the next commit. It supersedes
+  bd-ib-z6fmp's coverage-before-Green section, which three measured
+  partial-progress runs of 2026-10-31 showed had turned into duplicate aggregate
+  runs (57 of overseer-e6bvmt's 95 implement minutes). The prompt is DERIVED from
+  the graph's `implement` node rather than named, with a control asserting the
+  derivation found exactly one such node whose prompt is on disk. The self-run
+  prohibition and the whole-suite reason are pinned POSITIVELY by their physical
+  lines; the one absence assertion targets the superseded section's own heading,
+  which a revert would restore, so it can return a hit. This tier
   reads the COMMITTED prompt; its DISPATCHED counterpart — the same instruction
   in the per-dispatch payload, with the check-suite input bound from the target
   repository's own declaration — is
