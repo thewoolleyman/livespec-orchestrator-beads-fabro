@@ -12,6 +12,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
     merge_poll_budget_exhausted_detail,
     reports_base_advanced_after_arming,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance_record_files import (
+    measure_conflicted_paths,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_confirm import confirm_pr
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
@@ -84,6 +87,12 @@ def await_merge(
         if view is not None and _reports_overtaken_arming(view=view):
             conflicting_reports += 1
             if conflicting_reports >= CONSECUTIVE_CONFLICTING_REPORTS:
+                _ = measure_conflicted_paths(
+                    repo=plan.repo,
+                    runner=runner,
+                    pr_head=view.head or "",
+                    default_branch_tip=view.base or "",
+                )
                 return outcome_type(
                     work_item_id=plan.work_item_id,
                     status="blocked",
