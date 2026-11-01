@@ -26,7 +26,12 @@ from pathlib import Path
 
 _VENDOR_ROOT = Path(".claude-plugin/scripts/_vendor/livespec_runtime")
 _MANIFEST = Path(".vendor.jsonc")
-_EXPECTED_PIN = "v0.28.0"
+# The FLOOR, not the pin: v0.28.0 is the first release carrying `spec_stated`.
+# An equality here froze the pin at that release and failed every later bump
+# (PR #3669, v0.29.1, red on master's CI since 2026-10-25) although nothing the
+# assertion was about had changed.
+_MINIMUM_PIN = (0, 28, 0)
+_RELEASE_TAG = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
 _LINE_COMMENT = re.compile(r'("(?:\\.|[^"\\])*")|(//[^\n]*)')
 
 
@@ -58,5 +63,11 @@ def test_spec_stated_judgement_surface_imports_from_the_vendored_runtime() -> No
 
 
 def test_vendored_livespec_runtime_is_pinned_to_the_spec_stated_release() -> None:
-    """The manifest pins v0.28.0, the first release carrying `spec_stated`."""
-    assert _manifest_entry(name="livespec_runtime")["upstream_ref"] == _EXPECTED_PIN
+    """The manifest pins a release tag no older than v0.28.0, the first carrying `spec_stated`."""
+    pin = _manifest_entry(name="livespec_runtime")["upstream_ref"]
+    assert isinstance(pin, str)
+    match = _RELEASE_TAG.fullmatch(pin)
+    assert (
+        match is not None
+    ), f"livespec_runtime pin {pin!r} is not a vMAJOR.MINOR.PATCH release tag"
+    assert tuple(int(part) for part in match.groups()) >= _MINIMUM_PIN

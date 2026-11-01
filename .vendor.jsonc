@@ -6,25 +6,19 @@
 //   shipped skills import livespec_runtime.cross_repo.*, work_items.*, and needs-attention helpers; this
 //   vendored copy makes those imports resolve from the published
 //   installed-cache bundle without a `uv sync` step (li-k5dadf).
-//   The pin is v0.28.0, the FIRST release carrying
+//   v0.28.0 is the FIRST release carrying
 //   `livespec_runtime.spec_stated` — the shared spec-stated judgement
 //   (`judge` / `classify` / `parse_verdict`) that every consumer of
 //   that judgement in this repository imports from the release rather
-//   than re-implementing locally (bd-ib-ouk27x).
-//   ONE carve-out survives the re-vendor, and it is why this tree is
-//   not simply byte-identical to the release: upstream has never
-//   defined `WorkItem.rework_pending`, and this repository has carried
-//   that field and its docstring in work_items/types.py since commit
-//   74a97bf9 (2026-08-28), because the ratified rework-pending
-//   re-dispatch contract materializes the `rework:pending` beads label
-//   as a field so selection, accounting and stranded-state
-//   discrimination all read one authority. Exact release alignment and
-//   a green repository are therefore incompatible, which is what a
-//   first attempt at this bump discovered by deleting the field;
+//   than re-implementing locally (bd-ib-ouk27x) — so the pin may move
+//   forward but never below it
+//   (tests/test_vendored_livespec_runtime.py asserts that floor).
+//   The tree is byte-identical to the release apart from the preserved
+//   LICENSE below. The `WorkItem.rework_pending` carve-out this
+//   repository carried in work_items/types.py since commit 74a97bf9
+//   is retired: v0.29.0 upstreamed the field.
 //   `dev-tooling/check-vendored-livespec-runtime-release.sh` reads this
-//   entry's own pin and proves the vendored tree equals that release
-//   plus exactly that carve-out and the preserved LICENSE below, so the
-//   divergence can neither widen nor be lost unnoticed.
+//   entry's own pin and proves that equality.
 // - livespec_spec_clauses, vendored from livespec core's
 //   dev-tooling/spec_clauses.py into
 //   .claude-plugin/scripts/_vendor/livespec_spec_clauses.py. The
@@ -74,8 +68,8 @@
     {
       "name": "livespec_runtime",
       "upstream_url": "https://github.com/thewoolleyman/livespec-runtime",
-      "upstream_ref": "v0.28.0",
-      "vendored_at": "2026-10-22T00:45:23Z"
+      "upstream_ref": "v0.29.1",
+      "vendored_at": "2026-10-25T19:22:29Z"
     },
     {
       "name": "livespec_spec_clauses",
