@@ -147,7 +147,7 @@ def drain_rate_attempted(*, reading: SessionHeadroomReading, floor_percent: int)
     MEASURED, and the skip it reads was already decided by the filter; a
     candidate's fate is unchanged by what this returns.
     """
-    if floor_percent <= 0:
+    if floor_percent <= 0 or reading.five_hour_window_absent:
         return False
     return not headroom_skips_candidate(reading=reading, floor_percent=floor_percent)
 
