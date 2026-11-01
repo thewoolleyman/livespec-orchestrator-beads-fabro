@@ -34,7 +34,7 @@ fold_checkpoints() {
 
 latest_red_test_file() {
     awk '
-        /^##[[:space:]]+red([[:space:]]|$)/ { in_red = 1; next }
+        /^##[[:space:]]+red([[:space:]]|$)/ { in_red = 1; latest = ""; next }
         /^##[[:space:]]/ { in_red = 0 }
         in_red && /^Red test file:[[:space:]]*/ {
             value = $0

@@ -129,3 +129,70 @@ def test_commit_green_folds_checkpoints_and_amends_the_unpaired_red_with_hooks(
     message = _git(repo=repo, argv=["log", "-1", "--format=%B"])
     assert "TDD-Red-Test-File-Checksum: red" in message
     assert "TDD-Green-Verified-At: green" in message
+
+
+def test_refused_commands_append_failed_targets_and_the_recorded_output_tail(
+    tmp_path: Path,
+) -> None:
+    """Both commands preserve a hook refusal in the local append-only handoff."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    test_file = repo / "tests" / "test_feature.py"
+    test_file.parent.mkdir()
+    _ = test_file.write_text("def test_feature() -> None:\n    assert True\n", encoding="utf-8")
+    _ = (repo / "implementation.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _checkpoint(repo=repo, name="red")
+    handoff = _handoff(repo=repo, text="## red\nRed test file: tests/test_feature.py\n")
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    _ = hook.write_text(
+        "#!/bin/sh\nprintf 'Failed targets (1):\\n  - check-example\\n'\n"
+        'i=1; while [ "$i" -le 100 ]; do printf \'hook line %s\\n\' "$i"; '
+        "i=$((i + 1)); done\nexit 1\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+    red = _run(repo=repo, argv=["bash", str(_RED)], check=False)
+
+    assert red.returncode == 1
+    red_handoff = handoff.read_text(encoding="utf-8")
+    assert "## commit_red" in red_handoff
+    assert "Exit status: 1" in red_handoff
+    assert "  - check-example" in red_handoff
+    assert "hook line 100" in red_handoff
+    assert "hook line 20" not in red_handoff
+
+    hook.unlink()
+    assert _run(repo=repo, argv=["bash", str(_RED)], check=False).returncode == 0
+    _checkpoint(repo=repo, name="green")
+    _ = hook.write_text(
+        "#!/bin/sh\nprintf 'Failed targets (1):\\n  - check-green\\n'; exit 1\n", encoding="utf-8"
+    )
+    hook.chmod(0o755)
+
+    green = _run(repo=repo, argv=["bash", str(_GREEN)], check=False)
+
+    assert green.returncode == 1
+    green_handoff = handoff.read_text(encoding="utf-8")
+    assert "## commit_green" in green_handoff
+    assert "  - check-green" in green_handoff
+
+
+def test_commit_red_refuses_when_the_latest_red_section_names_no_test_file(tmp_path: Path) -> None:
+    """A stale earlier Red test must not let the next Red command make a commit."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    before = _git(repo=repo, argv=["rev-parse", "HEAD"])
+    handoff = _handoff(
+        repo=repo,
+        text=(
+            "## red\nRed test file: tests/test_old.py\n\n"
+            "## green\nThe old test was wrong.\n\n"
+            "## red\nNo test was written this visit.\n"
+        ),
+    )
+
+    completed = _run(repo=repo, argv=["bash", str(_RED)], check=False)
+
+    assert completed.returncode != 0
+    assert _git(repo=repo, argv=["rev-parse", "HEAD"]) == before
+    recorded = handoff.read_text(encoding="utf-8")
+    assert "Cause: latest red section names no test file" in recorded
