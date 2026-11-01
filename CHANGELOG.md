@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.268.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.267.2...v0.268.0) (2026-11-01)
+
+
+### Features
+
+* **dispatcher:** add drift run command ([9cdb8a7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9cdb8a7e315c1bfb791992f965965a7b688fb384))
+
 ## [0.267.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.267.1...v0.267.2) (2026-11-01)
 
 
