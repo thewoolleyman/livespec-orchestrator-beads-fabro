@@ -57,8 +57,8 @@ _TREE = {
 }
 
 # Measured against this fixture: the four budgets at which one more clause body
-# fits than at the one before it, plus a budget under which none does.
-_GRADED_CEILINGS = (0, 9900, 10300, 11500, 13000)
+# is read in full than at the one before it, plus a budget under which none is.
+_GRADED_CEILINGS = (0, 9900, 10250, 11850, 12650)
 
 
 @dataclass(kw_only=True)
@@ -73,9 +73,12 @@ class _PromptRecorder:
 
 
 def _withheld(*, ceiling: int) -> int:
-    """How many clause bodies the condensation withheld at one budget."""
+    """How many clause bodies the condensation did not carry in full at one budget."""
     condensed = condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT, ceiling=ceiling)
-    return sum(text.count(ELIDED_BODY_MARKER) for text in condensed.values())
+    return sum(
+        text.count(ELIDED_BODY_MARKER) + text.count("body partially withheld")
+        for text in condensed.values()
+    )
 
 
 def test_an_empty_tree_condenses_to_an_empty_tree() -> None:
@@ -243,6 +246,31 @@ def test_an_oversized_relevant_section_is_partly_carried_after_a_whole_selection
     condensed = condensed_spec_tree(
         spec_tree=tree,
         statement="governing detail statement",
+        ceiling=20_000,
+    )
+    rendered_section = condensed["contracts.md"]
+
+    assert first_body in rendered_section
+    assert oversized_body[:100] in rendered_section
+    assert oversized_body not in rendered_section
+    assert "partially withheld" in rendered_section
+
+
+def test_a_later_oversized_section_matching_fewer_terms_is_still_partly_carried() -> None:
+    """Relevance, not equality with the first-ranked clause's terms, earns a partial body."""
+    first_heading = "## First governing section"
+    oversized_heading = "## Narrower oversized section"
+    first_body = "The alpha beta gamma delta behaviour is stated here in full. " * 10
+    oversized_body = "Only the alpha behaviour recurs through this long unrelated text. " * 3000
+    tree = {
+        "contracts.md": (
+            f"{first_heading}\n\n{first_body}\n{oversized_heading}\n\n{oversized_body}"
+        )
+    }
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="alpha beta gamma delta",
         ceiling=20_000,
     )
     rendered_section = condensed["contracts.md"]
