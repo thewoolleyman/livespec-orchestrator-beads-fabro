@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.265.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.265.0...v0.265.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* route ordinary script laps without failure ([aab22c3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aab22c33720909a27cc8482dcc06e45fd4c5cd50))
+
 ## [0.265.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.264.9...v0.265.0) (2026-10-31)
 
 
