@@ -11423,3 +11423,19 @@ Feature: Terminal dispatch span
     Then the attempt span carries no acp.model
     And livespec.dispatch.unavailable_fields on that span names acp.model
 ```
+
+## Scenario 295 — A run a server restart cancelled has its still-running Kubernetes sandbox stopped through its provider
+
+```gherkin
+Feature: Sandbox retention and collection
+
+  Scenario: A restart-cancelled run's pod is stopped, its workspace retained
+    Given a factory run on the Kubernetes provider whose sandbox pod is running
+    And the Fabro server restarts and records that run as ended without stopping its sandbox
+    When the Dispatcher's next pass runs
+    Then the run's sandbox is stopped through the provider's stop operation and its pod no longer exists in its namespace
+    And the namespace quota's used cpu equals the cpu of the live runs' pods
+    And the run's driver record and node workspace directory still exist
+    When a further pass runs
+    Then nothing further is recorded for that run and the pass does not fail
+```
