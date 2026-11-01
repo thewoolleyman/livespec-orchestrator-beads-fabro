@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.269.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.268.0...v0.269.0) (2026-11-01)
+
+
+### Features
+
+* add Green commit command ([6a20e2b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6a20e2b5bf3e6a31c518bbb9926187ac8c965727))
+* add Red commit command ([0fb5b4e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0fb5b4e1f3375d0c440fd478520f2938d08b71b9))
+
+
+### Bug Fixes
+
+* refuse a Red commit when the red turn changed a product path ([7280b5d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7280b5d37a56419c82fd1ff80b2403e4ba068d00))
+* reject Red handoff without a current test ([c6bd6c7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6bd6c78ff5c72d03a1976e8284000117697a686))
+
 ## [0.268.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.267.2...v0.268.0) (2026-11-01)
 
 
