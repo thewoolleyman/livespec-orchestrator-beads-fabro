@@ -191,17 +191,6 @@ class _Section:
         """This clause's identity within the tree."""
         return (self.path, self.index)
 
-    @property
-    def prompt_provenance(self) -> CondensedClause:
-        """This selected prompt section's provenance, including a preamble.
-
-        A file preamble has no H2 heading but can be selected lexically and sent
-        verbatim in the condensed prompt. Its empty heading distinguishes that
-        prompt section from a headed clause while retaining its full bytes as
-        the reuse key.
-        """
-        return self.prompt_provenance_for(rendered=self.full)
-
     def prompt_provenance_for(self, *, rendered: str) -> CondensedClause:
         """The provenance of this section as it appears in a condensed prompt."""
         if self.heading is None:
@@ -239,13 +228,19 @@ def condensed_spec_tree(
     )
     selected: dict[tuple[str, int], str] = {}
     complete: set[tuple[str, int]] = set()
-    for section in _relevance_order(sections=sections, statement=statement):
+    statement_terms = frozenset(_TERM.findall(statement.casefold()))
+    relevance_order = _relevance_order(sections=sections, statement=statement)
+    most_relevant_terms: frozenset[str] = (
+        relevance_order[0].terms & statement_terms if relevance_order else frozenset()
+    )
+    for section in relevance_order:
         cost = len(section.full) - len(section.elided)
         if cost <= remaining:
             selected[section.key] = section.full
             complete.add(section.key)
             remaining -= cost
             continue
+        matching_terms = section.terms & statement_terms
         partial = (
             partially_selected_section(
                 heading=section.heading,
@@ -254,7 +249,7 @@ def condensed_spec_tree(
                 elided=section.elided,
                 remaining=remaining,
             )
-            if not complete
+            if matching_terms and matching_terms == most_relevant_terms
             else None
         )
         if partial is not None:
@@ -263,7 +258,7 @@ def condensed_spec_tree(
     return CondensedSpecTree(
         tree=_condensed(sections=sections, selected=selected, paths=spec_tree),
         clauses=tuple(
-            section.prompt_provenance
+            section.prompt_provenance_for(rendered=section.full)
             for path in spec_tree
             for section in sections
             if section.path == path and section.key in complete
@@ -282,10 +277,10 @@ def clauses_named(
     """
     wanted = frozenset(headings)
     return tuple(
-        section.prompt_provenance
+        section.prompt_provenance_for(rendered=section.full)
         for path in spec_tree
         for section in _sections_of(path=path, text=spec_tree[path])
-        if section.heading is not None and _named_form(heading=section.heading) in wanted
+        if section.heading is not None and section.heading.rstrip(" \t") in wanted
     )
 
 
@@ -296,12 +291,8 @@ def headings_resolved(*, headings: Collection[str], clauses: Collection[Condense
     receipt carrying it must never be reused: comparing two empty sets would
     be reuse earned by missing data.
     """
-    resolved = {_named_form(heading=clause.heading) for clause in clauses}
+    resolved = {clause.heading.rstrip(" \t") for clause in clauses}
     return all(heading in resolved for heading in headings)
-
-
-def _named_form(*, heading: str) -> str:
-    return heading.rstrip(" \t")
 
 
 def judge_within_ceiling(

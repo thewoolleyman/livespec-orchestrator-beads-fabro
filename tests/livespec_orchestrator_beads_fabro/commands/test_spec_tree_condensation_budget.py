@@ -226,3 +226,28 @@ def test_an_oversized_relevant_section_contributes_a_marked_leading_body_portion
 
     assert len(recorder.prompts) == 1
     assert len(recorder.prompts[0]) < ceiling
+
+
+def test_an_oversized_relevant_section_is_partly_carried_after_a_whole_selection() -> None:
+    """A prior whole selection cannot make a later oversized section disappear."""
+    first_heading = "## First governing section"
+    oversized_heading = "## Oversized governing section"
+    first_body = "The governing detail statement is immediately applicable. " * 10
+    oversized_body = "The governing detail statement requires the retained context. " * 3000
+    tree = {
+        "contracts.md": (
+            f"{first_heading}\n\n{first_body}\n{oversized_heading}\n\n{oversized_body}"
+        )
+    }
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="governing detail statement",
+        ceiling=20_000,
+    )
+    rendered_section = condensed["contracts.md"]
+
+    assert first_body in rendered_section
+    assert oversized_body[:100] in rendered_section
+    assert oversized_body not in rendered_section
+    assert "partially withheld" in rendered_section
