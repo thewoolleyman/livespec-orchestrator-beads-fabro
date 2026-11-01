@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -f .coverage ]]; then
-    echo ":: check-coverage: reading existing .coverage (produced by check-per-file-coverage); no duplicate suite run"
-    status=0
-    env -u COVERAGE_FILE uv run coverage report --fail-under=100 || status=$?
-    # Consume-once (livespec-dev-tooling-yilyxr.8): delete after the read so
-    # no later standalone run can report from stale coverage data.
-    rm -f .coverage
-    [ "$status" -eq 0 ] || exit "$status"
+if [[ ! -f .coverage-gates/per-file.status || ! -f .coverage-gates/per-file.log ]]; then
+    echo ":: check-coverage: no canonical per-file verdict; running the suite"
+    set +e
+    bash dev-tooling/just-check-per-file-coverage.sh
+    producer_rc=$?
+    set -e
+    if [[ "$producer_rc" -ne 0 && ! -f .coverage-gates/per-file.status ]]; then
+        exit "$producer_rc"
+    fi
 else
-    echo ":: check-coverage: no .coverage data file (CI standalone job); running the suite"
-    env -u COVERAGE_FILE uv run pytest -n "$(bash dev-tooling/just-test-nprocs.sh)" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    echo ":: check-coverage: reading the canonical per-file verdict"
+    cat .coverage-gates/per-file.log >&2
 fi
+
+status=$(<.coverage-gates/per-file.status)
+# Consume the coverage data and its canonical verdict together so a later
+# standalone invocation cannot report from stale evidence.
+rm -f .coverage .coverage-gates/per-file.log .coverage-gates/per-file.status
+rmdir .coverage-gates 2>/dev/null || true
+
+[ "$status" -eq 0 ] || exit "$status"
