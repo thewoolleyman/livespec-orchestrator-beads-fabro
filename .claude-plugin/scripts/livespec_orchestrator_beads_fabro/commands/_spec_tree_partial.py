@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-__all__: list[str] = ["partially_selected_section"]
+__all__: list[str] = ["FUNCTION_TERMS", "partially_selected_section"]
+
+# Words that carry no topic, so sharing one does not make a section relevant to a
+# statement. They still weigh in the ranking, where inverse clause frequency already
+# discounts them; only the decision to carry a section in part ignores them.
+FUNCTION_TERMS = frozenset(
+    "the and for are was with that this from not but its into onto when then than which".split()
+)
 
 _PARTIALLY_WITHHELD_BODY_MARKER = (
     "\n\n(body partially withheld from this prompt: the displayed leading text was selected "

@@ -67,6 +67,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
     resolving_subsection_citations,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_partial import (
+    FUNCTION_TERMS,
     partially_selected_section,
 )
 
@@ -230,9 +231,6 @@ def condensed_spec_tree(
     complete: set[tuple[str, int]] = set()
     statement_terms = frozenset(_TERM.findall(statement.casefold()))
     relevance_order = _relevance_order(sections=sections, statement=statement)
-    most_relevant_terms: frozenset[str] = (
-        relevance_order[0].terms & statement_terms if relevance_order else frozenset()
-    )
     for section in relevance_order:
         cost = len(section.full) - len(section.elided)
         if cost <= remaining:
@@ -240,7 +238,7 @@ def condensed_spec_tree(
             complete.add(section.key)
             remaining -= cost
             continue
-        matching_terms = section.terms & statement_terms
+        matching_terms = section.terms & statement_terms - FUNCTION_TERMS
         partial = (
             partially_selected_section(
                 heading=section.heading,
@@ -249,7 +247,7 @@ def condensed_spec_tree(
                 elided=section.elided,
                 remaining=remaining,
             )
-            if matching_terms and matching_terms == most_relevant_terms
+            if matching_terms
             else None
         )
         if partial is not None:
