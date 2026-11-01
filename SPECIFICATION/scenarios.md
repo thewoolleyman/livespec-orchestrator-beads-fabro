@@ -702,6 +702,19 @@ Scenario: a manual → auto flip on a pending-approval item does not approve it 
   When the operator invokes `drive --action set-admission:<work-item-id>:auto`
   Then the valve does not move the item, which remains at `pending-approval` when the command returns
   And it moves to `ready` only through an explicit `approve:<work-item-id>` or a later Dispatcher pass that finds its effective admission_policy auto
+
+Scenario: close-duplicate closes a held duplicate and records its successor
+  Given a `blocked` item held at the spec-change tier whose behaviour another work item already carries
+  When the operator invokes `drive --action close-duplicate:<work-item-id>:<successor-id>`
+  Then the item is closed with no factory run and no other item changes
+  And the item's superseded_by names the successor
+  And a ledger comment on the item and one journal record each name the successor and the invoker
+
+Scenario: close-duplicate refuses and writes nothing on a bad successor, a closed item or a live claim
+  Given an item and a close-duplicate action whose successor does not resolve, equals the item, or whose item is already closed or carries a live run or an unreleased dispatch claim
+  When the operator invokes `drive --action close-duplicate:<work-item-id>:<successor-id>`
+  Then the valve refuses naming the reason
+  And the item, its comments, its edges and the journal are unchanged
 ```
 
 ## Scenario 32 — Adopter-target dispatch compatibility
