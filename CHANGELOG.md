@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.270.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.269.0...v0.270.0) (2026-11-01)
+
+
+### Features
+
+* pin red green handoff prompts ([4868876](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4868876fa0c20189472937b68f97c6442ef68e95))
+
+
+### Bug Fixes
+
+* cover red green prompt registration ([79f2d07](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/79f2d075e1ff5aec89f0daa604d373d1874f8e50))
+
 ## [0.269.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.268.0...v0.269.0) (2026-11-01)
 
 
