@@ -87,11 +87,15 @@ def drift_judge(
     *,
     project_root: Path,
     runner: CommandRunner,
+    caller: str,
     payload_root: Path | None = None,
     reply: ReplyShape = "verdict",
-    caller: str = "drift_run",
 ) -> spec_stated.ModelRunner:
     """A `ModelRunner` that puts one rendered prompt to the headless judge.
+
+    `caller` is REQUIRED, with no default, because a default would attribute
+    every launcher that forgot to name itself to one named judgement. It is the
+    identifier-shaped `livespec.caller` value the spawn carries.
 
     `reply` names the SHAPE the caller's prompt is answered in, because the
     shared chain advances to its next candidate on any reply its shape check
