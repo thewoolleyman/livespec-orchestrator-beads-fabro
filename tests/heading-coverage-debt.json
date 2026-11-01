@@ -1132,5 +1132,12 @@
     "heading": "## Scenario 288 \u2014 An absent five-hour window is no five-hour limit, and the seven-day status still governs",
     "work_item": "bd-ib-75dpxr",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 291 \u2014 A pod-sandboxed run's spans name the cluster node its pod ran on",
+    "work_item": "bd-ib-motuct",
+    "first_seen": "2026-11-01"
   }
 ]
