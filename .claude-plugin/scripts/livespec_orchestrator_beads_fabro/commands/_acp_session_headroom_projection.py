@@ -52,6 +52,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    FIVE_HOUR_WINDOW_ABSENT,
     NOT_PROJECTED_RESULT,
     PROJECTED_RESULT,
     UNAVAILABLE_RESULT,
@@ -194,6 +195,8 @@ def _not_attempted_reason(*, reading: SessionHeadroomReading, floor_percent: int
     """
     if floor_percent <= _FLOOR_DISABLED_PERCENT:
         return FLOOR_DISABLED_REASON
+    if reading.five_hour_window_absent:
+        return FIVE_HOUR_WINDOW_ABSENT
     if not reading.observable:
         return UNOBSERVABLE_READING_REASON
     return FLOOR_SKIPPED_READING_REASON

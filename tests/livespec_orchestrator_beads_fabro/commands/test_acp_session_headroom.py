@@ -365,6 +365,7 @@ def test_the_record_carries_no_credential_value_or_raw_provider_response() -> No
         "provider_reset_claim",
         "seven_day",
         "slot",
+        "five_hour_window_absent",
     }
     # The one field that is itself a VALUE has to be closed too, or the
     # structural guarantee stops at the outer type and the nested one becomes

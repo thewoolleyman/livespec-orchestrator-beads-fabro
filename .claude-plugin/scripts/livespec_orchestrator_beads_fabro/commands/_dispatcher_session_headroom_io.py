@@ -84,6 +84,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     UNOBSERVABLE_SEVEN_DAY,
     SessionHeadroomReading,
     SevenDayReading,
+    five_hour_window_absent_reading,
     session_headroom_reading,
     seven_day_reading,
     unobservable_session_headroom,
@@ -175,6 +176,7 @@ class _ProviderWindows:
     reason: str | None = None
     reset_claim: str | None = None
     seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY
+    five_hour_reported: bool = False
 
 
 def projected_credential_identity(*, token: str | None) -> str:
@@ -203,6 +205,12 @@ def read_projected_session_headroom(
             observed_at=observed_at,
             reason=windows.reason,
             provider_reset_claim=windows.reset_claim,
+            seven_day=windows.seven_day,
+        )
+    if not windows.five_hour_reported:
+        return five_hour_window_absent_reading(
+            credential_identity=identity,
+            observed_at=observed_at,
             seven_day=windows.seven_day,
         )
     return session_headroom_reading(
@@ -256,6 +264,8 @@ def _answered(*, headers: Message | None) -> _ProviderWindows:
             utilization=_header_percent(headers=headers, name=SEVEN_DAY_UTILIZATION_HEADER),
             status=_header_text(headers=headers, name=SEVEN_DAY_STATUS_HEADER),
         ),
+        five_hour_reported=_header_text(headers=headers, name=FIVE_HOUR_UTILIZATION_HEADER)
+        is not None,
     )
 
 

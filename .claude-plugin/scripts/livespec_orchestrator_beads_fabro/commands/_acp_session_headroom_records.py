@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom_records impo
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    FIVE_HOUR_WINDOW_ABSENT,
     SessionHeadroomProjection,
     SessionHeadroomReading,
     SevenDayReading,
@@ -202,6 +203,11 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         "unverified_provider_reset_claim": reading.provider_reset_claim,
         "seven_day": seven_day_reading_fields(reading=reading.seven_day),
     }
+    if reading.five_hour_window_absent:
+        # Named only where it applies, so every record of a reported or failed
+        # window keeps its existing key set (contracts v263: the absent window is
+        # journaled as `five-hour-window-absent`, never as unobservable or a figure).
+        fields["five_hour_window"] = FIVE_HOUR_WINDOW_ABSENT
     if reading.slot is not None:
         fields["slot"] = {
             "name": reading.slot.slot,

@@ -75,6 +75,7 @@ __all__: list[str] = [
     "ABSENT_SEVEN_DAY_READING",
     "DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT",
     "DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES",
+    "FIVE_HOUR_WINDOW_ABSENT",
     "FULL_ALLOWANCE_PERCENT",
     "NOT_PROJECTED_RESULT",
     "PROJECTED_RESULT",
@@ -87,6 +88,7 @@ __all__: list[str] = [
     "SessionHeadroomReading",
     "SevenDayReading",
     "SlotSelection",
+    "five_hour_window_absent_reading",
     "headroom_covers_candidate",
     "headroom_skips_candidate",
     "session_headroom_reading",
@@ -116,6 +118,17 @@ FULL_ALLOWANCE_PERCENT = 100.0
 # missing, malformed or out of range. The transport reasons belong to whoever
 # issued the request, because only it observed the fault.
 UNREADABLE_UTILIZATION = "unreadable-utilization"
+
+# The named result for a five-hour window the provider did not report at all
+# on a successful, authenticated response (contracts v263, Scenario 288).
+# It is NOT an unobservable reason: measured 2026-11-01, every pool slot's
+# 2xx carried the seven-day headers and no five-hour header of any kind, and
+# grading that as unobservable floor-skipped every slot and idled the
+# factory. The provider is stating there is no five-hour limit, so the slot
+# passes the floor, is never projected, and the seven-day status still
+# governs it -- the same reading caam gives an absent short window
+# (livespec-overseer overseer-yizu3e).
+FIVE_HOUR_WINDOW_ABSENT = "five-hour-window-absent"
 
 # The THREE projection results the clause closes, and they are three rather
 # than two because `not-projected` and `unavailable` "MUST remain distinct
@@ -265,6 +278,7 @@ class SessionHeadroomReading:
     provider_reset_claim: str | None = None
     seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY
     slot: SlotSelection | None = None
+    five_hour_window_absent: bool = False
 
     @property
     def observable(self) -> bool:
@@ -379,6 +393,24 @@ def unobservable_session_headroom(
     )
 
 
+def five_hour_window_absent_reading(
+    *, credential_identity: str, observed_at: str, seven_day: SevenDayReading
+) -> SessionHeadroomReading:
+    """A successful response that reported NO five-hour window: no five-hour limit.
+
+    Neither a number nor an unobservable result, which is why it is a flag of
+    its own: the utilization stays null because nothing was reported, and
+    `unobservable` stays null because nothing FAILED to be measured. The
+    seven-day half of the same response rides through, since it still governs.
+    """
+    return SessionHeadroomReading(
+        credential_identity=credential_identity,
+        observed_at=observed_at,
+        seven_day=seven_day,
+        five_hour_window_absent=True,
+    )
+
+
 def seven_day_reading(*, utilization: object, status: object) -> SevenDayReading:
     """Grade one response's seven-day pair, or the explicit absence of both.
 
@@ -440,7 +472,7 @@ def headroom_skips_candidate(*, reading: SessionHeadroomReading, floor_percent: 
     skipped whenever the usage endpoint timed out -- the opposite of what the
     clause ratifies, from the arm a numeric test cannot reach.
     """
-    if floor_percent <= 0:
+    if floor_percent <= 0 or reading.five_hour_window_absent:
         return False
     remaining = reading.remaining_percent
     if remaining is None:
