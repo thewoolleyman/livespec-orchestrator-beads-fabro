@@ -1139,5 +1139,26 @@
     "heading": "## Scenario 291 \u2014 A pod-sandboxed run's spans name the cluster node its pod ran on",
     "work_item": "bd-ib-motuct",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 292 \u2014 A factory Codex response span keeps its measured cache-token counts",
+    "work_item": "bd-ib-3k3nxw",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 293 \u2014 A factory Claude API-request record carries its cache-write lifetimes and dispatch id",
+    "work_item": "bd-ib-t7yjrb",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 294 \u2014 A terminated dispatch emits one terminal span with its outcome and one span per attempt",
+    "work_item": "bd-ib-welwbc",
+    "first_seen": "2026-11-01"
   }
 ]
