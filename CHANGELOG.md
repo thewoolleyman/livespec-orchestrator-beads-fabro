@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.267.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.267.1...v0.267.2) (2026-11-01)
+
+
+### Bug Fixes
+
+* carry a later oversized relevant section in part, not only the first-ranked one's term set ([8903cdb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8903cdbe53e11d17c5cedcec2c3ea5e5988d64e9))
+* retain oversized section after whole selection ([de1518e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/de1518e75091c6bb3fad071ea4e0d929a9522e90))
+* retain part of oversized relevant spec sections ([c200980](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c2009805f84886b437a6bec8988b842fb4633111))
+
 ## [0.267.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.267.0...v0.267.1) (2026-11-01)
 
 
