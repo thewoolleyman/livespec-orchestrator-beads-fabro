@@ -3384,7 +3384,8 @@ entered only from a green janitor outcome and exiting to `proof_capture`, which
 MUST push the item's publish branch and, when no pull request for that branch
 exists, open one as a DRAFT; it MUST be idempotent across janitor re-entries
 and MUST fail closed to `needs_human` when origin cannot be reached; a refresh
-that conflicts, or a refreshed head that the repository's gate rejects, MUST
+that conflicts, a commit of the refresh that the repository's commit hook
+refuses, or a refreshed head that the repository's gate rejects, MUST
 instead take the refresh-repair route of "Refresh repair" below while that
 route's budget lasts. When the `publish_draft` push is refused, its failure
 output MUST name which cause refused it. A pre-push hook refusal MUST name
@@ -3443,7 +3444,8 @@ its recorded publication or validated resume provenance, never from a stale
 local tracking ref. Except as the next paragraph provides for a pull request
 that has already merged, a missing or unobservable remote, or a foreign or
 unexpectedly changed publish head, MUST fail closed with a named cause and
-recovery artifact pointer. A conflicted rebase or merge, and a refreshed head
+recovery artifact pointer. A conflicted rebase or merge, a commit of the
+refresh that the repository's commit hook refuses, and a refreshed head
 that the repository-declared gate rejects, MUST take the refresh-repair route of
 "Refresh repair" below while its budget lasts, and MUST fail closed with a named
 cause and recovery artifact pointer once that budget is spent. A previously completed refresh may be
@@ -3574,9 +3576,11 @@ retain an unconditional outgoing edge accepted by the supported engine, and
 command nonzero exits MUST take their failure edge.
 
 **Refresh repair.** When `publish_draft` or `pr_refresh` cannot refresh the run
-onto the advanced default branch — because the rebase or merge conflicts, or
-because the refreshed head fails the repository-declared gate that runs before
-or during the publishing push — the stage MUST restore its pre-refresh head,
+onto the advanced default branch — because the rebase or merge conflicts,
+because the repository's commit hook refuses a commit the refresh itself makes
+(the merge commit of a merge refresh, or a commit a rebase replays) while no
+path is conflicted, or because the refreshed head fails the
+repository-declared gate that runs before or during the publishing push — the stage MUST restore its pre-refresh head,
 MUST record a refresh-repair brief, and MUST route to the existing `fix` agent
 node. The pre-refresh head is the head the stage held when it began that
 refresh: for `publish_draft`, the head the most recent `janitor` passed; for
@@ -3588,7 +3592,8 @@ pre-refresh head, so it applies equally when the refresh itself completed and
 only the gate rejected the result. The brief MUST name the stage, the
 pre-refresh head, the default-branch commit the refresh targeted, and either
 each conflicted path together with the run commit that was being applied, or
-each failed gate target.
+each failed gate target, or, for a commit-hook refusal, each target the hook
+names as failed together with the last 80 lines of the hook's own output.
 When the conflicted paths include a generated record file, the brief MUST carry
 one line `regenerate: <path> via <generator argv>` per such file. The `fix` turn
 MUST resolve every other conflicted path first and MUST then resolve each named
@@ -3596,8 +3601,11 @@ file by running its generator, never by editing its text. When a failed gate
 target's failure names a generated record file, the brief MUST carry the same
 `regenerate:` line for that file beside the failed target. The stage MUST distinguish a refreshed head that the
 gate rejected from a push that origin refused or could not reach, and from an
-authentication failure; only a conflict or a gate rejection takes this route,
-and every other cause keeps its existing fail-closed behaviour. The `fix` turn
+authentication failure; only a conflict, a commit-hook refusal of the refresh's own
+commit, or a gate rejection takes this route, and every other cause keeps its
+existing fail-closed behaviour. A commit-hook refusal of the refresh's own
+commit MUST NOT end the run at `needs_human` with
+`LIVESPEC_REFRESH_REPAIR_ABSENT`. The `fix` turn
 integrates the default branch into the run's work, resolving the conflict or
 the gate failure inside its own turn. Hooks MUST run normally there, and the
 turn MUST NOT use `--no-verify`, bare force, or a rewrite of any ref. After a

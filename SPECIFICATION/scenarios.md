@@ -6432,6 +6432,15 @@ Feature: A janitor-green run survives a default branch that moved under it
     And the run enters the fix node with a brief naming each failed gate target
     And the run does not end at needs_human
 
+  Scenario: A refresh commit refused by the commit hook is restored and repaired
+    Given a run whose janitor stage succeeded at head H
+    And the refresh onto the advanced default branch conflicts on no path
+    And the repository's commit hook refuses the commit the refresh makes
+    When publish_draft refreshes the run onto the default branch
+    Then the run's working branch is reset to H with no merge or rebase in progress
+    And a refresh-repair brief names H, the targeted default-branch commit and each target the hook named as failed
+    And the run enters the fix node rather than needs_human
+
   Scenario: A conflicted pr_refresh routes to a repair turn and counts as a refresh
     Given a run whose proof was verified on its published head P
     And origin's default branch has advanced with a commit that conflicts with the run's work
