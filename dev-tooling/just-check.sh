@@ -25,44 +25,14 @@ if ! uv sync --all-groups; then
 fi
 export UV_NO_SYNC=1
 
-failed=()
-executed=0
-skipped=0
-for target in "${targets[@]}"; do
-    skip_this=0
-    for skip_target in "${skip_targets[@]}"; do
-        if [[ "$target" == "$skip_target" ]]; then
-            skip_this=1
-            break
-        fi
-    done
-    if [[ "$skip_this" -eq 1 ]]; then
-        printf '\n::: just %s (skipped)\n' "$target"
-        skipped=$((skipped + 1))
-        continue
-    fi
-    printf '\n::: just %s\n' "$target"
-    executed=$((executed + 1))
-    if ! just "$target"; then
-        failed+=("$target")
-    fi
-done
-
-if [[ ${#failed[@]} -gt 0 ]]; then
-    printf '\nFailed targets (%d):\n' "${#failed[@]}"
-    printf '  - %s\n' "${failed[@]}"
+# The dispatcher keeps each aggregate member as one `just` subprocess, so the
+# pytest/coverage member retains its own LIVESPEC_TEST_PARALLELISM worker lane
+# while independent lint, type, and static members run beside it. It prints a
+# verdict for every member (including skips) and exits non-zero only after
+# collecting every failed verdict.
+if ! uv run python -m livespec_dev_tooling.parallel_check_dispatcher \
+    --skip "${skip_targets[*]}" -- "${targets[@]}"; then
     exit 1
 fi
-# The count is what RAN, never the declared length: a summary that counts
-# targets it skipped — or ones a stale hardcoded list named and never
-# invoked — reads as broader assurance than the run earned, which is the
-# false green this script's derivation removes (work-item bd-ib-mxqrr4). The
-# skipped tally is printed rather than merely subtracted, so a short count is
-# legible instead of mysterious.
-if [[ "$skipped" -gt 0 ]]; then
-    printf '\nAll %d targets passed (%d of %d declared skipped).\n' \
-        "$executed" "$skipped" "${#targets[@]}"
-else
-    printf '\nAll %d targets passed.\n' "$executed"
-fi
+
 uv run bash dev-tooling/green-token-scope.sh write "${skip_targets[@]}" || true
