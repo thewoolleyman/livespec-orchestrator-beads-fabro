@@ -224,3 +224,30 @@ def test_a_chain_that_ran_no_candidate_says_so_on_standard_error_and_in_the_reco
     assert len(reports) == 1
     assert "cause no-eligible-model" in reports[0]
     assert "no candidate ran" in reports[0]
+
+
+def test_an_input_limited_unavailable_record_names_the_measured_total_and_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bound-ended taking records the size that made it unavailable.
+
+    The candidate label alone cannot distinguish a subject just over the bound
+    from one that is many times larger, so the unavailable record carries the
+    aggregate it measured beside the fixed host limit.
+    """
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "token")
+    runner = _Runner(
+        results=[
+            CommandResult(
+                exit_code=143,
+                stdout='{"usage": {"input_tokens": 100321}}\n',
+                stderr="",
+            )
+        ]
+    )
+
+    body = _take_unavailable(tmp_path=tmp_path, runner=runner)
+
+    assert "judgement-unavailable-cause: input-limit-reached" in body.splitlines()
+    assert "total-input-tokens: 100321" in body.splitlines()
+    assert "host-judgement-input-limit: 100000" in body.splitlines()
