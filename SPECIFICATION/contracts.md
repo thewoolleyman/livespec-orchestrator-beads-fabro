@@ -9484,6 +9484,20 @@ MUST additionally carry `gate.verdict`, either `pass` or `fail`, and, when
 the verdict is `fail`, `gate.failed_targets`, the names of the targets that
 failed.
 
+When a run's sandbox is a Kubernetes pod, every step span of that run, and
+every `run_turn` span the run's engine exports, MUST additionally carry
+`k8s.node.name`: the name of the cluster node the pod was scheduled on, as
+the cluster reports it in the pod's `spec.nodeName`. That is the node
+`kubectl get pod -o wide` shows for the pod. The value names where the
+sandbox ran, not where the engine's worker ran. A dispatch whose pod is
+scheduled on a node other than the factory host therefore names that other
+node, beside the `livespec.dispatch.factory` value naming the factory. A
+run whose sandbox is not a Kubernetes pod (for example a Docker container
+on the factory host) MUST NOT carry `k8s.node.name`; its omission is not an
+unobservable value, so it is not named in `fabro.step.unavailable_fields`.
+When the sandbox IS a pod but its node cannot be read, the attribute
+follows the unobservable-value rule below.
+
 A value the factory cannot observe MUST be omitted rather than fabricated,
 and the span MUST then carry `fabro.step.unavailable_fields`, naming each
 omitted attribute. In particular a step whose agent made no tool call MUST

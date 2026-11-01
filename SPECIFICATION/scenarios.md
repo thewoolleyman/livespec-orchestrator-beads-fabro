@@ -11290,3 +11290,25 @@ Feature: A provider response with no five-hour window does not idle the factory
     When the Dispatcher evaluates admission
     Then the reading is journaled as unobservable and the slot is skipped by a floor skip
 ```
+
+## Scenario 291 — A pod-sandboxed run's spans name the cluster node its pod ran on
+
+```gherkin
+Feature: Factory spans name the cluster node of a pod sandbox
+  As a triager of a factory run on the Kubernetes backend
+  I want each span of the run to name the node its sandbox pod ran on
+  So that one query shows where every step executed beside which factory dispatched it
+
+  Scenario: A dispatch whose pod is scheduled off the factory host
+    Given a factory whose environment selects the Kubernetes sandbox provider
+    And a dispatch to that factory whose sandbox pod is scheduled on a cluster node other than the factory host
+    When the run's spans are queried in Honeycomb filtered by the run id
+    Then every step span and every run_turn span of the run carries k8s.node.name naming the node the pod ran on
+    And each of those spans carries livespec.dispatch.factory naming the factory
+
+  Scenario: A Docker-sandboxed run names no cluster node
+    Given a factory whose environment selects the Docker sandbox provider
+    When a dispatch to that factory runs and its spans are queried by run id
+    Then no span of the run carries k8s.node.name
+    And no step span names k8s.node.name in its unavailable fields
+```

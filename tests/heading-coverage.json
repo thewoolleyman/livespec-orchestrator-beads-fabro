@@ -2621,5 +2621,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal five-hour-window-absent under the 2026-11-01 stop-the-line, and the owning work-item bd-ib-75dpxr teaches `_acp_session_headroom` and `_dispatcher_session_headroom_io` the absent five-hour window, together with the test that binds this entry.",
     "work_item": "bd-ib-75dpxr"
+  },
+  {
+    "heading": "## Scenario 291 \u2014 A pod-sandboxed run's spans name the cluster node its pod ran on",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the exercising proof is a host-captured Honeycomb query over spans from a real Kubernetes-backend factory dispatch whose pod ran off the factory host; owned by work-item bd-ib-motuct (run_turn spans), with the step-span half riding livespec-dev-tooling-ipcm33.",
+    "work_item": "bd-ib-motuct"
   }
 ]
