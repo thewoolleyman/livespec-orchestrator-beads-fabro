@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.271.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.270.0...v0.271.0) (2026-11-01)
+
+
+### Features
+
+* reuse the canonical coverage verdict ([704a96d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/704a96deddcabf97b8c05091bf344f7a0a38f308))
+
+
+### Bug Fixes
+
+* standalone check-coverage fails when the suite fails ([210e195](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/210e195f5a1726353d5edb921d9240daeb983a0c))
+
 ## [0.270.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.269.0...v0.270.0) (2026-11-01)
 
 
