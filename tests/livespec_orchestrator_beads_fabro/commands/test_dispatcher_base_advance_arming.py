@@ -61,7 +61,7 @@ _CONFLICTING = "DIRTY"
 _ITEM_ID = "bd-ib-overtaken"
 
 
-def _plan(*, repo: Path) -> DispatchPlan:
+def _plan(*, repo: Path, config_text: str = _DECLARED_CONFIG) -> DispatchPlan:
     return build_plan(
         repo=repo,
         work_item_id=_ITEM_ID,
@@ -70,7 +70,7 @@ def _plan(*, repo: Path) -> DispatchPlan:
         fabro_bin="fabro",
         janitor=None,
         janitor_checkout=repo / "janitor-co",
-        config_text=_DECLARED_CONFIG,
+        config_text=config_text,
         default_branch="master",
         fabro_factory_name="hp",
     )
@@ -243,7 +243,49 @@ def test_the_ending_stops_before_the_poll_budget(tmp_path: Path) -> None:
     outcome = _await(repo=tmp_path, runner=runner, attempts=8)
 
     assert isinstance(outcome, DispatchOutcome)
-    assert [argv[:3] for argv in runner.calls] == [["gh", "pr", "view"]] * 2
+    polls = [argv[:3] for argv in runner.calls if argv[:3] == ["gh", "pr", "view"]]
+    assert polls == [["gh", "pr", "view"]] * 2
+
+
+def test_an_overtaken_arming_measures_mixed_conflicted_paths_before_resting(
+    tmp_path: Path,
+) -> None:
+    """A foreign path remains the ordinary needs-human ending after measurement."""
+    runner = _Runner(
+        queue=[
+            _ok(stdout=_pr_json()),
+            _ok(stdout=_pr_json()),
+            _ok(stdout="declared-record.json\nforeign.py\n"),
+        ]
+    )
+    plan = _plan(
+        repo=tmp_path,
+        config_text=(
+            '{"livespec-orchestrator-beads-fabro": {"dispatcher": '
+            '{"record_files": [{"path": "declared-record.json"}]}}}'
+        ),
+    )
+
+    outcome = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=_Journal(),
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=8, interval_seconds=0.0),
+    )
+
+    assert isinstance(outcome, DispatchOutcome)
+    assert outcome.status == "blocked"
+    assert outcome.base_advanced is not None
+    assert runner.calls[-1] == [
+        "git",
+        "merge-tree",
+        "--write-tree",
+        "--name-only",
+        "head1111",
+        "base2222",
+    ]
 
 
 def test_the_ending_reports_exit_code_four(tmp_path: Path) -> None:
