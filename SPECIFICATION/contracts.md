@@ -202,7 +202,22 @@ remembered:
   that carries a held finding, stops the frontier until it is processed
   with every finding filed, and a later merge's
   success MUST NOT advance past it. The pass MUST NOT accept, modify or
-  reject any proposal. When the count of default-branch merges after the
+  reject any proposal. A drift-job run MUST NOT write into the working
+  tree of its `--repo` path. It MUST write the proposals it files in a
+  fresh worktree of the
+  default branch as fetched from the forge at the start of the run, commit
+  them on one `spec/` branch, and publish them as ONE pull request per run,
+  so a machine-filed proposal reaches the default branch only through that
+  pull request's merge. A finding is filed only once that pull request
+  exists: a run whose commit or publication fails MUST treat every finding
+  it wrote as not filed, so the frontier MUST NOT advance past their
+  merges. The already-filed finding identity set MUST include the
+  proposals on every open drift-run pull request, beside the open and
+  archived proposals of the fetched default branch, so a retried run MUST
+  NOT file a second pull request for a finding whose pull request is open
+  or merged. The open count that `dispatcher.drift_proposal_queue_cap`
+  bounds MUST include the drift-origin proposals on open drift-run pull
+  requests. When the count of default-branch merges after the
   frontier is at or past the effective
   `dispatcher.drift_capture_merge_threshold`, the needs-attention snapshot
   MUST still carry a drift-staleness fact naming the merges after the
