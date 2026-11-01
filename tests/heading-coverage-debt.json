@@ -1139,5 +1139,12 @@
     "heading": "## Scenario 291 \u2014 A pod-sandboxed run's spans name the cluster node its pod ran on",
     "work_item": "bd-ib-motuct",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 292 \u2014 A run a server restart cancelled has its still-running Kubernetes sandbox stopped through its provider",
+    "work_item": "bd-ib-lupvil",
+    "first_seen": "2026-11-01"
   }
 ]

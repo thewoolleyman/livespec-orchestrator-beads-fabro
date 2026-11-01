@@ -8019,11 +8019,13 @@ While the run's work-item rests at `blocked` or `needs-human`, the Dispatcher MU
 
 Once the run's work-item is closed, the Dispatcher MUST delete that run's sandbox through its provider's own delete operation, so that the driver record and the node workspace directory are both gone. The Dispatcher MUST NOT remove either one by any route other than that provider operation, because a workspace removed behind the provider leaves a driver record naming a directory that no longer exists. A deletion the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass; it MUST NOT reopen, block or otherwise transition the closed item.
 
-A run whose work-item is at any other status keeps today's behaviour; this subsection neither retains nor collects its sandbox.
+An ended run whose sandbox is still running, for instance because a Fabro server restart cancelled the run before its own end-of-run stop, MUST have that sandbox stopped through its provider's own stop operation by the Dispatcher's next pass, whatever its work-item's status, so that the sandbox's compute is released and the namespace quota it held counts only live runs. Stopping MUST NOT remove the driver record or the node workspace directory; those remain subject to the retention and collection rules above. A stop the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass. A pass finding an ended run's sandbox already stopped MUST record nothing further for it.
+
+A run whose work-item is at any other status keeps today's behaviour; this subsection neither retains nor collects its sandbox, although the stop rule above still applies to it.
 
 Collection MUST be idempotent: a later pass finding a closed item's sandbox already gone MUST record nothing further for it and MUST NOT fail.
 
-Scenario 281 in `scenarios.md` exercises this subsection.
+Scenarios 281 and 292 in `scenarios.md` exercise this subsection.
 
 ### Sandbox test-worker parallelism
 

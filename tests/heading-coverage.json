@@ -2629,5 +2629,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the exercising proof is a host-captured Honeycomb query over spans from a real Kubernetes-backend factory dispatch whose pod ran off the factory host; owned by work-item bd-ib-motuct (run_turn spans), with the step-span half riding livespec-dev-tooling-ipcm33.",
     "work_item": "bd-ib-motuct"
+  },
+  {
+    "heading": "## Scenario 292 \u2014 A run a server restart cancelled has its still-running Kubernetes sandbox stopped through its provider",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal restart-cancelled-runs-sandboxes-are-stopped, and the owning work-item bd-ib-lupvil stops a restart-cancelled run's still-running Kubernetes sandbox through its provider, together with the test that binds this entry.",
+    "work_item": "bd-ib-lupvil"
   }
 ]
