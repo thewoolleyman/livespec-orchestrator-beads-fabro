@@ -1160,5 +1160,12 @@
     "heading": "## Scenario 294 \u2014 A terminated dispatch emits one terminal span with its outcome and one span per attempt",
     "work_item": "bd-ib-welwbc",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 295 \u2014 A run a server restart cancelled has its still-running Kubernetes sandbox stopped through its provider",
+    "work_item": "bd-ib-lupvil",
+    "first_seen": "2026-11-02"
   }
 ]
