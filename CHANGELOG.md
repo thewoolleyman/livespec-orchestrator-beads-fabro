@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.266.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.266.0...v0.266.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* put the vendored runtime on the prose bootstrap's import path ([c74e766](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c74e766171dc44fb38b80c4ac89400b81b4ab6d0))
+
 ## [0.266.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.265.1...v0.266.0) (2026-11-01)
 
 
