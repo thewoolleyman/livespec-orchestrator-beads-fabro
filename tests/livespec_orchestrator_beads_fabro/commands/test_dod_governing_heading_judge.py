@@ -121,6 +121,7 @@ class _Runner:
         self.stdout = stdout
         self.exit_code = exit_code
         self.calls = 0
+        self.environ: dict[str, str] | None = None
 
     def run(
         self,
@@ -132,7 +133,8 @@ class _Runner:
         stdin: int | None = None,
         start_new_session: bool = False,
     ) -> CommandResult:
-        _ = (argv, cwd, timeout_seconds, env, stdin, start_new_session)
+        _ = (argv, cwd, timeout_seconds, stdin, start_new_session)
+        self.environ = env
         self.calls += 1
         return CommandResult(exit_code=self.exit_code, stdout=self.stdout, stderr="")
 
@@ -275,6 +277,24 @@ def test_the_host_reader_puts_the_prompt_to_the_injected_runner(tmp_path: Path) 
     assert runner.calls == 1
     assert verdict is not None
     assert verdict.stated_by == (_GOVERNING,)
+
+
+def test_the_host_reader_labels_the_shared_judge_as_governing_heading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=livespec-family")
+    runner = _Runner(stdout=_VERDICT_REPLY)
+
+    verdict = host_governing_heading_reader(runner=runner)(
+        item=_item(), repo=_repo(tmp_path=tmp_path)
+    )
+
+    assert verdict is not None
+    assert runner.environ is not None
+    assert (
+        runner.environ["OTEL_RESOURCE_ATTRIBUTES"]
+        == "service.namespace=livespec-family,livespec.caller=dod_governing_heading"
+    )
 
 
 def test_a_partial_host_verdict_stops_at_the_primary_candidate(tmp_path: Path) -> None:

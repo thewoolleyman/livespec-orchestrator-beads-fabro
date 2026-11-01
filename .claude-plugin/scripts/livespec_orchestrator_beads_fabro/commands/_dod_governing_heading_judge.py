@@ -143,7 +143,13 @@ def host_governing_heading_reader(*, runner: CommandRunner) -> GoverningHeadingR
 
     def read(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict | None:
         return governing_heading_verdict(
-            item=item, repo=repo, run_model=drift_judge(project_root=repo, runner=runner)
+            item=item,
+            repo=repo,
+            run_model=drift_judge(
+                project_root=repo,
+                runner=runner,
+                caller="dod_governing_heading",
+            ),
         )
 
     return read
