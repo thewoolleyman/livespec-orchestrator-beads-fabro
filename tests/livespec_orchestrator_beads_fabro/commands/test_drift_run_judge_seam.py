@@ -122,7 +122,9 @@ def test_a_prompt_past_the_argv_ceiling_reaches_the_child_on_standard_input(
     prompt = "x" * (_ARGV_ENTRY_CEILING + 1)
     project, payload = _project_root(tmp_path=tmp_path)
 
-    reply = drift_judge(project_root=project, payload_root=payload, runner=runner)(prompt)
+    reply = drift_judge(
+        project_root=project, payload_root=payload, runner=runner, caller="drift_run"
+    )(prompt)
 
     assert reply == '{"kind": "stated"}'
     assert runner.stdin_text == [prompt]
@@ -135,7 +137,9 @@ def test_the_judge_is_invoked_headless_with_no_prompt_argument(tmp_path: Path) -
     runner = _Runner()
     project, payload = _project_root(tmp_path=tmp_path)
 
-    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner, caller="drift_run")(
+        "a prompt"
+    )
 
     argv = runner.argvs[0]
     assert argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
@@ -149,7 +153,9 @@ def test_the_drift_judge_appends_its_caller_to_inherited_resource_attributes(
     runner = _Runner()
     project, payload = _project_root(tmp_path=tmp_path)
 
-    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner, caller="drift_run")(
+        "a prompt"
+    )
 
     assert runner.environs[0] is not None
     assert (
@@ -162,7 +168,12 @@ def test_a_non_zero_exit_answers_the_empty_string(tmp_path: Path) -> None:
     runner = _Runner(exit_code=126, reply="whatever the shell said")
     project, payload = _project_root(tmp_path=tmp_path)
 
-    assert drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt") == ""
+    assert (
+        drift_judge(project_root=project, payload_root=payload, runner=runner, caller="drift_run")(
+            "a prompt"
+        )
+        == ""
+    )
 
 
 @pytest.mark.parametrize(
@@ -183,7 +194,9 @@ def test_the_prompt_file_does_not_outlive_the_call(tmp_path: Path) -> None:
     before = sorted(Path(os.environ.get("TMPDIR", "/tmp")).glob("livespec-drift-judge-*"))
     project, payload = _project_root(tmp_path=tmp_path)
 
-    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner, caller="drift_run")(
+        "a prompt"
+    )
 
     # A 1.36 MB prompt per merge, on a timer firing every ten minutes, is what
     # makes the cleanup a property rather than tidiness.
@@ -205,6 +218,8 @@ def test_a_positive_time_box_is_honoured(tmp_path: Path, monkeypatch: pytest.Mon
     runner = _Runner()
     project, payload = _project_root(tmp_path=tmp_path)
 
-    _ = drift_judge(project_root=project, payload_root=payload, runner=runner)("a prompt")
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner, caller="drift_run")(
+        "a prompt"
+    )
 
     assert runner.timeouts == [12.5]

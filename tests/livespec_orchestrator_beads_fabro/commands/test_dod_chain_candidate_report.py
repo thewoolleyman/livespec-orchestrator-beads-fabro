@@ -145,7 +145,9 @@ def test_a_drift_run_judgement_reports_every_candidate_it_ran_in_order(
             CommandResult(exit_code=0, stdout=_VERDICT_REPLY, stderr=""),
         ]
     )
-    judge = drift_judge(project_root=_repo(tmp_path=tmp_path, fallback=True), runner=runner)
+    judge = drift_judge(
+        project_root=_repo(tmp_path=tmp_path, fallback=True), runner=runner, caller="drift_run"
+    )
 
     reply = judge("one prompt")
 

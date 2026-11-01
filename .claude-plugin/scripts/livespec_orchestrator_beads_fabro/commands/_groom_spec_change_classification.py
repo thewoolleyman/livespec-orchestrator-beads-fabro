@@ -72,6 +72,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = ["classified_candidate_slices"]
 
+_CALLER = "groom_spec_change_classification"
 _FIELD_ABSENT = "(none recorded)"
 # How the draft's own declaration is rendered into the classifier's evidence
 # slot. Self-describing words rather than a boolean, because the prompt renders
@@ -103,8 +104,13 @@ def classified_candidate_slices(
     if tree is None:
         return list(slices)
     judge_runner = runner or ShellCommandRunner()
-    classify_model = drift_judge(project_root=repo, runner=judge_runner, reply="item_class")
-    judge_model = drift_judge(project_root=repo, runner=judge_runner)
+    classify_model = drift_judge(
+        project_root=repo,
+        runner=judge_runner,
+        reply="item_class",
+        caller=_CALLER,
+    )
+    judge_model = drift_judge(project_root=repo, runner=judge_runner, caller=_CALLER)
     return [
         _classified(
             candidate=one, tree=tree, classify_model=classify_model, judge_model=judge_model

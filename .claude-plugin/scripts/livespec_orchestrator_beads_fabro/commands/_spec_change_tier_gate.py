@@ -108,6 +108,8 @@ __all__: list[str] = [
     "classify_spec_change_tier",
 ]
 
+_CALLER = "spec_change_tier_gate"
+
 # The four conditions under which the classification does not run, as
 # self-describing words rather than a shared "unavailable": the record is what
 # an operator reads to find out why the tier is missing, and each of these sends
@@ -171,7 +173,12 @@ def classify_spec_change_tier(
         title=item.title,
         description=item.description,
         item_type=item.type,
-        run_model=drift_judge(project_root=repo, runner=judge_runner, reply="item_class"),
+        run_model=drift_judge(
+            project_root=repo,
+            runner=judge_runner,
+            reply="item_class",
+            caller=_CALLER,
+        ),
     )
     if not is_successful(classification):
         return did_not_run_outcome(
@@ -196,7 +203,7 @@ def classify_spec_change_tier(
     verdict = judge_within_ceiling(
         spec_tree=snapshot.files,
         statement=statement,
-        run_model=drift_judge(project_root=repo, runner=judge_runner),
+        run_model=drift_judge(project_root=repo, runner=judge_runner, caller=_CALLER),
         rubric=CONFIGURATION_RUBRIC,
     )
     if not is_successful(verdict):

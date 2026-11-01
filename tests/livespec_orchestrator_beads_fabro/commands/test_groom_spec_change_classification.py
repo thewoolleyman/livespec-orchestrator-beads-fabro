@@ -148,3 +148,24 @@ def test_an_unreadable_spec_tree_leaves_every_draft_standing(tmp_path: Path) -> 
     classified = classified_candidate_slices(slices=declared, repo=tmp_path / "absent")
     assert [one.is_spec_change for one in classified] == [True, False]
     assert classified == declared
+
+
+def test_the_groom_judgement_labels_its_own_spawn_not_the_drift_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = tmp_path / "seen-attributes"
+    script = tmp_path / "fake-judge"
+    _ = script.write_text(
+        f'#!/bin/sh\necho "$OTEL_RESOURCE_ATTRIBUTES" >> {seen}\necho bug\n', encoding="utf-8"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(script))
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=livespec-family")
+
+    _ = classified_candidate_slices(
+        slices=[_candidate(is_spec_change=True)], repo=_repo(tmp_path=tmp_path)
+    )
+
+    assert seen.read_text(encoding="utf-8").splitlines() == [
+        "service.namespace=livespec-family,livespec.caller=groom_spec_change_classification"
+    ]

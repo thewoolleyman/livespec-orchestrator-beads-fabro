@@ -314,3 +314,27 @@ def test_the_judgement_is_told_a_configuration_bullet_is_not_unratified_behaviou
     assert "configures a behaviour a ratified MAY or SHOULD clause permits" in judged
     assert "is configuration, not asked-for behaviour" in judged
     assert "still unstated" in judged
+
+
+def test_the_tier_gate_labels_its_own_spawns_not_the_drift_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    seen = tmp_path / "seen-attributes"
+    script = tmp_path / "fake-judge"
+    _ = script.write_text(
+        f'#!/bin/sh\necho "$OTEL_RESOURCE_ATTRIBUTES" >> {seen}\necho feature\n',
+        encoding="utf-8",
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(script))
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=livespec-family")
+    append_work_item(path=_config(repo=repo), item=_item())
+
+    _ = classify_item_spec_change_tier(
+        item=_item(), repo=repo, path=_config(repo=repo), stage=STAGE_FILING
+    )
+
+    assert set(seen.read_text(encoding="utf-8").splitlines()) == {
+        "service.namespace=livespec-family,livespec.caller=spec_change_tier_gate"
+    }
