@@ -26,13 +26,17 @@ scenario's dispatch-time sub-scenarios.
 
 from __future__ import annotations
 
+import json
 import stat
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from livespec_orchestrator_beads_fabro import intake_dor
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands import _drive_approve_valve as approve_valve
 from livespec_orchestrator_beads_fabro.commands.drive import run_action
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
@@ -168,6 +172,17 @@ def _route_intake(*, repo: Path) -> str:
     )
 
 
+def _judgement_rows(*, repo: Path) -> list[dict[str, object]]:
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    return [
+        record
+        for record in (
+            json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()
+        )
+        if record["stage"] == "dod-judgement"
+    ]
+
+
 def test_scenario174_intake_holds_an_item_the_judgement_rests_at_needs_human(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -235,3 +250,41 @@ def test_scenario174_the_approve_valve_admits_an_item_the_judgement_passes(
 
     assert result["status"] == "green"
     assert _stored(repo=repo).status == "ready"
+
+
+def test_scenario174_each_pre_admission_taking_journals_candidate_and_input_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Intake and approve leave the same countable judgement account."""
+    repo = _repo(tmp_path=tmp_path)
+    judgement = SimpleNamespace(
+        holds=False,
+        reused=False,
+        deciding_candidate="claude-acp:claude-opus-5",
+        input_tokens=100_001,
+        bound_ended_candidates=(),
+    )
+    monkeypatch.setattr(intake_dor, "judge_item_definition_of_done", lambda **_kwargs: judgement)
+    monkeypatch.setattr(approve_valve, "judge_item_definition_of_done", lambda **_kwargs: judgement)
+
+    assert _route_intake(repo=repo) == "ready"
+    approve_item = _item(id="bd-ib-approve", admission_policy="manual")
+    append_work_item(path=_config(repo=repo), item=approve_item)
+
+    assert run_action(repo=repo, action_id=f"approve:{approve_item.id}")["status"] == "green"
+    assert _judgement_rows(repo=repo) == [
+        {
+            "stage": "dod-judgement",
+            "work_item_id": "bd-ib-174",
+            "judgement_stage": "pre-admission",
+            "candidate": "claude-acp:claude-opus-5",
+            "total_input_tokens": 100_001,
+        },
+        {
+            "stage": "dod-judgement",
+            "work_item_id": "bd-ib-approve",
+            "judgement_stage": "pre-admission",
+            "candidate": "claude-acp:claude-opus-5",
+            "total_input_tokens": 100_001,
+        },
+    ]
