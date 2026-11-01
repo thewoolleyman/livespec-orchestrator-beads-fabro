@@ -56,12 +56,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_varian
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_decision import (
-    DodJudgementDecision,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     held_judgement,
     judge_item_definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_journal import (
+    judgement_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_DISPATCH,
@@ -125,7 +125,11 @@ def dod_judgement_refusal(
         )
         append = getattr(journal, "append", None)
         if append is not None and not decision.reused:
-            append(record=_judgement_journal_record(item_id=item.id, decision=decision))
+            append(
+                record=judgement_journal_record(
+                    item_id=item.id, judgement_stage=STAGE_PRE_DISPATCH, decision=decision
+                )
+            )
         if append is not None and decision.spec_identity is not None:
             append(
                 record=spec_identity_journal_record(
@@ -143,33 +147,6 @@ def dod_judgement_refusal(
                 f" the item.\n{findings}\n"
             )
     return None
-
-
-def _judgement_journal_record(*, item_id: str, decision: DodJudgementDecision) -> dict[str, object]:
-    """The one journal row a host taking leaves for its input-size accounting."""
-    candidate = decision.deciding_candidate
-    input_tokens = decision.input_tokens
-    bound_ended = [
-        {
-            "candidate": ended.candidate,
-            "total_input_tokens": ended.input_tokens,
-        }
-        for ended in decision.bound_ended_candidates
-        if not isinstance(ended, str)
-    ]
-    if candidate is None and bound_ended:
-        candidate = str(bound_ended[-1]["candidate"])
-        input_tokens = int(bound_ended[-1]["total_input_tokens"])
-    record: dict[str, object] = {
-        "stage": "dod-judgement",
-        "work_item_id": item_id,
-        "judgement_stage": STAGE_PRE_DISPATCH,
-        "candidate": candidate,
-        "total_input_tokens": input_tokens,
-    }
-    if bound_ended:
-        record["bound_ended_candidates"] = bound_ended
-    return record
 
 
 def dod_unrefused_candidates(

@@ -30,6 +30,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibili
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     judge_item_definition_of_done,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_journal import (
+    journal_taken_judgement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_ADMISSION,
 )
@@ -91,6 +94,12 @@ def _definition_of_done_refusal(
         return None
     judgement = judge_item_definition_of_done(
         item=item, repo=repo, path=config, stage=STAGE_PRE_ADMISSION
+    )
+    journal_taken_judgement(
+        repo=repo,
+        item_id=item.id,
+        judgement_stage=STAGE_PRE_ADMISSION,
+        decision=judgement,
     )
     if judgement.holds:
         return valve_refusal(

@@ -125,6 +125,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_f
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     judge_item_definition_of_done,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_journal import (
+    journal_taken_judgement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_ADMISSION,
 )
@@ -360,9 +363,7 @@ def apply_intake_dor(
             policy == _AUTO_ADMISSION
             and not findings.withholds_ready
             and spec_change is None
-            and not judge_item_definition_of_done(
-                item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
-            ).holds
+            and _judgement_allows_auto_admission(item=item, repo=repo_root, path=path)
         ):
             status = _READY_STATUS
 
@@ -385,6 +386,20 @@ def apply_intake_dor(
     for body in findings.comment_bodies():
         client.add_comment(issue_id=item_id, body=body)
     return IOSuccess(status)
+
+
+def _judgement_allows_auto_admission(*, item: WorkItem, repo: Path, path: StoreConfig) -> bool:
+    """Take and account for the admission judgement before routing an auto item."""
+    judgement = judge_item_definition_of_done(
+        item=item, repo=repo, path=path, stage=STAGE_PRE_ADMISSION
+    )
+    journal_taken_judgement(
+        repo=repo,
+        item_id=item.id,
+        judgement_stage=STAGE_PRE_ADMISSION,
+        decision=judgement,
+    )
+    return not judgement.holds
 
 
 def file_captured_work_item(
