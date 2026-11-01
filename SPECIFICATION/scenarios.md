@@ -11247,3 +11247,46 @@ Feature: The worker-count resolver sizes test workers from the CPU allowance
     When the worker-count resolver runs
     Then it prints 3
 ```
+
+## Scenario 288 — An absent five-hour window is no five-hour limit, and the seven-day status still governs
+
+```gherkin
+Feature: A provider response with no five-hour window does not idle the factory
+  As an operator running Claude-routed factory nodes
+  I want admission to read an absent five-hour window as no five-hour limit
+  So that the factory is not refused on accounts the provider still serves
+
+  Background:
+    Given dispatcher.session_headroom_floor_percent is 20
+    And an item whose admission-required node's candidate is covered by the admission session-headroom clause
+    And every other admission-valve condition is satisfied
+
+  Scenario: An authenticated 2xx response with no five-hour window qualifies the slot
+    Given the usage request for the only pool slot is answered with a 2xx status
+    And the response carries no five-hour utilization and no five-hour reset instant
+    And the same response reports the seven-day status as allowed
+    When the Dispatcher evaluates admission
+    Then the slot qualifies and the item is admitted with that slot projected
+    And the assessment record names the five-hour window as five-hour-window-absent, not as an unobservable result
+    And the assessment record carries a not-projected projection result with the reason five-hour-window-absent
+
+  Scenario: The seven-day status still governs a slot whose five-hour window is absent
+    Given the usage request for the only pool slot is answered with a 2xx status
+    And the response carries no five-hour window
+    And the same response reports the seven-day status as rejected
+    When the Dispatcher evaluates admission
+    Then the slot is skipped by a seven-day skip
+    And the item stays ready without a claim
+
+  Scenario: A slot with a measured five-hour reading outranks a slot whose window is absent
+    Given slot "ANTHROPIC_0" is answered with a 2xx status carrying no five-hour window
+    And slot "ANTHROPIC_1" reads 10 percent five-hour utilization with a measured projection
+    When the Dispatcher evaluates admission
+    Then slot "ANTHROPIC_1" is projected
+    And the record names "ANTHROPIC_0" as qualifying but ranked lower
+
+  Scenario: A malformed figure or a failed request is still unobservable
+    Given the usage request for the only pool slot is answered with a five-hour figure that is not a number, or is refused with a non-2xx status carrying no five-hour figure, or times out
+    When the Dispatcher evaluates admission
+    Then the reading is journaled as unobservable and the slot is skipped by a floor skip
+```

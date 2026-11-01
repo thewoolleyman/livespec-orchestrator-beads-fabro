@@ -1125,5 +1125,12 @@
     "heading": "## Scenario 290 \u2014 With no projected parallelism the test worker count follows the CPUs the process may use",
     "work_item": "bd-ib-zneh24",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 288 \u2014 An absent five-hour window is no five-hour limit, and the seven-day status still governs",
+    "work_item": "bd-ib-75dpxr",
+    "first_seen": "2026-11-01"
   }
 ]
