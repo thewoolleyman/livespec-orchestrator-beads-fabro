@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.266.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.266.1...v0.266.2) (2026-11-01)
+
+
+### Bug Fixes
+
+* read an absent five-hour window as no five-hour limit ([e7b7eeb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e7b7eebd9444bd84600ffc001b1a574cf43ea5ca))
+
 ## [0.266.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.266.0...v0.266.1) (2026-11-01)
 
 
