@@ -36,6 +36,9 @@ import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro._store_dispatch_workflow import record_dispatch_workflow
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    BoundEndedCandidate,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     DodJudgement,
@@ -50,6 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     judgement_rubric,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall import (
+    dod_judgement_refusal,
     dod_unrefused_candidates,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -251,3 +255,86 @@ def test_an_unresolvable_connection_preserves_the_callers_order(tmp_path: Path) 
     assert (
         dod_unrefused_candidates(items=ranked, repo=_unresolvable_repo(tmp_path=tmp_path)) == ranked
     )
+
+
+def test_a_taken_judgement_appends_its_candidate_and_input_total_to_the_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-dispatch journal makes input-bound frequency measurable."""
+    repo = _connected_repo(tmp_path=tmp_path)
+    item = _item()
+    journal_records: list[dict[str, object]] = []
+
+    class _Journal:
+        def append(self, *, record: dict[str, object]) -> None:
+            journal_records.append(record)
+
+    class _TakenDecision:
+        holds = False
+        reused = False
+        spec_identity = None
+        deciding_candidate = "claude-acp:claude-opus-5"
+        input_tokens = 99_999
+        bound_ended_candidates: tuple[object, ...] = ()
+
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall.judge_item_definition_of_done",
+        lambda **_kwargs: _TakenDecision(),
+    )
+
+    assert dod_judgement_refusal(repo=repo, items=(item,), journal=_Journal()) is None
+    assert journal_records == [
+        {
+            "stage": "dod-judgement",
+            "work_item_id": item.id,
+            "judgement_stage": STAGE_PRE_DISPATCH,
+            "candidate": "claude-acp:claude-opus-5",
+            "total_input_tokens": 99_999,
+        }
+    ]
+
+
+def test_an_input_limited_judgement_journals_its_bound_ended_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A did-not-run taking still makes the candidate and measured size countable."""
+    repo = _connected_repo(tmp_path=tmp_path)
+    item = _item()
+    journal_records: list[dict[str, object]] = []
+
+    class _Journal:
+        def append(self, *, record: dict[str, object]) -> None:
+            journal_records.append(record)
+
+    class _BoundEndedDecision:
+        holds = False
+        reused = False
+        spec_identity = None
+        deciding_candidate = None
+        input_tokens = None
+        bound_ended_candidates = (
+            BoundEndedCandidate(
+                candidate="claude-acp:claude-opus-5",
+                input_tokens=100_001,
+                input_usage="complete",
+            ),
+        )
+
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall.judge_item_definition_of_done",
+        lambda **_kwargs: _BoundEndedDecision(),
+    )
+
+    assert dod_judgement_refusal(repo=repo, items=(item,), journal=_Journal()) is None
+    assert journal_records == [
+        {
+            "stage": "dod-judgement",
+            "work_item_id": item.id,
+            "judgement_stage": STAGE_PRE_DISPATCH,
+            "candidate": "claude-acp:claude-opus-5",
+            "total_input_tokens": 100_001,
+            "bound_ended_candidates": [
+                {"candidate": "claude-acp:claude-opus-5", "total_input_tokens": 100_001}
+            ],
+        }
+    ]

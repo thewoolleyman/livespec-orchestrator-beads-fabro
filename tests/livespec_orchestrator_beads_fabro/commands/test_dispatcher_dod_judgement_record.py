@@ -17,6 +17,8 @@ that is running fine.
 
 from __future__ import annotations
 
+from typing import cast
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_ADMITTED,
     JUDGEMENT_HELD,
@@ -164,6 +166,25 @@ def test_a_chainless_verdict_comment_lists_every_bound_ended_candidate() -> None
     # No candidate decided it, so the record must claim none.
     assert "deciding-candidate: " not in comment
     assert "deciding-candidate-input-tokens: " not in comment
+
+
+def test_an_input_limited_did_not_run_record_names_each_candidate_s_measurement() -> None:
+    """A bound-ended candidate carries its own measured total and governing bound."""
+    body = did_not_run_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_DISPATCH,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        cause=CAUSE_INPUT_LIMIT,
+        bound_ended_candidates=cast(
+            "tuple[str, ...]", (("claude-acp:claude-sonnet-5-5", 140_000, "complete"),)
+        ),
+    )
+
+    assert "bound-ended-candidate: claude-acp:claude-sonnet-5-5" in body
+    assert "bound-ended-candidate-input-tokens: 140000" in body
+    assert "bound-ended-candidate-input-usage: complete" in body
+    assert "host-judgement-input-limit: 100000" in body
 
 
 def test_a_verdict_taken_against_different_bytes_is_not_reused() -> None:

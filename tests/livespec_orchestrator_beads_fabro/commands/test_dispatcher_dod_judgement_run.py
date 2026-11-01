@@ -38,6 +38,9 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    BoundEndedCandidate,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     CAUSE_UNPARSEABLE_VERDICT,
     JUDGEMENT_ADMITTED,
@@ -427,7 +430,13 @@ def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decid
     assert verdict.findings == ("the fallback decided",)
     assert verdict.input_tokens == 99999
     assert verdict.input_usage == "complete"
-    assert verdict.bound_ended_candidates == ("codex-acp:gpt-5.6-terra",)
+    assert verdict.bound_ended_candidates == (
+        BoundEndedCandidate(
+            candidate="codex-acp:gpt-5.6-terra",
+            input_tokens=100_000,
+            input_usage="complete",
+        ),
+    )
     assert runner.calls[0][0] == "codex"
     assert runner.calls[1][1:3] == ["-p", "--model"]
     assert runner.calls[1][runner.calls[1].index("--tools") + 1] == ""

@@ -48,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    BoundEndedCandidate,
     CandidateAttempt,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
@@ -131,7 +132,7 @@ class DodJudgement:
     deciding_candidate: str | None = None
     input_tokens: int | None = None
     input_usage: str = "unreported"
-    bound_ended_candidates: tuple[str, ...] = ()
+    bound_ended_candidates: tuple[str | BoundEndedCandidate, ...] = ()
     attempts: tuple[CandidateAttempt, ...] = ()
 
     @property

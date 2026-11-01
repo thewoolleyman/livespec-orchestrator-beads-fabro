@@ -19,6 +19,9 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_dod_judgement_run as judgement_module,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    BoundEndedCandidate,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_UNAVAILABLE,
 )
@@ -27,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_DISPATCH,
+    did_not_run_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     dod_gate_prompt_path,
@@ -224,3 +228,24 @@ def test_a_chain_that_ran_no_candidate_says_so_on_standard_error_and_in_the_reco
     assert len(reports) == 1
     assert "cause no-eligible-model" in reports[0]
     assert "no candidate ran" in reports[0]
+
+
+def test_an_input_limited_candidate_records_the_measured_input_that_ended_it() -> None:
+    """A bound-ended candidate remains measured when no verdict can be taken."""
+    body = did_not_run_comment(
+        item_id="bd-ib-tfu2gj",
+        stage=STAGE_PRE_DISPATCH,
+        digest="a" * 64,
+        rubric_digest="b" * 64,
+        cause="input-limit-reached",
+        bound_ended_candidates=(
+            BoundEndedCandidate(
+                candidate="claude-acp:claude-opus-5",
+                input_tokens=100_001,
+                input_usage="complete",
+            ),
+        ),
+    )
+
+    assert "bound-ended-candidate-input-tokens: 100001" in body
+    assert "host-judgement-input-limit: 100000" in body

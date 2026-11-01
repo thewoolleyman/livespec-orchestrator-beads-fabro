@@ -42,6 +42,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    BoundEndedCandidate,
     CandidateAttempt,
     candidate_record_lines,
     unavailable_record_lines,
@@ -286,7 +287,7 @@ def did_not_run_comment(  # noqa: PLR0913 - each argument is one field of the re
     digest: str,
     rubric_digest: str,
     cause: str,
-    bound_ended_candidates: Sequence[str] = (),
+    bound_ended_candidates: Sequence[str | BoundEndedCandidate] = (),
     attempts: Sequence[CandidateAttempt] = (),
 ) -> str:
     """The ledger comment recording that the judgement did not run, why, and who ran.

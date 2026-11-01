@@ -16,6 +16,7 @@ __all__: list[str] = [
     "CANDIDATE_FIELD",
     "ENDER_FIELD",
     "OUTCOME_VERDICT",
+    "BoundEndedCandidate",
     "CandidateAttempt",
     "candidate_record_lines",
     "candidate_report",
@@ -55,6 +56,15 @@ class CandidateAttempt:
             f"agent={self.agent} model={self.model} "
             f"exit-code={self.exit_code} outcome={self.outcome}"
         )
+
+
+@dataclass(frozen=True, kw_only=True)
+class BoundEndedCandidate:
+    """One candidate the host input bound ended, with its last measured input."""
+
+    candidate: str
+    input_tokens: int
+    input_usage: str
 
 
 def candidate_record_lines(*, attempts: Sequence[CandidateAttempt]) -> list[str]:

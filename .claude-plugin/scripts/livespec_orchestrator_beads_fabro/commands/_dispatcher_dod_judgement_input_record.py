@@ -36,7 +36,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    BoundEndedCandidate,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import DodJudgement
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage import (
+    HOST_JUDGEMENT_INPUT_LIMIT,
+)
 
 __all__: list[str] = [
     "BOUND_ENDED_CANDIDATE_FIELD",
@@ -48,6 +54,9 @@ _DECIDING_CANDIDATE_FIELD = "deciding-candidate"
 _DECIDING_INPUT_TOKENS_FIELD = "deciding-candidate-input-tokens"
 _DECIDING_INPUT_USAGE_FIELD = "deciding-candidate-input-usage"
 BOUND_ENDED_CANDIDATE_FIELD = "bound-ended-candidate"
+_BOUND_ENDED_INPUT_TOKENS_FIELD = "bound-ended-candidate-input-tokens"
+_BOUND_ENDED_INPUT_USAGE_FIELD = "bound-ended-candidate-input-usage"
+_HOST_INPUT_LIMIT_FIELD = "host-judgement-input-limit"
 _FIELD_SEPARATOR = ": "
 
 
@@ -63,13 +72,32 @@ def input_usage_lines(*, judgement: DodJudgement) -> list[str]:
     return lines
 
 
-def bound_ended_lines(*, candidates: Sequence[str]) -> list[str]:
+def bound_ended_lines(
+    *, candidates: Sequence[str | BoundEndedCandidate | tuple[str, int, str]]
+) -> list[str]:
     """One record line per candidate the input bound ended, in chain order.
 
     Shared by the taken-verdict record and the did-not-run record, because a
     chain the bound exhausted returns no verdict and its only record is the
     second one.
     """
-    return [
-        f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}" for candidate in candidates
-    ]
+    lines: list[str] = []
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            lines.append(f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}")
+            continue
+        if isinstance(candidate, BoundEndedCandidate):
+            measured = candidate
+        else:
+            measured = BoundEndedCandidate(
+                candidate=candidate[0], input_tokens=candidate[1], input_usage=candidate[2]
+            )
+        lines.extend(
+            (
+                f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{measured.candidate}",
+                f"{_BOUND_ENDED_INPUT_TOKENS_FIELD}{_FIELD_SEPARATOR}{measured.input_tokens}",
+                f"{_BOUND_ENDED_INPUT_USAGE_FIELD}{_FIELD_SEPARATOR}{measured.input_usage}",
+                f"{_HOST_INPUT_LIMIT_FIELD}{_FIELD_SEPARATOR}{HOST_JUDGEMENT_INPUT_LIMIT}",
+            )
+        )
+    return lines

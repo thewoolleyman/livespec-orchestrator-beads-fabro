@@ -16,10 +16,11 @@ import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
     OUTCOME_VERDICT,
+    BoundEndedCandidate,
     CandidateAttempt,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
@@ -90,7 +91,7 @@ class CandidateChainResult:
     cause: str
     deciding_candidate: str | None = None
     usage: CandidateInputUsage | None = None
-    bound_ended_candidates: tuple[str, ...] = ()
+    bound_ended_candidates: tuple[BoundEndedCandidate, ...] = ()
     attempts: tuple[CandidateAttempt, ...] = ()
 
     def __iter__(self) -> Iterator[str | None]:
@@ -153,7 +154,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
         else timeout_seconds
     )
     last_cause = CAUSE_NO_ELIGIBLE_MODEL
-    bound_ended: list[str] = []
+    bound_ended: list[BoundEndedCandidate] = []
     attempts: list[CandidateAttempt] = []
     for candidate in resolved:
         attempt = _run_candidate(
@@ -178,7 +179,14 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
             )
         )
         if outcome == CAUSE_INPUT_LIMIT:
-            bound_ended.append(candidate_label(candidate=candidate))
+            input_tokens = cast("int", attempt.usage.total_tokens)
+            bound_ended.append(
+                BoundEndedCandidate(
+                    candidate=candidate_label(candidate=candidate),
+                    input_tokens=input_tokens,
+                    input_usage=attempt.usage.status,
+                )
+            )
         if outcome == OUTCOME_VERDICT:
             return CandidateChainResult(
                 reply=reply,

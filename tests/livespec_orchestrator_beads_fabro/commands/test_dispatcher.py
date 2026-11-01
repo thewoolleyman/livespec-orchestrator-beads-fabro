@@ -4421,6 +4421,9 @@ def test_dispatch_green_closes_item_and_journals(
         # silence -- the record is non-blocking and the dispatch runs to `green`
         # with it present.
         "dispatcher-fabro-currency-unevaluated",
+        # A fresh host Definition-of-Done judgement records the candidate and
+        # its input measurement before the remaining dispatch gates run.
+        "dod-judgement",
         # The pre-dispatch proof-assets gate (S5 / bd-ib-b4u6b7), between the
         # reconcile pass and admission: it runs BEFORE the claim so a refused item
         # is never claimed. This fixture has no forge, so the record it writes is

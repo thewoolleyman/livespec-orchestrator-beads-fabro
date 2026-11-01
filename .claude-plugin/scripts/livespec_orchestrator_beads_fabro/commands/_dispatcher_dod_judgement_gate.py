@@ -24,13 +24,15 @@ a listing into a fleet of model calls.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro._store_dod_judgement_marker import (
     mark_work_item_dod_judgement_recorded,
     stamp_judged_if_able,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    BoundEndedCandidate,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
     governing_heading_subject_digest,
@@ -40,12 +42,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
-    first_remedy,
     judgement_subject_digest,
     rubric_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_decision import (
+    DodJudgementDecision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     GoverningHeadingReceipt,
@@ -61,7 +65,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    SpecIdentity,
     spec_identity_for_governing,
     whole_tree_identity,
 )
@@ -96,32 +99,6 @@ __all__: list[str] = [
 # stopped: a digest-shaped placeholder would read as a rubric that exists, and an
 # empty field as a field the writer forgot.
 UNREADABLE_RUBRIC_DIGEST = "unreadable"
-
-
-@dataclass(frozen=True, kw_only=True)
-class DodJudgementDecision:
-    """What one call site learned, and whether anything was spent learning it.
-
-    `reused` is reported rather than inferred from `findings`, because a reused
-    verdict and a freshly-taken identical one are indistinguishable by outcome —
-    and the two caps the clause states are about the SPEND, not the answer.
-    """
-
-    work_item_id: str
-    outcome: str
-    findings: tuple[str, ...] = ()
-    reused: bool = False
-    spec_identity: SpecIdentity | None = None
-
-    @property
-    def holds(self) -> bool:
-        """Whether this decision rests the item at needs-human."""
-        return self.outcome == JUDGEMENT_HELD
-
-    @property
-    def first_remedy(self) -> str | None:
-        """The remedy a refusal and a hygiene fact name."""
-        return first_remedy(findings=self.findings)
 
 
 def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent seam input.
@@ -256,6 +233,9 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         outcome=verdict.outcome,
         findings=verdict.findings,
         spec_identity=identity,
+        deciding_candidate=verdict.deciding_candidate,
+        input_tokens=verdict.input_tokens,
+        bound_ended_candidates=verdict.bound_ended_candidates,
     )
 
 
@@ -355,7 +335,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     cause: str | None,
     comments: Sequence[str],
     append: Callable[..., None],
-    bound_ended_candidates: Sequence[str] = (),
+    bound_ended_candidates: Sequence[str | BoundEndedCandidate] = (),
     attempts: Sequence[CandidateAttempt] = (),
 ) -> DodJudgementDecision:
     """Record that the judgement did not run, unless this cause already stands.
@@ -382,4 +362,8 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
                 attempts=attempts,
             )
         )
-    return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
+    return DodJudgementDecision(
+        work_item_id=item.id,
+        outcome=JUDGEMENT_UNAVAILABLE,
+        bound_ended_candidates=tuple(bound_ended_candidates),
+    )
