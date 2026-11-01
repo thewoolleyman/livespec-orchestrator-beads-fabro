@@ -10,20 +10,25 @@ from __future__ import annotations
 
 import socket
 import threading
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._session_telemetry_events import (
+    SessionEvent,
     session_event,
     trace_parent_from_environ,
 )
 from livespec_orchestrator_beads_fabro.commands._session_telemetry_export import (
     ENDPOINT_ENV,
+    PostOutcome,
     SessionTelemetry,
+    config_from_environ,
     http_post,
 )
+
+# The poll that can only happen after an idle one: event, then empty, then this.
+_IDLE_PROOF_POLLS = 3
 
 
 @contextmanager
@@ -81,17 +86,47 @@ def test_an_accepting_answer_without_a_usable_rejection_count_rejects_nothing(
 
 def test_the_default_report_goes_to_stderr_and_an_idle_worker_keeps_polling(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     unset = SessionTelemetry.from_environ(environ={})
     _ = unset.close()
     assert "local-only" in capsys.readouterr().err
 
     with _answering_server(status=200, body=b"{}") as url:
-        telemetry = SessionTelemetry.from_environ(environ={ENDPOINT_ENV: url})
+        posted = threading.Event()
+
+        def observed_post(*, url: str, body: bytes, timeout_seconds: float) -> PostOutcome:
+            outcome = http_post(url=url, body=body, timeout_seconds=timeout_seconds)
+            posted.set()
+            return outcome
+
+        # The worker's THIRD batch poll proves it polled once idle and kept
+        # going: the first poll takes the one event, the second finds the queue
+        # empty with no stop requested, and only a worker that keeps polling
+        # makes a third. Waiting on that event, rather than sleeping and hoping
+        # the worker idled meanwhile, is what keeps a loaded host from deciding
+        # either the verdict or which branch the run exercised.
+        polls: list[None] = []
+        third_poll = threading.Event()
+        next_batch = SessionTelemetry._next_batch  # noqa: SLF001
+
+        def counted_next_batch(self: SessionTelemetry) -> list[SessionEvent]:
+            polls.append(None)
+            if len(polls) == _IDLE_PROOF_POLLS:
+                third_poll.set()
+            return next_batch(self)
+
+        monkeypatch.setattr(SessionTelemetry, "_next_batch", counted_next_batch)
+        telemetry = SessionTelemetry(
+            config=config_from_environ(environ={ENDPOINT_ENV: url}), post=observed_post
+        )
         telemetry.emit(
             event=session_event(name="session.wait.armed", at=1.0, trace_key="k", attributes={})
         )
-        time.sleep(0.2)
+        # Closed only once the delivery has landed and the worker has idled, so
+        # the export is decided by events. The timeouts are hang guards only.
+        assert posted.wait(timeout=30.0), "the export was never posted"
+        assert third_poll.wait(timeout=30.0), "the idle worker stopped polling"
         report = telemetry.close()
 
     assert report.exported == 1

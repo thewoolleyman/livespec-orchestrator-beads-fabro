@@ -6,7 +6,7 @@ ever controlling liveness, and that export outage, partial rejection and queue
 saturation are visible locally and never recursive. Inspecting an emit file
 proves none of that, so these tests drive the real exporter against real
 sockets: a real `OtelReceiver` is the positive control that delivery works at
-all, and a listener that accepts and never answers is the blocked-exporter
+all, and an export held open until the test releases it is the blocked-exporter
 control that nothing waits on delivery.
 """
 
@@ -80,6 +80,11 @@ def _event(
     )
 
 
+# A hang guard only: every wait below ends on its event long before this, and a
+# loaded host stretches the event, never the verdict.
+_HANG_GUARD_SECONDS = 30.0
+
+
 def _config(*, url: str, queue_limit: int = 64, batch_limit: int = 16) -> TelemetryConfig:
     return TelemetryConfig(
         state=STATE_CONFIGURED,
@@ -98,17 +103,6 @@ def _values(*, span: dict[str, object]) -> dict[str, dict[str, object]]:
         cast("str", entry["key"]): cast("dict[str, object]", entry["value"])
         for entry in cast("list[dict[str, object]]", span["attributes"])
     }
-
-
-@contextmanager
-def _hanging_listener() -> Iterator[int]:
-    listener = socket.socket()
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(8)
-    try:
-        yield int(listener.getsockname()[1])
-    finally:
-        listener.close()
 
 
 def _refused_port() -> int:
@@ -253,22 +247,42 @@ def test_a_real_receiver_delivers_the_typed_scrubbed_event(tmp_path: Path) -> No
 
 
 def test_a_blocked_exporter_never_delays_emit_and_close_is_bounded() -> None:
-    reports = _Reports()
-    with _hanging_listener() as port:
-        telemetry = SessionTelemetry(
-            config=_config(url=f"http://127.0.0.1:{port}/v1/traces"), reporter=reports
-        )
-        started = time.monotonic()
-        for _ in range(3):
-            telemetry.emit(event=_event())
-        emit_seconds = time.monotonic() - started
-        time.sleep(0.1)
-        closing = time.monotonic()
-        report = telemetry.close()
-        close_seconds = time.monotonic() - closing
+    """Emit and close both return while the export they started is still blocked.
 
-    assert emit_seconds < 0.1
-    assert close_seconds < 1.0
+    The bound is an ORDERING, not a stopwatch: the post is held until the test
+    releases it, so an emit that waited on the export, or a close that waited
+    for it rather than abandoning it after its shutdown allowance, could only
+    return after the release. The hold's own timeout is a hang guard, far
+    longer than any healthy return, and never the bound under test.
+    """
+    entered = threading.Event()
+    release = threading.Event()
+    post_returned = threading.Event()
+
+    def blocked_post(*, url: str, body: bytes, timeout_seconds: float) -> PostOutcome:
+        del url, body, timeout_seconds
+        entered.set()
+        _ = release.wait(timeout=_HANG_GUARD_SECONDS)
+        post_returned.set()
+        return PostOutcome(delivered=False)
+
+    reports = _Reports()
+    telemetry = SessionTelemetry(
+        config=_config(url="http://127.0.0.1:1/v1/traces"), post=blocked_post, reporter=reports
+    )
+    for _ in range(3):
+        telemetry.emit(event=_event())
+    emits_returned_while_blocked = not post_returned.is_set()
+    assert entered.wait(timeout=_HANG_GUARD_SECONDS), "the export never started"
+    report = telemetry.close()
+    close_returned_while_blocked = not post_returned.is_set()
+    release.set()
+    # The abandoned post still finishes once released; waiting for it keeps the
+    # worker from outliving the case. A hang guard, never the verdict.
+    assert post_returned.wait(timeout=_HANG_GUARD_SECONDS)
+
+    assert emits_returned_while_blocked
+    assert close_returned_while_blocked
     assert report.abandoned >= 1
     assert report.exported == 0
     assert len(reports.lines) == 1
@@ -317,13 +331,15 @@ def test_a_partially_rejecting_receiver_is_counted_rejected() -> None:
 def test_queue_saturation_drops_without_blocking_and_the_count_rides_later_events() -> None:
     entered = threading.Event()
     release = threading.Event()
+    returned = threading.Event()
     bodies: list[bytes] = []
 
     def gated_post(*, url: str, body: bytes, timeout_seconds: float) -> PostOutcome:
         del url, timeout_seconds
         bodies.append(body)
         entered.set()
-        _ = release.wait(timeout=5.0)
+        _ = release.wait(timeout=_HANG_GUARD_SECONDS)
+        returned.set()
         return PostOutcome(delivered=True)
 
     reports = _Reports()
@@ -333,13 +349,14 @@ def test_queue_saturation_drops_without_blocking_and_the_count_rides_later_event
         reporter=reports,
     )
     telemetry.emit(event=_event())
-    assert entered.wait(timeout=2.0)
-    started = time.monotonic()
+    assert entered.wait(timeout=_HANG_GUARD_SECONDS)
     for _ in range(10):
         telemetry.emit(event=_event())
-    assert time.monotonic() - started < 0.2
+    # Every emit returned while the export is still held, so none of them
+    # blocked on the full queue: a blocking put could only return after the post.
+    assert not returned.is_set()
     release.set()
-    deadline = time.monotonic() + 2.0
+    deadline = time.monotonic() + _HANG_GUARD_SECONDS
     while len(bodies) < 3 and time.monotonic() < deadline:
         time.sleep(0.01)
     telemetry.emit(event=_event(name="session.wait.returned"))
