@@ -8411,7 +8411,7 @@ Feature: Implementation that outruns the specification is caught at every merge
   Scenario: The pass never accepts a proposal
     Given a drift-origin proposed change filed by the pass
     When the pass completes
-    Then the proposal rests under proposed_changes for revise and the pass takes no decision on it
+    Then the proposal rests under proposed_changes on the run's pull request for revise and the pass takes no decision on it
 
   Scenario: A reconcile pass runs no drift pass
     Given default-branch merges after the recorded drift frontier
@@ -8426,6 +8426,18 @@ Feature: Implementation that outruns the specification is caught at every merge
     When dispatcher.py drift-run --dry-run runs instead
     Then no drift pass runs and no model judgement is invoked
     And the drift frontier and the detection-coverage anchor are unchanged
+
+  Scenario: A filed proposal reaches the default branch only through a pull request
+    Given one default-branch merge after the frontier whose diff adds a behaviour the spec-stated judgement reports unstated
+    When dispatcher.py drift-run runs against the repository's primary checkout
+    Then one pull request on a spec branch carries the drift-origin proposal
+    And git status --short in the primary checkout reports no file under SPECIFICATION/proposed_changes/
+
+  Scenario: A retried run files no second pull request for an open or merged finding
+    Given a drift-origin proposal whose pull request is open or merged under its finding identity
+    When the drift job processes the merge again
+    Then no second pull request is opened for that finding
+    And the open drift-run pull request's proposals count toward dispatcher.drift_proposal_queue_cap
 
   Scenario: A merge already judged against the same spec revision is not judged again
     Given a merge after the frontier that a drift-job run judged against ratified spec revision vN
