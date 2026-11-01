@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.267.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.267.0...v0.267.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* preserve runner failed targets in replay ([9fbfe0e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9fbfe0ea5a61d1ed77b8b8ff1140d5d6ce364e01))
+* retain terminal runner hook refusals ([ad634de](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ad634de819215d56c0d3367cf2fc226df1ff79eb))
+
 ## [0.267.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.266.2...v0.267.0) (2026-11-01)
 
 
