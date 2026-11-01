@@ -22,6 +22,7 @@ from __future__ import annotations
 import importlib
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -879,8 +880,10 @@ _INSPECT_CEILING = 8
 class _ConcurrentReader:
     """A reader that measures how many `inspect` reads are in flight at once.
 
-    Every read waits (briefly) for the in-flight count to reach the ceiling, so
-    a sequential scan never gets there and a bounded concurrent one always does.
+    No read may return before the in-flight count reaches the ceiling. This
+    makes the assertion about ordering rather than a short wall-clock race:
+    a bounded concurrent scan releases all of its first eight reads together,
+    while a sequential scan exhausts the deliberately generous deadlock bound.
     """
 
     rows: tuple[Any, ...]
@@ -889,6 +892,7 @@ class _ConcurrentReader:
     in_flight: int = 0
     peak: int = 0
     saturated: threading.Event = field(default_factory=threading.Event)
+    timed_out: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def list_runs(self, *, factory: str) -> tuple[Any, ...] | None:
@@ -896,12 +900,17 @@ class _ConcurrentReader:
 
     def inspect_payload(self, *, factory: str, run_id: str) -> object | None:
         assert factory == "hp"
+        if self.timed_out.is_set():
+            return None if run_id in self.unreadable else self.payloads[run_id]
         with self.lock:
             self.in_flight += 1
             self.peak = max(self.peak, self.in_flight)
             if self.in_flight >= _INSPECT_CEILING:
                 self.saturated.set()
-        self.saturated.wait(timeout=0.3)
+        saturated = self.saturated.wait(timeout=20)
+        if not saturated:
+            self.timed_out.set()
+        assert saturated, "the scan must start eight inspect reads before one may return"
         with self.lock:
             self.in_flight -= 1
         return None if run_id in self.unreadable else self.payloads[run_id]
@@ -918,16 +927,24 @@ def _concurrent_reader(*, unreadable: frozenset[str] = frozenset()) -> _Concurre
 
 def test_the_per_run_inspect_reads_are_issued_concurrently_at_most_eight_at_a_time(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The scan overlaps its per-run reads, bounded at eight in flight.
 
     Twelve in-window failed runs are listed. A reader that gates each read on
     eight being in flight at once can only be satisfied by a scan that issues
-    them together, and its peak can never pass the ceiling.
+    them together. The worker bound rejects a larger pool; the reader's peak
+    proves all eight workers actually reached the gate.
     """
     module = _module()
     reader = _concurrent_reader()
 
+    def bounded_executor(*, max_workers: int) -> ThreadPoolExecutor:
+        """Reject an executor that could start more than eight reads at once."""
+        assert max_workers <= _INSPECT_CEILING, "inspect worker cap exceeded"
+        return ThreadPoolExecutor(max_workers=max_workers)
+
+    monkeypatch.setattr(module, "ThreadPoolExecutor", bounded_executor)
     evidence = module.factory_hold_evidence(
         repo=_repo(tmp_path=tmp_path), reader=reader, now_iso=_NOW
     )
