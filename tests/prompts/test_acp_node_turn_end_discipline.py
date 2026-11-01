@@ -72,18 +72,25 @@ def _acp_prompt_files() -> tuple[str, ...]:
 
 
 _ACP_PROMPT_FILES = _acp_prompt_files()
+# Red and Green are deliberately shipped before their graph wiring so separate
+# work can introduce the nodes without coupling it to the prompt contract.
+# They are not ACP-node prompts yet and therefore do not carry this suite's
+# turn-end section; keep that bounded exception explicit so a truly orphaned
+# prompt still fails the inventory control.
+_PENDING_GRAPH_PROMPT_FILES = ("green.md", "red.md")
 
 
 def _prompt_text(*, name: str) -> str:
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
-def test_the_graph_scan_reaches_every_prompt_file_in_the_bundle() -> None:
-    """Control: the derivation can return a hit for each prompt, and finds them all."""
+def test_the_graph_scan_reaches_every_active_prompt_file_in_the_bundle() -> None:
+    """Control: the scan reaches every active prompt; pending nodes are explicit."""
     on_disk = sorted(path.name for path in _PROMPTS_DIR.glob("*.md"))
+    accounted_for = sorted((*_ACP_PROMPT_FILES, *_PENDING_GRAPH_PROMPT_FILES))
 
     assert on_disk, f"no prompt files found under {_PROMPTS_DIR}"
-    assert sorted(_ACP_PROMPT_FILES) == on_disk
+    assert accounted_for == on_disk
     assert len(set(_ACP_PROMPT_FILES)) == len(_ACP_PROMPT_FILES)
 
 
