@@ -1953,7 +1953,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_implement_completion_field_scenario204",
-    "reason": "Integration-tier acceptance for this heading, completed by bd-ib-ahxcjx. The module binds all three sub-scenarios of the v165 completion-field rule, and the tier is tests.integration because two layers are needed and neither establishes the other: the committed graph decides where an incomplete turn routes and what the implement stage's completion gate costs, and the gate's own shipped script bytes decide what counts as a stated completion. The three sub-scenarios execute those bytes against a real throwaway clone -- a stated incomplete and a stated nothing each exit non-zero with the partial-progress cause on stderr and in the stage-cause file the needs_human terminal renders, and a stated complete exits zero and leaves no cause behind -- while the graph cases assert the gate sits on implement's own fallthrough ahead of the diff breaker and routes its failures to the terminal an outcome=failed implement reaches. The prompt half of the clause, which directs the turn to state the field at all, is tests.prompts.test_implement_completion_field. The v208 hook-refusal sub-scenarios (re-entry, exhausted budget, nothing staged, staged-but-accepted) are bound by tests.integration.test_implement_hook_refusal_reentry_scenario204, which executes the implement_hook_route script against a clone with a stub pre-commit hook (bd-ib-y7372n)."
+    "reason": "Integration-tier acceptance for this heading, completed by bd-ib-ahxcjx. The module binds all three sub-scenarios of the v165 completion-field rule, and the tier is tests.integration because two layers are needed and neither establishes the other: the committed graph decides where an incomplete turn routes and what the implement stage's completion gate costs, and the gate's own shipped script bytes decide what counts as a stated completion. The three sub-scenarios execute those bytes against a real throwaway clone -- a stated incomplete and a stated nothing each exit non-zero with the partial-progress cause on stderr and in the stage-cause file the needs_human terminal renders, and a stated complete exits zero and leaves no cause behind -- while the graph cases assert the gate sits on implement's own fallthrough ahead of the diff breaker and routes its failures to the terminal an outcome=failed implement reaches. The prompt half of the clause, which directs the turn to state the field at all, is tests.prompts.test_implement_completion_field. The v208 hook-refusal sub-scenarios (re-entry, exhausted budget, nothing staged, staged-but-accepted) are bound by tests.integration.test_implement_hook_refusal_reentry_scenario204, which executes the implement_hook_route script against a clone with a stub pre-commit hook (bd-ib-y7372n). v262 (proposal implement-red-green-node-split) rewrote this scenario for the red/green node split; rebinding its test to the new nodes is owed at the integration tier: livespec-dev-tooling-sv6m5p (plan implement-test-performance) owns it; the implementation children are filed under that plan."
   },
   {
     "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
@@ -2451,7 +2451,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal an-item-whose-factory-captured, and the owning work-item bd-ib-mvws23 ends a complete no-diff implement turn as already satisfied instead of dead_implementer, together with the test that binds this entry.",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal an-item-whose-factory-captured, and the owning work-item bd-ib-mvws23 ends a complete no-diff implement turn as already satisfied instead of dead_implementer, together with the test that binds this entry. v262 (proposal implement-red-green-node-split) rewrote this scenario for the red/green node split; rebinding its test to the new nodes is owed at the integration tier: livespec-dev-tooling-sv6m5p (plan implement-test-performance) owns it; the implementation children are filed under that plan.",
     "work_item": "bd-ib-mvws23"
   },
   {
@@ -2589,5 +2589,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal ended-runs-kubernetes-sandboxes-are, and the owning work-item bd-ib-u5facl retains an ended run's Kubernetes sandbox while its item awaits a human and deletes it through its provider once the item closes, together with the test that binds this entry.",
     "work_item": "bd-ib-u5facl"
+  },
+  {
+    "heading": "## Scenario 285 \u2014 Red and Green run as separate nodes and every implement commit is made by a command node",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal implement-red-green-node-split (v262); livespec-dev-tooling-sv6m5p (plan implement-test-performance) owns it; the implementation children are filed under that plan.",
+    "work_item": "livespec-dev-tooling-sv6m5p"
   }
 ]

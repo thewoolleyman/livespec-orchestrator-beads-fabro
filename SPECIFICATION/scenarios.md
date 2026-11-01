@@ -6727,7 +6727,7 @@ Feature: A factory agent's commit leg is not bounded by one tool call
   So that a loaded factory host does not turn a verified change into a lost run
 
   Scenario: A Green amend whose hook outlasts one tool call completes
-    Given an implement-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
+    Given a review_fix-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
     When the agent starts the amend through the sandbox commit runner and repeats bounded waits in later tool calls
     Then the amend completes with the hook's own verdict
     And the resulting commit carries every trailer the hook wrote
@@ -6740,7 +6740,7 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     And HEAD is unchanged
 
   Scenario: A needs-human ending after a hook-refused commit names the hook's recorded verdict
-    Given an implement turn whose latest commit attempt was refused by the commit hook with a recorded non-zero exit status and named failed targets
+    Given a fix turn whose latest commit attempt was refused by the commit hook with a recorded non-zero exit status and named failed targets
     And the turn's own failure text describes that hook as not completed
     When the run ends at the needs_human terminal
     Then the needs-human cause comment names the recorded exit status and the failed target names as read from the run's recorded tool output
@@ -8002,96 +8002,40 @@ Scenario: A fresh dispatch of a previously pinned item takes overflow selection
 ## Scenario 204 — An implement turn that reports its work incomplete fails the implement stage
 
 ```gherkin
-Feature: An incomplete implement turn is not recorded as a success
+Feature: An incomplete green turn is not recorded as a success
   As the maintainer of a repository dispatched to the factory
-  I want an implement turn that stops partway to end the implement stage as failed
+  I want a green turn that stops partway to end the implement stage as failed once its budget is spent
   So that the run does not publish and prove an incomplete change as if it were finished
 
-  Scenario: A turn that reports partial progress re-enters implement while its retry budget remains
-    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left nothing staged and made no failing run of the repository's check suite
-    And the implement node's retry budget is not exhausted
-    When the implement stage ends
-    Then the run re-enters the implement stage instead of failing it
-    And the re-entered turn's brief states that the previous turn ended incomplete with no recorded failing gate
+  Scenario: A green turn that reports partial progress re-enters green while its budget remains
+    Given commit_red has made the Red commit
+    And a green turn whose final output's completion field reports the Definition of Done incomplete
+    And the green node's max_visits is not exhausted
+    When the green node ends
+    Then the run re-enters green instead of failing the implement stage
+    And the re-entered green turn starts a fresh session whose context carries the handoff file with the previous green turn's section
 
-  Scenario: An incomplete turn whose own check-suite run failed re-enters with that run's failed targets
-    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left no refused commit attempt
-    And the turn's latest run of the repository's check suite exited non-zero naming failed targets
-    And the implement node's retry budget is not exhausted
-    When the implement stage ends
-    Then the run re-enters the implement stage instead of failing it
-    And the re-entered turn's brief carries those failed target names and that run's error lines, taken from the run's recorded tool output
+  Scenario: A green turn with no completion field is treated as incomplete and re-enters green
+    Given commit_red has made the Red commit
+    And a green turn whose final output carries no completion field
+    And the green node's max_visits is not exhausted
+    When the green node ends
+    Then the run re-enters green instead of failing the implement stage
 
-  Scenario: An incomplete turn whose staged changes the commit hook accepts re-enters implement
-    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left changes staged that the repository's commit hook accepts
-    And the implement node's retry budget is not exhausted
-    When the implement stage ends
-    Then the run re-enters the implement stage instead of failing it
-
-  Scenario: An incomplete turn with no refused commit and its retry budget exhausted fails as partial progress
-    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left no refused commit attempt
-    And the implement node's retry budget is exhausted
-    When the implement stage ends
+  Scenario: An incomplete green turn with its budget exhausted fails as partial progress
+    Given commit_red has made the Red commit
+    And a green turn whose final output's completion field reports the Definition of Done incomplete, or carries no completion field
+    And the green node's max_visits is exhausted
+    When the green node ends
     Then the stage outcome is failed with a cause naming partial progress
     And the run takes the implement stage's failure edge, and the dispatch outcome detail carries that cause
 
-  Scenario: A turn whose commit the hook refused re-enters implement while its retry budget remains
-    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left changes staged that the repository's commit hook refuses, naming failed targets
-    And the implement node's retry budget is not exhausted
-    When the implement stage ends
-    Then the run re-enters the implement stage instead of failing it
-    And the re-entered turn's brief carries the refused commit's failed target names and the hook's own error lines, taken from the hook's recorded output
-
-  Scenario: A hook-refused turn with its retry budget exhausted fails naming the failed targets
-    Given an implement turn whose final output's completion field reports the Definition of Done incomplete
-    And the turn left changes staged that the repository's commit hook refuses, naming failed targets
-    And the implement node's retry budget is exhausted
-    When the implement stage ends
-    Then the stage outcome is failed with a cause naming the hook's failed targets
-    And the dispatch outcome detail carries that cause
-
-  Scenario: A turn with no completion field is treated as incomplete and re-enters implement
-    Given an implement turn whose final output carries no completion field
-    And the turn left nothing staged
-    And the implement node's retry budget is not exhausted
-    When the implement stage ends
-    Then the run re-enters the implement stage instead of failing it
-
-  Scenario: A turn with no completion field and its retry budget exhausted fails as partial progress
-    Given an implement turn whose final output carries no completion field
-    And the turn left nothing staged
-    And the implement node's retry budget is exhausted
-    When the implement stage ends
-    Then the stage outcome is failed with a cause naming partial progress
-
-  Scenario: A turn with no completion field whose commit the hook refused re-enters implement
-    Given an implement turn whose final output carries no completion field
-    And the turn left changes staged that the repository's commit hook refuses, naming failed targets
-    And the implement node's retry budget is not exhausted
-    When the implement stage ends
-    Then the run re-enters the implement stage instead of failing it
-
-  Scenario: A turn that reports its work complete keeps its routing
-    Given an implement turn whose final output's completion field reports the Definition of Done complete
-    When the implement stage ends
-    Then the stage outcome is succeeded and the run proceeds to implementation_diff as before
-
-  Scenario: A turn that ends while its runner commit is still running waits for that commit's verdict
-    Given an implement turn that, contrary to its end-of-turn obligation, sent its final message while a commit run it started through the detached commit runner was still running
-    When the run decides the implement stage's outcome
-    Then it first waits until that commit run reaches its own terminal state
-    And that wait consumes none of the implement node's retry budget
-
-  Scenario: A commit the runner recorded as failed counts as the turn's refused commit attempt
-    Given an incomplete implement turn whose latest commit run through the detached commit runner reached failed with the commit hook having named a failed target
-    And that target's name appears only in the commit run's full recorded output, not in its terminal report's final lines
-    When the implement stage re-enters while its retry budget remains
-    Then the re-entered brief carries that commit run's failed target names and hook error lines from its full recorded output
+  Scenario: A green turn that reports the work complete hands the tree to commit_green
+    Given commit_red has made the Red commit
+    And a green turn whose final output's completion field reports the Definition of Done complete
+    When the green node ends
+    Then the run proceeds to commit_green
+    And no green turn made a commit
 ```
 
 ## Scenario 205 — Gap detection enumerates headings without an exercising test
@@ -10440,8 +10384,8 @@ Feature: In-turn commits pay the scoped gate, and the full aggregate runs once p
   I want implement and review_fix commits to run only the tests their change affects
   So that a run does not repeat the full check aggregate at every commit before the janitor runs it
 
-  Scenario: An implement turn's commit runs the affected-tests gate
-    Given an implement turn committing a change to product modules and their tests
+  Scenario: A review_fix turn's commit runs the affected-tests gate
+    Given a review_fix turn committing a change to product modules and their tests
     When its commit hook runs
     Then it runs just check-changed on the change and not the full check aggregate
 
@@ -10451,15 +10395,15 @@ Feature: In-turn commits pay the scoped gate, and the full aggregate runs once p
     Then it runs the full check aggregate
 
   Scenario: The janitor still runs the full aggregate once
-    Given a run whose implement turn committed through the affected-tests gate
+    Given a run whose commit_green node committed through the affected-tests gate
     When the run reaches the janitor stage
     Then the janitor runs the full check aggregate once on the run's tree before publication
 
   Scenario: A Red commit and its Green amend go through the affected-tests gate
-    Given an implement turn staging one failing test alone for its Red commit
+    Given commit_red staging the one failing Red test alone for the Red commit
     When its commit hook runs
     Then the gate accepts the commit because the staged test fails, without demanding passing tests or coverage
-    When the turn stages the implementation and amends to Green
+    When commit_green stages the implementation and amends to Green
     Then the commit hook runs the affected-tests gate and requires the scoped tests and their coverage to pass
 ```
 
@@ -10805,14 +10749,15 @@ Feature: A complete implement turn with no diff is already satisfied, not a dead
   I want the run to end as already satisfied and rest the item for its Proof of Done
   So that a correct no-op turn is not read as a failed attempt and leaves no stranded claim
 
-  Scenario: a complete implement turn with an unchanged tree ends as already satisfied
+  Scenario: a red turn that declares the work already satisfied with an unchanged tree ends as already satisfied
     Given a work-item whose factory_captured assertions are already true on the default branch
-    When its dispatch's `implement` turn reports the Definition of Done complete and the run's tree is unchanged against the dispatch base
+    When its dispatch's `red` turn declares the already-satisfied outcome and the run's tree is unchanged against the dispatch base
     Then the run ends with an already-satisfied outcome naming the item, not at `dead_implementer`
     And the item rests in `acceptance` with no stranded factory claim, and `needs-attention` names the route to its Proof of Done
 
-  Scenario: an incomplete implement turn with no diff is still a dead implementer
-    Given a dispatch whose `implement` turn reports the Definition of Done incomplete and leaves the tree unchanged
+  Scenario: a red turn with no diff and no already-satisfied declaration is still a dead implementer
+    Given a dispatch whose `red` turn leaves the tree unchanged against the dispatch base without the already-satisfied declaration
+    And the `red` node's max_visits is exhausted
     When the run evaluates the implementer's outcome
     Then the run ends at `dead_implementer` with today's truncation record
 ```
@@ -11189,4 +11134,52 @@ Feature: Sandbox retention and collection
     And run B's driver record and node workspace directory still exist
     When a further pass runs
     Then nothing further is recorded for run A and the pass does not fail
+```
+
+## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node
+
+```gherkin
+Feature: The implement stage separates Red from Green and commits outside agent turns
+  Scenario: A Red test and its implementation commit as one Red-Green pair
+    Given a dispatched work item whose Definition of Done needs a new behaviour
+    When the red node writes a failing test and ends its turn
+    Then commit_red makes the Red commit with the repository's commit hooks running
+    And the green node starts a fresh session whose context is the work item and the handoff file
+    When the green node implements the behaviour and ends its turn
+    Then commit_green folds any engine checkpoint commits above the Red commit into the index
+    And commit_green amends the Red commit with the repository's commit hooks running
+    And the branch carries one commit with the Red test, the implementation and both trailer sets
+
+  Scenario: A refused Green amend re-enters green with the hook's recorded failure
+    Given commit_red has made the Red commit
+    When commit_green's hook refuses naming a failed target
+    Then the run re-enters green
+    And the handoff file's newest section carries that failed target and the hook's own output lines
+
+  Scenario: Green finds the Red test wrong
+    Given commit_red has made the Red commit
+    When the green turn ends with a test-wrong declaration and its reason
+    Then the run re-enters red with that reason in the handoff file
+    And the Red test file is unchanged by the green turn
+    And the re-entered red turn starts from the dispatch base with the test-wrong reason in the handoff file
+    And after the next commit_red the branch carries exactly one Red commit above the dispatch base
+
+  Scenario: A refused Red commit re-enters red
+    Given a red turn that has ended
+    When commit_red's hook refuses, naming a failed target
+    Then the run re-enters red
+    And the handoff file's newest section carries commit_red's exit status, that failed target and the hook's own output lines
+
+  Scenario: An exhausted commit re-entry ends the stage failed with the recorded verdict
+    Given commit_green's hook has refused and the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the implement stage's outcome is failed
+    And the needs-human cause names commit_green's recorded exit status and failed target names
+
+  Scenario: An exhausted test-wrong route ends the stage failed with both sides' sections
+    Given a green turn that ends with a test-wrong declaration
+    And the red node's max_visits is exhausted
+    When the run evaluates the implement stage's outcome
+    Then the implement stage's outcome is failed
+    And the cause carries the latest red and green sections of the handoff file
 ```
