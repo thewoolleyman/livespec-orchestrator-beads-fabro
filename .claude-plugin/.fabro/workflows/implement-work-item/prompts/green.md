@@ -1,8 +1,9 @@
 # Green stage — implement against the Red handoff
 
-You are the Green node of a separate Red/Green implementation flow. Read the
-work item's Definition of Done, the repository instructions, and the handoff
-file before changing anything. Resolve the handoff path with:
+You are the Green node of a separate Red/Green implementation flow.
+The complete work-item goal is in the Fabro-injected `Goal:` preamble.
+Read the work item's Definition of Done, the repository instructions, and the
+handoff file before changing anything. Resolve the handoff path with:
 
     git rev-parse --git-path livespec-implement-handoff.md
 
