@@ -11175,6 +11175,13 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     Then the run re-enters red
     And the handoff file's newest section carries commit_red's exit status, that failed target and the hook's own output lines
 
+  Scenario: A red turn that changes a product file is refused at commit_red
+    Given a red turn that wrote a failing test and also changed a product file
+    When commit_red runs
+    Then commit_red makes no commit
+    And the handoff file's newest section names the changed product file
+    And the run re-enters red from the dispatch base
+
   Scenario: An exhausted commit re-entry ends the stage failed with the recorded verdict
     Given commit_green's hook has refused and the green node's max_visits is exhausted
     When the run ends at the needs_human terminal
