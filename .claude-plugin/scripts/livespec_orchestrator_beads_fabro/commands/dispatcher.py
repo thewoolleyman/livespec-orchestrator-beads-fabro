@@ -25,6 +25,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py idle-slot-audit [--repo <path>] [--json]
   dispatcher.py sandbox-images --factory <name> [--repo <path>]... [--json]
+  dispatcher.py drift-run [--repo <path>] [--invoker <id>] [--dry-run] [--json]
   dispatcher.py reconcile-runs [--repo <path>] [--factory <name>]
                                 [--fabro-bin <path>] [--journal <path>]
                                 [--invoker <id>] [--dry-run] [--json]
@@ -328,6 +329,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import
     add_dispatch_common,
     add_probe_arguments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_drift_run_command import (
+    run_drift_run_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_inspect import (
     add_factory_inspect_arguments,
     run_factory_inspect_command,
@@ -403,6 +407,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images_comma
 from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args import (
     add_claude_cred_status_arguments,
     add_codex_cred_refresh_arguments,
+    add_drift_run_arguments,
     add_janitor_check_arguments,
     add_ledger_check_arguments,
     add_ledger_normalize_arguments,
@@ -423,6 +428,12 @@ _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
     ledger_blocked_after_normalization,
     reflect,
 )
+
+
+def _run_drift_run(*, args: argparse.Namespace) -> int:
+    """Resolve the drift-job handler at invocation time, like the other CLI seams."""
+    return run_drift_run_command(args=args)
+
 
 __all__: list[str] = [
     "bounce_non_convergence_to_backlog",
@@ -448,6 +459,7 @@ __all__: list[str] = [
     "run_clear_provider_exhaustion_command",
     "run_codex_cred_refresh",
     "run_codex_cred_status",
+    "run_drift_run_command",
     "run_file_canary_command",
     "run_id",
     "run_idle_slot_audit_command",
@@ -471,6 +483,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "codex-cred-refresh": run_codex_cred_refresh,
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
+    "drift-run": _run_drift_run,
     "file-canary": run_file_canary_command,
     "idle-slot-audit": run_idle_slot_audit_command,
     "inspect": run_factory_inspect_command,
@@ -514,6 +527,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
     add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
+    add_drift_run_arguments(parser=subparsers.add_parser("drift-run"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
