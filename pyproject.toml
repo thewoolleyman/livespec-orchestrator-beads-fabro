@@ -378,6 +378,10 @@ exclude_also = [
 # MUST stay above the [[...mirror_pairings]] array-of-tables below, for the same
 # reason `file_lloc_hard_gate` must.
 delegated_gate = true
+# Delegate the staged-tree aggregate before a human-host pre-commit runs it
+# locally.  The shared client falls back locally when this host cannot submit a
+# gates Job, so sandboxes and laptops retain the existing aggregate path.
+delegated_pre_commit = true
 # Phase-2 file_lloc FLIP (fleet-check-coverage epic). With this key true, the
 # `file_lloc` check hard-gates this repo's WHOLE git-derived first-party-.py
 # universe (>250 LLOC => error/exit 1), superseding the hardcoded legacy-tree

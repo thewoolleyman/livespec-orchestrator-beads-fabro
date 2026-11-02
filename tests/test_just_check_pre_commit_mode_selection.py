@@ -27,6 +27,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+from livespec_dev_tooling.config import load_delegated_pre_commit
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-pre-commit.sh"
 _INCREMENTAL_GATE = "check-check-coverage-incremental"
@@ -190,3 +192,8 @@ def test_checkout_without_the_marker_still_runs_the_master_ci_green_gate(*, tmp_
         "check-codex-skill-picker",
     ]
     assert _MASTER_CI_GATE not in invocation
+
+
+def test_this_repository_declares_the_delegated_pre_commit_switch() -> None:
+    """The hosted staged-tree gate is an explicit repository opt-in."""
+    assert load_delegated_pre_commit(repo_root=_REPO_ROOT) is True
