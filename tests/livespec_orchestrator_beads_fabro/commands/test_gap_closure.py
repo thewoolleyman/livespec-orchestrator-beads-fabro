@@ -118,6 +118,19 @@ if __name__ == "__main__":
     raise SystemExit(main())
 """
 
+_SHELL_CHECK_SCRIPT = """#!/bin/sh
+if [ "$1" = "--negative-control" ]; then
+    exit 1
+fi
+exit 0
+"""
+
+_UNAVAILABLE_INTERPRETER_CHECK_SCRIPT = """#!/definitely/not/an/interpreter
+import sys
+
+raise SystemExit(1 if "--negative-control" in sys.argv else 0)
+"""
+
 
 class _FakeClient:
     def __init__(self, *, metadata: dict[str, Any]) -> None:
@@ -171,6 +184,58 @@ def test_evaluate_closes_when_check_passes_and_control_fails(
         config=cast("Any", None), project_root=tmp_path, item_id="bd-ib-gap1"
     )
     assert decision.verdict == "close"
+
+
+def test_evaluate_closes_generic_shell_check_with_declared_interpreter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _init_git_repo(repo_root=tmp_path)
+    check_path = tmp_path / "checks" / "generic_check.sh"
+    check_path.parent.mkdir(parents=True)
+    check_path.write_text(_SHELL_CHECK_SCRIPT, encoding="utf-8")
+    check_path.chmod(0o755)
+
+    client = _FakeClient(metadata={GAP_CHECK_PATH_KEY: "checks/generic_check.sh"})
+    monkeypatch.setattr(_gap_closure, "make_beads_client", lambda **_kwargs: client)
+
+    decision = evaluate_gap_closure(
+        config=cast("Any", None), project_root=tmp_path, item_id="bd-ib-gap1"
+    )
+
+    assert decision.verdict == "close"
+
+
+def test_evaluate_refuses_unavailable_declared_interpreter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _init_git_repo(repo_root=tmp_path)
+    check_path = tmp_path / "checks" / "unavailable_interpreter.py"
+    check_path.parent.mkdir(parents=True)
+    check_path.write_text(_UNAVAILABLE_INTERPRETER_CHECK_SCRIPT, encoding="utf-8")
+    check_path.chmod(0o755)
+
+    client = _FakeClient(metadata={GAP_CHECK_PATH_KEY: "checks/unavailable_interpreter.py"})
+    monkeypatch.setattr(_gap_closure, "make_beads_client", lambda **_kwargs: client)
+
+    decision = evaluate_gap_closure(
+        config=cast("Any", None), project_root=tmp_path, item_id="bd-ib-gap1"
+    )
+
+    assert decision.verdict == "refuse-check-failed"
+
+
+def test_evaluate_refuses_unavailable_check_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _init_git_repo(repo_root=tmp_path)
+    client = _FakeClient(metadata={GAP_CHECK_PATH_KEY: "checks/missing_check.py"})
+    monkeypatch.setattr(_gap_closure, "make_beads_client", lambda **_kwargs: client)
+
+    decision = evaluate_gap_closure(
+        config=cast("Any", None), project_root=tmp_path, item_id="bd-ib-gap1"
+    )
+
+    assert decision.verdict == "refuse-check-failed"
 
 
 def test_evaluate_refuses_when_check_does_not_pass(
