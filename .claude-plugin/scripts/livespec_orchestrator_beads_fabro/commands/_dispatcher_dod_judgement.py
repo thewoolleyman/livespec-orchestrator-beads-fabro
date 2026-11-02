@@ -1,8 +1,8 @@
 """Pure Definition-of-Done judgement subject and verdict parsing.
 
 The admission and dispatch walls share this one rendering so a verdict is reused
-only when the exact criteria, referenced specification headings and ledger riders
-are unchanged.
+only when the exact criteria, governing-selected referenced clauses and ledger
+riders are unchanged.
 
 WHAT THE SUBJECT CARRIES, AND WHY THE RIDERS ARE PART OF IT. `contracts.md`'s
 one-rubric-one-subject clause puts the item's effective criteria, the body of
@@ -189,7 +189,7 @@ def judgement_subject(
             (
                 "",
                 f"## Referenced heading: {reference}",
-                _heading_body(repo=cwd, reference=reference),
+                _heading_body(repo=cwd, reference=reference, governing=governing),
             )
         )
     blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
@@ -338,8 +338,16 @@ def _last_non_empty_line(*, reply: str) -> str | None:
     return None
 
 
-def _heading_body(*, repo: Path, reference: str) -> str:
-    """Return an H2 section body, retaining an explicit absence when unresolved."""
+def _heading_body(*, repo: Path, reference: str, governing: GoverningHeadingVerdict | None) -> str:
+    """Render the governing verdict's clauses for a reference, or its full body without one."""
+    if governing is not None:
+        clauses = dict.fromkeys(
+            clause
+            for collection in (governing.selected_clauses, governing.named_clauses)
+            for clause in collection
+            if _heading_title(heading=clause.heading) == _heading_title(heading=reference)
+        )
+        return "\n\n".join(f"{clause.heading}{clause.body}" for clause in clauses)
     title = reference.removeprefix(_H2_MARKER)
     spec_root = repo / _SPEC_DIRNAME
     if not spec_root.is_dir():
@@ -352,6 +360,11 @@ def _heading_body(*, repo: Path, reference: str) -> str:
         if body is not None:
             return body
     return _UNRESOLVED_HEADING_BODY
+
+
+def _heading_title(*, heading: str) -> str:
+    """Normalize the optional H2 marker before matching a clause to its reference."""
+    return heading.removeprefix(_H2_MARKER).strip()
 
 
 def _section_of(*, text: str, title: str) -> str | None:
