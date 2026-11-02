@@ -186,6 +186,21 @@ allowed to pin.
   `origin/factory-integration`. `fabro --version` is the command that
   identifies the serving build for the rules above; the release and
   disposition evidence below decides its currency.
+- **Fork gate and build venue.** A push to, or a pull request against, a
+  carrier branch of the fork (any branch a pinned factory build is cut
+  from) MUST run the fork's Rust format, clippy and test gates on the
+  fleet's self-hosted ARC k3s runner capacity, so the pull request's
+  status rollup carries their verdicts; a carrier-branch pull request
+  with no such checks MUST NOT be read as green. The release binary a
+  factory build pins MUST be built on that capacity, by a GitHub
+  workflow or a k3s Job, from a named carrier ref, and published with a
+  `BUILD_INFO` naming the source ref and commit; producing it MUST NOT
+  require a build on the dev host. A fork gate or build on the dev host
+  is permitted only as an explicit fallback while the cluster venue is
+  unavailable, at `nice -n 19` with `CARGO_BUILD_JOBS=4`, and the work
+  item that used it MUST record the fallback. The hand-build guidance
+  (`.ai/fabro-fork-hand-build.md`) names the cluster venue, under the
+  runbook-lockstep rule below.
 - **Currency evidence.** Each currency evaluation MUST record the
   upstream release-tag survey and its observation time, the ancestry from
   the serving integration commit to the exact selected base tag, that

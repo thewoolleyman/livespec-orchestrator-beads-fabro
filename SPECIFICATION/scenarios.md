@@ -11607,3 +11607,29 @@ Feature: a launcher queued on a factory's FIFO spends its wait on its own prefli
     And its FIFO ticket is gone from the queue directory
     And it never created the factory's mutex
 ```
+
+## Scenario 300 — Fabro-fork gates and carrier builds run on the cluster, not the dev host
+
+Governing clause: `constraints.md` §"Fabro runtime constraints".
+
+```gherkin
+Feature: fork Rust gates and pinned carrier builds run on ARC k3s runner capacity
+  Scenario: a fork pull request against a carrier branch carries cluster-run gate verdicts
+    Given a pull request in thewoolleyman/fabro targeting a carrier branch a pinned factory build is cut from
+    When its checks run
+    Then the format, clippy and test gates run on an ARC k3s runner pod
+    And the pull request's status rollup carries their verdicts
+    And no cargo or rustc process for that pull request runs on the dev host
+
+  Scenario: a pinned carrier build is produced off the dev host
+    Given a named carrier ref
+    When the carrier build runs
+    Then the release binary is built on the ARC k3s runner capacity or in a k3s Job
+    And it is published with a BUILD_INFO naming the source ref and commit
+
+  Scenario: a dev-host fallback is throttled and recorded
+    Given the cluster venue is unavailable
+    When a fork gate runs on the dev host
+    Then it runs at nice 19 with CARGO_BUILD_JOBS=4
+    And the work item that used it records the fallback
+```
