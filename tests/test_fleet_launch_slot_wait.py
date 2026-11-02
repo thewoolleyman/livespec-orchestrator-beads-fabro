@@ -24,3 +24,9 @@ def test_slot_wait_give_up_names_item_and_queue_ticket() -> None:
         "item=$ITEM queue-ticket=${ticket:-none}"
     ) in dispatch
     assert dispatch.count("no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up") == 1
+
+
+def test_gmktec_factory_pressure_threshold_is_a_declared_host_override() -> None:
+    config = _CONFIG.read_text(encoding="utf-8")
+
+    assert ': "${FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD:=25}"' in config

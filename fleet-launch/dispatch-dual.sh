@@ -26,7 +26,8 @@
 #
 # Gates, in order: the Dispatcher's own ready set; the shared fleet cap (live runs on
 # every declared board plus launches not yet listed); the launch-time
-# Definition-of-Done preflight; the hold file; gmktec's own ceiling and idle CPU; a
+# Definition-of-Done preflight; the hold file; gmktec's own ceiling and
+# factory-class CPU pressure; a
 # per-factory FIFO ticket and mutex; a binding re-count that includes this launch's
 # in-flight marker; and a usable-credential probe. An unreadable board counts as
 # UNKNOWN and is never green.
@@ -47,8 +48,8 @@ INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 GMK_Q=$FLEET_LAUNCH_GMK_QUEUE_DIR
 GMK_LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
-ticket=""; lock=""; marker=""; FLEET_CAP=0
-gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=""
+ticket=""; lock=""; marker=""; FLEET_CAP=0; preflight_evaluated=0
+gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=unknown; gmk_pressure=unknown
 mkdir -p "$OUT"
 
 drop_ticket() { [ -n "$ticket" ] && rm -f "$ticket"; ticket=""; }
@@ -108,8 +109,66 @@ read_boards() {
   markers=$(unlisted_markers "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
   if [ "$markers" = U ]; then fleet=U; else fleet=$(( gmk_live + hl_live + markers )); fi
 }
-gt() { awk "BEGIN{exit !($1 > $2)}"; }
 mpstat_idle() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$1" 'mpstat 5 2' 2>/dev/null | awk '/^Average/ {print $NF}'; }
+factory_pressure() {
+  ssh -o BatchMode=yes -o ConnectTimeout=15 "$1" 'set -eu
+cpus=$(getconf _NPROCESSORS_ONLN)
+case $cpus in ""|*[!0-9]*|0) exit 1 ;; esac
+paths=/sys/fs/cgroup/system.slice
+[ -r "$paths/cpu.stat" ] || exit 1
+namespaces="factory factory-mi-homelab"
+overcommitted=$(python3 -c "
+import json, socket, subprocess
+def millis(quantity):
+    text = str(quantity)
+    return int(text[:-1]) if text.endswith(\"m\") else int(float(text) * 1000)
+def kubectl(*args):
+    command = (\"k3s\", \"kubectl\", \"get\") + args + (\"-o\", \"json\")
+    return json.loads(subprocess.run(command, check=True, capture_output=True, text=True).stdout)
+node = socket.gethostname().lower()
+allocatable = millis(kubectl(\"node\", node)[\"status\"][\"allocatable\"][\"cpu\"])
+requested = 0
+for pod in kubectl(\"pods\", \"--all-namespaces\", \"--field-selector\", \"spec.nodeName=\" + node)[\"items\"]:
+    if pod.get(\"status\", {}).get(\"phase\") in (\"Succeeded\", \"Failed\"):
+        continue
+    def request(container):
+        return millis(container.get(\"resources\", {}).get(\"requests\", {}).get(\"cpu\", 0))
+    running = sum(request(container) for container in pod[\"spec\"][\"containers\"])
+    init = max([request(container) for container in pod[\"spec\"].get(\"initContainers\", [])], default=0)
+    requested += max(running, init)
+print(\"yes\" if requested > allocatable else \"no\")
+") || exit 1
+case $overcommitted in
+  yes) namespaces="$namespaces gates" ;;
+  no) ;;
+  *) exit 1 ;;
+esac
+for namespace in $namespaces; do
+  pods=$(k3s crictl pods --namespace "$namespace" -o json) || exit 1
+  uids=$(printf "%s" "$pods" | python3 -c "import json, sys; print(chr(10).join(item[\"metadata\"][\"uid\"] for item in json.load(sys.stdin).get(\"items\", []) if item.get(\"metadata\", {}).get(\"uid\")))") || exit 1
+  for uid in $uids; do
+    escaped=$(printf "%s" "$uid" | tr "-" "_")
+    pod_path=$(find /sys/fs/cgroup/kubepods.slice -type d -name "*pod${escaped}.slice" -print -quit) || exit 1
+    [ -n "$pod_path" ] || exit 1
+    paths="$paths $pod_path"
+  done
+done
+usage() {
+  total=0
+  for path in $paths; do
+    value=$(awk "/^usage_usec / {print \$2}" "$path/cpu.stat")
+    case $value in ""|*[!0-9]*) exit 1 ;; esac
+    total=$((total + value))
+  done
+  printf "%s\\n" "$total"
+}
+before=$(usage)
+sleep 5
+after=$(usage)
+awk -v before="$before" -v after="$after" -v cpus="$cpus" "BEGIN { pressure = (after - before) * 100 / (5000000 * cpus); if (pressure < 0 || pressure > 100) exit 1; printf \"%.2f\\n\", pressure }"' 2>/dev/null
+}
+valid_percentage() { awk -v value="$1" 'BEGIN { exit !(value ~ /^[0-9]+([.][0-9]+)?$/ && value >= 0 && value <= 100) }'; }
+at_or_below() { awk "BEGIN{exit !($1 <= $2)}"; }
 fleet_green() {
   read_fleet_cap; read_boards
   [ "$fleet" != U ] && [ "$FLEET_CAP" -gt 0 ] && [ "$fleet" -lt "$FLEET_CAP" ]
@@ -126,7 +185,13 @@ bind_count() {
 }
 gmk_green() {
   [ "$gmk_live" != U ] && [ "$gmk_live" -lt "$FLEET_LAUNCH_GMK_CAP" ] || return 1
-  gmk_idle=$(mpstat_idle "$FLEET_LAUNCH_GMK_SSH"); [ -n "$gmk_idle" ] && gt "$gmk_idle" "$FLEET_LAUNCH_GMK_MIN_IDLE"
+  gmk_idle=unknown
+  idle=$(mpstat_idle "$FLEET_LAUNCH_GMK_SSH") || idle=""
+  if valid_percentage "$idle"; then gmk_idle=$idle; fi
+  gmk_pressure=unknown
+  gmk_pressure=$(factory_pressure "$FLEET_LAUNCH_GMK_SSH") || { gmk_pressure=unknown; return 1; }
+  valid_percentage "$gmk_pressure" || { gmk_pressure=unknown; return 1; }
+  at_or_below "$gmk_pressure" "$FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD"
 }
 holder_dead() {
   local age h pid
@@ -218,8 +283,12 @@ while [ -z "$target" ]; do
       echo "$(date -u +%T) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
     fi
   fi
-  [ "$(date +%s)" -lt "$deadline" ] || give_up
-  gmk_idle=
+  # A queue can be scheduled out for longer than a short test budget before it
+  # starts its first pass.  Always perform one full preflight before the wall
+  # clock may end the wait, so a held launch records the reading that held it.
+  [ "$preflight_evaluated" -eq 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+  gmk_idle=unknown; gmk_pressure=unknown
+  preflight_evaluated=1
   if ! fleet_green; then echo "$(date -u +%T) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
   if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%T) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
   launch_preflight
@@ -236,7 +305,7 @@ while [ -z "$target" ]; do
     sleep "$FLEET_LAUNCH_POLL_S"; continue
   fi
   if { [ -z "${CAPTURE_NULL:-}" ] || [ "${CAPTURE_EXPECT:-}" = petri ]; } && gmk_green; then
-    echo "$(date -u +%T) gmktec green (live=$gmk_live hl=$hl_live idle=$gmk_idle fleet=$fleet): queue for the gmktec mutex"
+    echo "$(date -u +%T) gmktec green (live=$gmk_live hl=$hl_live idle=$gmk_idle pressure=$gmk_pressure threshold=$FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD fleet=$fleet): queue for the gmktec mutex"
     if take_mutex "$GMK_Q" "$GMK_LOCK"; then
       taken=$(date +%s)
       if bind_count petri && gmk_green; then drop_ticket; target=petri; break; fi
@@ -245,7 +314,7 @@ while [ -z "$target" ]; do
     fi
     sleep "$FLEET_LAUNCH_POLL_S"; continue
   fi
-  echo "$(date -u +%T) no factory green: gmktec=$gmk_live (idle ${gmk_idle:-?}) markers=$markers fleet=$fleet/$FLEET_CAP"
+  echo "$(date -u +%T) no factory green: gmktec=$gmk_live (idle=$gmk_idle pressure=$gmk_pressure threshold=$FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD) markers=$markers fleet=$fleet/$FLEET_CAP"
   sleep "$FLEET_LAUNCH_POLL_S"
 done
 
