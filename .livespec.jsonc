@@ -817,6 +817,21 @@
             "cache_write_usd_per_million": 0.125,
             "cache_read_usd_per_million": 0.01
           }
+        },
+        // Source: https://developers.openai.com/api/docs/models/gpt-6.1-terra, read 2026-11-02,
+        // Standard tier text tokens: input $1, cached input $0.05, output $5 per 1M. Prompts over
+        // 272K input tokens bill 2x input/cache and 1.5x output for the whole request, which is
+        // why the implement trial below pins model_auto_compact_token_limit under that line.
+        // Cache write follows this file's 1.25x-input convention.
+        "openai/gpt-6.1-terra": {
+          "display_name": "GPT-6.1 Terra",
+          "pricing": {
+            "model": "gpt-6.1-terra",
+            "input_usd_per_million": 1.0,
+            "output_usd_per_million": 5.0,
+            "cache_write_usd_per_million": 1.25,
+            "cache_read_usd_per_million": 0.05
+          }
         }
       },
       "acp_nodes": {
@@ -824,7 +839,26 @@
         // 2026-10-30: implement, fix and review on Codex Terra with a Sonnet fallback (maintainer
         // direction via the coordinator, superseding R153 for these three nodes); the Codex
         // headroom brake skips to the fallback before the weekly window is spent.
-        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
+        // 2026-11-02 BOUNDED TRIAL (coordinator legacy-coordinator-agent R301 approval for plan
+        // codex-implement-cost-per-run, livespec-dev-tooling-vspttc): implement on gpt-6.1-terra
+        // high for 20 runs or 72 h, early stop below 40% merged after 10 runs; then revert to
+        // the structured gpt-5.6-terra entry or adopt, by a config PR. MANUAL form because the
+        // contract's "Codex compaction limit" rides the node's args and the structured form
+        // admits no args; command and env are byte-identical to what the structured form
+        // renders for codex-acp / gpt-6.1-terra / high, and the identity keys restate it.
+        "implement": {
+          "command": "/opt/livespec/codex-acp/bin/codex-acp",
+          "env": {
+            "CODEX_CONFIG": "{\"approval_policy\":\"never\",\"model\":\"gpt-6.1-terra\",\"model_reasoning_effort\":\"high\",\"sandbox_mode\":\"danger-full-access\"}",
+            "INITIAL_AGENT_MODE": "agent-full-access"
+          },
+          "args": ["-c", "model_auto_compact_token_limit=245000"],
+          "display_name": "GPT-6.1 Terra",
+          "candidate_key": "codex-acp/openai/gpt-6.1-terra",
+          "availability_key": "codex",
+          "pricing": { "model": "gpt-6.1-terra", "input_usd_per_million": 1.0, "output_usd_per_million": 5.0, "cache_write_usd_per_million": 1.25, "cache_read_usd_per_million": 0.05 },
+          "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }]
+        },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
         "review_fix": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" },
         // 2026-10-25: proof nodes moved luna medium -> terra high on the canary's
