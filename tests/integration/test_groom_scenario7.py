@@ -83,6 +83,11 @@ def _config() -> StoreConfig:
     )
 
 
+def test_the_fake_backend_uses_pytest_temporary_repo_root(tmp_path: Path) -> None:
+    """A scenario run must not create an ignored directory in the checkout."""
+    assert tmp_path / _LOCAL_REPO == _LOCAL_REPO_ROOT
+
+
 _LOCAL_REPO = "livespec-orchestrator-beads-fabro"
 _LOCAL_REPO_ROOT = Path("tests/nonexistent-groom-policy-cwd")
 _CROSS_REPO = "livespec-runtime"
