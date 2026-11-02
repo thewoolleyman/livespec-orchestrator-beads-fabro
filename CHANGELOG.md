@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.276.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.276.1...v0.276.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* route bounded janitor re-entry ([8afbe96](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8afbe96f39ee6e0e0f4daf1c1e78688f6816eeb0))
+
 ## [0.276.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.276.0...v0.276.1) (2026-11-02)
 
 
