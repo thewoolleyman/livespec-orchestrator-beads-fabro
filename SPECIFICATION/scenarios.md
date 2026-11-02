@@ -731,6 +731,33 @@ Scenario: Preflight verifies the serving App reaches the target repo
   Then it refuses before launching with a diagnostic naming the per-tenant server requirement (the target tenant's own App identity)
   And the diagnostic surfaces the App workflows read-write grant as deliberately withheld from the dispatch credential, naming the attended-host-session route
 
+Scenario: A shared server serves a run under the target's per-run selected App
+  Given a shared Fabro server whose global integration is an App not installed for the adopter target repo
+  And the target declares dispatcher.factories.<name>.github_app naming an App-id secret and a private-key secret provisioned in that server's vault for an App installed on the target repo
+  When the Dispatcher dispatches an item of the target to that factory
+  Then the rendered run configuration selects that credential source by secret name and carries no secret value
+  And the run's native checkout, each managed stage GITHUB_TOKEN renewal and its publication all authenticate as the selected App
+  And the server's global integration is unchanged
+
+Scenario: An unresolvable per-run App selection refuses before any forge operation
+  Given a run whose configuration selects a GitHub credential source
+  And a selected secret is absent, empty, unparseable, or names an App not installed for the target repo
+  When the run's worker starts
+  Then the run fails before any protected forge operation with a diagnostic naming the selected secret names and the failing condition
+  And it does not fall back to the server's global App or to anonymous access
+
+Scenario: A malformed github_app declaration refuses before claim naming the key
+  Given a dispatch target whose dispatcher.factories.<name>.github_app is not an object, omits the App-id or private-key secret name, carries an empty or non-string name, or carries any other key
+  When the Dispatcher selects an item of that target for that factory
+  Then it refuses before claim with a diagnostic naming dispatcher.factories.<name>.github_app and the malformation
+  And no run is launched and no item is claimed
+
+Scenario: Concurrent runs under different Apps keep distinct authority
+  Given two concurrent runs on one shared server, one selecting no source and one selecting an org App
+  When each run refreshes its credentials and snapshots its vault
+  Then the first run authenticates only as the server's global App and the second only as the selected org App
+  And neither run's inspect or dump output, workflow version or sandbox environment contains a private key or a minted token
+
 Scenario: A target-local workflow supplies the target's toolchain facts
   Given an adopter repo carrying its own .fabro/workflows/implement-work-item workflow
   And the dispatch names no --workflow override and no --workflow-name
