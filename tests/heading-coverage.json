@@ -2677,5 +2677,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal launch-preflight-while-queued (v277), and the owning work-item bd-ib-x7bwug adds the check-fleet-launch hermetic-harness cases (a queued launcher preflights before an older ticket binds while FIFO order holds, a fresh pass is reused at the head, a reused pass does not skip the hold check, a stale pass is re-taken at the head, a preflight that fails while queued drops the ticket without the mutex) together with the launcher change.",
     "work_item": "bd-ib-x7bwug"
+  },
+  {
+    "heading": "## Scenario 300 \u2014 Fabro-fork gates and carrier builds run on the cluster, not the dev host",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal fabro-fork-rust-gates-and (v278), and the owning work-item bd-ib-dqxcsh adds the test exercising the fork's carrier-branch gate and carrier-build venue together with the change.",
+    "work_item": "bd-ib-dqxcsh"
   }
 ]
