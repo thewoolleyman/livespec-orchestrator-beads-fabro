@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     utc_now_iso,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import DispatchLaunchContext
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     post_admission_publish_branch_reclaim,
 )
@@ -221,7 +222,7 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
                 repo=repo,
                 item=item,
                 journal=journal,
-                janitor=janitor,
+                launch=DispatchLaunchContext(janitor=janitor),
                 # The valve's OWN evaluation, so each launch selects its
                 # per-node ACP candidate from the read that admitted the item.
                 # Re-resolving one here would be a second read of the

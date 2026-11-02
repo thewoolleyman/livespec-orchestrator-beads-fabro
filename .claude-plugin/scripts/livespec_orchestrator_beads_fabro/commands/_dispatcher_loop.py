@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack
-from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
@@ -65,7 +64,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_record import record_dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import (
+    DispatchLaunchContext,
+    DispatchLifetime,
     DispatchRunContext,
+    dispatch_id_for_launch,
     run_dispatch_with_watchdog,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
@@ -94,22 +96,14 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 __all__: list[str] = ["dispatch_one"]
 
 
-@dataclass(frozen=True, kw_only=True)
-class _DispatchLifetime:
-    """The identity and cleanup stack shared by one locked dispatch."""
-
-    identity: DispatchJournalIdentity
-    cleanup: ExitStack
-
-
 def dispatch_one(
     *,
     args: argparse.Namespace,
     repo: Path,
     item: WorkItem,
     journal: JournalFile,
-    janitor: tuple[str, ...] | None,
     verdict: AcpPreflightVerdict | None = None,
+    launch: DispatchLaunchContext | None = None,
 ) -> DispatchOutcome:
     """Launch one admitted item, under the admission evaluation that admitted it.
 
@@ -123,6 +117,7 @@ def dispatch_one(
     them, and absent means no selection is applied: every node keeps its
     configured primary, which is the contract's additive guarantee.
     """
+    resolved_launch = launch or DispatchLaunchContext()
     raw_factory_target = getattr(args, "fabro_factory_target", None)
     dispatch_factory = (
         raw_factory_target.name if isinstance(raw_factory_target, FactoryTarget) else None
@@ -131,7 +126,7 @@ def dispatch_one(
         args.fabro_factory_target = FactoryTarget(name="default", server=None, dev_token=None)
     lock = live_dispatch_lock(repo=repo, work_item_id=item.id)
     if lock is None or lock.dispatch_id is None:
-        dispatch_id = run_id()
+        dispatch_id = dispatch_id_for_launch(context=resolved_launch, mint_id=run_id)
         lock_path = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
     else:
         dispatch_id = lock.dispatch_id
@@ -143,15 +138,16 @@ def dispatch_one(
             repo=repo,
             item=item,
             journal=journal,
-            janitor=janitor,
+            janitor=resolved_launch.janitor,
             verdict=verdict,
-            lifetime=_DispatchLifetime(
+            lifetime=DispatchLifetime(
                 identity=DispatchJournalIdentity(
                     dispatch_id=dispatch_id,
                     dispatch_factory=dispatch_factory,
                 ),
                 cleanup=stack,
             ),
+            prelaunch_profile=resolved_launch.prelaunch_profile,
         )
         release_pre_run_claim_if_needed(repo=repo, item=item, outcome=outcome, journal=journal)
         return outcome
@@ -172,10 +168,11 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
     verdict: AcpPreflightVerdict | None,
-    lifetime: _DispatchLifetime,
+    lifetime: DispatchLifetime,
+    prelaunch_profile: PrelaunchCpuProfile | None = None,
 ) -> DispatchOutcome:
     identity = lifetime.identity
-    profile = PrelaunchCpuProfile.for_drive(
+    profile = prelaunch_profile or PrelaunchCpuProfile.for_drive(
         journal=journal, work_item_id=item.id, dispatch_id=identity.dispatch_id
     )
     with profile.during(name="record-dispatch"):
