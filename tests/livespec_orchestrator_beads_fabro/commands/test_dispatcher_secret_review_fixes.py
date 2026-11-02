@@ -295,7 +295,7 @@ def test_factory_authentication_precedes_vault_materialization(
             acceptance_criteria=None,
         ),
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
-        janitor=None,
+        launch=loop_module.DispatchLaunchContext(),
     )
     assert outcome.status == "failed"
     assert events == ["factory-auth", "vault-materialization"]

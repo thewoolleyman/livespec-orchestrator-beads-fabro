@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     prepare,
     ready_items,
+    run_id,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
@@ -36,6 +37,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import PrelaunchCpuProfile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
     not_ready_requested_items_error,
 )
@@ -83,9 +85,21 @@ def _dispatch_in_pass(*, args: argparse.Namespace) -> int:
     if selected is None:
         return EXIT_PRECONDITION_ERROR
     target, marked = selected
+    dispatch_id = run_id()
+    profile = PrelaunchCpuProfile.for_drive(
+        journal=journal,
+        work_item_id=target.id,
+        dispatch_id=dispatch_id,
+    )
     # Every refusal that must land after selection and before the claim, as one
     # decision. The SAME wall the drain runs, handed a one-item selection.
-    wall_exit = pre_dispatch_wall_exit(args=args, repo=repo, items=[target], journal=journal)
+    wall_exit = pre_dispatch_wall_exit(
+        args=args,
+        repo=repo,
+        items=[target],
+        journal=journal,
+        prelaunch_checkpoint=profile.checkpoint,
+    )
     if wall_exit is not None:
         return wall_exit
     # RECOVERY ROUTING, which the clause places after the pre-dispatch wall and
@@ -93,7 +107,10 @@ def _dispatch_in_pass(*, args: argparse.Namespace) -> int:
     # reads only; a target with no earlier dispatch that released it is routed
     # `fresh` without any remote measurement, so an ordinary dispatch pays
     # nothing for it.
-    routing = route_recovery(args=args, repo=repo, candidates=[target], journal=journal)
+    routing = profile.phase(
+        name="recovery-routing",
+        action=lambda: route_recovery(args=args, repo=repo, candidates=[target], journal=journal),
+    )
     held = routing.held_report(work_item_id=target.id)
     if held is not None:
         # The drain reports a hold as a deferred outcome; `dispatch --item` names
@@ -112,6 +129,7 @@ def _dispatch_in_pass(*, args: argparse.Namespace) -> int:
         janitor=janitor,
         marked=marked,
         routing=routing,
+        prelaunch_profile=profile,
     )
     # Every post-verdict stage, as ONE sequence. The SAME tail the resume runs,
     # which is what makes "both paths journal the same" a property of one

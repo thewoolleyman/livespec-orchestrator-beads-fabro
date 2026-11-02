@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_pre_dispatch_wall as wall_module,
+)
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu"
 _MODULE_PATH = (
@@ -51,6 +56,13 @@ def test_each_completed_prelaunch_phase_is_journalled_with_its_drive_tree_cpu() 
     ]
 
 
+def test_the_pre_admission_wall_accepts_a_cpu_checkpoint() -> None:
+    """The profile includes the expensive pre-admission refusal sequence."""
+    parameters = inspect.signature(wall_module.pre_dispatch_wall_exit).parameters
+
+    assert "prelaunch_checkpoint" in parameters
+
+
 def _stat_line(*, pid: int, comm: str, ppid: int, ticks: tuple[int, int, int, int]) -> str:
     utime, stime, cutime, cstime = ticks
     return (
@@ -72,7 +84,7 @@ def test_process_tree_cpu_counts_live_descendants_that_os_times_cannot_see(
     }
     for pid, line in rows.items():
         (tmp_path / str(pid)).mkdir()
-        (tmp_path / str(pid) / "stat").write_text(line, encoding="utf-8")
+        _ = (tmp_path / str(pid) / "stat").write_text(line, encoding="utf-8")
     (tmp_path / "self").mkdir()
     (tmp_path / "104").mkdir()
 
