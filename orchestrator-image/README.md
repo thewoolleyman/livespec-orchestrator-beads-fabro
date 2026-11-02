@@ -317,6 +317,27 @@ The patch was based on the serving branch and rebase-merged into it, not cut as 
 branch on upstream `main` and merge-committed, as the convention above says. Before it is
 offered upstream, re-cut it as a topic branch on upstream `main`; the change is one file.
 
+**The fleet instance's build (2026-11-02).** Since 2026-11-02T15:04:02Z, gmktec's fleet
+instance `fabro-server` (`:32276`) serves `613add19c`. That is the next commit on the same
+Fabro carrier branch `carrier-candidate-registered-20261023`: `9f6c38fab` plus one
+fork-local carry. Its `Cargo.lock` still pins Petri `e92b191`, so `565ac47` above stays
+undeployed. `fabro-server-candidate` and `fabro-server-mi-homelab` keep `9f6c38fab`, by
+coordinator ruling. The build is `fabro 0.393.0-nightly.1 (613add1 2026-11-02)`, sha256
+`def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-613add19c/` on
+vps. The pin is livespec-dev-tooling PR #3141 (`9657a61e`), and its rollback target is
+`v0393-9f6c38fab` (sha256 `e8ebf8ac…09d6`).
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `613add19c` (thewoolleyman/fabro#13) | per-run GitHub App selection: a run config's `[run.integrations.github.app]` names the App a run publishes as, in place of the server's global App | one shared main-Petri instance serves repositories owned by different GitHub organizations, and each run must publish as its target repository's own App (homelab's org App beside the fleet's) | **YES**, on `fabro-server` `:32276` only, since 2026-11-02 | `bd-ib-voozdp` (plan `fabro-currency`) |
+
+Deploying it exposed a role defect. The `fabro_server` role's restart-deferred apply
+renamed the new build over the binary of a running server. That server spawns each run's
+worker from its own executable path, so every new run failed to launch from 14:42:47Z
+until the 15:04:02Z restart. The fix is livespec-dev-tooling-udma. Until it ships, any
+apply that stages a Fabro binary MUST restart that instance in the same step.
+
 **The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
 `fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
 `thewoolleyman/fabro`. It is upstream `v0.389.0-nightly.0` (`5c90ad2e0`) plus the two
