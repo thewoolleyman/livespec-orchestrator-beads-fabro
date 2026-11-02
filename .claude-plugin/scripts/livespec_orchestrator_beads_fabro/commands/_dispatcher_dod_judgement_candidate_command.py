@@ -54,6 +54,8 @@ def candidate_command(
     candidate: AcpCandidate,
     environ: dict[str, str],
     bound_input: bool,
+    journal_spend: bool,
+    journal_name: str,
     allowed_directory: Path,
 ) -> tuple[list[str], dict[str, str]]:
     """The direct host command for one catalog-resolved ACP candidate.
@@ -106,8 +108,11 @@ def candidate_command(
         argv = judgement_argv(
             judge_path=resolve_judge_path(environ=environ),
             model=model,
+            name=journal_name,
             allowed_directory=allowed_directory,
-            stream_usage=bound_input,
+            # The spend journal records Claude's assistant stream even when
+            # this caller does not apply the Definition-of-Done input bound.
+            stream_usage=bound_input or journal_spend,
         )
         return argv, judge_environ
     return [candidate.adapter.command, *candidate.adapter.args], judge_environ

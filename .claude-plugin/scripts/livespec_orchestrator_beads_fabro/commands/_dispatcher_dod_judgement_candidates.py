@@ -49,6 +49,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._host_judge_spend_journal import (
+    HostJudgeSpendJournal,
+    append_assistant_event,
+    is_claude_agent,
+    spend_journal_name,
+    start_spend_journal,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
@@ -136,6 +143,8 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
     candidate_resolver: Callable[..., tuple[AcpCandidate, ...] | None] = dod_gate_candidates,
     bound_input: bool = False,
     caller: str | None = None,
+    journal_name: str | None = None,
+    journal_spend: bool = False,
 ) -> CandidateChainResult:
     """Run the resolved candidates in order, closing stdin for each.
 
@@ -151,6 +160,9 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
     if resolved is None:
         return CandidateChainResult(reply=None, cause=CAUSE_NO_ELIGIBLE_MODEL)
     environ = _caller_environ(caller=caller, environ=dict(os.environ))
+    resolved_journal_name = (
+        spend_journal_name(caller=caller, cwd=cwd) if journal_name is None else journal_name
+    )
     resolved_timeout = (
         resolve_judge_timeout_seconds(environ=environ)
         if timeout_seconds is None
@@ -170,9 +182,13 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
             environ=environ,
             timeout_seconds=resolved_timeout,
             bound_input=bound_input,
+            journal_name=resolved_journal_name,
+            journal_spend=journal_spend,
         )
         reply = (
-            candidate_reply(output=attempt.result.stdout) if bound_input else attempt.result.stdout
+            candidate_reply(output=attempt.result.stdout)
+            if bound_input or is_claude_agent(agent_id=candidate.agent_id)
+            else attempt.result.stdout
         )
         outcome = _candidate_outcome(attempt=attempt, reply=reply, is_verdict=is_verdict)
         usages.append(attempt.usage)
@@ -242,10 +258,27 @@ def _run_candidate(  # noqa: PLR0913 - each argument is an independent seam inpu
     environ: dict[str, str],
     timeout_seconds: float,
     bound_input: bool,
+    journal_name: str,
+    journal_spend: bool,
 ) -> _CandidateRun:
     """Run one configured host candidate with a prompt file as its only stdin."""
     argv, judge_environ = candidate_command(
-        candidate=candidate, environ=environ, bound_input=bound_input, allowed_directory=cwd
+        candidate=candidate,
+        environ=environ,
+        bound_input=bound_input,
+        journal_spend=journal_spend,
+        journal_name=journal_name,
+        allowed_directory=cwd,
+    )
+    journal = (
+        start_spend_journal(
+            home=Path(environ.get("HOME", str(Path.home()))),
+            name=journal_name,
+            cwd=cwd,
+            first_prompt=prompt,
+        )
+        if is_claude_agent(agent_id=candidate.agent_id) and (bound_input or journal_spend)
+        else None
     )
     with isolated_launch(
         is_codex=is_codex_candidate(candidate=candidate),
@@ -253,13 +286,15 @@ def _run_candidate(  # noqa: PLR0913 - each argument is an independent seam inpu
         candidate_environ=judge_environ,
         ambient_environ=environ,
     ) as isolated:
-        if bound_input and isinstance(runner, ShellCommandRunner):
+        if journal is not None and isinstance(runner, ShellCommandRunner):
             live_usage = _LiveUsage()
             result = runner.run_streaming(
                 argv=argv,
                 cwd=isolated.cwd,
                 timeout_seconds=timeout_seconds,
-                on_stdout_line=live_usage.observe,
+                on_stdout_line=lambda line: _observe_line(
+                    journal=journal, live_usage=live_usage, bound_input=bound_input, line=line
+                ),
                 env=isolated.environ,
                 stdin=isolated.stdin,
             )
@@ -275,6 +310,9 @@ def _run_candidate(  # noqa: PLR0913 - each argument is an independent seam inpu
             env=isolated.environ,
             stdin=isolated.stdin,
         )
+    if journal is not None:
+        for line in result.stdout.splitlines():
+            append_assistant_event(journal=journal, line=line)
     usage = candidate_input_usage(output=result.stdout) if bound_input else _UNBOUNDED_USAGE
     return _CandidateRun(result=result, usage=usage, ended_by_input_limit=False)
 
@@ -297,3 +335,11 @@ def _caller_environ(*, caller: str | None, environ: dict[str, str]) -> dict[str,
         **environ,
         "OTEL_RESOURCE_ATTRIBUTES": label if inherited is None else f"{inherited},{label}",
     }
+
+
+def _observe_line(
+    *, journal: HostJudgeSpendJournal, live_usage: _LiveUsage, bound_input: bool, line: str
+) -> bool:
+    """Journal a received response before optionally ending an over-budget candidate."""
+    append_assistant_event(journal=journal, line=line)
+    return live_usage.observe(line=line) if bound_input else False
