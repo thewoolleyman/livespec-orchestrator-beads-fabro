@@ -59,6 +59,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
     read_dispatch_labels,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
+    write_work_item_status_and_reconcile,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -73,7 +76,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     effective_acceptance_policy,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr
-from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -250,7 +252,9 @@ def _park_regraded_item(
     journal: JournalFile,
 ) -> DispatchOutcome:
     """Park a passing re-grade whose host or human proof leg is still pending."""
-    update_work_item_status(path=store_config(repo=repo), item_id=item.id, status="acceptance")
+    write_work_item_status_and_reconcile(
+        path=store_config(repo=repo), item_id=item.id, status="acceptance"
+    )
     park_in_acceptance(
         repo=repo,
         item_id=item.id,
