@@ -186,6 +186,7 @@ def judgement_argv(
     *,
     judge_path: str,
     model: str,
+    name: str,
     allowed_directory: Path,
     stream_usage: bool = False,
 ) -> list[str]:
@@ -207,6 +208,8 @@ def judgement_argv(
         "-p",
         "--model",
         model,
+        "--name",
+        name,
         "--tools",
         _AVAILABLE_TOOLS,
     ]

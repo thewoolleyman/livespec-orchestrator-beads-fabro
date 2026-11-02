@@ -26,6 +26,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     run_dod_gate_prompt,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._host_judge_spend_journal import (
+    HostJudgeSpendJournal,
+    append_assistant_event,
+)
 
 
 def _configured_repo(*, tmp_path: Path) -> Path:
@@ -150,6 +154,8 @@ def test_an_unparseable_primary_falls_back_to_the_next_configured_candidate(
     assert runner.argvs[1][runner.argvs[1].index("--model") :] == [
         "--model",
         "claude-opus-5",
+        "--name",
+        "purpose:host_judgement@repo",
         "--tools",
         "",
         "--add-dir",
@@ -196,6 +202,14 @@ def test_missing_dod_gate_has_no_host_candidate(tmp_path: Path) -> None:
     )
 
     assert dod_gate_candidates(cwd=repo) is None
+
+
+def test_a_non_mapping_stream_record_is_not_journalled(tmp_path: Path) -> None:
+    journal = HostJudgeSpendJournal(path=tmp_path / "spend.jsonl", session_id="session")
+
+    append_assistant_event(journal=journal, line="[]")
+
+    assert not journal.path.exists()
 
 
 def test_an_unresolvable_dod_gate_has_no_host_candidate(tmp_path: Path) -> None:
@@ -381,6 +395,8 @@ def test_a_claude_candidate_carries_its_adapter_environment(
         "-p",
         "--model",
         "claude-opus-5",
+        "--name",
+        "purpose:host_judgement@" + tmp_path.name,
         "--tools",
         "",
         "--add-dir",
