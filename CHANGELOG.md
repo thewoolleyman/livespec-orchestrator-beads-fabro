@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.275.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.3...v0.275.0) (2026-11-02)
+
+
+### Features
+
+* admit green ancestor CI evidence ([67cfab3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/67cfab3a23e0b75107cbff6186dd9caf2e32abde))
+
+
+### Bug Fixes
+
+* fall back to the bounded wait on malformed ancestor-lookup output ([ca0a6ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca0a6edf17b4bcb087cc96eae04c109c7db1d3f7))
+
 ## [0.274.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.2...v0.274.3) (2026-11-02)
 
 
