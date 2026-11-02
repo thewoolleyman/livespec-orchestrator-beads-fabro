@@ -39,9 +39,11 @@ __all__: list[str] = [
     "UNKNOWN_RUN",
     "CiJob",
     "CiRun",
+    "ancestor_of_branch",
     "find_job",
     "has_stored_credential",
     "job_records",
+    "list_recent_runs",
     "list_runs",
     "resolve_default_branch",
     "run_id_of",
@@ -62,6 +64,8 @@ class CiRun(TypedDict, total=False):
     status: str | None
     conclusion: str | None
     databaseId: int | str | None
+    headSha: str | None
+    createdAt: str | None
 
 
 class CiJob(TypedDict, total=False):
@@ -95,6 +99,52 @@ def list_runs(*, repo: Path, runner: CommandRunner, workflow: str, branch: str) 
             "status,conclusion,databaseId",
         ],
     )
+
+
+def list_recent_runs(
+    *, repo: Path, runner: CommandRunner, workflow: str, branch: str
+) -> CommandResult:
+    """The recent runs needed to find a concluded ancestor while the latest is pending."""
+    return _gh(
+        repo=repo,
+        runner=runner,
+        argv=[
+            "run",
+            "list",
+            "--branch",
+            branch,
+            "--limit",
+            "100",
+            "--workflow",
+            workflow,
+            "--json",
+            "databaseId,headSha,status,conclusion,createdAt",
+        ],
+    )
+
+
+def ancestor_of_branch(
+    *, repo: Path, runner: CommandRunner, commit: str, branch: str
+) -> bool | None:
+    """Whether the forge says ``commit`` is the current branch head or its ancestor."""
+    result = _gh(
+        repo=repo,
+        runner=runner,
+        argv=[
+            "api",
+            f"repos/{{owner}}/{{repo}}/compare/{commit}...{branch}",
+            "--jq",
+            ".status",
+        ],
+    )
+    if result.exit_code != 0:
+        return None
+    status = result.stdout.strip()
+    if status in {"ahead", "identical"}:
+        return True
+    if status in {"behind", "diverged"}:
+        return False
+    return None
 
 
 def view_run_jobs(*, repo: Path, runner: CommandRunner, run_id: str) -> CommandResult:

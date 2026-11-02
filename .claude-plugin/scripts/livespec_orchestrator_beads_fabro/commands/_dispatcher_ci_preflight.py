@@ -42,12 +42,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_pipeline_view imp
     MasterCiPipeline,
     resolve_master_ci_pipeline,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_ancestors import (
+    green_ancestor,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_lookup_failure import (
+    lookup_failure_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_lookups import (
     UNKNOWN_RUN,
     CiJob,
     CiRun,
     find_job,
-    has_stored_credential,
     job_records,
     list_runs,
     run_id_of,
@@ -56,11 +61,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_lookups
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusals import (
     BRANCH_REMEDY,
-    CREDENTIAL_REMEDY,
     NO_RUNS_REMEDY,
     PENDING_REMEDY,
     PIPELINE_REMEDY,
     MasterCiOutcome,
+    green_ancestor_outcome,
     pass_outcome,
     red_outcome,
     unprovable_outcome,
@@ -74,17 +79,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
     resolve_default_branch,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-    CommandResult,
-    CommandRunner,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 
 __all__: list[str] = [
     "master_ci_preflight",
 ]
 
 _UNRESOLVED_BRANCH = "<unresolved>"
-_STDERR_EXCERPT = 200
 _GREEN_CONCLUSIONS: frozenset[str] = frozenset({"success"})
 _PENDING_STATUSES: frozenset[str] = frozenset(
     {"queued", "in_progress", "waiting", "pending", "requested"},
@@ -150,7 +151,7 @@ def _read_latest(
 ) -> MasterCiOutcome | PendingReading:
     result = list_runs(repo=repo, runner=runner, workflow=pipeline.workflow, branch=branch)
     if result.exit_code != 0:
-        return _lookup_failure(
+        return lookup_failure_outcome(
             repo=repo, runner=runner, pipeline=pipeline, branch=branch, result=result
         )
     runs = run_records(result=result)
@@ -173,39 +174,6 @@ def _read_latest(
     return _classify_run(repo=repo, runner=runner, pipeline=pipeline, branch=branch, first=runs[0])
 
 
-def _lookup_failure(
-    *,
-    repo: Path,
-    runner: CommandRunner,
-    pipeline: MasterCiPipeline,
-    branch: str,
-    result: CommandResult,
-) -> MasterCiOutcome:
-    """A failed run lookup: no usable credential, or a pipeline that will not resolve.
-
-    An absent `gh` binary and an unauthenticated one land on the same arm on
-    purpose: both make `gh auth token` fail, and both leave the operator with
-    the same remedy.
-    """
-    excerpt = result.stderr.strip()[:_STDERR_EXCERPT] or "<empty stderr>"
-    if not has_stored_credential(repo=repo, runner=runner):
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            cause=f"no usable `gh` credential on this host; `gh` exited {result.exit_code}",
-            remedy=CREDENTIAL_REMEDY,
-        )
-    return _unprovable(
-        pipeline=pipeline,
-        branch=branch,
-        cause=(
-            f"the resolved pipeline could not be found; credentialed `gh` exited "
-            f"{result.exit_code}: {excerpt}"
-        ),
-        remedy=PIPELINE_REMEDY,
-    )
-
-
 def _classify_run(
     *,
     repo: Path,
@@ -225,7 +193,13 @@ def _classify_run(
     run_id = run_id_of(run=run)
     status = run.get("status")
     if isinstance(status, str) and status in _PENDING_STATUSES:
-        return PendingReading(run_id=run_id, status=status)
+        return _ancestor_or_pending(
+            repo=repo,
+            runner=runner,
+            pipeline=pipeline,
+            branch=branch,
+            pending=PendingReading(run_id=run_id, status=status),
+        )
     return _classify_job(repo=repo, runner=runner, pipeline=pipeline, branch=branch, run_id=run_id)
 
 
@@ -264,7 +238,44 @@ def _classify_job(
             cause=f"aggregate job `{pipeline.job}` is missing from run {run_id}",
             remedy=PIPELINE_REMEDY,
         )
-    return _classify_conclusion(pipeline=pipeline, branch=branch, run_id=run_id, job=job)
+    classification = _classify_conclusion(pipeline=pipeline, branch=branch, run_id=run_id, job=job)
+    if isinstance(classification, MasterCiOutcome):
+        return classification
+    return _ancestor_or_pending(
+        repo=repo,
+        runner=runner,
+        pipeline=pipeline,
+        branch=branch,
+        pending=classification,
+    )
+
+
+def _ancestor_or_pending(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    pending: PendingReading,
+) -> MasterCiOutcome | PendingReading:
+    ancestor = green_ancestor(
+        repo=repo,
+        runner=runner,
+        pipeline=pipeline,
+        branch=branch,
+        pending_run_id=pending.run_id,
+    )
+    if ancestor is None:
+        return pending
+    run_id, head_sha = ancestor
+    return green_ancestor_outcome(
+        pipeline=pipeline,
+        branch=branch,
+        run_id=run_id,
+        head_sha=head_sha,
+        pending_run_id=pending.run_id,
+        pending_status=pending.status,
+    )
 
 
 def _classify_conclusion(
