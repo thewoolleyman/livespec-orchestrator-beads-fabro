@@ -222,6 +222,7 @@ def test_evaluate_refuses_unavailable_declared_interpreter(
     )
 
     assert decision.verdict == "refuse-check-failed"
+    assert decision.detail == "the recorded check did not pass"
 
 
 def test_evaluate_refuses_unavailable_check_file(
