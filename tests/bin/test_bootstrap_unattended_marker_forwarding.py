@@ -49,6 +49,11 @@ _BIN_DIR = _SCRIPTS_DIR / "bin"
 _PACKAGE_DIR = _SCRIPTS_DIR / "livespec_orchestrator_beads_fabro"
 
 _MARKER = "LIVESPEC_PLAN_UNATTENDED"
+_AGENT_SESSION_ENV_VARS = (
+    "CODEX_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "PI_SESSION_ID",
+)
 _WRAPPER_SEPARATOR = "--"
 _ENV_COMMAND = "env"
 _PLACEHOLDER_SECRET = "test-not-a-real-secret"
@@ -242,6 +247,12 @@ def _record_reexec_argv(*, monkeypatch: pytest.MonkeyPatch, cwd: Path) -> list[s
     return recorded
 
 
+def _clear_agent_session_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make marker-only cases independent of the runner's own session."""
+    for name in _AGENT_SESSION_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_forwarded_argv_places_the_env_operand_after_the_wrapper_separator(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -251,6 +262,7 @@ def test_forwarded_argv_places_the_env_operand_after_the_wrapper_separator(
     command the wrapper execs, which is the only position the sudo stage cannot
     strip.
     """
+    _clear_agent_session_env(monkeypatch=monkeypatch)
     monkeypatch.setenv(_MARKER, "1")
     assert _record_reexec_argv(monkeypatch=monkeypatch, cwd=tmp_path) == [
         "/usr/local/bin/with-livespec-env.sh",
@@ -270,10 +282,30 @@ def test_forwarded_argv_preserves_the_operator_written_marker_value(
     assert f"{_MARKER}=true" in _record_reexec_argv(monkeypatch=monkeypatch, cwd=tmp_path)
 
 
+def test_forwarded_argv_preserves_every_agent_session_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The wrapped proof poster keeps the invoking session's identity."""
+    monkeypatch.delenv(_MARKER, raising=False)
+    session_values = {name: f"{name.lower()}-value" for name in _AGENT_SESSION_ENV_VARS}
+    for name, value in session_values.items():
+        monkeypatch.setenv(name, value)
+    assert _record_reexec_argv(monkeypatch=monkeypatch, cwd=tmp_path) == [
+        "/usr/local/bin/with-livespec-env.sh",
+        _WRAPPER_SEPARATOR,
+        _ENV_COMMAND,
+        *(f"{name}={value}" for name, value in session_values.items()),
+        "/usr/bin/python3",
+        "next.py",
+    ]
+
+
 def test_forwarded_argv_is_unchanged_for_an_attended_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Without an agent session, the wrapped process keeps human fallback."""
     monkeypatch.delenv(_MARKER, raising=False)
+    _clear_agent_session_env(monkeypatch=monkeypatch)
     assert _record_reexec_argv(monkeypatch=monkeypatch, cwd=tmp_path) == [
         "/usr/local/bin/with-livespec-env.sh",
         _WRAPPER_SEPARATOR,
@@ -286,6 +318,7 @@ def test_forwarded_argv_is_unchanged_when_the_marker_is_set_empty(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """An empty marker is not unattended, so forwarding it would say nothing."""
+    _clear_agent_session_env(monkeypatch=monkeypatch)
     monkeypatch.setenv(_MARKER, "")
     assert _ENV_COMMAND not in _record_reexec_argv(monkeypatch=monkeypatch, cwd=tmp_path)
 
