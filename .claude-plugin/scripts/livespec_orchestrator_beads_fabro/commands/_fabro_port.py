@@ -162,9 +162,13 @@ class FabroPort:
             ),
         )
 
-    def events(self, *, run_id: str, timeout_seconds: float) -> FabroEventsResult:
+    def events(
+        self, *, run_id: str, timeout_seconds: float, since: str | None = None
+    ) -> FabroEventsResult:
+        """Read one run's events, optionally after an already-observed instant."""
+        since_args = [] if since is None else ["--since", since]
         command = self._run(
-            argv=[self.fabro_bin, "events", run_id, "--json", *self._server_suffix()],
+            argv=[self.fabro_bin, "events", run_id, "--json", *since_args, *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
         return FabroEventsResult(command=command, payload=fabro_events_payload(command=command))
@@ -185,8 +189,17 @@ class FabroPort:
         return FabroCommandResult(command=command)
 
     def ps(self, *, timeout_seconds: float) -> FabroPsResult:
+        """Read the factory's complete run inventory for history consumers."""
+        return self._ps(timeout_seconds=timeout_seconds, include_history=True)
+
+    def live_ps(self, *, timeout_seconds: float) -> FabroPsResult:
+        """Read statuses for only the runs the factory currently holds live."""
+        return self._ps(timeout_seconds=timeout_seconds, include_history=False)
+
+    def _ps(self, *, timeout_seconds: float, include_history: bool) -> FabroPsResult:
+        history_args = ["-a"] if include_history else []
         command = self._run(
-            argv=[self.fabro_bin, "ps", "-a", "--json", *self._server_suffix()],
+            argv=[self.fabro_bin, "ps", *history_args, "--json", *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
         payload = fabro_json_payload(command=command)

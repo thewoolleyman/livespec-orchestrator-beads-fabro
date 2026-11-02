@@ -8,8 +8,9 @@ Scenario 173) plus the choice between them:
 * Until the Dispatcher has bound the dispatched run's id, the poll MAY
   discover the run by listing what the factory holds — the only route
   available, because `fabro run` is blocking and yields its id on RETURN.
-* Once the id is bound, every later poll MUST read THAT run by its id and
-  MUST NOT list the factory's runs again.
+* Once the id is bound, every later poll reads the factory's LIVE status
+  inventory once and selects that run from it. A run that disappears gets one
+  inspection so the terminal conclusion is recorded.
 
 WHY THE LISTING HAD TO GO, in the numbers that decided it. `fabro ps -a`
 scans every run the server has ever held, so a poll built on it costs what
@@ -111,8 +112,8 @@ _RUN_NOT_HELD_MARKER = "no run found"
 class ObservedRun:
     """One poll's observation: the run, and the record the read returned.
 
-    `record` is the PER-RUN read's own payload, or None on the listing route
-    and on any read that yielded none. It is carried rather than discarded so a
+    `record` is the terminal per-run read's own payload, or None on the live
+    listing route and on any read that yielded none. It is carried rather than discarded so a
     caller needing a FIELD of the run's record reads it from the SAME reading
     that answered where the run is -- the whole-run wall budget's `running`
     instant is the one such field today, and a second `fabro inspect` for it
@@ -187,7 +188,7 @@ def observed_run(
     return ObservedRun(
         run=journaled_discovery(
             work_item_id=work_item_id,
-            ps=port.ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
+            ps=port.live_ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
             journal=journal,
             attribution=attribution,
         ),

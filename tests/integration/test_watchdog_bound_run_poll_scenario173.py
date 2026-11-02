@@ -97,10 +97,12 @@ class _FactoryRunner:
     """
 
     inspect_readings: list[tuple[int, str, str]]
+    ps_readings: list[tuple[int, str, str]]
     argvs: list[list[str]] = field(default_factory=list)
     run_done: threading.Event = field(default_factory=threading.Event)
     run_returned: threading.Event = field(default_factory=threading.Event)
     _inspects: int = 0
+    _ps_reads: int = 0
 
     @property
     def verbs(self) -> list[str]:
@@ -135,7 +137,10 @@ class _FactoryRunner:
         return CommandResult(exit_code=0, stdout=f"    Run: {_RUN_ID}\n", stderr="")
 
     def _ps(self) -> CommandResult:
-        return CommandResult(exit_code=0, stdout=_PS_LISTING, stderr="")
+        index = min(self._ps_reads, len(self.ps_readings) - 1)
+        self._ps_reads += 1
+        exit_code, stdout, stderr = self.ps_readings[index]
+        return CommandResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
     def _events(self) -> CommandResult:
         return CommandResult(exit_code=0, stdout=_EVENTS, stderr="")
@@ -192,10 +197,14 @@ def _launch(
     *,
     tmp_path: Path,
     inspect_readings: list[tuple[int, str, str]],
+    ps_readings: list[tuple[int, str, str]] | None = None,
     polls_before_the_run_ends: int,
 ) -> tuple[_FactoryRunner, _Journal]:
     """Drive the production launcher for a bounded number of polls."""
-    runner = _FactoryRunner(inspect_readings=inspect_readings)
+    runner = _FactoryRunner(
+        inspect_readings=inspect_readings,
+        ps_readings=ps_readings if ps_readings is not None else [(0, _PS_LISTING, "")],
+    )
     journal = _Journal()
     slept = {"polls": 0}
 

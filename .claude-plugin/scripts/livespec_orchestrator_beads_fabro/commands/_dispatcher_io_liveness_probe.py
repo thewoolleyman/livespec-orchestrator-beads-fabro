@@ -25,6 +25,7 @@ the per-poll probe cost on every dispatch in the fleet.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe import (
@@ -33,13 +34,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe impo
     heartbeat_lookup_keys,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_open_command_node import (
-    open_command_node,
+    updated_open_command_node,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     LivenessSample,
+    OpenCommandNode,
     parse_last_event_epoch,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
@@ -59,6 +61,17 @@ __all__: list[str] = [
 FABRO_PROBE_TIMEOUT_SECONDS = 60.0
 
 
+@dataclass(kw_only=True)
+class _LivenessState:
+    """The event facts one watch has established for one live run."""
+
+    newest_event_epoch: float | None = None
+    open_command_node: OpenCommandNode | None = None
+
+
+_LIVENESS_STATES: dict[tuple[int, str], _LivenessState] = {}
+
+
 @dataclass(frozen=True, kw_only=True)
 class _WallClockEventProbe:
     """The coarse wall-clock backstop expressed as a liveness probe."""
@@ -66,6 +79,7 @@ class _WallClockEventProbe:
     plan: DispatchPlan
     port: FabroPort
     run_id: str | None
+    state: _LivenessState
 
     def sample(self, *, observed_at: float) -> LivenessSample:
         if self.run_id is None:
@@ -79,17 +93,27 @@ class _WallClockEventProbe:
         events = self.port.events(
             run_id=self.run_id,
             timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
+            since=_event_since(epoch=self.state.newest_event_epoch),
         )
         events_json = events.command.stdout if events.command.exit_code == 0 else ""
+        newest = parse_last_event_epoch(events_json=events_json)
+        if newest is not None and (
+            self.state.newest_event_epoch is None or newest > self.state.newest_event_epoch
+        ):
+            self.state.newest_event_epoch = newest
+        if events.command.exit_code == 0 and events_json:
+            self.state.open_command_node = updated_open_command_node(
+                established=self.state.open_command_node,
+                events_json=events_json,
+                timeouts=self.plan.node_timeouts,
+            )
         return LivenessSample(
-            last_event_epoch=parse_last_event_epoch(events_json=events_json),
+            last_event_epoch=self.state.newest_event_epoch,
             observed_at=observed_at,
             # Read from the SAME output as the timestamp above, against this
             # dispatch's own resolved node timeouts, so the bound the stall
             # decision applies is the value the rendered graph gave the node.
-            open_command_node=open_command_node(
-                events_json=events_json, timeouts=self.plan.node_timeouts
-            ),
+            open_command_node=self.state.open_command_node,
         )
 
 
@@ -110,7 +134,12 @@ def liveness_sample(
     overlay projected into the sandbox and therefore the id the sink keys
     every beat by; None falls back to the work-item id alone.
     """
-    wall_clock = _WallClockEventProbe(plan=plan, port=port, run_id=run_id)
+    wall_clock = _WallClockEventProbe(
+        plan=plan,
+        port=port,
+        run_id=run_id,
+        state=_state_for(port=port, run_id=run_id),
+    )
     if heartbeat_path is None:
         return wall_clock.sample(observed_at=observed_at)
     heartbeat = HeartbeatLivenessProbe(
@@ -119,3 +148,16 @@ def liveness_sample(
     )
     layered = LayeredLivenessProbe(primary=heartbeat, fallback=wall_clock)
     return layered.sample(observed_at=observed_at)
+
+
+def _event_since(*, epoch: float | None) -> str | None:
+    """Render an observed event instant in Fabro's RFC 3339 CLI form."""
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _state_for(*, port: FabroPort, run_id: str | None) -> _LivenessState:
+    if run_id is None:
+        return _LivenessState()
+    return _LIVENESS_STATES.setdefault((id(port), run_id), _LivenessState())

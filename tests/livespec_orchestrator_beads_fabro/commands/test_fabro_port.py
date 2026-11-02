@@ -233,6 +233,7 @@ def test_fabro_port_json_operations_parse_payloads_and_run_summaries(tmp_path: P
                 ),
                 stderr="",
             ),
+            CommandResult(exit_code=0, stdout='{"runs": []}', stderr=""),
             CommandResult(exit_code=0, stdout='{"valid": true}', stderr=""),
         ],
         calls=[],
@@ -247,6 +248,7 @@ def test_fabro_port_json_operations_parse_payloads_and_run_summaries(tmp_path: P
     inspect = port.inspect(run_id="01RUN", timeout_seconds=1.0)
     events = port.events(run_id="01RUN", timeout_seconds=2.0)
     ps = port.ps(timeout_seconds=3.0)
+    live_ps = port.live_ps(timeout_seconds=3.0)
     validate = port.validate(workflow_toml=tmp_path / "workflow.toml", timeout_seconds=4.0)
 
     assert inspect.status_kind == "blocked"
@@ -260,11 +262,13 @@ def test_fabro_port_json_operations_parse_payloads_and_run_summaries(tmp_path: P
         ),
     )
     assert getattr(ps.runs[0], "work_item_id", None) == "bd-ib-okr5ru"
+    assert live_ps.runs == ()
     assert validate.payload == {"valid": True}
     assert [call.argv for call in runner.calls] == [
         ["fabro", "inspect", "01RUN", "--json", "--server", "http://factory"],
         ["fabro", "events", "01RUN", "--json", "--server", "http://factory"],
         ["fabro", "ps", "-a", "--json", "--server", "http://factory"],
+        ["fabro", "ps", "--json", "--server", "http://factory"],
         ["fabro", "validate", str(tmp_path / "workflow.toml"), "--json"],
     ]
 

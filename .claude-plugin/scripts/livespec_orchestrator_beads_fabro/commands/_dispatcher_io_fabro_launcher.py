@@ -20,9 +20,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     dispatch_fabro_run_inputs,
     run_fabro_factory_auth_login,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
-    liveness_sample,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import liveness_sample
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
     release_pass_snapshot,
 )
@@ -76,7 +74,7 @@ __all__: list[str] = ["WatchedFabroLauncher"]
 # own run thread against the same number — the thread is waiting for the
 # `fabro run` that `rm` is what ends, so two different budgets would let the
 # join outlive or undercut the cancel it is waiting on.
-_WATCHDOG_POLL_INTERVAL_SECONDS = 30.0
+_WATCHDOG_POLL_INTERVAL_SECONDS = 60.0
 
 
 @dataclass(frozen=True, kw_only=True)

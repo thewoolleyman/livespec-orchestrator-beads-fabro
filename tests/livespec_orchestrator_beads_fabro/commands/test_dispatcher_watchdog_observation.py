@@ -166,8 +166,6 @@ def test_a_bound_poll_reads_its_run_and_issues_no_listing() -> None:
     run = observed.run
     assert runner.verbs == ["inspect"]
     assert "ps" not in runner.verbs
-    # The per-run read carries its own record, which is what lets a caller read
-    # a FIELD of the run without spending a second round trip on it.
     assert observed.record is not None
     assert run is not None
     assert run.run_id == "01BOUND"
