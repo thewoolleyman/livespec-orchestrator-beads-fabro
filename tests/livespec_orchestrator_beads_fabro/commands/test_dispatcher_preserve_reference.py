@@ -159,6 +159,19 @@ def _args() -> argparse.Namespace:
     )
 
 
+def test_fabro_dump_timeout_is_defined_once_at_nine_hundred_seconds() -> None:
+    module_path = (
+        Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+        / "_dispatcher_fabro_dump_timeout.py"
+    )
+
+    assert module_path.is_file()
+    timeout = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout"
+    )
+    assert timeout.FABRO_DUMP_TIMEOUT_SECONDS == 900
+
+
 def test_failed_run_comment_records_resolvable_diff_pointer(tmp_path: Path) -> None:
     module = _module()
     append_work_item(path=_config(), item=_item())
