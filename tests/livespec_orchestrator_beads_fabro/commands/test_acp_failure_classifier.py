@@ -450,7 +450,7 @@ def test_measured_removed_model_400_is_eligible_but_a_generic_400_is_not() -> No
     verdict = classifier.classify_acp_failure(
         signal=signals.AcpFailureSignal(
             original_identity="acp-protocol-error",
-            terminal_diagnostic=_MEASURED_400,
+            protocol_message=_MEASURED_400,
             turn_started=True,
         ),
         candidate=candidate,
@@ -464,7 +464,7 @@ def test_measured_removed_model_400_is_eligible_but_a_generic_400_is_not() -> No
     generic = classifier.classify_acp_failure(
         signal=signals.AcpFailureSignal(
             original_identity="acp-protocol-error",
-            terminal_diagnostic=_GENERIC_400,
+            protocol_message=_GENERIC_400,
             turn_started=True,
         ),
         candidate=candidate,
@@ -483,7 +483,7 @@ def test_measured_404_and_usage_limit_carry_their_contract_scopes() -> None:
     candidate = _candidate(modules=modules, identity=_identity())
     removed = classifier.classify_acp_failure(
         signal=signals.AcpFailureSignal(
-            original_identity="acp", terminal_diagnostic=_MEASURED_404, turn_started=True
+            original_identity="acp", protocol_message=_MEASURED_404, turn_started=True
         ),
         candidate=candidate,
         builtin=True,
@@ -504,7 +504,7 @@ def test_measured_404_and_usage_limit_carry_their_contract_scopes() -> None:
     assert spent.hold_key == "codex"
     bare = classifier.classify_acp_failure(
         signal=signals.AcpFailureSignal(
-            original_identity="acp", terminal_diagnostic=_GENERIC_404, turn_started=True
+            original_identity="acp", protocol_message=_GENERIC_404, turn_started=True
         ),
         candidate=candidate,
         builtin=True,
@@ -578,10 +578,21 @@ def test_pre_turn_without_evidence_and_identity_absence_mint_nothing() -> None:
     assert quiet.reason == "pre_turn_without_provider_evidence"
     # A startup diagnostic IS provider evidence even before a turn: the
     # contract names the terminal adapter startup diagnostic as a source.
+    startup_signature = _signature(
+        modules=modules,
+        source="process.terminal_diagnostic",
+        cause="model_unsupported",
+        scope="candidate",
+        all_literals=(
+            "requested model",
+            "is not supported when using codex with a chatgpt account",
+        ),
+    )
     speaking = classifier.classify_acp_failure(
         signal=signals.AcpFailureSignal(original_identity="acp", terminal_diagnostic=_MEASURED_400),
-        candidate=_candidate(modules=modules, identity=_identity()),
-        builtin=True,
+        candidate=_candidate(
+            modules=modules, signatures=(startup_signature,), identity=_identity()
+        ),
     )
     assert isinstance(speaking, classifier.AcpAvailabilityFailure)
     # An identity-less legacy adapter cannot be classified typed at all,
@@ -590,8 +601,7 @@ def test_pre_turn_without_evidence_and_identity_absence_mint_nothing() -> None:
         signal=signals.AcpFailureSignal(
             original_identity="acp", terminal_diagnostic=_MEASURED_400, turn_started=True
         ),
-        candidate=_candidate(modules=modules),
-        builtin=True,
+        candidate=_candidate(modules=modules, signatures=(startup_signature,)),
     )
     assert isinstance(legacy, classifier.AcpNonEligibleFailure)
     assert legacy.reason == "identity_absent"
