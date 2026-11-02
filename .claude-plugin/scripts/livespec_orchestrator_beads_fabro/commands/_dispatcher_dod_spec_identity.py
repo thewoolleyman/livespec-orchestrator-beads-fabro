@@ -155,7 +155,12 @@ def clause_provenance_digest(
 
 
 def spec_identity_journal_record(
-    *, work_item_id: str, stage: str, identity: SpecIdentity
+    *,
+    work_item_id: str,
+    stage: str,
+    identity: SpecIdentity,
+    deciding_candidate: str | None = None,
+    total_input_tokens: int | None = None,
 ) -> dict[str, object]:
     """The dispatch-journal row recording the identity a taking used.
 
@@ -163,7 +168,7 @@ def spec_identity_journal_record(
     what a reader comparing two takings needs; the bodies themselves are the spec
     tree's to keep.
     """
-    return {
+    record: dict[str, object] = {
         "stage": SPEC_IDENTITY_JOURNAL_STAGE,
         "work_item_id": work_item_id,
         "judgement_stage": stage,
@@ -180,6 +185,11 @@ def spec_identity_journal_record(
             for clause in clauses
         ],
     }
+    if deciding_candidate is not None:
+        record["deciding_candidate"] = deciding_candidate
+    if total_input_tokens is not None:
+        record["total_input_tokens"] = total_input_tokens
+    return record
 
 
 def spec_identity_block(*, identity: SpecIdentity) -> str:

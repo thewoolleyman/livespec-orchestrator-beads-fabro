@@ -110,6 +110,8 @@ class DodJudgementDecision:
     findings: tuple[str, ...] = ()
     reused: bool = False
     spec_identity: SpecIdentity | None = None
+    deciding_candidate: str | None = None
+    total_input_tokens: int | None = None
 
     @property
     def holds(self) -> bool:
@@ -252,6 +254,8 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         outcome=verdict.outcome,
         findings=verdict.findings,
         spec_identity=identity,
+        deciding_candidate=verdict.deciding_candidate,
+        total_input_tokens=verdict.total_input_tokens,
     )
 
 
@@ -337,9 +341,7 @@ def held_judgement(
         ),
         rubric_digest=rubric_digest(rubric=rubric),
     )
-    if recorded is None or recorded.outcome != JUDGEMENT_HELD:
-        return None
-    return recorded
+    return recorded if recorded is not None and recorded.outcome == JUDGEMENT_HELD else None
 
 
 def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it writes.

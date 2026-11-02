@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_dod_judgement_wall as wall
@@ -174,6 +175,28 @@ def test_the_journal_row_names_the_form_the_value_and_each_clause_by_address() -
         ("named", "contracts.md", "## Other"),
     ]
     assert all(len(one["body_sha256"]) == 64 for one in provenance)
+
+
+def test_a_judgement_journal_row_names_its_stage_candidate_and_input_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decision = SimpleNamespace(
+        spec_identity=_IDENTITY,
+        holds=False,
+        deciding_candidate="claude-acp:claude-opus-5",
+        total_input_tokens=100_321,
+    )
+    monkeypatch.setattr(wall, "judge_item_definition_of_done", lambda **_kwargs: decision)
+    journal = _Journal()
+
+    assert (
+        wall.dod_judgement_refusal(repo=_repo(tmp_path=tmp_path), items=[_item()], journal=journal)
+        is None
+    )
+    (row,) = journal.rows
+    assert row["judgement_stage"] == STAGE_PRE_DISPATCH
+    assert row.get("deciding_candidate") == "claude-acp:claude-opus-5"
+    assert row.get("total_input_tokens") == 100_321
 
 
 class _Journal:

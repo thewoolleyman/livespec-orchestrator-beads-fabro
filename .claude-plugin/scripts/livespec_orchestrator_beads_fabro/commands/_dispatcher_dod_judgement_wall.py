@@ -127,6 +127,8 @@ def dod_judgement_refusal(
                     work_item_id=item.id,
                     stage=STAGE_PRE_DISPATCH,
                     identity=decision.spec_identity,
+                    deciding_candidate=decision.deciding_candidate,
+                    total_input_tokens=decision.total_input_tokens,
                 )
             )
         if decision.holds:
