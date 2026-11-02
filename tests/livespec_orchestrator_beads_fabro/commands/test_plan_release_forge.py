@@ -67,22 +67,24 @@ def _runner(*, exit_code: int = 0, stdout: str = "", stderr: str = "") -> _Runne
     return _Runner(result=CommandResult(exit_code=exit_code, stdout=stdout, stderr=stderr))
 
 
-def test_the_tags_argv_asks_the_forge_remote_for_every_tag_the_repository_carries() -> None:
+def test_the_tags_argv_asks_for_only_the_repositorys_non_prerelease_release_tags() -> None:
     # The repository is NAMED in the endpoint rather than left to `gh`'s
     # `{owner}`/`{repo}` placeholders: those resolve against the repository the
     # command runs in, which is the GOVERNED one, so a placeholder form would
-    # answer about the governed repository for every record.
+    # answer about the governed repository for every record. The release endpoint
+    # and its projection exclude the Dispatcher's proof-assets prerelease and
+    # every other prerelease: neither makes a release apply to plan proof.
     assert repository_tags_argv(repository=_REPOSITORY) == [
         "gh",
         "api",
         "--method",
         "GET",
-        f"repos/{_REPOSITORY}/tags",
+        f"repos/{_REPOSITORY}/releases",
         "--paginate",
         "-F",
         "per_page=100",
         "--jq",
-        ".[].name",
+        ".[] | select(.prerelease == false) | .tag_name",
     ]
 
 

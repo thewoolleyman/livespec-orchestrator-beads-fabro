@@ -124,7 +124,7 @@ class _Forge:
                 stdout=f"HTTP/2.0 {'200 OK' if present else '404 Not Found'}\r\n",
                 stderr="" if present else "gh: HTTP 404",
             )
-        repository = endpoint.removeprefix("repos/").removesuffix("/tags")
+        repository = endpoint.removeprefix("repos/").removesuffix("/releases")
         if repository in self.unreadable_tags:
             return CommandResult(exit_code=1, stdout="", stderr="gh: Bad credentials (HTTP 401)")
         return CommandResult(
