@@ -77,7 +77,11 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     verdict_named_headings,
 )
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
+from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
+    judged_prompt_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    PROMPT_CHARACTER_CEILING,
     clauses_named,
     condensed_spec_tree,
     headings_resolved,
@@ -177,7 +181,11 @@ def governing_heading_verdict(
     if isinstance(read, AttemptFailure):
         return None
     statement = governing_heading_statement(item=item, section=section)
-    condensed = condensed_spec_tree(spec_tree=read, statement=statement)
+    condensed = condensed_spec_tree(
+        spec_tree=read,
+        statement=statement,
+        ceiling=judged_prompt_ceiling(spec_tree=read, ceiling=PROMPT_CHARACTER_CEILING),
+    )
     judged = attempt(
         action=lambda: judge_within_ceiling(
             spec_tree=read,

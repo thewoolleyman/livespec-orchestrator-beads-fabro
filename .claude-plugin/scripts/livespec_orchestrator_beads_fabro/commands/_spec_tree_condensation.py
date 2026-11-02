@@ -66,7 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     reference_line_headings,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
-    correction_prompt_headroom,
+    judged_prompt_ceiling,
     resolving_subsection_citations,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_partial import (
@@ -343,7 +343,7 @@ def judge_within_ceiling(
             condensed_spec_tree(
                 spec_tree=spec_tree,
                 statement=statement,
-                ceiling=ceiling - correction_prompt_headroom(spec_tree=spec_tree),
+                ceiling=judged_prompt_ceiling(spec_tree=spec_tree, ceiling=ceiling),
             ),
         ),
         statement=f"{statement}{rubric}",
