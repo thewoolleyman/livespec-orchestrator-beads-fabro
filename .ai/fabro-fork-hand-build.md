@@ -62,6 +62,24 @@ measured on that walk.
   venue for a fork build: `rust.yml` runs only for `main`, and an ad hoc
   host build on gmktec is not sanctioned.
 
+## Nightly tags are release tags
+
+- Upstream `fabro-sh/fabro` has published only nightly prerelease tags
+  since stable `v0.254.0` (2026-06-04); the newest on 2026-11-02 was
+  `v0.403.0-nightly.0` (2026-10-31). `SPECIFICATION/constraints.md`
+  §"Fabro runtime constraints" makes an official nightly or prerelease tag
+  eligible on the same terms as a stable tag, and
+  `_dispatcher_fabro_currency.py` reads no release class. Never treat
+  stable-versus-nightly as an open question or a blocker.
+- A base fails the currency rule in only two ways: (a) it is not EXACTLY a
+  published tag, or (b) its tag was published more than 30 days before the
+  newest release. The serving carrier `carrier-candidate-registered-20261023`
+  fails (a): it sits on upstream `main` at `9d9cbe9f4`, four commits (two
+  merged PRs, #1062 and #1065) past `v0.393.0-nightly.1` (`e28675a1d`).
+- "Candidate" in this repository's ops vocabulary names the
+  `fabro-server-candidate` canary instance on gmktec `:32278`, not a
+  release tag.
+
 ## The merge gate is local
 
 The fork's GitHub workflows run only on `main` (`rust.yml`,
