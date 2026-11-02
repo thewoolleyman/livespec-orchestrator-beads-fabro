@@ -3183,25 +3183,60 @@ corrective injection path. The full required set is surfaced up front
 architecture record: the openbrain adopter dogfood, github-app-auth
 `p3icf6`, 2026-07-03.)
 
-**Per-tenant engine identity.** The Fabro server serving a dispatch
-MUST hold the dispatch TARGET tenant's own GitHub App identity. A
-server instance holds exactly ONE App integration — a structural fact
-of the engine — so dispatching an adopter repo through the fleet's
-shared server fails (the fleet App is not installed for the target);
-adopter dispatch therefore runs against a per-tenant server instance
-(e.g. a dedicated `FABRO_HOME` carrying the adopter's `app_id`, its
-PEM in the server process environment, and its own port and
-authentication). A dispatch preflight SHOULD verify the serving App
-can reach the target repo BEFORE launching, refusing with an
-actionable diagnostic rather than failing inside the engine run.
-Workflow-file-touching pushes structurally require the App's
-`workflows` read-write permission grant, which the factory sandbox's
-credential MUST NOT hold (§"Factory sandbox credential constraints" in
-`constraints.md`). The preflight and the adopter docs MUST therefore
-surface that grant as one DELIBERATELY WITHHELD from the dispatch
-credential, and MUST name the attended-host-session route for work
-requiring it — never as an App-installation requirement to be granted.
-(Implementation tracked as `bd-ib-z2ctra` and `bd-ib-w4iaaf`.)
+**Per-tenant engine identity.** The Fabro server serving a dispatch MUST
+publish, check out and renew credentials for that dispatch under the
+dispatch TARGET tenant's own GitHub App identity. Two routes satisfy
+this. (1) A per-tenant server instance whose global integration IS the
+target's App (e.g. a dedicated `FABRO_HOME` carrying the adopter's
+`app_id`, its PEM in the server process environment, and its own port
+and authentication). (2) A SHARED server whose global integration is a
+different App, serving the run under a PER-RUN APP SELECTION (below).
+Without a per-run selection, a server serves every run under its one
+global integration, so dispatching an adopter repo through a shared
+server whose App is not installed for the target fails. A dispatch
+preflight SHOULD verify that the App the run will use can reach the
+target repo BEFORE launching. It refuses with an actionable diagnostic
+rather than failing inside the engine run. Workflow-file-touching pushes
+structurally require the App's `workflows` read-write permission grant,
+which the factory sandbox's credential MUST NOT hold (§"Factory sandbox
+credential constraints" in `constraints.md`). The preflight and the
+adopter docs MUST therefore surface that grant as one DELIBERATELY
+WITHHELD from the dispatch credential, and MUST name the
+attended-host-session route for work requiring it — never as an
+App-installation requirement to be granted. (Implementation tracked as
+`bd-ib-z2ctra` and `bd-ib-w4iaaf`.)
+
+**Per-run App selection on a shared server.** A dispatch target MAY
+declare, per factory, the GitHub App a run on that factory uses. Under
+`dispatcher.factories.<name>.github_app` it names an App-id secret and a
+private-key secret. Both are secret NAMES the operator provisioned in
+that factory's server-side vault, and neither is ever a value. The
+Dispatcher MUST render the declaration into the run configuration as the
+run's GitHub credential source, carrying the names only. It MUST refuse
+before claim, naming the key, when the declaration is malformed: not an
+object, missing either name, carrying an empty or non-string name, or
+carrying any other key. The engine MUST resolve the selected source from
+the server-held secrets in its worker. It MUST use that ONE selected
+authority, as renewable repository-scoped installation tokens, for every
+protected forge operation of the run: the native repository checkout,
+every managed stage credential renewal (the projected `GITHUB_TOKEN`),
+and the run's publication (branch push and pull-request creation). An
+explicitly selected source whose secrets are absent or empty, whose key
+does not parse, or whose App is not installed for or authorized on the
+target repository MUST fail the run BEFORE any protected forge
+operation, naming the selected secret names and the failing condition.
+It MUST NOT fall back to the server's global integration or to anonymous
+access. A run that selects no source keeps the server's global
+integration unchanged. Selection is per run: concurrent runs on one
+server under different Apps MUST each keep their own repository-scoped
+authority through every credential refresh and vault snapshot. A
+selection MUST NOT replace or mutate the server's global integration.
+The selected private key and every token minted from it MUST NOT appear
+in the run configuration, the immutable workflow version, `fabro
+inspect` or `fabro dump` output, or the sandbox environment, consistent
+with the ephemeral-token rule above. (Engine implementation tracked as
+`bd-ib-voozdp`, in the Fabro owner fork; the Dispatcher binding is
+tracked as its own child.)
 
 **Target-local workflow.** An adopter MAY carry its own
 `implement-work-item` workflow in the TARGET repo
