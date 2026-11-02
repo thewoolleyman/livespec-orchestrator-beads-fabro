@@ -187,6 +187,7 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # could key it away from the environment the launch names, and both
         # readings would be well-formed (bd-ib-kyeor4).
         factory_environment=plan.fabro_factory_environment,
+        github_app=plan.fabro_factory_github_app,
         secret_sink=overlay.secret_sink,
         # WHERE this dispatch's sandbox image comes from, read off the plan's
         # single resolution for the same resolve-once reason the integration

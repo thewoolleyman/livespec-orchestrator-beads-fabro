@@ -29,7 +29,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro.commands import dispatcher
-from livespec_orchestrator_beads_fabro.commands._config import (
+from livespec_orchestrator_beads_fabro.commands._factory_presence import (
     has_fabro_factories,
     has_fabro_factory,
 )

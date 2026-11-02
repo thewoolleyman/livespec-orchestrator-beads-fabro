@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._factory_client_source import (
 from livespec_orchestrator_beads_fabro.commands._factory_environment import (
     FACTORY_ENVIRONMENT_KEY,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    factory_github_app_refusal,
+)
 
 __all__: list[str] = [
     "factory_declaration_refusal",
@@ -120,5 +123,10 @@ def factory_declaration_refusal(*, factory: FactoryTarget | None) -> str | None:
     return (
         factory_bin_refusal(factory=factory)
         or factory_environment_refusal(factory=factory)
+        or (
+            None
+            if factory is None
+            else factory_github_app_refusal(factory=factory.name, github_app=factory.github_app)
+        )
         or factory_registry_refusal(factory=factory)
     )

@@ -66,6 +66,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation
     ObservedRun,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroRunSummary
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+)
 
 _REVIEW_VAULT_KEY = "LIVESPEC_DISPATCH_REVIEW_GITHUB_TOKEN"
 
@@ -226,6 +229,7 @@ def test_factory_authentication_precedes_vault_materialization(
         # double missing the field fails on its absence rather than on that
         # order (bd-ib-kyeor4).
         fabro_factory_environment=None,
+        fabro_factory_github_app=NO_FACTORY_GITHUB_APP,
         # The resolved client build the dispatch hands the materializer, which
         # decides how the written config names its graph. None is the pinned
         # posture and the neutral one for this case: it is about the ORDER of

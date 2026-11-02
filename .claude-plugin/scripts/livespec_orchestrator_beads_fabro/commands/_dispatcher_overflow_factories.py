@@ -50,11 +50,11 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
-    has_fabro_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._factory_default import (
     configured_factory_name,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_presence import has_fabro_factory
 
 __all__: list[str] = [
     "OVERFLOW_FACTORIES_KEY",
