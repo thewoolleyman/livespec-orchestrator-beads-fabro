@@ -154,6 +154,8 @@ def governing_heading_statement(*, item: WorkItem, section: DefinitionOfDone) ->
         f"{_STATEMENT_ASSERTION}{_FIELD_SEPARATOR}{assertion.text}"
         for assertion in section.assertions
     )
+    if section.references:
+        lines.append(f"References: {', '.join(section.references)}")
     return "\n".join(lines)
 
 

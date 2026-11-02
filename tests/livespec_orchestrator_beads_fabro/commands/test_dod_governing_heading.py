@@ -167,6 +167,18 @@ def test_the_statement_the_judgement_grades_is_the_title_and_every_assertion() -
     assert _SECOND_ASSERTION in statement
 
 
+def test_the_statement_omits_a_reference_line_when_the_definition_has_none() -> None:
+    """A reference-free Definition of Done does not invent prompt evidence."""
+    module = _module()
+    item = _item(description=f"## Definition of Done\n\n- {_FIRST_ASSERTION}\n")
+
+    statement = module.governing_heading_statement(
+        item=item, section=definition_of_done(description=item.description)
+    )
+
+    assert "References:" not in statement
+
+
 def test_the_subject_block_carries_every_returned_heading_and_names_an_absence() -> None:
     module = _module()
 
