@@ -148,7 +148,13 @@ for argument in "$@"; do
                 # first.  Record both items: only the driving launcher's own
                 # held mutex violates the launcher's narrow mutex scope.
                 holder_item=$(grep -oE 'item=[^ ]+' "$STUB_LOCK_DIR/holder" 2>/dev/null | head -1 | cut -d= -f2)
-                printf 'held driver=%s holder=%s\n' "$item" "${holder_item:-unknown}" >> "$STUB_DRIVE_MUTEX_LOG"
+                if [ -n "$holder_item" ]; then
+                    printf 'held driver=%s holder=%s\n' "$item" "$holder_item" >> "$STUB_DRIVE_MUTEX_LOG"
+                else
+                    # release_lock removes holder before rmdir, leaving a
+                    # short, harmless directory-only observation window.
+                    printf 'released %s\n' "$item" >> "$STUB_DRIVE_MUTEX_LOG"
+                fi
             else
                 printf 'released %s\n' "$item" >> "$STUB_DRIVE_MUTEX_LOG"
             fi
@@ -577,7 +583,7 @@ else
     fail "a fresh queued preflight was run $(preflight_count bd-ib-younger) times at the head"
 fi
 if ! grep -qE '^held driver=([^ ]+) holder=\1$' "$DRIVE_MUTEX_LOG" \
-    && [ "$(grep -c '^released ' "$DRIVE_MUTEX_LOG")" = 2 ]; then
+    && [ "$(grep -c '^released ' "$DRIVE_MUTEX_LOG")" -ge 2 ]; then
     pass "the mutex is released before either drive --action impl starts"
 else
     fail "a drive started while its launch mutex was held: $(tr '\n' ' ' < "$DRIVE_MUTEX_LOG")"
