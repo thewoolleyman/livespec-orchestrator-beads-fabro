@@ -118,6 +118,14 @@ def test_ps_records_carry_reader_field_set(*, port: FabroPort) -> None:
         assert _status_kind(record=record) is not None
 
 
+def test_live_ps_records_carry_reader_field_set(*, port: FabroPort) -> None:
+    result = port.live_ps(timeout_seconds=TIMEOUT_SECONDS)
+
+    _assert_success(command=result.command)
+    for record in _run_records(payload=result.payload):
+        assert set(record) >= _EXPECTED_PS_FIELDS
+
+
 def test_server_flag_is_per_subcommand(*, port: FabroPort) -> None:
     suffixed = port.ps(timeout_seconds=TIMEOUT_SECONDS)
     top_level = port.top_level_server_parse_probe(
