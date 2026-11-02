@@ -27,8 +27,9 @@
 # Per-factory ceilings, from the gitops host_vars for gmktec-xubuntu.
 : "${FLEET_LAUNCH_GMK_CAP:=8}"
 : "${FLEET_LAUNCH_HL_CAP:=2}"
-# Minimum gmktec idle CPU percentage before a launch.
-: "${FLEET_LAUNCH_GMK_MIN_IDLE:=25}"
+# Maximum factory-class CPU pressure percentage before a gmktec launch. This
+# measures only factory namespaces plus system.slice, not whole-host idle.
+: "${FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD:=25}"
 
 # The Fabro client that reads the boards.
 : "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro}"
