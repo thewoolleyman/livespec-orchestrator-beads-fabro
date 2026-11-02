@@ -1132,6 +1132,53 @@ def test_regrade_pass_with_an_unverified_host_assertion_parks_in_acceptance(
     assert parking["pending"] == ["host-captured record for 'The released command works.'"]
 
 
+def test_regrade_park_reaches_the_lifecycle_reconcile_chokepoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parking a regraded item reconciles the runs it disowns, like every lifecycle write."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    monkeypatch.setattr(
+        regrade,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(
+            verdict="PASS",
+            proof=_PendingHostProof(pending_host_captured=("The released command works.",)),
+        ),
+    )
+    lifecycle_writes = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes"
+    )
+    reconciled: list[tuple[str, str]] = []
+
+    def _record(*, path: object, item_id: str, status: str) -> None:
+        _ = path
+        reconciled.append((item_id, status))
+
+    monkeypatch.setattr(lifecycle_writes, "reconcile_after_lifecycle_write", _record)
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+    assert exit_code == 0
+    assert reconciled == [(item.id, "acceptance")]
+
+
 def test_regrade_fail_leaves_status_labels_and_failed_passes_untouched(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
