@@ -159,6 +159,15 @@ def test_scenario242_the_harness_and_its_driver_are_committed_and_executable() -
     assert (_REPO_ROOT / _DRIVER).is_file()
 
 
+def test_scenario242_gives_launch_expected_cases_a_budget_separate_from_refusals() -> None:
+    """CPU contention cannot turn a launch control into a two-second give-up."""
+    harness = (_REPO_ROOT / _HARNESS).read_text(encoding="utf-8")
+
+    assert "FLEET_LAUNCH_SUCCESS_WAIT_S=30" in harness
+    assert "run_launch_expected()" in harness
+    assert 'FLEET_LAUNCH_MAX_WAIT_S="$FLEET_LAUNCH_SUCCESS_WAIT_S"' in harness
+
+
 _PROVISIONAL_SHELL_SCRIPTS = sorted(
     path.relative_to(_REPO_ROOT).as_posix() for path in (_REPO_ROOT / _LAUNCH_DIR).rglob("*.sh")
 )

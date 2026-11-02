@@ -312,6 +312,10 @@ new_case() {
     # A short wait and a one-second poll: a refusal case must reach its
     # give-up exit promptly rather than in the six hours a real launcher waits.
     export FLEET_LAUNCH_MAX_WAIT_S=2
+    # Refusal cases must give up promptly.  A launch-positive control instead
+    # receives this separate budget, so host CPU contention cannot change its
+    # asserted outcome into the two-second give-up used to test refusals.
+    FLEET_LAUNCH_SUCCESS_WAIT_S=30
     export FLEET_LAUNCH_ABANDON_S=60
     export FLEET_LAUNCH_POLL_S=1
     export FLEET_LAUNCH_PREFLIGHT_REUSE_S=600
@@ -323,6 +327,14 @@ new_case() {
 run_launcher() {
     local item="$1" log="${2:-$CASE_LOG}"
     "$LAUNCHER" "$item" > "$log" 2>&1
+    RC=$?
+}
+
+# run_launch_expected <item> [log]: launch-positive cases are tested for their
+# behavior, not for whether a loaded CI worker can finish the stub path in 2 s.
+run_launch_expected() {
+    local item="$1" log="${2:-$CASE_LOG}"
+    FLEET_LAUNCH_MAX_WAIT_S="$FLEET_LAUNCH_SUCCESS_WAIT_S" "$LAUNCHER" "$item" > "$log" 2>&1
     RC=$?
 }
 
@@ -413,7 +425,7 @@ else
 fi
 # The positive control: the same fleet, one slot of headroom.
 printf '5\n' > "$CAP_FILE"
-run_launcher bd-ib-undercap "$CASE_DIR/control.log"
+run_launch_expected bd-ib-undercap "$CASE_DIR/control.log"
 if [ "$(drive_log_items)" = "bd-ib-undercap" ] && [ "$RC" = 0 ]; then
     pass "control: one slot of headroom under the same cap launches"
 else
@@ -488,7 +500,7 @@ else
 fi
 # The positive control: the identical case with the hold file removed.
 rm -f "$HOLD_FILE"
-run_launcher bd-ib-released "$CASE_DIR/control.log"
+run_launch_expected bd-ib-released "$CASE_DIR/control.log"
 if [ "$(drive_log_items)" = "bd-ib-released" ] && [ "$RC" = 0 ]; then
     pass "control: removing the hold file releases the identical launch"
 else
@@ -515,7 +527,7 @@ fi
 # The positive control: the same idle board with headroom MUST launch, which is
 # what an unknown reading could never do.
 printf '8\n' > "$CAP_FILE"
-run_launcher bd-ib-retired-ok "$CASE_DIR/control.log"
+run_launch_expected bd-ib-retired-ok "$CASE_DIR/control.log"
 if [ "$(drive_log_items)" = "bd-ib-retired-ok" ] && [ "$RC" = 0 ]; then
     pass "control: a fleet counted past an idle board launches"
 else
@@ -549,7 +561,7 @@ new_case factory-pressure
 printf '8\n' > "$CAP_FILE"
 export STUB_SSH_IDLE=1.00
 export STUB_FACTORY_PRESSURE=25.00
-run_launcher bd-ib-pressure-equal
+run_launch_expected bd-ib-pressure-equal
 if [ "$(drive_log_items)" = "bd-ib-pressure-equal" ] && [ "$RC" = 0 ] \
     && log_has "$CASE_LOG" "idle=1.00 pressure=25.00 threshold=25"; then
     pass "a low-pressure factory launches despite whole-host idle below the old floor"
@@ -623,7 +635,7 @@ new_case gate-fits
 : > "$BOARD_GMK"; : > "$BOARD_HL"; printf '8\n' > "$CAP_FILE"
 export STUB_SSH_IDLE=1.00
 remote_fixture 1000 15000000
-run_launcher bd-ib-gate-fits
+run_launch_expected bd-ib-gate-fits
 if [ "$(drive_log_items)" = "bd-ib-gate-fits" ] && [ "$RC" = 0 ] \
     && log_has "$CASE_LOG" "pressure=5.00 threshold=25"; then
     pass "a gate burst is excluded while CPU requests fit the node"
@@ -661,7 +673,7 @@ fi
 # max(1000m, 2500m) = 2500m, plus 1000m, fits 4000m, so the gate burst stays excluded.
 : > "$DRIVE_LOG"
 remote_fixture 1000 15000000 2500
-run_launcher bd-ib-init-fits
+run_launch_expected bd-ib-init-fits
 if [ "$(drive_log_items)" = "bd-ib-init-fits" ] && [ "$RC" = 0 ] \
     && log_has "$CASE_LOG" "pressure=5.00 threshold=25"; then
     pass "an init container request is the pod's maximum, not additive, when it fits the node"
@@ -673,7 +685,7 @@ fi
 # Positive control: overcommitted with an idle gate pod still launches.
 : > "$DRIVE_LOG"
 remote_fixture 3000 0
-run_launcher bd-ib-gate-idle
+run_launch_expected bd-ib-gate-idle
 if [ "$(drive_log_items)" = "bd-ib-gate-idle" ] && [ "$RC" = 0 ] \
     && log_has "$CASE_LOG" "pressure=5.00 threshold=25"; then
     pass "an overcommitted node with an idle gate pod still launches"
