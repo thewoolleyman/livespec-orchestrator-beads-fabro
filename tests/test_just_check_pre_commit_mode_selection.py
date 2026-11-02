@@ -70,9 +70,21 @@ def _install_fake_just(*, repo: Path) -> Path:
     return bin_dir
 
 
+def _install_fake_pre_commit_delegate(*, repo: Path) -> None:
+    """Record the shared delegate invocation and return the selected route."""
+    delegate = repo / "fake-bin" / "uv"
+    delegate.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "uv %s\\n" "$*" >> just.log\n'
+        'exit "${PRE_COMMIT_DELEGATE_EXIT}"\n',
+        encoding="utf-8",
+    )
+    delegate.chmod(delegate.stat().st_mode | stat.S_IXUSR)
+
+
 def _init_repo(*, tmp_path: Path, baseline_message: str) -> tuple[Path, dict[str, str]]:
     repo = tmp_path / "repo"
-    repo.mkdir()
+    repo.mkdir(parents=True)
     _run(argv=["git", "init"], cwd=repo)
     _run(argv=["git", "config", "user.email", "test@example.com"], cwd=repo)
     _run(argv=["git", "config", "user.name", "Test User"], cwd=repo)
@@ -211,3 +223,33 @@ def test_e2e_skeleton_pins_the_released_delegated_pre_commit_client() -> None:
     root_source = root_config["tool"]["uv"]["sources"]["livespec-dev-tooling"]
     skeleton_source = skeleton_config["tool"]["uv"]["sources"]["livespec-dev-tooling"]
     assert skeleton_source["tag"] == root_source["tag"]
+
+
+def test_pre_commit_delegates_before_running_a_local_aggregate(*, tmp_path: Path) -> None:
+    """Only the delegate's explicit local-fallback code reaches `just`."""
+    for delegate_exit, expected_exit, expected_commands in [
+        (0, 0, ["uv run python -m livespec_dev_tooling.pre_commit_delegate run"]),
+        (1, 1, ["uv run python -m livespec_dev_tooling.pre_commit_delegate run"]),
+        (
+            75,
+            0,
+            [
+                "uv run python -m livespec_dev_tooling.pre_commit_delegate run",
+                (
+                    "check-skipping check-coverage check-per-file-coverage "
+                    "check-check-coverage-incremental check-codex-skill-picker"
+                ),
+            ],
+        ),
+    ]:
+        repo, env = _init_repo(tmp_path=tmp_path / str(delegate_exit), baseline_message="baseline")
+        _install_fake_pre_commit_delegate(repo=repo)
+        env["PRE_COMMIT_DELEGATE_EXIT"] = str(delegate_exit)
+        _stage(
+            repo=repo, relative_path="tests/test_placeholder.py", body="def test_green(): pass\n"
+        )
+
+        result = _run(argv=["bash", str(_SCRIPT)], cwd=repo, env=env)
+
+        assert result.returncode == expected_exit, result.stdout + result.stderr
+        assert (repo / "just.log").read_text(encoding="utf-8").splitlines() == expected_commands

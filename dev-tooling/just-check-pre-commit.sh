@@ -26,6 +26,27 @@ if [[ "$(git config --get --bool livespec.sandboxExempt || printf 'false')" == t
     sandbox_skips+=(check-master-ci-green)
 fi
 
+# The shared delegate owns both staged-tree capture and the dev-host decision:
+# a qualified host submits the exact index tree to a gates Job, while a sandbox
+# or laptop receives its explicit local-fallback status (75). A remote PASS or
+# FAIL is already a verdict and must never start pytest or coverage locally.
+# The delegate's structured output names both the Job and staged tree hash,
+# making the delegated hand-commit evidence visible in the hook transcript.
+delegate_status=0
+if uv run python -m livespec_dev_tooling.pre_commit_delegate run; then
+    delegate_status=0
+else
+    delegate_status=$?
+fi
+
+if [[ "$delegate_status" == 0 ]]; then
+    exit 0
+fi
+if [[ "$delegate_status" != 75 ]]; then
+    exit "$delegate_status"
+fi
+echo ":: pre-commit: delegated aggregate requested local fallback; running the local aggregate"
+
 staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
