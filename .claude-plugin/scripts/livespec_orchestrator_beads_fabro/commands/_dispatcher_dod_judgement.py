@@ -63,6 +63,9 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
     governing_heading_block,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    CondensedClause,
+)
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -96,6 +99,9 @@ _VERDICT_PASSED = "passed"
 _VERDICT_FAILED = "failed"
 _REMEDY_SEPARATOR = "; "
 _UNRESOLVED_HEADING_BODY = "(this heading does not resolve in the governed spec tree)"
+_UNSELECTED_HEADING_BODY = (
+    "(the governing-heading verdict named or selected no clause from this referenced heading)"
+)
 _ABSENT_CRITERIA_BODY = "(this item carries no effective acceptance criteria)"
 # The description is the item's own text, so it can carry any heading; the end
 # marker is what keeps the subject's next heading from reading as the item's.
@@ -152,7 +158,7 @@ def judgement_subject(
     comments: Sequence[str] = (),
     governing: GoverningHeadingVerdict | None = None,
 ) -> str:
-    """Render the item's goal fields, criteria, referenced heading bodies and riders.
+    """Render the item's goal fields, criteria, referenced clauses and riders.
 
     `comments` is the item's ledger comment bodies, oldest first, exactly as the
     gate reads them. It defaults to EMPTY rather than being required, because
@@ -189,7 +195,11 @@ def judgement_subject(
             (
                 "",
                 f"## Referenced heading: {reference}",
-                _heading_body(repo=cwd, reference=reference),
+                _referenced_heading_body(
+                    repo=cwd,
+                    reference=reference,
+                    governing=governing,
+                ),
             )
         )
     blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
@@ -336,6 +346,45 @@ def _last_non_empty_line(*, reply: str) -> str | None:
         if stripped:
             return stripped
     return None
+
+
+def _referenced_heading_body(
+    *,
+    repo: Path,
+    reference: str,
+    governing: GoverningHeadingVerdict | None,
+) -> str:
+    """Render the governing verdict's verbatim clauses for one cited heading.
+
+    The subject is bounded by the clauses the spec-stated judgement named or
+    selected. Before that judgement is available, retain the whole section: an
+    omitted body would turn an unobserved verdict into a claim that no clause
+    governs. Once it is available, an explicit empty selection is the honest
+    compact representation of a cited heading that did not contribute a clause.
+    """
+    if governing is None:
+        return _heading_body(repo=repo, reference=reference)
+    clauses = _governing_clauses_for(reference=reference, governing=governing)
+    if not clauses:
+        return _UNSELECTED_HEADING_BODY
+    return "\n\n".join(f"{clause.heading}{clause.body}" for clause in clauses)
+
+
+def _governing_clauses_for(
+    *, reference: str, governing: GoverningHeadingVerdict
+) -> tuple[CondensedClause, ...]:
+    """Return unique selected and named clauses from one referenced H2.
+
+    The two lists are distinct provenance roles, but a clause present in both
+    appears once in the subject: duplicating identical text consumes the bound
+    without giving the judge a second requirement to grade.
+    """
+    clauses: list[CondensedClause] = []
+    for clause in (*governing.selected_clauses, *governing.named_clauses):
+        if clause.heading.rstrip(" \t") != reference.rstrip(" \t") or clause in clauses:
+            continue
+        clauses.append(clause)
+    return tuple(clauses)
 
 
 def _heading_body(*, repo: Path, reference: str) -> str:
