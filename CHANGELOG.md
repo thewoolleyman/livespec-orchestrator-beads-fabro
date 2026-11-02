@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.274.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.2...v0.274.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* collect closed ended sandbox runs ([9414dcc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9414dccda394f947af2181fcfbe8a77e4cfed5e0))
+* **dispatcher:** scope ended-run collection to the targeted item and journal the rm response ([8ed2ca3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ed2ca3a7ac29c7e10d54a47511f35cea1b016ff))
+
 ## [0.274.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.1...v0.274.2) (2026-11-02)
 
 
