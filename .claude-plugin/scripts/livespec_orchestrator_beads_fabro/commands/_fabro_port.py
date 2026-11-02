@@ -231,10 +231,11 @@ class FabroPort:
             timeout_seconds=timeout_seconds,
         )
 
-    def rm(self, *, run_id: str, timeout_seconds: float) -> FabroCommandResult:
+    def rm(self, *, run_id: str, timeout_seconds: float, force: bool = True) -> FabroCommandResult:
         forget_inspection(factory=self.target.server_url or "", run_id=run_id)
+        force_flag = ["-f"] if force else []
         command = self._run(
-            argv=[self.fabro_bin, "rm", "-f", run_id, *self._server_suffix()],
+            argv=[self.fabro_bin, "rm", *force_flag, run_id, *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
         return FabroCommandResult(command=command)
