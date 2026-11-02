@@ -11569,3 +11569,41 @@ Feature: a CI burst on a shared factory node does not hold factory launches
     Then it is assigned only in fleet-launch/config.sh
     And setting its FLEET_LAUNCH_ environment variable before the launcher runs changes the threshold the launcher uses
 ```
+
+## Scenario 297 — A queued provisional launcher runs its preflight while it waits and still binds in FIFO order
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a launcher queued on a factory's FIFO spends its wait on its own preflight
+  Scenario: two queued launchers preflight concurrently
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub preflight that records its start time, and throwaway queue, lock, in-flight and state directories
+    And two launchers hold FIFO tickets for the same factory, the older ahead of the younger
+    When both launchers poll while the older holds the head of the FIFO
+    Then the younger launcher's preflight starts before the older launcher binds
+    And the older launcher binds before the younger launcher
+
+  Scenario: a fresh pass is reused at the head of the FIFO
+    Given a queued launcher whose preflight passed less than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds ago
+    When it reaches the head of the FIFO and the factory is green
+    Then it takes the factory's mutex without running the preflight again
+
+  Scenario: a reused pass does not skip the hold check
+    Given a queued launcher holding a preflight pass younger than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds
+    And the hold file is created after that pass was taken
+    When the launcher reaches the head of the FIFO and makes its hold-file check
+    Then it holds the launch
+    And it does not start drive --action impl
+
+  Scenario: a stale pass is re-taken at the head of the FIFO
+    Given a queued launcher whose only preflight pass is older than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds
+    When it reaches the head of the FIFO
+    Then it runs the preflight again before it takes the factory's mutex
+
+  Scenario: a preflight that fails while queued drops the ticket
+    Given a queued launcher whose stub preflight fails
+    When the preflight returns
+    Then the launcher exits without a launch
+    And its FIFO ticket is gone from the queue directory
+    And it never created the factory's mutex
+```
