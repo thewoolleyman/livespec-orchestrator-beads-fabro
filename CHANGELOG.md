@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.274.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.273.0...v0.274.0) (2026-11-02)
+
+
+### Features
+
+* clear factory safety holds ([d451219](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d4512195d0cab3a03774d9d2e31cd0d4b1a732bf))
+
+
+### Bug Fixes
+
+* **dispatcher:** park regraded host proof pending ([10371d7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/10371d7fc347b5e417add935bc4373b8b952ced7))
+* **dispatcher:** route regrade park write through lifecycle chokepoint ([f87f78a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f87f78a80415222a7e203c0b026a7f985a3ffc52))
+
 ## [0.273.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.272.0...v0.273.0) (2026-11-02)
 
 
