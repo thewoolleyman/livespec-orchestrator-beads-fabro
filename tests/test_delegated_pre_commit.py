@@ -22,7 +22,8 @@ def test_repository_config_opts_in_to_the_repaired_pre_commit_delegate() -> None
     assert load_delegated_pre_commit(repo_root=_REPO_ROOT) is True
     assert load_gate_check_suite(repo_root=_REPO_ROOT) == (
         "install-worktree-pack",
-        "check-pre-commit",
+        "install-commit-refuse-hooks",
+        "check-pre-push",
     )
 
     config = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
