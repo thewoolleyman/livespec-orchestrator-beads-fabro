@@ -40,11 +40,13 @@ from the one recorded text would widen every terminal-sourced signature onto a
 channel it was not measured on, which is the structural half of the contract's
 "never an arbitrary exec-output tail" rule turned off. The consequence is
 worth stating plainly rather than discovering later: a signature declared for
-`process.terminal_diagnostic` -- the built-in `model_unsupported` and
-`model_not_found` mappings among them -- cannot match through THIS reading,
-and keeps its existing route. That is the conservative direction, and a
-repository needing those causes released from a terminal declares them for
-`protocol.message`, which is the channel the record actually carries.
+`process.terminal_diagnostic` -- the historical built-in
+`model_unsupported` and `model_not_found` mappings among them -- cannot match
+through THIS reading, and keeps its existing route. The measured 2026-11-02
+Codex account refusal has its own built-in `protocol.message` mapping because
+this reading is the observed channel; it does release and record its
+candidate hold. Other terminal-only mappings stay conservative until their
+recorded channel is measured.
 
 RELEASE IS A DISJUNCTION OF TWO ARMS, NOT ONE LADDER. An eligible
 classification releases AND mints a typed hold. A failure carrying the typed

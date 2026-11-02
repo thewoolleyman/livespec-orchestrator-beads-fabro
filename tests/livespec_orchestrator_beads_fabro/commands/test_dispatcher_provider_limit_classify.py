@@ -77,6 +77,11 @@ _TURN_TIMEOUT = (
     "last update at 13344311ms"
 )
 _SIGNATURE = "implement|transient_infra|acp turn failed"
+_CODEX_CHATGPT_MODEL_UNSUPPORTED = (
+    "HTTP 400 invalid_request_error model_not_found: The 'gpt-6.1-terra' model "
+    "is not supported when using Codex with a ChatGPT account"
+)
+_GENERIC_400 = "HTTP 400 Bad Request: the request could not be processed"
 
 _DECLARED_QUOTA = {
     "source": "protocol.message",
@@ -100,14 +105,19 @@ def _signatures(*, declared: dict[str, object]) -> Any:
     return parsed
 
 
-def _rendered(*, identity: AcpCandidateIdentity | None, declared: dict[str, object] | None) -> Any:
+def _rendered(
+    *,
+    identity: AcpCandidateIdentity | None,
+    declared: dict[str, object] | None,
+    builtin: bool = False,
+) -> Any:
     return RenderedCandidate(
         candidate=AcpCandidate(
             adapter=AcpAdapter(command="claude-code-acp", args=(), env={}),
             identity=identity,
             signatures=() if declared is None else _signatures(declared=declared),
         ),
-        builtin=False,
+        builtin=builtin,
     )
 
 
@@ -181,6 +191,41 @@ def test_a_declared_quota_signature_releases_on_its_own_scope_and_key() -> None:
     # the triple the clause keys replay on.
     assert release.release_key == "hp:01M52R2WND7Y:implement"
     assert release.recovery_source == "refs/heads/needs-human/01M52R2WND7Y"
+
+
+def test_a_recorded_codex_model_not_found_releases_with_a_candidate_hold() -> None:
+    """The measured ChatGPT-account refusal releases; a generic 400 still does not.
+
+    The run record carries its final cause as the ACP protocol message, not as
+    a terminal-diagnostic field.  The built-in Codex signature must therefore
+    classify the current wording on that recorded channel, so the ensuing
+    release mints the candidate-scoped hold that makes the next dispatch skip
+    this candidate for its declared fallback.
+    """
+    assert _SOURCE.is_file()
+    codex = AcpCandidateIdentity(
+        display_name="Codex Terra",
+        candidate_key="gpt-6-1-terra",
+        availability_key="codex",
+    )
+
+    release = _release(
+        failure=_failure(cause=_CODEX_CHATGPT_MODEL_UNSUPPORTED),
+        rendered=_rendered(identity=codex, declared=None, builtin=True),
+    )
+
+    assert release is not None
+    assert release.matched is not None
+    assert (release.matched.cause, release.matched.scope) == ("model_unsupported", "candidate")
+    assert release.matched.hold_key == "codex"
+    assert release.matched.candidate_key == "gpt-6-1-terra"
+    assert (
+        _release(
+            failure=_failure(cause=_GENERIC_400),
+            rendered=_rendered(identity=codex, declared=None, builtin=True),
+        )
+        is None
+    )
 
 
 def test_the_same_sentence_without_a_declared_signature_is_not_eligible() -> None:

@@ -109,6 +109,24 @@ _CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
     ),
 )
 
+# MEASURED 2026-11-02 on hp, run 01M6DXH0CHT8 of `bd-ib-5d5aue`: the
+# codex-acp implement turn's recorded final cause was `HTTP 400
+# invalid_request_error model_not_found: The 'gpt-6.1-terra' model is not
+# supported when using Codex with a ChatGPT account`. Fabro preserves a failed
+# turn's final cause as the ACP protocol message, rather than as its terminal
+# diagnostic. The model name changes with the candidate, so `model` and the
+# provider's account-refusal sentence are the exact stable conjunction; a bare
+# HTTP 400 matches neither and remains non-eligible.
+_CODEX_MODEL_UNSUPPORTED_PROTOCOL_MESSAGE = AcpAvailabilitySignature(
+    source=_MESSAGE_SOURCE,
+    cause="model_unsupported",
+    scope=_CANDIDATE_SCOPE,
+    all_literals=(
+        "model",
+        "is not supported when using codex with a chatgpt account",
+    ),
+)
+
 # MEASURED 2026-08 on the Wave B fork validation (`plan/archive/
 # fabro-fork-control-plane-gaps/research/005-...`): `-m gpt-5.5` returned
 # `404 Not Found: The model 'gpt-5.5' does not exist or you do not have
@@ -200,6 +218,7 @@ _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     ),
     CODEX_DOMAIN: (
         _CODEX_MODEL_UNSUPPORTED,
+        _CODEX_MODEL_UNSUPPORTED_PROTOCOL_MESSAGE,
         _CODEX_MODEL_NOT_FOUND,
         _CODEX_CAPACITY,
         _CODEX_USAGE_LIMIT,
