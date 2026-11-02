@@ -6045,26 +6045,55 @@ Feature: attribute a failed engine checkpoint commit and route its decision to t
 ```gherkin
 Feature: Master-CI preflight waits on a pending run instead of treating it as failed
   As an operator dispatching work while the default branch's CI is still running
-  I want the preflight to wait for that run's verdict
-  So that a run that has not failed is never reported as a failure
+  I want the preflight to pass on a concluded green ancestor run, or else wait for the pending run's verdict
+  So that a run that has not failed is never reported as a failure and overlapping runs never starve dispatch
+
+  Scenario: a concluded green ancestor passes while the latest run is pending
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded green on a commit that is an ancestor of the current default-branch head
+    When the preflight reads the runs
+    Then the dispatch proceeds without waiting
+      And the journaled pass names the green run, its head commit and the still-pending latest run
+
+  Scenario: a red newest concluded run does not pass, and the preflight waits on the latest run
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded red
+    When the preflight reads the runs
+    Then the dispatch is neither started nor refused on that red run
+      And the preflight waits on the latest run
+
+  Scenario: a concluded green run that is not an ancestor of the head does not pass
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded green on a commit that is not an ancestor of the current default-branch head
+    When the preflight reads the runs
+    Then the dispatch does not proceed on that run
+      And the preflight waits on the latest run
 
   Scenario: a pending run that concludes green lets the dispatch proceed
     Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And no concluded green ancestor run satisfies the pass conditions
     When that job concludes green within the bounded wait
     Then the dispatch proceeds and the journaled pass names the run that concluded green
 
   Scenario: a pending run that concludes red refuses as red
     Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And no concluded green ancestor run satisfies the pass conditions
     When that job concludes red within the bounded wait
     Then the dispatch is refused naming the red run with the reason master-ci-red
 
   Scenario: a newer run replaces the one being waited on
-    Given the preflight is waiting on an in-progress run
-    When a newer run starts on the default branch and concludes green within the original bounded wait
+    Given the preflight is waiting on an in-progress run because the newest concluded run is red
+    When a newer run starts on the default branch and concludes green within the original bounded wait while it is still the latest run
     Then the preflight waits on the newer run and the journaled pass names the newer run
+
+  Scenario: a run concluding green during the wait passes as a green ancestor while a newer run is pending
+    Given the preflight is waiting on an in-progress run because the newest concluded run is red
+    When that run concludes green on an ancestor of the current head while a newer run is still in progress
+    Then the next poll passes on that green run and the journaled pass names it and the still-pending newer run
 
   Scenario: a run still pending at the bound is deferred, not failed
     Given the latest default-branch run stays in progress for the whole bounded wait
+      And no poll finds a concluded green ancestor run satisfying the pass conditions
     When the bound expires
     Then the dispatch does not start and the work item is not claimed
       And the journal records reason master-ci-pending with status deferred
