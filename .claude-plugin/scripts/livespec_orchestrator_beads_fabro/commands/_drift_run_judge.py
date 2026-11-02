@@ -143,6 +143,7 @@ def _judged(
         is_verdict=lambda text: is_reply(text=text),
         timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
         caller=caller,
+        journal_spend=True,
     )
     for ran in chain.attempts:
         _ = sys.stderr.write(f"{candidate_report(attempt=ran)}\n")

@@ -176,6 +176,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
         is_verdict=lambda text: parse_judgement_reply(reply=text).outcome != JUDGEMENT_UNAVAILABLE,
         bound_input=True,
         caller=caller,
+        journal_name=f"purpose:{caller}@{item.id}",
     )
     if result.reply is not None:
         parsed = parse_judgement_reply(reply=result.reply)
@@ -219,6 +220,7 @@ def run_dod_gate_prompt(  # noqa: PLR0913 - each argument is an independent seam
     timeout_seconds: float | None = None,
     bound_input: bool = False,
     caller: str | None = None,
+    journal_name: str | None = None,
 ) -> CandidateChainResult:
     """Run the resolved `dod_gate` candidates in order, closing stdin for each.
 
@@ -239,4 +241,5 @@ def run_dod_gate_prompt(  # noqa: PLR0913 - each argument is an independent seam
         candidate_resolver=dod_gate_candidates,
         bound_input=bound_input,
         caller=caller,
+        journal_name=journal_name,
     )

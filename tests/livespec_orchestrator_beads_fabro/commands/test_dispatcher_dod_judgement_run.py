@@ -463,6 +463,58 @@ def test_the_claude_judge_reports_usage_and_its_reply_is_read_from_the_stream(
     assert verdict.input_usage == "complete"
 
 
+def test_the_claude_host_judgement_journals_each_assistant_response_for_spend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-persisted Claude response remains visible to the host spend emitter."""
+    home = tmp_path / "operator-home"
+    monkeypatch.setenv("HOME", str(home))
+    stream = "\n".join(
+        (
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "msg-spend-1",
+                        "model": "claude-sonnet-5-5",
+                        "usage": {"input_tokens": 40000, "output_tokens": 200},
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "result": '{"outcome": "passed"}',
+                    "usage": {"input_tokens": 40000},
+                }
+            ),
+        )
+    )
+
+    _verdict, runner = _take(
+        tmp_path=tmp_path, result=CommandResult(exit_code=0, stdout=stream + "\n", stderr="")
+    )
+
+    journals = list((home / ".claude" / "spend-journal").glob("*.jsonl"))
+    assert len(journals) == 1
+    records = [json.loads(line) for line in journals[0].read_text(encoding="utf-8").splitlines()]
+    assert records[0]["name"] == "purpose:dod_judgement_pre_admission@bd-ib-7f66ar"
+    assert records[0]["cwd"] == str(tmp_path / "repo")
+    assert records[1] == {
+        "type": "assistant",
+        "message": {
+            "id": "msg-spend-1",
+            "model": "claude-sonnet-5-5",
+            "usage": {"input_tokens": 40000, "output_tokens": 200},
+        },
+        "ts": records[1]["ts"],
+    }
+    assert records[1]["ts"].endswith("Z")
+    assert runner.argv is not None
+    assert runner.argv[runner.argv.index("--name") + 1] == records[0]["name"]
+
+
 def test_a_chain_run_without_the_bound_asks_for_no_usage_and_ends_no_candidate_on_it(
     tmp_path: Path,
 ) -> None:

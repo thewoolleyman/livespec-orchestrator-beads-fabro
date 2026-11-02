@@ -20,6 +20,7 @@ retries anyway.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -162,6 +163,56 @@ def test_the_drift_judge_appends_its_caller_to_inherited_resource_attributes(
         runner.environs[0]["OTEL_RESOURCE_ATTRIBUTES"]
         == "service.namespace=livespec-family,livespec.caller=drift_run"
     )
+
+
+def test_the_drift_judge_journals_a_claude_response_for_host_spend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "operator-home"
+    monkeypatch.setenv("HOME", str(home))
+    project, payload = _project_root(tmp_path=tmp_path)
+    _ = (project / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    stream = "\n".join(
+        (
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "drift-spend-1",
+                        "model": "claude-opus-5",
+                        "usage": {"input_tokens": 40, "output_tokens": 20},
+                    },
+                }
+            ),
+            json.dumps({"type": "result", "result": '{"kind": "stated"}'}),
+        )
+    )
+    runner = _Runner(reply=stream)
+
+    reply = drift_judge(
+        project_root=project, payload_root=payload, runner=runner, caller="drift_run"
+    )("a prompt")
+
+    assert reply == '{"kind": "stated"}'
+    journals = list((home / ".claude" / "spend-journal").glob("*.jsonl"))
+    assert len(journals) == 1
+    records = [json.loads(line) for line in journals[0].read_text(encoding="utf-8").splitlines()]
+    assert records[0]["name"] == f"purpose:drift_run@{project.name}"
+    assert records[1]["message"]["id"] == "drift-spend-1"
+    assert records[1]["ts"].endswith("Z")
+    assert runner.argvs[0][-3:] == ["--output-format", "stream-json", "--verbose"]
 
 
 def test_a_non_zero_exit_answers_the_empty_string(tmp_path: Path) -> None:
