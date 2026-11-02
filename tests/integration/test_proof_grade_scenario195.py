@@ -469,6 +469,7 @@ def test_a_verified_record_without_a_full_publish_branch_head_is_refused(
 
         assert result.returncode != 0, result.stderr
         assert "LIVESPEC_PROOF_GRADE_PUBLISH_HEAD_UNESTABLISHED" in result.stderr
+        assert "full publish-branch head" in result.stderr
         assert _failures(tmp_path=tmp_path / (declared_head or "empty"))[0] == "1"
 
 
