@@ -7192,6 +7192,37 @@ Feature: Recovery routing for an automatically released item
     Then the route is held, neither seeded nor fresh
     And the journal carries a recovery-held record naming the merged state and the remedy reconcile-merged --item
     And no publish-branch reclaim runs for it
+
+  Scenario: An item returned to ready after a needs_human ending with a published head and a proof record is resumed
+    Given an item whose latest dispatch ended at the needs_human terminal after proof_capture posted a captured proof record naming the published head
+    And a human valve returned the item to ready with its Definition of Done unchanged and no newer dispatch submitted
+    And the across-dispatch required-result progress refusal does not apply to it
+    When the Dispatcher's next pass grades the item
+    Then recovery routing routes it resume
+    And its run enters at review on the anchored head without visiting dod_gate or implement
+
+  Scenario: An item returned to ready after a non_converged ending with preserved work and no proof anchor is seeded
+    Given an item whose latest dispatch ended at a non_converged terminal with a preserved terminal tree and no proof record
+    And the item returned from backlog to ready with no newer dispatch submitted
+    And the across-dispatch required-result progress refusal does not apply to it
+    When the Dispatcher's next pass grades the item
+    Then recovery routing routes it seeded
+    And its seed record names the source run and the preserved tree's commit SHA and preservation reference
+    And its run checks out that recorded SHA
+
+  Scenario: A returned item whose Definition of Done a groom changed is seeded, not resumed
+    Given an item whose latest dispatch ended at the needs_human terminal with a published head and a verified proof record
+    And a groom changed the item's Definition of Done before it returned to ready
+    When the Dispatcher's next pass grades the item
+    Then recovery routing routes it seeded
+    And no proof record from the earlier Definition of Done is inherited
+
+  Scenario: The across-dispatch no-progress refusal is graded before recovery routing for a returned item
+    Given an item whose latest dispatch ended at the needs_human terminal and that returned to ready
+    And the across-dispatch required-result progress refusal applies to it
+    When the Dispatcher's next pass grades the item
+    Then the refusal is recorded before any claim and before recovery routing
+    And the item is neither routed nor offered to the admission valve in that pass
 ```
 
 ## Scenario 186 — A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor
