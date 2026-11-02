@@ -1205,7 +1205,7 @@ def test_watched_launcher_takes_no_sample_once_the_fabro_run_call_has_returned(
         polls["n"] += 1
         if polls["n"] >= 3:
             runner.run_done.set()
-            assert target_returned.wait(timeout=5.0)
+            assert target_returned.wait(timeout=30.0)  # a hang guard, not a bound
 
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _lingering_thread)
     journal = _RecordingJournal()

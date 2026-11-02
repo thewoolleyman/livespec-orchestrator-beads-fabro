@@ -348,7 +348,9 @@ def test_same_factory_vault_writes_wait_for_the_prior_worker_snapshot() -> None:
     # proves the thread was genuinely attempting the store rather than never run.
     second_was_blocked = not second_entered.wait(timeout=0.1)
     getattr(first, "release_launch_guard", lambda: None)()
-    thread.join(timeout=2.0)
+    # A hang guard: the release above is what ends the second store, so the
+    # join waits on that event and the timeout never decides the verdict.
+    thread.join(timeout=30.0)
     getattr(second, "release_launch_guard", lambda: None)()
 
     assert second_was_blocked

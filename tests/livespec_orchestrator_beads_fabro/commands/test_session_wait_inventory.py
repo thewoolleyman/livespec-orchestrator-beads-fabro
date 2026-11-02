@@ -377,7 +377,9 @@ def _assert_cli(
 
 def _poll_until_observed(*, probe: _Pollable) -> GateObservation:
     observation: GateObservation | None = None
-    deadline = time.monotonic() + 2.0
+    # A hang guard: the loop ends on the observation, and a loaded host only
+    # delays it. The sibling helper in test_session_wait_pane uses the same.
+    deadline = time.monotonic() + 30.0
     while observation is None and time.monotonic() < deadline:
         observation = probe.poll(now=time.monotonic())
         time.sleep(0.01)

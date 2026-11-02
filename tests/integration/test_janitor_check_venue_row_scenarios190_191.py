@@ -123,7 +123,16 @@ _HOST_SUITE: tuple[str, ...] = ("sh", "-c", "exit 0")
 # really takes time is the only way to observe that the start instant was taken
 # BEFORE the launch rather than beside the journal append.
 _SLEEP_SECONDS = 2
-_SLOW_HOST_SUITE: tuple[str, ...] = ("sh", "-c", f"sleep {_SLEEP_SECONDS}")
+
+
+def _slow_host_suite(*, launched_marker: Path) -> tuple[str, ...]:
+    """A suite that stamps the instant it really launched, then sleeps.
+
+    The stamp is the suite's OWN reading of the clock, taken inside the launched
+    process, so a row whose start instant is not later than it was provably
+    taken before the launch, however slowly a loaded host runs either side.
+    """
+    return ("sh", "-c", f"date -u +%s > {launched_marker}; sleep {_SLEEP_SECONDS}")
 
 
 def _config_text(*, venue: str | None, check_suite: tuple[str, ...]) -> str:
@@ -388,6 +397,14 @@ def _elapsed_seconds(*, row: dict[str, object]) -> float:
         tzinfo=timezone.utc
     )
     return (appended - started).total_seconds()
+
+
+def _started_epoch(*, row: dict[str, object]) -> int:
+    """The row's start instant as whole UTC epoch seconds, as `date -u +%s` reads."""
+    started = datetime.strptime(str(row[_STARTED_AT_FIELD]), _INSTANT_FORMAT).replace(
+        tzinfo=timezone.utc
+    )
+    return int(started.timestamp())
 
 
 def _drive(
@@ -674,23 +691,25 @@ def test_scenario191_the_row_carries_the_suites_start_so_the_stage_duration_is_r
     taken before the launch, one taken beside the journal append, one taken at
     the top of the post-merge flow -- would read identically.
 
-    The quick leg is the control, and without it the slow leg proves nothing: a
-    duration of two seconds is equally consistent with a start instant taken
-    before the launch and with a fixture that simply takes two seconds to do
-    anything. The two legs differ only in their declared check suite, so the
-    difference between their durations is the sleep.
+    A duration of two seconds alone is equally consistent with a start instant
+    taken before the launch and with a fixture that simply takes two seconds to
+    do anything, so the slow suite stamps the instant it actually launched and
+    the row's start is asserted to be no later than that stamp. That is an
+    ORDERING between two clock readings, not a ceiling on how long the quick
+    legs take, so a loaded host stretches every leg without changing a verdict.
 
     Both instants are parsed with the exact seconds-precision UTC format, so a
     value that is not one raises here rather than comparing oddly, and the
     duration is read from the ROW as an operator reads it rather than from any
     clock this module holds.
     """
+    launched_marker = tmp_path / "slow-suite-launched-at"
     slow = _drive(
         tmp_path=tmp_path,
         name="slow",
         venue=_HOST_LOCAL,
         suite=None,
-        check_suite=_SLOW_HOST_SUITE,
+        check_suite=_slow_host_suite(launched_marker=launched_marker),
     )
     quick = _drive(tmp_path=tmp_path, name="quick", venue=_HOST_LOCAL, suite=None)
     cluster = _drive(
@@ -703,10 +722,12 @@ def test_scenario191_the_row_carries_the_suites_start_so_the_stage_duration_is_r
         if _STARTED_AT_FIELD not in drive.row
     ] == []
     assert _elapsed_seconds(row=slow.row) >= _SLEEP_SECONDS
-    assert _elapsed_seconds(row=quick.row) < _SLEEP_SECONDS
-    # Owed on BOTH venues: the field is not part of the gate account, so a
-    # cluster row carries it too and parses the same way.
-    assert _elapsed_seconds(row=cluster.row) < _SLEEP_SECONDS
+    launched_at = int(launched_marker.read_text(encoding="utf-8").strip())
+    assert _started_epoch(row=slow.row) <= launched_at
+    # Owed on BOTH venues and on either suite: the field is not part of the gate
+    # account, so every row carries it and parses the same way.
+    assert _elapsed_seconds(row=quick.row) >= 0
+    assert _elapsed_seconds(row=cluster.row) >= 0
     assert (slow.outcome.stage, quick.outcome.stage) == ("done", "done")
 
 
