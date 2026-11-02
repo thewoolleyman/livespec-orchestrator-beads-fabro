@@ -24,9 +24,12 @@ and "the mechanical item did not" is equally consistent with one that withholds
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from livespec_orchestrator_beads_fabro import intake_dor
 from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
     make_beads_client,
@@ -291,3 +294,33 @@ def test_a_verdict_reached_without_a_repository_root_grades_nothing() -> None:
 
     assert verdict == "backlog"
     assert _comments(issue_id="li-no-root") == ()
+
+
+def test_an_auto_admission_filing_journals_its_pre_admission_judgement_usage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decision = SimpleNamespace(
+        holds=False,
+        spec_identity=None,
+        deciding_candidate=None,
+        bound_ended_candidates=("claude-acp:claude-sonnet-5-5",),
+        total_input_tokens=100_321,
+    )
+    monkeypatch.setattr(intake_dor, "judge_item_definition_of_done", lambda **_kw: decision)
+    _seed_issue(
+        issue_id="li-journaled",
+        description=_description(
+            assertion="The accept valve refuses an item with no verified record.",
+            references=_RESOLVABLE_HEADING,
+        ),
+    )
+    repo = _repo(tmp_path=tmp_path)
+
+    _ = _route(issue_id="li-journaled", repo=repo)
+
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    (row,) = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert row["work_item_id"] == "li-journaled"
+    assert row["judgement_stage"] == "pre-admission"
+    assert row["bound_ended_candidates"] == ["claude-acp:claude-sonnet-5-5"]
+    assert row["total_input_tokens"] == 100_321

@@ -14,12 +14,15 @@ establish that.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
+from livespec_orchestrator_beads_fabro.commands import _drive_approve_valve as approve_valve
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
@@ -410,6 +413,45 @@ def test_approve_admits_a_pending_item_whose_criteria_are_gradeable(tmp_path: Pa
 
     assert result["status"] == "green"
     assert _fake().show_issue(issue_id="bd-ib-v072")["status"] == "ready"
+
+
+def test_approve_journals_its_pre_admission_judgement_with_candidate_and_input_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _valve_repo(tmp_path=tmp_path)
+    append_work_item(
+        path=_config(),
+        item=_item(
+            status="pending-approval",
+            admission_policy="manual",
+            acceptance_criteria=_TWO_ASSERTIONS,
+        ),
+    )
+    decision = SimpleNamespace(
+        holds=False,
+        findings=(),
+        spec_identity=None,
+        deciding_candidate=None,
+        bound_ended_candidates=("claude-acp:claude-sonnet-5-5",),
+        total_input_tokens=100_321,
+    )
+    monkeypatch.setattr(approve_valve, "judge_item_definition_of_done", lambda **_kw: decision)
+
+    result = run_human_valve_action(repo=repo, action_id="approve:bd-ib-v072")
+
+    assert result["status"] == "green"
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    rows = (
+        [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+        if journal.exists()
+        else []
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["work_item_id"] == "bd-ib-v072"
+    assert row["judgement_stage"] == "pre-admission"
+    assert row["bound_ended_candidates"] == ["claude-acp:claude-sonnet-5-5"]
+    assert row["total_input_tokens"] == 100_321
 
 
 def test_approve_admits_a_human_only_item_carrying_no_criteria(tmp_path: Path) -> None:

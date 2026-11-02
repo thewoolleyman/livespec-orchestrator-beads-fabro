@@ -60,11 +60,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
     held_judgement,
     judge_item_definition_of_done,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_journal import (
+    journal_dod_taking,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_DISPATCH,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    spec_identity_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -122,21 +122,9 @@ def dod_judgement_refusal(
         decision = judge_item_definition_of_done(
             item=item, repo=repo, path=config, stage=STAGE_PRE_DISPATCH
         )
-        append = getattr(journal, "append", None)
-        if append is not None and (
-            decision.spec_identity is not None
-            or bool(getattr(decision, "bound_ended_candidates", ()))
-        ):
-            append(
-                record=spec_identity_journal_record(
-                    work_item_id=item.id,
-                    stage=STAGE_PRE_DISPATCH,
-                    identity=decision.spec_identity,
-                    deciding_candidate=decision.deciding_candidate,
-                    bound_ended_candidates=getattr(decision, "bound_ended_candidates", ()),
-                    total_input_tokens=decision.total_input_tokens,
-                )
-            )
+        journal_dod_taking(
+            journal=journal, work_item_id=item.id, stage=STAGE_PRE_DISPATCH, decision=decision
+        )
         if decision.holds:
             findings = "\n".join(decision.findings)
             return (

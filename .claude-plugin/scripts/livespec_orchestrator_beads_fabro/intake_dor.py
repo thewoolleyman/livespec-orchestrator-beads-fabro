@@ -125,6 +125,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_f
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     judge_item_definition_of_done,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_journal import (
+    journal_dod_taking_to_repo,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_ADMISSION,
 )
@@ -228,6 +231,17 @@ class FilingFindings:
         return tuple(
             f"{MECHANICAL_FINDING_PREFIX} {finding}" for finding in self.mechanical
         ) + tuple(f"{ADVISORY_FINDING_PREFIX} {finding}" for finding in self.advisory)
+
+
+def _admission_judgement_holds(*, item: WorkItem, repo_root: Path, path: StoreConfig) -> bool:
+    """Take the pre-admission judgement, journal its row, and report whether it holds."""
+    decision = judge_item_definition_of_done(
+        item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
+    )
+    journal_dod_taking_to_repo(
+        repo=repo_root, work_item_id=item.id, stage=STAGE_PRE_ADMISSION, decision=decision
+    )
+    return decision.holds
 
 
 def filing_findings(*, item: WorkItem, repo_root: Path | None) -> FilingFindings:
@@ -360,9 +374,7 @@ def apply_intake_dor(
             policy == _AUTO_ADMISSION
             and not findings.withholds_ready
             and spec_change is None
-            and not judge_item_definition_of_done(
-                item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
-            ).holds
+            and not _admission_judgement_holds(item=item, repo_root=repo_root, path=path)
         ):
             status = _READY_STATUS
 
