@@ -193,7 +193,6 @@ class NodeTimeouts:
 
     def seconds_for(self, *, node: str) -> int:
         """The resolved timeout in seconds for `node`."""
-<<<<<<< HEAD
         return self.configured.get(_configuration_node(node=node), DEFAULT_NODE_TIMEOUT_SECONDS)
 
     def layer_for(self, *, node: str) -> str:
@@ -203,15 +202,6 @@ class NodeTimeouts:
             if _configuration_node(node=node) in self.configured
             else WORKFLOW_DEFAULT_LAYER
         )
-=======
-        key = "implement" if node in _IMPLEMENT_STAGE_NODES else node
-        return self.configured.get(key, DEFAULT_NODE_TIMEOUT_SECONDS)
-
-    def layer_for(self, *, node: str) -> str:
-        """Which layer supplied `node`'s timeout."""
-        key = "implement" if node in _IMPLEMENT_STAGE_NODES else node
-        return REPOSITORY_LAYER if key in self.configured else WORKFLOW_DEFAULT_LAYER
->>>>>>> 7cced92bc (feat: split implement workflow into red and green nodes)
 
 
 def default_node_timeouts() -> NodeTimeouts:

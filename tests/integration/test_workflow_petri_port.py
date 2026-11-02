@@ -142,10 +142,6 @@ _RED_GREEN_ADDED = {
 # node itself predates this change.
 _RED_GREEN_LOOP = _RED_GREEN_ADDED | {"implementation_diff"}
 _RETIRED_IMPLEMENT_NODES = {"implement"}
-_IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
-    "implement",
-    "implement_completion",
-}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
