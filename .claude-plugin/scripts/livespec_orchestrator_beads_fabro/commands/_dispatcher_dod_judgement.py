@@ -37,7 +37,6 @@ renderer, because a second spelling of the marker is two answers to one question
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +52,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attemp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_judgement_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_referenced_heading import (
+    referenced_heading_body,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
     EffectiveCriteria,
@@ -62,9 +64,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import read_
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
     governing_heading_block,
-)
-from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
-    CondensedClause,
 )
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
@@ -93,15 +92,9 @@ JUDGEMENT_HELD = "rests-at-needs-human"
 JUDGEMENT_UNAVAILABLE = "did-not-run"
 CAUSE_UNPARSEABLE_VERDICT = "unparseable-verdict"
 
-_H2 = re.compile(r"^##\s+(.+?)\s*$")
-_H2_MARKER = "## "
 _VERDICT_PASSED = "passed"
 _VERDICT_FAILED = "failed"
 _REMEDY_SEPARATOR = "; "
-_UNRESOLVED_HEADING_BODY = "(this heading does not resolve in the governed spec tree)"
-_UNSELECTED_HEADING_BODY = (
-    "(the governing-heading verdict named or selected no clause from this referenced heading)"
-)
 _ABSENT_CRITERIA_BODY = "(this item carries no effective acceptance criteria)"
 # The description is the item's own text, so it can carry any heading; the end
 # marker is what keeps the subject's next heading from reading as the item's.
@@ -115,6 +108,7 @@ _LESSONS_LABEL = (
 # riders distinguishable from one whose riders were dropped, which is the
 # difference between a brief that is complete and one that was truncated.
 _RIDERS_HEADING = "## Ledger comments (operator riders; part of the brief)"
+_ABSENT_RIDERS_HEADING = "## Operator riders"
 _ABSENT_RIDERS_BODY = "(this item carries no operator rider)"
 # The governed spec tree, named where `_heading_body` names it, and the two
 # halves of the identity the reuse digest folds in.
@@ -195,14 +189,14 @@ def judgement_subject(
             (
                 "",
                 f"## Referenced heading: {reference}",
-                _referenced_heading_body(
+                referenced_heading_body(
                     repo=cwd,
                     reference=reference,
                     governing=governing,
                 ),
             )
         )
-    blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
+    blocks.extend(("", _riders_heading(comments=comments), _riders_body(comments=comments)))
     blocks.extend(("", governing_heading_block(verdict=governing)))
     return "\n".join(blocks)
 
@@ -327,6 +321,15 @@ def _riders_body(*, comments: Sequence[str]) -> str:
     return "\n\n".join(riders) if riders else _ABSENT_RIDERS_BODY
 
 
+def _riders_heading(*, comments: Sequence[str]) -> str:
+    """Name the rider block without implying a ledger section when none exists."""
+    return (
+        _RIDERS_HEADING
+        if any(not is_judgement_record(body=body) for body in comments)
+        else _ABSENT_RIDERS_HEADING
+    )
+
+
 def _unreadable() -> DodJudgement:
     return DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_UNPARSEABLE_VERDICT)
 
@@ -346,74 +349,3 @@ def _last_non_empty_line(*, reply: str) -> str | None:
         if stripped:
             return stripped
     return None
-
-
-def _referenced_heading_body(
-    *,
-    repo: Path,
-    reference: str,
-    governing: GoverningHeadingVerdict | None,
-) -> str:
-    """Render the governing verdict's verbatim clauses for one cited heading.
-
-    The subject is bounded by the clauses the spec-stated judgement named or
-    selected. Before that judgement is available, retain the whole section: an
-    omitted body would turn an unobserved verdict into a claim that no clause
-    governs. Once it is available, an explicit empty selection is the honest
-    compact representation of a cited heading that did not contribute a clause.
-    """
-    if governing is None:
-        return _heading_body(repo=repo, reference=reference)
-    clauses = _governing_clauses_for(reference=reference, governing=governing)
-    if not clauses:
-        return _UNSELECTED_HEADING_BODY
-    return "\n\n".join(f"{clause.heading}{clause.body}" for clause in clauses)
-
-
-def _governing_clauses_for(
-    *, reference: str, governing: GoverningHeadingVerdict
-) -> tuple[CondensedClause, ...]:
-    """Return unique selected and named clauses from one referenced H2.
-
-    The two lists are distinct provenance roles, but a clause present in both
-    appears once in the subject: duplicating identical text consumes the bound
-    without giving the judge a second requirement to grade.
-    """
-    clauses: list[CondensedClause] = []
-    for clause in (*governing.selected_clauses, *governing.named_clauses):
-        if clause.heading.rstrip(" \t") != reference.rstrip(" \t") or clause in clauses:
-            continue
-        clauses.append(clause)
-    return tuple(clauses)
-
-
-def _heading_body(*, repo: Path, reference: str) -> str:
-    """Return an H2 section body, retaining an explicit absence when unresolved."""
-    title = reference.removeprefix(_H2_MARKER)
-    spec_root = repo / _SPEC_DIRNAME
-    if not spec_root.is_dir():
-        return _UNRESOLVED_HEADING_BODY
-    for path in sorted(spec_root.glob("*.md")):
-        read = attempt(action=lambda p=path: p.read_text(encoding="utf-8"), exceptions=(OSError,))
-        if isinstance(read, AttemptFailure):
-            continue
-        body = _section_of(text=read, title=title)
-        if body is not None:
-            return body
-    return _UNRESOLVED_HEADING_BODY
-
-
-def _section_of(*, text: str, title: str) -> str | None:
-    """Extract an H2 section through, but not including, the following H2."""
-    collected: list[str] | None = None
-    for raw in text.splitlines():
-        match = _H2.match(raw)
-        if match is None:
-            if collected is not None:
-                collected.append(raw)
-            continue
-        if collected is not None:
-            break
-        if match.group(1) == title:
-            collected = [raw]
-    return "\n".join(collected) if collected is not None else None

@@ -241,6 +241,25 @@ def test_subject_bounds_large_references_to_the_governing_verdicts_clauses(
     assert large_body not in subject
 
 
+def test_goal_carries_the_byte_identical_subject_the_host_judges(tmp_path: Path) -> None:
+    """The in-run gate receives the same shared subject as every host taking."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    goal = importlib.import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_goal")
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    _ = (spec / "scenarios.md").write_text(
+        "## Scenario 174 — The judgement runs before admission\n\n" "The shared subject text.\n",
+        encoding="utf-8",
+    )
+
+    subject = judgement.judgement_subject(item=_item(), cwd=tmp_path)
+    rendered = goal.render_goal(item=_item(), repo=tmp_path, branch="feat/bd-ib-7f66ar")
+
+    assert subject in rendered
+
+
 def test_subject_carries_the_goal_fields_the_rubric_grades(tmp_path: Path) -> None:
     """The rubric's check 1 reads the DESCRIPTION's first heading (bd-ib-kt4mgw).
 

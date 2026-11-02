@@ -37,6 +37,12 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
+    reusable_governing_heading_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    judgement_subject,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_judgement_record,
 )
@@ -85,6 +91,7 @@ _DEFINITION_OF_DONE_BEGIN_MARK = (
     "--- BEGIN ITEM DEFINITION OF DONE (the item's own section; ledger comments are outside it) ---"
 )
 _DEFINITION_OF_DONE_END_MARK = "--- END ITEM DEFINITION OF DONE ---"
+_SHARED_JUDGEMENT_SUBJECT_HEADING = "## Definition-of-Done judgement subject"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -266,6 +273,7 @@ def render_goal(
     # judgement nobody took — the first forecloses its finding and the second
     # leaves it its own search.
     bodies = tuple(comment.text for comment in comments)
+    governing = reusable_governing_heading_verdict(item=item, repo=repo, comments=bodies)
     # A standing human attestation is the verdict when one exists: the `dod_gate`
     # node "MUST use the attested `stated` verdict", and the receipt the pre-dispatch
     # taking recorded may predate the attestation.
@@ -273,7 +281,13 @@ def render_goal(
     verdict_block = (
         "\n"
         + governing_heading_block(
-            verdict=recorded_governing_heading(comments=bodies) if attested is None else attested
+            verdict=(
+                governing
+                if governing is not None
+                else recorded_governing_heading(comments=bodies)
+                if attested is None
+                else attested
+            )
         )
         + "\n"
     )
@@ -284,8 +298,13 @@ def render_goal(
     supplied = recorded_spec_identity(comments=bodies)
     if supplied is not None:
         verdict_block += "\n" + spec_identity_block(identity=supplied) + "\n"
+    shared_subject = (
+        f"\n{_SHARED_JUDGEMENT_SUBJECT_HEADING}\n"
+        + judgement_subject(item=item, cwd=repo, comments=bodies, governing=governing)
+        + "\n"
+    )
     if not riders:
-        return escape_minijinja_literal(text=body + verdict_block)
+        return escape_minijinja_literal(text=body + verdict_block + shared_subject)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
@@ -295,7 +314,9 @@ def render_goal(
     # renderer lost rather than one it deliberately omitted.
     for index, comment in enumerate(riders, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
-    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n" + verdict_block)
+    return escape_minijinja_literal(
+        text=body + "\n".join(lines) + "\n" + verdict_block + shared_subject
+    )
 
 
 def _description_with_marked_definition_of_done(*, description: str) -> str:
