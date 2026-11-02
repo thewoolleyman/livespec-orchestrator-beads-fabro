@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.274.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.0...v0.274.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* preserve session identity through credential re-exec ([c42af79](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c42af79d19920f2a13ba4a38d58d92c5b5cfa57f))
+* reject unavailable gap check interpreter ([c5a69fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c5a69fb64e7476ee66c15cc9f067c03c2fdab2a4))
+
 ## [0.274.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.273.0...v0.274.0) (2026-11-02)
 
 
