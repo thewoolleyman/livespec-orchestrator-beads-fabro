@@ -63,6 +63,7 @@ from typing_extensions import override
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
+    reference_line_headings,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
     correction_prompt_headroom,
@@ -235,7 +236,10 @@ def condensed_spec_tree(
     selected: dict[tuple[str, int], str] = {}
     complete: set[tuple[str, int]] = set()
     statement_terms = frozenset(_TERM.findall(statement.casefold()))
-    references = definition_of_done(description=statement).references
+    definition = definition_of_done(description=statement)
+    references = (
+        definition.references if definition.present else reference_line_headings(text=statement)
+    )
     pinned = [
         section
         for reference in references
@@ -259,7 +263,7 @@ def condensed_spec_tree(
                 elided=section.elided,
                 remaining=remaining,
             )
-            if section in pinned or (matching_terms and not pinned)
+            if section in pinned or matching_terms
             else None
         )
         if partial is not None:
