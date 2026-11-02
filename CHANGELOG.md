@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.276.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.276.0...v0.276.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* release unsupported Codex model candidates ([47addc4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/47addc4f98d595c23286b5d0c2a1c25da80b7f3c))
+
 ## [0.276.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.275.0...v0.276.0) (2026-11-02)
 
 
