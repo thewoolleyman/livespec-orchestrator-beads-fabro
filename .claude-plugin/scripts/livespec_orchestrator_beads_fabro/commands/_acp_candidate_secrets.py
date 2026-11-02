@@ -82,7 +82,9 @@ def adapter_secret_refusal(
         return _refusal(key=key, location="command", marker=command_marker)
     for index, argument in enumerate(args):
         if (
-            argument.startswith(_CODEX_COMPACTION_LIMIT_PREFIX)
+            index > 0
+            and args[index - 1] == "-c"
+            and argument.startswith(_CODEX_COMPACTION_LIMIT_PREFIX)
             and argument.removeprefix(_CODEX_COMPACTION_LIMIT_PREFIX).isdigit()
         ):
             continue

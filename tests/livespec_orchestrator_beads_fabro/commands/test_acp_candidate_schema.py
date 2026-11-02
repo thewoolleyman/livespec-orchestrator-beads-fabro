@@ -199,6 +199,23 @@ def test_numeric_codex_compaction_limits_are_the_only_token_named_args_that_pass
     limit = "model_auto_compact_token_limit=245000"
 
     assert secrets.adapter_secret_refusal(**{**clean, "args": ("-c", limit)}) is None
+    parsed = _chains().parse_node_chain(
+        entry={
+            **_IDENTITY,
+            "command": "codex-acp",
+            "args": ["-c", limit],
+            "fallbacks": [{**_candidate(), "args": ["-c", limit]}],
+        },
+        key="dispatcher.acp_nodes.pr",
+        node="pr",
+        catalogs=_catalogs(),
+    )
+    assert not isinstance(parsed, str), parsed
+    assert parsed.fallbacks[0].adapter.args == ("-c", limit)
+    standalone = secrets.adapter_secret_refusal(**{**clean, "args": (limit,)})
+    assert standalone is not None
+    assert "args[0]" in standalone
+    assert "'token'" in standalone
     for value in ("not-an-integer", "", "245000token"):
         argument = f"model_auto_compact_token_limit={value}"
         refusal = secrets.adapter_secret_refusal(**{**clean, "args": ("-c", argument)})
