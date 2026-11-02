@@ -50,7 +50,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,6 +66,9 @@ from livespec_orchestrator_beads_fabro.commands import (
 )
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_loop_wave as loop_wave,
+)
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_resume_observation as resume_observation,
 )
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_run_commands as run_commands,
@@ -101,6 +103,22 @@ _FRESH_ID = "bd-ib-3snvbf"
 # large enough that a build rendering anything but the lock's own age cannot
 # match it by accident.
 _LOCK_AGE_SECONDS = 42.0
+
+# The one instant this file's world runs at. The lock is written this far in the
+# past and the resume observation reads its age against this same instant, so
+# the rendered age is exactly `_LOCK_AGE_SECONDS` however slowly the runner
+# gets from the write to the read. Reading the real clock twice made the
+# rendered "Ns old" a race a slow CI runner lost ("43s old").
+_FROZEN_NOW = 1_800_000_000.0
+
+
+class _FrozenClock:
+    """The `time` module as the resume observation sees it: stopped at `_FROZEN_NOW`."""
+
+    @staticmethod
+    def time() -> float:
+        return _FROZEN_NOW
+
 
 # Spelled as literals because this file's Red predates the module that exports
 # them, and a Red's test bytes are fixed across its Red-to-Green pair.
@@ -171,6 +189,8 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch, repo: Path) -> None:
     # answers wherever `/proc` cannot be read, and it is what lets the lock
     # below carry an age instead of reading as written-this-instant.
     monkeypatch.setattr(dispatch_lock, "process_started_at_epoch", lambda **_kwargs: None)
+    # Only the observation's age read is frozen; liveness never reads the clock.
+    monkeypatch.setattr(resume_observation, "time", _FrozenClock)
 
 
 def _write_live_lock(*, repo: Path) -> None:
@@ -182,7 +202,7 @@ def _write_live_lock(*, repo: Path) -> None:
             {
                 "work_item_id": _ITEM_ID,
                 "pid": os.getpid(),
-                "started_at_epoch": time.time() - _LOCK_AGE_SECONDS,
+                "started_at_epoch": _FROZEN_NOW - _LOCK_AGE_SECONDS,
                 "dispatch_id": _DISPATCH,
             }
         ),
