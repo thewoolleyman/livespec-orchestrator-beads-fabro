@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "FACTORY_SAFETY_REASONS",
+    "clear_work_item_factory_safety",
     "update_work_item_awaits_scope_override",
     "update_work_item_factory_safety",
     "update_work_item_policy",
@@ -101,6 +102,14 @@ def update_work_item_factory_safety(
         issue_id=item_id,
         add_labels=[f"{_LABEL_FACTORY_SAFETY}{reason}"],
         metadata={**metadata, "factory_safety_recorded_at": recorded_at},
+    )
+
+
+def clear_work_item_factory_safety(*, path: StoreConfig, item_id: str, reason: str) -> None:
+    """Remove one recorded factory-safety label without changing lifecycle fields."""
+    make_beads_client(config=path).update_issue(
+        issue_id=item_id,
+        remove_labels=[f"{_LABEL_FACTORY_SAFETY}{reason}"],
     )
 
 

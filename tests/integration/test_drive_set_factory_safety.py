@@ -200,3 +200,28 @@ def test_clear_factory_safety_journals_the_rationale_invoker_and_removed_reason(
     assert "host secret rotation is complete: R392" in journal
     assert '"invoker": "human:cw"' in journal
     assert "needs-host-secrets" in journal
+
+
+def test_clear_factory_safety_preserves_lifecycle_status_and_admission_policy(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(
+        path=_config(),
+        item=_item(
+            factory_safety="mutates-host-machinery",
+            status="acceptance",
+            admission_policy="manual",
+        ),
+    )
+
+    result = run_action(
+        repo=repo,
+        action_id="clear-factory-safety:bd-ib-123:the host-only change was superseded",
+    )
+
+    assert result["status"] == "green"
+    stored = _stored()
+    assert stored.factory_safety is None
+    assert stored.status == "acceptance"
+    assert stored.admission_policy == "manual"
