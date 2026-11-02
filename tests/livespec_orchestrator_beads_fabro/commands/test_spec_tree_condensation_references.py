@@ -9,7 +9,7 @@ to a much longer unrelated clause.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -233,3 +233,62 @@ def test_governing_heading_judgement_pins_the_same_references_as_the_work_item_j
     expected = {_REFERENCED_HEADING, _SECOND_REFERENCED_HEADING, _THIRD_REFERENCED_HEADING}
     assert expected <= {clause.heading for clause in fresh.clauses}
     assert expected <= {clause.heading for clause in governing.clauses}
+
+
+def test_a_bare_reference_line_pins_its_clause_as_the_reuse_statement_renders_it() -> None:
+    """The governing-heading statement carries no Definition-of-Done heading."""
+    referenced = "## Governing contract"
+    governing_body = "The definitive contract applies here. " * 120
+    tempting_body = "delegated gate runner full suite worktree verdict " * 1000
+    tree = {
+        "contracts.md": (
+            f"{referenced}\n\n{governing_body}\n"
+            f"## Lexically tempting background\n\n{tempting_body}"
+        )
+    }
+    item = replace(
+        _ITEM,
+        title="Delegated gate runner",
+        description=(
+            "## Definition of Done\n\n"
+            f"References: {referenced}\n\n"
+            "- A delegated gate runner full suite records a worktree verdict.\n"
+        ),
+    )
+    statement = governing_heading_statement(
+        item=item, section=definition_of_done(description=item.description)
+    )
+
+    condensed = condensed_spec_tree(spec_tree=tree, statement=statement, ceiling=16_000)
+
+    assert not statement.startswith("## Definition of Done")
+    assert f"References: {referenced}" in statement
+    assert governing_body in condensed["contracts.md"]
+    assert referenced in {clause.heading for clause in condensed.clauses}
+
+
+def test_an_unnamed_relevant_clause_is_still_carried_in_part_once_references_fit() -> None:
+    """Pinning references spends budget first, then retrieval spends the rest."""
+    referenced = "## Governing contract"
+    governing_body = "The definitive contract applies here. " * 20
+    tempting_body = "delegated gate runner full suite worktree verdict " * 1000
+    tree = {
+        "contracts.md": (
+            f"{referenced}\n\n{governing_body}\n"
+            f"## Lexically tempting background\n\n{tempting_body}"
+        )
+    }
+    statement = (
+        "## Definition of Done\n\n"
+        f"References: {referenced}\n\n"
+        "- A delegated gate runner full suite records a worktree verdict."
+    )
+
+    rendered = condensed_spec_tree(spec_tree=tree, statement=statement, ceiling=16_000)[
+        "contracts.md"
+    ]
+
+    assert governing_body in rendered
+    assert tempting_body[:200] in rendered
+    assert tempting_body not in rendered
+    assert "partially withheld" in rendered
