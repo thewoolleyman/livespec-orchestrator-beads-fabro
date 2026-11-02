@@ -131,8 +131,11 @@ requested = 0
 for pod in kubectl(\"pods\", \"--all-namespaces\", \"--field-selector\", \"spec.nodeName=\" + node)[\"items\"]:
     if pod.get(\"status\", {}).get(\"phase\") in (\"Succeeded\", \"Failed\"):
         continue
-    for container in pod[\"spec\"][\"containers\"]:
-        requested += millis(container.get(\"resources\", {}).get(\"requests\", {}).get(\"cpu\", 0))
+    def request(container):
+        return millis(container.get(\"resources\", {}).get(\"requests\", {}).get(\"cpu\", 0))
+    running = sum(request(container) for container in pod[\"spec\"][\"containers\"])
+    init = max([request(container) for container in pod[\"spec\"].get(\"initContainers\", [])], default=0)
+    requested += max(running, init)
 print(\"yes\" if requested > allocatable else \"no\")
 ") || exit 1
 case $overcommitted in

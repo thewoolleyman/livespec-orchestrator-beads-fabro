@@ -591,10 +591,13 @@ echo "--- 7. gate Job pods are excluded only while CPU requests fit the node"
 export STUB_REMOTE_EXEC=1
 export STUB_CPUS=4
 
-# remote_fixture <requested-millis-per-pod> <gate-delta-usec>: a node with 4000m
-# allocatable, one factory pod and one gates pod each requesting the given CPU.
+# remote_fixture <requested-millis-per-pod> <gate-delta-usec> [init-millis]: a node with 4000m
+# allocatable, one factory pod and one gates pod each requesting the given CPU; the optional
+# init-millis adds one init container with that request to the factory pod.
 remote_fixture() {
-    local request="$1" gate_delta="$2" root="$CASE_DIR/cgroup" k3s="$CASE_DIR/k3s"
+    local request="$1" gate_delta="$2" init="${3:-}" root="$CASE_DIR/cgroup" k3s="$CASE_DIR/k3s"
+    local init_json=""
+    [ -n "$init" ] && init_json=", \"initContainers\": [{\"resources\": {\"requests\": {\"cpu\": \"${init}m\"}}}]"
     rm -rf "$root" "$k3s"
     mkdir -p "$k3s" "$root/system.slice"
     export STUB_CGROUP_ROOT="$root" STUB_K3S_DIR="$k3s"
@@ -611,8 +614,8 @@ remote_fixture() {
     done
     printf '{"items": []}\n' > "$k3s/crictl-factory-mi-homelab.json"
     printf '{"status": {"allocatable": {"cpu": "4"}}}\n' > "$k3s/node.json"
-    printf '{"items": [{"status": {"phase": "Running"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "%sm"}}}]}}, {"status": {"phase": "Succeeded"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "9000m"}}}]}}, {"status": {"phase": "Running"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "%sm"}}}]}}]}\n' \
-        "$request" "$request" > "$k3s/pods.json"
+    printf '{"items": [{"status": {"phase": "Running"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "%sm"}}}]%s}}, {"status": {"phase": "Succeeded"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "9000m"}}}]}}, {"status": {"phase": "Running"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "%sm"}}}]}}]}\n' \
+        "$request" "$init_json" "$request" > "$k3s/pods.json"
 }
 
 # Requests (1000m + 1000m) fit 4000m: the gate burst is not factory-competing.
@@ -639,6 +642,32 @@ if [ ! -s "$DRIVE_LOG" ] && [ "$RC" = 75 ] \
 else
     fail "an overcommitted node did not count the gate burst (rc=$RC, dispatches: $(drive_log_items))"
     tail -8 "$CASE_DIR/overcommitted.log" >&2
+fi
+
+# An init container's request raises the pod's effective request to the larger of the two:
+# 1000m + 5000m init -> 5000m effective, plus the gate pod's 1000m, exceeds 4000m.
+: > "$DRIVE_LOG"
+remote_fixture 1000 15000000 5000
+run_launcher bd-ib-init-overcommitted "$CASE_DIR/init-overcommitted.log"
+if [ ! -s "$DRIVE_LOG" ] && [ "$RC" = 75 ] \
+    && log_has "$CASE_DIR/init-overcommitted.log" "pressure=80.00 threshold=25"; then
+    pass "an init container request that overcommits the node counts the gate burst"
+else
+    fail "an init container request that overcommits the node did not count the gate burst (rc=$RC, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_DIR/init-overcommitted.log" >&2
+fi
+
+# An init container request is the pod's maximum against its containers, not additive:
+# max(1000m, 2500m) = 2500m, plus 1000m, fits 4000m, so the gate burst stays excluded.
+: > "$DRIVE_LOG"
+remote_fixture 1000 15000000 2500
+run_launcher bd-ib-init-fits
+if [ "$(drive_log_items)" = "bd-ib-init-fits" ] && [ "$RC" = 0 ] \
+    && log_has "$CASE_LOG" "pressure=5.00 threshold=25"; then
+    pass "an init container request is the pod's maximum, not additive, when it fits the node"
+else
+    fail "an init container request was wrongly added to the pod's containers (rc=$RC, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_LOG" >&2
 fi
 
 # Positive control: overcommitted with an idle gate pod still launches.
