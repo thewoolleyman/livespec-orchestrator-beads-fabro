@@ -898,10 +898,16 @@
       // the derivation bills it at that loop's own visit count and every
       // inherited second would land in the Codex credential-lifetime floor
       // tests/test_factory_checkpoint_declaration.py guards.
+      //
+      // `janitor_admission` is declared downward for the same reason
+      // (bd-ib-tusqrf): it reads and increments one counter under `$GIT_DIR`
+      // before a fresh janitor suite run, or records the named exhausted bound
+      // for needs_human. It never runs the suite itself.
       "node_timeouts": {
         "implement": 14400,
         "implement_completion": 600,
         "dod_gate": 600,
+        "janitor_admission": 600,
         "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200,

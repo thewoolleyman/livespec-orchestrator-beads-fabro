@@ -76,6 +76,7 @@ COMMAND_NODES: tuple[str, ...] = (
     "implement_hook_route",
     "implementation_diff",
     "janitor",
+    "janitor_admission",
     "needs_human",
     "non_converged",
     "pr",

@@ -93,7 +93,10 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # is reached by three visits of two attempts each, SIX, and the route, the
 # completion gate, the diff breaker and `implement_commit_settle` once per
 # visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three and
-# `fix_commit_settle` follows `fix`'s two. The
+# `fix_commit_settle` follows `fix`'s two. `janitor_admission` sits ahead of
+# each janitor visit and is likewise billed three times; it has its own
+# engine-side ninth visit only to name the exhausted eight-visit bound and
+# preserve the tree, which is not part of a successful run's longest path. The
 # route runs the repository's pre-commit hook, which can take the better part
 # of its timeout, so it is billed at its full visit count like any node that can
 # spend its ceiling.
@@ -167,6 +170,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "implement_completion": 3,
     "implement_hook_route": 3,
     "implementation_diff": 3,
+    "janitor_admission": 3,
     "janitor": 3,
     "fix": 2,
     "fix_commit_settle": 2,
