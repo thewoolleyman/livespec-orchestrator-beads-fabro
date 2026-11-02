@@ -143,7 +143,12 @@ for argument in "$@"; do
             esac
             printf '%s\n' "$item" >> "$STUB_DRIVE_LOG"
             if [ -d "$STUB_LOCK_DIR" ]; then
-                printf 'held %s\n' "$item" >> "$STUB_DRIVE_MUTEX_LOG"
+                # A preceding launcher releases the mutex before it begins its
+                # drive, so a following launcher may legitimately acquire it
+                # first.  Record both items: only the driving launcher's own
+                # held mutex violates the launcher's narrow mutex scope.
+                holder_item=$(grep -oE 'item=[^ ]+' "$STUB_LOCK_DIR/holder" 2>/dev/null | head -1 | cut -d= -f2)
+                printf 'held driver=%s holder=%s\n' "$item" "${holder_item:-unknown}" >> "$STUB_DRIVE_MUTEX_LOG"
             else
                 printf 'released %s\n' "$item" >> "$STUB_DRIVE_MUTEX_LOG"
             fi
@@ -571,10 +576,11 @@ if [ "$(preflight_count bd-ib-younger)" = 1 ]; then
 else
     fail "a fresh queued preflight was run $(preflight_count bd-ib-younger) times at the head"
 fi
-if ! grep -q '^held ' "$DRIVE_MUTEX_LOG" && [ "$(grep -c '^released ' "$DRIVE_MUTEX_LOG")" = 2 ]; then
+if ! grep -qE '^held driver=([^ ]+) holder=\1$' "$DRIVE_MUTEX_LOG" \
+    && [ "$(grep -c '^released ' "$DRIVE_MUTEX_LOG")" = 2 ]; then
     pass "the mutex is released before either drive --action impl starts"
 else
-    fail "a drive started while the launch mutex was held: $(tr '\n' ' ' < "$DRIVE_MUTEX_LOG")"
+    fail "a drive started while its launch mutex was held: $(tr '\n' ' ' < "$DRIVE_MUTEX_LOG")"
 fi
 
 # A young pass expires while the older launcher spends four seconds in its own
