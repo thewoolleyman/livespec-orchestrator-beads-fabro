@@ -22,7 +22,8 @@ explicitly initiated delegated-revise flow, not an automatic spec-work scheduler
 The original six plan assertions still govern completion. This rewrite neither
 changes them nor ratifies proposed phase-two acceptance scenarios. Live status
 and rulings remain in the ledger. The appendix preserves the responsibility
-inventory, reconciled evidence and source trail.
+inventory, reconciled evidence and source trail. The November 1 legacy-role
+cutover below supersedes the older reports' incumbent-coordinator assumption.
 
 ## Architecture, APIs and flows at a glance
 
@@ -180,12 +181,24 @@ operations. Refusals name the action, rule and source. The October 31 maintainer
 clarification permits the coordinator to unblock a legacy picker when necessary;
 it does not make pane input the portable API.
 
-**The existing coordinator is the first client.** The owning session
-`gitops-fleet-capacity-monitoring`, under its fleet capacity, migration,
-observability and stability epic (`livespec-dev-tooling-dfixhe`), retains every
-untransferred duty and grant. A service rollout does not retire its delivery
-program. The appendix maps the original 58 activities, eight explicit spec-side
-duties and 15 historical delivery requirements to proposed owners.
+**Two interim roles now bridge the cutover.** The maintainer's November 1
+reorganization replaced `gitops-fleet-capacity-monitoring` with the owning sessions
+**legacy-coordinator-agent** (`livespec-dev-tooling-6tgd2z`) and
+**legacy-dispatcher-agent** (`bd-ib-ynnykl`). The old epic archived after transferring
+its delivery assertions to five owning plans. Neither legacy role owns delivery
+work. The coordinator directs and unblocks owners; the dispatcher operates the
+existing temporary launchers, break-fix only. This plan stays focused on the
+rearchitecture and must not absorb their daily operations.
+
+The coordinator reads maintainer-set priorities fresh each tick, reports all
+priorities and the top three dependency trees, and retains delegated answering
+with accurate attribution. The dispatcher retains queue, hold and ending-watch
+continuity. They are the migration clients now. Transfer an action class only
+after proving its replacement and disabling duplicate legacy execution. Retire
+the coordinator when the replacement performs its coordination with no duty left
+unowned; retire the dispatcher when the scheduler admits gmktec work and no old
+launcher process runs. The [appendix](014-responsibility-and-evidence-appendix.md)
+records the current five-plan delivery ownership map and the preserved 58+8 duties.
 
 ## Safe execution and recovery
 
@@ -251,7 +264,14 @@ from a fresh checkout with the journal absent. Preserve queryable per-dispatch,
 per-node selection/fallback evidence before pruning or rotation. Retain audit and
 recovery evidence until replacement readers are proven. Retire `fleet-launch/`
 and temporary launch controls only after active callers migrate. Faster local
-reads alone do not satisfy portability.
+reads alone do not satisfy portability. Retain the planned updates to core's
+component and family dependency diagrams, with resolving code paths and a check
+method when the corresponding contracts change.
+
+The proposed fleet-control surface owns fleet start/hold/observe operations;
+existing `drive`/Dispatcher operations retain per-item execution and admission.
+Console, coordinator and terminal clients use the same attention facts and public
+operations. Final command paths belong to the decision register below.
 
 ## Delivery and proof before responsibility transfers
 
@@ -309,9 +329,9 @@ direction or proposed behavior, rather than additional permission questions.
 
 A broker or additional workflow engine is deferred unless measured delivery or
 workflow requirements justify its cost; reconsider under the API/execution design.
-Four permanent model sessions, a production proposal sweep and wholesale
-coordinator retirement are outside the initial delivery; reconsider expansion
-only after proof and explicit handover.
+Four permanent model sessions and a production proposal sweep are outside the
+initial delivery; reconsider expansion only after proof. Retire each interim
+role only when its specified replacement exit passes and handover is explicit.
 
 ## Supporting evidence
 

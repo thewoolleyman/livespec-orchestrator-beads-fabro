@@ -41,4 +41,6 @@ or later ledger rulings. Reports 001 and 009–012 were retired during consolida
 
 - [Native-input receipt](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/evidence/input-verification-receipt.json) — unchanged October 27 transport evidence; not cross-host control-plane proof.
 
+- [GitHub Mermaid rendering receipt](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/evidence/mermaid-rendering/receipt.json) — all 11 diagrams, exact source hashes and browser screenshots.
+
 Each report links back here; do not copy this navigation list into the reports.

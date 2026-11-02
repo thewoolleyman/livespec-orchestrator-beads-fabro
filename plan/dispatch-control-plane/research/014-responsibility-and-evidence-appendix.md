@@ -125,30 +125,68 @@ remaining** section. Per-item delivery and proof remain with owning plans.
 | S07. Continue after disposition | Publication and implementation eligibility are distinct. | Reconciliation observes disposition and re-evaluates held work; rejection never releases admission by itself. |
 | S08. Detect starvation/unavailable observation | Current spec-next can drop its row on failure. | Deterministic supervision exposes failed observation and overdue attempts, not an apparently empty queue or model-driven poll. |
 
-## Delivery obligations retained with the incumbent and domain owners
+## Delivery obligations and their current owning plans
 
-These **15 requirements** preserve report 011's October 27 carrier snapshot.
-They are neither a fresh closure audit nor fifteen children of this plan. Later
-rulings may change a carrier or disposition; the owning ledger governs that
-change. A new control-plane deployment cannot count as completing these programs.
+The **15 requirements** below originated in report 011's October 27 inventory.
+On November 1 the maintainer replaced the old coordinator's assertions with one
+transfer assertion, moved delivery to the owners below, then archived that plan.
+This table incorporates that change; earlier carrier details remain historical in
+report 011. The five owning epics' current descriptions were read directly from
+their tenants on November 2. Ownership is established here, not completion of
+their work. These are not children of dispatch-control-plane.
 
-| Requirement | Recorded carrier/owner and continuity obligation |
+| Former requirement | Current accountable plan and assertion |
 | --- | --- |
-| 1. Fleet repositories route to gmktec, not hp. | Factory migration/retirement (`bd-ib-iud52v`); progress follows each repo's outcome. |
-| 2. A dispatch from each cut-over repo appears on gmktec. | Migration and runtime adoption (`livespec-runtime-gfhy2a`); require observed runs, not configuration alone. |
-| 3. Correct engine build and safe legacy-service retirement. | Fabro currency (`bd-ib-6tcjfx`) and retirement owners; respect later upgrade deferrals. |
-| 4. Real Kubernetes implementation merges and Kubernetes becomes default. | Kubernetes sandbox delivery (`bd-ib-nmuyjc`); hosting coordination on Kubernetes is different proof. |
-| 5. A 24-hour measurement supports gmktec cap. | Owning capacity proof retains that specific obligation; short routing tests cannot replace it. |
-| 6. hp leaves committed factory inventory. | Retirement/deployment owner; verify committed and applied state without blocking unrelated work. |
-| 7. Every node emits resource/condition signals. | Node observability (`livespec-dev-tooling-dfdiil`); retain identity and 15-minute coverage criteria. |
-| 8. Pods expose placement, requests/limits and allocatable context. | Collector attribution (`livespec-dev-tooling-a2aiza`); telemetry owns delivery. |
-| 9. Workload health includes restarts, OOM and pending/admission failures. | Workload telemetry (`ec2rkp`) and last-termination follow-up (`jmwa7k`), both in dev-tooling; a closed predecessor does not erase residual work. |
-| 10. Control-plane/datastore/quota/Kueue health is visible. | Control-plane emission (`vdleg7`, dev-tooling); retain kine/SQLite versus etcd and factory-quota versus CI-queue distinctions. |
-| 11. Useful board and actionable triggers. | Observability owners (`uftb4o`, `b7wwgy`, `t6om4l`, dev-tooling); unified attention complements source evidence. |
-| 12. Collector/board/trigger state converges through GitOps. | Telemetry/deployment owners; retain reproducibility and drift proof. |
-| 13. Refused-commit incomplete turns can retry with actual hook findings. | Workflow stability (originally `bd-ib-y7372n`); prove released behavior across applicable factories. |
-| 14. Applicable repos reject staged lint/type errors before expensive checks. | Dev-tooling shared fix (`nil6v7`) and adopting repo owners; preserve exclusions and cross-tenant carrier map. |
-| 15. Needs-human endings expose recorded cause and hook verdict. | Workflow evidence (`bd-ib-36d3x5`, `bd-ib-k3nmbi`); attention cannot compensate for missing source evidence. |
+| 1. Fleet repositories route to gmktec, not hp. | gmktec-factory-placement (`livespec-dev-tooling-me5aqz`), assertion 1. |
+| 2. A dispatch from each cut-over repo appears on gmktec. | gmktec-factory-placement, assertion 2; observed run required, not configuration alone. |
+| 3. Correct engine build and safe legacy-service retirement. | gmktec-factory-placement, assertion 3; its November 2 wording names the serving candidate by build/commit. |
+| 4. Real Kubernetes implementation merges and Kubernetes becomes default. | kubernetes-sandbox-backend (`bd-ib-nmuyjc`), assertions 1 and 5; its scope generalizes gmktec to the non-hp factory. |
+| 5. A 24-hour measurement supports gmktec cap. | gmktec-factory-placement, assertion 4; short routing tests cannot replace it. |
+| 6. hp leaves committed factory inventory. | gmktec-factory-placement, assertion 5. |
+| 7. Every node emits resource/condition signals. | kubernetes-observability (`livespec-dev-tooling-s2aqob`), assertion 1; retains identity and 15-minute coverage. |
+| 8. Pods expose placement, requests/limits and allocatable context. | kubernetes-observability, assertion 2. |
+| 9. Workload health includes restarts, OOM and pending/admission failures. | kubernetes-observability, assertion 3; last-termination residual moved to this plan. |
+| 10. Control-plane/datastore/quota/Kueue health is visible. | kubernetes-observability, assertion 4; retains kine/SQLite versus etcd and factory-quota versus CI-queue distinctions. |
+| 11. Useful board and actionable triggers. | kubernetes-observability, assertion 5; unified attention complements source evidence. |
+| 12. Collector/board/trigger state converges through GitOps. | kubernetes-observability, assertion 6; its reference to former assertion 11 is now assertion 5. |
+| 13. Refused-commit incomplete turns retry with actual hook findings. | sandbox-commit-gate-ceiling (`bd-ib-qy5wol`), assertion 4. |
+| 14. Applicable repos reject staged lint/type errors before expensive checks. | dev-host-test-gate-load (`livespec-dev-tooling-6vuiwe`), assertion 7. |
+| 15. Needs-human endings expose recorded cause and hook verdict. | sandbox-commit-gate-ceiling, assertion 5. |
+
+The old coordinator's current-state transfer record was independently replayed at
+November 1 22:07:42 UTC and received completeness review at 22:14:54 UTC.
+[Archive PR 3050](https://github.com/thewoolleyman/livespec-dev-tooling/pull/3050)
+merged at 22:35:05 UTC as `1306ceb5159e5a987b59844454a6b2657135ef24`.
+This discharged the transfer assertion, not the underlying delivery assertions.
+The later verified ownership record supersedes the earlier unresolved-disposition
+notes for the observability leftovers.
+
+### The interim roles and replacement exits
+
+**legacy-coordinator-agent** (`livespec-dev-tooling-6tgd2z`) directs and unblocks
+owning plans and owns no delivery work. Its single completion assertion requires
+the replacement to read maintainer priorities, report priorities/dependencies,
+unblock seats and route decisions, then retire the legacy seat with no duty
+unowned. Its November 1–2 scope rulings retain delegated picker authority,
+source-verified reports and plan-specific sessions. Current report format is all
+priorities, with dependency trees only for the top three. Priorities come only
+from the maintainer and are read fresh; a failed read is reported, not guessed.
+The latest record inspected is November 2 00:19:52 UTC. Temporary load/cap
+observations are not copied into the architecture as permanent policy.
+
+**legacy-dispatcher-agent** (`bd-ib-ynnykl`) runs the existing `tmp/petri-canary/`
+and `tmp/petri-refill/` launchers break-fix only, retaining ticket ordering, holds,
+refusal routing, outage re-ticketing and ending notifications to owning plans.
+It owns no delivery items and adds no new features/scripts. Its single exit is
+that this plan's scheduler admits gmktec work and no old temporary launcher process
+runs on the dispatching host. Its November 2 00:08:18 handoff records current
+continuity; transient queue order and caps remain there, not in this appendix.
+
+The November 1 LEGACY CUTOVER decision explicitly keeps dispatch-control-plane
+out of daily operations. This changes the identity and ownership assumptions in
+the October 27 coexistence proposal, not the durable-storage, delegation,
+no-duplicate-execution or proof boundaries. Replacing interim roles does not
+move their domain plans' work into this plan.
 
 ## Reconciled evidence and its limits
 
@@ -207,7 +245,7 @@ Compose/Kubernetes execution. Keep native request IDs distinct from durable IDs.
 | Source read | What it establishes and qualification |
 | --- | --- |
 | This epic's complete scope-event set, October 25–31 | Orchestrator ownership, dedicated non-Beads Dolt, typed capacity, performance-first/proportionate relief, portable services, coexistence and this consolidation request. Original six assertions remain unchanged. |
-| Coordinator comments through November 1 22:21:44 UTC, filtered for delegation/control-plane/follow-up changes, plus current epic | R121/R158 void at October 28 09:52; relevant R219 void at October 30 18:28. October 31 13:06 clarifies legacy picker unblocking. Later routing/cap observations are historical context, not authority to override current config. |
+| Old coordinator scope/handoffs through November 1 22:21:44 UTC and its amended epic, plus new legacy-role records above | R121/R158 void at October 28 09:52; relevant R219 void at October 30 18:28. October 31 13:06 clarifies legacy picker unblocking. The November 1 cutover and transferred ownership supersede the old incumbent assumption; transient routing/cap observations do not override current config. |
 | Livespec current `SPECIFICATION/spec.md` | Complementary diagrams and zero direct Driver-to-orchestrator dependencies; effective spec policy and drift doctrine; proposal age is productivity tooling, not a doctor invariant. |
 | Current orchestrator `_spec_change_tier_wall.py` and `_dispatcher_loop_candidates.py` | Wording now says linked-proposal ratification; the hold remains. This replaces report 012's diagnosis of obsolete comments. |
 | Current `_needs_attention_spec_next_run.py` | Unresolvable core, failed subprocess or unusable output can return no row. A missing inbox row is not an authoritative empty-work observation. |
@@ -219,8 +257,12 @@ The latest parent scope event specifically corrects “GitLab” to **GitHub onl
 The original sequence in report 010 failed in GitHub's Mermaid 12.2.0 renderer:
 its message `current state; act` produced a line-13 parse error. Report 008 also used a semicolon in a sequence message and failed rendering.
 The retired copies replace those semicolons with “and”; the proposal uses complementary diagrams
-with explicit target/existing labels. Render inspection is documented separately
-in the committed evidence receipt after exercising the actual GitHub web pages.
+with explicit target/existing labels. The [rendering receipt](evidence/mermaid-rendering/receipt.json) records actual
+GitHub frame inspection for all 11 blocks, exact source-byte matches and screenshots.
+The current diagram bytes are identical to the immutable tested commit named there;
+subsequent prose reconciliation does not change them. Browser captures used the
+viewer reset control after scrolling into view; off-screen blank captures were
+discarded rather than accepted as visual evidence.
 
 External primary sources consulted in the original October 26–27 research remain
 linked in the retired reports: Dolt transaction implementation, Kubernetes
