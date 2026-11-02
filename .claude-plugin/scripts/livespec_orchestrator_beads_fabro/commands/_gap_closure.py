@@ -143,9 +143,7 @@ def evaluate_gap_closure(
     check_returncode = _run_check(abs_path=abs_path, negative_control=False)
     negative_control_returncode = _run_check(abs_path=abs_path, negative_control=True)
     check_passed = check_returncode == 0
-    negative_control_failed = (
-        negative_control_returncode is not None and negative_control_returncode != 0
-    )
+    negative_control_failed = negative_control_returncode not in {None, 0, 126, 127}
     baseline_blob = metadata.get(GAP_CHECK_BASELINE_BLOB_KEY)
     current_blob = _git_blob_hash(repo_root=project_root, rel_path=check_path)
     check_modified = (
