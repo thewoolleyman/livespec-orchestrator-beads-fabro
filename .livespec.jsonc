@@ -282,6 +282,23 @@
       // capacity-deferred. Read on each admission pass; no restart needed.
       "wip_cap": 16,
       "acceptance_mode": "ai-only",
+      // Committed maintainer delegations of the human valves (contracts.md,
+      // journal invoker attribution, "Delegated valve authority"). A press
+      // `--invoker delegate:<delegate> --delegation <ref>` is admitted only on
+      // resolve-blocked, approve, accept, reject and release-spec-tier, and only
+      // when its ref and delegate match an entry here. NOT API-configurable:
+      // adding a grant is a reviewed commit. R493 is the maintainer's standing
+      // grant ("the coordinator presses human valves on the maintainer's
+      // authority, except credentials, irreversible or outward-facing acts"),
+      // made first-class by the maintainer's 2026-11-02T23:22:22Z ruling.
+      "valve_delegations": [
+        {
+          "ref": "R493",
+          "delegate": "legacy-coordinator-agent",
+          "grantor": "human:thewoolleyman",
+          "record": "livespec-dev-tooling-6tgd2z plan-scope-event 2026-11-01T22:36:24Z"
+        }
+      ],
       // The shared append-only records a refresh may merge entry by entry
       // instead of spending a repair round. Entries must remain independent:
       // default-branch records stay first and this run's additions follow.
