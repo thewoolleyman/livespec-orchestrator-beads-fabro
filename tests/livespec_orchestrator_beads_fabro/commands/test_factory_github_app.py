@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import tomli
 from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
     factory_github_app_from_entry,
     factory_github_app_refusal,
@@ -41,3 +42,30 @@ def test_valid_factory_github_app_is_not_refused() -> None:
     )
 
     assert factory_github_app_refusal(factory="petri", github_app=app) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        'QUOTE"NAME',
+        "LINE\nBREAK",
+        'EVIL"\n[run.injected]\nx = "1',
+        "BACK\\SLASH",
+        "UNICODE\u00e9\x7f",
+    ],
+)
+def test_rendered_table_round_trips_the_declared_names_as_toml_strings(name: str) -> None:
+    """Secret names are serialized as TOML strings, so the overlay carries exactly them."""
+    app = factory_github_app_from_entry(
+        entry={"github_app": {"app_id_secret": name, "private_key_secret": name + "_KEY"}}
+    )
+
+    parsed = tomli.loads(github_app_table(github_app=app))
+
+    assert parsed == {
+        "run": {
+            "integrations": {
+                "github": {"app": {"app_id_secret": name, "private_key_secret": name + "_KEY"}}
+            }
+        }
+    }

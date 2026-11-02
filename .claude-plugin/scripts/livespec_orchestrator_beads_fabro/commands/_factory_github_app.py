@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -68,6 +69,11 @@ def github_app_secret_names(*, github_app: FactoryGithubApp) -> tuple[str, str] 
     return github_app.app_id_secret, github_app.private_key_secret
 
 
+def _toml_string(*, value: str) -> str:
+    """One TOML basic string; DEL is escaped because TOML forbids it raw."""
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def github_app_table(*, github_app: FactoryGithubApp) -> str:
     """Render the optional run-integration table from already-validated names."""
     names = github_app_secret_names(github_app=github_app)
@@ -75,8 +81,8 @@ def github_app_table(*, github_app: FactoryGithubApp) -> str:
         return ""
     return (
         "\n[run.integrations.github.app]\n"
-        f'app_id_secret = "{names[0]}"\n'
-        f'private_key_secret = "{names[1]}"\n'
+        f"app_id_secret = {_toml_string(value=names[0])}\n"
+        f"private_key_secret = {_toml_string(value=names[1])}\n"
     )
 
 
