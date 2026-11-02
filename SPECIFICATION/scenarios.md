@@ -11479,3 +11479,37 @@ Feature: Sandbox retention and collection
     When a further pass runs
     Then nothing further is recorded for that run and the pass does not fail
 ```
+
+## Scenario 296 — The provisional launcher's shared-node gate holds on factory-class pressure, not whole-host idle
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a CI burst on a shared factory node does not hold factory launches
+  Scenario: CI pods drive whole-host idle down while factory-class pressure stays low
+    Given fleet-launch/config.sh values overridden to a stub node reading and throwaway directories
+    And the stub reading shows CI workflow pods in non-factory namespaces, burstable or best-effort, taking whole-host idle below the launcher's old idle floor
+    And the stub reading shows the factory namespaces plus system.slice using CPU at or below the factory-pressure threshold
+    When the launcher evaluates that factory for a ready item
+    Then it treats the factory as green and proceeds to that factory's mutex
+    And its log names the factory-class pressure value it used and the threshold
+
+  Scenario: factory-class pressure above the threshold holds the launch
+    Given a stub node reading whose factory namespaces plus system.slice use CPU above the factory-pressure threshold
+    When the launcher evaluates that factory for a ready item
+    Then it holds the launch
+    And its log names the factory-class pressure value and the threshold that held it
+
+  Scenario: an unreadable reading holds the launch
+    Given a stub node reading that cannot be taken or cannot be parsed
+    When the launcher evaluates that factory for a ready item
+    Then it holds the launch
+    And its log names the pressure reading as unknown and the threshold
+    And it does not treat the factory as green
+
+  Scenario: the threshold is a declared, overridable host value
+    Given the factory-pressure threshold the launcher reads
+    When the scripts are searched for where it is assigned
+    Then it is assigned only in fleet-launch/config.sh
+    And setting its FLEET_LAUNCH_ environment variable before the launcher runs changes the threshold the launcher uses
+```
