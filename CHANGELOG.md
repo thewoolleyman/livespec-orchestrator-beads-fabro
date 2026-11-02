@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.276.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.275.0...v0.276.0) (2026-11-02)
+
+
+### Features
+
+* preserve implement configuration for red and green ([8ed1d37](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ed1d37d826a29f3a6843746cb85db4fc8d2f54a))
+
 ## [0.275.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.3...v0.275.0) (2026-11-02)
 
 
