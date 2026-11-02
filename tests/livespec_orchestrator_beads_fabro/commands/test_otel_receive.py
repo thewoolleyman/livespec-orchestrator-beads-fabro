@@ -58,8 +58,8 @@ from pathlib import Path
 from socket import create_connection, socket
 from typing import cast
 
-import livespec_orchestrator_beads_fabro.commands._otel_receive as otel_receive
 import pytest
+from livespec_orchestrator_beads_fabro.commands._otel_http_handler import SocketHttpPostHandler
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -952,18 +952,15 @@ def test_receiver_malformed_request_line_closes_without_response(
     receiver, _exporter, _heartbeat, _base = receiver_factory
     close_started = threading.Event()
     release_close = threading.Event()
+    original_cleanup = getattr(SocketHttpPostHandler, "_cleanup")  # noqa: B009
     original_select = select.select
     clock_values = iter((0.0, 0.0, 10.0))
     select_calls = 0
 
-    def _hold_close(
-        *, receiver: OtelReceiver, request: socket, client_address: object, server: object
-    ) -> None:
-        _ = (receiver, client_address, server)
-        _ = request.recv(4096)
+    def _hold_cleanup(handler: SocketHttpPostHandler) -> None:
         close_started.set()
         _ = release_close.wait()
-        request.close()
+        original_cleanup(handler)
 
     def _release_after_ten_seconds(
         readers: list[socket],
@@ -981,7 +978,7 @@ def test_receiver_malformed_request_line_closes_without_response(
         release_close.set()
         return original_select(readers, writers, exceptional, timeout)
 
-    monkeypatch.setattr(otel_receive, "SocketHttpPostHandler", _hold_close)
+    monkeypatch.setattr(SocketHttpPostHandler, "_cleanup", _hold_cleanup)
     monkeypatch.setattr(select, "select", _release_after_ten_seconds)
     monkeypatch.setattr(time, "monotonic", lambda: next(clock_values))
     assert _send_raw_http(host="127.0.0.1", port=receiver.bound_port, payload=b"\r\n") == b""
@@ -995,15 +992,10 @@ def test_receiver_malformed_request_line_rejects_response_bytes(
     """The malformed-request assertion fails if the receiver writes a response."""
     receiver, _exporter, _heartbeat, _base = receiver_factory
 
-    def _write_response_then_serve(
-        *, receiver: OtelReceiver, request: socket, client_address: object, server: object
-    ) -> None:
-        _ = (receiver, client_address, server)
-        _ = request.recv(4096)
-        request.sendall(b"unexpected response")
-        request.close()
+    def _write_response_then_serve(handler: SocketHttpPostHandler) -> None:
+        getattr(handler, "_request").sendall(b"unexpected response")  # noqa: B009
 
-    monkeypatch.setattr(otel_receive, "SocketHttpPostHandler", _write_response_then_serve)
+    monkeypatch.setattr(SocketHttpPostHandler, "_serve_one", _write_response_then_serve)
     with pytest.raises(AssertionError):
         assert _send_raw_http(host="127.0.0.1", port=receiver.bound_port, payload=b"\r\n") == b""
 
@@ -1014,16 +1006,15 @@ def test_receiver_malformed_request_line_times_out_when_left_open(
 ) -> None:
     """The malformed-request close wait fails at its explicit deadline."""
     receiver, _exporter, _heartbeat, _base = receiver_factory
+    close_started = threading.Event()
     release_close = threading.Event()
+    original_cleanup = getattr(SocketHttpPostHandler, "_cleanup")  # noqa: B009
     clock_values = iter((0.0, 0.0, _RAW_HTTP_CLOSE_DEADLINE_SECONDS))
 
-    def _leave_open(
-        *, receiver: OtelReceiver, request: socket, client_address: object, server: object
-    ) -> None:
-        _ = (receiver, client_address, server)
-        _ = request.recv(4096)
+    def _leave_open(handler: SocketHttpPostHandler) -> None:
+        close_started.set()
         _ = release_close.wait()
-        request.close()
+        original_cleanup(handler)
 
     def _nothing_readable(
         readers: list[socket],
@@ -1032,9 +1023,10 @@ def test_receiver_malformed_request_line_times_out_when_left_open(
         timeout: float | None = None,
     ) -> tuple[list[socket], list[socket], list[socket]]:
         _ = (readers, writers, exceptional, timeout)
+        assert close_started.wait(timeout=1.0)
         return [], [], []
 
-    monkeypatch.setattr(otel_receive, "SocketHttpPostHandler", _leave_open)
+    monkeypatch.setattr(SocketHttpPostHandler, "_cleanup", _leave_open)
     monkeypatch.setattr(select, "select", _nothing_readable)
     monkeypatch.setattr(time, "monotonic", lambda: next(clock_values))
     try:
