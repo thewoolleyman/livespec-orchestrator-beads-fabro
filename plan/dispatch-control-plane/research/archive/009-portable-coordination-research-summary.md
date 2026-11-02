@@ -2,6 +2,8 @@
 
 [Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
+> Retired 2 November 2026. This dated record is superseded by proposal 013 and appendix 014, linked from the single index. Its open questions and observations are historical.
+
 Research summary and proposed direction · 26 October 2026; corrected 27 October 2026
 
 Plan: **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`)
@@ -372,18 +374,18 @@ their differences rather than treating agreement as proof of implementation.
 
 Earlier research:
 
-- [Journal history](archive/002-dispatch-journal-genesis.md) and
-  [how work reaches the factory](archive/003-how-work-reaches-the-factory.md).
-- [Recorded discussion and directions](archive/004-discussion-transcript-and-maintainer-directions.md).
-- [Other factory designs](archive/005-external-dark-factories.md),
-  [capacity and control approaches](archive/006-external-how-others-solve-capacity-and-control.md),
-  and [human attention](archive/007-external-human-attention.md).
-- [The first design draft](archive/008-first-pass-control-plane-design-draft.md) is historical;
+- [Journal history](002-dispatch-journal-genesis.md) and
+  [how work reaches the factory](003-how-work-reaches-the-factory.md).
+- [Recorded discussion and directions](004-discussion-transcript-and-maintainer-directions.md).
+- [Other factory designs](005-external-dark-factories.md),
+  [capacity and control approaches](006-external-how-others-solve-capacity-and-control.md),
+  and [human attention](007-external-human-attention.md).
+- [The first design draft](008-first-pass-control-plane-design-draft.md) is historical;
   its single-coordinator and storage proposals are superseded where they conflict
   with later rulings.
-- [Measured ledger concurrency](../../../.ai/ledger-writers-are-multi-host.md),
-  [operation contracts](../../../SPECIFICATION/contracts.md), and
-  [plan-operation prose](../../../.claude-plugin/prose/plan.md).
+- [Measured ledger concurrency](../../../../.ai/ledger-writers-are-multi-host.md),
+  [operation contracts](../../../../SPECIFICATION/contracts.md), and
+  [plan-operation prose](../../../../.claude-plugin/prose/plan.md).
 
 Selected primary sources consulted by the researchers on 26 October 2026:
 

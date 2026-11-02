@@ -2,6 +2,8 @@
 
 [Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
+> Retired 2 November 2026. This dated record is superseded by proposal 013 and appendix 014, linked from the single index. Its open questions and observations are historical.
+
 Research and recommendation · 27 October 2026
 
 Plan: **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`).
@@ -79,7 +81,7 @@ sequenceDiagram
     H->>C: Read pending decisions
     H->>C: Submit answer for question and version
     R->>C: Claim eligible continuation
-    R->>O: Recheck authority and current state; act
+    R->>O: Recheck authority and current state and act
     O-->>R: Observable result
     R->>C: Record outcome or unresolved uncertainty
 ```
@@ -114,7 +116,7 @@ than repeatedly prompting the human. That delegation must survive the transport
 change. The pane-based overseer instructions describe the existing presentation
 path; they do not revoke coordinator authority. The mismatch is another reason
 to formalize answer routing instead of copying terminal behavior into a service.
-[Plan-session guidance](../../../.ai/plan-session-lessons.md).
+[Plan-session guidance](../../../../.ai/plan-session-lessons.md).
 
 The replacement should preserve **one decision owner**, while allowing multiple
 views of that same decision. Multiple clients showing one question ID are useful;
@@ -302,7 +304,7 @@ unanswered for about eleven seconds between screen inspection and selection;
 Codex's for about nine seconds. Pi was answered within its explicit ten-second
 test timeout. Each process was then terminated by its own test controller.
 
-A [compact evidence receipt](evidence/input-verification-receipt.json) preserves request
+A [compact evidence receipt](../evidence/input-verification-receipt.json) preserves request
 identities, selected answers, timestamps where recorded, and terminal excerpts.
 The temporary controllers also captured raw terminal logs locally; those noisy
 logs are not the published report or a durable coordination store.
@@ -470,8 +472,8 @@ of every long-lived session.
 
 ## Evidence scope
 
-This report builds on [factory research](archive/005-external-dark-factories.md),
-[human attention research](archive/007-external-human-attention.md) and the corrected
+This report builds on [factory research](005-external-dark-factories.md),
+[human attention research](007-external-human-attention.md) and the corrected
 storage/coexistence ruling. Primary public sources were re-read on 27 October
 2026; local source inspection and the pi probe are identified separately.
 Commercial products were not deployed or benchmarked. A candidate OpenHands
