@@ -54,9 +54,10 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         "## green",
         "what changed",
         "which tests ran",
-        "declared `test-wrong` outcome and its reason",
     ):
         assert phrase in green, f"the green prompt omits {phrase!r}"
+
+    assert "test-wrong" not in green
 
     for prompt in (red, green):
         assert "append" in prompt, "the prompt does not direct an append"
