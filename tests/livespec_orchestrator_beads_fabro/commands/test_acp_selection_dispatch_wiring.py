@@ -410,8 +410,8 @@ def test_a_launched_dispatch_hands_its_verdict_to_the_dispatch_record(
         repo=tmp_path,
         item=item,
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
-        janitor=None,
         verdict=evaluated,
+        launch=loop_module.DispatchLaunchContext(),
     )
 
     assert seen[0]["verdict"] is evaluated

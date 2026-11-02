@@ -97,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import DispatchLaunchContext
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import prepare
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
@@ -375,12 +376,14 @@ def _admit_and_dispatch_resume(
             repo=repo,
             item=admitted,
             journal=journal,
-            janitor=janitor,
-            # The valve's own ACP evaluation. A resume is subject to the
-            # ordinary admission rules, so it is subject to this one too: the
-            # resumed run selects its per-node candidates from the read that
-            # re-admitted the item, never from one of its own.
             verdict=admission.verdict,
+            launch=DispatchLaunchContext(
+                janitor=janitor,
+                # The valve's own ACP evaluation. A resume is subject to the
+                # ordinary admission rules, so it is subject to this one too: the
+                # resumed run selects its per-node candidates from the read that
+                # re-admitted the item, never from one of its own.
+            ),
         )
         for admitted in admission.admitted
     ]
