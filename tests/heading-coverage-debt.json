@@ -184,13 +184,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Provisional fleet launch scripts",
-    "work_item": "bd-ib-nz4av6",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Self-contained plugin dispatch",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"
@@ -653,13 +646,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 242 — The provisional fleet launch check fails the build on a broken launcher",
-    "work_item": "bd-ib-nz4av6",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 243 — Admission skips a Codex candidate whose usage window is short of headroom",
     "work_item": "bd-ib-4jdgcw",
     "first_seen": "2026-10-24"
@@ -936,13 +922,6 @@
     "heading": "## Scenario 295 — A run a server restart cancelled has its still-running Kubernetes sandbox stopped through its provider",
     "work_item": "bd-ib-lupvil",
     "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 296 — The provisional launcher's shared-node gate holds on factory-class pressure, not whole-host idle",
-    "work_item": "bd-ib-nmuyjc.6",
-    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
