@@ -116,7 +116,31 @@ cpus=$(getconf _NPROCESSORS_ONLN)
 case $cpus in ""|*[!0-9]*|0) exit 1 ;; esac
 paths=/sys/fs/cgroup/system.slice
 [ -r "$paths/cpu.stat" ] || exit 1
-for namespace in factory factory-mi-homelab; do
+namespaces="factory factory-mi-homelab"
+overcommitted=$(python3 -c "
+import json, socket, subprocess
+def millis(quantity):
+    text = str(quantity)
+    return int(text[:-1]) if text.endswith(\"m\") else int(float(text) * 1000)
+def kubectl(*args):
+    command = (\"k3s\", \"kubectl\", \"get\") + args + (\"-o\", \"json\")
+    return json.loads(subprocess.run(command, check=True, capture_output=True, text=True).stdout)
+node = socket.gethostname().lower()
+allocatable = millis(kubectl(\"node\", node)[\"status\"][\"allocatable\"][\"cpu\"])
+requested = 0
+for pod in kubectl(\"pods\", \"--all-namespaces\", \"--field-selector\", \"spec.nodeName=\" + node)[\"items\"]:
+    if pod.get(\"status\", {}).get(\"phase\") in (\"Succeeded\", \"Failed\"):
+        continue
+    for container in pod[\"spec\"][\"containers\"]:
+        requested += millis(container.get(\"resources\", {}).get(\"requests\", {}).get(\"cpu\", 0))
+print(\"yes\" if requested > allocatable else \"no\")
+") || exit 1
+case $overcommitted in
+  yes) namespaces="$namespaces gates" ;;
+  no) ;;
+  *) exit 1 ;;
+esac
+for namespace in $namespaces; do
   pods=$(k3s crictl pods --namespace "$namespace" -o json) || exit 1
   uids=$(printf "%s" "$pods" | python3 -c "import json, sys; print(chr(10).join(item[\"metadata\"][\"uid\"] for item in json.load(sys.stdin).get(\"items\", []) if item.get(\"metadata\", {}).get(\"uid\")))") || exit 1
   for uid in $uids; do

@@ -28,7 +28,9 @@
 : "${FLEET_LAUNCH_GMK_CAP:=8}"
 : "${FLEET_LAUNCH_HL_CAP:=2}"
 # Maximum factory-class CPU pressure percentage before a gmktec launch. This
-# measures only factory namespaces plus system.slice, not whole-host idle.
+# measures factory namespaces plus system.slice, not whole-host idle. Gate Job pods
+# (namespace gates) are added only while gmktec's summed CPU requests exceed its
+# allocatable CPU; an unreadable request total holds the launch as unknown.
 : "${FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD:=25}"
 
 # The Fabro client that reads the boards.

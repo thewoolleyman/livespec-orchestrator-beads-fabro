@@ -115,7 +115,9 @@ def test_scenarios242_and_296_the_committed_check_lints_every_shell_script_and_r
     assert ': "${FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD:=25}"' in config
     assert "FLEET_LAUNCH_GMK_MIN_IDLE" not in config
     launcher = (_REPO_ROOT / _LAUNCHER).read_text(encoding="utf-8")
-    assert "for namespace in factory factory-mi-homelab; do" in launcher
+    assert 'namespaces="factory factory-mi-homelab"' in launcher
+    assert 'yes) namespaces="$namespaces gates" ;;' in launcher
+    assert "for namespace in $namespaces; do" in launcher
     assert "paths=/sys/fs/cgroup/system.slice" in launcher
     assert 'at_or_below "$gmk_pressure"' in launcher
     assert "0 failed" in combined, combined

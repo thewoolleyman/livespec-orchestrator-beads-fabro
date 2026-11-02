@@ -154,7 +154,17 @@ cat > "$STUB/bin/ssh" <<'SSH_STUB'
 set -u
 command_line=$*
 case $command_line in
-    *crictl*|*cpu.stat*) printf '%s\n' "${STUB_FACTORY_PRESSURE:-10.00}" ;;
+    *crictl*|*cpu.stat*)
+        if [ -n "${STUB_REMOTE_EXEC:-}" ]; then
+            # Run the launcher's real remote script against a fixture cgroup tree
+            # and stub k3s, getconf and sleep, so its overcommit branch is exercised.
+            printf '%s\n' "$command_line" \
+                | sed "s#/sys/fs/cgroup#${STUB_CGROUP_ROOT}#g" \
+                | PATH="$STUB_REMOTE_BIN:$PATH" bash
+        else
+            printf '%s\n' "${STUB_FACTORY_PRESSURE:-10.00}"
+        fi
+        ;;
     *mpstat*)
         printf 'Linux stub\n\n'
         printf 'Average:     all    1.00    0.00    0.00    %s\n' "${STUB_SSH_IDLE:-95.00}"
@@ -164,7 +174,34 @@ case $command_line in
 esac
 SSH_STUB
 
-chmod +x "$STUB/fabro" "$STUB/wrapper" "$STUB/bin/ssh"
+# The stubs the fixture remote host runs: k3s answers from fixture JSON files and
+# fails when one is missing, getconf reports STUB_CPUS, and sleep advances every
+# fixture cpu.stat by the `delta` file beside it, standing in for the sample window.
+export STUB_REMOTE_BIN="$STUB/remote-bin"
+mkdir -p "$STUB_REMOTE_BIN"
+cat > "$STUB_REMOTE_BIN/k3s" <<'K3S_STUB'
+#!/usr/bin/env bash
+set -u
+if [ "$1" = crictl ]; then file="$STUB_K3S_DIR/crictl-$4.json"
+elif [ "$2" = get ] && [ "$3" = node ]; then file="$STUB_K3S_DIR/node.json"
+elif [ "$2" = get ] && [ "$3" = pods ]; then file="$STUB_K3S_DIR/pods.json"
+else exit 1; fi
+cat "$file"
+K3S_STUB
+cat > "$STUB_REMOTE_BIN/getconf" <<'GETCONF_STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$STUB_CPUS"
+GETCONF_STUB
+cat > "$STUB_REMOTE_BIN/sleep" <<'SLEEP_STUB'
+#!/usr/bin/env bash
+find "$STUB_CGROUP_ROOT" -name delta | while read -r delta; do
+    stat_file="$(dirname "$delta")/cpu.stat"
+    usage=$(awk '/^usage_usec / {print $2}' "$stat_file")
+    printf 'usage_usec %s\n' $((usage + $(cat "$delta"))) > "$stat_file"
+done
+SLEEP_STUB
+
+chmod +x "$STUB/fabro" "$STUB/wrapper" "$STUB/bin/ssh" "$STUB_REMOTE_BIN/k3s" "$STUB_REMOTE_BIN/getconf" "$STUB_REMOTE_BIN/sleep"
 
 # --- the throwaway tenant repository ----------------------------------------
 # The launcher fast-forwards the tenant repository to origin/master before it
@@ -545,6 +582,103 @@ else
     fail "an unreadable pressure reading did not hold as unknown (rc=$RC, dispatches: $(drive_log_items))"
     tail -8 "$CASE_DIR/unknown.log" >&2
 fi
+
+# --- 7. gate Job pods count only while gmktec CPU requests are overcommitted ---
+# The remote script runs for real against fixture k3s answers and a fixture cgroup
+# tree (4 CPUs, 4000m allocatable). Factory pods use 5 percent of the node in every
+# arm; a burstable gate Job pod in the gates namespace bursts to 75 percent.
+echo "--- 7. gate Job pods are excluded only while CPU requests fit the node"
+export STUB_REMOTE_EXEC=1
+export STUB_CPUS=4
+
+# remote_fixture <requested-millis-per-pod> <gate-delta-usec>: a node with 4000m
+# allocatable, one factory pod and one gates pod each requesting the given CPU.
+remote_fixture() {
+    local request="$1" gate_delta="$2" root="$CASE_DIR/cgroup" k3s="$CASE_DIR/k3s"
+    rm -rf "$root" "$k3s"
+    mkdir -p "$k3s" "$root/system.slice"
+    export STUB_CGROUP_ROOT="$root" STUB_K3S_DIR="$k3s"
+    printf 'usage_usec 1000\n' > "$root/system.slice/cpu.stat"
+    printf '0\n' > "$root/system.slice/delta"
+    local qos="kubepods-burstable" pod
+    for pod in factory:aaaa_factory:1000000 gates:bbbb_gate:"$gate_delta"; do
+        IFS=: read -r namespace uid delta <<< "$pod"
+        [ "$namespace" = gates ] && qos="kubepods-besteffort"
+        mkdir -p "$root/kubepods.slice/$qos.slice/$qos-pod${uid}.slice"
+        printf 'usage_usec 1000\n' > "$root/kubepods.slice/$qos.slice/$qos-pod${uid}.slice/cpu.stat"
+        printf '%s\n' "$delta" > "$root/kubepods.slice/$qos.slice/$qos-pod${uid}.slice/delta"
+        printf '{"items": [{"metadata": {"uid": "%s"}}]}\n' "${uid//_/-}" > "$k3s/crictl-$namespace.json"
+    done
+    printf '{"items": []}\n' > "$k3s/crictl-factory-mi-homelab.json"
+    printf '{"status": {"allocatable": {"cpu": "4"}}}\n' > "$k3s/node.json"
+    printf '{"items": [{"status": {"phase": "Running"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "%sm"}}}]}}, {"status": {"phase": "Succeeded"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "9000m"}}}]}}, {"status": {"phase": "Running"}, "spec": {"containers": [{"resources": {"requests": {"cpu": "%sm"}}}]}}]}\n' \
+        "$request" "$request" > "$k3s/pods.json"
+}
+
+# Requests (1000m + 1000m) fit 4000m: the gate burst is not factory-competing.
+new_case gate-fits
+: > "$BOARD_GMK"; : > "$BOARD_HL"; printf '8\n' > "$CAP_FILE"
+export STUB_SSH_IDLE=1.00
+remote_fixture 1000 15000000
+run_launcher bd-ib-gate-fits
+if [ "$(drive_log_items)" = "bd-ib-gate-fits" ] && [ "$RC" = 0 ] \
+    && log_has "$CASE_LOG" "pressure=5.00 threshold=25"; then
+    pass "a gate burst is excluded while CPU requests fit the node"
+else
+    fail "a gate burst held a launch although CPU requests fit the node (rc=$RC, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_LOG" >&2
+fi
+
+# Requests (3000m + 3000m) exceed 4000m: the same gate burst is counted and holds.
+: > "$DRIVE_LOG"
+remote_fixture 3000 15000000
+run_launcher bd-ib-gate-overcommitted "$CASE_DIR/overcommitted.log"
+if [ ! -s "$DRIVE_LOG" ] && [ "$RC" = 75 ] \
+    && log_has "$CASE_DIR/overcommitted.log" "pressure=80.00 threshold=25"; then
+    pass "a gate burst is counted as factory-competing while CPU requests are overcommitted"
+else
+    fail "an overcommitted node did not count the gate burst (rc=$RC, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_DIR/overcommitted.log" >&2
+fi
+
+# Positive control: overcommitted with an idle gate pod still launches.
+: > "$DRIVE_LOG"
+remote_fixture 3000 0
+run_launcher bd-ib-gate-idle
+if [ "$(drive_log_items)" = "bd-ib-gate-idle" ] && [ "$RC" = 0 ] \
+    && log_has "$CASE_LOG" "pressure=5.00 threshold=25"; then
+    pass "an overcommitted node with an idle gate pod still launches"
+else
+    fail "an overcommitted node with an idle gate pod did not launch (rc=$RC, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_LOG" >&2
+fi
+
+# Overcommitted, but the gate pods cannot be read: unknown, never green.
+: > "$DRIVE_LOG"
+remote_fixture 3000 0
+rm -f "$STUB_K3S_DIR/crictl-gates.json"
+run_launcher bd-ib-gate-unreadable "$CASE_DIR/gate-unreadable.log"
+if [ ! -s "$DRIVE_LOG" ] && [ "$RC" = 75 ] \
+    && log_has "$CASE_DIR/gate-unreadable.log" "pressure=unknown threshold=25"; then
+    pass "unreadable gate pods under overcommit hold the launch as unknown"
+else
+    fail "unreadable gate pods under overcommit did not hold as unknown (rc=$RC, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_DIR/gate-unreadable.log" >&2
+fi
+
+# The CPU requests themselves cannot be read: unknown, never an assumed fit.
+: > "$DRIVE_LOG"
+remote_fixture 1000 0
+rm -f "$STUB_K3S_DIR/pods.json"
+run_launcher bd-ib-requests-unreadable "$CASE_DIR/requests-unreadable.log"
+if [ ! -s "$DRIVE_LOG" ] && [ "$RC" = 75 ] \
+    && log_has "$CASE_DIR/requests-unreadable.log" "pressure=unknown threshold=25"; then
+    pass "unreadable CPU requests hold the launch as unknown"
+else
+    fail "unreadable CPU requests did not hold as unknown (rc=$RC, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_DIR/requests-unreadable.log" >&2
+fi
+unset STUB_REMOTE_EXEC
 
 echo
 echo "=== fleet-launch hermetic harness: $PASS passed, $FAIL failed"
