@@ -14,6 +14,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_io_fabro_launcher as launcher_module,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_run as run_module
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_prelaunch_cpu as cpu_module,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -198,21 +201,67 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
     assert events == ["span", "dispatch-span", "launcher", "engine"]
 
 
-def test_a_drive_profile_journals_the_live_tree_cpu_of_each_phase() -> None:
+def test_a_profile_checkpoint_journals_the_delta_from_an_injected_cpu_reader() -> None:
     records: list[dict[str, object]] = []
+    readings = iter((4.25, 6.75))
 
     class _Journal:
         def append(self, *, record: dict[str, object]) -> None:
             records.append(record)
 
-    profile = PrelaunchCpuProfile.for_drive(
-        journal=_Journal(), work_item_id="bd-ib-5d5aue", dispatch_id="dispatch-7"
+    profile = PrelaunchCpuProfile(
+        journal=_Journal(),
+        work_item_id="bd-ib-5d5aue",
+        dispatch_id="dispatch-7",
+        cpu_seconds=lambda: next(readings),
     )
-    _ = sum(index * index for index in range(200_000))
     profile.checkpoint(name="spin")
 
-    assert len(records) == 1
-    cpu_seconds = records[0]["cpu_seconds"]
-    assert isinstance(cpu_seconds, float)
-    assert cpu_seconds > 0.0
-    assert records[0]["phase"] == "spin"
+    assert records == [
+        {
+            "stage": "pre-launch-cpu",
+            "work_item_id": "bd-ib-5d5aue",
+            "dispatch_id": "dispatch-7",
+            "phase": "spin",
+            "cpu_seconds": 2.5,
+        }
+    ]
+
+
+def test_for_drive_uses_the_drive_tree_cpu_reader_for_each_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records: list[dict[str, object]] = []
+    readings = iter((10.0, 10.0, 10.0))
+
+    class _Journal:
+        def append(self, *, record: dict[str, object]) -> None:
+            records.append(record)
+
+    def drive_cpu_reader() -> float:
+        return next(readings)
+
+    monkeypatch.setattr(cpu_module, "drive_tree_cpu_seconds", drive_cpu_reader)
+    profile = cpu_module.PrelaunchCpuProfile.for_drive(
+        journal=_Journal(), work_item_id="bd-ib-5d5aue", dispatch_id="dispatch-7"
+    )
+    profile.checkpoint(name="first")
+    profile.checkpoint(name="second")
+
+    assert profile.cpu_seconds is cpu_module.drive_tree_cpu_seconds
+    assert records == [
+        {
+            "stage": "pre-launch-cpu",
+            "work_item_id": "bd-ib-5d5aue",
+            "dispatch_id": "dispatch-7",
+            "phase": "first",
+            "cpu_seconds": 0.0,
+        },
+        {
+            "stage": "pre-launch-cpu",
+            "work_item_id": "bd-ib-5d5aue",
+            "dispatch_id": "dispatch-7",
+            "phase": "second",
+            "cpu_seconds": 0.0,
+        },
+    ]
