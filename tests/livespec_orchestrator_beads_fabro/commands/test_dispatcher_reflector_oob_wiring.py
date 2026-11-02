@@ -189,8 +189,9 @@ def test_spawn_daemon_starts_and_completes_a_thread() -> None:
 
     done = _threading.Event()
     _spawn_daemon(body=done.set)
-    # The daemon thread is fire-and-forget; wait deterministically for it.
-    assert done.wait(timeout=2.0) is True
+    # The daemon thread is fire-and-forget; wait deterministically for it. The
+    # timeout is a hang guard, so a loaded host delays the event, not the verdict.
+    assert done.wait(timeout=30.0) is True
 
 
 def test_default_seams_resolve_without_injection(

@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -332,23 +331,23 @@ def test_a_lingering_session_is_killed_during_the_reap(
 # delivered to the launcher alone never reaches the process actually holding the
 # stdout pipe.
 #
-# Every lifetime here is FINITE and short on purpose. The pre-fix runner only
-# returns when the grandchild exits, so an unbounded sleep would make each
-# failing Red/replay run hang for that whole sleep and could leave children
-# behind on interruption. Three seconds is the measured reproduction's own
-# figure: it is far above the deadline below and far below the assertion
-# ceiling, so pre-fix fails promptly and nothing can outlive the case.
-_GRANDCHILD_LIFETIME_SECONDS = 3
+# Every lifetime here is FINITE on purpose. The pre-fix runner only returns
+# when the grandchild exits, so an unbounded sleep would make each failing
+# Red/replay run hang for that whole sleep and could leave children behind on
+# interruption. The lifetime is a hang guard, far above the deadline, and the
+# verdict never rests on it: a grandchild that lives out its sleep leaves the
+# marker file below, and one killed with its group never does.
+_GRANDCHILD_LIFETIME_SECONDS = 30
+_NATURAL_EXIT_MARKER = "grandchild-outlived-its-sleep"
 _LAUNCHER_WITH_INHERITING_GRANDCHILD = (
     "import subprocess, sys, time\n"
-    f"subprocess.Popen([sys.executable, '-c', 'import time; time.sleep({_GRANDCHILD_LIFETIME_SECONDS})'])\n"
+    "subprocess.Popen([sys.executable, '-c', "
+    f"'import pathlib, time; time.sleep({_GRANDCHILD_LIFETIME_SECONDS}); "
+    f'pathlib.Path("{_NATURAL_EXIT_MARKER}").write_text("exited")\'])\n'
     f"time.sleep({_GRANDCHILD_LIFETIME_SECONDS})\n"
 )
 
 _DEADLINE_SECONDS = 0.5
-# Comfortably below the 3s grandchild and well above the 0.5s deadline, so the
-# two outcomes cannot be confused by ordinary scheduling noise.
-_BOUNDED_CEILING_SECONDS = 2.0
 
 
 def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
@@ -368,8 +367,6 @@ def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
     processes self-terminate within `_GRANDCHILD_LIFETIME_SECONDS` whatever
     this assertion does.
     """
-    started = time.monotonic()
-
     result = ShellCodexAppServerRunner().run(
         argv=[sys.executable, "-c", _LAUNCHER_WITH_INHERITING_GRANDCHILD],
         cwd=tmp_path,
@@ -377,12 +374,16 @@ def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
         timeout_seconds=_DEADLINE_SECONDS,
     )
 
-    elapsed = time.monotonic() - started
-    # Pre-fix this is the grandchild's own lifetime (~3s); post-fix it is the
-    # deadline (~0.5s), because killing the group closes the inherited pipe.
-    assert (
-        elapsed < _BOUNDED_CEILING_SECONDS
-    ), f"renewal outlived its {_DEADLINE_SECONDS}s deadline: {elapsed:.2f}s"
+    # An ORDERING, not a stopwatch reading. Pre-fix the runner returns only
+    # once the grandchild has lived out its sleep and left its marker; post-fix
+    # killing the group closes the inherited pipe, so the runner returns with
+    # the grandchild killed before it could write one. A loaded host delays
+    # both, but cannot reorder them.
+    assert not (
+        tmp_path / _NATURAL_EXIT_MARKER
+    ).exists(), (
+        f"renewal returned only after the grandchild outlived its {_DEADLINE_SECONDS}s deadline"
+    )
     assert result.exit_code == UNSPENDABLE_EXIT_CODE
 
 

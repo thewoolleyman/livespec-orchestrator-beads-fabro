@@ -28,6 +28,10 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     OtelReceiver,
     ReceiverConfig,
 )
+from livespec_orchestrator_beads_fabro.commands._session_telemetry_export import (
+    DegradationReport,
+    SessionTelemetry,
+)
 from livespec_orchestrator_beads_fabro.commands._session_telemetry_gate import (
     ObservationGate,
     load_gate,
@@ -402,29 +406,41 @@ def test_a_blocked_exporter_leaves_the_wait_result_on_its_deadline(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """The result is written before the exporter's shutdown allowance is spent.
+
+    The bound is an ORDERING rather than a stopwatch reading: the wait's result
+    must reach stdout BEFORE the blocked exporter is closed, so the bounded
+    shutdown can never sit on the deadline path however slowly a loaded host
+    runs either step. The exporter really is blocked: its receiver accepts and
+    never answers.
+    """
     repository = _repository(tmp_path=tmp_path)
-    printed_at: list[float] = []
-    original = _session_wait_cli.write_stdout
+    order: list[str] = []
+    original_write = _session_wait_cli.write_stdout
+    original_close = SessionTelemetry.close
 
     def recording_write(*, text: str) -> None:
-        printed_at.append(time.monotonic())
-        _ = original(text=text)
+        order.append("result-written")
+        _ = original_write(text=text)
 
-    deadline = 1.0
+    def recording_close(self: SessionTelemetry) -> DegradationReport:
+        order.append("exporter-closed")
+        return original_close(self)
+
     with _hanging_listener() as port:
         monkeypatch.setattr(_session_wait_cli, "write_stdout", recording_write)
+        monkeypatch.setattr(SessionTelemetry, "close", recording_close)
         monkeypatch.setenv(_ENDPOINT_ENV, f"http://127.0.0.1:{port}")
-        started = time.monotonic()
         code = session_wait.main(
-            argv=_wait_argv(repository=repository, deadline=deadline),
+            argv=_wait_argv(repository=repository, deadline=1.0),
             seams=_seams(script=_never_ends),
         )
-        total = time.monotonic() - started
 
     assert code == 0
     assert '"command_outcome": "deadline"' in capsys.readouterr().out
-    assert printed_at[0] - started < deadline + 0.75
-    assert total < deadline + 2.0 + 1.5
+    assert order.count("exporter-closed") == 1
+    assert order[-1] == "exporter-closed"
+    assert "result-written" in order[:-1]
 
 
 def test_a_blocked_exporter_is_reported_locally_and_an_unset_one_says_local_only(

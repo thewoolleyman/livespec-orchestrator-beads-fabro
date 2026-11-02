@@ -104,6 +104,15 @@ def _await_ready(*, push: subprocess.Popen[str]) -> None:
     assert push.stdout.readline() == "ready\n"
 
 
+# The stand-in hook's whole life. It is also the band's ceiling: a hook observed
+# at all is still alive, so no true reading can exceed it, while the limit
+# (3600 s) and every other wrong figure the band rejects do. A ceiling tied to
+# the hook rather than to a guess at the observer's speed is what keeps a
+# loaded host from reading as a wrong measurement.
+_HOOK_LIFETIME_SECONDS = 30
+_ELAPSED_CEILING_MS = _HOOK_LIFETIME_SECONDS * 1_000
+
+
 def _stop(*, push: subprocess.Popen[str]) -> None:
     """Reap the stand-in push and release the readiness pipe it held."""
     push.kill()
@@ -151,7 +160,7 @@ def test_a_hook_still_running_at_the_limit_is_reported_with_its_elapsed_time(
     tmp_path: Path,
 ) -> None:
     """Scenario 177: the event names the node, the operation, the limit, the elapsed."""
-    hook = _hook_script(tmp_path=tmp_path, seconds=30)
+    hook = _hook_script(tmp_path=tmp_path, seconds=_HOOK_LIFETIME_SECONDS)
     # A stand-in push: a shell that runs the hook as a CHILD. The trailing
     # `true` is what stops the shell exec-ing into the hook and collapsing the
     # two into one process, which is the shape a real `git push` never has.
@@ -172,7 +181,7 @@ def test_a_hook_still_running_at_the_limit_is_reported_with_its_elapsed_time(
     # A real measurement rather than a constant: the hook had been running for
     # at least two seconds, and an implementation that reported zero, or the
     # push's own age, or the limit, would all fail this band.
-    assert 1_000 <= event.hook_elapsed_ms <= 20_000, event.hook_elapsed_ms
+    assert 1_000 <= event.hook_elapsed_ms <= _ELAPSED_CEILING_MS, event.hook_elapsed_ms
 
 
 def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
@@ -189,7 +198,7 @@ def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
     The non-exec case above is kept as the control, so this is not one blind spot
     traded for another: both shapes must be reported.
     """
-    hook = _delegating_hook_script(tmp_path=tmp_path, seconds=30)
+    hook = _delegating_hook_script(tmp_path=tmp_path, seconds=_HOOK_LIFETIME_SECONDS)
     push = subprocess.Popen(["sh", "-c", f"{hook}; true"], stdout=subprocess.PIPE, text=True)
     try:
         _await_ready(push=push)
@@ -207,7 +216,7 @@ def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
     # The same real measurement the non-exec case asserts, and here it also
     # pins WHICH process was taken as the hook run's root: the delegate's own
     # `sleep` child starts last and would report near zero.
-    assert 1_000 <= event.hook_elapsed_ms <= 20_000, event.hook_elapsed_ms
+    assert 1_000 <= event.hook_elapsed_ms <= _ELAPSED_CEILING_MS, event.hook_elapsed_ms
 
 
 def test_a_push_with_no_hook_running_reports_no_event(tmp_path: Path) -> None:
@@ -239,7 +248,7 @@ def test_an_unmeasurable_elapsed_time_reports_no_invented_figure(tmp_path: Path)
     withholds the event. Reproduced by pointing the reader at a proc root that
     carries the process table it needs and NO `uptime`.
     """
-    hook = _hook_script(tmp_path=tmp_path, seconds=30)
+    hook = _hook_script(tmp_path=tmp_path, seconds=_HOOK_LIFETIME_SECONDS)
     push = subprocess.Popen(["sh", "-c", f"{hook}; true"], stdout=subprocess.PIPE, text=True)
     proc_root = tmp_path / "proc"
     proc_root.mkdir()
