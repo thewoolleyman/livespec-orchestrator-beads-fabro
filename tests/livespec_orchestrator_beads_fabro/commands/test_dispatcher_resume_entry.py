@@ -291,3 +291,21 @@ def test_a_resume_entered_at_proof_capture_can_reach_neither_dod_gate_nor_implem
     assert "proof_capture" in reachable
     assert "dod_gate" not in reachable
     assert "implement" not in reachable
+
+
+def test_the_proof_only_arm_visits_its_three_proof_stages_in_order_and_nothing_else() -> None:
+    """Scenario 257: the merged-resume graph excludes every ordinary workflow leg."""
+    module = _entry_module()
+    assert hasattr(module, "proof_only_graph")
+    derived = module.proof_only_graph(graph_text=_committed_graph())
+    assert derived is not None
+    graph = parse_dot_graph(text=derived)
+    assert not isinstance(graph, str), graph
+    proof_stages = ("proof_capture", "proof_verify", "proof_grade")
+    assert set(graph.nodes) == {"start", "exit", *proof_stages}
+    assert [(edge.source, edge.destination) for edge in graph.edges] == [
+        ("start", "proof_capture"),
+        ("proof_capture", "proof_verify"),
+        ("proof_verify", "proof_grade"),
+        ("proof_grade", "exit"),
+    ]
