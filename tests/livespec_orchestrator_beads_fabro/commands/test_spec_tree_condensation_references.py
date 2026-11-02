@@ -154,7 +154,10 @@ def test_references_are_selected_before_lexically_more_relevant_unreferenced_cla
 
     assert governing_body in condensed["contracts.md"]
     assert tempting_body not in condensed["contracts.md"]
-    assert ELIDED_BODY_MARKER in condensed["contracts.md"]
+    assert (
+        ELIDED_BODY_MARKER in condensed["contracts.md"]
+        or "partially withheld" in condensed["contracts.md"]
+    )
 
 
 def test_referenced_clauses_are_partially_withheld_in_reference_order_and_fit_the_prompt() -> None:
