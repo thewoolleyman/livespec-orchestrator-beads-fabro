@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.272.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.271.0...v0.272.0) (2026-11-02)
+
+
+### Features
+
+* journal host Claude judgement spend ([5c843b3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c843b30dcf1402940b42c21a5bf87cf2dc528ad))
+
 ## [0.271.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.270.0...v0.271.0) (2026-11-01)
 
 
