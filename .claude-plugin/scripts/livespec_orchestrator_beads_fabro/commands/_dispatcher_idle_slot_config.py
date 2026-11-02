@@ -32,8 +32,8 @@ from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
-    has_fabro_factory,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_presence import has_fabro_factory
 
 __all__: list[str] = [
     "IDLE_SLOT_AUDIT_KEY",

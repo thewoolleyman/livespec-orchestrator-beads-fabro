@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_plugin_cache_gate,
     _dispatcher_review_guard,
     _dispatcher_tmux_socket_root,
+    _factory_presence,
 )
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
@@ -360,10 +361,12 @@ def test_non_object_root_names_the_shape_not_a_missing_prefix(
     "call",
     [
         pytest.param(
-            lambda cwd: _config.has_fabro_factory(cwd=cwd, factory="default"),
+            lambda cwd: _factory_presence.has_fabro_factory(cwd=cwd, factory="default"),
             id="has_fabro_factory",
         ),
-        pytest.param(lambda cwd: _config.has_fabro_factories(cwd=cwd), id="has_fabro_factories"),
+        pytest.param(
+            lambda cwd: _factory_presence.has_fabro_factories(cwd=cwd), id="has_fabro_factories"
+        ),
         pytest.param(
             lambda cwd: _config.resolve_fabro_factory(cwd=cwd), id="resolve_fabro_factory"
         ),

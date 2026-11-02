@@ -134,6 +134,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         fabro_factory_server=factory_target.server,
         fabro_factory_dev_token=factory_target.dev_token,
         fabro_factory_environment=factory_environment_id(factory=factory_target),
+        fabro_factory_github_app=factory_target.github_app,
         # WHERE this dispatch's sandbox image comes from, decided ONCE here and
         # projected to both consumers off the plan: the launch overlay renders
         # from it and the dispatch record names it. An unreadable

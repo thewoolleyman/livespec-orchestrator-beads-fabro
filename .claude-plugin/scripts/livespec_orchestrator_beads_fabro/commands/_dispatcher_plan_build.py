@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import AcpNodeResolution
 from livespec_orchestrator_beads_fabro.commands._dispatcher_check_suite_view import (
@@ -63,6 +64,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
     DEFAULT_STALL_WINDOW,
     StallWindow,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+    FactoryGithubApp,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
@@ -144,6 +149,7 @@ class DispatchPlan:
     # is a factory that names none, so the run intent carries no environment
     # and the server selects whatever it selects today.
     fabro_factory_environment: str | None = None
+    fabro_factory_github_app: FactoryGithubApp = NO_FACTORY_GITHUB_APP
     # WHERE this dispatch's sandbox image comes from, decided ONCE from the
     # factory's catalog environment and the repository's configured override.
     # It rides the plan because TWO seams consume it — the launch overlay
@@ -251,6 +257,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_factory_server: str | None = None,
     fabro_factory_dev_token: str | None = None,
     fabro_factory_environment: str | None = None,
+    fabro_factory_github_app: object = NO_FACTORY_GITHUB_APP,
     sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE,
     janitor: tuple[str, ...] | None,
     janitor_checkout: Path,
@@ -292,6 +299,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_factory_server=fabro_factory_server,
         fabro_factory_dev_token=fabro_factory_dev_token,
         fabro_factory_environment=fabro_factory_environment,
+        fabro_factory_github_app=cast("FactoryGithubApp", fabro_factory_github_app),
         sandbox_image=sandbox_image,
         janitor=janitor_argv(
             check_suite=janitor_check_suite_from_contract(resolved=integration, janitor=janitor)

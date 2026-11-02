@@ -12,8 +12,6 @@ from typing import cast
 from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
     dispatcher_block,
-    has_fabro_factories,
-    has_fabro_factory,
     resolve_fabro_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
@@ -26,6 +24,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overflow_selection i
     overflow_selection,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
+from livespec_orchestrator_beads_fabro.commands._factory_presence import (
+    has_fabro_factories,
+    has_fabro_factory,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,

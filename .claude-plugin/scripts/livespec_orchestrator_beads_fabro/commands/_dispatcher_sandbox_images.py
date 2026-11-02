@@ -29,7 +29,6 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
-    has_fabro_factory,
     resolve_fabro_factory,
     resolve_fabro_sandbox_image,
 )
@@ -46,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
     toml_section_string,
     toml_section_string_declaration,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_presence import has_fabro_factory
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import workflow_registry
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError

@@ -79,6 +79,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones impor
     resolve_sibling_clones,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_client import overlay_graph_reference
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+    FactoryGithubApp,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
@@ -134,6 +138,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # the pinned-engine posture, where the committed `[run.environment]` id is
     # both the committed and the selected environment (bd-ib-kyeor4).
     factory_environment: str | None = None,
+    github_app: FactoryGithubApp = NO_FACTORY_GITHUB_APP,
     secret_sink: VaultSecretSink | None = None,
     # WHERE this dispatch's sandbox image comes from, as the plan resolved it.
     # The default is the pinned-engine posture — no catalog environment and no
@@ -324,6 +329,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # resolution could key the table away from the environment the launch
         # selected with nothing announcing it (bd-ib-kyeor4).
         factory_environment=factory_environment,
+        github_app=github_app,
         # The per-dispatch payload's rendered graph, carrying this dispatch's
         # resolved node timeouts as literal durations, NAMED as the client that
         # collects it can resolve it.

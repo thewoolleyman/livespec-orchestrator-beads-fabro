@@ -81,6 +81,11 @@ from livespec_orchestrator_beads_fabro.commands._factory_environment import (
     NO_FACTORY_ENVIRONMENT,
     FactoryEnvironment,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+    FactoryGithubApp,
+    factory_github_app_from_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._factory_registry import (
     NO_FACTORY_REGISTRY,
     FactoryRegistryReading,
@@ -104,8 +109,6 @@ __all__: list[str] = [
     "ConfigUnreadable",
     "FactoryTarget",
     "dispatcher_block",
-    "has_fabro_factories",
-    "has_fabro_factory",
     "resolve_fabro_bin",
     "resolve_fabro_factory",
     "resolve_fabro_sandbox_image",
@@ -154,6 +157,9 @@ class FactoryTarget:
     # an absent key and an unusable value must stay distinguishable, and
     # `_dispatcher_factory_environment` owns the grade of the reading.
     environment: FactoryEnvironment = NO_FACTORY_ENVIRONMENT
+    # The per-run GitHub App secret names this factory declares.  It remains a
+    # structured reading until the pre-claim declaration grade has admitted it.
+    github_app: FactoryGithubApp = NO_FACTORY_GITHUB_APP
     # The Docker daemon that runs THIS factory's sandbox containers, from its
     # optional `docker_host` key, spelled as the Docker CLI spells one (e.g.
     # `ssh://<user>@<factory host>`). None means the entry declares none,
@@ -325,22 +331,6 @@ def resolve_fabro_factory(*, cwd: Path, factory: str | None = None) -> FactoryTa
     )
 
 
-def has_fabro_factory(*, cwd: Path, factory: str) -> bool:
-    """Return whether the current dispatcher config defines a named factory."""
-    block = dispatcher_block(cwd=cwd)
-    factories_raw = block.get("factories")
-    if not isinstance(factories_raw, dict):
-        return False
-    return factory in cast("dict[str, Any]", factories_raw)
-
-
-def has_fabro_factories(*, cwd: Path) -> bool:
-    """Return whether dispatcher config constrains factory names."""
-    block = dispatcher_block(cwd=cwd)
-    factories_raw = block.get("factories")
-    return isinstance(factories_raw, dict)
-
-
 def resolve_fabro_sandbox_image(*, cwd: Path) -> IOResult[str | None, ConfigUnreadable]:
     """Resolve the optional Fabro sandbox image override (env > config > unset).
 
@@ -497,6 +487,7 @@ def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
         server=registry.server if registry.declared else _optional_str(value=entry.get("server")),
         fabro_bin=client.fabro_bin,
         environment=client.environment,
+        github_app=factory_github_app_from_entry(entry=entry),
         docker_host=(
             registry.docker_host
             if registry.declared
