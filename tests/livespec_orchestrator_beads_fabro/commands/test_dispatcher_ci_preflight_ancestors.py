@@ -120,11 +120,21 @@ def test_the_newest_green_ancestor_is_selected_by_creation_time() -> None:
         (_recent(payload=[], exit_code=1), None, None),
         (_recent(payload={}), None, None),
         (_recent(payload=["bad"]), None, None),
+        (
+            (_recent(payload=[])[0], _result(stdout="not json")),
+            None,
+            None,
+        ),
         (_recent(payload=[{"createdAt": ""}]), None, None),
         (_recent(payload=[_run()]), _view(exit_code=1), None),
         (
             _recent(payload=[_run()]),
             (("gh", "run", "view", "2", "--json", "jobs"), _result(stdout="[]")),
+            None,
+        ),
+        (
+            _recent(payload=[_run()]),
+            (("gh", "run", "view", "2", "--json", "jobs"), _result(stdout="not json")),
             None,
         ),
         (_recent(payload=[_run()]), _view(conclusion=None), None),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import cast
 
@@ -19,7 +20,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_lookups
     run_records,
     view_run_jobs,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    CommandRunner,
+)
 
 __all__: list[str] = ["green_ancestor"]
 
@@ -41,7 +45,7 @@ def green_ancestor(
     result = list_recent_runs(repo=repo, runner=runner, workflow=pipeline.workflow, branch=branch)
     if result.exit_code != 0:
         return None
-    runs = run_records(result=result)
+    runs = _readable_runs(result=result)
     if runs is None:
         return None
     candidate = _newest_concluded_run(
@@ -59,6 +63,20 @@ def green_ancestor(
     if ancestor_of_branch(repo=repo, runner=runner, commit=head_sha, branch=branch) is not True:
         return None
     return run_id, head_sha
+
+
+def _readable_runs(*, result: CommandResult) -> list[object] | None:
+    try:
+        return run_records(result=result)
+    except json.JSONDecodeError:
+        return None
+
+
+def _readable_jobs(*, result: CommandResult) -> list[object] | None:
+    try:
+        return job_records(result=result)
+    except json.JSONDecodeError:
+        return None
 
 
 def _newest_concluded_run(
@@ -119,7 +137,7 @@ def _concluded_candidate(
     result = view_run_jobs(repo=repo, runner=runner, run_id=run_id)
     if result.exit_code != 0:
         return None
-    jobs = job_records(result=result)
+    jobs = _readable_jobs(result=result)
     if jobs is None:
         return None
     job = find_job(jobs=jobs, name=pipeline.job)
