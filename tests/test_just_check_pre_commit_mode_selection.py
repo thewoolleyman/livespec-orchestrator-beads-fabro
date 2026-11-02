@@ -27,6 +27,7 @@ import stat
 import subprocess
 from pathlib import Path
 
+import toml
 from livespec_dev_tooling.config import load_delegated_pre_commit
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -197,3 +198,16 @@ def test_checkout_without_the_marker_still_runs_the_master_ci_green_gate(*, tmp_
 def test_this_repository_declares_the_delegated_pre_commit_switch() -> None:
     """The hosted staged-tree gate is an explicit repository opt-in."""
     assert load_delegated_pre_commit(repo_root=_REPO_ROOT) is True
+
+
+def test_e2e_skeleton_pins_the_released_delegated_pre_commit_client() -> None:
+    """Every in-repository dev-tooling source uses the fixed release."""
+    root_config = toml.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    skeleton_config = toml.loads(
+        (_REPO_ROOT / "orchestrator-image" / "e2e-skeleton" / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    root_source = root_config["tool"]["uv"]["sources"]["livespec-dev-tooling"]
+    skeleton_source = skeleton_config["tool"]["uv"]["sources"]["livespec-dev-tooling"]
+    assert skeleton_source["tag"] == root_source["tag"]
