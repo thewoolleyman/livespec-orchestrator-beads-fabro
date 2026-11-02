@@ -159,6 +159,16 @@ def test_scenario242_the_harness_and_its_driver_are_committed_and_executable() -
     assert (_REPO_ROOT / _DRIVER).is_file()
 
 
+def test_scenario296_launch_expected_cases_have_a_case_budget_not_the_refusal_deadline() -> None:
+    """Launch controls tolerate contention while refusal cases still give up promptly."""
+    harness = (_REPO_ROOT / _HARNESS).read_text(encoding="utf-8")
+
+    assert "FLEET_LAUNCH_LAUNCH_EXPECTED_WAIT_S=30" in harness
+    assert "run_launch_expected() {" in harness
+    assert harness.count("run_launch_expected ") >= 6
+    assert "FLEET_LAUNCH_MAX_WAIT_S=2" in harness
+
+
 _PROVISIONAL_SHELL_SCRIPTS = sorted(
     path.relative_to(_REPO_ROOT).as_posix() for path in (_REPO_ROOT / _LAUNCH_DIR).rglob("*.sh")
 )
