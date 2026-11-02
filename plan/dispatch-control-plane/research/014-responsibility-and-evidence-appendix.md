@@ -217,8 +217,8 @@ Compose/Kubernetes execution. Keep native request IDs distinct from durable IDs.
 
 The latest parent scope event specifically corrects “GitLab” to **GitHub only**.
 The original sequence in report 010 failed in GitHub's Mermaid 12.2.0 renderer:
-its message `current state; act` produced a line-13 parse error. The retired
-copy replaces that semicolon with “and”; the proposal uses complementary diagrams
+its message `current state; act` produced a line-13 parse error. Report 008 also used a semicolon in a sequence message and failed rendering.
+The retired copies replace those semicolons with “and”; the proposal uses complementary diagrams
 with explicit target/existing labels. Render inspection is documented separately
 in the committed evidence receipt after exercising the actual GitHub web pages.
 

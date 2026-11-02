@@ -67,7 +67,11 @@ flowchart TB
     services -.->|"observe published disposition"| git
 ```
 
-The orchestrator owns the new coordination operations and action rules. Beads,
+The orchestrator owns the new coordination operations and action rules. Existing
+shared attention types remain in livespec-runtime; supervision integration stays
+with overseer, and the console presents public operations. New coordination
+schemas stay with their owning producer until actual shared use warrants extraction.
+Beads,
 Fabro and core retain existing authority. Shared services reference their facts
 rather than creating another status authority. A run-owned Fabro question keeps
 its run/question identity and existing answering interface.
@@ -108,7 +112,9 @@ sequenceDiagram
 
 An acknowledged question is saved work. An accepted answer is a decision. An
 applied action is an effect. Completion means observing the original required
-result. Each needs its own record. Multiple frontends display the same decision
+result. Each needs its own record. The attention view groups facts by cause, routes them
+by required action and time to consequence, and includes evidence and a decision
+packet when a ruling is needed. Multiple frontends display the same decision
 identity, rather than creating competing prompts. Questions support free text
 and follow-up as well as fixed choices.
 
