@@ -66,6 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_input_record import (
     BOUND_ENDED_CANDIDATE_FIELD,
     bound_ended_lines,
+    bound_ended_measurement_lines,
     input_usage_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
@@ -287,6 +288,8 @@ def did_not_run_comment(  # noqa: PLR0913 - each argument is one field of the re
     rubric_digest: str,
     cause: str,
     bound_ended_candidates: Sequence[str] = (),
+    bound_ended_candidate_input_tokens: Sequence[int | None] = (),
+    input_tokens: int | None = None,
     attempts: Sequence[CandidateAttempt] = (),
 ) -> str:
     """The ledger comment recording that the judgement did not run, why, and who ran.
@@ -309,6 +312,15 @@ def did_not_run_comment(  # noqa: PLR0913 - each argument is one field of the re
             f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
             f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
             *bound_ended_lines(candidates=bound_ended_candidates),
+            *bound_ended_measurement_lines(
+                judgement=DodJudgement(
+                    outcome=JUDGEMENT_UNAVAILABLE,
+                    cause=cause,
+                    input_tokens=input_tokens,
+                    bound_ended_candidates=tuple(bound_ended_candidates),
+                    bound_ended_candidate_input_tokens=tuple(bound_ended_candidate_input_tokens),
+                )
+            ),
             *unavailable_record_lines(attempts=attempts),
         )
     )

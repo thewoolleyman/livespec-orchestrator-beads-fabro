@@ -98,6 +98,7 @@ class CandidateChainResult:
     deciding_candidate: str | None = None
     usage: CandidateInputUsage | None = None
     bound_ended_candidates: tuple[str, ...] = ()
+    bound_ended_candidate_input_tokens: tuple[int | None, ...] = ()
     attempts: tuple[CandidateAttempt, ...] = ()
 
     def __iter__(self) -> Iterator[str | None]:
@@ -166,6 +167,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
     )
     last_cause = CAUSE_NO_ELIGIBLE_MODEL
     bound_ended: list[str] = []
+    bound_ended_input_tokens: list[int | None] = []
     attempts: list[CandidateAttempt] = []
     for candidate in resolved:
         attempt = _run_candidate(
@@ -191,10 +193,13 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
                 model=candidate_model(candidate=candidate),
                 exit_code=attempt.result.exit_code,
                 outcome=outcome,
+                input_tokens=attempt.usage.total_tokens,
+                input_usage=attempt.usage.status,
             )
         )
         if outcome == CAUSE_INPUT_LIMIT:
             bound_ended.append(candidate_label(candidate=candidate))
+            bound_ended_input_tokens.append(attempt.usage.total_tokens)
         if outcome == OUTCOME_VERDICT:
             return CandidateChainResult(
                 reply=reply,
@@ -202,6 +207,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
                 deciding_candidate=candidate_label(candidate=candidate),
                 usage=attempt.usage,
                 bound_ended_candidates=tuple(bound_ended),
+                bound_ended_candidate_input_tokens=tuple(bound_ended_input_tokens),
                 attempts=tuple(attempts),
             )
         last_cause = outcome
@@ -209,6 +215,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
         reply=None,
         cause=last_cause,
         bound_ended_candidates=tuple(bound_ended),
+        bound_ended_candidate_input_tokens=tuple(bound_ended_input_tokens),
         attempts=tuple(attempts),
     )
 

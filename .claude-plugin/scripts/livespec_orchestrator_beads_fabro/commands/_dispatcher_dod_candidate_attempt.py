@@ -48,6 +48,8 @@ class CandidateAttempt:
     model: str
     exit_code: int
     outcome: str
+    input_tokens: int | None = None
+    input_usage: str = "unreported"
 
     def render(self) -> str:
         """The attempt as one `key=value` line, free of anything a template reads."""

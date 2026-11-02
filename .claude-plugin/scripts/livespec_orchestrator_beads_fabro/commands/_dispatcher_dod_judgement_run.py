@@ -189,6 +189,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
             input_tokens=None if usage is None else usage.total_tokens,
             input_usage="unreported" if usage is None else usage.status,
             bound_ended_candidates=result.bound_ended_candidates,
+            bound_ended_candidate_input_tokens=result.bound_ended_candidate_input_tokens,
             attempts=result.attempts,
         )
     cause = result.cause or CAUSE_NO_ELIGIBLE_MODEL
@@ -197,6 +198,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
         outcome=JUDGEMENT_UNAVAILABLE,
         cause=cause,
         bound_ended_candidates=result.bound_ended_candidates,
+        bound_ended_candidate_input_tokens=result.bound_ended_candidate_input_tokens,
         attempts=result.attempts,
     )
 

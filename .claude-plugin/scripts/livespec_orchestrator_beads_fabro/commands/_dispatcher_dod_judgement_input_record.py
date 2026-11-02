@@ -37,10 +37,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import DodJudgement
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage import (
+    HOST_JUDGEMENT_INPUT_LIMIT,
+)
 
 __all__: list[str] = [
     "BOUND_ENDED_CANDIDATE_FIELD",
     "bound_ended_lines",
+    "bound_ended_measurement_lines",
     "input_usage_lines",
 ]
 
@@ -48,6 +52,8 @@ _DECIDING_CANDIDATE_FIELD = "deciding-candidate"
 _DECIDING_INPUT_TOKENS_FIELD = "deciding-candidate-input-tokens"
 _DECIDING_INPUT_USAGE_FIELD = "deciding-candidate-input-usage"
 BOUND_ENDED_CANDIDATE_FIELD = "bound-ended-candidate"
+_BOUND_ENDED_INPUT_TOKENS_FIELD = "bound-ended-candidate-input-tokens"
+_HOST_INPUT_LIMIT_FIELD = "host-judgement-input-limit"
 _FIELD_SEPARATOR = ": "
 
 
@@ -73,3 +79,17 @@ def bound_ended_lines(*, candidates: Sequence[str]) -> list[str]:
     return [
         f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}" for candidate in candidates
     ]
+
+
+def bound_ended_measurement_lines(*, judgement: DodJudgement) -> list[str]:
+    """Render the measured total and fixed bound for every exhausted candidate."""
+    totals = judgement.bound_ended_candidate_input_tokens
+    if not totals and len(judgement.bound_ended_candidates) == 1:
+        totals = (judgement.input_tokens,)
+    lines: list[str] = []
+    for total in totals:
+        if total is not None:
+            lines.append(f"{_BOUND_ENDED_INPUT_TOKENS_FIELD}{_FIELD_SEPARATOR}{total}")
+    if judgement.bound_ended_candidates:
+        lines.append(f"{_HOST_INPUT_LIMIT_FIELD}{_FIELD_SEPARATOR}{HOST_JUDGEMENT_INPUT_LIMIT}")
+    return lines
