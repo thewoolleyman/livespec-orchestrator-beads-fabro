@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.273.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.272.0...v0.273.0) (2026-11-02)
+
+
+### Features
+
+* grade publish head before refresh ([58e47d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/58e47d6879842e674267c5a464a9f04264891f54))
+* run generic gap checks through their interpreter ([407a470](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/407a4704f46678e8417d57ef0f8a9883b4216f34))
+
+
+### Bug Fixes
+
+* pin the proof grade to the shared publish-head reader ([d35c5fc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d35c5fc61dc3020db224c4b7a4dceb8e6c0e0ea0))
+
 ## [0.272.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.271.0...v0.272.0) (2026-11-02)
 
 
