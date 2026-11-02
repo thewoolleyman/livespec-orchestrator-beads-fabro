@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 def fabro_port_for_plan(*, plan: Any, runner: FabroRunner) -> FabroPort:
-    """Construct the port after the facade module has finished importing."""
+    """Construct the Fabro CLI port from a dispatch plan."""
     from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 
     return FabroPort(
