@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 __all__: list[str] = ["referenced_heading_body"]
 
 _H2 = re.compile(r"^##\s+(.+?)\s*$")
-_H2_MARKER = "## "
+_MARKER = re.compile(r"^##\s+")
 _SPEC_DIRNAME = "SPECIFICATION"
 _UNRESOLVED_HEADING_BODY = "(this heading does not resolve in the governed spec tree)"
 _UNSELECTED_HEADING_BODY = (
@@ -57,15 +57,20 @@ def _governing_clauses_for(
     """
     clauses: list[CondensedClause] = []
     for clause in (*governing.selected_clauses, *governing.named_clauses):
-        if clause.heading.rstrip(" \t") != reference.rstrip(" \t") or clause in clauses:
+        if _title_of(heading=clause.heading) != _title_of(heading=reference) or clause in clauses:
             continue
         clauses.append(clause)
     return tuple(clauses)
 
 
+def _title_of(*, heading: str) -> str:
+    """Return a heading's title, whether or not it carries the optional `## ` marker."""
+    return _MARKER.sub("", heading.strip()).strip()
+
+
 def _heading_body(*, repo: Path, reference: str) -> str:
     """Return an H2 section body, retaining an explicit absence when unresolved."""
-    title = reference.removeprefix(_H2_MARKER)
+    title = _title_of(heading=reference)
     spec_root = repo / _SPEC_DIRNAME
     if not spec_root.is_dir():
         return _UNRESOLVED_HEADING_BODY
