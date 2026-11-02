@@ -54,7 +54,6 @@ opposite of what the relevance order is for.
 from __future__ import annotations
 
 import re
-from collections import Counter
 from collections.abc import Iterator, ValuesView
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
@@ -62,6 +61,9 @@ from typing import TYPE_CHECKING, cast
 from livespec_runtime.spec_stated import JUDGE_PROMPT, judge
 from typing_extensions import override
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
     correction_prompt_headroom,
     resolving_subsection_citations,
@@ -69,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
 from livespec_orchestrator_beads_fabro.commands._spec_tree_partial import (
     FUNCTION_TERMS,
     partially_selected_section,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_relevance import (
+    relevance_order,
 )
 
 if TYPE_CHECKING:
@@ -230,8 +235,15 @@ def condensed_spec_tree(
     selected: dict[tuple[str, int], str] = {}
     complete: set[tuple[str, int]] = set()
     statement_terms = frozenset(_TERM.findall(statement.casefold()))
+    references = definition_of_done(description=statement).references
+    pinned = [
+        section
+        for reference in references
+        for section in sections
+        if section.heading is not None and section.heading.rstrip(" \t") == reference.rstrip(" \t")
+    ]
     relevance_order = _relevance_order(sections=sections, statement=statement)
-    for section in relevance_order:
+    for section in [*pinned, *(section for section in relevance_order if section not in pinned)]:
         cost = len(section.full) - len(section.elided)
         if cost <= remaining:
             selected[section.key] = section.full
@@ -247,7 +259,7 @@ def condensed_spec_tree(
                 elided=section.elided,
                 remaining=remaining,
             )
-            if matching_terms
+            if section in pinned or (matching_terms and not pinned)
             else None
         )
         if partial is not None:
@@ -393,23 +405,11 @@ def _relevance_order(*, sections: list[_Section], statement: str) -> list[_Secti
     The weight is inverse clause frequency, which is what keeps a term every
     clause carries — `the`, `MUST`, this repository's own name — from ranking
     clauses that merely share the specification's vocabulary above the clause
-    that shares the statement's subject.
+    that shares the statement's subject.  Dividing by the square root of each
+    clause's lexical breadth stops a long clause from winning only because it
+    has room to collect many otherwise-marginal matching terms.
     """
-    wanted = frozenset(_TERM.findall(statement.casefold()))
-    frequency = Counter(term for section in sections for term in section.terms & wanted)
-    decorated = [
-        (
-            (
-                -sum(1.0 / (1 + frequency[term]) for term in sorted(section.terms & wanted)),
-                section.path,
-                section.index,
-            ),
-            section,
-        )
-        for section in sections
-    ]
-    decorated.sort(key=lambda pair: pair[0])
-    return [section for _, section in decorated]
+    return relevance_order(sections=sections, statement=statement, term_pattern=_TERM)
 
 
 def _condensed(
