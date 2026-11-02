@@ -2,6 +2,8 @@
 
 [Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
+> Retired 2 November 2026. This dated record is superseded by proposal 013 and appendix 014, linked from the single index. Its open questions and observations are historical.
+
 Detailed responsibility mapping · 27 October 2026 · authority correction 28 October 2026
 
 Current coordinator: **gitops-fleet-capacity-monitoring**, `livespec-dev-tooling-dfixhe`.
@@ -46,7 +48,7 @@ portability and delegation rulings applied. These are descriptive names for this
 comparison, not implemented command names or four mandatory permanent processes.
 Different roles can use different agents or models. A role's obligations persist
 even when no model is running. [Proposed direction](009-portable-coordination-research-summary.md),
-[original approved split](archive/004-discussion-transcript-and-maintainer-directions.md#the-coordinator-with-grants).
+[original approved split](004-discussion-transcript-and-maintainer-directions.md#the-coordinator-with-grants).
 
 | Proposed owner | Responsibility | What it must leave to someone else |
 | --- | --- | --- |
@@ -433,10 +435,10 @@ above; October 27 observability report at 19:39:17. These support keeping uncert
 or corrected observations distinct from established facts.
 
 <a id="n1"></a>
-**N1 — Approved new responsibility split.** [Discussion and rulings, report 004](archive/004-discussion-transcript-and-maintainer-directions.md),
+**N1 — Approved new responsibility split.** [Discussion and rulings, report 004](004-discussion-transcript-and-maintainer-directions.md),
 especially the second pass at 04:27:53 on October 25 and the subsequent approval;
 phase-two role-agent scope event at 2026-10-26 13:04:26 on `bd-ib-k6dqwc`.
-[Report 008](archive/008-first-pass-control-plane-design-draft.md) is historical and is
+[Report 008](008-first-pass-control-plane-design-draft.md) is historical and is
 superseded where it assigns everything to one standing coordinator or uses a
 Beads fleet tenant for shared operational state.
 

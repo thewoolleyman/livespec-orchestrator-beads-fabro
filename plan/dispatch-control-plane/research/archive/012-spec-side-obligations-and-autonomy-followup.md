@@ -2,6 +2,8 @@
 
 [Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
+> Retired 2 November 2026. This dated record is superseded by proposal 013 and appendix 014, linked from the single index. Its open questions and observations are historical.
+
 30 October 2026. This extends the [responsibility mapping](011-coordinator-responsibility-mapping.md) and the [portable coordination direction](009-portable-coordination-research-summary.md). It records verified source findings and the maintainer-authorized sequence. The service behavior below is proposed design, not deployed enforcement or permission to ratify the production backlog.
 
 ## Decision and startup order
@@ -134,5 +136,5 @@ The original coordinator brief was read in full from its October 30 scratchpad r
 - This repository's `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_spec_change_tier_wall.py`, `_dispatcher_loop_candidates.py`, `_spec_change_tier_hold.py`, `_needs_attention_spec_next_run.py` and `_needs_attention_spec_next_adapt.py`.
 - [Archived spec-side-autonomy design](https://github.com/thewoolleyman/livespec/blob/master/plan/archive/spec-side-autonomy/research/brainstorm.md), especially the foreman execution assumption and two independent AI signals; its ledger epic `livespec-jvdvx4` and existing items `livespec-yaig` and `livespec-vb12` were read directly.
 - [Console redesign decisions](https://github.com/thewoolleyman/livespec-console-beads-fabro/blob/master/plan/retire-overseer-and-redesign-control-plane-around-console/research/redesign-brainstorm-and-decisions.md), D3, amended D5 and section 5. These supply the previously missed workflow/staleness design; they do not establish an implemented trigger.
-- [Unattended plan operation](../../archive/unattended-plan-operation/research/opening-research-2026-08-20.md), which concerns an already-running authorized session.
+- [Unattended plan operation](../../../archive/unattended-plan-operation/research/opening-research-2026-08-20.md), which concerns an already-running authorized session.
 - Follow-up ledger epic `livespec-7ap2fb`, owner session `ce19c72a-238e-4973-bbde-0a4f85197eb8`, child `livespec-hitmrz`, and the SendMessage receipt above. The temporary startup receipt was inspected before this plan was changed; future state must be read from the ledger rather than that temporary file.

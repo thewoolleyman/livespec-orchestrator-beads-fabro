@@ -2,6 +2,8 @@
 
 [Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
+> Retired 2 November 2026. This dated record is superseded by proposal 013 and appendix 014, linked from the single index. Its open questions and observations are historical.
+
 Founding charter · 25 October 2026. The original requirements and discussion questions are preserved below. The current reports and later direction are listed in the index; the ledger remains the source of live plan status.
 
 ## The maintainer's statement of what done means
