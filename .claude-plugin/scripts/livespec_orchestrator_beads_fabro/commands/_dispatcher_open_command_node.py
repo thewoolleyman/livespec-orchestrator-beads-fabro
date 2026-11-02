@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import NodeTimeou
 __all__: list[str] = [
     "COMMAND_NODES",
     "open_command_node",
+    "updated_open_command_node",
 ]
 
 # Every COMMAND node of the `implement-work-item` workflow — the nodes the
@@ -144,6 +145,34 @@ def open_command_node(*, events_json: str, timeouts: NodeTimeouts) -> OpenComman
     if not candidates:
         return None
     return max(candidates, key=lambda candidate: candidate.timeout_seconds)
+
+
+def updated_open_command_node(
+    *,
+    established: OpenCommandNode | None,
+    events_json: str,
+    timeouts: NodeTimeouts,
+) -> OpenCommandNode | None:
+    """Update an open command node from one incremental event read.
+
+    A delta can omit a still-running command node entirely, so it cannot be
+    interpreted as a complete stream. An unreadable delta and a readable delta
+    with no lifecycle event both retain the established node; only an observed
+    completion of that specific node clears it.
+    """
+    events = fabro_event_records_from_stdout(stdout=events_json)
+    if events is None:
+        return established
+    current = open_command_node(events_json=events_json, timeouts=timeouts)
+    if current is not None:
+        return current
+    if established is not None and any(
+        _command_node_id(event=event) == established.node
+        and _event_name(event=event).endswith(_ENDED_SUFFIXES)
+        for event in events
+    ):
+        return None
+    return established
 
 
 def _command_node_id(*, event: dict[str, Any]) -> str | None:
