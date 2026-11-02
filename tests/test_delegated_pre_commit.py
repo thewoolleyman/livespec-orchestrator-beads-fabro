@@ -14,6 +14,7 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PRE_COMMIT_SCRIPT = _REPO_ROOT / "dev-tooling" / "just-check-pre-commit.sh"
+_GATED_TREE_SCRIPT = _REPO_ROOT / "dev-tooling" / "check-pre-commit-gated-tree.sh"
 
 
 def test_repository_config_opts_in_to_the_repaired_pre_commit_delegate() -> None:
@@ -110,3 +111,72 @@ def test_pre_commit_delegates_before_locally_falling_back(*, tmp_path: Path) -> 
     assert not any(call.startswith("just") for call in failed_calls)
     assert local_calls[-1] == "just check-pre-commit-doc-only"
     assert gated_calls == ["just check-pre-commit-doc-only"]
+
+
+def _git(*, repo: Path, arguments: list[str]) -> str:
+    """Run git in a throwaway repository and return its standard output."""
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def _gated_repository(*, tmp_path: Path) -> tuple[Path, str, str]:
+    """Create the detached staged-tree commit consumed by the gate recipe."""
+    repo = tmp_path / "repository"
+    repo.mkdir()
+    _git(repo=repo, arguments=["init", "--quiet"])
+    _git(repo=repo, arguments=["config", "user.name", "Test User"])
+    _git(repo=repo, arguments=["config", "user.email", "test@example.invalid"])
+    (repo / "subject.txt").write_text("parent\n", encoding="utf-8")
+    _git(repo=repo, arguments=["add", "subject.txt"])
+    _git(repo=repo, arguments=["commit", "--quiet", "-m", "parent"])
+    parent = _git(repo=repo, arguments=["rev-parse", "HEAD"])
+    (repo / "subject.txt").write_text("staged\n", encoding="utf-8")
+    _git(repo=repo, arguments=["add", "subject.txt"])
+    gated_tree = _git(repo=repo, arguments=["write-tree"])
+    gated_commit = _git(
+        repo=repo,
+        arguments=["commit-tree", gated_tree, "-p", parent, "-m", "staged tree"],
+    )
+    _git(repo=repo, arguments=["reset", "--hard", "--quiet", gated_commit])
+    return repo, parent, gated_tree
+
+
+def test_gated_tree_recipe_rewinds_one_parent_without_changing_the_index(*, tmp_path: Path) -> None:
+    """The gate recipe preserves the staged tree and prevents recursive delegation."""
+    assert _GATED_TREE_SCRIPT.is_file()
+    repo, parent, gated_tree = _gated_repository(tmp_path=tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    just = bin_dir / "just"
+    just.write_text(
+        """#!/usr/bin/env bash
+test \"$LIVESPEC_GATE_CONTEXT\" = 1
+printf '%s %s\\n' \"$*\" \"$(git write-tree)\" > \"$GATE_LOG\"
+""",
+        encoding="utf-8",
+    )
+    just.chmod(just.stat().st_mode | stat.S_IXUSR)
+    log = tmp_path / "gate.log"
+    completed = subprocess.run(
+        ["bash", str(_GATED_TREE_SCRIPT)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "GATE_LOG": str(log),
+        },
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert _git(repo=repo, arguments=["rev-parse", "HEAD"]) == parent
+    assert _git(repo=repo, arguments=["write-tree"]) == gated_tree
+    assert log.read_text(encoding="utf-8") == f"check-pre-commit {gated_tree}\n"

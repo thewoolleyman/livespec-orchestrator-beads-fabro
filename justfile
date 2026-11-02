@@ -1256,6 +1256,9 @@ reap-e2e-repos *ARGS:
 check-pre-commit:
     bash dev-tooling/just-check-pre-commit.sh
 
+check-pre-commit-gated-tree:
+    bash dev-tooling/check-pre-commit-gated-tree.sh
+
 # When zero `.py` files are staged, `check-pre-commit` delegates to this
 # conservative doc-only subset. This is a LOCAL pre-commit speed optimization
 # only — it is NOT a merge gate, and pre-push no longer delegates here.
