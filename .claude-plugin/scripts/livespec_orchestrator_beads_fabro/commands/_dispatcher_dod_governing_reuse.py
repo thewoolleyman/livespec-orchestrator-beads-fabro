@@ -36,10 +36,14 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     governing_heading_statement,
     verdict_named_headings,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
+    judged_prompt_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tier_attested_verdict import (
     attested_governing_heading,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    PROMPT_CHARACTER_CEILING,
     clauses_named,
     condensed_spec_tree,
 )
@@ -91,7 +95,11 @@ def reusable_governing_heading_verdict(
     except (OSError, UnicodeDecodeError):
         return None
     statement = governing_heading_statement(item=item, section=section)
-    condensed = condensed_spec_tree(spec_tree=spec_tree, statement=statement)
+    condensed = condensed_spec_tree(
+        spec_tree=spec_tree,
+        statement=statement,
+        ceiling=judged_prompt_ceiling(spec_tree=spec_tree, ceiling=PROMPT_CHARACTER_CEILING),
+    )
     subject_digest = governing_heading_subject_digest(item=item, comments=comments)
     for body in comments:
         verdict = reusable_governing_heading(

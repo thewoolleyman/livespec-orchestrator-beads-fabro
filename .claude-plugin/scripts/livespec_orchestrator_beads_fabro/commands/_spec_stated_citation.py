@@ -66,6 +66,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "correction_prompt_headroom",
+    "judged_prompt_ceiling",
     "resolving_subsection_citations",
 ]
 
@@ -116,6 +117,16 @@ def correction_prompt_headroom(*, spec_tree: Mapping[str, str]) -> int:
             headings=headings,
         )
     )
+
+
+def judged_prompt_ceiling(*, spec_tree: Mapping[str, str], ceiling: int) -> int:
+    """`ceiling` less the headroom the correction prompt reserves.
+
+    The ONE place the reduction is taken: the judgement's prompt, the receipt's
+    recorded clause set and the reuse read must all condense at this ceiling, or
+    a recorded set can differ from the one a fresh judgement shows the model.
+    """
+    return ceiling - correction_prompt_headroom(spec_tree=spec_tree)
 
 
 @dataclass(frozen=True, kw_only=True)
