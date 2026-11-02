@@ -29,23 +29,44 @@ measured on that walk.
 
 ## The worktree
 
-- Base every branch on `origin/factory-integration`, never on `main` and never
-  on an upstream tag. Worktrees live under `~/.worktrees/fabro/<branch>`; the
-  fork's primary clone is `~/.worktrees/fabro/factory-integration`.
+- Base every branch on the carrier branch the SERVING factory build was cut
+  from, never on `main` and never on an upstream tag. Do not assume it is
+  `factory-integration`. Read the serving build's commit from the
+  `binary_source` that `livespec-dev-tooling`
+  `ansible/inventory/host_vars/gmktec-xubuntu.yml` pins, then from the
+  `BUILD_INFO` file staged beside that binary, which names the source ref.
+  CORRECTION (2026-11-02, work-item `bd-ib-voozdp`): this bullet named
+  `origin/factory-integration` until then, but gmktec's `petri` and
+  `mi-homelab` instances serve `carrier-candidate-registered-20261023` at
+  `9f6c38fab`. That branch patches Petri to
+  `thewoolleyman/petri` `fabro-integration-registered-20261023` (see
+  `orchestrator-image/README.md`), so `factory-integration` no longer
+  describes what serves. A fix based on it would not rebuild the serving
+  lineage. Merge the fix into that same carrier branch. Worktrees live under
+  `~/.worktrees/fabro/<branch>`.
 - Share the build cache: `CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target`.
   A cold workspace build of the fork is a from-scratch Rust dependency compile
   on a box that runs many concurrent sessions; the shared target directory is
-  what makes the gates incremental.
+  what makes the gates incremental. The directory can be EMPTY: on
+  2026-11-02 no fork target directory existed on vps, so the first gate was
+  a cold build anyway. Do not plan an ETA around a warm cache without
+  `ls`-ing it first.
 - Run `uptime` BEFORE any build or test run, every time, and bound the
   compile (`CARGO_BUILD_JOBS`, `nice`, `--test-threads`) when the load is
   already high. The load on 2026-09-12 was 25 to 30 on 18 cores from other
-  sessions' cargo and pytest runs.
+  sessions' cargo and pytest runs. The coordinator's standing throttle for a
+  fork gate on vps (ruling 2026-11-02): `nice -n 19`, `CARGO_BUILD_JOBS=4`,
+  nextest limited to `-p` the touched crates with a low `--test-threads`. At
+  nice 19 the gate takes only the cycles the other sessions leave idle, so it
+  pauses only when `mpstat 5 1` reports idle below 8%. There is no cluster
+  venue for a fork build: `rust.yml` runs only for `main`, and an ad hoc
+  host build on gmktec is not sanctioned.
 
 ## The merge gate is local
 
 The fork's GitHub workflows run only on `main` (`rust.yml`,
 `typescript.yml`: `branches: [main]`), so a pull request against
-`factory-integration` shows NO checks and `gh pr view` reports an empty
+any carrier branch shows NO checks and `gh pr view` reports an empty
 status rollup. That is not a green signal; it is the absence of an
 instrument. The merge gate is therefore the same set the fork CI would run,
 executed locally against the branch tip:
@@ -90,7 +111,7 @@ script's own done marker, and keep `CARGO_BUILD_JOBS` at 4 to 6 with
 - Merge with `gh pr merge <n> --rebase -R thewoolleyman/fabro`. The fork
   rebase-merges, so the merge SHA is the LAST commit of the rebased series,
   and the branch SHA does not survive; verify the landing with a content
-  check on `origin/factory-integration`, not by branch containment.
+  check on the carrier branch it merged into, not by branch containment.
 - `SPECIFICATION/constraints.md` §"Fabro runtime constraints" requires
   `orchestrator-image/README.md` §"`factory-integration` — the carrier branch
   for unreleased fixes" to be updated IN THE SAME CHANGE whenever the
