@@ -146,7 +146,7 @@ def test_dead_implementer_routes_unchanged_work_away_from_review() -> None:
     )
     assert (
         re.search(
-            r'implementation_diff\s*->\s*janitor\b[^\n]*condition="outcome=succeeded"',
+            r'implementation_diff\s*->\s*janitor_admission\b[^\n]*condition="outcome=succeeded"',
             text,
         )
         is not None
@@ -170,11 +170,12 @@ def test_changed_implementation_still_reaches_review_normally() -> None:
 
     assert (
         re.search(
-            r'implementation_diff\s*->\s*janitor\b[^\n]*condition="outcome=succeeded"',
+            r'implementation_diff\s*->\s*janitor_admission\b[^\n]*condition="outcome=succeeded"',
             text,
         )
         is not None
     )
+    assert re.search(r"janitor_admission\s*->\s*janitor\b", text) is not None
     assert (
         re.search(r'janitor\s*->\s*publish_draft\b[^\n]*condition="outcome=succeeded"', text)
         is not None

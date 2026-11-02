@@ -51,6 +51,7 @@ _PROMPT = _PAYLOAD / "prompts" / "implement.md"
 _IMPLEMENT_SETTLE = "implement_commit_settle"
 _REVIEW_FIX_SETTLE = "review_fix_commit_settle"
 _FIX_SETTLE = "fix_commit_settle"
+_JANITOR_ADMISSION = "janitor_admission"
 _ROUTE = "implement_hook_route"
 
 _LIVE_GIT_PATH = "livespec-implement-live-commit"
@@ -73,6 +74,7 @@ _INCOMPLETE_REENTER = "LIVESPEC_IMPLEMENT_INCOMPLETE_REENTER"
 _REENTRY_EXHAUSTED = "LIVESPEC_IMPLEMENT_REENTRY_BUDGET_EXHAUSTED"
 _CONFIGURED_DELTA = 137
 _SETTLE_VISITS = 3
+_JANITOR_VISIT_CAP = 8
 
 # A refusing pre-commit hook: if the route ran it over the staged tree, its
 # distinctive line would appear in the brief, which is what separates "the brief
@@ -175,7 +177,7 @@ def test_the_turn_reaches_the_settle_before_the_completion_gate_on_both_outcomes
 def test_review_fix_reaches_the_settle_before_the_janitor() -> None:
     """The review-fix turn's ordinary route waits out its commit runs, then validates."""
     assert ("review_fix_commit_settle", "") in _targets(source="review_fix")
-    assert _targets(source=_REVIEW_FIX_SETTLE) == [("janitor", "")]
+    assert _targets(source=_REVIEW_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
     assert ("needs_human", "outcome=failed") in _targets(source="review_fix")
 
 
@@ -432,7 +434,7 @@ def test_fix_reaches_the_settle_before_the_janitor() -> None:
     """A succeeded fix turn waits out its commit runs, then the janitor validates the tree."""
     assert (_FIX_SETTLE, "") in _targets(source="fix")
     assert ("janitor", "") not in _targets(source="fix")
-    assert _targets(source=_FIX_SETTLE) == [("janitor", "")]
+    assert _targets(source=_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
 
 
 def test_a_failed_fix_turn_still_goes_to_needs_human_without_the_settle() -> None:
@@ -478,3 +480,31 @@ def test_the_fix_settle_is_billed_into_the_subprocess_ceiling() -> None:
     )
     assert not isinstance(configured, str), configured
     assert derive_fabro_timeout_seconds(timeouts=configured) > default_ceiling
+
+
+def test_review_fixes_reenter_janitor_through_a_routable_admission_gate() -> None:
+    """A first Red janitor does not strand the later review-fixed Green tree."""
+    assert _targets(source=_REVIEW_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert _targets(source=_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert _targets(source=_JANITOR_ADMISSION) == [
+        ("needs_human", "outcome=failed"),
+        ("janitor", ""),
+    ]
+
+
+def test_janitor_admission_names_and_routes_an_exhausted_visit_bound(tmp_path: Path) -> None:
+    """The ninth entry preserves the tree at needs-human instead of replaying old janitor output."""
+    repo = _clone(tmp_path)
+    plugins = _plugins(tmp_path)
+
+    for _ in range(_JANITOR_VISIT_CAP):
+        admitted = _run_node(repo=repo, node=_JANITOR_ADMISSION, plugins=plugins)
+        assert admitted.returncode == 0, admitted.stderr
+
+    refused = _run_node(repo=repo, node=_JANITOR_ADMISSION, plugins=plugins)
+
+    assert refused.returncode != 0
+    cause = _git_file(repo=repo, name=_STAGE_CAUSE_GIT_PATH).read_text(encoding="utf-8")
+    assert "stage: janitor_admission" in cause
+    assert "LIVESPEC_JANITOR_VISIT_BOUND_EXHAUSTED" in cause
+    assert str(_JANITOR_VISIT_CAP) in cause

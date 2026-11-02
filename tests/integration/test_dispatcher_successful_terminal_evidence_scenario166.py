@@ -63,6 +63,7 @@ _SUCCESSFUL_NODES = (
     # THROUGH it, having stated its Definition of Done complete.
     "implement_completion",
     "implementation_diff",
+    "janitor_admission",
     "janitor",
     "publish_draft",
     "publish_merged_reconcile_route",

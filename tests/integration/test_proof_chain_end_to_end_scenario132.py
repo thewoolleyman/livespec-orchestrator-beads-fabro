@@ -900,6 +900,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         # only one that proceeds, which is what this green journey is.
         "implement_completion",
         "implementation_diff",
+        "janitor_admission",
         "janitor",
         _PUBLISH_DRAFT,
         _PUBLISH_MERGED_RECONCILE_ROUTE,
@@ -908,6 +909,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _DISPOSITION,
         "review_fix",
         "review_fix_commit_settle",
+        "janitor_admission",
         "janitor",
         _PUBLISH_DRAFT,
         _PUBLISH_MERGED_RECONCILE_ROUTE,
