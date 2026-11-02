@@ -2661,5 +2661,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal restart-cancelled-runs-sandboxes-are-stopped, and the owning work-item bd-ib-lupvil stops a restart-cancelled run's still-running Kubernetes sandbox through its provider, together with the test that binds this entry.",
     "work_item": "bd-ib-lupvil"
+  },
+  {
+    "heading": "## Scenario 296 \u2014 The provisional launcher's shared-node gate holds on factory-class pressure, not whole-host idle",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal the-gmktec-launch-gate-measures-factory-class-pressure (v275), and the owning work-item bd-ib-nmuyjc.6 adds the check-fleet-launch harness cases (green under a CI burst, held above the threshold, held on an unreadable reading, threshold declared in fleet-launch/config.sh) together with the gate itself.",
+    "work_item": "bd-ib-nmuyjc.6"
   }
 ]
