@@ -324,7 +324,7 @@ sequenceDiagram
     X-->>R: liveness of any prior run
     X->>L: stamp dispatch id, run id, factory
     X->>R: fabro run --server
-    X->>S: result (run id) ; next_action becomes await run:<id>
+    X->>S: result (run id) and next_action becomes await run:<id>
 ```
 
 ### 7.2 The coordinator holds a factory
