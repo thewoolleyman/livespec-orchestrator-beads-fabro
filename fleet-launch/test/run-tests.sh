@@ -48,6 +48,14 @@ FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  ok:   %s\n' "$1"; }
 fail() { FAIL=$((FAIL + 1)); printf '  FAIL: %s\n' "$1" >&2; }
 
+# A proof capture needs the launcher's measurements, not only this harness's
+# pass/fail summary.  Keep the ordinary gate output compact, but let an
+# explicit opt-in emit each invocation's complete, item-labelled log without
+# rewriting this script at proof time.  That makes the displayed reading a
+# direct product of the tracked harness and keeps it associated with the
+# launcher invocation that produced it.
+: "${FLEET_LAUNCH_HARNESS_LOGS:=0}"
+
 # The two stub server URLs. They are opaque to the launcher, which only passes
 # them to `fabro ps -a --server`, so the stub discriminates boards on them.
 GMK_URL="https://stub-gmktec.invalid:32276"
@@ -324,6 +332,10 @@ run_launcher() {
     local item="$1" log="${2:-$CASE_LOG}"
     "$LAUNCHER" "$item" > "$log" 2>&1
     RC=$?
+    if [ "$FLEET_LAUNCH_HARNESS_LOGS" = 1 ]; then
+        printf '  launcher[%s] (rc=%s):\n' "$item" "$RC"
+        sed 's/^/    /' "$log"
+    fi
 }
 
 log_has() { grep -qF -- "$2" "$1"; }
