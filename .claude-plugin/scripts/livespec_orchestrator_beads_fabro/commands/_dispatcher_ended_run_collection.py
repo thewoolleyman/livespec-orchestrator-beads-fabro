@@ -23,6 +23,7 @@ _CLOSED_ITEM_STATUSES = frozenset({"closed", "done"})
 _ENDED_STATUS_KINDS = frozenset({"canceled", "cancelled", "dead", "failed", "succeeded"})
 _COLLECTION_STAGE = "ended-run-collected"
 _RM_TIMEOUT_SECONDS = 120.0
+_RM_OUTPUT_EXCERPT_CHARS = 2000
 
 
 def collect_closed_ended_runs(
@@ -35,10 +36,14 @@ def collect_closed_ended_runs(
     """Delete ended sandboxes whose recorded work-item is now closed.
 
     `fabro rm` is deliberately unforced: the server's provider-delete route
-    is the collection operation, and its exit code is journaled so a failed
-    provider prune remains visible for the next periodic pass to retry.
+    is the collection operation, and its exit code and bounded response are
+    journaled so a Cleaned, Preserved or Absent result and any lease-prune
+    problem stay visible for diagnosis and for the next periodic pass to retry.
+    A targeted inventory collects only its own item's runs.
     """
     for row in attributed_runs(inventory=inventory, include_terminal=True):
+        if inventory.only_work_item_id not in (None, row.work_item_id):
+            continue
         if not _collectable(status_kind=row.run.status_kind, item_status=row.work_item_status):
             continue
         if dry_run:
@@ -57,6 +62,8 @@ def collect_closed_ended_runs(
                 "work_item_id": row.work_item_id,
                 "work_item_status": row.work_item_status,
                 "rm_exit_code": removed.command.exit_code,
+                "rm_stdout": removed.command.stdout.strip()[:_RM_OUTPUT_EXCERPT_CHARS],
+                "rm_stderr": removed.command.stderr.strip()[:_RM_OUTPUT_EXCERPT_CHARS],
             }
         )
 
