@@ -210,8 +210,10 @@ def read_journaled_runs(*, path: Path) -> JournaledRuns:
     return journaled_runs(text=read, source_path=path)
 
 
-def attributed_runs(*, inventory: FactoryRunInventory) -> tuple[AttributedRun, ...]:
-    """Every in-scope non-terminal run, joined to its item and its moot reason."""
+def attributed_runs(
+    *, inventory: FactoryRunInventory, include_terminal: bool = False
+) -> tuple[AttributedRun, ...]:
+    """Every requested in-scope run, joined to its item and its moot reason."""
     resolved = _resolved_attribution(inventory=inventory)
     rows: list[AttributedRun] = []
     for run in inventory.runs:
@@ -221,7 +223,9 @@ def attributed_runs(*, inventory: FactoryRunInventory) -> tuple[AttributedRun, .
             id_prefix=inventory.id_prefix,
             allow_goal_text=inventory.allow_goal_text_attribution,
         )
-        if run.status_kind not in NON_TERMINAL_STATUS_KINDS or attributed is None:
+        if attributed is None or (
+            not include_terminal and run.status_kind not in NON_TERMINAL_STATUS_KINDS
+        ):
             continue
         work_item_id, attribution_source = attributed
         work_item_status = inventory.item_statuses.get(work_item_id)

@@ -53,6 +53,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ended_run_collection import (
+    collect_closed_ended_runs,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_selection import (
     pass_selection_replays,
 )
@@ -273,6 +276,12 @@ def _reconcile_one_factory(
         run_ids=blocked_grace_candidate_ids(inventory=inventory),
         grace_seconds=inputs.blocked_run_grace_seconds,
         now_epoch=inputs.now_epoch,
+    )
+    collect_closed_ended_runs(
+        inventory=inventory,
+        port=port,
+        journal=inputs.journal,
+        dry_run=dry_run,
     )
     # NO EVENT-PROJECTION REPLAY RIDES THIS SURVEY. The replay that stood here
     # re-read each unresolved projection-failure fact's run through
