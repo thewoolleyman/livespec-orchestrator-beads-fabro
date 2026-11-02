@@ -27,6 +27,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     JournalWriter,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout import (
+    FABRO_DUMP_TIMEOUT_SECONDS,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     FABRO_DIFF_ARTIFACT_GLOB,
@@ -57,7 +60,6 @@ __all__: list[str] = [
     "preserve_checkpointed_work_reference",
 ]
 
-_DUMP_TIMEOUT_SECONDS = 300.0
 # Every terminal whose work is worth a durable pointer. The release status is
 # imported from the RECORDS leaf rather than from the outcome mapper that names
 # it a status, because the stage and the status are one literal and the leaf
@@ -182,7 +184,7 @@ def pointer_record_for_run(
         dumped = port.dump(
             run_id=run_id,
             output_dir=output_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
+            timeout_seconds=FABRO_DUMP_TIMEOUT_SECONDS,
         ).command
         artifacts = tuple(
             sorted(path for path in output_dir.glob(FABRO_DIFF_ARTIFACT_GLOB) if path.is_file())

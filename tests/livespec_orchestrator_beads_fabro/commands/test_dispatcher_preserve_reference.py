@@ -84,6 +84,29 @@ class _FailingDumpRunner:
         return CommandResult(exit_code=2, stdout="", stderr=self.stderr)
 
 
+@dataclass(kw_only=True)
+class _SixHundredSecondDumpRunner:
+    timeouts: list[float] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, env, stdin)
+        self.timeouts.append(timeout_seconds)
+        if timeout_seconds < 600:
+            return CommandResult(exit_code=124, stdout="", stderr="timeout")
+        diff = Path(argv[argv.index("-o") + 1]) / "stages" / "002-implement@1" / "diff.patch"
+        diff.parent.mkdir(parents=True)
+        _ = diff.write_text("diff --git a/app.py b/app.py\n+print('kept')\n", encoding="utf-8")
+        return CommandResult(exit_code=0, stdout="", stderr="")
+
+
 def _module() -> ModuleType:
     module_path = (
         Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
@@ -170,6 +193,43 @@ def test_fabro_dump_timeout_is_defined_once_at_nine_hundred_seconds() -> None:
         "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout"
     )
     assert timeout.FABRO_DUMP_TIMEOUT_SECONDS == 900
+
+
+def test_every_dispatcher_dump_consumer_imports_the_shared_timeout() -> None:
+    timeout = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout"
+    )
+    checker = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_check"
+    )
+    worker_exit = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause"
+    )
+
+    assert _module().FABRO_DUMP_TIMEOUT_SECONDS is timeout.FABRO_DUMP_TIMEOUT_SECONDS
+    assert checker.FABRO_DUMP_TIMEOUT_SECONDS is timeout.FABRO_DUMP_TIMEOUT_SECONDS
+    assert worker_exit.FABRO_DUMP_TIMEOUT_SECONDS is timeout.FABRO_DUMP_TIMEOUT_SECONDS
+
+
+def test_a_six_hundred_second_dump_writes_a_digested_preserve_pointer(tmp_path: Path) -> None:
+    module = _module()
+    append_work_item(path=_config(), item=_item())
+    runner = _SixHundredSecondDumpRunner()
+
+    module.preserve_checkpointed_work_reference(
+        args=_args(),
+        repo=_repo(tmp_path),
+        item=_item(),
+        outcome=_outcome(status="failed"),
+        journal=_RecordingJournal(),
+        runner=runner,
+    )
+
+    comments = make_beads_client(config=_config()).list_comments(issue_id="bd-ib-preserve")
+    body = str(comments[-1]["text"])
+    assert runner.timeouts == [900]
+    assert "sha256: 66cea3fffd55d2674c51819b19f4a7dee70484243ba4ed26408fa70e05b074dd" in body
+    assert "fabro dump failed" not in body
 
 
 def test_failed_run_comment_records_resolvable_diff_pointer(tmp_path: Path) -> None:

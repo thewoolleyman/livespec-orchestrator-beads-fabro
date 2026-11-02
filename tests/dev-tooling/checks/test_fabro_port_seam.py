@@ -54,12 +54,12 @@ _NON_FAMILY_ANCHOR = "commands/_dispatcher_engine.py"
 _ROUTED_DUMP = """        dumped = port.dump(
             run_id=run_id,
             output_dir=output_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
+            timeout_seconds=FABRO_DUMP_TIMEOUT_SECONDS,
         ).command"""
 _INLINED_DUMP = """        dumped = command_runner.run(
             argv=[fabro_bin, "dump", run_id, "--server", server_url, "-o", str(output_dir)],
             cwd=repo,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
+            timeout_seconds=FABRO_DUMP_TIMEOUT_SECONDS,
         )"""
 _ROUTED_SYSTEM_INFO = """    result = FabroHttpPort(
         target=FabroTarget(server_url=factory.server, dev_token=factory.dev_token),
