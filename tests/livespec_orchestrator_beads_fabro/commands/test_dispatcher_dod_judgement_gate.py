@@ -340,11 +340,14 @@ def test_a_did_not_run_record_is_written_once_per_distinct_cause(tmp_path: Path)
 def test_a_did_not_run_record_lists_each_candidate_the_input_bound_ended(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ended = ("claude-acp:claude-opus-5", "codex-acp:gpt-5.6-terra")
+    ended = ("claude-acp:claude-opus-5",)
 
     def exhausted(**_: object) -> DodJudgement:
         return DodJudgement(
-            outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_INPUT_LIMIT, bound_ended_candidates=ended
+            outcome=JUDGEMENT_UNAVAILABLE,
+            cause=CAUSE_INPUT_LIMIT,
+            bound_ended_candidates=ended,
+            input_tokens=100_001,
         )
 
     monkeypatch.setattr(gate_module, "run_dod_judgement", exhausted)
@@ -363,6 +366,8 @@ def test_a_did_not_run_record_lists_each_candidate_the_input_bound_ended(
     assert "judgement-unavailable-cause: input-limit-reached" in body
     for candidate in ended:
         assert f"bound-ended-candidate: {candidate}" in body
+    assert "bound-ended-candidate-input-tokens: 100001" in body
+    assert "host-judgement-input-limit: 100000" in body
     assert "deciding-candidate: " not in body
 
 
