@@ -26,7 +26,9 @@ from livespec_orchestrator_beads_fabro.commands._drive_accept_valve import accep
 from livespec_orchestrator_beads_fabro.commands._drive_answer import answer_delivery
 from livespec_orchestrator_beads_fabro.commands._drive_approve_valve import approve_item
 from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
+    CLEAR_FACTORY_SAFETY_ACTION,
     FACTORY_SAFETY_ACTION,
+    clear_factory_safety,
     set_factory_safety,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_valve import set_merge_hold
@@ -186,15 +188,8 @@ def _policy_edit(*, call: _ValveCall) -> dict[str, Any] | None:
     command runner; the factory-safety opt-out is the one that also journals,
     which is why it alone is handed the repo path and the identity.
     """
-    if call.action == FACTORY_SAFETY_ACTION:
-        return set_factory_safety(
-            repo=call.repo,
-            config=call.config,
-            item=call.item,
-            aid=call.action_id,
-            value=call.value,
-            identity=call.identity,
-        )
+    if call.action in {FACTORY_SAFETY_ACTION, CLEAR_FACTORY_SAFETY_ACTION}:
+        return _factory_safety_edit(call=call)
     if call.action in {"set-admission", "set-acceptance"}:
         return set_policy(
             config=call.config,
@@ -225,6 +220,27 @@ def _policy_edit(*, call: _ValveCall) -> dict[str, Any] | None:
             runner=call.runner,
         )
     return None
+
+
+def _factory_safety_edit(*, call: _ValveCall) -> dict[str, Any]:
+    """Run the factory-safety valve selected by one already-parsed action."""
+    if call.action == FACTORY_SAFETY_ACTION:
+        return set_factory_safety(
+            repo=call.repo,
+            config=call.config,
+            item=call.item,
+            aid=call.action_id,
+            value=call.value,
+            identity=call.identity,
+        )
+    return clear_factory_safety(
+        repo=call.repo,
+        config=call.config,
+        item=call.item,
+        aid=call.action_id,
+        rationale=call.value,
+        identity=call.identity,
+    )
 
 
 def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:
