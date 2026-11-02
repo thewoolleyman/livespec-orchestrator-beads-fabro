@@ -371,6 +371,29 @@ def test_a_did_not_run_record_lists_each_candidate_the_input_bound_ended(
     assert "deciding-candidate: " not in body
 
 
+def test_an_input_bound_record_names_the_bound_even_when_it_ended_one_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def exhausted(**_: object) -> DodJudgement:
+        return DodJudgement(
+            outcome=JUDGEMENT_UNAVAILABLE,
+            cause=CAUSE_INPUT_LIMIT,
+            bound_ended_candidates=("claude-acp:claude-opus-5",),
+            input_tokens=100_001,
+        )
+
+    monkeypatch.setattr(gate_module, "run_dod_judgement", exhausted)
+    ledger = _Ledger()
+
+    _ = _judge(
+        tmp_path=tmp_path,
+        ledger=ledger,
+        runner=_Runner(results=[CommandResult(exit_code=0, stdout="", stderr="")]),
+    )
+
+    assert "host-judgement-input-limit: 100000" in ledger.bodies[0]
+
+
 def test_only_a_recorded_hold_against_the_current_bytes_reads_as_held(tmp_path: Path) -> None:
     ledger = _Ledger()
     repo = _repo(tmp_path=tmp_path)
