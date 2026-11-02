@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -363,3 +365,61 @@ def test_green_run_adds_no_preserve_comment(tmp_path: Path) -> None:
 
     assert runner.calls == []
     assert make_beads_client(config=_config()).list_comments(issue_id="bd-ib-preserve") == []
+
+
+def test_pointer_reads_only_stage_diffs_from_the_run_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stage projection carries the exact text `fabro dump` writes.
+
+    `GET /runs/<id>/state` is intentionally used rather than the event stream:
+    the dump writes each `StageProjection.diff` verbatim, while its event log
+    is the large, unrelated part of a terminal-run export.
+    """
+    module = _module()
+    http = importlib.import_module("livespec_orchestrator_beads_fabro.commands._fabro_port_http")
+    port_module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._fabro_port")
+    payload = {
+        "stages": {
+            "plan@1": {"first_event_seq": 1, "diff": None},
+            "implement@1": {
+                "first_event_seq": 2,
+                "diff": "diff --git a/a.py b/a.py\n+kept\n",
+            },
+            "fix@1": {
+                "first_event_seq": 3,
+                "diff": "diff --git a/a.py b/a.py\n+fixed\n",
+            },
+        }
+    }
+
+    class _StateApi:
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> object:
+            assert (run_id, timeout_seconds) == ("01M0RUN", 300.0)
+            return http.FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload=payload,
+                succeeded=True,
+            )
+
+    def _state_api(_self: object) -> _StateApi:
+        return _StateApi()
+
+    monkeypatch.setattr(port_module.FabroPort, "server_api", _state_api)
+    pointer = module.pointer_record_for_run(
+        fabro_bin="fabro",
+        repo=tmp_path,
+        item_id="bd-ib-preserve",
+        run_id="01M0RUN",
+        server_url="https://factory.example.test",
+        command_runner=_FailingDumpRunner(stderr="the CLI dump must not run"),
+    )
+
+    assert pointer.artifact_present is True
+    assert "stage artifact path: stages/002-implement@1/diff.patch" in pointer.body
+    assert "stage artifact path: stages/003-fix@1/diff.patch" in pointer.body
+    assert hashlib.sha256(b"diff --git a/a.py b/a.py\n+kept\n").hexdigest() in pointer.body
+    assert hashlib.sha256(b"diff --git a/a.py b/a.py\n+fixed\n").hexdigest() in pointer.body
