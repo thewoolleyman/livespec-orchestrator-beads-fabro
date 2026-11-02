@@ -69,6 +69,7 @@ _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
 _DEFAULT_BRANCH = "trunk"
 _STAGED_BRANCH = "livespec/source/92ab7ab9b68647419e9501460d6c2231"
 _SEED_COMMITS = 3
+_RELEASE_TAG = "v1.153.2"
 _OAUTH_TOKEN = "oauth-token-value-that-must-not-leak"
 _GITHUB_TOKEN = "github-token-value-that-must-not-leak"
 _CHECK_FAILED_SENTINEL = "LIVESPEC_DEAD_IMPLEMENTER_CHECK_FAILED"
@@ -148,6 +149,33 @@ def test_an_unchanged_tree_still_reports_the_dead_implementer(tmp_path: Path) ->
     assert _CHECK_FAILED_SENTINEL not in completed.stderr
 
 
+def test_the_rendered_prepare_refreshes_a_stale_release_tag_at_the_default_tip(
+    tmp_path: Path,
+) -> None:
+    """A forced remote tag move replaces the clone's stale tag before checks run.
+
+    The fixture deliberately clones while the release tag still names the staged
+    commit, then moves that SAME remote tag to the default branch's next commit.
+    Ordinary branch and unshallow fetches leave the already-present local tag
+    untouched, so this asserts both the tag object and `git describe` after the
+    complete rendered prepare sequence.
+    """
+    sandbox = _provision(tmp_path=tmp_path, render_dispatch_base=True)
+
+    assert (
+        _capture(argv=["git", "rev-parse", _RELEASE_TAG], cwd=sandbox.clone, env=sandbox.env)
+        == sandbox.default_branch_head
+    )
+    assert (
+        _capture(
+            argv=["git", "describe", "--tags", f"origin/{_DEFAULT_BRANCH}"],
+            cwd=sandbox.clone,
+            env=sandbox.env,
+        )
+        == _RELEASE_TAG
+    )
+
+
 @dataclass(frozen=True, kw_only=True)
 class _Sandbox:
     """The provisioned clone, its environment, and origin's default-branch head."""
@@ -200,12 +228,37 @@ def _provision(*, tmp_path: Path, render_dispatch_base: bool) -> _Sandbox:
         cwd=seed,
         env=env,
     )
+    _run(argv=["git", "tag", _RELEASE_TAG], cwd=seed, env=env)
+    _run(
+        argv=["git", "push", "--quiet", str(origin), f"refs/tags/{_RELEASE_TAG}"], cwd=seed, env=env
+    )
+
+    clone = _clone_staged_branch(tmp_path=tmp_path, origin=origin, env=env)
+
     _ = (seed / "advanced.txt").write_text("merged while the run was queued\n", encoding="utf-8")
     _run(argv=["git", "add", "."], cwd=seed, env=env)
     _run(argv=["git", "commit", "--quiet", "-m", "advanced"], cwd=seed, env=env)
     _run(argv=["git", "push", "--quiet", str(origin), _DEFAULT_BRANCH], cwd=seed, env=env)
+    _run(argv=["git", "tag", "--force", _RELEASE_TAG], cwd=seed, env=env)
+    _run(
+        argv=["git", "push", "--quiet", "--force", str(origin), f"refs/tags/{_RELEASE_TAG}"],
+        cwd=seed,
+        env=env,
+    )
     default_branch_head = _capture(argv=["git", "rev-parse", "HEAD"], cwd=seed, env=env)
+    sandbox = _Sandbox(clone=clone, env=env, default_branch_head=default_branch_head)
 
+    rendered = _rendered_overlay(tmp_path=tmp_path)
+    steps = _fetch_steps(text=_committed_region(rendered=rendered))
+    if render_dispatch_base:
+        steps += _fetch_steps(text=_materialized_region(rendered=rendered))
+    for step in steps:
+        _run(argv=["/bin/bash", "-c", step], cwd=clone, env=env)
+    return sandbox
+
+
+def _clone_staged_branch(*, tmp_path: Path, origin: Path, env: dict[str, str]) -> Path:
+    """Take the source-staged, depth-one clone before origin moves its release tag."""
     clone = tmp_path / "clone"
     _run(
         argv=[
@@ -223,15 +276,7 @@ def _provision(*, tmp_path: Path, render_dispatch_base: bool) -> _Sandbox:
     )
     _run(argv=["git", "config", "user.email", "implementer@example.invalid"], cwd=clone, env=env)
     _run(argv=["git", "config", "user.name", "Implementer"], cwd=clone, env=env)
-    sandbox = _Sandbox(clone=clone, env=env, default_branch_head=default_branch_head)
-
-    rendered = _rendered_overlay(tmp_path=tmp_path)
-    steps = _fetch_steps(text=_committed_region(rendered=rendered))
-    if render_dispatch_base:
-        steps += _fetch_steps(text=_materialized_region(rendered=rendered))
-    for step in steps:
-        _run(argv=["/bin/bash", "-c", step], cwd=clone, env=env)
-    return sandbox
+    return clone
 
 
 def _rendered_overlay(*, tmp_path: Path) -> str:

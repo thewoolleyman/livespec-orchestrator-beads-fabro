@@ -35,6 +35,13 @@ and a single-branch clone's configuration names only the staged branch. Measured
 that reports success while the ref the next node reads still does not exist. The
 destination half of the refspec is therefore load-bearing rather than decoration.
 
+WHY `--tags --force` RIDES THIS FETCH. Unshallowing only follows tags for newly
+fetched reachable commits and does not refresh a local tag that the remote later
+moved. The source-staged clone can therefore retain a release tag from its seed
+while the remote's default-branch tip carries that same tag at a newer object.
+Fetching every tag with force makes tag-reading checks and `git describe --tags`
+read the remote's current release namespace before any stage runs.
+
 WHY THE OVERLAY AND NOT `workflow.toml`. The committed run config is FORKED per
 repository — `_dispatcher_paths.workflow_toml` resolves a dispatch target's own
 `<repo>/.fabro/workflows/implement-work-item/workflow.toml` ahead of the bundled
@@ -93,14 +100,15 @@ def default_branch_fetch_prepare_steps_block(*, prepare_inputs: Mapping[str, str
     if not default_branch:
         return ""
     refspec = f"+refs/heads/{default_branch}:refs/remotes/origin/{default_branch}"
-    script = f"git fetch --quiet origin {shlex.quote(refspec)}"
+    script = f"git fetch --quiet --tags --force origin {shlex.quote(refspec)}"
     lines = [
         "",
         "# --- Dispatcher-materialized dispatch-base fetch: bring the governed",
         "# --- repository's default branch into the SINGLE-BRANCH sandbox clone as",
         "# --- origin/<default_branch>, which the clone's own refspec never names and",
         "# --- which `git fetch --unshallow` therefore never brings in — the ref",
-        "# --- `implementation_diff` and the check suite diff against (bd-ib-xlblgr) ---",
+        "# --- `implementation_diff` and the check suite diff against. `--tags --force`",
+        "# --- also refreshes stale release tags before tag-reading checks run",
         "[[run.prepare.steps]]",
         f"script = {json.dumps(script)}",
     ]

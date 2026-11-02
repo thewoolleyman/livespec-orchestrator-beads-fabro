@@ -80,6 +80,8 @@ def test_the_rendered_step_fetches_the_projected_branch_into_a_tracking_ref(
                 "git",
                 "fetch",
                 "--quiet",
+                "--tags",
+                "--force",
                 "origin",
                 f"+refs/heads/{default_branch}:refs/remotes/origin/{default_branch}",
             ]
@@ -107,7 +109,15 @@ def test_the_projected_input_name_is_the_contract_input_the_sandbox_receives(
 
     assert rendered is not None
     assert _materialized_fetch_argv(rendered=rendered) == [
-        ["git", "fetch", "--quiet", "origin", "+refs/heads/trunk:refs/remotes/origin/trunk"]
+        [
+            "git",
+            "fetch",
+            "--quiet",
+            "--tags",
+            "--force",
+            "origin",
+            "+refs/heads/trunk:refs/remotes/origin/trunk",
+        ]
     ]
 
 
