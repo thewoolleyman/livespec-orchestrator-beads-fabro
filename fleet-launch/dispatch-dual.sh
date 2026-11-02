@@ -189,9 +189,10 @@ ready_check() {
 rcout=$(ready_check); rcrc=$?; echo "$(date -u +%T) $rcout"
 [ $rcrc = 0 ] || { echo "$(date -u +%T) ready-set check refused (rc=$rcrc): no slot taken, no launch"; exit 3; }
 
-# The launch-time Definition-of-Done preflight runs at launch, just before the marker, and a pass is
-# reused for FLEET_LAUNCH_PREFLIGHT_REUSE_S so a repeatedly-green launcher does not re-run it every poll.
+# A queued launcher takes its Definition-of-Done preflight while it waits; a pass
+# is reusable for FLEET_LAUNCH_PREFLIGHT_REUSE_S when it reaches the FIFO head.
 pf_ok_at=0
+queue_preflight_done=0
 launch_preflight() {
   local now prc pf="$OUT/$ITEM-preflight-launch.txt"; now=$(date +%s)
   [ $(( now - pf_ok_at )) -lt "$FLEET_LAUNCH_PREFLIGHT_REUSE_S" ] && return 0
@@ -215,6 +216,10 @@ while [ -z "$target" ]; do
     ahead=$(oldest_live_ticket "$GMK_Q")
     if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
       [ "$(date +%s)" -lt "$deadline" ] || give_up
+      # Spend FIFO wait time on this launcher's own Definition-of-Done
+      # preflight. Do it once while queued; launch_preflight decides whether
+      # the cached pass is still reusable when this ticket reaches the head.
+      if [ "$queue_preflight_done" = 0 ]; then launch_preflight; queue_preflight_done=1; fi
       echo "$(date -u +%T) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
     fi
   fi
