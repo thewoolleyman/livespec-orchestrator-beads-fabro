@@ -1124,9 +1124,12 @@ def test_regrade_pass_with_an_unverified_host_assertion_parks_in_acceptance(
     stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
     assert stored.status == "acceptance"
     assert stored.rework_pending is False
-    stages = [record["stage"] for record in _journal_records(repo=repo)]
+    records = _journal_records(repo=repo)
+    stages = [record["stage"] for record in records]
     assert "ledger-regrade-accept" not in stages
     assert "acceptance-parking-record" in stages
+    parking = next(record for record in records if record["stage"] == "acceptance-parking-record")
+    assert parking["pending"] == ["host-captured record for 'The released command works.'"]
 
 
 def test_regrade_fail_leaves_status_labels_and_failed_passes_untouched(
