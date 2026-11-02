@@ -414,8 +414,9 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
         heartbeat_path: object,
         dispatch_id: object,
         observed_at: float,
+        state: object,
     ) -> LivenessSample:
-        _ = (plan, port, run_id, heartbeat_path, dispatch_id, observed_at)
+        _ = (plan, port, run_id, heartbeat_path, dispatch_id, observed_at, state)
         return samples.pop(0)
 
     def _runnable_run(**_: object) -> ObservedRun:

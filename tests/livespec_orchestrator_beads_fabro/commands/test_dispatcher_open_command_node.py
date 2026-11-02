@@ -29,6 +29,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_open_command_node import (
     COMMAND_NODES,
     open_command_node,
+    updated_open_command_node,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_NODE_TIMEOUT_SECONDS,
@@ -274,3 +275,52 @@ def test_an_unreadable_stream_is_no_open_node() -> None:
 
 def test_an_empty_stream_is_no_open_node() -> None:
     assert open_command_node(events_json="[]", timeouts=DEFAULT_NODE_TIMEOUTS) is None
+
+
+def test_an_incremental_stream_updates_an_established_command_node() -> None:
+    """A delta is not a complete stream, so only its own lifecycle facts change state."""
+    established = open_command_node(
+        events_json=_stream(_event(name="stage.started", node="janitor")),
+        timeouts=DEFAULT_NODE_TIMEOUTS,
+    )
+    assert established is not None
+
+    assert (
+        updated_open_command_node(
+            established=established,
+            events_json="not-json",
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        == established
+    )
+    current = updated_open_command_node(
+        established=None,
+        events_json=_stream(_event(name="stage.started", node="publish_draft")),
+        timeouts=DEFAULT_NODE_TIMEOUTS,
+    )
+    assert current is not None
+    assert current.node == "publish_draft"
+    assert (
+        updated_open_command_node(
+            established=established,
+            events_json=_stream(_event(name="stage.completed", node="janitor")),
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        is None
+    )
+    assert (
+        updated_open_command_node(
+            established=established,
+            events_json="[]",
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        == established
+    )
+    assert (
+        updated_open_command_node(
+            established=None,
+            events_json="[]",
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        is None
+    )

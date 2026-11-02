@@ -162,9 +162,13 @@ class FabroPort:
             ),
         )
 
-    def events(self, *, run_id: str, timeout_seconds: float) -> FabroEventsResult:
+    def events(
+        self, *, run_id: str, timeout_seconds: float, since: str | None = None
+    ) -> FabroEventsResult:
+        """Read one run's events, optionally after an already-observed instant."""
+        since_args = [] if since is None else ["--since", since]
         command = self._run(
-            argv=[self.fabro_bin, "events", run_id, "--json", *self._server_suffix()],
+            argv=[self.fabro_bin, "events", run_id, "--json", *since_args, *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
         return FabroEventsResult(command=command, payload=fabro_events_payload(command=command))
