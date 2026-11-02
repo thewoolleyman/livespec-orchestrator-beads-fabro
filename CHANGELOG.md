@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.274.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.1...v0.274.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* allow numeric Codex compaction limit in fallback nodes ([329186b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/329186bec41a35da82742bbdf54a832162271c49))
+* require Codex compaction limits to use config syntax ([c7c736e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c7c736e77950fbed113909f108b218d30e9e7fa7))
+
 ## [0.274.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.274.0...v0.274.1) (2026-11-02)
 
 

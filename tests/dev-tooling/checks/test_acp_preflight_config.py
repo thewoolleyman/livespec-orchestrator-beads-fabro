@@ -64,9 +64,15 @@ _CODEX_CATALOG_ENTRY: dict[str, Any] = {
 }
 
 
-def _write_config(*, repo: Path, catalog: dict[str, Any]) -> Path:
+def _write_config(
+    *, repo: Path, catalog: dict[str, Any], node: dict[str, Any] | None = None
+) -> Path:
     dispatcher: dict[str, Any] = {
-        "acp_nodes": {"disposition": {**_CODEX_NODE, "fallbacks": [_CLAUDE_FALLBACK]}}
+        "acp_nodes": {
+            "disposition": node
+            if node is not None
+            else {**_CODEX_NODE, "fallbacks": [_CLAUDE_FALLBACK]}
+        }
     }
     if catalog:
         dispatcher["model_catalog"] = catalog
@@ -99,6 +105,37 @@ def test_declared_fallback_model_passes(tmp_path: Path, monkeypatch: pytest.Monk
         },
     )
     monkeypatch.setattr(sys, "argv", ["acp_preflight_config", str(repo)])
+    assert _CHECK.main() == 0
+
+
+def test_fallback_enabled_codex_primary_preserves_a_numeric_compaction_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The committed scan accepts Codex's non-credential config override."""
+    repo = _write_config(
+        repo=tmp_path,
+        catalog={
+            "anthropic/claude-sonnet-5-5": _CLAUDE_CATALOG_ENTRY,
+            "openai/gpt-6-sol": _CODEX_CATALOG_ENTRY,
+        },
+        node={
+            "display_name": "GPT-6 Sol",
+            "candidate_key": "gpt-6-sol",
+            "availability_key": "openai",
+            "command": "codex-acp",
+            "args": ["-c", "model_auto_compact_token_limit=245000"],
+            "fallbacks": [_CLAUDE_FALLBACK],
+        },
+    )
+    monkeypatch.setattr(sys, "argv", ["acp_preflight_config", str(repo)])
+
+    verdict = _CHECK.resolve_acp_preflight(
+        repo=repo, journal_path=None, now_iso="2026-11-02T00:00:00+00:00"
+    )
+    assert verdict.refusal is None
+    primary = verdict.node_preflight(node="disposition")
+    assert primary is not None
+    assert primary.candidates[0].adapter.args == ("-c", "model_auto_compact_token_limit=245000")
     assert _CHECK.main() == 0
 
 
