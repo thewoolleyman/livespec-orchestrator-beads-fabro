@@ -388,6 +388,10 @@ def test_this_repository_committed_entries_reach_their_rendered_adapters() -> No
             if other.command != agent.command:
                 assert other.command not in rendered, (node, rendered)
 
-    for node, entry in sorted(_committed_manual_entries().items()):
-        rendered = adapters[node]
-        assert str(entry["command"]) in rendered, (node, rendered)
+    manual = _committed_manual_entries()
+    unrendered = {
+        node: adapters.get(node)
+        for node, entry in manual.items()
+        if str(entry["command"]) not in adapters.get(node, "")
+    }
+    assert not unrendered, unrendered
