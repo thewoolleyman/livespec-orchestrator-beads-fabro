@@ -24,7 +24,6 @@ a listing into a fleet of model calls.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
@@ -41,12 +40,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
-    first_remedy,
     judgement_subject_digest,
     rubric_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_decision import (
+    DodJudgementDecision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     GoverningHeadingReceipt,
@@ -94,34 +95,6 @@ __all__: list[str] = [
 # stopped: a digest-shaped placeholder would read as a rubric that exists, and an
 # empty field as a field the writer forgot.
 UNREADABLE_RUBRIC_DIGEST = "unreadable"
-
-
-@dataclass(frozen=True, kw_only=True)
-class DodJudgementDecision:
-    """What one call site learned, and whether anything was spent learning it.
-
-    `reused` is reported rather than inferred from `findings`, because a reused
-    verdict and a freshly-taken identical one are indistinguishable by outcome —
-    and the two caps the clause states are about the SPEND, not the answer.
-    """
-
-    work_item_id: str
-    outcome: str
-    findings: tuple[str, ...] = ()
-    reused: bool = False
-    spec_identity: SpecIdentity | None = None
-    deciding_candidate: str | None = None
-    total_input_tokens: int | None = None
-
-    @property
-    def holds(self) -> bool:
-        """Whether this decision rests the item at needs-human."""
-        return self.outcome == JUDGEMENT_HELD
-
-    @property
-    def first_remedy(self) -> str | None:
-        """The remedy a refusal and a hygiene fact name."""
-        return first_remedy(findings=self.findings)
 
 
 def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent seam input.
@@ -230,6 +203,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             judgement=verdict,
             comments=comments,
             append=append,
+            spec_identity=identity,
         )
     append(
         body=verdict_comment(
@@ -353,6 +327,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     judgement: DodJudgement,
     comments: Sequence[str],
     append: Callable[..., None],
+    spec_identity: SpecIdentity | None = None,
 ) -> DodJudgementDecision:
     """Record that the judgement did not run, unless this cause already stands.
 
@@ -382,4 +357,10 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
                 total_input=(judgement.total_input_tokens, judgement.total_input_usage),
             )
         )
-    return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
+    return DodJudgementDecision(
+        work_item_id=item.id,
+        outcome=JUDGEMENT_UNAVAILABLE,
+        spec_identity=spec_identity,
+        bound_ended_candidates=judgement.bound_ended_candidates,
+        total_input_tokens=judgement.total_input_tokens,
+    )

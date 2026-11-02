@@ -28,6 +28,7 @@ correct the day the judgement is taken per assertion.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -158,37 +159,49 @@ def spec_identity_journal_record(
     *,
     work_item_id: str,
     stage: str,
-    identity: SpecIdentity,
+    identity: SpecIdentity | None,
     deciding_candidate: str | None = None,
+    bound_ended_candidates: Sequence[str] = (),
     total_input_tokens: int | None = None,
 ) -> dict[str, object]:
-    """The dispatch-journal row recording the identity a taking used.
+    """The dispatch-journal row recording one host Definition-of-Done taking.
 
-    The clauses are recorded by address and by the digest of their body, which is
-    what a reader comparing two takings needs; the bodies themselves are the spec
-    tree's to keep.
+    Every taking carries its stage, candidate evidence and total input measurement,
+    including one that did not reach a spec identity because its input bound ended
+    it. The clauses are recorded by address and by the digest of their body when
+    identity is available, which is what a reader comparing two takings needs;
+    the bodies themselves are the spec tree's to keep.
     """
     record: dict[str, object] = {
         "stage": SPEC_IDENTITY_JOURNAL_STAGE,
         "work_item_id": work_item_id,
         "judgement_stage": stage,
-        "spec_identity_form": identity.form,
-        "spec_identity": identity.value,
-        "clause_provenance": [
-            {
-                "list": label,
-                "path": clause.path,
-                "heading": clause.heading,
-                "body_sha256": hashlib.sha256(clause.body.encode("utf-8")).hexdigest(),
-            }
-            for label, clauses in (("selected", identity.selected), ("named", identity.named))
-            for clause in clauses
-        ],
+        "total_input_tokens": total_input_tokens,
     }
+    if identity is not None:
+        record.update(
+            {
+                "spec_identity_form": identity.form,
+                "spec_identity": identity.value,
+                "clause_provenance": [
+                    {
+                        "list": label,
+                        "path": clause.path,
+                        "heading": clause.heading,
+                        "body_sha256": hashlib.sha256(clause.body.encode("utf-8")).hexdigest(),
+                    }
+                    for label, clauses in (
+                        ("selected", identity.selected),
+                        ("named", identity.named),
+                    )
+                    for clause in clauses
+                ],
+            }
+        )
     if deciding_candidate is not None:
         record["deciding_candidate"] = deciding_candidate
-    if total_input_tokens is not None:
-        record["total_input_tokens"] = total_input_tokens
+    if bound_ended_candidates:
+        record["bound_ended_candidates"] = list(bound_ended_candidates)
     return record
 
 

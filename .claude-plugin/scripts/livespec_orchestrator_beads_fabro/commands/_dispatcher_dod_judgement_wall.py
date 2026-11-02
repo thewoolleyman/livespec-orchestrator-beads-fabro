@@ -104,10 +104,12 @@ def dod_judgement_refusal(
     the variant precedence comes from the ONE resolution the launch itself uses,
     so this row cannot exempt a different variant than the one that would run.
 
-    EVERY TAKING JOURNALS THE SPEC IDENTITY IT USED, whether it reused a record or
-    appended one and whether it admitted or refused, because the run is supplied
-    that identity and the journal row is the dispatch's own account of which one.
-    A taking that produced none — the judgement did not run — writes no row.
+    EVERY TAKING THAT DECIDES OR ENDS AT THE INPUT BOUND JOURNALS ITS STAGE,
+    CANDIDATE AND INPUT TOTAL, whether it reused a record, appended one, admitted,
+    refused, or ended at the input limit. The spec identity is additional
+    provenance when the taking reached that point; an unavailable bound-ended
+    taking still needs a row, because its size is exactly what an operator must
+    count when deciding whether to raise the bound or shrink input.
     """
     if not items:
         return None
@@ -121,13 +123,17 @@ def dod_judgement_refusal(
             item=item, repo=repo, path=config, stage=STAGE_PRE_DISPATCH
         )
         append = getattr(journal, "append", None)
-        if append is not None and decision.spec_identity is not None:
+        if append is not None and (
+            decision.spec_identity is not None
+            or bool(getattr(decision, "bound_ended_candidates", ()))
+        ):
             append(
                 record=spec_identity_journal_record(
                     work_item_id=item.id,
                     stage=STAGE_PRE_DISPATCH,
                     identity=decision.spec_identity,
                     deciding_candidate=decision.deciding_candidate,
+                    bound_ended_candidates=getattr(decision, "bound_ended_candidates", ()),
                     total_input_tokens=decision.total_input_tokens,
                 )
             )

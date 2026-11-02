@@ -199,6 +199,30 @@ def test_a_judgement_journal_row_names_its_stage_candidate_and_input_total(
     assert row.get("total_input_tokens") == 100_321
 
 
+def test_a_bound_ended_judgement_is_journaled_with_its_candidate_and_input_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decision = SimpleNamespace(
+        spec_identity=None,
+        holds=False,
+        deciding_candidate=None,
+        bound_ended_candidates=("claude-acp:claude-sonnet-5-5",),
+        total_input_tokens=100_321,
+    )
+    monkeypatch.setattr(wall, "judge_item_definition_of_done", lambda **_kwargs: decision)
+    journal = _Journal()
+
+    assert (
+        wall.dod_judgement_refusal(repo=_repo(tmp_path=tmp_path), items=[_item()], journal=journal)
+        is None
+    )
+
+    (row,) = journal.rows
+    assert row["judgement_stage"] == STAGE_PRE_DISPATCH
+    assert row["bound_ended_candidates"] == ["claude-acp:claude-sonnet-5-5"]
+    assert row["total_input_tokens"] == 100_321
+
+
 class _Journal:
     def __init__(self) -> None:
         self.rows: list[dict[str, object]] = []
