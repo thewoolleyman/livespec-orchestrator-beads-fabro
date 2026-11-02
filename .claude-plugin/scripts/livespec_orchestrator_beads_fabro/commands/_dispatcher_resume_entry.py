@@ -80,6 +80,7 @@ __all__: list[str] = [
     "RESUME_HEAD_ARG",
     "ResumeCheckout",
     "graph_entered_at",
+    "proof_only_graph",
     "resume_checkout_for",
     "resume_checkout_prepare_steps_block",
 ]
@@ -144,6 +145,18 @@ _NODE_NAME = re.compile(r"^\w+$")
 # not a question the derivation has.
 _START_NODE = "start"
 
+# The terminal `exit` is engine structure rather than a stage.  The proof-only
+# arm retains it solely so the successful grade has an explicit terminal route;
+# every capture or verification outcome that does not match its one outgoing
+# edge ends the run without visiting another stage.
+_PROOF_ONLY_NODES = frozenset({"start", "exit", "proof_capture", "proof_verify", "proof_grade"})
+_PROOF_ONLY_EDGES = (
+    ("start", "proof_capture"),
+    ("proof_capture", "proof_verify"),
+    ("proof_verify", "proof_grade"),
+    ("proof_grade", "exit"),
+)
+
 
 @dataclass(frozen=True, kw_only=True)
 class ResumeCheckout:
@@ -196,6 +209,39 @@ def graph_entered_at(*, graph_text: str, node: str) -> str | None:
         ],
     )
     return _validated(text=derived, declared=frozenset(graph.nodes) - orphaned, entry=node)
+
+
+def proof_only_graph(*, graph_text: str) -> str | None:
+    """Derive the merged-resume arm containing only capture, verification and grade.
+
+    The committed workflow remains the authority for every retained node's
+    attributes, including the proof-stage prompts and commands.  This derived
+    graph replaces every edge because keeping the ordinary workflow's failure
+    routes would enter `fix`, `review`, publication, or a human gate.  An
+    unmatched capture or verification result therefore ends the run, while the
+    one successful path is capture, verification, grade, then the engine's
+    terminal `exit` node.
+    """
+    graph = parse_dot_graph(text=graph_text)
+    if isinstance(graph, str) or frozenset(graph.nodes) < _PROOF_ONLY_NODES:
+        return None
+    removed_nodes = frozenset(graph.nodes) - _PROOF_ONLY_NODES
+    proof_edges = "".join(
+        f"    {source} -> {destination}\n" for source, destination in _PROOF_ONLY_EDGES
+    )
+    derived = _spliced(
+        text=graph_text,
+        edits=[
+            *_declaration_spans(graph_text=graph_text, names=removed_nodes),
+            *_edge_spans(
+                graph_text=graph_text,
+                names=frozenset(graph.nodes),
+                moved=(-1, -1),
+            ),
+            (graph_text.rfind("}"), graph_text.rfind("}"), f"\n{proof_edges}"),
+        ],
+    )
+    return _proof_only_validated(text=derived)
 
 
 def _orphaned_by_entering(*, graph: DotGraph, entry: str) -> frozenset[str]:
@@ -283,6 +329,17 @@ def _validated(*, text: str, declared: frozenset[str], entry: str) -> str | None
             found.source == _START_NODE and found.destination == entry for found in graph.edges
         )
     ):
+        return None
+    return text
+
+
+def _proof_only_validated(*, text: str) -> str | None:
+    """Return a proof-only graph only when its nodes and routes are exact."""
+    graph = parse_dot_graph(text=text)
+    if isinstance(graph, str) or frozenset(graph.nodes) != _PROOF_ONLY_NODES:
+        return None
+    routes = tuple((edge.source, edge.destination) for edge in graph.edges)
+    if routes != _PROOF_ONLY_EDGES:
         return None
     return text
 
