@@ -763,6 +763,85 @@ def test_a_hook_refused_publish_draft_refresh_is_restored_and_repaired(
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
 
 
+def _refuse_rebase_start_with_failed_targets(*, world: _World) -> None:
+    """Refuse the rebase before any commit exists, in the aggregate hook's words.
+
+    A `pre-rebase` hook is not a commit hook. It can print the same
+    `Failed targets` stanza, but it refuses the rebase from starting, so the
+    refresh never attempted a commit and the failure is not a hook refusal of the
+    refresh's own commit.
+    """
+    hook = world.clone / ".git" / "hooks" / "pre-rebase"
+    _ = hook.write_text(
+        "\n".join(
+            (
+                "#!/bin/sh",
+                "printf 'Failed targets (1):\\n' >&2",
+                "printf '  - check-lint\\n' >&2",
+                "exit 1",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+
+def test_a_pre_rebase_refusal_is_not_taken_for_a_commit_hook_refusal_in_publish_draft(
+    tmp_path: Path,
+) -> None:
+    """A rebase refused before its first commit keeps the fail-closed ending."""
+    world, janitor_head, _advanced = _clean_refresh_world(root=tmp_path)
+    _refuse_rebase_start_with_failed_targets(world=world)
+
+    result = _run_publish_draft(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    assert world.head() == janitor_head
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) is None
+
+
+def test_a_pre_rebase_refusal_is_not_taken_for_a_commit_hook_refusal_in_pr_refresh(
+    tmp_path: Path,
+) -> None:
+    """The second refreshing stage reads the same refusal the same way."""
+    world = _world(root=tmp_path)
+    published = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    _ = _advance_default(world=world, path=_OWNED_FILE, text="the default's own file\n")
+    _refuse_rebase_start_with_failed_targets(world=world)
+
+    result = subprocess.run(
+        ["bash", "-c", _pr_refresh_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{_unarmed_forge_bin(world=world)}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+    )
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) is None
+    assert world.head() == published
+
+
 def _refuse_commit_signing(*, world: _World) -> None:
     """Make every commit a rebase would write fail, with NO path conflicted.
 
