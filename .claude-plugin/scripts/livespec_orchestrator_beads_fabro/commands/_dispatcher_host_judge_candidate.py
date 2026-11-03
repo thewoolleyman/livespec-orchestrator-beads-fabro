@@ -9,7 +9,9 @@ The candidate itself runs from an empty scratch directory that is not inside any
 Git worktree.  The governed repository is therefore available only through the
 explicit ``--add-dir`` grant.  Codex receives a fresh ``CODEX_HOME`` containing
 at most its copied ``auth.json``, so none of the invoking profile's
-configuration, skills or project instructions reach the judgement.
+configuration, skills or project instructions reach the judgement. Its
+invoking ``HOME`` remains available only because a host Codex wrapper can use it
+to find its runtime binary.
 """
 
 from __future__ import annotations
@@ -135,16 +137,17 @@ def _isolated_environ(
     isolated = dict(environ)
     private_home = scratch / "home"
     private_home.mkdir()
-    isolated["HOME"] = str(private_home)
     isolated["ZDOTDIR"] = str(private_home)
     for name in _PROFILE_ENVIRONMENT:
         _ = isolated.pop(name, None)
-    if not is_codex:
+    if is_codex:
+        isolated["HOME"] = ambient_environ.get("HOME", str(Path.home()))
+        codex_home = scratch / "codex-home"
+        codex_home.mkdir()
+        _copy_codex_auth(ambient_environ=ambient_environ, destination=codex_home / "auth.json")
+        isolated["CODEX_HOME"] = str(codex_home)
         return isolated
-    codex_home = scratch / "codex-home"
-    codex_home.mkdir()
-    _copy_codex_auth(ambient_environ=ambient_environ, destination=codex_home / "auth.json")
-    isolated["CODEX_HOME"] = str(codex_home)
+    isolated["HOME"] = str(private_home)
     return isolated
 
 
