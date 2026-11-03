@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_watchdog_observation
@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
     FabroTarget,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands._run_attribution import GOAL_TEXT_ONLY
 
 _PS_ROW = (
@@ -85,6 +86,32 @@ class _Runner:
             stdout=self.stdout_by_verb.get(argv[1], ""),
             stderr=self.stderr_by_verb.get(argv[1], ""),
         )
+
+
+@dataclass(kw_only=True)
+class _HttpTransport:
+    result: FabroHttpResult
+    calls: list[dict[str, object]] = field(default_factory=list)
+
+    def send(
+        self,
+        *,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        timeout_seconds: float,
+    ) -> FabroHttpResult:
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": headers,
+                "body": body,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        return self.result
 
 
 def _port(*, runner: _Runner) -> FabroPort:
@@ -172,6 +199,42 @@ def test_a_bound_poll_reads_its_run_and_issues_no_listing() -> None:
     assert run is not None
     assert run.run_id == "01BOUND"
     assert [record["stage"] for record in journal.records] == [BOUND_POLL_JOURNAL_STAGE]
+
+
+def test_a_bound_poll_reads_its_status_and_stages_by_id_without_the_cli_inspect() -> None:
+    """A bound watch uses the compact one-run projection, not a full record."""
+    runner = _runner()
+    transport = _HttpTransport(
+        result=FabroHttpResult(
+            status=200,
+            body='{"data": [{"id": "implement@1", "handler": "agent", "status": "running"}]}',
+            error=None,
+            payload=None,
+            succeeded=True,
+        )
+    )
+    port = FabroPort(
+        fabro_bin="fabro",
+        target=FabroTarget(server_url="https://factory.example.test"),
+        runner=runner,
+        cwd=Path("/tmp"),
+        http=transport,
+    )
+
+    observed = observed_run(
+        work_item_id="bd-ib-mine",
+        port=port,
+        journal=_Journal(records=[]),
+        attribution=GOAL_TEXT_ONLY,
+        bound_run_id="01BOUND",
+    )
+
+    assert observed.run is not None
+    assert observed.run.status_kind == "running"
+    assert runner.argvs == []
+    assert [(call["method"], call["url"]) for call in transport.calls] == [
+        ("GET", "https://factory.example.test/api/v1/runs/01BOUND/stages")
+    ]
 
 
 def test_a_bound_poll_names_the_bound_run_in_the_command_it_issues() -> None:
