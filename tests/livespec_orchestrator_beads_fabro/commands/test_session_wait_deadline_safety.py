@@ -425,9 +425,9 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
             monotonic=clock.monotonic,
             sleeper=clock.sleep,
         )
+        assert clock.read_started_before_deadline is True
         task = watcher.probes[0].tasks[0]
         assert task is not None
-        assert clock.read_started_before_deadline is True
         read_budget = task.channel.timeout_seconds
         assert read_budget > _LONE_DEADLINE_SECONDS, (
             f"a {read_budget}s read budget cannot outlast a " f"{_LONE_DEADLINE_SECONDS}s deadline"
