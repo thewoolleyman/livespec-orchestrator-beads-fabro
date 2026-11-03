@@ -8,7 +8,7 @@ resolution, refusal, journal, and status effects under test together.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -435,7 +435,7 @@ def test_an_acceptance_item_refuses_a_selector_that_mismatches_green_janitor_evi
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
-    append_work_item(path=_config(), item=_item() | {"status": "acceptance"})
+    append_work_item(path=_config(), item=replace(_item(), status="acceptance"))
     journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
     journal.parent.mkdir()
     _ = journal.write_text(
