@@ -93,11 +93,11 @@ def default_branch_fetch_prepare_steps_block(*, prepare_inputs: Mapping[str, str
     if not default_branch:
         return ""
     refspec = f"+refs/heads/{default_branch}:refs/remotes/origin/{default_branch}"
-    script = f"git fetch --quiet origin {shlex.quote(refspec)}"
+    script = f"git fetch --quiet --tags --force origin {shlex.quote(refspec)}"
     lines = [
         "",
         "# --- Dispatcher-materialized dispatch-base fetch: bring the governed",
-        "# --- repository's default branch into the SINGLE-BRANCH sandbox clone as",
+        "# --- repository's default branch and release tags into the SINGLE-BRANCH sandbox clone,",
         "# --- origin/<default_branch>, which the clone's own refspec never names and",
         "# --- which `git fetch --unshallow` therefore never brings in — the ref",
         "# --- `implementation_diff` and the check suite diff against (bd-ib-xlblgr) ---",
