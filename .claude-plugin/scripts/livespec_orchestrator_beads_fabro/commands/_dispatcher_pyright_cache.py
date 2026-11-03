@@ -39,10 +39,13 @@ install_root="$(mktemp -d "$cache_root/.pyright-install.XXXXXX")"
 cleanup() { rm -rf "$archive_root" "$install_root"; }
 complete_cache() {
     root="$1/node_modules/pyright"
-    test "$(node -p "require(process.argv[1]).version" "$root/package.json")" = "$version"
+    installed_version="$(node -p "require(process.argv[1]).version" "$root/package.json")"
+    if test "$installed_version" != "$version"; then return 1; fi
     expected="$(tar -tzf "$archive" | sed -n '\|^package/dist/typeshed-fallback/stdlib/.*|p')"
-    test -n "$expected"
-    for entry in $expected; do test -f "$root/${entry#package/}"; done
+    if test -z "$expected"; then return 1; fi
+    for entry in $expected; do
+        if ! test -f "$root/${entry#package/}"; then return 1; fi
+    done
 }
 trap cleanup EXIT
 npm pack --silent --pack-destination "$archive_root" "pyright@$version" >/dev/null
