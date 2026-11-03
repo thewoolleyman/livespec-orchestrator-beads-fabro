@@ -549,7 +549,7 @@ def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
     assert refused.draft_created is False
 
 
-def test_a_pre_push_hook_refusal_names_its_failed_targets_after_the_push_marker(
+def test_a_pre_push_hook_refusal_names_its_failed_targets_in_the_refresh_repair_brief(
     tmp_path: Path,
 ) -> None:
     """Scenario 224 attributes a refused push to the hook that refused it."""
@@ -568,9 +568,11 @@ def test_a_pre_push_hook_refusal_names_its_failed_targets_after_the_push_marker(
     refused = _publish(tmp_path=tmp_path, run=run)
 
     assert refused.result.returncode != 0
-    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
-    assert "pre-push hook refused the push" in message
-    assert "check-per-file-coverage, check-coverage" in message
+    assert "LIVESPEC_PUBLISH_DRAFT_GATE_REJECTED" in refused.result.stderr
+    brief = run / ".git" / "livespec-publication" / "livespec-refresh-repair-brief"
+    assert "failed-gate-targets: check-per-file-coverage, check-coverage" in brief.read_text(
+        encoding="utf-8"
+    )
     assert refused.draft_created is False
 
 
@@ -579,14 +581,19 @@ def test_a_non_fast_forward_push_refusal_names_the_stale_publish_branch(
 ) -> None:
     """Scenario 224 directs the operator to reconcile an actually stale branch."""
     run, _, _ = _stale_run(tmp_path=tmp_path)
+    gate_trace = tmp_path / "declared-gate-ran"
 
     refused = _publish(
         tmp_path=tmp_path,
         run=run,
+        check_suite=f"sh -c 'printf declared-gate-ran > {shlex.quote(str(gate_trace))}'",
         push_refusal="! [rejected] HEAD -> feat/bd-ib-qustjx (non-fast-forward)",
     )
 
     assert refused.result.returncode != 0
+    assert (
+        gate_trace.exists()
+    ), "a refusal without a hook target summary still runs the declared gate"
     message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
     assert "origin rejected the push as non-fast-forward" in message
     assert "reconcile the stale publish branch" in message
@@ -607,6 +614,26 @@ def test_an_unreachable_origin_is_named_after_the_push_marker(tmp_path: Path) ->
     message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
     assert "origin could not be reached" in message
     assert "stale publish branch" not in message
+    assert refused.draft_created is False
+
+
+def test_an_authentication_push_refusal_from_the_path_stub_stays_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """A recorded authentication refusal is never mistaken for a repairable gate failure."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    refused = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        push_refusal="fatal: Authentication failed for 'https://example.invalid/repo.git'",
+    )
+
+    assert refused.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in refused.result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in refused.result.stderr
+    brief = run / ".git" / "livespec-publication" / "livespec-refresh-repair-brief"
+    assert not brief.exists()
     assert refused.draft_created is False
 
 

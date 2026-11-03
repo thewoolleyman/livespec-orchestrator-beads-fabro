@@ -49,6 +49,8 @@ name the live run's own counters.
 from __future__ import annotations
 
 import os
+import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -357,8 +359,32 @@ def _publish_draft_script(*, check_suite: str) -> str:
     )
 
 
+def _push_refusal_bin(*, world: _World, refusal: str) -> Path:
+    """Put a git wrapper on PATH that refuses only the publication push."""
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = world.clone.parent / "push-refusal-bin"
+    bin_dir.mkdir(exist_ok=True)
+    git = bin_dir / "git"
+    _ = git.write_text(
+        "#!/bin/sh\n"
+        'if test "$1" = push; then\n'
+        f"    printf '%s\\n' {shlex.quote(refusal)} >&2\n"
+        "    exit 1\n"
+        "fi\n"
+        f'exec {shlex.quote(real_git)} "$@"\n',
+        encoding="utf-8",
+    )
+    git.chmod(0o755)
+    return bin_dir
+
+
 def _run_publish_draft(
-    *, world: _World, check_suite: str = "true", extra_env: dict[str, str] | None = None
+    *,
+    world: _World,
+    check_suite: str = "true",
+    extra_env: dict[str, str] | None = None,
+    push_refusal: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute the shipped `publish_draft` bytes in this world's clone.
 
@@ -375,8 +401,11 @@ def _run_publish_draft(
     _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
         record_file_program_source(), encoding="utf-8"
     )
+    push_refusal_path = ""
+    if push_refusal is not None:
+        push_refusal_path = f"{_push_refusal_bin(world=world, refusal=push_refusal)}{os.pathsep}"
     env = {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "PATH": f"{push_refusal_path}/usr/local/bin:/usr/bin:/bin",
         "HOME": str(world.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
@@ -704,6 +733,50 @@ def test_a_refreshed_head_the_gate_rejects_is_restored_and_repaired(tmp_path: Pa
     assert fields.get("refresh-target") == advanced
     assert "check-coverage-refused" in (fields.get("failed-gate-targets") or "")
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+
+def test_a_recorded_pre_push_refusal_repairs_without_rerunning_the_declared_gate(
+    tmp_path: Path,
+) -> None:
+    """A hook's target summary is enough evidence for the refresh-repair route."""
+    world, janitor_head, advanced = _clean_refresh_world(root=tmp_path)
+    gate_trace = tmp_path / "declared-gate-ran"
+    refusal = "\n".join(
+        (
+            "lefthook pre-push refused the refreshed head",
+            "Failed targets (2):",
+            "  - check-per-file-coverage",
+            "  - check-coverage",
+        )
+    )
+    check_suite = f"sh -c 'printf declared-gate-ran > {shlex.quote(str(gate_trace))}; exit 1'"
+
+    result = _run_publish_draft(
+        world=world,
+        check_suite=check_suite,
+        push_refusal=refusal,
+    )
+    fields = _brief_fields(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert not gate_trace.exists(), "the hook summary must avoid a second declared-gate run"
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
+    assert not (world.clone / ".git" / "MERGE_HEAD").exists()
+    assert world.remote_head(ref=_BRANCH) == ""
+    assert fields.get("stage") == "publish_draft"
+    assert fields.get("pre-refresh-head") == janitor_head
+    assert fields.get("refresh-target") == advanced
+    targets = fields.get("failed-gate-targets") or ""
+    assert "check-per-file-coverage" in targets
+    assert "check-coverage" in targets
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+    classifier = _run_refresh_repair(world=world)
+    assert classifier.returncode == 0, classifier.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
+    assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
 
 
 def _refuse_commit_signing(*, world: _World) -> None:
