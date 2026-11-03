@@ -129,6 +129,7 @@ for argument in "$@"; do
             exit "${STUB_PREFLIGHT_EXIT:-0}"
             ;;
         dispatcher.py)
+            sleep "${STUB_CRED_SLEEP:-0}"
             printf 'stub: the Claude credential is usable (HTTP 200)\n'
             exit 0
             ;;
@@ -460,7 +461,9 @@ if ! wait_for_line "$LATER_LOG" "hold file present" 30; then
     fail "the later-ticket launcher never parked on the hold file"
     tail -8 "$LATER_LOG" >&2
 fi
-ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-earlier > "$EARLIER_LOG" 2>&1 &
+# The older launcher's credential probe is slow, so a younger ticket that could take the mutex once
+# the older launch has bound its count would launch first.
+STUB_CRED_SLEEP=4 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-earlier > "$EARLIER_LOG" 2>&1 &
 earlier_pid=$!
 if wait_for_line "$LATER_LOG" "queued behind an older gmktec ticket" 30; then
     pass "the later ticket queues behind the older one"

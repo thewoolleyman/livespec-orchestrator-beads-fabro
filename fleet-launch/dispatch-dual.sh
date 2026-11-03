@@ -48,7 +48,7 @@ INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 GMK_Q=$FLEET_LAUNCH_GMK_QUEUE_DIR
 GMK_LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
-ticket=""; lock=""; marker=""; FLEET_CAP=0; preflight_evaluated=0
+ticket=""; ticket_early=""; lock=""; marker=""; FLEET_CAP=0; preflight_evaluated=0
 gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=unknown; gmk_pressure=unknown
 mkdir -p "$OUT"
 
@@ -222,9 +222,12 @@ take_mutex() {
   while [ $(( $(date +%s) - queued )) -lt "$FLEET_LAUNCH_ABANDON_S" ]; do
     if [ -d "$l" ] && holder_dead "$l"; then echo "$(date -u +%T) dead holder on $l: $(cat "$l/holder" 2>/dev/null); removing"; rm -f "$l/holder"; rmdir "$l" 2>/dev/null; fi
     if [ ! -d "$l" ] && [ "$(oldest_live_ticket "$q")" = "$ticket" ] && mkdir "$l" 2>/dev/null; then
-      # An EARLY ticket is kept while the lock is held: if bind_count then fails, the launcher keeps its
-      # FIFO place instead of polling ticketless. The ticket is dropped only once the launch binds.
-      lock="$l"; echo "owner=$SEAT pid=$$ item=$ITEM at=$(date -u +%FT%TZ)" > "$l/holder"; [ -n "$early" ] || drop_ticket; return 0
+      # The ticket is kept while the lock is held and past its release, so a younger ticket cannot take
+      # the mutex while this launch is still in its credential probe and ready-set re-check. It is dropped
+      # once the drive process is started. An EARLY ticket also survives a failed bind_count, so the
+      # launcher keeps its FIFO place instead of polling ticketless.
+      ticket_early=$early
+      lock="$l"; echo "owner=$SEAT pid=$$ item=$ITEM at=$(date -u +%FT%TZ)" > "$l/holder"; return 0
     fi
     sleep 10
   done
@@ -297,8 +300,9 @@ while [ -z "$target" ]; do
       echo "$(date -u +%T) mi-homelab green (live=$hl_live fleet=$fleet): queue for the gmktec mutex"
       if take_mutex "$GMK_Q" "$GMK_LOCK"; then
         taken=$(date +%s)
-        if bind_count mi-homelab && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then drop_ticket; target=mi-homelab; break; fi
+        if bind_count mi-homelab && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then target=mi-homelab; break; fi
         [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
+        [ -n "$ticket_early" ] || drop_ticket
         echo "$(date -u +%T) under the gmktec mutex: mi-homelab no longer green (hl=$hl_live fleet=$fleet): release"; release_lock
       fi
     else echo "$(date -u +%T) mi-homelab not green: live=$hl_live cap=$FLEET_LAUNCH_HL_CAP"; fi
@@ -308,8 +312,9 @@ while [ -z "$target" ]; do
     echo "$(date -u +%T) gmktec green (live=$gmk_live hl=$hl_live idle=$gmk_idle pressure=$gmk_pressure threshold=$FLEET_LAUNCH_GMK_FACTORY_PRESSURE_THRESHOLD fleet=$fleet): queue for the gmktec mutex"
     if take_mutex "$GMK_Q" "$GMK_LOCK"; then
       taken=$(date +%s)
-      if bind_count petri && gmk_green; then drop_ticket; target=petri; break; fi
+      if bind_count petri && gmk_green; then target=petri; break; fi
       [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
+      [ -n "$ticket_early" ] || drop_ticket
       echo "$(date -u +%T) under the gmktec mutex: no longer green (gmktec=$gmk_live fleet=$fleet): release"; release_lock
     fi
     sleep "$FLEET_LAUNCH_POLL_S"; continue
@@ -351,6 +356,7 @@ if [ -n "${RELEASE_BLOCKED:-}" ]; then
 fi
 (cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "impl:$ITEM" --invoker "claude:$SEAT" --json) > "$OUT/$ITEM-r267.json" 2>"$OUT/$ITEM-r267.stderr" &
 drive_pid=$!
+drop_ticket
 if [ -n "${CAPTURE_NULL:-}" ]; then
   # Watch for the first fabro run of THIS item and check that its argv names the expected server.
   while kill -0 "$drive_pid" 2>/dev/null; do
