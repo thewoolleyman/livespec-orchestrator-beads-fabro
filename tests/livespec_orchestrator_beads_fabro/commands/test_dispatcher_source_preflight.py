@@ -30,6 +30,20 @@ class _Runner:
         _ = (cwd, timeout_seconds, env, stdin)
         key = tuple(argv[1:])
         self.calls.append(key)
+        if key[:2] == ("for-each-ref", "--contains"):
+            head = key[2]
+            inventory = self.results[
+                ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin")
+            ]
+            containing = [
+                ref
+                for ref in inventory.stdout.splitlines()
+                if self.results.get(
+                    ("merge-base", "--is-ancestor", head, ref), _result(exit_code=1)
+                ).exit_code
+                == 0
+            ]
+            return _result(stdout="\n".join(containing) + ("\n" if containing else ""))
         return self.results[key]
 
 
@@ -42,6 +56,7 @@ def _base_results() -> dict[tuple[str, ...], CommandResult]:
         ("rev-parse", "--is-inside-work-tree"): _result(stdout="true\n"),
         ("rev-parse", "HEAD"): _result(stdout="abc123\n"),
         ("rev-parse", "--abbrev-ref", "HEAD"): _result(stdout="master\n"),
+        ("symbolic-ref", "--short", "refs/remotes/origin/HEAD"): _result(stdout="origin/master\n"),
         ("push", "--dry-run", "origin", "HEAD:master"): _result(
             exit_code=1,
             stderr="livespec: refusing commit/push at primary checkout; use a worktree\n",
@@ -302,7 +317,14 @@ def test_preflight_records_the_ref_that_actually_contains_the_pinned_source_head
         == hashlib.sha256(b"origin/unrelated\norigin/containing").hexdigest()
     )
     assert "origin_refs" not in outcome.record
-    assert ("merge-base", "--is-ancestor", "abc123", "origin/containing") in runner.calls
+    assert (
+        "for-each-ref",
+        "--contains",
+        "abc123",
+        "--format=%(refname:short)",
+        "refs/remotes/origin",
+    ) in runner.calls
+    assert not any(call[0] == "merge-base" for call in runner.calls)
 
 
 def test_unreadable_head_cannot_produce_an_unpinned_containment_witness(*, tmp_path: Path) -> None:
