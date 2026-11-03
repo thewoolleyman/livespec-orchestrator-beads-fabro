@@ -18,4 +18,9 @@ else
     echo "WARNING: shellcheck not found; skipping shell lint (the hermetic harness still runs)" >&2
 fi
 
-bash fleet-launch/test/run-tests.sh
+if [ "$#" -gt 1 ]; then
+    echo "usage: just-check-fleet-launch.sh [scenario297]" >&2
+    exit 2
+fi
+
+bash fleet-launch/test/run-tests.sh "$@"
