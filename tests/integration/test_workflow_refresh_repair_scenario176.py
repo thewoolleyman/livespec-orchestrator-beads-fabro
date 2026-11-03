@@ -350,6 +350,22 @@ def _refuse_every_push(*, world: _World) -> None:
     hook.chmod(0o755)
 
 
+def _refuse_refresh_merge_commit(*, world: _World) -> None:
+    """Make the commit created by a clean merge refresh fail in its hook."""
+    hook = world.clone / ".git" / "hooks" / "pre-merge-commit"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    _ = hook.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' 'lefthook pre-merge-commit refused the refresh commit' >&2\n"
+        "printf '%s\\n' 'Failed targets (2):' >&2\n"
+        "printf '%s\\n' '  - check-per-file-coverage' >&2\n"
+        "printf '%s\\n' '  - check-coverage' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+
 def _publish_draft_script(*, check_suite: str) -> str:
     graph = parse_dot_graph(text=_graph_text())
     assert not isinstance(graph, str), graph
@@ -777,6 +793,35 @@ def test_a_recorded_pre_push_refusal_repairs_without_rerunning_the_declared_gate
     assert classifier.returncode == 0, classifier.stderr
     assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
     assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
+
+
+def test_a_hook_refused_merge_refresh_is_restored_and_routed_to_repair(tmp_path: Path) -> None:
+    """A hook refusal of the refresh's own merge commit is repairable evidence."""
+    world, janitor_head, advanced = _clean_refresh_world(root=tmp_path)
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    _refuse_refresh_merge_commit(world=world)
+
+    result = _run_publish_draft(world=world)
+    fields = _brief_fields(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
+    assert not (world.clone / ".git" / "MERGE_HEAD").exists()
+    assert fields.get("stage") == "publish_draft"
+    assert fields.get("pre-refresh-head") == janitor_head
+    assert fields.get("refresh-target") == advanced
+    assert "check-per-file-coverage" in (fields.get("failed-hook-targets") or "")
+    assert "check-coverage" in (fields.get("failed-hook-targets") or "")
+    assert "lefthook pre-merge-commit refused the refresh commit" in (
+        fields.get("hook-output-last-80-lines") or ""
+    )
+
+    classifier = _run_refresh_repair(world=world)
+    assert classifier.returncode == 0, classifier.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
 
 
 def _refuse_commit_signing(*, world: _World) -> None:
