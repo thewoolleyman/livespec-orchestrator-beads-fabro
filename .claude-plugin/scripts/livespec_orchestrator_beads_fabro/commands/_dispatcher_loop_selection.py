@@ -258,7 +258,7 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         # NOT the post-merge valve: nothing merged and no pull request exists, so the
         # item rests in `acceptance` with its claim released and the route to its
         # Proof of Done named, rather than being accepted on a pass over no change.
-        rest_already_satisfied(repo=repo, outcome=outcome, journal=journal)
+        outcome = rest_already_satisfied(repo=repo, outcome=outcome, journal=journal)
     elif outcome.status == "green" and outcome.stage != MERGE_HELD_STAGE and args.close_on_merge:
         outcome = outcome_after_acceptance(
             outcome=outcome,

@@ -4,12 +4,14 @@ A run that ended as already satisfied (`_dispatcher_already_satisfied`) merged n
 and opened no pull request, so the post-merge acceptance valve does not apply. The item
 rests in `acceptance` with its factory claim released, where `needs-attention` surfaces
 it, and one ledger comment names the route by which its Proof of Done can still be
-obtained. Every ledger failure is journaled and none raises: the run itself finished, so
-an unwritable ledger must not turn a correct no-op into a crashed dispatch.
+obtained. No ledger failure raises, and each is journaled. A refused rest leaves the item
+active and claimed, so it is reported as a failed outcome at its own stage rather than as
+the green ending; a refused comment only loses the route text, so the rest still stands.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro import store
@@ -60,8 +62,12 @@ def rest_already_satisfied(
     repo: Path,
     outcome: DispatchOutcome,
     journal: JournalFile,
-) -> None:
-    """Journal the ending, release the claim and rest the item in `acceptance`."""
+) -> DispatchOutcome:
+    """Journal the ending, release the claim and rest the item in `acceptance`.
+
+    RETURNS the outcome the dispatch reports: the ending itself when the item rested, and a
+    failed outcome at `already-satisfied-rest-failed` when the rest could not be written.
+    """
     journal.append(
         record={
             "stage": ALREADY_SATISFIED_STAGE,
@@ -91,7 +97,16 @@ def rest_already_satisfied(
         _ = write_stderr(
             text=f"already-satisfied: {outcome.work_item_id} could not be rested in acceptance\n"
         )
-        return
+        return replace(
+            outcome,
+            status="failed",
+            stage=ALREADY_SATISFIED_REST_FAILED_STAGE,
+            detail=(
+                f"already satisfied, but {outcome.work_item_id} could not be rested in "
+                f"acceptance, so it is still active and claimed: {rested.error}; "
+                f"{outcome.detail}"
+            ),
+        )
     commented = attempt(
         action=lambda: store.append_work_item_comment(
             path=config, work_item_id=outcome.work_item_id, body=outcome.detail
@@ -106,3 +121,4 @@ def rest_already_satisfied(
                 "error": str(commented.error),
             }
         )
+    return outcome

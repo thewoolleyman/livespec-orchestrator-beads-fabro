@@ -198,8 +198,15 @@ def _stub_ledger(*, monkeypatch: pytest.MonkeyPatch, ledger: _Ledger) -> None:
 
 
 def _dispositions(*, tmp_path: Path, outcome: DispatchOutcome) -> list[dict[str, object]]:
+    _revised, records = _revised_and_dispositions(tmp_path=tmp_path, outcome=outcome)
+    return records
+
+
+def _revised_and_dispositions(
+    *, tmp_path: Path, outcome: DispatchOutcome
+) -> tuple[DispatchOutcome, list[dict[str, object]]]:
     journal = JournalFile(path=tmp_path / "journal.jsonl")
-    _dispatcher_loop_selection.post_run_dispositions(
+    revised = _dispatcher_loop_selection.post_run_dispositions(
         args=argparse.Namespace(close_on_merge=True),
         repo=tmp_path,
         item=_item(),
@@ -210,7 +217,7 @@ def _dispositions(*, tmp_path: Path, outcome: DispatchOutcome) -> list[dict[str,
         token_supplier=lambda: "token",
     )
     text = journal.path.read_text(encoding="utf-8")
-    return [json.loads(line) for line in text.splitlines()]
+    return revised, [json.loads(line) for line in text.splitlines()]
 
 
 def test_a_declared_already_satisfied_run_ends_without_reaching_the_pull_request_lookup(
@@ -277,6 +284,36 @@ def test_a_refused_rest_is_journaled_and_does_not_raise(
     stages = [str(record["stage"]) for record in records]
     assert "already-satisfied-rest-failed" in stages
     assert ledger.comments == []
+
+
+def test_a_refused_rest_is_reported_as_a_failed_outcome_not_the_green_ending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = _Ledger(fail_status=True)
+    _stub_ledger(monkeypatch=monkeypatch, ledger=ledger)
+    outcome, _runner = _dispatch(repo=tmp_path, fabro_stderr=_LINE)
+
+    revised, records = _revised_and_dispositions(tmp_path=tmp_path, outcome=outcome)
+
+    assert revised.status == "failed"
+    assert revised.stage == "already-satisfied-rest-failed"
+    assert "bd-ib-1" in revised.detail
+    assert "still active and claimed" in revised.detail
+    journaled = next(record for record in records if record["stage"] == "outcome")
+    assert journaled["outcome"]["status"] == "failed"  # type: ignore[index]
+
+
+def test_a_rested_item_keeps_the_green_ending_as_its_reported_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = _Ledger()
+    _stub_ledger(monkeypatch=monkeypatch, ledger=ledger)
+    outcome, _runner = _dispatch(repo=tmp_path, fabro_stderr=_LINE)
+
+    revised, _records = _revised_and_dispositions(tmp_path=tmp_path, outcome=outcome)
+
+    assert revised.status == "green"
+    assert revised.stage == "already-satisfied"
 
 
 def test_a_refused_comment_is_journaled_and_the_item_still_rests(
