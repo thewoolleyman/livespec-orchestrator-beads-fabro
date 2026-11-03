@@ -389,6 +389,7 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     "reclassified_turns",
     "remedy",
     "step",
+    "provider_refusal",
     # The acceptance verdict, which only an outcome that reached the post-merge
     # acceptance valve carries. Dropping it when unset keeps every pre-merge and
     # failed outcome's payload the shape it has always been.

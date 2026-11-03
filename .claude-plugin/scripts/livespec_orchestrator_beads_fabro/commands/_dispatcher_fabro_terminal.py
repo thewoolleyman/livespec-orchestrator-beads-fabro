@@ -29,6 +29,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outco
     provider_limit_release_outcome,
     reclassified_turns,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_refusal import (
+    provider_refusal_detail,
+    provider_refusal_from_turns,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted import (
     recapture_exhausted_outcome,
 )
@@ -173,7 +177,23 @@ def _terminal_outcome(
             client_text=client_text,
         )
     if terminated is not None:
-        return terminated
+        refusal = (
+            None
+            if inspect is None
+            else provider_refusal_from_turns(plan=plan, payload=inspect.payload)
+        )
+        return (
+            terminated
+            if refusal is None
+            else replace(
+                terminated,
+                detail=f"{terminated.detail}; {provider_refusal_detail(refusal=refusal)}",
+                fabro_failure_cause=refusal.message,
+                fabro_failure_category="permanent",
+                fabro_failure_signature="provider-refusal",
+                provider_refusal=refusal,
+            )
+        )
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="cancelled" if cancelled else "failed",

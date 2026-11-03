@@ -18,6 +18,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_class
     ProviderLimitRelease,
     ReclassifiedTurn,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_refusal import (
+    ProviderRefusal,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
@@ -203,6 +206,10 @@ class DispatchOutcome:
     # one of them ended the run. `None` rather than empty when none matched, so
     # the journal payload drops it with every other unset observation.
     reclassified_turns: tuple[ReclassifiedTurn, ...] | None = None
+    # A structured provider error embedded in a turn the engine booked as
+    # succeeded. It is distinct from a provider usage limit: a model refusal
+    # must surface as the run's cause without claiming the allowance was spent.
+    provider_refusal: ProviderRefusal | None = None
     # The merged-reconcile ending this run took, if it took one. Carried on the
     # outcome because the sandbox that printed it is gone by the time the
     # acceptance pass needs the merged head, and a record of what the ending

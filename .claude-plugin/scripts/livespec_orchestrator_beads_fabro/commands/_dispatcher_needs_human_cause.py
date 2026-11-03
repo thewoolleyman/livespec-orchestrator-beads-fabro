@@ -180,6 +180,7 @@ def needs_human_cause_body(*, outcome: DispatchOutcome) -> str:
         *_terminal_reason(outcome=outcome),
         *_preservation(outcome=outcome),
         *_provider(outcome=outcome),
+        *_provider_refusal(outcome=outcome),
         "",
         _decision(outcome=outcome),
         "",
@@ -324,6 +325,20 @@ def _provider(*, outcome: DispatchOutcome) -> tuple[str, ...]:
     if outcome.provider_usage_limit_provider is None:
         return ()
     return (f"provider ceiling: {outcome.provider_usage_limit_provider} refused this run",)
+
+
+def _provider_refusal(*, outcome: DispatchOutcome) -> tuple[str, ...]:
+    """Name the refused ACP adapter and model beside the embedded provider cause."""
+    refusal = outcome.provider_refusal
+    if refusal is None:
+        return ()
+    model = refusal.model or "(model not recorded)"
+    return (
+        f"provider refusal: {_safe(text=refusal.message)}",
+        f"refused ACP node: {refusal.node}",
+        f"refused adapter: {refusal.adapter}",
+        f"refused model: {model}",
+    )
 
 
 def _decision(*, outcome: DispatchOutcome) -> str:
