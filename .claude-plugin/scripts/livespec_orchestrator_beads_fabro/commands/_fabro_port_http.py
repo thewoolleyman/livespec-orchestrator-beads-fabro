@@ -246,6 +246,20 @@ class FabroHttpPort:
             timeout_seconds=timeout_seconds,
         )
 
+    def stages(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+        """Read one run's compact stage projection by its id.
+
+        The watchdog needs each stage's lifecycle state, not the run's full
+        record or event history.  This endpoint provides that projection in
+        one by-id request, so a quiet bound poll has no second Fabro read.
+        """
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/stages",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
     def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
         """Read one run's whole record -- the projection `fabro inspect` prints.
 
