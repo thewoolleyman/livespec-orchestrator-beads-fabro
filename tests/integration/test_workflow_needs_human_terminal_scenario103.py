@@ -141,14 +141,7 @@ def test_every_other_former_gate_edge_targets_needs_human() -> None:
     lines = _code_lines(_dot())
     for source in _DIRECT_NEEDS_HUMAN_SOURCES:
         assert any(re.match(rf"^{source}\s*->\s*needs_human\b", line) for line in lines), source
-    assert (
-        'implement -> implement_amendment_route [label="Blocked", condition="outcome=failed"]'
-        in lines
-    )
-    assert (
-        'implement_amendment_route -> needs_human [label="Definition-of-Done amendment", condition="outcome=failed"]'
-        in lines
-    )
+    assert 'green -> needs_human [label="Blocked", condition="outcome=failed"]' in lines
     assert 'review -> needs_human [label="unmatched review outcome"]' in lines
     assert 'disposition -> needs_human [label="unmatched disposition outcome"]' in lines
 

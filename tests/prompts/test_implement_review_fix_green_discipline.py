@@ -21,7 +21,7 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_STAGES = ("implement", "review_fix")
+_STAGES = ("review_fix",)
 
 
 def _stage_prompts() -> dict[str, Path]:
@@ -58,7 +58,7 @@ def test_review_fix_requires_one_test_file_and_no_product_file_at_red() -> None:
     assert "stage exactly one test file and no product file" in prompt
 
 
-def test_both_prompts_require_touched_tests_to_pass_before_green() -> None:
+def test_review_fix_requires_touched_tests_to_pass_before_green() -> None:
     """A Green commit is gated on every test file the change touches."""
     for stage in _STAGES:
         assert (
@@ -67,7 +67,7 @@ def test_both_prompts_require_touched_tests_to_pass_before_green() -> None:
         ) in _prompt_text(stage=stage)
 
 
-def test_both_prompts_require_pinning_tests_with_prompt_or_overlay_edits() -> None:
+def test_review_fix_requires_pinning_tests_with_prompt_or_overlay_edits() -> None:
     """Prompt and overlay edits carry their pinning tests in the same commit."""
     for stage in _STAGES:
         assert (

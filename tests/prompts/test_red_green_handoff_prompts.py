@@ -30,6 +30,11 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
     red = _prompt(path=_RED_PROMPT)
     green = _prompt(path=_GREEN_PROMPT)
 
+    assert red.index(_HANDOFF_COMMAND) < red.index(
+        "Decide whether the Definition of Done"
+    ), "the red prompt must resolve the handoff before deciding"
+    assert "read it in full before deciding or changing anything" in red
+
     for phrase in (
         "Write one failing test for one Definition of Done assertion.",
         "Run only that test and capture its failure output.",
@@ -54,9 +59,13 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         "## green",
         "what changed",
         "which tests ran",
-        "declared `test-wrong` outcome and its reason",
+        '{"definition_of_done_complete": true}',
+        '{"definition_of_done_complete": false}',
+        "read as incomplete",
     ):
         assert phrase in green, f"the green prompt omits {phrase!r}"
+
+    assert "test-wrong" not in green
 
     for prompt in (red, green):
         assert "append" in prompt, "the prompt does not direct an append"

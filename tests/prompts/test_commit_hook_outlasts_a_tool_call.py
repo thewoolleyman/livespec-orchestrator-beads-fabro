@@ -61,7 +61,7 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_COMMITTING_STAGE_NODES = ("implement", "fix")
+_COMMITTING_STAGE_NODES = ("fix",)
 
 _HEADING = "## A commit hook outlasts a tool call — a return is not a verdict"
 # One regex rather than a find-the-next-heading walk: the lookahead ends the
@@ -178,8 +178,8 @@ def test_the_waiting_direction_holds_for_a_commit_runner_s_bounded_waits(node: s
         assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
 
 
-def test_the_fix_prompt_carries_the_same_directions_as_the_implement_prompt() -> None:
-    """One wording, not two: a per-prompt paraphrase drifts and cannot be audited."""
+def test_the_only_agent_stage_that_commits_carries_the_waiting_directions() -> None:
+    """The command nodes, not Red or Green, own implement commits."""
     distinct = {_section(node=node) for node in _COMMITTING_STAGE_NODES}
 
     assert len(distinct) == 1, (
