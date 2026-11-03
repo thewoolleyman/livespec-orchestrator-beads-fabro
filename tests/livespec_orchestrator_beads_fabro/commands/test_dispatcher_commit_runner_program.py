@@ -111,6 +111,12 @@ def _gone(group: int) -> bool:
     return False
 
 
+def _reused_group(group: int, expected_start_ticks: int | None = None) -> bool:
+    """A numeric process group is live only until its original leader is replaced."""
+    assert group == 4242
+    return expected_start_ticks is None
+
+
 def _last_report(capsys: pytest.CaptureFixture[str]) -> dict[str, object]:
     return json.loads(capsys.readouterr().out.strip().splitlines()[-1])
 
@@ -178,6 +184,18 @@ def test_a_running_record_whose_processes_are_gone_reads_as_no_verdict(
 
     assert report[REPORT_STATE_KEY] == "no-verdict"
     assert report[REPORT_EXIT_CODE_KEY] is None
+
+
+def test_a_reused_process_group_never_keeps_a_killed_run_running(tmp_path: Path) -> None:
+    """A loaded host may reuse a killed worker's numeric group before the next wait."""
+    program = _program(tmp_path)
+    program["group_alive"] = _reused_group
+    path = _record(tmp_path, _RUN_ID, {"state": "running", "group_start_ticks": 17}, 4242)
+
+    assert (
+        program["current_state"](path, {"state": "running", "group_start_ticks": 17})
+        == "no-verdict"
+    )
 
 
 def test_a_running_record_still_in_its_launch_window_reads_as_running(tmp_path: Path) -> None:
