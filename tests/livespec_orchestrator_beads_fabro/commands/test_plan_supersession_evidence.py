@@ -582,7 +582,7 @@ def test_disposed_evidence_requires_a_readable_status_and_labels(
     }
 
     observed = evidence_module.disposed_evidence(
-        config=_config(repo=tmp_path), required_result=required
+        config=_config(repo=tmp_path), epic_id=_EPIC, required_result=required
     )
 
     if expected is None:
@@ -664,7 +664,9 @@ def test_evidence_reader_rejects_an_incomplete_claim_and_malformed_disposed_resu
     missing = supersession_evidence(
         config=_config(repo=repo), epic_id=_EPIC, supersession=incomplete, head=head
     )
-    malformed = evidence_module.disposed_evidence(config=_config(repo=repo), required_result={})
+    malformed = evidence_module.disposed_evidence(
+        config=_config(repo=repo), epic_id=_EPIC, required_result={}
+    )
     disposed_evidence = supersession_evidence(
         config=_config(repo=repo), epic_id=_EPIC, supersession=disposed, head=head
     )
