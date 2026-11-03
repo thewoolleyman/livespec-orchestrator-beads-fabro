@@ -22,6 +22,9 @@ from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import CAP_
 from livespec_orchestrator_beads_fabro.commands._drive_release_spec_tier_valve import (
     RELEASE_SPEC_TIER_ACTION,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_relink_spec_tier_valve import (
+    RELINK_SPEC_TIER_ACTION,
+)
 
 __all__: list[str] = [
     "ACTION_WITH_ITEM_PARTS",
@@ -55,7 +58,11 @@ VALUE_ALLOWLISTS = {
 # canonical reasons, and an id rejected here reaches the operator as the generic
 # "Unsupported human valve action id." — the one message that cannot tell a
 # typo'd reason from a typo'd verb.
-_UNGRADED_VALUE_ACTIONS: frozenset[str] = CAP_ACTION_VERBS | {"move", FACTORY_SAFETY_ACTION}
+_UNGRADED_VALUE_ACTIONS: frozenset[str] = CAP_ACTION_VERBS | {
+    "move",
+    FACTORY_SAFETY_ACTION,
+    RELINK_SPEC_TIER_ACTION,
+}
 
 
 def is_human_valve_action(*, action_id: str) -> bool:
@@ -77,6 +84,7 @@ def is_human_valve_action(*, action_id: str) -> bool:
             "set-merge-hold:",
             "move:",
             f"{RELEASE_SPEC_TIER_ACTION}:",
+            f"{RELINK_SPEC_TIER_ACTION}:",
         )
     )
 
