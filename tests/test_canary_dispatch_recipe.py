@@ -220,7 +220,7 @@ def test_the_recipe_refuses_an_undeclared_factory_before_filing_anything() -> No
     assert "hp-candidate is not a factory this repository declares" in completed.stderr
     # The declared set is named, because a refusal an operator cannot act on
     # sends them to the config file to work out what they should have typed.
-    assert "declared factories: petri" in completed.stderr
+    assert "declared factories: candidate, petri" in completed.stderr
     # Nothing was filed: the refusal says so, and the filing narration that the
     # successful path prints is absent.
     assert "nothing was filed and nothing was dispatched" in completed.stderr
