@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attri
     FactoryRunInventory,
     attributed_runs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rm_pacing import DeletionPacer
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 
 __all__: list[str] = [
@@ -82,6 +83,8 @@ def collect_closed_ended_runs(
     problem stay visible for diagnosis and for the next periodic pass to retry.
     A targeted inventory collects only its own item's runs.
     """
+    has_running_run = any(run.status_kind == "running" for run in inventory.runs)
+    pacer = DeletionPacer(repo=port.cwd)
     for row in attributed_runs(inventory=inventory, include_terminal=True):
         if inventory.only_work_item_id not in (None, row.work_item_id):
             continue
@@ -97,6 +100,15 @@ def collect_closed_ended_runs(
             journal=journal,
             work_item_id=row.work_item_id,
             run_id=row.run.run_id,
+        ):
+            continue
+        if not pacer.permit(
+            factory=inventory.factory_name,
+            run_id=row.run.run_id,
+            caller="ended-run-collection",
+            has_running_run=has_running_run,
+            collection=True,
+            journal=journal,
         ):
             continue
         removed = port.rm(

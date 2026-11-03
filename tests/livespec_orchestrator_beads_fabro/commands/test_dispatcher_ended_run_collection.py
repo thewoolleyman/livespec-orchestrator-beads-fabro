@@ -99,7 +99,6 @@ def test_collects_only_ended_runs_of_closed_items_and_journals_the_provider_resu
                 _run(run_id="01CLOSED", status_kind="succeeded"),
                 _run(run_id="01BLOCKED", status_kind="succeeded"),
                 _run(run_id="01CLEARANCE", status_kind="succeeded"),
-                _run(run_id="01LIVE", status_kind="running"),
             ),
             statuses={"bd-ib-closed": "done", "bd-ib-blocked": "blocked"},
             stamps=(("01CLOSED", "bd-ib-closed"), ("01BLOCKED", "bd-ib-blocked")),
@@ -234,6 +233,36 @@ def test_targeted_pass_collects_only_its_own_items_closed_runs(tmp_path: Path) -
 
     assert runner.calls == [["fabro", "rm", "01MINE", "--server", "https://factory.test"]]
     assert [record["run_id"] for record in journal.records] == ["01MINE"]
+
+
+def test_busy_factory_defers_each_closed_ended_run_until_the_factory_is_idle(
+    tmp_path: Path,
+) -> None:
+    runner = _Runner()
+    journal = _Journal()
+
+    collect_closed_ended_runs(
+        inventory=_inventory(
+            runs=(
+                _run(run_id="01ENDED-A", status_kind="succeeded"),
+                _run(run_id="01ENDED-B", status_kind="failed"),
+                _run(run_id="01RUNNING", status_kind="running"),
+            ),
+            statuses={"bd-ib-a": "done", "bd-ib-b": "closed"},
+            stamps=(("01ENDED-A", "bd-ib-a"), ("01ENDED-B", "bd-ib-b")),
+        ),
+        port=_port(tmp_path=tmp_path, runner=runner),
+        journal=journal,
+        dry_run=False,
+    )
+
+    assert runner.calls == []
+    assert [
+        (record["stage"], record["run_id"], record["caller"]) for record in journal.records
+    ] == [
+        ("fabro-rm-deferred", "01ENDED-A", "ended-run-collection"),
+        ("fabro-rm-deferred", "01ENDED-B", "ended-run-collection"),
+    ]
 
 
 def _inventory(
