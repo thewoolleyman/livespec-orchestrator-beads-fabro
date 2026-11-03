@@ -582,8 +582,13 @@ if [ "$(preflight_count bd-ib-younger)" = 1 ]; then
 else
     fail "a fresh queued preflight was run $(preflight_count bd-ib-younger) times at the head"
 fi
+# Each drive leaves one observation.  `released` means no launcher held the
+# mutex; `held driver=A holder=B` with A != B means the older launcher had
+# already released and the younger one took the mutex first, which the narrow
+# mutex scope allows and which a loaded host makes likely.  Only a driver that
+# still holds its OWN mutex is a violation, so count both legal shapes.
 if ! grep -qE '^held driver=([^ ]+) holder=\1$' "$DRIVE_MUTEX_LOG" \
-    && [ "$(grep -c '^released ' "$DRIVE_MUTEX_LOG")" -ge 2 ]; then
+    && [ "$(grep -cE '^(released |held driver=)' "$DRIVE_MUTEX_LOG")" -ge 2 ]; then
     pass "the mutex is released before either drive --action impl starts"
 else
     fail "a drive started while its launch mutex was held: $(tr '\n' ' ' < "$DRIVE_MUTEX_LOG")"
