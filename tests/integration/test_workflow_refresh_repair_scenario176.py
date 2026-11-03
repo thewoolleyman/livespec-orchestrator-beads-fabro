@@ -685,6 +685,84 @@ def test_a_refreshed_head_the_gate_rejects_is_restored_and_repaired(tmp_path: Pa
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
 
 
+def _hook_refused_merge_refresh_world(*, root: Path) -> tuple[_World, str, str]:
+    """A refresh whose merge commit is refused after an earlier publish.
+
+    The initial publish makes the remote branch an ancestor of the run head, so
+    ``publish_draft`` preserves that ancestry with a merge instead of a rebase.
+    That is the shape in which the refresh itself creates a merge commit and the
+    repository's commit hook can refuse it.
+    """
+    world = _world(root=root)
+    published = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="published work\n",
+        subject="feat: publish the first run commit",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    janitor_head = _commit(
+        cwd=world.clone,
+        path=_OWNED_FILE,
+        text="work since publication\n",
+        subject="feat: add later run work",
+    )
+    assert janitor_head != published
+    advanced = _advance_default(world=world, path="default.txt", text="advanced default\n")
+    return world, janitor_head, advanced
+
+
+def _refuse_refresh_merge_commit(*, world: _World) -> None:
+    """Refuse the refresh merge with the aggregate hook's structured evidence."""
+    hook = world.clone / ".git" / "hooks" / "pre-merge-commit"
+    _ = hook.write_text(
+        "\n".join(
+            (
+                "#!/bin/sh",
+                "printf 'Failed targets (2):\\n' >&2",
+                "printf '  - check-lint\\n' >&2",
+                "printf '  - check-types\\n' >&2",
+                'i=1; while test "$i" -le 82; do printf \'hook detail %s\\n\' "$i" >&2; i=$((i + 1)); done',
+                "exit 1",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+
+def test_a_hook_refused_publish_draft_refresh_is_restored_and_repaired(
+    tmp_path: Path,
+) -> None:
+    """A hook-refused refresh carries targets and the final 80 hook-output lines.
+
+    A structured failed-target summary is positive evidence that the commit hook
+    itself refused the merge.  The deliberately long output makes the tail an
+    observable contract rather than a label: details 1 and 2 must be absent,
+    while the earliest detail is excluded and the latest is retained for the
+    fix turn.
+    """
+    world, janitor_head, advanced = _hook_refused_merge_refresh_world(root=tmp_path)
+    _refuse_refresh_merge_commit(world=world)
+
+    result = _run_publish_draft(world=world)
+    brief = world.state(name=_BRIEF_FILENAME)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "MERGE_HEAD").exists()
+    assert brief is not None
+    assert f"pre-refresh-head: {janitor_head}" in brief
+    assert f"refresh-target: {advanced}" in brief
+    assert "failed-hook-targets: check-lint check-types" in brief
+    assert "hook-output-last-80-lines:" in brief
+    assert "hook detail 2\n" not in brief
+    assert "hook detail 82\n" in brief
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+
 def _refuse_commit_signing(*, world: _World) -> None:
     """Make every commit a rebase would write fail, with NO path conflicted.
 
