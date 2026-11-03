@@ -602,6 +602,7 @@ def test_disposed_evidence_requires_a_readable_status_and_labels(
         ([{"id": _EPIC, "dependency_type": "parent-child"}], True),
         ([{"depends_on_id": "bd-ib-other", "type": "parent-child"}], False),
         ([{"depends_on_id": _EPIC, "type": "blocks"}], False),
+        (None, None),
         ("not-a-list", None),
         (["not-an-edge"], None),
         ([{"depends_on_id": 7, "type": "parent-child"}], None),
