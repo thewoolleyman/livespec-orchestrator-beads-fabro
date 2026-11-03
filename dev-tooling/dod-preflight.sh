@@ -29,6 +29,12 @@
 # reason to fix the tool, not to skip the check.
 set -euo pipefail
 
+# Tenant credential wrappers deliberately replace PATH.  Both host-judge CLIs
+# are operator-installed user tools, so restore their conventional directory
+# before the package resolves the configured candidate chain.
+PATH="$HOME/.local/bin:$PATH"
+export PATH
+
 item="${1:?usage: dod-preflight.sh <item-id> [<description-file>]}"
 override="${2:-}"
 repo_root=$(git rev-parse --show-toplevel)
@@ -47,38 +53,6 @@ if not paths:
 print(paths[0])
 PY
 ) || exit 2
-
-# EVERY candidate of the in-run gate's chain. Measured 2026-10-20 over five
-# PASS-then-refused items. A hard-coded `sonnet` here graded more leniently than
-# the gate's `acp_nodes.dod_gate` route (References and deliverable-policy
-# misses). And the admission session-headroom filter can skip the claude-acp
-# primary at dispatch time, so the gate then runs a FALLBACK (bd-ib-h7iaai: the
-# gate ran codex-acp gpt-5.6-terra while this script graded on claude-opus-5).
-# Which candidate a dispatch will select is not knowable here, so the judgement
-# runs on every candidate in the chain and passes only if all of them pass.
-#
-# IT NO LONGER REFUSES ON AN ABSENT `dispatcher.sandbox_capabilities` ARRAY. That
-# refusal was this script grading the capability question itself, which is the
-# rubric's to grade: the rubric resolves the set in its own order and reports
-# `sandbox-capabilities: unpublished` where neither source answers, and the node
-# grades by exactly that.
-routes=$(python3 - "$install_root" "$repo_root" <<'PY'
-import sys
-from pathlib import Path
-sys.path.insert(0, f"{sys.argv[1]}/scripts")
-sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
-from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
-block = dispatcher_block(cwd=Path(sys.argv[2]))
-# No entry means the workflow's built-in dod_gate default, its review_adapter.
-entry = (block.get("acp_nodes") or {}).get("dod_gate") or {
-    "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high"}
-for route in [entry, *(entry.get("fallbacks") or [])]:
-    if route.get("agent") not in ("claude-acp", "codex-acp") or not route.get("model"):
-        sys.exit(f"dod-preflight: acp_nodes.dod_gate candidate {route!r} is not one this host can run")
-    print(route["agent"], route["model"], route.get("effort") or "high")
-PY
-) || exit 2
-[ -n "$routes" ] || exit 2
 
 # THE WHOLE PROMPT, composed by the PACKAGE rather than assembled here:
 # `judgement_prompt` over `judgement_rubric` and `judgement_subject`, which is
@@ -203,116 +177,76 @@ if [ -s "$judgement_input.findings" ]; then
   exit 1
 fi
 
-# The claude leg authenticates as the account a dispatch would, through the
-# Dispatcher's own selector, not as whatever bare CLAUDE_CODE_OAUTH_TOKEN the
-# wrapper injected. Measured 2026-10-20: the bare token was the account at its
-# weekly limit while caam had selected another, so every claude leg exited 2
-# for a factory that was not exhausted (coordinator R324).
-claude_credential_env=$(python3 - "$install_root" <<'PY'
-import os, sys
-from pathlib import Path
-sys.path.insert(0, f"{sys.argv[1]}/scripts")
-sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
-from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
-    select_factory_credential,
-)
-choice = select_factory_credential(
-    environ=os.environ, home=Path.home(), warn=lambda line: print(f"dod-preflight: {line}", file=sys.stderr)
-)
-print(choice.env_name)
-PY
-) || exit 2
-
-judge_failure_cause() {
-  python3 - "$install_root" "$1" <<'FAILURE_PY'
+# Run through the host's shared candidate chain rather than invoking bare CLIs
+# here.  Besides preserving the configured Codex-first order, this keeps the
+# governing-heading, Definition-of-Done and reflector model bindings in one
+# resolver.  The legacy string form predates candidate metadata, so bridge its
+# recognisable Claude adapter into that resolver until the configuration is
+# migrated.
+set +e
+python3 - "$install_root" "$repo_root" "$judgement_input" <<'JUDGE_PY'
 import sys
 from pathlib import Path
 
 sys.path.insert(0, f"{sys.argv[1]}/scripts")
 sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 
-from livespec_orchestrator_beads_fabro.commands._fabro_port_permanent_failure import (
-    fabro_usage_limit_provider,
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import parse_adapter_string
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
+    dod_gate_candidates,
 )
-
-output = Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
-print(
-    "provider-limit"
-    if fabro_usage_limit_provider(causes=(output,)) is not None
-    else "judge-command-failed"
-)
-FAILURE_PY
-}
-
-status=0
-while read -r agent model effort; do
-  echo "=== dod-preflight candidate: $agent $model $effort"
-  rm -f "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.last"
-  if [ "$agent" = claude-acp ]; then
-    echo "dod-preflight: claude leg credential: $claude_credential_env"
-    [ -n "${!claude_credential_env:-}" ] || { echo "dod-preflight: $claude_credential_env is not set" >&2; exit 2; }
-    if CLAUDE_CODE_OAUTH_TOKEN="${!claude_credential_env}" \
-      claude -p --model "$model" --effort "$effort" --allowedTools "Read,Grep,Glob" \
-      < "$judgement_input" > "$judgement_input.judge" 2> "$judgement_input.stderr"; then
-      verdict=$(cat "$judgement_input.judge")
-    else
-      cat "$judgement_input.stderr" >> "$judgement_input.judge"
-      verdict=$(cat "$judgement_input.judge")
-      cause=$(judge_failure_cause "$judgement_input.judge") || cause=judge-command-failed
-      printf '%s\n' "$verdict"
-      echo "DID-NOT-RUN $cause $agent $model"
-      exit 2
-    fi
-  else
-    # Session hooks are disabled because this is a one-shot judgement, not a
-    # supervised session, and a Stop hook that blocks makes the model keep going
-    # past its verdict, so `-o` captures whatever it said last. Measured
-    # 2026-10-20 on livespec-dev-tooling-r6kagr: the candidate printed PASS, then
-    # livespec-driver-codex's supervisor completion gate blocked the stop on that
-    # repository's legacy non-JSON tmp/overseer markers, and the last message was
-    # a question, so the leg reported "no verdict" (coordinator R342 follow-up).
-    if codex exec -m "$model" -c "model_reasoning_effort=$effort" -s read-only --skip-git-repo-check \
-      --disable hooks \
-      -o "$judgement_input.last" < "$judgement_input" > "$judgement_input.judge" 2>&1; then
-      verdict=$(cat "$judgement_input.last")
-    else
-      cat "$judgement_input.last" >> "$judgement_input.judge" 2>/dev/null || true
-      verdict=$(cat "$judgement_input.judge")
-      cause=$(judge_failure_cause "$judgement_input.judge") || cause=judge-command-failed
-      printf '%s\n' "$verdict"
-      echo "DID-NOT-RUN $cause $agent $model"
-      exit 2
-    fi
-  fi
-  printf '%s\n' "$verdict"
-  # The verdict line is the last non-empty line that is not a Markdown code
-  # fence, trimmed. Measured 2026-10-20 (coordinator R339): a candidate wrapped
-  # its failed JSON in a fenced block, so the last line was the closing fence and
-  # a real finding was reported as "not run" (exit 2) instead of failed.
-  last=$(printf '%s\n' "$verdict" | awk '
-    { sub(/\r$/, ""); sub(/^[ \t]+/, ""); sub(/[ \t]+$/, "") }
-    NF && !/^(```|~~~)/ { line = $0 }
-    END { print line }')
-  # READ by the package, for the same reason the prompt is COMPOSED by it: the
-  # ending contract states one verdict form, and `parse_judgement_reply` is the
-  # one reader of it. A second parse here is how this script came to accept a
-  # bare `PASS` the contract never asked any judge to write.
-  outcome=$(python3 - "$install_root" "$last" <<'VERDICT_PY'
-import sys
-sys.path.insert(0, f"{sys.argv[1]}/scripts")
-sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     parse_judgement_reply,
 )
-print(parse_judgement_reply(reply=sys.argv[2]).outcome)
-VERDICT_PY
-) || exit 2
-  case "$outcome" in
-    admitted) ;;
-    rests-at-needs-human) status=1 ;;
-    *) echo "dod-preflight: $agent $model gave no verdict line; treat as not run" >&2; exit 2 ;;
-  esac
-done <<< "$routes"
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
+    run_candidate_chain,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import ShellCommandRunner
 
-[ "$status" -eq 0 ] && echo PASS
-exit "$status"
+repo = Path(sys.argv[2])
+prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
+
+
+def candidates(*, cwd: Path) -> tuple[AcpCandidate, ...] | None:
+    resolved = dod_gate_candidates(cwd=cwd)
+    if resolved is not None:
+        return resolved
+    entry = (dispatcher_block(cwd=cwd).get("acp_nodes") or {}).get("dod_gate")
+    if not isinstance(entry, str):
+        return None
+    adapter = parse_adapter_string(text=entry)
+    if "claude-agent-acp" in adapter.command:
+        return (AcpCandidate(adapter=adapter, agent_id="claude-acp"),)
+    return None
+
+
+def is_verdict(*, text: str) -> bool:
+    return parse_judgement_reply(reply=text).outcome in {"admitted", "rests-at-needs-human"}
+
+
+chain = run_candidate_chain(
+    prompt=prompt,
+    cwd=repo,
+    runner=ShellCommandRunner(),
+    is_verdict=lambda text: is_verdict(text=text),
+    candidate_resolver=candidates,
+    caller="dod_preflight",
+    journal_spend=True,
+)
+if chain.reply is None:
+    print(f"DID-NOT-RUN {chain.cause}")
+    raise SystemExit(2)
+print(chain.reply)
+outcome = parse_judgement_reply(reply=chain.reply).outcome
+raise SystemExit(0 if outcome == "admitted" else 1)
+JUDGE_PY
+status=$?
+set -e
+
+case "$status" in
+  0) echo PASS ;;
+  1) exit 1 ;;
+  *) exit 2 ;;
+esac
