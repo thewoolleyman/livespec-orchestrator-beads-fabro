@@ -141,6 +141,10 @@ _COMMIT_SETTLE_ADDED = {
     "review_fix_commit_settle",
 }
 _JANITOR_ADMISSION_ADDED = {"janitor_admission"}
+# This command node sits before `disposition`, preserving its three-visit
+# review-fix budget while converting a fourth request into a named terminal
+# route instead of the engine's unroutable entry abort.
+_REVIEW_FIX_ADMISSION_ADDED = {"review_fix_admission"}
 _IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
 # The `dod_gate` post-turn mutation guard (work-item bd-ib-al54tl), kept as its
 # own constant for the reason every set above gives. It sits on `dod_gate`'s
@@ -745,6 +749,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
+        | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
@@ -772,6 +777,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
+        | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )
     assert moved <= reachable, sorted(moved - reachable)
