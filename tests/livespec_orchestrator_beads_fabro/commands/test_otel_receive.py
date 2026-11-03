@@ -46,16 +46,20 @@ from __future__ import annotations
 import http.client
 import importlib
 import json
+import select
+import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
-from socket import create_connection
+from socket import create_connection, socket
 from typing import cast
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._otel_http_handler import SocketHttpPostHandler
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -68,6 +72,8 @@ from livespec_orchestrator_beads_fabro.commands._otel_scrub import ATTR_MAX_LEN
 _HTTP_OK = 200
 _HTTP_BAD_REQUEST = 400
 _HTTP_NOT_FOUND = 404
+_RAW_HTTP_CONNECT_TIMEOUT_SECONDS = 5.0
+_RAW_HTTP_CLOSE_DEADLINE_SECONDS = 15.0
 
 
 # --------------------------------------------------------------------------
@@ -114,10 +120,24 @@ def _post_oversized_content_length(*, host: str, port: int, path: str) -> int:
 
 
 def _send_raw_http(*, host: str, port: int, payload: bytes) -> bytes:
-    """Send a raw HTTP payload and return whatever response bytes arrive."""
-    with create_connection((host, port), timeout=5.0) as conn:
+    """Send a raw HTTP payload and await its close or the explicit deadline."""
+    with create_connection((host, port), timeout=_RAW_HTTP_CONNECT_TIMEOUT_SECONDS) as conn:
+        conn.settimeout(None)
         conn.sendall(payload)
         conn.shutdown(1)
+        return _receive_until_close(conn=conn)
+
+
+def _receive_until_close(*, conn: socket) -> bytes:
+    """Return the first response bytes or end-of-stream before the close deadline."""
+    deadline = time.monotonic() + _RAW_HTTP_CLOSE_DEADLINE_SECONDS
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("receiver did not close the malformed request before its deadline")
+        readable, _writable, _exceptional = select.select([conn], [], [], remaining)
+        if not readable:
+            continue
         return conn.recv(4096)
 
 
@@ -921,12 +941,99 @@ def test_receiver_non_post_request_404(
 
 
 def test_receiver_malformed_request_line_closes_without_response(
+    monkeypatch: pytest.MonkeyPatch,
     receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
 ) -> None:
-    """A malformed request line closes cleanly without crashing the receiver."""
+    """A malformed request closes after a controlled ten-second handler stall.
+
+    The controlled clock keeps this regression test fast while proving the
+    client waits for the observed close past the old five-second socket limit.
+    """
     receiver, _exporter, _heartbeat, _base = receiver_factory
+    close_started = threading.Event()
+    release_close = threading.Event()
+    original_cleanup = getattr(SocketHttpPostHandler, "_cleanup")  # noqa: B009
+    original_select = select.select
+    clock_values = iter((0.0, 0.0, 10.0))
+    select_calls = 0
+
+    def _hold_cleanup(handler: SocketHttpPostHandler) -> None:
+        close_started.set()
+        _ = release_close.wait()
+        original_cleanup(handler)
+
+    def _release_after_ten_seconds(
+        readers: list[socket],
+        writers: list[socket],
+        exceptional: list[socket],
+        timeout: float | None = None,
+    ) -> tuple[list[socket], list[socket], list[socket]]:
+        nonlocal select_calls
+        select_calls += 1
+        if select_calls == 1:
+            assert close_started.wait(timeout=1.0)
+            assert timeout == _RAW_HTTP_CLOSE_DEADLINE_SECONDS
+            return [], [], []
+        assert timeout == _RAW_HTTP_CLOSE_DEADLINE_SECONDS - 10.0
+        release_close.set()
+        return original_select(readers, writers, exceptional, timeout)
+
+    monkeypatch.setattr(SocketHttpPostHandler, "_cleanup", _hold_cleanup)
+    monkeypatch.setattr(select, "select", _release_after_ten_seconds)
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock_values))
     assert _send_raw_http(host="127.0.0.1", port=receiver.bound_port, payload=b"\r\n") == b""
     assert receiver.is_running() is True
+
+
+def test_receiver_malformed_request_line_rejects_response_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """The malformed-request assertion fails if the receiver writes a response."""
+    receiver, _exporter, _heartbeat, _base = receiver_factory
+
+    def _write_response_then_serve(handler: SocketHttpPostHandler) -> None:
+        getattr(handler, "_request").sendall(b"unexpected response")  # noqa: B009
+
+    monkeypatch.setattr(SocketHttpPostHandler, "_serve_one", _write_response_then_serve)
+    with pytest.raises(AssertionError):
+        assert _send_raw_http(host="127.0.0.1", port=receiver.bound_port, payload=b"\r\n") == b""
+
+
+def test_receiver_malformed_request_line_times_out_when_left_open(
+    monkeypatch: pytest.MonkeyPatch,
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """The malformed-request close wait fails at its explicit deadline."""
+    receiver, _exporter, _heartbeat, _base = receiver_factory
+    close_started = threading.Event()
+    release_close = threading.Event()
+    original_cleanup = getattr(SocketHttpPostHandler, "_cleanup")  # noqa: B009
+    clock_values = iter((0.0, 0.0, _RAW_HTTP_CLOSE_DEADLINE_SECONDS))
+
+    def _leave_open(handler: SocketHttpPostHandler) -> None:
+        close_started.set()
+        _ = release_close.wait()
+        original_cleanup(handler)
+
+    def _nothing_readable(
+        readers: list[socket],
+        writers: list[socket],
+        exceptional: list[socket],
+        timeout: float | None = None,
+    ) -> tuple[list[socket], list[socket], list[socket]]:
+        _ = (readers, writers, exceptional, timeout)
+        assert close_started.wait(timeout=1.0)
+        return [], [], []
+
+    monkeypatch.setattr(SocketHttpPostHandler, "_cleanup", _leave_open)
+    monkeypatch.setattr(select, "select", _nothing_readable)
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock_values))
+    try:
+        with pytest.raises(TimeoutError, match="did not close"):
+            _send_raw_http(host="127.0.0.1", port=receiver.bound_port, payload=b"\r\n")
+    finally:
+        release_close.set()
 
 
 def test_receiver_metrics_malformed_body_is_bad_request(

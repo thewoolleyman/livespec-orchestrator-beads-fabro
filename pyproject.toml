@@ -65,7 +65,7 @@ dev = [
 # module uses its types module for the canonical cross-repo manifest shape.
 # Pin matches livespec's pin (>=0.2.0; ~/livespec).
 [tool.uv.sources]
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.157.0" }
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.158.1" }
 livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.29.1" }
 
 # ---------------------------------------------------------------------------
@@ -367,17 +367,24 @@ exclude_also = [
 # a laptop, the gate pod itself) keeps the local aggregate and SAYS so, rather
 # than failing closed on a cluster it cannot reach.
 #
-# NO `gate_check_suite` IS DECLARED, deliberately. The client's own
-# fall-through is the shared pre-push sequence this repository's local gate
-# already runs (install-worktree-pack, install-commit-refuse-hooks,
-# check-pre-push), and it has already passed on the cluster for this repository
-# — gate Job gate-livespec-orchestrator-beads-fabro-1c5e8de33c1f, 92 targets.
-# A declaration here would gate the tree on recipes chosen in this file instead,
-# which is how a consumer's gate goes red on a tree whose CI is green.
+# `gate_check_suite` spells out the established pre-push fall-through exactly:
+# install-worktree-pack, install-commit-refuse-hooks, then check-pre-push.
+# Making that sequence explicit preserves the existing delegated pre-push
+# behavior. The released pre-commit client replaces only its final member with
+# `check-pre-commit-gated-tree` for the staged-tree Job.
 #
 # MUST stay above the [[...mirror_pairings]] array-of-tables below, for the same
 # reason `file_lloc_hard_gate` must.
 delegated_gate = true
+# The dev host delegates a hand commit's aggregate when it can submit a gates
+# Job; sandbox and credentialless hosts retain the local pre-commit gate. The
+# delegate reports the remote Job and staged-tree hash when it reaches a verdict.
+delegated_pre_commit = true
+gate_check_suite = [
+    "install-worktree-pack",
+    "install-commit-refuse-hooks",
+    "check-pre-push",
+]
 # Phase-2 file_lloc FLIP (fleet-check-coverage epic). With this key true, the
 # `file_lloc` check hard-gates this repo's WHOLE git-derived first-party-.py
 # universe (>250 LLOC => error/exit 1), superseding the hardcoded legacy-tree

@@ -13,10 +13,9 @@ WHY IT IS WORTH OPTING IN. A push from the VPS runs the full `just check`
 aggregate on the VPS — measured at about 17 minutes on this repository. The
 delegated gate runs that same aggregate as a Job in the self-hosted k3s
 cluster's `gates` namespace and gates the push on its verdict instead. This
-repository's default suite has already run green there (gate Job
-`gate-livespec-orchestrator-beads-fabro-1c5e8de33c1f`, 92 targets), so no
-`gate_check_suite` declaration is wanted: the client's own documented
-fall-through is the sequence this repository's pre-push already runs.
+repository declares the established pre-push sequence explicitly: the
+pre-commit delegate derives its gated-tree final member from that declaration,
+while the pre-push delegate retains the declared sequence unchanged.
 
 DELEGATION IS SELECTED BY TWO FACTS, AND ONLY ONE OF THEM IS IN THIS TREE. The
 switch travels with the code and names no host; whether the pushing user can
@@ -170,19 +169,17 @@ def test_this_repository_declares_the_delegated_gate_switch() -> None:
     )
 
 
-def test_this_repository_declares_no_gate_suite_and_takes_the_shared_fall_through() -> None:
-    """No declaration is the deliberate choice, not an omission.
-
-    A declaration here would gate the tree on recipes chosen in this file rather
-    than on the ones the repository's own pre-push actually runs — which is how
-    a consumer's gate goes red on a green tree. The client's fall-through is
-    that sequence, and it has already passed on the cluster for this repository.
-    """
+def test_this_repository_declares_the_existing_pre_push_gate_suite() -> None:
+    """The explicit suite preserves the pre-push sequence and feeds pre-commit derivation."""
     declared = load_gate_check_suite(repo_root=_REPO_ROOT)
 
-    assert declared is None, (
-        "this repository must declare NO gate suite, so the delegated gate runs the "
-        "shared pre-push sequence its local fall-through runs; "
+    assert declared == (
+        "install-worktree-pack",
+        "install-commit-refuse-hooks",
+        "check-pre-push",
+    ), (
+        "this repository must explicitly retain its established delegated pre-push "
+        "sequence, so the pre-commit delegate can replace only its final member; "
         f"declared={declared!r}"
     )
 
