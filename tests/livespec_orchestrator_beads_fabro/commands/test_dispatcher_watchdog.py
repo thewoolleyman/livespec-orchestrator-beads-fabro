@@ -93,6 +93,28 @@ pytestmark = pytest.mark.usefixtures("server_cancel")
 _WORK_ITEM_ID = "livespec-impl-beads-oyg"
 
 
+def test_end_run_finds_the_launcher_before_releasing_the_fake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_done = threading.Event()
+    enumerated_after_release: list[bool] = []
+    launcher = SimpleNamespace(
+        name=f"fabro-run-{_WORK_ITEM_ID}",
+        join=lambda **_kwargs: None,
+        is_alive=lambda: False,
+    )
+
+    def enumerate_threads() -> list[SimpleNamespace]:
+        enumerated_after_release.append(run_done.is_set())
+        return [launcher]
+
+    monkeypatch.setattr(threading, "enumerate", enumerate_threads)
+
+    end_run_and_await_launcher_return(run_done=run_done, work_item_id=_WORK_ITEM_ID)
+
+    assert enumerated_after_release == [False]
+
+
 def _plan(*, repo: Path, stall_seconds: float | None = None) -> DispatchPlan:
     """A dispatch plan, optionally carrying a tight stall window.
 
@@ -788,7 +810,7 @@ class _ScriptedFabroRunner:
     def _run(self) -> CommandResult:
         # Block until the watchdog cancels (or a healthy run completes —
         # the healthy-path tests set run_done during or before polling).
-        _ = self.run_done.wait(timeout=10.0)
+        self.run_done.wait()
         self.run_returned.set()
         # The gap this fake declares, held between its signal and its return.
         _ = threading.Event().wait(timeout=self.return_gap_seconds)
@@ -901,7 +923,9 @@ def test_an_incremental_event_read_advances_the_established_progress_instant(
     assert later.last_event_epoch > first.last_event_epoch
 
 
-def test_the_cancel_record_locates_the_run_before_the_server_cancel(tmp_path: Path) -> None:
+def test_the_cancel_record_locates_the_run_before_the_server_cancel(
+    *, tmp_path: Path, server_cancel: ServerCancel
+) -> None:
     """`bd-ib-nfbyot`: the production launcher journals the run's own half too.
 
     The two readings this adds — the executing stage and the publication — are
@@ -935,6 +959,7 @@ def test_the_cancel_record_locates_the_run_before_the_server_cancel(tmp_path: Pa
         ]
     )
     runner = _ScriptedFabroRunner(events_jsons=[frozen])
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
 
@@ -961,13 +986,16 @@ def test_the_cancel_record_locates_the_run_before_the_server_cancel(tmp_path: Pa
     assert "rm" not in runner.verbs
 
 
-def test_watched_launcher_cancels_a_confirmed_stall(tmp_path: Path) -> None:
+def test_watched_launcher_cancels_a_confirmed_stall(
+    *, tmp_path: Path, server_cancel: ServerCancel
+) -> None:
     # A frozen event timestamp across every poll -> the watch loop
     # confirms a stall within the tight, test-set window and cancels the run
     # through its factory server. Injected clock advances 600s/sample; window
     # 1000s.
     frozen = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
     runner = _ScriptedFabroRunner(events_jsons=[frozen])
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
     result = launcher.launch(
@@ -1008,7 +1036,7 @@ def test_a_refused_server_cancel_is_not_reported_as_a_stall_and_polling_continue
 
 
 def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
-    tmp_path: Path,
+    *, tmp_path: Path, server_cancel: ServerCancel
 ) -> None:
     """The production shape of bd-ib-n44n4e, driven through the real watch loop.
 
@@ -1028,6 +1056,7 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
         '[{"timestamp": "2026-06-13T08:10:00Z"}]',
     ]
     runner = _ScriptedFabroRunner(events_jsons=progress_then_silence)
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
     result = launcher.launch(
@@ -1042,7 +1071,7 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
 
 
 def test_a_stall_is_still_confirmed_while_the_bound_run_is_polled_by_id(
-    tmp_path: Path,
+    *, tmp_path: Path, server_cancel: ServerCancel
 ) -> None:
     """bd-ib-6pdigz: binding the run must not cost the watchdog its stall detection.
 
@@ -1053,6 +1082,7 @@ def test_a_stall_is_still_confirmed_while_the_bound_run_is_polled_by_id(
     being removed.
     """
     runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
+    server_cancel.on_success = runner.run_done.set
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
 
     result = launcher.launch(
@@ -1177,7 +1207,7 @@ def test_watched_launcher_does_not_cancel_while_a_command_node_is_open(tmp_path:
 
 
 def test_watched_launcher_cancels_once_the_open_command_node_has_completed(
-    tmp_path: Path,
+    *, tmp_path: Path, server_cancel: ServerCancel
 ) -> None:
     # The negative control for the test above. The same frozen stream, plus
     # the janitor's completion event: nothing is open, so the configured
@@ -1186,6 +1216,7 @@ def test_watched_launcher_cancels_once_the_open_command_node_has_completed(
     # mentioned a command node would satisfy the test above.
     frozen_and_completed = [f"[{_JANITOR_STARTED_EVENT}, {_JANITOR_COMPLETED_EVENT}]"]
     runner = _ScriptedFabroRunner(events_jsons=frozen_and_completed)
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
     result = launcher.launch(
