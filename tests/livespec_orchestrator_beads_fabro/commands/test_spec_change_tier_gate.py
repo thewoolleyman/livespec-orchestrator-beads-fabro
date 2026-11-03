@@ -218,6 +218,35 @@ def test_a_taken_tier_record_carries_its_selected_and_named_clause_bodies(
     assert [json.loads(value) for value in named] == [expected]
 
 
+def test_an_unrelated_revision_reuses_the_tier_verdict_without_a_model_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    ledger = _install_judge(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        replies=("feature", _UNSTATED, "bug"),
+    )
+    append_work_item(path=_config(repo=repo), item=_item())
+
+    _ = classify_item_spec_change_tier(
+        item=_item(), repo=repo, path=_config(repo=repo), stage=STAGE_FILING
+    )
+    spec = repo / "SPECIFICATION"
+    (spec / "history" / "v002").mkdir()
+    _ = (spec / "unrelated.md").write_text(
+        "## Unrelated revision\n\n" + "x" * 250_000,
+        encoding="utf-8",
+    )
+
+    reused = classify_item_spec_change_tier(
+        item=_item(), repo=repo, path=_config(repo=repo), stage=STAGE_DISPATCH
+    )
+
+    assert reused.reused is True
+    assert _calls(ledger=ledger) == 2
+
+
 def test_a_bug_pays_for_the_classification_and_not_for_the_judgement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

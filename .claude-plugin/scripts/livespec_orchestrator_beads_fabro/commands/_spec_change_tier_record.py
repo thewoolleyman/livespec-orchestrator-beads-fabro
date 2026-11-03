@@ -43,14 +43,19 @@ one. An empty value reads as a field the writer forgot, which collapses the two.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import clause_line
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
+    clause_line,
+    clauses_from,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import SPEC_CHANGE_TIER
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import clauses_named
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
         SpecChangeTierDecision,
@@ -252,21 +257,36 @@ def classification_did_not_run_comment(
 
 
 def reusable_spec_change_tier(
-    *, comments: Sequence[str], spec_version: str, digest: str
+    *,
+    comments: Sequence[str],
+    digest: str,
+    selected_clauses: tuple[CondensedClause, ...],
+    spec_tree: Mapping[str, str],
 ) -> RecordedSpecChangeTier | None:
     """The newest recorded classification, when it was taken against THIS pair.
 
-    `None` whenever the newest record names a different specification version or
-    a different behaviour digest, which is the reuse rule the module docstring
-    quotes: such a record is evidence about an item or a specification that no
-    longer exists, so the caller must take the classification again.
+    `None` whenever the asked-for behaviour or the recorded clause provenance
+    differs. A version is audit evidence, not the reuse identity: a revision
+    outside the clauses the model saw or named must not spend another judgement.
     """
     recorded = recorded_spec_change_tier(comments=comments)
     if recorded is None:
         return None
-    if (recorded.spec_version, recorded.digest) != (spec_version, digest):
+    if not recorded.provenance_complete or recorded.digest != digest:
         return None
-    return recorded
+    named_clauses = clauses_named(
+        spec_tree=spec_tree,
+        headings=tuple(clause.heading for clause in recorded.named_clauses),
+    )
+    if Counter(recorded.selected_clauses) != Counter(selected_clauses):
+        return None
+    if Counter(recorded.named_clauses) != Counter(named_clauses):
+        return None
+    return replace(
+        recorded,
+        selected_clauses=selected_clauses,
+        named_clauses=named_clauses,
+    )
 
 
 def recorded_did_not_run_causes(*, comments: Sequence[str]) -> frozenset[str]:
@@ -293,6 +313,10 @@ def _recorded_from(*, body: str) -> RecordedSpecChangeTier | None:
     digest = fields.get(_DIGEST_FIELD)
     if tier is None or spec_version is None or digest is None:
         return None
+    selected_clauses = clauses_from(values=_repeated(body=body, key=_SELECTED_CLAUSE_FIELD))
+    named_clauses = clauses_from(values=_repeated(body=body, key=_NAMED_CLAUSE_FIELD))
+    if selected_clauses is None or named_clauses is None:
+        return None
     return RecordedSpecChangeTier(
         tier=tier,
         classification=fields.get(_CLASSIFICATION_FIELD, ""),
@@ -301,6 +325,9 @@ def _recorded_from(*, body: str) -> RecordedSpecChangeTier | None:
         linked_proposal_topic=_parsed(value=fields.get(_LINKED_TOPIC_FIELD)),
         spec_version=spec_version,
         digest=digest,
+        selected_clauses=selected_clauses,
+        named_clauses=named_clauses,
+        provenance_complete=fields.get(_PROVENANCE_FIELD) == "complete",
     )
 
 
@@ -318,6 +345,16 @@ def _fields_of(*, body: str) -> dict[str, str]:
         if separator:
             fields[key] = value
     return fields
+
+
+def _repeated(*, body: str, key: str) -> tuple[str, ...]:
+    """Every repeated field value, preserving the record's clause order."""
+    return tuple(
+        value
+        for raw in body.splitlines()
+        for found, separator, value in (raw.strip().partition(_FIELD_SEPARATOR),)
+        if separator and found == key
+    )
 
 
 def _rendered(*, value: str | None) -> str:
