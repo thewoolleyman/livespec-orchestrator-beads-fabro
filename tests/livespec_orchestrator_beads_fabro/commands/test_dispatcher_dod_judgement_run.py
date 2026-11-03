@@ -592,7 +592,37 @@ def test_a_host_codex_judge_resolves_before_isolation_and_reads_only_its_grant(
     assert runner.cwd_git_returncode is not None
     assert runner.cwd_git_returncode != 0
     assert runner.environ is not None
-    assert runner.environ["HOME"] == str(runner.cwd / "home")
+    assert runner.environ["HOME"] == str(home)
+
+
+def test_a_host_codex_wrapper_can_start_its_binary_under_the_invoking_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The private Codex config home must not replace a wrapper's runtime HOME."""
+    home = tmp_path / "operator-home"
+    wrapper = home / ".local" / "bin" / "codex"
+    bun = home / ".bun" / "bin" / "bun"
+    wrapper.parent.mkdir(parents=True)
+    bun.parent.mkdir(parents=True)
+    _ = wrapper.write_text('#!/bin/sh\nexec "$HOME/.bun/bin/bun" "$@"\n', encoding="utf-8")
+    event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": '{"outcome": "passed"}'},
+        }
+    )
+    _ = bun.write_text(f"#!/bin/sh\nprintf '%s\\n' '{event}'\n", encoding="utf-8")
+    wrapper.chmod(0o755)
+    bun.chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", f"{wrapper.parent}:{os.environ.get('PATH', '')}")
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+
+    verdict = run_dod_judgement(item=_item(), cwd=repo, payload_root=_payload(tmp_path=tmp_path))
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert verdict.deciding_candidate == "codex-acp:gpt-5.6-terra"
 
 
 def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
@@ -624,7 +654,7 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
     assert runner.environ["CODEX_HOME"] != str(codex_home)
     assert runner.codex_auth == "host-auth"
     assert runner.cwd is not None
-    assert runner.environ["HOME"] == str(runner.cwd / "home")
+    assert runner.environ["HOME"] == str(operator_home)
     assert runner.environ["ZDOTDIR"] == str(runner.cwd / "home")
     assert {"BASH_ENV", "ENV", "XDG_CONFIG_HOME"}.isdisjoint(runner.environ)
 
