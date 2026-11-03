@@ -868,6 +868,7 @@ jobs:
           just check-codex-plugin-structure || failed="$failed check-codex-plugin-structure"
           just check-fabro-graph-validity || failed="$failed check-fabro-graph-validity"
           just check-bd-guard || failed="$failed check-bd-guard"
+          just check-fleet-launch || failed="$failed check-fleet-launch"
           just check-codex-skill-picker || failed="$failed check-codex-skill-picker"
           just check-agents-ai-references-resolve || failed="$failed check-agents-ai-references-resolve"
           just check-canonical-recipe-fidelity || failed="$failed check-canonical-recipe-fidelity"
