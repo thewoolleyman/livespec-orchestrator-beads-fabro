@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.281.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.0...v0.281.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* preserve exhausted refresh repairs ([5356b6b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5356b6beb8fe14d8ff421058f286c723aa64e8ae))
+* restore exhausted refresh route after rebase ([951a80d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/951a80d98607d336f16049a4151d91412db54bb5))
+* synchronize refresh repair publication recipes ([b4566c3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4566c36550c9769ac70d3701cf199c707abc452))
+
 ## [0.281.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.280.1...v0.281.0) (2026-11-03)
 
 
