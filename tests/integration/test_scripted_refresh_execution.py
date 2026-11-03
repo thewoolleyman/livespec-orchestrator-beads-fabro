@@ -1779,6 +1779,28 @@ def _generic_terminal_reason() -> str:
     return match.group(1)
 
 
+def test_pr_refresh_clears_a_stale_needs_human_reason_at_entry(tmp_path: Path) -> None:
+    """An earlier stage's reason cannot survive this stage's first refusal.
+
+    A missing publish-branch name is deliberately the first fail-closed arm:
+    it runs before the state lookup, remote observation, fetch, or rebase.  A
+    clear after any of those operations would leave this stale file available to
+    the terminal when this invocation ends.  The terminal consults the reason
+    file before its stage cause and fallback, so this must be absent here rather
+    than merely overwritten by one of the later refusal arms.
+    """
+    reason_filename = _needs_human_reason_filename()
+    box = _build(root=tmp_path)
+    stale = box.clone / ".git" / reason_filename
+    _ = stale.write_text("publish_draft left this stale cause\n", encoding="utf-8")
+
+    refused = _run(box=box, extra_env={"LIVESPEC_PUBLISH_BRANCH": ""})
+
+    assert refused.returncode == 1, refused.stdout
+    assert "LIVESPEC_PR_REFRESH_NO_BRANCH" in refused.stderr
+    assert not stale.exists()
+
+
 def test_the_non_convergence_refusal_records_its_cause_for_the_terminal(
     tmp_path: Path,
 ) -> None:
