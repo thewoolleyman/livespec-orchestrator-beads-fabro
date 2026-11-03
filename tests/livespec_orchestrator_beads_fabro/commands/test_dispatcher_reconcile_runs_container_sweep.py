@@ -94,7 +94,6 @@ class _Runner:
             return self._docker(argv=argv)
         if argv[1] == "ps":
             return CommandResult(exit_code=0, stdout=self.fabro_ps_json, stderr="")
-        return CommandResult(exit_code=0, stdout="", stderr="")
 
     def _docker(self, *, argv: list[str]) -> CommandResult:
         # Membership rather than a fixed index: every docker argv opens with

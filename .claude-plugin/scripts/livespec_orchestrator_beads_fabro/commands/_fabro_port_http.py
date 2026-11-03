@@ -245,6 +245,15 @@ class FabroHttpPort:
             timeout_seconds=timeout_seconds,
         )
 
+    def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+        """Read one run's bounded projection without fetching its event stream."""
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/state",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
     def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
         """Cancel one run through the server's lifecycle route."""
         return self._verb(

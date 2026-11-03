@@ -12,7 +12,6 @@ import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-    CommandResult,
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
@@ -41,73 +40,15 @@ class _DumpRunner:
     stage_diffs: dict[str, str] | None = None
     calls: list[list[str]] = field(default_factory=list)
 
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = cwd
-        _ = timeout_seconds
-        _ = env
-        _ = stdin
-        self.calls.append(argv)
-        output_dir = Path(argv[argv.index("-o") + 1])
-        stage_diffs = self.stage_diffs
-        if stage_diffs is None and self.export_diff:
-            stage_diffs = {"002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n"}
-        for stage, payload in (stage_diffs or {}).items():
-            diff = output_dir / "stages" / stage / "diff.patch"
-            diff.parent.mkdir(parents=True)
-            _ = diff.write_text(payload, encoding="utf-8")
-        return CommandResult(exit_code=0, stdout="", stderr="")
-
 
 @dataclass(kw_only=True)
 class _FailingDumpRunner:
     stderr: str
 
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = argv
-        _ = cwd
-        _ = timeout_seconds
-        _ = env
-        _ = stdin
-        return CommandResult(exit_code=2, stdout="", stderr=self.stderr)
-
 
 @dataclass(kw_only=True)
 class _SixHundredSecondDumpRunner:
     timeouts: list[float] = field(default_factory=list)
-
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = (cwd, env, stdin)
-        self.timeouts.append(timeout_seconds)
-        if timeout_seconds < 600:
-            return CommandResult(exit_code=124, stdout="", stderr="timeout")
-        diff = Path(argv[argv.index("-o") + 1]) / "stages" / "002-implement@1" / "diff.patch"
-        diff.parent.mkdir(parents=True)
-        _ = diff.write_text("diff --git a/app.py b/app.py\n+print('kept')\n", encoding="utf-8")
-        return CommandResult(exit_code=0, stdout="", stderr="")
 
 
 @pytest.fixture(autouse=True)

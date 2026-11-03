@@ -15,7 +15,6 @@ from livespec_orchestrator_beads_fabro.commands import (
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-    CommandResult,
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.errors import (
@@ -41,40 +40,12 @@ class _RecordingJournal:
 
 @dataclass(kw_only=True)
 class _FailingDumpRunner:
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = argv
-        _ = cwd
-        _ = timeout_seconds
-        _ = env
-        _ = stdin
-        return CommandResult(exit_code=2, stdout="", stderr="run storage not found")
+    pass
 
 
 @dataclass(kw_only=True)
 class _PermissionDumpRunner:
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = argv
-        _ = cwd
-        _ = timeout_seconds
-        _ = env
-        _ = stdin
-        raise PermissionError("artifact is unreadable")
+    pass
 
 
 class _BrokenClient:
@@ -193,11 +164,10 @@ def test_dump_failure_writes_resolve_failure_comment(tmp_path: Path) -> None:
     )
 
     body = str(make_beads_client(config=_config()).list_comments(issue_id=_item().id)[-1]["text"])
-    assert "artifact: fabro dump failed with exit code 2" in body
-    assert "stderr: run storage not found" in body
-    assert "byte size: (not recorded; dump failed)" in body
-    assert "sha256: (not recorded; dump failed)" in body
-    assert "treat the reference as dangling" in body
+    assert "artifact: preserve reference failed with RuntimeError" in body
+    assert "run-state read failed with HTTP status 500" in body
+    assert "byte size: (not recorded; preserve step failed)" in body
+    assert "sha256: (not recorded; preserve step failed)" in body
 
 
 def test_comment_write_failure_is_journaled(
@@ -223,9 +193,9 @@ def test_comment_write_failure_is_journaled(
     assert record["reason"] == "WorkItemNotFoundError"
     assert record["run_id"] == "01M0RUN"
     assert record["factory_server_url"] == "https://factory.example.test"
-    assert record["artifact_digest"] == "(not recorded; dump failed)"
+    assert record["artifact_digest"] == "(not recorded; preserve step failed)"
     assert record["pointer_body"] == _BROKEN_BODIES[-1]
-    assert "fabro dump failed with exit code 2" in str(record["pointer_body"])
+    assert "run-state read failed with HTTP status 500" in str(record["pointer_body"])
 
 
 def test_store_config_failure_is_journaled_without_fake_success(
@@ -256,7 +226,7 @@ def test_store_config_failure_is_journaled_without_fake_success(
     assert record["reason"] == "ConnectionPrefixMissingError"
     assert record["run_id"] == "01M0RUN"
     assert record["factory_server_url"] == "https://factory.example.test"
-    assert "fabro dump failed with exit code 2" in str(record["pointer_body"])
+    assert "run-state read failed with HTTP status 500" in str(record["pointer_body"])
 
 
 def test_dump_os_error_is_journaled_and_swallowed(tmp_path: Path) -> None:

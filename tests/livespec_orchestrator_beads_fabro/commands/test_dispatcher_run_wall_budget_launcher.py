@@ -185,7 +185,6 @@ class _ScriptedFabroRunner:
             )
         if verb == "events":
             return CommandResult(exit_code=0, stdout=_FROZEN_EVENTS, stderr="")
-        return CommandResult(exit_code=0, stdout="", stderr="")
 
 
 def _wall_clock() -> Any:

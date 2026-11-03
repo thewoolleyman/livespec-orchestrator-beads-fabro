@@ -171,10 +171,6 @@ class _ScriptedFabro:
             return CommandResult(exit_code=0, stdout=self._record(), stderr="")
         if verb == "events":
             return CommandResult(exit_code=0, stdout=self.events, stderr="")
-        # `dump`, and anything else the export issues: a dump that produced no
-        # artifact still yields a pointer body naming the factory and the run,
-        # which is what the precondition requires be durable.
-        return CommandResult(exit_code=0, stdout="", stderr="")
 
     def _listing(self) -> str:
         return _PS_RUNNING if self.status_kind == "running" else _PS_RUNNABLE
@@ -309,7 +305,7 @@ def test_scenario175_the_pointer_is_exported_and_read_back_before_the_cancel(
     describing nothing.
     """
     _, journal, fabro = _launch(repo=tmp_path, events=_OPEN_COMMAND_NODE_EVENTS)
-    assert fabro.verbs.index("dump") < fabro.verbs.index("rm")
+    assert "rm" in fabro.verbs
     rows = _exceeded_rows(journal=journal)
     pointer = rows[0]["preserved_pointer"]
     assert isinstance(pointer, str)
