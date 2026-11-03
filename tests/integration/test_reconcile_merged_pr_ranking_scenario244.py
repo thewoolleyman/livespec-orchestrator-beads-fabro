@@ -174,6 +174,40 @@ def _reconcile(
     return exit_code, repo
 
 
+def _reconcile_selected(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected: dict[str, object],
+) -> tuple[int, Path]:
+    """Run the selector route, whose direct PR read bypasses ranking."""
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+    runner = _Runner(
+        queue=[
+            _ok(stdout="origin/master"),
+            _ok(stdout=json.dumps(selected)),
+            *_janitor_green(),
+        ]
+    )
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+    monkeypatch.setattr(
+        _dispatcher_completion, "run_acceptance_pass", lambda **_: _AcceptancePass()
+    )
+    exit_code = main(
+        argv=[
+            "reconcile-merged",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--pr",
+            str(selected["number"]),
+        ]
+    )
+    return exit_code, repo
+
+
 def _stored() -> WorkItem:
     return materialize_work_items(records=read_work_items(path=_config()))[_ITEM_ID]
 
@@ -313,3 +347,134 @@ def test_a_tie_in_the_highest_tier_refuses_without_changing_the_item(
     assert "#79 title79" not in error
     assert "#80 body80" not in error
     assert _stored().status == "active"
+
+
+def test_an_explicit_selector_chooses_one_title_match_without_ranking_its_sibling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exit_code, repo = _reconcile_selected(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        selected=_listed(
+            number=81,
+            title=f"fix: {_ITEM_ID}",
+            body="",
+            sha="selected81",
+            head="fix/hand-landed",
+        ),
+    )
+
+    assert exit_code == 0
+    assert _stored().audit is not None
+    assert (_stored().audit.pr_number, _stored().audit.merge_sha) == (81, "selected81")
+    records = [
+        json.loads(line)
+        for line in (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert {
+        "stage": "reconcile-pr-selected",
+        "work_item_id": _ITEM_ID,
+        "pr_number": 81,
+        "merge_sha": "selected81",
+    }.items() <= records[2].items()
+
+
+@pytest.mark.parametrize(
+    "selected",
+    [
+        _listed(
+            number=82,
+            title=f"fix: {_ITEM_ID}",
+            body="",
+            sha="open82",
+            head="fix/hand-landed",
+        )
+        | {"state": "OPEN"},
+        _listed(
+            number=83,
+            title="fix: unrelated",
+            body=f"mentions {_ITEM_ID}",
+            sha="unrelated83",
+            head="fix/unrelated",
+        ),
+    ],
+)
+def test_a_selector_rejects_an_unmerged_or_nonidentifying_pr(
+    selected: dict[str, object],
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+    runner = _Runner(queue=[_ok(stdout="origin/master"), _ok(stdout=json.dumps(selected))])
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+
+    exit_code = main(
+        argv=[
+            "reconcile-merged",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--pr",
+            str(selected["number"]),
+        ]
+    )
+
+    assert exit_code == 3
+    assert f"PR #{selected['number']}" in capsys.readouterr().err
+    assert _stored().status == "active"
+
+
+def test_an_acceptance_item_refuses_a_selector_that_mismatches_green_janitor_evidence(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item() | {"status": "acceptance"})
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal.parent.mkdir()
+    _ = journal.write_text(
+        json.dumps(
+            {
+                "stage": "janitor-post-merge",
+                "work_item_id": _ITEM_ID,
+                "exit_code": 0,
+                "pr_number": 84,
+                "merge_sha": "janitor84",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    selected = _listed(
+        number=85,
+        title=f"fix: {_ITEM_ID}",
+        body="",
+        sha="selected85",
+        head="fix/hand-landed",
+    )
+    runner = _Runner(queue=[_ok(stdout="origin/master"), _ok(stdout=json.dumps(selected))])
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+
+    exit_code = main(
+        argv=[
+            "reconcile-merged",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--pr",
+            "85",
+        ]
+    )
+
+    assert exit_code == 3
+    error = capsys.readouterr().err
+    assert "PR #85" in error
+    assert "PR #84" in error
+    assert _stored().status == "acceptance"
