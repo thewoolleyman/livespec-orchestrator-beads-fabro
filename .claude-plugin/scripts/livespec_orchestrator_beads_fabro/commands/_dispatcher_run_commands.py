@@ -75,22 +75,24 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
 
 def _dispatch_in_pass(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
-    started = _start_dispatch(args=args, repo=repo)
+    # Started before anything else the drive does, so that every phase from its
+    # launch to the Fabro submission is closed into a row of its own. The rows
+    # wait inside the profile until the target is selected and named.
+    profile = PrelaunchCpuProfile.for_drive_launch(dispatch_id=run_id())
+    started = _start_dispatch(args=args, repo=repo, profile=profile)
     if isinstance(started, int):
         return started
     janitor = started.janitor
     items = started.items
     journal = started.journal
-    selected = _target_item(args=args, repo=repo, items=items, journal=journal)
+    selected = profile.phase(
+        name="target-selection",
+        action=lambda: _target_item(args=args, repo=repo, items=items, journal=journal),
+    )
     if selected is None:
         return EXIT_PRECONDITION_ERROR
     target, marked = selected
-    dispatch_id = run_id()
-    profile = PrelaunchCpuProfile.for_drive(
-        journal=journal,
-        work_item_id=target.id,
-        dispatch_id=dispatch_id,
-    )
+    profile.bind(journal=journal, work_item_id=target.id)
     # Every refusal that must land after selection and before the claim, as one
     # decision. The SAME wall the drain runs, handed a one-item selection.
     wall_exit = pre_dispatch_wall_exit(
@@ -137,23 +139,29 @@ def _dispatch_in_pass(*, args: argparse.Namespace) -> int:
     return dispatch_tail_exit(args=args, repo=repo, outcome=outcome, journal=journal)
 
 
-def _start_dispatch(*, args: argparse.Namespace, repo: Path) -> _DispatchStart | int:
+def _start_dispatch(
+    *, args: argparse.Namespace, repo: Path, profile: PrelaunchCpuProfile
+) -> _DispatchStart | int:
     """Run every repository-wide and size precondition before selection."""
-    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
+    with profile.during(name="dispatch-preamble"):
+        janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
     if preamble_exit is not None:
         return preamble_exit
-    arm_otel_egress(args=args, repo=repo)
-    prepared = prepare(args=args, repo=repo)
+    with profile.during(name="otel-egress"):
+        arm_otel_egress(args=args, repo=repo)
+    with profile.during(name="ledger-prepare"):
+        prepared = prepare(args=args, repo=repo)
     if prepared is None:
         return EXIT_PRECONDITION_ERROR
     items, journal = prepared
     raw_target = next((item for item in items if item.id == args.item), None)
-    size_result = apply_factory_size_dispatch_entry(
-        cwd=repo,
-        path_factory=lambda: store_config(repo=repo),
-        items=() if raw_target is None else (raw_target,),
-        journal=journal,
-    )
+    with profile.during(name="factory-size-check"):
+        size_result = apply_factory_size_dispatch_entry(
+            cwd=repo,
+            path_factory=lambda: store_config(repo=repo),
+            items=() if raw_target is None else (raw_target,),
+            journal=journal,
+        )
     if not is_successful(size_result):
         failure = unsafe_perform_io(size_result.failure())
         outcome = failed_dispatch_outcome(
@@ -171,11 +179,13 @@ def _start_dispatch(*, args: argparse.Namespace, repo: Path) -> _DispatchStart |
             outcome=size_refusals[0],
             journal=journal,
         )
-    if not args.skip_ledger_check and ledger_blocked_after_normalization(
-        items=items,
-        config=store_config(repo=repo),
-        journal=journal,
-    ):
+    with profile.during(name="ledger-check"):
+        ledger_blocked = not args.skip_ledger_check and ledger_blocked_after_normalization(
+            items=items,
+            config=store_config(repo=repo),
+            journal=journal,
+        )
+    if ledger_blocked:
         return EXIT_FAILURE
     return _DispatchStart(janitor=janitor, items=items, journal=journal)
 
