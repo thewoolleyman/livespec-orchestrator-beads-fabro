@@ -31,14 +31,20 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_builds import (
     BuildDiscoveryRoots,
     executing_builds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images import BuildRoot
+
+from tests.livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_readiness import (
+    wait_for_dispatcher_exec,
+)
 
 _PROC = Path("/proc")
 _LEASE_DIRECTORY = ".in_use"
@@ -71,7 +77,14 @@ def _dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
     entry = build / "scripts" / "bin" / "dispatcher.py"
     entry.parent.mkdir(parents=True, exist_ok=True)
     _ = entry.write_text("", encoding="utf-8")
-    return subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
+    process = subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
+    try:
+        wait_for_dispatcher_exec(process=process, entry=entry)
+    except BaseException:
+        process.kill()
+        _ = process.wait()
+        raise
+    return process
 
 
 def _reaped_pid() -> int:
@@ -116,6 +129,36 @@ def test_executing_builds_are_the_host_wide_deduplicated_union(tmp_path: Path) -
         BuildRoot(identity="leased", root=leased),
         BuildRoot(identity="executed", root=executed),
     )
+
+
+def test_dispatcher_fixture_reaps_a_child_when_readiness_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A readiness failure does not leak the fixture child process."""
+
+    def _fail_readiness(**_: object) -> None:
+        raise AssertionError("fixture never became ready")
+
+    monkeypatch.setattr(sys.modules[__name__], "wait_for_dispatcher_exec", _fail_readiness)
+
+    with pytest.raises(AssertionError, match="fixture never became ready"):
+        _dispatcher_process(build=tmp_path / "build")
+
+
+def test_dispatcher_fixture_readiness_times_out_when_cmdline_is_unreadable(tmp_path: Path) -> None:
+    """An unreadable cmdline uses the fixture's bounded readiness deadline."""
+    process = _sleeper()
+    try:
+        with pytest.raises(AssertionError, match="did not exec"):
+            wait_for_dispatcher_exec(
+                process=process,
+                entry=tmp_path / "build" / "scripts" / "bin" / "dispatcher.py",
+                proc=tmp_path / "proc",
+                timeout_seconds=0.001,
+                poll_seconds=0.0,
+            )
+    finally:
+        _stopped(processes=iter((process,)))
 
 
 def test_a_build_manifest_version_is_the_builds_identity(tmp_path: Path) -> None:
