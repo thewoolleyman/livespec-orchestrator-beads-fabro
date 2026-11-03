@@ -591,6 +591,23 @@ def test_a_non_fast_forward_push_refusal_names_the_stale_publish_branch(
     assert refused.draft_created is False
 
 
+def test_an_unreachable_origin_is_named_after_the_push_marker(tmp_path: Path) -> None:
+    """Scenario 224 keeps a dead origin distinct from a stale branch."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    refused = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        push_refusal="fatal: Could not resolve host: origin.example.invalid",
+    )
+
+    assert refused.result.returncode != 0
+    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
+    assert "origin could not be reached" in message
+    assert "stale publish branch" not in message
+    assert refused.draft_created is False
+
+
 def test_a_landed_publication_whose_pr_head_is_not_the_tip_still_ends_as_landed(
     tmp_path: Path,
 ) -> None:
