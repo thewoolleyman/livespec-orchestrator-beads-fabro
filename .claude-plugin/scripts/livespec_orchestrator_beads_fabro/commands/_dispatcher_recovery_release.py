@@ -130,12 +130,13 @@ def _record_work_item_id(*, record: Mapping[str, object]) -> object:
 def _is_recovery_terminal(*, record: Mapping[str, object]) -> bool:
     """Whether an attributed terminal row ended at needs-human or non-convergence."""
     terminal = cast("Mapping[str, object]", record[_OUTCOME_KEY])
+    detail = terminal.get(_DETAIL_KEY)
+    if isinstance(detail, str) and RECAPTURE_EXHAUSTED_MARKER in detail:
+        return False
     if isinstance(terminal.get(_NEEDS_HUMAN_KIND_KEY), str):
         return True
-    detail = terminal.get(_DETAIL_KEY)
     return (
         terminal.get(_STATUS_KEY) == "failed"
         and isinstance(detail, str)
         and NON_CONVERGED_MARKER in detail
-        and RECAPTURE_EXHAUSTED_MARKER not in detail
     )
