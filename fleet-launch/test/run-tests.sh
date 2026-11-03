@@ -119,7 +119,19 @@ for argument in "$@"; do
         dod-preflight.sh)
             item=${!#}
             printf '%s %s\n' "$(date +%s%N)" "$item" >> "$STUB_PREFLIGHT_LOG"
-            if [ "$item" = "${STUB_PREFLIGHT_SLOW_ITEM:-}" ]; then sleep "$STUB_PREFLIGHT_SLOW_S"; fi
+            if [ "$item" = "${STUB_PREFLIGHT_SLOW_ITEM:-}" ]; then
+                # HELD until the harness creates the release file (bounded by
+                # STUB_PREFLIGHT_SLOW_S), not slept for a fixed time.  The older
+                # launcher therefore cannot bind before the harness has seen the
+                # younger launcher's queued preflight, however slow the host is.
+                # A fixed sleep raced launcher start-up and failed under CI load
+                # (bd-ib-x7bwug, PR #4235).
+                held=0
+                while [ ! -e "${STUB_PREFLIGHT_RELEASE:-/nonexistent}" ] && [ "$held" -lt "$STUB_PREFLIGHT_SLOW_S" ]; do
+                    sleep 1
+                    held=$((held + 1))
+                done
+            fi
             if [ "$item" = "${STUB_PREFLIGHT_FAIL_ITEM:-}" ]; then
                 printf 'stub queued preflight failure\n'
                 exit 1
@@ -278,6 +290,7 @@ new_case() {
     export STUB_READY_EXIT=0
     export STUB_PREFLIGHT_EXIT=0
     unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM
+    export STUB_PREFLIGHT_RELEASE="$CASE_DIR/release-held-preflight"
     export STUB_SSH_IDLE=95.00
 
     export REPO_OVERRIDE="$TENANT"
@@ -555,7 +568,7 @@ echo "--- 6. preflights while queued and reuses a fresh pass at the FIFO head"
 new_case queued-preflight
 export FLEET_LAUNCH_MAX_WAIT_S=300
 export STUB_PREFLIGHT_SLOW_ITEM=bd-ib-older
-export STUB_PREFLIGHT_SLOW_S=4
+export STUB_PREFLIGHT_SLOW_S=120
 : > "$BOARD_GMK"
 : > "$BOARD_HL"
 printf '8\n' > "$CAP_FILE"
@@ -566,12 +579,15 @@ if ! wait_for_preflight bd-ib-older 1 10; then
 fi
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
-if wait_for_preflight bd-ib-younger 1 2 && [ ! -s "$DRIVE_LOG" ]; then
+# The older preflight is held, so the older launcher cannot bind until the
+# release below: a younger preflight seen first ran while it was queued.
+if wait_for_preflight bd-ib-younger 1 60 && [ ! -s "$DRIVE_LOG" ]; then
     pass "the younger queued launcher starts its preflight before the older binds"
 else
     fail "the younger launcher waited for the FIFO head before starting its preflight"
 fi
-await_both "$older_pid" "$younger_pid" 45
+touch "$STUB_PREFLIGHT_RELEASE"
+await_both "$older_pid" "$younger_pid" 90
 if [ "$(drive_log_items)" = "bd-ib-older bd-ib-younger" ]; then
     pass "queued launchers bind in FIFO ticket order after their preflights"
 else
@@ -594,7 +610,7 @@ else
     fail "a drive started while its launch mutex was held: $(tr '\n' ' ' < "$DRIVE_MUTEX_LOG")"
 fi
 
-# A young pass expires while the older launcher spends four seconds in its own
+# A young pass expires while the older launcher is held in its own
 # preflight.  Its ticket must re-run the preflight at the FIFO head before it
 # can take the mutex.
 echo "--- 7. re-runs a stale queued preflight at the FIFO head"
@@ -602,7 +618,7 @@ new_case stale-preflight
 export FLEET_LAUNCH_MAX_WAIT_S=300
 export FLEET_LAUNCH_PREFLIGHT_REUSE_S=1
 export STUB_PREFLIGHT_SLOW_ITEM=bd-ib-stale-older
-export STUB_PREFLIGHT_SLOW_S=4
+export STUB_PREFLIGHT_SLOW_S=120
 : > "$BOARD_GMK"
 : > "$BOARD_HL"
 printf '8\n' > "$CAP_FILE"
@@ -611,8 +627,14 @@ older_pid=$!
 wait_for_preflight bd-ib-stale-older 1 10 || fail "the stale-case older launcher did not preflight"
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-stale-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
-wait_for_preflight bd-ib-stale-younger 1 2 || fail "the stale-case younger launcher did not preflight while queued"
-await_both "$older_pid" "$younger_pid" 45
+if ! wait_for_preflight bd-ib-stale-younger 1 60 || [ -s "$DRIVE_LOG" ]; then
+    fail "the stale-case younger launcher did not preflight while queued"
+fi
+# Let the younger pass outlive FLEET_LAUNCH_PREFLIGHT_REUSE_S=1 before the
+# older launcher is released to bind.
+sleep 2
+touch "$STUB_PREFLIGHT_RELEASE"
+await_both "$older_pid" "$younger_pid" 90
 if [ "$(preflight_count bd-ib-stale-younger)" = 2 ]; then
     pass "a stale queued pass is re-run at the FIFO head before binding"
 else
@@ -626,7 +648,7 @@ echo "--- 8. drops a ticket when its queued preflight fails"
 new_case queued-preflight-failure
 export FLEET_LAUNCH_MAX_WAIT_S=300
 export STUB_PREFLIGHT_SLOW_ITEM=bd-ib-failing-older
-export STUB_PREFLIGHT_SLOW_S=4
+export STUB_PREFLIGHT_SLOW_S=120
 export STUB_PREFLIGHT_FAIL_ITEM=bd-ib-failing-younger
 : > "$BOARD_GMK"
 : > "$BOARD_HL"
@@ -636,7 +658,7 @@ older_pid=$!
 wait_for_preflight bd-ib-failing-older 1 10 || fail "the failure-case older launcher did not preflight"
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-failing-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
-if wait_for_preflight bd-ib-failing-younger 1 2; then
+if wait_for_preflight bd-ib-failing-younger 1 60 && [ ! -s "$DRIVE_LOG" ]; then
     wait "$younger_pid"; younger_rc=$?
 else
     kill -TERM "$younger_pid" 2>/dev/null
@@ -648,6 +670,7 @@ if [ "$younger_rc" = 4 ] && [ ! -e "$CASE_DIR/queue/200-harness-seat" ] && [ ! -
 else
     fail "queued preflight failure did not cleanly exit (rc=$younger_rc ticket=$(test -e "$CASE_DIR/queue/200-harness-seat" && echo present || echo absent) lock=$(test -d "$CASE_DIR/lock" && echo present || echo absent))"
 fi
+touch "$STUB_PREFLIGHT_RELEASE"
 kill -TERM "$older_pid" 2>/dev/null
 wait "$older_pid" || true
 
