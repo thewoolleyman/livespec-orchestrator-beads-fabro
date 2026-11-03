@@ -29,7 +29,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
-from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
     ACCEPTANCE_STAGE,
     outcome_after_acceptance,
@@ -40,9 +39,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     complete_and_accept,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
-    resolve_default_branch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
@@ -61,27 +57,26 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_reten
     janitor_retention,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import emit_outcomes
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
-    livespec_config_text,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
-    build_plan,
-    janitor_reconcile_checkout_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged_pr import (
     merged_pr_list_argv,
     parse_merged_pr_list,
     resolve_merged_pr,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_plan import reconcile_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_preflight import (
     ACCEPTANCE_STATUS,
     reconcile_preflight,
     repo_path_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade import run_regrade
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_selected_pr import (
+    acceptance_selected_pr_mismatch_refusal,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -156,15 +151,30 @@ def run_reconcile_merged_command(
     # forbids running either again.
     if args.regrade:
         outcome = run_regrade(
-            repo=repo, item=item, plan=plan, runner=command_runner, journal=journal
+            repo=repo,
+            item=item,
+            plan=plan,
+            runner=command_runner,
+            journal=journal,
+            selected_pr_number=args.pr_number,
         )
     elif item.status == ACCEPTANCE_STATUS:
         outcome = _reaccept_in_acceptance(
-            repo=repo, item=item, plan=plan, runner=command_runner, journal=journal
+            repo=repo,
+            item=item,
+            plan=plan,
+            runner=command_runner,
+            journal=journal,
+            selected_pr_number=args.pr_number,
         )
     else:
         outcome = _janitor_and_accept(
-            repo=repo, item=item, plan=plan, runner=command_runner, journal=journal
+            repo=repo,
+            item=item,
+            plan=plan,
+            runner=command_runner,
+            journal=journal,
+            selected_pr_number=args.pr_number,
         )
     if isinstance(outcome, int):
         return outcome
@@ -174,7 +184,12 @@ def run_reconcile_merged_command(
 
 
 def _resolved_merge(
-    *, item: WorkItem, plan: DispatchPlan, runner: CommandRunner, journal: JournalFile
+    *,
+    item: WorkItem,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalFile,
+    selected_pr_number: int | None,
 ) -> PrView | int:
     """The merge both non-regrade arms key on, or the exit code that refuses.
 
@@ -183,7 +198,13 @@ def _resolved_merge(
     could come to name two different pull requests, and the disagreement would be
     invisible because each would be a plausible merge.
     """
-    merged = resolve_merged_pr(plan=plan, item=item, runner=runner, journal=journal)
+    merged = resolve_merged_pr(
+        plan=plan,
+        item=item,
+        runner=runner,
+        journal=journal,
+        selected_pr_number=selected_pr_number,
+    )
     if isinstance(merged, str):
         _ = write_stderr(text=merged)
         return EXIT_PRECONDITION_ERROR
@@ -200,13 +221,20 @@ def _janitor_and_accept(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalFile,
+    selected_pr_number: int | None,
 ) -> DispatchOutcome | int:
     """The ordinary arm: resolve the merge, re-run the janitor, then accept.
 
     Returns the terminal outcome for the shared tail to journal and emit, or an
     exit code when no single merged pull request resolves.
     """
-    merged = _resolved_merge(item=item, plan=plan, runner=runner, journal=journal)
+    merged = _resolved_merge(
+        item=item,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        selected_pr_number=selected_pr_number,
+    )
     if isinstance(merged, int):
         return merged
     outcome = post_merge(
@@ -231,6 +259,7 @@ def _reaccept_in_acceptance(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalFile,
+    selected_pr_number: int | None,
 ) -> DispatchOutcome | int:
     """Re-run ONLY the acceptance pass for an item already resting in `acceptance`.
 
@@ -252,9 +281,22 @@ def _reaccept_in_acceptance(
     a verdict, and by which an item whose pointer was skipped gets one: the pointer
     write lives inside `complete_and_accept`, before any disposition branch.
     """
-    merged = _resolved_merge(item=item, plan=plan, runner=runner, journal=journal)
+    merged = _resolved_merge(
+        item=item,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        selected_pr_number=selected_pr_number,
+    )
     if isinstance(merged, int):
         return merged
+    if selected_pr_number is not None:
+        mismatch = acceptance_selected_pr_mismatch_refusal(
+            item=item, selected=merged, journal=journal
+        )
+        if mismatch is not None:
+            _ = write_stderr(text=mismatch)
+            return EXIT_PRECONDITION_ERROR
     outcome = DispatchOutcome(
         work_item_id=item.id,
         status="green",
@@ -266,29 +308,6 @@ def _reaccept_in_acceptance(
     return outcome_after_acceptance(
         outcome=outcome,
         disposition=complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal),
-    )
-
-
-def reconcile_plan(
-    *, repo: Path, item: WorkItem, janitor: tuple[str, ...] | None, runner: CommandRunner
-) -> DispatchPlan:
-    """Build the subset of a dispatch plan needed by the reconcile valve.
-
-    It resolves the SAME contract a live dispatch would, from the same two
-    sources, because it runs the same post-merge janitor at the same venue: a
-    reconcile that resolved its own core pin or its own default branch could
-    clean up somewhere the original dispatch never named.
-    """
-    return build_plan(
-        repo=repo,
-        work_item_id=item.id,
-        workflow_toml=repo / "tmp" / f"reconcile-{item.id}-workflow.toml",
-        goal_file=repo / "tmp" / f"reconcile-{item.id}-goal.md",
-        fabro_bin=resolve_fabro_bin(cwd=repo),
-        janitor=janitor,
-        janitor_checkout=janitor_reconcile_checkout_path(repo=repo, work_item_id=item.id),
-        config_text=livespec_config_text(repo=repo),
-        default_branch=resolve_default_branch(repo=repo, runner=runner),
     )
 
 

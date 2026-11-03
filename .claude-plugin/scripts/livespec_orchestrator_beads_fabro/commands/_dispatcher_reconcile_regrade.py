@@ -107,6 +107,7 @@ def run_regrade(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalFile,
+    selected_pr_number: int | None,
 ) -> DispatchOutcome | int:
     """Re-grade a merged, rework-pending item against its current criteria.
 
@@ -115,7 +116,13 @@ def run_regrade(
     `regrade` when it reaches any other verdict and the item is untouched — or
     an exit code when the merge evidence the arm keys on does not hold.
     """
-    merged = resolve_merged_pr(plan=plan, item=item, runner=runner, journal=journal)
+    merged = resolve_merged_pr(
+        plan=plan,
+        item=item,
+        runner=runner,
+        journal=journal,
+        selected_pr_number=selected_pr_number,
+    )
     if isinstance(merged, str):
         _ = write_stderr(text=merged)
         return EXIT_PRECONDITION_ERROR

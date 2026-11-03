@@ -37,7 +37,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                             [--candidate-key <key>]
                                             [--repo <path>] [--invoker <id>]
                                             [--journal <path>]
-  dispatcher.py reconcile-merged --repo <path> --item <id> [--invoker <id>]
+  dispatcher.py reconcile-merged --repo <path> --item <id> [--pr <number>] [--invoker <id>]
                                  [--regrade] [--json]
   dispatcher.py post-host-record --repo <path> --item <id>
                                  --verdict <host_recorded|host_verified|

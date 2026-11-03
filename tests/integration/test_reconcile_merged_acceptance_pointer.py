@@ -417,3 +417,78 @@ def test_an_acceptance_resting_item_with_no_merged_pull_request_is_refused(
     assert "proof-pointer" not in stages
     assert "## Proof of Done" not in _stored().description
     assert _stored().status == "acceptance"
+
+
+def test_an_acceptance_item_allows_the_selected_pr_that_matches_green_janitor_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A selected PR may re-run acceptance when it is the green janitor's merge."""
+    repo = _repo(tmp_path=tmp_path, journaled_dispatch_id=_DISPATCH_ID)
+    append_work_item(path=_config(), item=_item())
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    with journal.open("a", encoding="utf-8") as handle:
+        _ = handle.write(
+            json.dumps(
+                {
+                    "stage": "outcome",
+                    "outcome": {
+                        "work_item_id": _ITEM_ID,
+                        "status": "green",
+                        "stage": "done",
+                        "pr_number": _PR_NUMBER,
+                        "merge_sha": _MERGE_SHA,
+                        "detail": "merged, post-merge janitor green",
+                    },
+                }
+            )
+            + "\n"
+        )
+    runner = _ValveRunner(
+        queue=[
+            CommandResult(exit_code=0, stdout="origin/master", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout=json.dumps(
+                    {
+                        "number": _PR_NUMBER,
+                        "title": f"fix: {_ITEM_ID}",
+                        "headRefName": "fix/reconcile-pointer",
+                        "baseRefName": "master",
+                        "state": "MERGED",
+                        "mergeCommit": {"oid": _MERGE_SHA},
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged.ShellCommandRunner",
+        lambda: runner,
+    )
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        _real_pass_over(comments=_comments_payload(run_id=_DISPATCH_ID)),
+        raising=False,
+    )
+
+    exit_code = main(
+        argv=[
+            "reconcile-merged",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--pr",
+            str(_PR_NUMBER),
+        ]
+    )
+
+    assert exit_code == 0
+    assert _stored().status == "acceptance"
+    assert [argv[:3] for argv in runner.argvs] == [
+        ["git", "symbolic-ref", "--short"],
+        ["gh", "pr", "view"],
+    ]

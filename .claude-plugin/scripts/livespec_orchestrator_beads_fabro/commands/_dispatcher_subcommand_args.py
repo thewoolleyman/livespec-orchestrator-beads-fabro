@@ -100,6 +100,14 @@ def add_reconcile_runs_arguments(*, parser: argparse.ArgumentParser) -> None:
 def add_reconcile_merged_arguments(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--repo", dest="repo", required=True)
     _ = parser.add_argument("--item", dest="item", required=True)
+    _ = parser.add_argument(
+        "--pr",
+        dest="pr_number",
+        type=int,
+        default=None,
+        metavar="<number>",
+        help="resolve this merged pull request instead of ranking candidates",
+    )
     _ = parser.add_argument("--janitor", dest="janitor", default=None)
     _ = parser.add_argument("--journal", dest="journal", default=None)
     add_invoker_argument(parser=parser)

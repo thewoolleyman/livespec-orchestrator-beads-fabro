@@ -8,7 +8,7 @@ resolution, refusal, journal, and status effects under test together.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -313,3 +313,170 @@ def test_a_tie_in_the_highest_tier_refuses_without_changing_the_item(
     assert "#79 title79" not in error
     assert "#80 body80" not in error
     assert _stored().status == "active"
+
+
+def test_an_explicit_selector_resolves_one_of_multiple_title_matches(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The selector names one carrier instead of asking ranking to break its tie."""
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+    runner = _Runner(
+        queue=[
+            _ok(stdout="origin/master"),
+            _ok(
+                stdout=json.dumps(
+                    _listed(
+                        number=82,
+                        title=f"fix: {_ITEM_ID}",
+                        body="",
+                        sha="selected82",
+                        head="fix/selected",
+                    )
+                )
+            ),
+            *_janitor_green(),
+        ]
+    )
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+    monkeypatch.setattr(
+        _dispatcher_completion, "run_acceptance_pass", lambda **_: _AcceptancePass()
+    )
+
+    with pytest.raises(SystemExit):
+        _ = main(argv=["reconcile-merged", "--help"])
+    assert "--pr <number>" in capsys.readouterr().out
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", _ITEM_ID, "--pr", "82"]
+    )
+
+    assert exit_code == 0
+    assert _stored().audit is not None
+    assert (_stored().audit.pr_number, _stored().audit.merge_sha) == (82, "selected82")
+    assert all(argv[:3] != ["gh", "pr", "list"] for argv in runner.argvs)
+
+
+@pytest.mark.parametrize(
+    ("number", "selected"),
+    [
+        (
+            83,
+            {
+                **_listed(
+                    number=83,
+                    title=f"fix: {_ITEM_ID}",
+                    body="",
+                    sha="open83",
+                    head="fix/open",
+                ),
+                "state": "OPEN",
+            },
+        ),
+        (
+            84,
+            _listed(
+                number=84,
+                title="docs: unrelated",
+                body=f"Mentions {_ITEM_ID} only in its body.",
+                sha="body84",
+                head="docs/unrelated",
+            ),
+        ),
+    ],
+)
+def test_a_selector_refuses_an_unmerged_or_nonidentifying_pull_request(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    number: int,
+    selected: dict[str, object],
+) -> None:
+    """An explicit number does not bypass the merged carrier requirements."""
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+    runner = _Runner(queue=[_ok(stdout="origin/master"), _ok(stdout=json.dumps(selected))])
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+
+    with pytest.raises(SystemExit):
+        _ = main(argv=["reconcile-merged", "--help"])
+    assert "--pr <number>" in capsys.readouterr().out
+
+    exit_code = main(
+        argv=[
+            "reconcile-merged",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--pr",
+            str(number),
+        ]
+    )
+
+    assert exit_code == 3
+    assert f"#{number}" in capsys.readouterr().err
+    assert _stored().status == "active"
+
+
+def test_an_acceptance_item_refuses_a_selected_pr_that_mismatches_green_janitor_evidence(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance cannot be retried against a merge other than its green janitor's."""
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=replace(_item(), status="acceptance"))
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal.parent.mkdir(parents=True)
+    _ = journal.write_text(
+        json.dumps(
+            {
+                "stage": "outcome",
+                "outcome": {
+                    "work_item_id": _ITEM_ID,
+                    "status": "green",
+                    "stage": "done",
+                    "pr_number": 81,
+                    "merge_sha": "janitor81",
+                    "detail": "merged, post-merge janitor green",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = _Runner(
+        queue=[
+            _ok(stdout="origin/master"),
+            _ok(
+                stdout=json.dumps(
+                    _listed(
+                        number=82,
+                        title=f"fix: {_ITEM_ID}",
+                        body="",
+                        sha="selected82",
+                        head="fix/selected",
+                    )
+                )
+            ),
+        ]
+    )
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: pytest.fail("acceptance must not run for mismatched janitor evidence"),
+    )
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", _ITEM_ID, "--pr", "82"]
+    )
+
+    assert exit_code == 3
+    error = capsys.readouterr().err
+    assert "selected PR #82" in error
+    assert "green janitor evidence PR #81" in error
+    assert _stored().status == "acceptance"

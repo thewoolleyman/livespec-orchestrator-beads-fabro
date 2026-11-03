@@ -15,7 +15,7 @@ is not a merge — and `None` when the forge said only that it found nothing.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
@@ -24,6 +24,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
     parse_pr_view,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_selected_pr import (
+    pr_view_from_merged_list_entry,
+    resolve_selected_pr,
 )
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -50,6 +54,7 @@ def resolve_merged_pr(
     item: WorkItem,
     runner: CommandRunner,
     journal: JournalFile,
+    selected_pr_number: int | None = None,
     produced_by_item_dispatch_only: bool = False,
 ) -> PrView | str | None:
     """Resolve the merged PR for `item`: a view, a refusal string, or `None`.
@@ -58,6 +63,14 @@ def resolve_merged_pr(
     status: a caller that publishes ONTO the pull request (the host-record primitive)
     needs one an item's own dispatch produced, identified by head branch or title.
     """
+    if selected_pr_number is not None:
+        return resolve_selected_pr(
+            plan=plan,
+            item=item,
+            runner=runner,
+            journal=journal,
+            selected_pr_number=selected_pr_number,
+        )
     viewed = run_stage(
         runner=runner,
         journal=journal,
@@ -174,7 +187,7 @@ def parse_merged_pr_list(
     title_matches: list[PrView] = []
     body_matches: list[PrView] = []
     for entry_raw in cast("list[object]", parsed_raw):
-        candidate = _pr_view_from_list_entry(
+        candidate = pr_view_from_merged_list_entry(
             entry_raw=entry_raw, item=item, branch=branch, default_branch=default_branch
         )
         if candidate is None:
@@ -249,60 +262,3 @@ def _unmerged_branch_detail(*, item: WorkItem, branch: str, state: str, default_
         f"{branch} reads {state}, and the item-id search over merges onto "
         f"{default_branch} named none. Searched: {searched}\n"
     )
-
-
-def _pr_view_from_list_entry(
-    *, entry_raw: object, item: WorkItem, branch: str, default_branch: str
-) -> tuple[PrView, str] | None:
-    """Return one candidate view plus its strongest work-item naming tier."""
-    if not isinstance(entry_raw, dict):
-        return None
-    entry = cast("dict[str, Any]", entry_raw)
-    number_raw: object = entry.get("number")
-    state_raw: object = entry.get("state")
-    if not isinstance(number_raw, int) or state_raw != "MERGED":
-        return None
-    base_raw: object = entry.get("baseRefName")
-    if isinstance(base_raw, str) and base_raw != default_branch:
-        return None
-    tier = _candidate_tier(entry=entry, item=item, branch=branch)
-    if tier is None:
-        return None
-    merge_sha = _list_entry_merge_sha(entry=entry)
-    if merge_sha is None:
-        return None
-    return (
-        PrView(
-            number=number_raw,
-            state="MERGED",
-            auto_merge_armed=False,
-            merge_state_status="UNKNOWN",
-            merge_sha=merge_sha,
-        ),
-        tier,
-    )
-
-
-def _candidate_tier(*, entry: dict[str, Any], item: WorkItem, branch: str) -> str | None:
-    """The strongest tier by which one merged PR names the work item."""
-    if entry.get("headRefName") == branch:
-        return "head"
-    title_raw: object = entry.get("title")
-    if isinstance(title_raw, str) and item.id in title_raw:
-        return "title"
-    if _body_names_item(entry=entry, item=item):
-        return "body"
-    return None
-
-
-def _body_names_item(*, entry: dict[str, Any], item: WorkItem) -> bool:
-    body_raw: object = entry.get("body")
-    return isinstance(body_raw, str) and item.id in body_raw
-
-
-def _list_entry_merge_sha(*, entry: dict[str, Any]) -> str | None:
-    commit_raw: object = entry.get("mergeCommit")
-    if not isinstance(commit_raw, dict):
-        return None  # pragma: no cover - defensive malformed gh JSON
-    oid_raw: object = cast("dict[str, Any]", commit_raw).get("oid")
-    return oid_raw if isinstance(oid_raw, str) and oid_raw else None

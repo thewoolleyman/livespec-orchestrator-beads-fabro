@@ -20,7 +20,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     CriterionCheck,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import janitor_checkout_path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    PrView,
+    janitor_checkout_path,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_selected_pr import (
+    acceptance_selected_pr_mismatch_refusal,
+    pr_view_from_merged_list_entry,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -1470,6 +1478,90 @@ def _regrade_diff() -> str:
         "+# The regrade arm reconciles a stranded merge.\n"
         "+REGRADE_STAGE = 'regrade'\n"
     )
+
+
+def test_selected_pr_janitor_evidence_requires_a_matching_well_formed_outcome(
+    tmp_path: Path,
+) -> None:
+    """Only a matching green janitor outcome constrains a selected PR."""
+    item = _item()
+    selected = PrView(
+        number=17,
+        state="MERGED",
+        auto_merge_armed=False,
+        merge_state_status="UNKNOWN",
+        merge_sha="merge17",
+    )
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+
+    assert (
+        acceptance_selected_pr_mismatch_refusal(item=item, selected=selected, journal=journal)
+        is None
+    )
+    journal.append(
+        record={
+            "stage": "outcome",
+            "outcome": {
+                "work_item_id": item.id,
+                "status": "failed",
+            },
+        }
+    )
+    journal.append(
+        record={
+            "stage": "outcome",
+            "outcome": {
+                "work_item_id": item.id,
+                "status": "green",
+                "stage": "done",
+                "pr_number": True,
+                "merge_sha": "",
+                "detail": "merged, post-merge janitor green",
+            },
+        }
+    )
+
+    assert (
+        acceptance_selected_pr_mismatch_refusal(item=item, selected=selected, journal=journal)
+        is None
+    )
+    assert (
+        pr_view_from_merged_list_entry(
+            entry_raw={"number": 18, "state": "MERGED", "headRefName": "branch"},
+            item=item,
+            branch="branch",
+            default_branch="master",
+        )
+        is None
+    )
+    matching_journal = JournalFile(path=tmp_path / "matching.jsonl")
+    matching_journal.append(
+        record={
+            "stage": "outcome",
+            "outcome": {
+                "work_item_id": item.id,
+                "status": "green",
+                "stage": "done",
+                "pr_number": selected.number,
+                "merge_sha": selected.merge_sha,
+                "detail": "merged, post-merge janitor green",
+            },
+        }
+    )
+
+    assert (
+        acceptance_selected_pr_mismatch_refusal(
+            item=item, selected=selected, journal=matching_journal
+        )
+        is None
+    )
+    mismatched = acceptance_selected_pr_mismatch_refusal(
+        item=item,
+        selected=replace(selected, number=18, merge_sha="merge18"),
+        journal=matching_journal,
+    )
+    assert mismatched is not None
+    assert "selected PR #18" in mismatched
 
 
 def _plan_build_probe() -> list[CommandResult]:
