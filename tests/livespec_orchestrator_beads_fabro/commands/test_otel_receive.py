@@ -429,6 +429,26 @@ def test_receiver_traces_route_through_enrich_to_exporter(
     assert len(spans) == 1
 
 
+def test_receiver_forwards_codex_cache_token_counts_intact(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """A Codex response span retains its measured cache-token counts at egress."""
+    _receiver, exporter, _heartbeat, base = receiver_factory
+    expected = {
+        "gen_ai.usage.cache_read.input_tokens": {"intValue": "161"},
+        "gen_ai.usage.cache_write.input_tokens": {"intValue": "29"},
+    }
+    body = _trace_request(
+        attrs=[{"key": key, "value": value} for key, value in expected.items()],
+        span_name="handle_responses",
+    )
+
+    assert _post_json(url=f"{base}/v1/traces", body=body) == _HTTP_OK
+    spans, _dataset = exporter.calls[0]
+    assert spans[0]["name"] == "handle_responses"
+    assert _attrs_of(span=spans[0]) == expected
+
+
 def test_receiver_traces_batch_per_dataset(
     receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
 ) -> None:

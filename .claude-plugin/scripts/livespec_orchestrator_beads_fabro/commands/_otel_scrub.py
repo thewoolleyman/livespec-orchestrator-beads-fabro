@@ -115,6 +115,8 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "gen_ai.usage.input_tokens",
         "output_tokens",
         "gen_ai.usage.output_tokens",
+        "gen_ai.usage.cache_read.input_tokens",
+        "gen_ai.usage.cache_write.input_tokens",
         "cache_read_tokens",
         "cache_creation_tokens",
         "duration_ms",
