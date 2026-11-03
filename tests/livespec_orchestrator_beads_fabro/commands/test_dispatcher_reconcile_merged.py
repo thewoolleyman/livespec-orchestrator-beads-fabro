@@ -1564,6 +1564,46 @@ def test_selected_pr_janitor_evidence_requires_a_matching_well_formed_outcome(
     assert "selected PR #18" in mismatched
 
 
+def test_selected_pr_janitor_evidence_reads_the_acceptance_resting_outcome(
+    tmp_path: Path,
+) -> None:
+    """A green item resting in acceptance journals stage `acceptance` and still constrains."""
+    item = _item()
+    selected = PrView(
+        number=17,
+        state="MERGED",
+        auto_merge_armed=False,
+        merge_state_status="UNKNOWN",
+        merge_sha="merge17",
+    )
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    journal.append(
+        record={
+            "stage": "outcome",
+            "outcome": {
+                "work_item_id": item.id,
+                "status": "green",
+                "stage": "acceptance",
+                "pr_number": 17,
+                "merge_sha": "merge17",
+                "detail": "merged, post-merge janitor green",
+            },
+        }
+    )
+
+    assert (
+        acceptance_selected_pr_mismatch_refusal(item=item, selected=selected, journal=journal)
+        is None
+    )
+    mismatched = acceptance_selected_pr_mismatch_refusal(
+        item=item,
+        selected=replace(selected, number=18, merge_sha="merge18"),
+        journal=journal,
+    )
+    assert mismatched is not None
+    assert "janitor evidence PR #17" in mismatched
+
+
 def _plan_build_probe() -> list[CommandResult]:
     """The ONE read `reconcile_plan` takes before anything else: the ratified
     default-branch probe, whose answer rides the plan's resolved integration

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
+    ACCEPTANCE_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
@@ -153,7 +156,7 @@ def _latest_green_janitor_evidence(
         if (
             outcome.get("work_item_id") != item.id
             or outcome.get("status") != "green"
-            or outcome.get("stage") != "done"
+            or outcome.get("stage") not in {"done", ACCEPTANCE_STAGE}
             or outcome.get("detail") != "merged, post-merge janitor green"
         ):
             continue
