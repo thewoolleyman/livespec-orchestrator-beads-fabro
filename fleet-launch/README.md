@@ -31,12 +31,13 @@ for the Dispatcher's own admission conditions.
 | File | What it does |
 | --- | --- |
 | `config.sh` | The one place a host-specific value is set: factory server URLs, the fabro client path, the fleet-cap and hold files, the queue, lock and in-flight directories, the plugin registry and cache, the wrappers and the timings. Every value can be overridden from the environment. |
-| `dispatch-dual.sh` | Launches one work-item. Gates, in order: the Dispatcher's ready set, the shared fleet cap, the launch-time Definition-of-Done preflight, the hold file, gmktec's own ceiling and idle CPU, a per-factory FIFO ticket and mutex, a binding re-count including this launch's in-flight marker, and a usable-credential probe. |
+| `dispatch-dual.sh` | Launches one work-item. Gates, in order: the Dispatcher's ready set, the shared fleet cap, the launch-time Definition-of-Done preflight, the hold file, gmktec's own ceiling and factory-class CPU pressure, a per-factory FIFO ticket and mutex, a binding re-count including this launch's in-flight marker, and a usable-credential probe. |
 | `ready-set-check.py` | Asks the installed plugin build's own `ready_items()` whether an item is dispatchable, so the answer cannot diverge from the Dispatcher's selection. |
 | `release-hold-on-caam-rotation.sh` | Keeps the hold file in place until caam's active Claude profile changes, then removes it. |
 | `resolve-default-factory.sh` | Prints a repository's committed `dispatcher.default_factory` from its origin default branch. |
 | `host-capture-payload.py` | Builds a `host_recorded` Proof-of-Done payload from a registry-resolved capture dispatch; refuses, writing nothing, when any evidence is missing. |
 | `wrappers/` | PATH-keeping shims around each independent tenant's committed credential wrapper, passed as `WRAPPER=` to `dispatch-dual.sh`. `homelab-wrapper.argv` holds parameter-store PATHS, never secret values. |
+| `test/run-tests.sh` | The hermetic harness `just check-fleet-launch` runs. It drives `dispatch-dual.sh` against stub factory boards, a stub credential wrapper, a stub `ssh` and throwaway queue, lock, in-flight and state directories — every launch gate exercised, no real factory and no real dispatch. Each refusal case carries the positive control that opens the one gate it is about. Set `FLEET_LAUNCH_HARNESS_LOGS=1` when capturing evidence to emit each item-labelled launcher log; the normal gate remains summary-only. |
 
 ## Running a launch
 

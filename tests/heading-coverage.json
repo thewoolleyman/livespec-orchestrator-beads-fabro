@@ -2240,16 +2240,16 @@
     "heading": "## Provisional fleet launch scripts",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
+    "test": "tests.integration.test_fleet_launch_check_scenario242.test_scenarios242_and_296_the_committed_check_lints_every_shell_script_and_runs_the_harness",
+    "reason": "Integration-tier acceptance drives the shipped check-fleet-launch driver over the committed tree, checking its shellcheck corpus and hermetic launcher harness; the broken-launcher scenario is a sibling test.",
     "work_item": "bd-ib-nz4av6"
   },
   {
     "heading": "## Scenario 242 \u2014 The provisional fleet launch check fails the build on a broken launcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Owed: an integration-tier test exercising check-fleet-launch end to end (shellcheck plus the hermetic launcher harness) is the binding for this heading, delivered by plan provisional-fleet-launch child bd-ib-nz4av6. TODO until that item merges and names the exercising test node; never a unit-tier test.",
+    "test": "tests.integration.test_fleet_launch_check_scenario242.test_scenario242_a_launcher_that_reads_an_idle_board_as_unknown_turns_the_check_red",
+    "reason": "Integration-tier acceptance copies the launcher, proves the idle-board mutation landed, and verifies that the shipped harness turns the defect into a failing check.",
     "work_item": "bd-ib-nz4av6"
   },
   {
@@ -2666,8 +2666,8 @@
     "heading": "## Scenario 296 \u2014 The provisional launcher's shared-node gate holds on factory-class pressure, not whole-host idle",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal the-gmktec-launch-gate-measures-factory-class-pressure (v275), and the owning work-item bd-ib-nmuyjc.6 adds the check-fleet-launch harness cases (green under a CI burst, held above the threshold, held on an unreadable reading, threshold declared in fleet-launch/config.sh) together with the gate itself.",
+    "test": "tests.integration.test_fleet_launch_check_scenario242.test_scenarios242_and_296_the_committed_check_lints_every_shell_script_and_runs_the_harness",
+    "reason": "Integration-tier acceptance runs the real check-fleet-launch driver and its hermetic low-idle, high-pressure and unreadable-pressure cases, while verifying the declared FLEET_LAUNCH_ threshold override.",
     "work_item": "bd-ib-nmuyjc.6"
   },
   {
