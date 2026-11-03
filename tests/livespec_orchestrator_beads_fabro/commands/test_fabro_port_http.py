@@ -119,6 +119,25 @@ def test_questions_and_answer_and_cancel_hit_the_documented_routes() -> None:
     }
 
 
+def test_stages_reads_one_runs_stage_projection_by_id() -> None:
+    """The watch can ask for its bound run's compact stage projection."""
+    transport = _RecordingTransport(result=_ok(body='[{"id": "implement@1", "status": "running"}]'))
+    port = FabroHttpPort(
+        target=FabroTarget(server_url="https://hp.example:32276/", dev_token=_DEV_TOKEN_VALUE),
+        transport=transport,
+    )
+
+    stages_reader = getattr(port, "stages", None)
+
+    assert stages_reader is not None
+    result = stages_reader(run_id="01RUN", timeout_seconds=5.0)
+
+    assert result.payload == [{"id": "implement@1", "status": "running"}]
+    assert [(call["method"], call["url"]) for call in transport.calls] == [
+        ("GET", "https://hp.example:32276/api/v1/runs/01RUN/stages")
+    ]
+
+
 def test_the_auth_file_token_rides_as_the_bearer_when_no_env_token_is_set(
     *,
     monkeypatch: pytest.MonkeyPatch,
