@@ -1,7 +1,7 @@
 ---
 topic: expedited-incident-lifecycle
 author: codex:expedited-incident-response-flag/orchestrator-carrier
-created_at: 2026-11-03T19:13:23Z
+created_at: 2026-11-03T19:45:17Z
 ---
 
 ## Proposal: Expedited incident identity, fenced ownership and same-item normal repayment
@@ -25,7 +25,27 @@ Add the following new section to contracts.md. This is an incident-only exceptio
 
 ## Expedited incident lifecycle
 
+For an authorized recorded incident only, this section MUST take precedence over conflicting ordinary admission, factory provenance, WIP, reconciliation and completion clauses. It MUST preserve the ordinary policy for every other item and for normal repayment. The incident phase is context on the canonical ledger item, not a second work-item store or lifecycle authority.
+
 The plugin MUST preserve one canonical incident work-item id through repair, revert, corrected attempts, normal factory repayment and later reopening. Each attempt MUST bind its repository, immutable operation id, attempt id, phase/generation, exact base/head, carrier PR, complete landed commit/tree identities and cumulative original scope. Claim stamps, branch recovery, merged-PR resolution, proof publication, acceptance and closure MUST select that explicit current identity; the first merged branch match, latest title mention, or marker-removal diff alone MUST NOT select it. Existing explicit multi-PR selection work remains a prerequisite; this contract does not replace its general ambiguity refusals.
+
+
+The sanctioned incident transition MUST publish the following phase and canonical lifecycle-state pair. Host-owned active phases MUST carry the incident owner rather than a factory claim and MUST NOT consume a factory slot. Unknown phase/state combinations MUST produce a named configuration refusal. Only the incident transition may establish these exceptional host phases; flags alone MUST NOT mutate lifecycle state. Ordinary factory admission and acceptance govern the repayment phases.
+
+| Incident phase | Canonical lifecycle state | Transition condition |
+| --- | --- | --- |
+| repair | active | Authorized canonical entry or corrected repair with fresh evidence. |
+| master-observation | active | The exact expedited repair carrier merged. |
+| reverting | active | A current incident failure requires the recorded inverse recovery. |
+| rollback-conflict | blocked | The controller records an owned inverse-patch conflict with its release condition. |
+| collecting-failures | active | Revert receipt exists and original failed CI evidence remains incomplete. |
+| repayment-admission | pending-approval | Complete normal master CI succeeded and ordinary repayment admission remains owed. |
+| repayment-ready | ready | Ordinary admission approved the unchanged incident behavioral Definition of Done. |
+| repayment-active | active | One fresh normal factory claim is admitted. |
+| repayment-acceptance | acceptance | The current normal repayment carrier merged and awaits final proof. |
+| closed | done | All incident completion requirements below are satisfied. |
+
+Canonical entry MUST preserve the item's original behavioral Definition of Done, or its initially recorded incident behavioral intent until normal grooming authors that section, across all phases. A current attributable regression after closure MUST reopen the same item into reverting, fenced against the closed generation; a completed revert and collected failure evidence permit a new repair phase only with the fresh evidence required below.
 
 Incident entry MUST reuse an existing item or canonically file a minimal identified incident with impact, owner, scope and behavioral intent, recording ordinary model-backed admission and spec debt as deferred to normal repayment. Slow Definition-of-Done/governing-heading judgement, factory capacity, provider probes and green-master preconditions MUST NOT delay that authorized host repair or recorded emergency revert. This is not permission for ordinary implementation to evade admission. A missing tenant MUST use a previously recorded canonical incident id and trusted receipt; it MUST NOT invent a second work-item identity or treat a failed read as absence.
 
@@ -46,76 +66,101 @@ Add the following scenarios to scenarios.md in the same revision. Their descript
 ## Scenario: an incident keeps one item with explicit current operation ownership
 
 ```gherkin
-Given an identified incident item with a queued or live factory attempt
-When the authorized host claims an expedited repair
-Then canonical identity and prior attempt evidence remain on the same item
-And the sanctioned server-side conditional transition fences the old generation and duplicate dispatch
-And a late old run cannot write proof or close the incident
-And absent conditional capability produces a named refusal instead of an apparent fence
+Feature: an incident keeps one item with explicit current operation ownership
+
+  Scenario: an incident keeps one item with explicit current operation ownership
+    Given an identified incident item with a queued or live factory attempt
+    When the authorized host claims an expedited repair
+    Then canonical identity and prior attempt evidence remain on the same item
+    And its repair phase is active under the host owner without a factory slot
+    And the sanctioned server-side conditional transition fences the old generation and duplicate dispatch
+    And a late old run cannot write proof or close the incident
+    And absent conditional capability produces a named refusal instead of an apparent fence
 ```
 
 ## Scenario: incident entry defers slow admission without creating another identity
 
 ```gherkin
-Given an authorized incident repair and a reachable tenant
-When no existing incident item covers its identified scope
-Then canonical intake records its impact owner scope and behavioral intent without slow model judgement
-And ordinary admission and spec debt remain owed before normal factory repayment
-Given the tenant is unavailable and a trusted canonical incident receipt already exists
-When recovery resumes
-Then that same identity is used without a new item or a fresh dependency on the failed tenant
+Feature: incident entry defers slow admission without creating another identity
+
+  Scenario: incident entry defers slow admission without creating another identity
+    Given an authorized incident repair and a reachable tenant
+    When no existing incident item covers its identified scope
+    Then canonical intake records its impact owner scope and behavioral intent without slow model judgement
+    And ordinary admission and spec debt remain owed before normal factory repayment
+
+  Scenario: Recovery resumes a previously recorded incident during tenant failure
+    Given the tenant is unavailable and a trusted canonical incident receipt already exists
+    When recovery resumes
+    Then that same identity is used without a new item or a fresh dependency on the failed tenant
 ```
 
 ## Scenario: incident provenance exceptions remain exact and repayable
 
 ```gherkin
-Given a recorded incident repair or emergency revert carrier and exact PR head and landed identities
-When provenance and retrospective bypass audit inspect it after its labels and environment disappear
-Then its trusted incident receipt is recognized as deferred verification with normal repayment outstanding
-And an arbitrary flag label trailer or marker does not admit another carrier
-And normal factory repayment still requires normal factory provenance
+Feature: incident provenance exceptions remain exact and repayable
+
+  Scenario: incident provenance exceptions remain exact and repayable
+    Given a recorded incident repair or emergency revert carrier and exact PR head and landed identities
+    When provenance and retrospective bypass audit inspect it after its labels and environment disappear
+    Then its trusted incident receipt is recognized as deferred verification with normal repayment outstanding
+    And an arbitrary flag label trailer or marker does not admit another carrier
+    And normal factory repayment still requires normal factory provenance
 ```
 
 ## Scenario: a successful incident merge reenters normal factory on the same item
 
 ```gherkin
-Given a merged expedited repair whose complete normal master CI succeeded
-And current ordinary admission is complete for its outstanding repayment
-When the dispatcher resumes the incident
-Then one fresh normal factory run and carrier PR use the same work-item id with a new phase identity
-And both incident flags are removed before provider and sandbox execution
-And the PR removes the marker while validating cumulative original incident scope and debt
-And restart or duplicate delivery resumes that operation without another repayment run
+Feature: a successful incident merge reenters normal factory on the same item
+
+  Scenario: a successful incident merge reenters normal factory on the same item
+    Given a merged expedited repair whose complete normal master CI succeeded
+    And current ordinary admission is complete for its outstanding repayment
+    When the dispatcher resumes the incident
+    Then normal repayment admission passes through pending-approval and ready before one active factory claim
+    And one fresh normal factory run and carrier PR use the same work-item id with a new phase identity
+    And both incident flags are removed before provider and sandbox execution
+    And the PR removes the marker while validating cumulative original incident scope and debt
+    And restart or duplicate delivery resumes that operation without another repayment run
 ```
 
 ## Scenario: a deferred-proof-only finding is repaired without reverting healthy master
 
 ```gherkin
-Given a successful incident master merge and its normal factory repayment in progress
-When deferred factory verification alone reveals a defect while deployed master remains healthy
-Then that defect is repaired in the repayment PR under normal validation
-And the original successful merge is not reverted solely for that deferred finding
+Feature: a deferred-proof-only finding is repaired without reverting healthy master
+
+  Scenario: a deferred-proof-only finding is repaired without reverting healthy master
+    Given a successful incident master merge and its normal factory repayment in progress
+    When deferred factory verification alone reveals a defect while deployed master remains healthy
+    Then that defect is repaired in the repayment PR under normal validation
+    And the original successful merge is not reverted solely for that deferred finding
 ```
 
 ## Scenario: incident completion requires final normal proof rather than an old repair merge
 
 ```gherkin
-Given an incident with an earlier expedited merge and a marker-removal follow-up
-When acceptance reconcile-merged close no-change or proof-only resume evaluates it
-Then it grades cumulative original incident behavior and the current normal carrier
-And it leaves the incident unfinished until the normal factory PR and its master CI succeed
-And it requires marker removal manual outcome repaid debt and disposition of related failures
-And missing cancelled or unreadable evidence remains an explicit obligation
+Feature: incident completion requires final normal proof rather than an old repair merge
+
+  Scenario: incident completion requires final normal proof rather than an old repair merge
+    Given an incident with an earlier expedited merge and a marker-removal follow-up
+    When acceptance reconcile-merged close no-change or proof-only resume evaluates it
+    Then it grades cumulative original incident behavior and the current normal carrier
+    And it leaves the incident unfinished until the normal factory PR and its master CI succeed
+    And it requires marker removal manual outcome repaid debt and disposition of related failures
+    And missing cancelled or unreadable evidence remains an explicit obligation
 ```
 
 ## Scenario: an attributable regression fences repayment and reopens the same incident
 
 ```gherkin
-Given an incident whose normal repayment is live or whose item is already closed
-When a related failure on master another PR or an adopted consumer is attributed with change evidence
-Then the same incident item is reopened with a new fenced generation and recovery requested
-And stale cleanup cannot merge or close the corrected attempt
-And failed original CI evidence is retained while a corrected attempt requires new repair or resolution evidence
-And final normal factory repayment remains owed on that item
+Feature: an attributable regression fences repayment and reopens the same incident
+
+  Scenario: an attributable regression fences repayment and reopens the same incident
+    Given an incident whose normal repayment is live or whose item is already closed
+    When a related failure on master another PR or an adopted consumer is attributed with change evidence
+    Then the same incident item is reopened with a new fenced generation and recovery requested
+    And stale cleanup cannot merge or close the corrected attempt
+    And failed original CI evidence is retained while a corrected attempt requires new repair or resolution evidence
+    And final normal factory repayment remains owed on that item
 ```
 
