@@ -184,13 +184,8 @@ def progress_event_body(*, payload: TransitionPayload, now: str) -> str:
     differs from the one the transition committed.
     """
     state = payload.authority
-    ruling = (
-        ()
-        if payload.continuation_ruling_by is None
-        else (
-            f"continuation-ruling-recorded-at: {payload.continuation_ruling_recorded_at}",
-            f"continuation-ruling-by: {payload.continuation_ruling_by}",
-        )
+    replaced = (
+        () if payload.replaced_result is None else (f"replaced-result: {payload.replaced_result}",)
     )
     return "\n".join(
         (
@@ -203,7 +198,7 @@ def progress_event_body(*, payload: TransitionPayload, now: str) -> str:
             f"max-handoffs: {state.max_handoffs}",
             f"consumed-handoffs: {state.consumed_handoffs}",
             f"recorded: {now}",
-            *ruling,
+            *replaced,
             f"{_PAYLOAD_LABEL}{render_payload(payload=payload)}",
         )
     )

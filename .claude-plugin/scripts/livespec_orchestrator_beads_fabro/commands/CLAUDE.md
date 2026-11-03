@@ -2591,76 +2591,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   unattended resume may take — with explicit null tracking so the unmet
   obligation stays in the progress history rather than being discharged by
   pointing elsewhere.
-- The EVIDENCED CAUSAL SUPERSESSION of `contracts.md` §"Required result, budget
-  and progress epoch" (`bd-ib-evrynu`, Scenario 211), split pure-from-impure the
-  usual way and reading bottom-up: `_plan_supersession_provenance` (PURE and a
-  LEAF: whether the derivation a supersession NAMES wrote the obligation
-  standing now, answering a reason or no objection) → `_plan_supersession`
-  (PURE: the ratified closed cause set, what one write must NAME, the evidence
-  values and the whole refusal ladder) → `_plan_supersession_evidence` (the
-  three ledger readings the `misderived` cause's verification needs) →
-  `_plan_progress_unmet`'s
-  `superseded_decision`, reached from `_plan_progress_decision` and carried by
-  `_plan_tracked_write` as one more field of a sanctioned write. It is the ONE
-  write that may rename an unmet obligation, and the derivation gate above is
-  what stops new obligations needing it.
-  Six properties an editor must not invert. The REPLACEMENT inherits the
-  superseded obligation's original deadline and consumed handoff count unchanged
-  and consumes nothing, so the candidate's own budget is DISCARDED — a
-  supersession that adopted it is the laundering route the cause exists to
-  close, and the pointer it produced would be indistinguishable from a
-  legitimately advanced one. The EXPIRY RULES STILL BIND: the clause says a
-  supersession of an already expired obligation "remains subject to the expiry
-  rules above", so it is not a second route past a deadline. The cause set is
-  the RATIFIED three and what this build can VERIFY is one of them, so a cause
-  whose evidence it takes no reading for is refused under the clause's own rule
-  that a cause whose evidence does not verify must be refused — fail-closed in
-  the only direction available, since all three were refused before. The
-  REPLACEMENT must be the closure of the carrier the evidence names, because the
-  evidence for this arm IS a carrier and a replacement free to name anything
-  else makes it a verified footnote attached to an unrelated rename. A carrier
-  CLOSED when the derivation was recorded and one closed SINCE are two refusals
-  with two reasons — the first means the step could legitimately have been
-  taken, the second that the replacement is already satisfied — and every
-  UNDATABLE closure routes to the first, which is the arm that refuses. And the
-  deriving match is the IDENTITY ALONE, resolved at the epoch that transition's
-  own payload records — never the chain head's.
-  THAT LAST ONE IS `bd-ib-4hznqp`, and it is the entry most easily re-inverted,
-  because requiring the two epochs to agree reads like the clause's own words.
-  It is not: "that epoch" is the epoch the derivation wrote the obligation at,
-  while the epoch the SUPERSESSION names is graded against the head as the
-  ordinary staleness check. Requiring both made a misderived obligation
-  supersedable only while NOTHING had been written since it was derived — so the
-  human pointer the derivation gate itself prescribes for an open carrier, or any
-  handoff, made it permanently unsupersedable, and the only rest state left was
-  that same human pointer. Measured 2026-10-22 on plan epic `bd-ib-fyozyd`,
-  derived at epoch 99 -> 100 and retained to 101 nine minutes later: naming 101
-  resolved no transition and naming 100 was refused as stale.
-  WHAT THAT COSTS, AND WHAT PAYS FOR IT, is the whole of
-  `_plan_supersession_provenance`: an identity alone selects ANY recorded
-  transition of the plan, including a real derivation by a real derivation actor
-  whose obligation a later transition replaced. So the named transition must have
-  RECORDED the retained obligation and every transition after it must have
-  RETAINED it unchanged, and the second is NOT implied by the first — an
-  obligation changed and then changed back satisfies the first exactly while the
-  transition that wrote what stands is the restoring one. Both comparisons are
-  between CANONICAL IDENTITIES, so a recorded value that parses to no typed
-  reference has none and compares unequal to every obligation; a later transition
-  whose payload the reader could not parse is carried as `None` rather than
-  SKIPPED, because skipping it would make the one transition nobody can place the
-  cheapest route past the retention condition. And both run BEFORE the
-  derivation-actor condition, whose refusal says "the obligation was written by
-  ..." — a sentence that is only true once the named transition is known to have
-  written it.
-  `_plan_progress_outcome` and `_plan_progress_unmet` are the cohesion split
-  that made room for it, and the direction is one-way: the outcome leaf imports
-  nothing from the family, the unmet module owns every arm that DEFENDS a
-  standing obligation (the rename refusal, the expiry gate, the typed causal
-  recovery and the supersession), and `_plan_progress_decision` is left as the
-  DISPATCH plus the arms that ESTABLISH a budget. `_plan_write_identity` is the
-  pure retry-identity derivation, split off `_plan_tracked_write` for the same
-  pure-from-impure reason. None of the four leaves a re-export shim; callers
-  import from the module that owns the name.
+- PLAN OBLIGATION EXPIRY IS DELETED (v286, maintainer ruling 2026-11-03 recorded
+  on `livespec-dev-tooling-6tgd2z`: "Whatever 'stall' rule is in effect here,
+  completely delete it"). The budget is a reporting datum only: an overdue
+  obligation never refuses a write, never needs a recovery attempt, ruling or
+  human decision, and never makes `resume_directive` withhold its action. The
+  evidenced causal supersession (the `_plan_supersession*` modules, Scenario 211)
+  went with it, because the rename refusal it unlocked existed only to stop a
+  rename evading expiry. A different required result is now a `replacement`: a
+  fresh obligation under the write's own budget, whose progress event carries
+  `replaced-result:` (`TransitionPayload.replaced_result`). Do NOT re-add a
+  refusal keyed on `obligation_expiry`; that reading feeds findings only.
+  `_plan_progress_outcome` and `_plan_progress_unmet` are a cohesion split: the
+  outcome leaf imports nothing from the family, the unmet module owns the
+  continue-or-replace arm (and grades an OPTIONAL typed causal recovery), and
+  `_plan_progress_decision` is the DISPATCH plus the arms that ESTABLISH a
+  budget. `_plan_write_identity` is the pure retry-identity derivation, split off
+  `_plan_tracked_write` for the same pure-from-impure reason. None of these
+  leaves a re-export shim; callers import from the module that owns the name.
 - `_plan_resume_reconcile.py` — the reconciliation half of the resume, split out
   of `_plan_resume` by cohesion once the durable progress check pushed that file
   past its size ceiling. `_plan_resume` keeps the TOP-LEVEL sequence (the

@@ -1,8 +1,11 @@
 """Required-result and budget reconciliation for a typed plan pointer.
 
 Every TERMINAL tracking finding lives here — a legacy pointer carrying no
-obligation, an unobservable result, and an expired budget — and returning `None`
-is what permits bounded continuation. The SATISFIED finding is deliberately NOT
+obligation, and an unobservable result — and returning `None` is what permits
+continuation. A passed deadline or an exhausted handoff count is deliberately
+NOT one of them: the budget is a reporting datum only, and the expiry finding
+that once stopped the resume here was deleted on the maintainer's 2026-11-03
+ruling. The SATISFIED finding is deliberately NOT
 here: it is the one arm that DERIVES AND PERSISTS a replacement pointer, which
 `_plan_resume_advance` owns, and its caller checks it first so that this module
 is reached only once staleness has been ruled out.
@@ -21,10 +24,8 @@ every one of them calls rather than to any of the call sites.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro._store_ready_dwell import utc_now_iso
-from livespec_orchestrator_beads_fabro.commands._plan_continuation import instant_expired
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     LEGACY_TRACKING,
     NextAction,
@@ -49,14 +50,13 @@ __all__: list[str] = [
 
 def tracked_resume_directive(
     *,
-    action: NextAction,
     observation: ResultObservation | None,
     findings: tuple[str, ...],
 ) -> ResumeDirective | None:
-    """Return a terminal tracking directive, or permit bounded continuation.
+    """Return a terminal tracking directive, or permit continuation.
 
     PURE over the pointer and its already-taken observation. It reads no store
-    and asks no factory, which is what makes the three findings it renders
+    and asks no factory, which is what makes the findings it renders
     exercisable across every state without a double for either.
     """
     if observation is None:
@@ -76,16 +76,7 @@ def tracked_resume_directive(
             findings=(*findings, finding),
             observation=observation,
         )
-    if _budget_unexpired(budget=action.budget):
-        return None
-    finding = f"next_action obligation expired after observing {observation.target}"
-    return ResumeDirective(
-        ask=False,
-        next_action=None,
-        reason=finding,
-        findings=(*findings, finding),
-        observation=observation,
-    )
+    return None
 
 
 def result_observation(
@@ -97,13 +88,3 @@ def result_observation(
     return read_plan_owned_result(
         config=config, epic_id=epic_id, required_result=action.required_result
     )
-
-
-def _budget_unexpired(*, budget: object) -> bool:
-    fields = cast("dict[str, Any]", budget)
-    deadline = cast("str", fields["deadline"])
-    maximum = cast("int", fields["max_handoffs"])
-    count = cast("int", fields.get("handoff_count", 0))
-    if count >= maximum:
-        return False
-    return not instant_expired(until=deadline, now=utc_now_iso())

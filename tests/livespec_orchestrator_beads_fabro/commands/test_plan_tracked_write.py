@@ -287,10 +287,15 @@ def test_a_chain_finding_other_than_missing_refuses_the_write(
     assert _handoff_comments(config=config) == []
 
 
-def test_a_decision_refusal_refuses_before_appending_or_updating_anything(
+def test_a_renamed_unmet_result_is_committed_as_a_replacement(
     tmp_path: Path,
 ) -> None:
-    """ "refused BEFORE appending a handoff or updating the pointer"."""
+    """A different required result REPLACES the unmet one; nothing refuses it.
+
+    The rename refusal was deleted with plan obligation expiry (v286). The
+    handoff is appended, the pointer carries the new result, and the progress
+    event names the result it replaced.
+    """
     config = _seed(tmp_path=tmp_path)
     assert _write(commit_tracked_write(request=_request(config=config))).tracked is True
     renamed = NextAction(
@@ -305,12 +310,19 @@ def test_a_decision_refusal_refuses_before_appending_or_updating_anything(
     )
     comments_before = len(_handoff_comments(config=config))
 
-    refusal = _refusal(
+    written = _write(
         commit_tracked_write(request=_request(config=config, is_handoff=True, action=renamed))
     )
 
-    assert "cannot be renamed" in refusal.detail
-    assert len(_handoff_comments(config=config)) == comments_before
+    assert written.action.required_result == renamed.required_result
+    assert written.consumed_handoffs == 1
+    assert len(_handoff_comments(config=config)) == comments_before + 1
+    events = [
+        str(comment.get("text", ""))
+        for comment in _fake(config=config).list_comments(issue_id=_EPIC_ID)
+        if str(comment.get("text", "")).startswith("plan-progress-event")
+    ]
+    assert any("event: replacement" in body and "replaced-result: " in body for body in events)
 
 
 def test_a_concurrent_writer_winning_the_race_refuses_with_a_retry_instruction(
@@ -451,21 +463,19 @@ def test_a_retry_of_the_handoff_that_exhausted_the_budget_recovers_it(
     assert len(_handoff_comments(config=config)) == 1
 
 
-def test_a_different_operation_at_the_exhausted_budget_is_still_refused_as_expired(
+def test_a_different_operation_past_the_exhausted_budget_is_accepted(
     tmp_path: Path,
 ) -> None:
-    """The control: expiry still refuses every write that is not that retry.
+    """The control for the retry case: a NEW handoff past the ceiling is a fresh write.
 
-    Without this, "recover the retry" is satisfiable by not grading expiry at
-    all — which would hand a fresh deadline to every continuation that asked.
-    The pointer is read back because a refusal that had already rewritten it
-    would leave a perfectly well-formed pointer behind.
+    Expiry no longer refuses anything (v286), so the successor handoff is
+    appended and consumes one more unit, while the original deadline and ceiling
+    stay exactly as the chain recorded them.
     """
     config = _seed(tmp_path=tmp_path)
-    _ = _exhaust(config=config, operation_id="op-final")
-    pointer_before = plan_record_metadata(record=_fake(config=config).show_issue(issue_id=_EPIC_ID))
+    first = _exhaust(config=config, operation_id="op-final")
 
-    refusal = _refusal(
+    successor = _write(
         commit_tracked_write(
             request=_request(
                 config=config,
@@ -476,11 +486,15 @@ def test_a_different_operation_at_the_exhausted_budget_is_still_refused_as_expir
         )
     )
 
-    assert "is expired at its handoffs limit" in refusal.detail
-    assert "causal recovery attempt" in refusal.detail
-    assert len(_handoff_comments(config=config)) == 1
-    after = plan_record_metadata(record=_fake(config=config).show_issue(issue_id=_EPIC_ID))
-    assert after[NEXT_ACTION_METADATA_KEY] == pointer_before[NEXT_ACTION_METADATA_KEY]
+    assert successor.idempotent is False
+    assert successor.consumed_handoffs == first.consumed_handoffs + 1
+    assert successor.action.budget is not None
+    assert successor.action.budget == {
+        **first.action.budget,
+        "handoff_count": 2,
+        "epoch": str(successor.epoch),
+    }
+    assert len(_handoff_comments(config=config)) == 2
 
 
 def test_an_unreadable_recovery_scan_refuses_rather_than_deciding_afresh(

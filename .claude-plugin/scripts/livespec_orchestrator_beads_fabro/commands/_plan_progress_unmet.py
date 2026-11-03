@@ -1,38 +1,43 @@
 """What one sanctioned write may do to an obligation that is still UNMET.
 
-PURE, and the half of the decision ladder every refusal lives in: an unmet
-obligation is the state in which the clause's guarantees bite, so this is where
-the rename refusal, the expiry gate, the typed causal recovery and the evidenced
-causal supersession are graded. `_plan_progress_decision` keeps the DISPATCH plus
-the arms for an obligation that is absent, satisfied or null-tracked, which are
-the arms that establish a budget rather than defend one.
+PURE. `_plan_progress_decision` keeps the DISPATCH plus the arms for an
+obligation that is absent, satisfied or null-tracked; this module is the arm for
+an unmet one, which a write either CONTINUES or REPLACES.
 
-WHY A RENAMED RESULT IS REFUSED RATHER THAN ACCEPTED AS NEW WORK. The clause:
-"A replacement or renaming of an unmet result MUST preserve the original
-obligation and deadline until an evidenced causal supersession explicitly
-accounts for it; a new label, repair-child milestone, acknowledgment or
-changed-approach claim cannot evade expiry." Renaming the target is the one
-rewrite that would otherwise look like legitimate advancement, because the
-pointer it produces is indistinguishable from a genuinely new obligation.
+AN OVERDUE OBLIGATION IS NEVER A REASON TO REFUSE. `contracts.md` section
+"Required result, budget and progress epoch" makes the budget a reporting datum
+only: "being overdue MUST NOT cause any write to be refused, any continuation to
+require a recovery attempt, a continuation ruling or a human decision, or any
+executable action to be withheld." So nothing here reads the clock or the
+handoff ceiling. That is the deletion of the expiry rule the maintainer ordered
+on 2026-11-03 ("Whatever 'stall' rule is in effect here, completely delete it"),
+and it is a deletion rather than a toggle: there is no arm left that could
+refuse on a limit.
 
-AND WHY THE SUPERSESSION ARM SITS BESIDE THAT REFUSAL RATHER THAN AROUND IT. The
-two are one decision about one write: either the rename is evidenced, in which
-case the obligation's RESULT changes while both of its limits stand, or it is
-not, in which case the obligation stands whole. Splitting them across modules is
-how a build comes to admit a rename on one path that the other still refuses.
+A RENAMED RESULT IS A REPLACEMENT, NOT A REFUSAL. "A sanctioned write MAY replace
+an unmet result with a different typed required result. The replacement MUST be
+recorded as a `plan-progress-event` of kind `replacement` ... the new obligation
+begins under the write's own budget." The rename refusal and the evidenced
+supersession it demanded existed only to stop a rename from evading expiry, so
+with expiry gone they were pure stall rules: a stale target could never be
+re-aimed.
+
+A TYPED CAUSAL RECOVERY ATTEMPT IS OPTIONAL. "no write requires one", but one
+that IS carried is still graded and recorded, because the independent consumer
+executes the operation it names and an unvalidated record must not become one.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import AuthorityState
-from livespec_orchestrator_beads_fabro.commands._plan_obligation import obligation_expiry
 from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
     EVENT_HANDOFF,
     EVENT_POINTER,
     EVENT_RECOVERY,
+    EVENT_REPLACEMENT,
     TrackedDecision,
     TrackedRefusal,
     retained_authority,
@@ -45,80 +50,61 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_reference import (
     parse_result_reference,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_targets import ResultReference
-from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
-    EVENT_SUPERSESSION,
-    validate_causal_supersession,
-)
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro.commands._plan_continuation import ContinuationRuling
     from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import ChainHead
     from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
-    from livespec_orchestrator_beads_fabro.commands._plan_obligation import Obligation
-    from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
-    from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
-        CausalSupersession,
-        SupersessionEvidence,
+    from livespec_orchestrator_beads_fabro.commands._plan_obligation import (
+        CandidateBudget,
+        Obligation,
     )
+    from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
 
 __all__: list[str] = [
-    "SupersessionContext",
-    "continuation_decision",
-    "superseded_decision",
+    "unmet_decision",
 ]
 
 
-@dataclass(frozen=True, kw_only=True)
-class SupersessionContext:
-    """The claim and current readings a supersession decision needs together."""
-
-    supersession: CausalSupersession
-    evidence: SupersessionEvidence | None
-    continuation_ruling: ContinuationRuling | None
-
-
-def continuation_decision(  # noqa: PLR0913 -- continuation needs every prior and candidate fact.
+def unmet_decision(  # noqa: PLR0913 -- an unmet write needs every prior and candidate fact.
     *,
     epic_id: str,
     head: ChainHead,
     candidate: NextAction,
+    proposed: CandidateBudget,
     prior: Obligation,
     consumed: int,
-    unobservable: bool,
     is_handoff: bool,
     recovery: CausalRecovery | None,
-    continuation_ruling: ContinuationRuling | None,
     now: str,
 ) -> TrackedDecision | TrackedRefusal:
-    """Continue an unmet obligation, preserving both of its original limits.
-
-    THE EXPIRY GATE RUNS HERE, before the decision returns anything a caller
-    could write: "After expiry, same-obligation continuation MUST be refused
-    before appending a handoff or updating the pointer unless a fresh typed
-    causal recovery attempt is supplied."
-    """
-    same_result = _same_result_refusal(candidate=candidate, prior=prior, unobservable=unobservable)
-    if isinstance(same_result, TrackedRefusal):
-        return same_result
-    expiry = obligation_expiry(obligation=prior, now=now)
-    if expiry is None and recovery is not None:
-        return TrackedRefusal(detail="causal recovery is invalid: the obligation is not expired")
-    if expiry is not None and recovery is None and continuation_ruling is None:
-        return TrackedRefusal(
-            detail=(
-                f"the obligation {prior.original_deadline} is expired at its {expiry} limit;"
-                " a fresh typed causal recovery attempt or a recorded human decision is"
-                " required to continue"
+    """Continue an unmet obligation, or replace its result, whatever its limits read."""
+    identities = _result_identities(candidate=candidate, prior=prior)
+    if isinstance(identities, TrackedRefusal):
+        return identities
+    candidate_identity, prior_identity = identities
+    if candidate_identity != prior_identity:
+        if recovery is not None:
+            return TrackedRefusal(
+                detail=(
+                    "a typed causal recovery attempt names the obligation it recovers, so it"
+                    " cannot ride on a write that replaces that obligation's result"
+                )
             )
+        return _replacement_decision(
+            candidate=candidate,
+            proposed=proposed,
+            consumed=consumed,
+            head=head,
+            replaced_identity=prior_identity,
         )
-    attempt = None
+    attempt = head.authority.last_recovery_attempt
     if recovery is not None:
         recovery_refusal = validate_causal_recovery(
             recovery=recovery,
             action=candidate,
             epic_id=epic_id,
             current_epoch=head.epoch,
-            current_result_identity=same_result,
+            current_result_identity=prior_identity,
             now=now,
         )
         if recovery_refusal is not None:
@@ -126,22 +112,8 @@ def continuation_decision(  # noqa: PLR0913 -- continuation needs every prior an
         attempt = recovery_record(recovery=recovery, prior=head.authority, now=now)
     return TrackedDecision(
         action=replace(candidate, required_result=prior.required_result),
-        authority=retained_authority(
-            prior=prior,
-            consumed=consumed,
-            attempt=head.authority.last_recovery_attempt if attempt is None else attempt,
-        ),
+        authority=retained_authority(prior=prior, consumed=consumed, attempt=attempt),
         event_kind=_event_kind(recovery=recovery, is_handoff=is_handoff),
-        continuation_ruling_by=(
-            continuation_ruling.by
-            if expiry is not None and recovery is None and continuation_ruling is not None
-            else None
-        ),
-        continuation_ruling_recorded_at=(
-            continuation_ruling.created_at
-            if expiry is not None and recovery is None and continuation_ruling is not None
-            else None
-        ),
     )
 
 
@@ -151,20 +123,12 @@ def _event_kind(*, recovery: CausalRecovery | None, is_handoff: bool) -> str:
     return EVENT_HANDOFF if is_handoff else EVENT_POINTER
 
 
-def _same_result_refusal(
+def _result_identities(
     *,
     candidate: NextAction,
     prior: Obligation,
-    unobservable: bool,
-) -> TrackedRefusal | str:
-    """Refuse a rewrite that renames the unmet target, or return that target.
-
-    The PRIOR IDENTITY is returned rather than merely validated, because the
-    recovery check downstream needs exactly the identity this arm has already
-    parsed. Re-deriving it there would mean a second parse whose failure arm is
-    unreachable — and an unreachable arm is either dead code or a lie about
-    which of the two readings is authoritative.
-    """
+) -> tuple[str, str] | TrackedRefusal:
+    """The candidate's and the prior obligation's canonical result identities."""
     candidate_parsed = parse_result_reference(value=candidate.required_result)
     prior_parsed = parse_result_reference(value=prior.required_result)
     if not isinstance(candidate_parsed, ResultReference):
@@ -173,98 +137,34 @@ def _same_result_refusal(
         return TrackedRefusal(
             detail="the prior obligation's required_result is unreadable; reconcile it first"
         )
-    if candidate_parsed.identity == prior_parsed.identity:
-        return prior_parsed.identity
-    if unobservable:
-        return TrackedRefusal(
-            detail=(
-                f"the obligation {prior_parsed.identity} is unobservable, so it cannot be"
-                f" replaced by {candidate_parsed.identity}"
-            )
-        )
-    return TrackedRefusal(
-        detail=(
-            f"the unmet obligation {prior_parsed.identity} cannot be renamed to"
-            f" {candidate_parsed.identity} without evidenced causal supersession"
-        )
-    )
+    return candidate_parsed.identity, prior_parsed.identity
 
 
-def superseded_decision(
+def _replacement_decision(
     *,
-    head: ChainHead,
     candidate: NextAction,
-    prior: Obligation,
-    context: SupersessionContext,
-    now: str,
-) -> TrackedDecision | TrackedRefusal:
-    """Replace an unmet obligation's result, keeping BOTH of its original limits.
+    proposed: CandidateBudget,
+    consumed: int,
+    head: ChainHead,
+    replaced_identity: str,
+) -> TrackedDecision:
+    """Begin a new obligation under the write's own budget, recording the replacement.
 
-    THE EXPIRY RULES STILL BIND, which the clause says in as many words: "A
-    supersession of an already expired obligation remains subject to the expiry
-    rules above." A current recorded continuation ruling is the human decision
-    those rules admit; absent that ruling, a supersession is not a second route
-    past a deadline.
-
-    THE REPLACEMENT INHERITS THE ORIGINAL DEADLINE AND THE CONSUMED COUNT
-    UNCHANGED, and consumes nothing: "A supersession never consumes a handoff
-    unit and never resets or postpones either limit." The candidate's own budget
-    is DISCARDED — a supersession that adopted it would be the laundering route
-    the whole cause exists to close, and the pointer it produced would be
-    indistinguishable from a legitimately advanced one.
-
-    THE PRIOR IDENTITY IS PARSED HERE rather than taken from the caller, because
-    the supersession must name the obligation the CHAIN holds and a caller-supplied
-    identity is one the caller could have chosen to match.
+    The replaced obligation is not erased: the chain keeps the transition that
+    held it, and the `replacement` event kind names it in the progress history.
+    The item-attributable recovery record is carried forward, because that count
+    is a fact about the item's dispatches rather than about which result the plan
+    is currently waiting on.
     """
-    expiry = obligation_expiry(obligation=prior, now=now)
-    if expiry is not None and context.continuation_ruling is None:
-        return TrackedRefusal(
-            detail=(
-                f"the obligation {prior.original_deadline} is expired at its {expiry} limit;"
-                " a supersession does not reopen it, so a fresh typed causal recovery"
-                " attempt or a recorded human decision is required first"
-            )
-        )
-    prior_parsed = parse_result_reference(value=prior.required_result)
-    if not isinstance(prior_parsed, ResultReference):
-        return TrackedRefusal(
-            detail="the prior obligation's required_result is unreadable; reconcile it first"
-        )
-    if not (context.evidence is not None and context.evidence.replacement_unmet):
-        return TrackedRefusal(
-            detail=(
-                "the replacement result is already satisfied or cannot be shown unmet, so a"
-                " supersession cannot trade an unmet obligation for advancement"
-            )
-        )
-    refusal = validate_causal_supersession(
-        supersession=context.supersession,
-        evidence=context.evidence,
-        prior_identity=prior_parsed.identity,
-        current_epoch=head.epoch,
-        replacement=candidate.required_result,
-    )
-    if refusal is not None:
-        return TrackedRefusal(detail=refusal.detail)
     return TrackedDecision(
         action=candidate,
         authority=AuthorityState(
             required_result=candidate.required_result,
-            original_deadline=prior.original_deadline,
-            max_handoffs=prior.max_handoffs,
-            consumed_handoffs=prior.consumed_handoffs,
+            original_deadline=proposed.deadline,
+            max_handoffs=proposed.max_handoffs,
+            consumed_handoffs=consumed,
             last_recovery_attempt=head.authority.last_recovery_attempt,
         ),
-        event_kind=EVENT_SUPERSESSION,
-        continuation_ruling_by=(
-            context.continuation_ruling.by
-            if expiry is not None and context.continuation_ruling is not None
-            else None
-        ),
-        continuation_ruling_recorded_at=(
-            context.continuation_ruling.created_at
-            if expiry is not None and context.continuation_ruling is not None
-            else None
-        ),
+        event_kind=EVENT_REPLACEMENT,
+        replaced_result=replaced_identity,
     )
