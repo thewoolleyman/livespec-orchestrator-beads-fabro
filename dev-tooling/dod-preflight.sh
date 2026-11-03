@@ -203,7 +203,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
     run_candidate_chain,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 
 repo = Path(sys.argv[2])
 prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
