@@ -146,6 +146,70 @@ def test_a_reading_that_was_never_projected_renders_an_explicit_null() -> None:
     assert records.codex_headroom_projection_fields(projection=None) is None
 
 
+def test_window_records_name_reset_proximity_and_the_effective_floor() -> None:
+    reading = codex.codex_headroom_reading(
+        credential_identity="codex-cred",
+        observed_at=_NOW,
+        response={
+            "rate_limit": {
+                "allowed": True,
+                "limit_reached": False,
+                "primary_window": {
+                    "used_percent": 90,
+                    "limit_window_seconds": 18000,
+                    "reset_at": 1793206800,
+                },
+            }
+        },
+    )
+
+    assessment_record = records.codex_headroom_assessment_record(
+        work_item_id="bd-ib-item", floor_percent=20, assessments=(reading,)
+    )
+    assessments: Any = assessment_record["assessments"]
+    [assessment] = assessments
+    windows: Any = assessment["windows"]
+    [window] = windows
+
+    assert window["reset_at"] == 1793206800
+    assert window["reset_at_result"] is None
+    assert window["effective_floor_percent"] == 5
+    assert window["floor_relaxed_by_reset_proximity"] is True
+
+
+def test_an_unreadable_observation_does_not_relax_a_window_floor() -> None:
+    window = codex.CodexWindowReading(
+        name="primary",
+        used_percent=90,
+        limit_window_seconds=18000,
+        remaining_percent=10,
+        reset_at=1793206800,
+        reset_at_result=None,
+    )
+
+    assert (
+        codex.codex_window_effective_floor_percent(
+            window=window, observed_at="not-an-instant", floor_percent=20
+        )
+        == 20
+    )
+
+
+def test_window_records_mark_an_absent_reset_at_without_relaxing_the_floor() -> None:
+    assessment_record = records.codex_headroom_assessment_record(
+        work_item_id="bd-ib-item", floor_percent=20, assessments=(_graded(),)
+    )
+    assessments: Any = assessment_record["assessments"]
+    [assessment] = assessments
+    windows: Any = assessment["windows"]
+    [window] = windows
+
+    assert window["reset_at"] is None
+    assert window["reset_at_result"] == "absent"
+    assert window["effective_floor_percent"] == 20
+    assert window["floor_relaxed_by_reset_proximity"] is False
+
+
 def test_no_credential_email_or_raw_response_reaches_a_record() -> None:
     fields = records.codex_headroom_reading_fields(reading=_graded(secondary=5.0))
 

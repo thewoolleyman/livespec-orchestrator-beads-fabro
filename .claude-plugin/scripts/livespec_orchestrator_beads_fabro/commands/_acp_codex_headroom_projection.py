@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
     CodexHeadroomReading,
     CodexWindowProjection,
     CodexWindowReading,
+    codex_window_effective_floor_percent,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain import (
     SessionHeadroomBaseline,
@@ -111,8 +112,13 @@ def _settled_reason(*, reading: CodexHeadroomReading, floor_percent: int) -> str
         return UNOBSERVABLE_REASON
     if reading.limit_governs:
         return CODEX_LIMIT_REASON
-    remaining = reading.governing_remaining_percent
-    if remaining is not None and remaining < floor_percent:
+    if any(
+        window.remaining_percent
+        < codex_window_effective_floor_percent(
+            window=window, observed_at=reading.observed_at, floor_percent=floor_percent
+        )
+        for window in reading.windows
+    ):
         return FLOOR_SKIP_REASON
     return None
 
