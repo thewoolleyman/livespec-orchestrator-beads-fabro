@@ -29,6 +29,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outco
     provider_limit_release_outcome,
     reclassified_turns,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reacquired_sandbox_fault import (
+    HOST_FAULT_RELEASE_CAUSE,
+    HOST_FAULT_RELEASE_STATUS,
+    reacquired_sandbox_helper_absence,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted import (
     recapture_exhausted_outcome,
 )
@@ -139,15 +144,27 @@ def _terminal_outcome(
     # shadow every such verdict, which is the whole hazard its own docstring
     # records.
     client_text = f"{stderr}\n{detail}"
-    unobservable = unobservable_run_outcome(
+    classified = unobservable_run_outcome(
         outcome_type=outcome_type,
         plan=plan,
         run_id=run_id,
         inspect=inspect,
         client_text=client_text,
     )
-    if unobservable is not None:
-        return unobservable
+    if classified is None and reacquired_sandbox_helper_absence(text=client_text):
+        classified = outcome_type(
+            work_item_id=plan.work_item_id,
+            status=HOST_FAULT_RELEASE_STATUS,
+            stage="fabro-run",
+            pr_number=None,
+            merge_sha=None,
+            detail=HOST_FAULT_RELEASE_CAUSE,
+            fabro_run_id=run_id,
+            fabro_failure_cause=HOST_FAULT_RELEASE_CAUSE,
+            fabro_failure_category="transient_infra",
+        )
+    if classified is not None:
+        return classified
     terminated = needs_human_terminal_outcome(
         outcome_type=outcome_type,
         plan=plan,
