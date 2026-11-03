@@ -23,6 +23,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
     CommandRunner,
     DispatchOutcome,
     JournalWriter,
@@ -40,6 +41,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_recor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
+from livespec_orchestrator_beads_fabro.commands._fabro_stage_diffs import (
+    FabroStageDiffsUnreadable,
+    read_fabro_stage_diffs,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -57,7 +62,6 @@ __all__: list[str] = [
     "preserve_checkpointed_work_reference",
 ]
 
-_DUMP_TIMEOUT_SECONDS = 300.0
 # Every terminal whose work is worth a durable pointer. The release status is
 # imported from the RECORDS leaf rather than from the outcome mapper that names
 # it a status, because the stage and the status are one literal and the leaf
@@ -159,7 +163,7 @@ def pointer_record_for_run(
     server_url: str,
     command_runner: CommandRunner,
 ) -> PointerRecord:
-    """Export one run and build the pointer body that references it.
+    """Read one run's stage diffs and build the pointer body that references them.
 
     PUBLIC because the run reconciler preserves work for runs no dispatch of
     this process ever launched, so it has no `DispatchOutcome` to hand the
@@ -167,9 +171,10 @@ def pointer_record_for_run(
     body, or a pointer written by one path would not be recognized by the
     other's read-back.
 
-    The export goes through a `FabroPort` built from the SAME `server_url` the
-    pointer body prints, so the record names the factory the bytes actually
-    came from and this module issues no engine invocation of its own.
+    The selective read goes through a `FabroPort` built from the SAME
+    `server_url` the pointer body prints, so the record names the factory the
+    bytes actually came from and this module issues no engine invocation of
+    its own.
     """
     port = FabroPort(
         fabro_bin=fabro_bin,
@@ -179,23 +184,31 @@ def pointer_record_for_run(
     )
     with tempfile.TemporaryDirectory(prefix=f"fabro-preserve-{item_id}-") as raw_dir:
         output_dir = Path(raw_dir)
-        dumped = port.dump(
+        read = read_fabro_stage_diffs(
+            port=port.server_api(),
             run_id=run_id,
-            output_dir=output_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
-        ).command
-        artifacts = tuple(
-            sorted(path for path in output_dir.glob(FABRO_DIFF_ARTIFACT_GLOB) if path.is_file())
         )
-        artifact_present = dumped.exit_code == 0 and bool(artifacts)
-        if dumped.exit_code != 0:
+        if isinstance(read, FabroStageDiffsUnreadable):
+            dumped = CommandResult(exit_code=1, stdout="", stderr=read.detail)
             body, digest = dump_failed_body(
                 run_id=run_id,
                 server_url=server_url,
                 command=dumped,
                 fabro_bin=fabro_bin,
             )
-        elif artifacts:
+            return PointerRecord(
+                body=body,
+                digest=digest,
+                artifact_present=False,
+                dump_exit_code=dumped.exit_code,
+                run_id=run_id,
+                server_url=server_url,
+            )
+        artifacts = tuple(output_dir / diff.path for diff in read)
+        for artifact, diff in zip(artifacts, read, strict=True):
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            _ = artifact.write_bytes(diff.contents)
+        if artifacts:
             body, digest = artifact_pointer_body(
                 run_id=run_id,
                 server_url=server_url,
@@ -210,8 +223,8 @@ def pointer_record_for_run(
     return PointerRecord(
         body=body,
         digest=digest,
-        artifact_present=artifact_present,
-        dump_exit_code=dumped.exit_code,
+        artifact_present=bool(artifacts),
+        dump_exit_code=0,
         run_id=run_id,
         server_url=server_url,
     )
