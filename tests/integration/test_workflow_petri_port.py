@@ -610,6 +610,37 @@ def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_vis
     assert "max_visits=" in bodies["disposition"]
 
 
+def test_review_fix_bound_routes_before_the_spent_disposition_node() -> None:
+    """A fourth review-fix request ends at `non_converged`, not workflow_error.
+
+    `disposition.max_visits=3` is an engine abort at entry, so the fourth
+    `fix` verdict must first pass through a script admission node.  Its git-state
+    counter admits exactly three rounds, then lets the terminal itself emit the
+    named non-convergence cause.  That keeps the final failure detail about the
+    exhausted review-fix bound rather than replaying an earlier stage's output.
+    """
+    text = _graph_text()
+    conditions = _conditions(text=text)
+    bodies = _node_bodies(text=text)
+
+    assert conditions["review", "review_fix_admission"] == "preferred_label=fix"
+    assert conditions["review_fix_admission", "non_converged"] == "outcome=failed"
+    assert "review -> disposition" not in {
+        (edge.group("src"), edge.group("dst")) for edge in _EDGE_RE.finditer(text)
+    }
+
+    admission = bodies["review_fix_admission"]
+    assert "max_visits=4" in admission
+    assert "livespec-review-fix-admission-count" in admission
+    assert '"$count" -ge 3' in admission
+    assert "LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED" in admission
+
+    terminal = bodies["non_converged"]
+    assert "livespec-review-fix-bound-exhausted" in terminal
+    assert "LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED" in terminal
+    assert "LIVESPEC_NON_CONVERGED" in terminal
+
+
 def test_the_needs_human_script_reads_the_run_id_from_the_engine_context() -> None:
     """`FABRO_RUN_ID` is exported to hooks only; the Petri-era source is the context."""
     body = _node_bodies(text=_graph_text())["needs_human"]
