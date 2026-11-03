@@ -91,6 +91,7 @@ COMMAND_NODES: tuple[str, ...] = (
     "publish_merged_reconcile_route",
     "recapture_route",
     "refresh_repair",
+    "review_fix_admission",
     "review_fix_commit_settle",
     "verify_pr",
 )

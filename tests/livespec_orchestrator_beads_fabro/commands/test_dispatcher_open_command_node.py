@@ -69,6 +69,8 @@ def test_command_nodes_are_exactly_the_graphs_script_nodes() -> None:
     declared = {
         match.group("node") for match in _NODE_BLOCK.finditer(text) if "script=" in match.group(0)
     }
+    assert "review_fix_admission" in declared
+    assert "review_fix_admission" in COMMAND_NODES
     assert declared == set(COMMAND_NODES)
     # And the ACP nodes are absent, which is the other half of the claim: a
     # run inside one emits agent events throughout, so widening its bound
