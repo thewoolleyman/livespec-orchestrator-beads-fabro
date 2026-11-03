@@ -60,7 +60,10 @@ _REMEDY = "add that heading to the reference line"
 
 _SPEC_STATED_REPLY = (
     '{\\"kind\\": \\"stated\\", \\"stated_by\\": [\\"' + _GOVERNING + '\\"],'
-    ' \\"generalization_target\\": null, \\"rationale\\": \\"It states the behaviour.\\"}'
+    ' \\"generalization_target\\": null, \\"rationale\\": \\"It states the behaviour.\\",'
+    ' \\"evidence\\": [{\\"heading\\": \\"'
+    + _GOVERNING
+    + '\\", \\"quote\\": \\"The dispatched slice lands its change.\\"}]}'
 )
 _PASS_REPLY = '{\\"outcome\\": \\"passed\\"}'
 
@@ -108,7 +111,7 @@ def _repo(*, tmp_path: Path) -> Path:
         f"# Contracts\n\n{_NON_GOVERNING}\n\nThe criteria clause.\n", encoding="utf-8"
     )
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_GOVERNING}\n\nIt states the dispatched slice's behaviour.\n",
+        f"# Scenarios\n\n{_GOVERNING}\n\nThe dispatched slice lands its change.\n",
         encoding="utf-8",
     )
     return repo

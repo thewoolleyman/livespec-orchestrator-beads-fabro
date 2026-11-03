@@ -70,7 +70,10 @@ _ONE_TAKING = 2
 
 _SPEC_STATED_REPLY = (
     '{\\"kind\\": \\"stated\\", \\"stated_by\\": [\\"' + _HEADING + '\\"],'
-    ' \\"generalization_target\\": null, \\"rationale\\": \\"It states it.\\"}'
+    ' \\"generalization_target\\": null, \\"rationale\\": \\"It states it.\\",'
+    ' \\"evidence\\": [{\\"heading\\": \\"'
+    + _HEADING
+    + '\\", \\"quote\\": \\"The dispatched slice lands its change.\\"}]}'
 )
 _PASS_REPLY = '{\\"outcome\\": \\"passed\\"}'
 
@@ -114,7 +117,8 @@ def _repo(*, tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_HEADING}\n\nThe slice's behaviour is stated here.\n", encoding="utf-8"
+        f"# Scenarios\n\n{_HEADING}\n\nThe dispatched slice lands its change.\n",
+        encoding="utf-8",
     )
     return repo
 

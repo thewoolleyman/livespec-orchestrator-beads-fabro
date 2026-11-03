@@ -11658,6 +11658,39 @@ Feature: a launcher queued on a factory's FIFO spends its wait on its own prefli
     And it never created the factory's mutex
 ```
 
+## Scenario 298 — A factory sandbox clone carries the remote's release tags after its prepare steps
+
+Governing clause: `contracts.md` §"Factory sandbox clone release tags".
+
+```gherkin
+Feature: A factory run reads the remote's release tags, not a stale tag set
+
+  Scenario: A clone whose tags lag the remote is refreshed during preparation
+    Given a governed repository whose remote holds release tags through v1.153.2 on its default branch
+    And a sandbox clone of that repository whose local release tags stop at v1.99.0
+    When the Dispatcher launches a run against that repository and the run's prepare steps complete
+    Then the newest release tag the clone lists by version order is v1.153.2
+    And every remote release tag whose target is reachable from the fetched default branch is present locally and points at the same object as on the remote
+    And git describe --tags on the fetched default branch's tip names the same tag as in a fresh full clone of the remote
+
+  Scenario: A local tag that disagrees with the remote is overwritten
+    Given a sandbox clone holding a release tag whose name the remote holds pointing at a different commit
+    When the run's prepare steps complete
+    Then that tag in the clone points at the remote's commit
+
+  Scenario: A tag-reading check in the run reads the refreshed tags
+    Given a governed repository whose check suite includes a check that reads its release tags
+    And a sandbox clone whose local release tags lag the remote's
+    When that check runs in a factory run after the prepare steps
+    Then it reads the remote's newest release tag and passes or fails on the change under test
+
+  Scenario: A failed tag refresh fails preparation
+    Given a run whose tag refresh fetch exits non-zero
+    When the run's prepare steps execute
+    Then the prepare chain fails
+    And no later prepare step or graph node runs on the clone's previous tag set
+```
+
 ## Scenario 300 — Fabro-fork gates and carrier builds run on the cluster, not the dev host
 
 Governing clause: `constraints.md` §"Fabro runtime constraints".
