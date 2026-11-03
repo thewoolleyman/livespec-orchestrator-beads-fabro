@@ -329,15 +329,18 @@ class WatchedFabroLauncher:
                 # its budget satisfies the stall rule too.
                 continue
             window = tuple(samples)
-            if decide_stall(samples=window, stall_seconds=stall_seconds) == StallVerdict.STALLED:
-                cancel_stalled_run(
-                    dispatch_id=self.dispatch_id,
-                    plan=plan,
-                    port=port,
-                    journal=journal,
-                    run_id=known_run_id,
-                    quiet_seconds=quiet_window_seconds(samples=window),
-                )
+            # A cancel the server refused falls through: the run may still be
+            # live, so the watch keeps polling and asks again.
+            if decide_stall(
+                samples=window, stall_seconds=stall_seconds
+            ) == StallVerdict.STALLED and cancel_stalled_run(
+                dispatch_id=self.dispatch_id,
+                plan=plan,
+                port=port,
+                journal=journal,
+                run_id=known_run_id,
+                quiet_seconds=quiet_window_seconds(samples=window),
+            ):
                 return _WatchResult(stalled_run_id=known_run_id)
         return _WatchResult()
 

@@ -62,7 +62,7 @@ public module per query-only skill:
   `ready` items up to the per-repo `dispatcher.wip_cap`, set the assignee,
   transition `ready → active`; a manual / unresolvable-assignee item is
   held + surfaced → Fabro sandbox run, guarded by a coarse wall-clock
-  progress watchdog that `fabro rm -f`-es a sustained-no-progress run and
+  progress watchdog that cancels a sustained-no-progress run through the factory server (keeping its record) and
   reports a distinct `stalled-no-progress` outcome → auto-merge
   confirmation → post-merge janitor in a fresh detached worktree of merged
   master, with provisioning failures classified as janitor-env-degraded

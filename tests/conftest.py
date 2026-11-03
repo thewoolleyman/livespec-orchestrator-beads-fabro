@@ -40,7 +40,7 @@ import os
 import subprocess
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -49,6 +49,8 @@ import pytest
 from hypothesis import settings
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 
 # Hypothesis's per-example WALL-CLOCK deadline, turned off suite-wide.
 #
@@ -1014,6 +1016,48 @@ def end_run_and_await_launcher_return(*, run_done: threading.Event, work_item_id
     for thread in launcher_threads:
         thread.join(timeout=_LAUNCHER_RETURN_TIMEOUT_SECONDS)
         assert not thread.is_alive(), f"{name} did not return within its wait"
+
+
+# ---------------------------------------------------------------------------
+# The factory server's cancel route, for launcher fixtures that stall-cancel
+# ---------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class ServerCancel:
+    """What a fixture's factory server answers to `POST /runs/{id}/cancel`.
+
+    A launcher fixture has no `server_url`, so the real cancel route reports
+    `succeeded=False` and the watchdog correctly declines to record a cancel
+    the server never performed. A case that needs the cancel to LAND uses this
+    fixture's default; a case about the refusal sets `succeeds` False and may
+    hang `on_refusal` on the refused call.
+    """
+
+    succeeds: bool = True
+    calls: int = 0
+    on_refusal: Callable[[], None] = lambda: None
+
+
+@pytest.fixture
+def server_cancel(monkeypatch: pytest.MonkeyPatch) -> ServerCancel:
+    state = ServerCancel()
+
+    class _Api:
+        def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            state.calls += 1
+            if state.succeeds:
+                return FabroHttpResult(
+                    status=200, body="", error=None, payload=None, succeeded=True
+                )
+            state.on_refusal()
+            return FabroHttpResult(
+                status=503, body="", error="HTTPError: 503", payload=None, succeeded=False
+            )
+
+    monkeypatch.setattr(FabroPort, "server_api", lambda _self: _Api())
+    return state
 
 
 # ---------------------------------------------------------------------------
