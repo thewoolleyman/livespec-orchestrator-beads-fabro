@@ -893,6 +893,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         "red",
         "commit_red",
         "green",
+        "implement_completion",
         "commit_green",
         "implementation_diff",
         "janitor_admission",

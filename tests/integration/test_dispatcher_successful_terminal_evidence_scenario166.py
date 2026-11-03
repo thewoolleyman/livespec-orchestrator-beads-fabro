@@ -56,6 +56,7 @@ _SUCCESSFUL_NODES = (
     "red",
     "commit_red",
     "green",
+    "implement_completion",
     "commit_green",
     "implementation_diff",
     "janitor_admission",

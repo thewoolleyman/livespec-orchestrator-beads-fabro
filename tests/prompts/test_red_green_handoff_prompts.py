@@ -59,6 +59,9 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         "## green",
         "what changed",
         "which tests ran",
+        '{"definition_of_done_complete": true}',
+        '{"definition_of_done_complete": false}',
+        "read as incomplete",
     ):
         assert phrase in green, f"the green prompt omits {phrase!r}"
 

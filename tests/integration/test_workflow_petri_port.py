@@ -703,6 +703,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _ACTIVE_COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
         | _RED_GREEN_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == _RETIRED_IMPLEMENT_NODES
@@ -728,6 +729,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _ACTIVE_COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
         | _RED_GREEN_LOOP
         | _RETIRED_IMPLEMENT_NODES
     )

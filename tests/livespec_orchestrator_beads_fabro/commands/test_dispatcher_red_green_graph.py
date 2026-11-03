@@ -20,7 +20,6 @@ def test_the_implement_stage_is_a_red_green_command_graph() -> None:
     assert {
         "implement",
         "implement_commit_settle",
-        "implement_completion",
         "test_wrong_reset",
     }.isdisjoint(graph.nodes)
     assert graph.nodes["red"]["backend"] == "acp"
@@ -39,7 +38,10 @@ def test_the_implement_stage_is_a_red_green_command_graph() -> None:
     assert ("red", "commit_red", None) in edges
     assert ("commit_red", "green", None) in edges
     assert ("commit_red", "red", "outcome=failed") in edges
-    assert ("green", "commit_green", None) in edges
+    assert ("green", "implement_completion", None) in edges
+    assert ("implement_completion", "green", "outcome=failed") in edges
+    assert ("implement_completion", "commit_green", None) in edges
+    assert ("green", "commit_green", None) not in edges
     assert ("commit_green", "implementation_diff", None) in edges
     assert ("commit_green", "green", "outcome=failed") in edges
     assert ("red", "already_satisfied", "preferred_label=already-satisfied") in edges

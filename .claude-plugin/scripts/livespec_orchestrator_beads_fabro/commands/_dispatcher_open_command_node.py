@@ -74,6 +74,7 @@ COMMAND_NODES: tuple[str, ...] = (
     "dead_implementer",
     "dod_gate_mutation_guard",
     "fix_commit_settle",
+    "implement_completion",
     "implementation_diff",
     "janitor",
     "janitor_admission",

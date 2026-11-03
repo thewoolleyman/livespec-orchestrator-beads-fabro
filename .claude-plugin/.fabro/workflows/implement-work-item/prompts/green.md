@@ -20,6 +20,12 @@ already-satisfied outcome.
 2. Run only the tests your change touches. Do not make a commit.
 3. Append, never rewrite an earlier section, using a `## green` section that
    states what changed and which tests ran.
+4. End your final reply with a structured completion field,
+   `{"definition_of_done_complete": true}` when the work item's Definition of
+   Done is complete in the tree you leave for `commit_green` to commit, and
+   `{"definition_of_done_complete": false}` otherwise. A reply that carries no
+   such field is read as incomplete, and an incomplete turn re-enters Green
+   rather than reaching the commit.
 
 The handoff is append-only: append your new section to the resolved file and
 never rewrite an earlier section.
