@@ -902,6 +902,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _PUBLISH_MERGED_RECONCILE_ROUTE,
         _PROOF_CAPTURE,
         _REVIEW,
+        "review_fix_admission",
         _DISPOSITION,
         "review_fix",
         "review_fix_commit_settle",

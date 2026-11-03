@@ -11305,11 +11305,27 @@ Feature: Sandbox retention and collection
     Given two ended factory runs on the Kubernetes provider, run A whose work-item rests at `needs-human` and run B whose work-item rests at `blocked`
     When the Dispatcher's next pass runs
     Then run A's and run B's driver records and node workspace directories still exist
-    When run A's work-item is closed and the Dispatcher's next pass runs
+    When run A's work-item is closed and the Dispatcher's next pass runs while no run on that factory is running
     Then run A's sandbox is deleted through the provider's delete operation, and its driver record and node workspace directory no longer exist
     And run B's driver record and node workspace directory still exist
     When a further pass runs
     Then nothing further is recorded for run A and the pass does not fail
+
+  Scenario: Collection is deferred while the factory runs any run
+    Given the factory's committed defer_collection_while_active setting is absent
+    And an ended run C whose work-item is closed, on a factory that is running run D
+    When the Dispatcher's next pass runs
+    Then run C's sandbox still exists and the pass journals run C's collection as deferred
+    When run D ends and the Dispatcher's next pass sees no running run on the factory
+    Then run C's sandbox is deleted through the provider's delete operation
+
+  Scenario: Deletions against a busy factory are paced host-wide
+    Given the factory's committed rm_min_interval_seconds is 60 and the factory is running a run
+    And one Dispatcher process started a run deletion against that factory 10 seconds ago
+    When a second Dispatcher process on the same host decides to cancel a stalled run on that factory
+    Then the stalled run stops progressing at once
+    And the deletion of its record waits until 60 seconds after the first deletion started
+    And the pass journals the deferred deletion with the run id, the factory, the caller and the earliest start instant
 ```
 
 ## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node
@@ -11658,6 +11674,39 @@ Feature: a launcher queued on a factory's FIFO spends its wait on its own prefli
     And it never created the factory's mutex
 ```
 
+## Scenario 298 — A factory sandbox clone carries the remote's release tags after its prepare steps
+
+Governing clause: `contracts.md` §"Factory sandbox clone release tags".
+
+```gherkin
+Feature: A factory run reads the remote's release tags, not a stale tag set
+
+  Scenario: A clone whose tags lag the remote is refreshed during preparation
+    Given a governed repository whose remote holds release tags through v1.153.2 on its default branch
+    And a sandbox clone of that repository whose local release tags stop at v1.99.0
+    When the Dispatcher launches a run against that repository and the run's prepare steps complete
+    Then the newest release tag the clone lists by version order is v1.153.2
+    And every remote release tag whose target is reachable from the fetched default branch is present locally and points at the same object as on the remote
+    And git describe --tags on the fetched default branch's tip names the same tag as in a fresh full clone of the remote
+
+  Scenario: A local tag that disagrees with the remote is overwritten
+    Given a sandbox clone holding a release tag whose name the remote holds pointing at a different commit
+    When the run's prepare steps complete
+    Then that tag in the clone points at the remote's commit
+
+  Scenario: A tag-reading check in the run reads the refreshed tags
+    Given a governed repository whose check suite includes a check that reads its release tags
+    And a sandbox clone whose local release tags lag the remote's
+    When that check runs in a factory run after the prepare steps
+    Then it reads the remote's newest release tag and passes or fails on the change under test
+
+  Scenario: A failed tag refresh fails preparation
+    Given a run whose tag refresh fetch exits non-zero
+    When the run's prepare steps execute
+    Then the prepare chain fails
+    And no later prepare step or graph node runs on the clone's previous tag set
+```
+
 ## Scenario 300 — Fabro-fork gates and carrier builds run on the cluster, not the dev host
 
 Governing clause: `constraints.md` §"Fabro runtime constraints".
@@ -11682,4 +11731,32 @@ Feature: fork Rust gates and pinned carrier builds run on ARC k3s runner capacit
     When a fork gate runs on the dev host
     Then it runs at nice 19 with CARGO_BUILD_JOBS=4
     And the work item that used it records the fallback
+```
+
+## Scenario 301 — A verified delegated press satisfies a human valve and is recorded as delegated
+
+```gherkin
+Feature: The maintainer's delegation of human valves is a verified, first-class invoker form
+  As a maintainer who has delegated human valves to a coordinator
+  I want a delegated press to be verified against a committed delegation and recorded as delegated
+  So that delegated decisions stop blocking without anyone forging my identity
+
+  Scenario: A verified delegated answer is admitted and recorded under the delegation
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent granted by human:thewoolleyman
+    And a work-item at blocked with blocked_reason needs-human and effective answer disposition human
+    When drive runs resolve-blocked:<work-item-id>:ready with --answer, --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then the press is admitted and the answer lands as a ledger comment naming delegation R493 and grantor human:thewoolleyman
+    And every journal record of the press carries invoker delegate:legacy-coordinator-agent and a delegation object citing R493
+    And the item gains a livespec-delegated-valve-press ledger comment, and no record carries a human: identity
+
+  Scenario: A delegation that cannot be verified is refused before any write
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs an allowlisted valve with --invoker delegate:legacy-coordinator-agent and a --delegation ref that no entry carries, or with no --delegation at all, or with --delegation and a non-delegate invoker
+    Then drive refuses the press naming the action, the invoker, the ref and the reason
+    And nothing is written to the store, the journal or the ledger
+
+  Scenario: A delegated press of a non-delegable valve is refused
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs set-merge-hold, set-factory-safety or an impl: dispatch with --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then drive refuses the press because the verb is not on the delegable valve allowlist
 ```

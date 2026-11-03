@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -130,7 +131,7 @@ def _publish_script(*, check_suite: str = "true") -> str:
     )
 
 
-def _forge_double(*, tmp_path: Path) -> Path:
+def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     gh = bin_dir / "gh"
@@ -156,6 +157,20 @@ def _forge_double(*, tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+    if push_refusal is not None:
+        real_git = shutil.which("git")
+        assert real_git is not None
+        git = bin_dir / "git"
+        git.write_text(
+            "#!/bin/sh\n"
+            'if test "$1" = push; then\n'
+            f"  printf '%s\\n' {shlex.quote(push_refusal)} >&2\n"
+            "  exit 1\n"
+            "fi\n"
+            f'exec {shlex.quote(real_git)} "$@"\n',
+            encoding="utf-8",
+        )
+        git.chmod(git.stat().st_mode | stat.S_IXUSR)
     return bin_dir
 
 
@@ -181,10 +196,11 @@ def _publish(
     late_landed_pr: str | None = None,
     dispatch_pull_requests: str | None = None,
     check_suite: str = "true",
+    push_refusal: str | None = None,
 ) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
-    bin_dir = _forge_double(tmp_path=tmp_path)
+    bin_dir = _forge_double(tmp_path=tmp_path, push_refusal=push_refusal)
     plugins_root = tmp_path / "plugins"
     plugins_root.mkdir()
     _ = (plugins_root / PROOF_HEAD_PROGRAM_FILENAME).write_text(
@@ -530,6 +546,67 @@ def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
     remote = _git(run, "ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}").stdout
     assert remote.split()[0] == prior_tip
     assert refused.calls == ()
+    assert refused.draft_created is False
+
+
+def test_a_pre_push_hook_refusal_names_its_failed_targets_after_the_push_marker(
+    tmp_path: Path,
+) -> None:
+    """Scenario 224 attributes a refused push to the hook that refused it."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    pre_push = run / ".git" / "hooks" / "pre-push"
+    pre_push.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' 'Failed targets (2):' >&2\n"
+        "printf '%s\\n' '  - check-per-file-coverage' >&2\n"
+        "printf '%s\\n' '  - check-coverage' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    pre_push.chmod(pre_push.stat().st_mode | stat.S_IXUSR)
+
+    refused = _publish(tmp_path=tmp_path, run=run)
+
+    assert refused.result.returncode != 0
+    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
+    assert "pre-push hook refused the push" in message
+    assert "check-per-file-coverage, check-coverage" in message
+    assert refused.draft_created is False
+
+
+def test_a_non_fast_forward_push_refusal_names_the_stale_publish_branch(
+    tmp_path: Path,
+) -> None:
+    """Scenario 224 directs the operator to reconcile an actually stale branch."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    refused = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        push_refusal="! [rejected] HEAD -> feat/bd-ib-qustjx (non-fast-forward)",
+    )
+
+    assert refused.result.returncode != 0
+    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
+    assert "origin rejected the push as non-fast-forward" in message
+    assert "reconcile the stale publish branch" in message
+    assert refused.draft_created is False
+
+
+def test_an_unreachable_origin_is_named_after_the_push_marker(tmp_path: Path) -> None:
+    """Scenario 224 keeps a dead origin distinct from a stale branch."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    refused = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        push_refusal="fatal: Could not resolve host: origin.example.invalid",
+    )
+
+    assert refused.result.returncode != 0
+    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
+    assert "origin could not be reached" in message
+    assert "stale publish branch" not in message
     assert refused.draft_created is False
 
 

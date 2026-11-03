@@ -1,2 +1,2 @@
-work_item=bd-ib-aqrdhl
-reason=Add the new repo-local check-acp-preflight-config target to the CI metadata batch in ci.yml so check-ci-matrix-completeness passes for the bd-ib-aqrdhl implementation (PR 4015).
+work_item=bd-ib-oujru2
+reason=Wire the repo-local check-fleet-launch target (added to the just check aggregate by bd-ib-x7bwug, PR #4235) into the CI check-metadata-batch job beside check-bd-guard, and remove its PROVISIONAL repo_local_ci_skips entry, so check-ci-matrix-completeness passes with the slug run in CI.

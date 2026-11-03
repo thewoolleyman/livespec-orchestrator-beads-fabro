@@ -458,6 +458,7 @@ check:
         check-codex-plugin-structure
         check-pi-plugin-structure
         check-bd-guard
+        check-fleet-launch
         check-codex-skill-picker
         check-no-fleet-pat-dispatch-surface
         check-spec-governance-default-block
@@ -755,6 +756,11 @@ check-no-fleet-toolchain-literals:
 # private block.
 check-bd-guard:
     bash dev-tooling/just-check-bd-guard.sh
+
+# Lints every fleet-launch shell script and drives its stubbed, hermetic
+# launcher harness; syntax alone cannot verify FIFO launch behaviour.
+check-fleet-launch:
+    bash dev-tooling/just-check-fleet-launch.sh
 
 # `check-bd-guard-candidate` — explicit Beads v1.2.2 qualification leg. It
 # downloads the official Linux amd64 release into a temporary directory, verifies

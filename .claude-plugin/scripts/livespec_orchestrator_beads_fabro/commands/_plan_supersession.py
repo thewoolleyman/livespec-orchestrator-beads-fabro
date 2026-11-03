@@ -74,7 +74,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from livespec_orchestrator_beads_fabro.commands._plan_archive import PLAN_ARCHIVE_ACTOR
-from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import CLOSED_STATUS
+from livespec_orchestrator_beads_fabro.commands._plan_disposed_supersession import (
+    DisposedEvidence,
+    SupersessionRefusal,
+    disposed_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import PLAN_RESUME_ACTOR
 from livespec_orchestrator_beads_fabro.commands._plan_supersession_carrier import (
     carrier_refusal_detail,
@@ -190,15 +194,6 @@ class ImplementationEvidence:
 
 
 @dataclass(frozen=True, kw_only=True)
-class DisposedEvidence:
-    """The closed-as-superseded target a `disposed` claim names."""
-
-    target_id: str
-    status: str
-    resolution: str | None
-
-
-@dataclass(frozen=True, kw_only=True)
 class SupersessionEvidence:
     """Every ledger reading one cause's verification needs, taken by the caller.
 
@@ -215,13 +210,6 @@ class SupersessionEvidence:
     implementation: ImplementationEvidence | None = None
     disposed: DisposedEvidence | None = None
     replacement_unmet: bool = False
-
-
-@dataclass(frozen=True, kw_only=True)
-class SupersessionRefusal:
-    """Why one claimed supersession is not an EVIDENCED causal supersession."""
-
-    detail: str
 
 
 def validate_causal_supersession(
@@ -249,7 +237,9 @@ def validate_causal_supersession(
     if evidence is None:
         return SupersessionRefusal(detail="the supersession's evidence could not be read")
     if supersession.cause == CAUSE_DISPOSED:
-        return _disposed_refusal(supersession=supersession, evidence=evidence)
+        return disposed_refusal(
+            target_id=supersession.disposed_target_id, disposed=evidence.disposed
+        )
     if supersession.cause == CAUSE_MISDERIVED:
         return _misderived_refusal(
             supersession=supersession,
@@ -333,28 +323,6 @@ def _misderived_refusal(
             replacement=replacement,
         )
     return _implementation_refusal(evidence=evidence, deriving=evidence.deriving)
-
-
-def _disposed_refusal(
-    *, supersession: CausalSupersession, evidence: SupersessionEvidence
-) -> SupersessionRefusal | None:
-    """Require the exact prior target to be closed with superseded resolution."""
-    target_id = supersession.disposed_target_id
-    disposed = evidence.disposed
-    if target_id is None:
-        return SupersessionRefusal(detail="a disposed supersession must name its target record")
-    if disposed is None or disposed.target_id != target_id:
-        return SupersessionRefusal(
-            detail=f"the disposed target {target_id!r} could not be read from the obligation"
-        )
-    if disposed.status != CLOSED_STATUS or disposed.resolution != "superseded":
-        return SupersessionRefusal(
-            detail=(
-                f"the disposed target {target_id!r} is not closed as superseded, so its"
-                " cause does not verify"
-            )
-        )
-    return None
 
 
 def _implementation_refusal(

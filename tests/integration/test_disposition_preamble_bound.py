@@ -64,21 +64,23 @@ def test_disposition_declares_a_bounded_preamble_no_edge_can_restore() -> None:
 
     The incoming-edge half is not decoration: an edge-level `fidelity` outranks
     the node's in Fabro, so a node correctly declaring a bounded mode is still
-    served a compact preamble when the edge that reached it says so. `review` is
-    asserted to BE a predecessor first, because an edge scan over a node nothing
-    routes to finds no offenders and reports clean.
+    served a compact preamble when the edge that reached it says so. The
+    `review_fix_admission` gate is asserted to route `review` to disposition
+    first, because an edge scan over a node nothing routes to finds no offenders
+    and reports clean.
     """
     text = _graph_text()
     graph = parse_workflow_graph(text=text)
 
-    assert "disposition" in graph.successors(node="review")
+    assert "review_fix_admission" in graph.successors(node="review")
+    assert "disposition" in graph.successors(node="review_fix_admission")
     disposition = next(node for node in graph.nodes if node.name == "disposition")
     declared = disposition.attributes.get("fidelity")
     assert declared in _BOUNDED_FIDELITIES, declared
     assert declared not in _UNBOUNDED_FIDELITIES, declared
 
     sources = graph.predecessors(node="disposition")
-    assert "review" in sources
+    assert "review_fix_admission" in sources
     incoming = [
         line
         for line in text.splitlines()

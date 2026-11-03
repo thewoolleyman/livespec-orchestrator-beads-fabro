@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.280.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.280.0...v0.280.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **dispatcher:** surface agent turn timeout cause ([5ec001a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5ec001aab624c591e9ff5154f81e5797322ecc5d))
+* prioritize relevant cited spec paragraphs ([51035f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/51035f1d233d0102ac10b4b2191b11a93654b053))
+
+## [0.280.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.279.0...v0.280.0) (2026-11-03)
+
+
+### Features
+
+* a verified delegate:&lt;name&gt; press satisfies the human valves under a committed maintainer delegation ([44a8c94](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/44a8c94915b8e89546873d10eb47c41a1910d990))
+* relax Codex floor near reset ([eefcf74](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/eefcf74018aadecd8e4db1a6291e37970c57841b))
+
+
+### Bug Fixes
+
+* accept a disposed target detached from its plan ([d433578](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d433578fbd452208c8a9f9eeb9c3e742089f8c72))
+* classify non-fast-forward publish refusals ([42116ab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/42116aba9125e5b99b950d049aeb602247c2b585))
+* **fleet-launch:** evaluate once before giving up; assert FIFO by bind, not drive order ([e69dced](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e69dced50d3f392d016999424bc837d9f40e68a5))
+* **fleet-launch:** handle mutex release observation ([f9ff1f9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f9ff1f90f328b230cf7fe736e2bd4855c0b41004))
+* **fleet-launch:** verify each launch releases its mutex ([fe1c55c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fe1c55c99fadacd142dfe11d4f64f885b79afbae))
+* honor continuation rulings for expired supersessions ([6442b0c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6442b0c7245fea7bf9bac3a00dc32f8c7b20e203))
+* name an unreachable publish origin ([e3ad7b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3ad7b4e646851cbdaf71de2bd1e69a78166f62b))
+* name pre-push refusal targets ([a191d31](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a191d31ffa66e5542033e5889ebf62f8bf5398b5))
+* parse multiline pre-push target summaries ([39562d1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/39562d1554f741cd53c323237045be587750258e))
+* persist governing-heading clause evidence in the judgement record ([dda8a6e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dda8a6ed2bf917d74d92ad848eaf2e318a985b43))
+* read Petri command-node events ([f5724a5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f5724a5087f69d45c36ac74ef8a8cae1be8238ac))
+* read Petri stall records ([881dd5c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/881dd5c9003c93603caeb2da25eb38c4a60c9cdb))
+* refuse a disposed target whose dependencies field is null ([b1762fc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b1762fc6814aba9b2ab2398a413c89a407dde311))
+* refuse a disposed target whose plan membership cannot be read ([6956085](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6956085e337fc9ed4aa99f4942abb93a4ba0b628))
+* require a stronger term overlap between a governing quote and the asserted behaviour ([b52ce1b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b52ce1ba339a580b8f821152484a4e873f47e2e2))
+* require clause evidence for governing headings ([4df0ec9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4df0ec9672b6b87b5895f217b38a33d89037378c))
+* route exhausted review fixes to non-convergence ([02c7010](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02c7010b0a9b37d0173d57fd95c1c9bd392b2137))
+
 ## [0.279.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.278.0...v0.279.0) (2026-11-03)
 
 

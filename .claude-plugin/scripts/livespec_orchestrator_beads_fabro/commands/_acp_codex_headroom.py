@@ -35,6 +35,7 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import CODEX_AGENT_ID
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, parse_iso_datetime
 
 __all__: list[str] = [
     "CODEX_FLOOR_SKIP_KIND",
@@ -49,6 +50,8 @@ __all__: list[str] = [
     "codex_headroom_covers_candidate",
     "codex_headroom_reading",
     "codex_headroom_skip_kind",
+    "codex_window_effective_floor_percent",
+    "codex_window_floor_relaxed_by_reset_proximity",
     "unobservable_codex_headroom",
 ]
 
@@ -71,6 +74,10 @@ UNREADABLE_CODEX_RESPONSE = "unreadable-response"
 
 _FULL_ALLOWANCE_PERCENT = 100.0
 _WINDOW_NAMES = (("primary", "primary_window"), ("secondary", "secondary_window"))
+CODEX_RESET_PROXIMITY_SECONDS = 43_200
+RELAXED_CODEX_FLOOR_PERCENT = 5
+_RESET_AT_ABSENT = "absent"
+_RESET_AT_UNUSABLE = "unusable"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -99,6 +106,8 @@ class CodexWindowReading:
     used_percent: float
     limit_window_seconds: int
     remaining_percent: float
+    reset_at: int | None = None
+    reset_at_result: str | None = _RESET_AT_ABSENT
     drain_percent_per_hour: float | None = None
     projection: CodexWindowProjection | None = None
 
@@ -206,8 +215,13 @@ def codex_headroom_skip_kind(*, reading: CodexHeadroomReading, floor_percent: in
         return CODEX_FLOOR_SKIP_KIND
     if reading.limit_governs:
         return CODEX_LIMIT_SKIP_KIND
-    remaining = reading.governing_remaining_percent
-    if remaining is not None and remaining < floor_percent:
+    if any(
+        window.remaining_percent
+        < codex_window_effective_floor_percent(
+            window=window, observed_at=reading.observed_at, floor_percent=floor_percent
+        )
+        for window in reading.windows
+    ):
         return CODEX_FLOOR_SKIP_KIND
     if any(
         window.projection is not None and window.projection.skip_applied
@@ -215,6 +229,33 @@ def codex_headroom_skip_kind(*, reading: CodexHeadroomReading, floor_percent: in
     ):
         return CODEX_PROJECTION_SKIP_KIND
     return None
+
+
+def codex_window_effective_floor_percent(
+    *, window: CodexWindowReading, observed_at: str, floor_percent: int
+) -> int:
+    """The floor for one window, relaxed only shortly before its reset."""
+    if floor_percent <= 0 or window.reset_at is None:
+        return floor_percent
+    observed = _observation_epoch_seconds(observed_at=observed_at)
+    if observed is None:
+        return floor_percent
+    seconds_until_reset = window.reset_at - observed
+    if 0 <= seconds_until_reset <= CODEX_RESET_PROXIMITY_SECONDS:
+        return min(floor_percent, RELAXED_CODEX_FLOOR_PERCENT)
+    return floor_percent
+
+
+def codex_window_floor_relaxed_by_reset_proximity(
+    *, window: CodexWindowReading, observed_at: str, floor_percent: int
+) -> bool:
+    """Whether reset proximity lowered this window's committed floor."""
+    return (
+        codex_window_effective_floor_percent(
+            window=window, observed_at=observed_at, floor_percent=floor_percent
+        )
+        < floor_percent
+    )
 
 
 def _mapping(*, value: object) -> dict[object, object]:
@@ -234,9 +275,28 @@ def _window(*, name: str, raw: object) -> CodexWindowReading | None:
         return None
     if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
         return None
+    reset_at, reset_at_result = _reset_at(fields=fields)
     return CodexWindowReading(
         name=name,
         used_percent=percent,
         limit_window_seconds=seconds,
         remaining_percent=_FULL_ALLOWANCE_PERCENT - percent,
+        reset_at=reset_at,
+        reset_at_result=reset_at_result,
     )
+
+
+def _reset_at(*, fields: dict[object, object]) -> tuple[int | None, str | None]:
+    reset_at = fields.get("reset_at")
+    if reset_at is None:
+        return None, _RESET_AT_ABSENT
+    if isinstance(reset_at, bool) or not isinstance(reset_at, int) or reset_at <= 0:
+        return None, _RESET_AT_UNUSABLE
+    return reset_at, None
+
+
+def _observation_epoch_seconds(*, observed_at: str) -> float | None:
+    parsed = parse_iso_datetime(text=observed_at.removesuffix("Z") + "+00:00")
+    if isinstance(parsed, IsoDatetimeParseFailure):
+        return None
+    return parsed.timestamp()

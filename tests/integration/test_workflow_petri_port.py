@@ -125,6 +125,10 @@ _ACTIVE_COMMIT_SETTLE_ADDED = {
     "review_fix_commit_settle",
 }
 _JANITOR_ADMISSION_ADDED = {"janitor_admission"}
+# This command node sits before `disposition`, preserving its three-visit
+# review-fix budget while converting a fourth request into a named terminal
+# route instead of the engine's unroutable entry abort.
+_REVIEW_FIX_ADMISSION_ADDED = {"review_fix_admission"}
 # The `dod_gate` post-turn mutation guard (work-item bd-ib-al54tl), kept as its
 # own constant for the reason every set above gives. It sits on `dod_gate`'s
 # single fallthrough, closes no cycle and is reached once, so it moves no other
@@ -591,14 +595,45 @@ def test_the_janitor_fix_loop_routes_on_outcome_and_is_bounded_by_max_visits() -
 
 
 def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_visits() -> None:
-    """The three review-cap conditions are gone; the loop's bound is on its nodes."""
+    """The admission gate routes the label; disposition retains the three-round bound."""
     text = _graph_text()
     conditions = _conditions(text=text)
-    assert conditions["review", "disposition"] == "preferred_label=fix"
+    assert conditions["review", "review_fix_admission"] == "preferred_label=fix"
     assert conditions["review", "proof_verify"] == "preferred_label=approve"
     bodies = _node_bodies(text=text)
     assert "max_visits=" in bodies["review_fix"]
     assert "max_visits=" in bodies["disposition"]
+
+
+def test_review_fix_bound_routes_before_the_spent_disposition_node() -> None:
+    """A fourth review-fix request ends at `non_converged`, not workflow_error.
+
+    `disposition.max_visits=3` is an engine abort at entry, so the fourth
+    `fix` verdict must first pass through a script admission node.  Its git-state
+    counter admits exactly three rounds, then lets the terminal itself emit the
+    named non-convergence cause.  That keeps the final failure detail about the
+    exhausted review-fix bound rather than replaying an earlier stage's output.
+    """
+    text = _graph_text()
+    conditions = _conditions(text=text)
+    bodies = _node_bodies(text=text)
+
+    assert conditions["review", "review_fix_admission"] == "preferred_label=fix"
+    assert conditions["review_fix_admission", "non_converged"] == "outcome=failed"
+    assert "review -> disposition" not in {
+        (edge.group("src"), edge.group("dst")) for edge in _EDGE_RE.finditer(text)
+    }
+
+    admission = bodies["review_fix_admission"]
+    assert "max_visits=4" in admission
+    assert "livespec-review-fix-admission-count" in admission
+    assert '\\"$count\\" -ge 3' in admission
+    assert "LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED" in admission
+
+    terminal = bodies["non_converged"]
+    assert "livespec-review-fix-bound-exhausted" in terminal
+    assert "LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED" in terminal
+    assert "LIVESPEC_NON_CONVERGED" in terminal
 
 
 def test_the_needs_human_script_reads_the_run_id_from_the_engine_context() -> None:
@@ -702,6 +737,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_ADDED
         | _ACTIVE_COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
+        | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
         | _RED_GREEN_ADDED
@@ -728,6 +764,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_LOOP
         | _ACTIVE_COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
+        | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
         | _RED_GREEN_LOOP

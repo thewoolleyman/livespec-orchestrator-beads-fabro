@@ -100,11 +100,11 @@ _case_tag = ""
 _TEARDOWN_SECONDS = 10
 
 
-def _tagged_pids(*, tag: str) -> list[int]:
+def _tagged_pids(*, tag: str, proc_root: Path = Path("/proc")) -> list[int]:
     """Every live process whose environment carries `tag`, this test process excepted."""
     needle = f"{_CASE_TAG_ENV_VAR}={tag}".encode()
     found: list[int] = []
-    for entry in Path("/proc").iterdir():
+    for entry in proc_root.iterdir():
         if not entry.name.isdigit() or int(entry.name) == os.getpid():
             continue
         try:
@@ -767,6 +767,47 @@ def test_a_process_with_no_proc_entry_is_not_executing() -> None:
     """
     pid_max = int(Path("/proc/sys/kernel/pid_max").read_text(encoding="utf-8"))
     assert not _executing(pid=pid_max + 1)
+
+
+def test_the_reaper_skips_a_proc_entry_that_vanishes_mid_scan(tmp_path: Path) -> None:
+    """A process that exits between the scan and the environ read is not an error.
+
+    Whether a real `/proc` scan meets such an entry depends on which process
+    exits when, so under a loaded gate Job the branch went uncovered (janitor
+    Job gate-livespec-orchestrator-beads-fabro-6zr7x, 2026-11-03). A numbered
+    directory with no `environ` file is that entry on every host.
+    """
+    (tmp_path / "4194305").mkdir()
+    assert _tagged_pids(tag=_case_tag, proc_root=tmp_path) == []
+
+
+def test_the_reaper_finds_and_kills_a_tagged_process_left_running() -> None:
+    """A tagged process still running at teardown is found and killed.
+
+    Teardown reaches its kill loop only when a case's process outlives the
+    case, which depends on scheduling, so this case leaves one running on
+    purpose and drives the reaper's own helpers over it.
+    """
+    child = subprocess.Popen(["/bin/sleep", "60"], env=_hermetic_env())
+    try:
+        assert _eventually(condition=lambda: child.pid in _tagged_pids(tag=_case_tag))
+        assert _kill_all(pids=[child.pid]) is False
+        assert child.wait(timeout=_CONTROLLED_CLOCK_HANG_GUARD_SECONDS) == -signal.SIGKILL
+    finally:
+        with contextlib.suppress(OSError):
+            child.kill()
+
+
+def test_the_hang_guard_polls_until_a_late_condition_holds() -> None:
+    """A condition false at first and true later is waited for, not given up on."""
+    checks: list[int] = []
+
+    def holds_on_the_second_check() -> bool:
+        checks.append(1)
+        return len(checks) >= 2
+
+    assert _eventually(condition=holds_on_the_second_check)
+    assert len(checks) == 2
 
 
 @pytest.mark.parametrize("start_fraction", [0.65, 0.95])

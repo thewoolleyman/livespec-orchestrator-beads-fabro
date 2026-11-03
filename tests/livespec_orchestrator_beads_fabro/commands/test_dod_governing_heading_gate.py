@@ -65,14 +65,18 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge imp
 )
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.spec_stated import ClauseEvidence
 
 _GOVERNING = "## Scenario 206 — The spec-change tier is decided by the spec-stated judgement"
 _CITED = "## Scenario 141 — The referenced scenario governs the proof"
 _PASS_REPLY = '{"outcome": "passed"}'
 _REMEDY = "add that heading to the reference line"
 
-_VERDICT = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,))
-_PARTIAL_VERDICT = GoverningHeadingVerdict(kind="partial", stated_by=(_GOVERNING,))
+_EVIDENCE = (ClauseEvidence(heading=_GOVERNING, quote="The checks consult the judgement."),)
+_VERDICT = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,), evidence=_EVIDENCE)
+_PARTIAL_VERDICT = GoverningHeadingVerdict(
+    kind="partial", stated_by=(_GOVERNING,), evidence=_EVIDENCE
+)
 
 
 def _item() -> WorkItem:
@@ -105,7 +109,7 @@ def _repo(*, tmp_path: Path) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_GOVERNING}\n\nIt states the behaviour.\n\n{_CITED}\n\nOther.\n",
+        f"# Scenarios\n\n{_GOVERNING}\n\nThe checks consult the judgement.\n\n{_CITED}\n\nOther.\n",
         encoding="utf-8",
     )
     _ = (repo / ".livespec.jsonc").write_text(
@@ -368,7 +372,10 @@ def _install_judge(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _ = script.write_text(
         "#!/bin/sh\n"
         f'printf "%s\\n" "{{\\"kind\\": \\"stated\\", \\"stated_by\\": [\\"{_GOVERNING}\\"],'
-        ' \\"generalization_target\\": null, \\"rationale\\": \\"It states it.\\"}"\n',
+        ' \\"generalization_target\\": null, \\"rationale\\": \\"It states it.\\",'
+        ' \\"evidence\\": [{\\"heading\\": \\"'
+        + _GOVERNING
+        + '\\", \\"quote\\": \\"The checks consult the judgement.\\"}]}"\n',
         encoding="utf-8",
     )
     script.chmod(script.stat().st_mode | stat.S_IEXEC)

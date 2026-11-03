@@ -2674,8 +2674,8 @@
     "heading": "## Scenario 297 \u2014 A queued provisional launcher runs its preflight while it waits and still binds in FIFO order",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal launch-preflight-while-queued (v277), and the owning work-item bd-ib-x7bwug adds the check-fleet-launch hermetic-harness cases (a queued launcher preflights before an older ticket binds while FIFO order holds, a fresh pass is reused at the head, a reused pass does not skip the hold check, a stale pass is re-taken at the head, a preflight that fails while queued drops the ticket without the mutex) together with the launcher change.",
+    "test": "tests.integration.test_fleet_launch_scenario297.test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate",
+    "reason": "Hermetic integration coverage for Scenario 297: the check-fleet-launch harness runs two real launcher processes with stub boards, credential wrapper, preflight, queue, lock, in-flight and state directories. It proves that a younger queued launcher begins its preflight before the older ticket binds, that FIFO bind order remains intact, that a fresh pass is reused, that a stale pass is renewed before binding, and that a queued preflight failure exits 4 after dropping its ticket without taking the mutex.",
     "work_item": "bd-ib-x7bwug"
   },
   {
@@ -2685,5 +2685,29 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal fabro-fork-rust-gates-and (v278), and the owning work-item bd-ib-dqxcsh adds the test exercising the fork's carrier-branch gate and carrier-build venue together with the change.",
     "work_item": "bd-ib-dqxcsh"
+  },
+  {
+    "heading": "## Scenario 301 \u2014 A verified delegated press satisfies a human valve and is recorded as delegated",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "tests.integration.test_delegated_valve_press_scenario301.test_scenario301_a_verified_delegated_answer_is_admitted_and_recorded_as_delegated",
+    "reason": "Bound by integration-tier cases over the public drive.run_action press: a verified delegate:<name> answer under a committed dispatcher.valve_delegations ref admitted at the human disposition, its answer header, journal records and livespec-delegated-valve-press comment all naming the delegation and no human: identity; an unknown ref, a ref granted to another delegate, a ref with no delegate role, a delegate role with no ref and an unreadable setting each refused with nothing written; and set-merge-hold, set-factory-safety, set-admission and impl: refused as not delegable.",
+    "work_item": "bd-ib-heat"
+  },
+  {
+    "heading": "## Factory sandbox clone release tags",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-ia6zbf makes the Dispatcher's rendered prepare steps refresh the remote's tags, together with the test that binds this entry.",
+    "work_item": "bd-ib-ia6zbf"
+  },
+  {
+    "heading": "## Scenario 298 \u2014 A factory sandbox clone carries the remote's release tags after its prepare steps",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-ia6zbf adds the prepare-step tag refresh and the test exercising a clone whose tags lag the remote.",
+    "work_item": "bd-ib-ia6zbf"
   }
 ]

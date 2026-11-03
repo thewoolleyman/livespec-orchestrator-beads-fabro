@@ -9,6 +9,13 @@ requires for a `scenarios.md` heading binding (integration-tier-or-above, never
 a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 `heading_coverage` check's default allowlist.
 
+- `test_fleet_launch_scenario297.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 297 by running the shipped `check-fleet-launch` driver over the
+  committed tree. The hermetic harness proves a queued younger ticket begins
+  its preflight before the older ticket binds, preserves FIFO bind order,
+  reuses fresh passes, renews stale passes at the head, releases the mutex
+  before drive, and drops a failed queued ticket without taking that mutex.
+
 - `test_merge_poll_budget_exhausted_scenario220.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 220": an exhausted merge-poll budget
   re-reads the pull request, proceeds on MERGED and otherwise rests the item at

@@ -98,6 +98,28 @@ def test_a_horizon_of_zero_never_applies_a_projection_skip() -> None:
     assert _only(assessed).skip_applied is False
 
 
+def test_reset_proximity_allows_projection_instead_of_settling_at_the_committed_floor() -> None:
+    reading = codex.codex_headroom_reading(
+        credential_identity="cred",
+        observed_at=_NOW,
+        response={
+            "rate_limit": {
+                "allowed": True,
+                "limit_reached": False,
+                "primary_window": {
+                    "used_percent": 90,
+                    "limit_window_seconds": _FIVE_HOURS,
+                    "reset_at": 1793206800,
+                },
+            }
+        },
+    )
+
+    assessed = _assessed(reading, baselines={_FIVE_HOURS: _baseline(used=80.0)})
+
+    assert _only(assessed).result == projection.PROJECTED
+
+
 def test_a_secondary_window_projection_is_carried_on_its_own_window() -> None:
     assessed = _assessed(
         _reading(primary=30.0, secondary=60.0),

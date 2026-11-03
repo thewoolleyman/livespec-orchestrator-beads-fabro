@@ -4251,6 +4251,64 @@ rule, the pointer repair and the run-identifier attribution are
 exercised by Scenario 136 and Scenario 138, and the governing-scenario
 entry of the record by Scenario 141.
 
+## Factory sandbox clone release tags
+
+A factory run's sandbox clone MUST carry the release tags its repository's
+remote holds at dispatch time, so a check that reads tags inside the run
+reads the same tag set a fresh clone of the remote would read. This section
+governs every run the Dispatcher launches: the reserved `implement-work-item`
+workflow, every registered variant, a target-local workflow resolved under
+"Target-local workflow" in §"Self-contained plugin dispatch", and a run the
+Dispatcher resumes.
+
+**The prepare chain refreshes the remote's tags.** The prepare steps the
+Dispatcher renders into a run MUST include a fetch from `origin` that updates
+the clone's tag namespace from the remote's, with existing local tags
+overwritten where the remote's tag of the same name points at a different
+object. That fetch MUST run after the committed prepare chain's opening
+unshallow step and no later than the Dispatcher-materialized dispatch-base
+fetch of the default branch, so every later prepare step and every graph node
+observes the refreshed tags. It MAY be the dispatch-base fetch itself, for
+example `git fetch --quiet --tags --force origin
++refs/heads/<default_branch>:refs/remotes/origin/<default_branch>`, provided
+the remote-tracking ref that fetch exists to create is still written. Tag
+auto-following on the unshallow fetch, or on any fetch of a branch refspec
+alone, MUST NOT be relied on to satisfy this section: it brings in only tags
+that point into newly fetched history and leaves tags already present, or a
+tag set seeded from elsewhere, unrefreshed.
+
+**What the clone holds after preparation.** After the run's prepare steps
+complete, all of the following MUST hold in the sandbox clone:
+
+- every tag the remote holds whose target is reachable from the fetched
+  default branch is present locally and points at the same object as the
+  remote's tag of that name;
+- the newest release tag the clone reports, ordered by version, equals the
+  newest release tag the remote holds at dispatch time; and
+- `git describe --tags` on the fetched default branch's tip names the same tag
+  it names in a fresh full clone of the remote.
+
+The fetch MAY bring in every tag the remote holds, including tags that point
+outside the fetched default-branch history.
+
+**A failed refresh fails preparation.** When the tag refresh exits non-zero,
+the prepare chain MUST fail, as a failure of the dispatch-base fetch does. It
+MUST NOT continue on the tag set the clone already had, because a tag-reading
+check would then grade the change under test against a stale tag set and
+report its own staleness as the change's defect.
+
+**Tag-reading checks are not made to tolerate stale tags.** A repository's
+check that reads release tags MUST NOT be weakened to tolerate a clone whose
+tags lag the remote; the remedy for a stale tag set is this section's
+refresh. Measured 2026-11-02 on factory run 01M6E7FFPF99
+(livespec-dev-tooling-t4rx4t): the sandbox clone of livespec-dev-tooling
+carried release tags ending at v1.99.0 while the remote's default branch was
+at v1.153.2, and the repository's versioning lockstep test failed in the
+refresh merge's suite-green leg on that stale tag set. The Dispatcher's launch
+overlay unshallowed the single-branch clone and fetched only the
+default-branch refspec, so the clone's tag namespace was never refreshed.
+Scenario 298 in `scenarios.md` exercises this section.
+
 ## Work-item state semantics
 
 What each of the seven lifecycle states MEANS, in plain English. These
@@ -4571,6 +4629,58 @@ human's explicit order SHOULD carry that human in the identity they
 assert. Where a ratified door already journals a door-specific actor
 field (the v051 valve records), that field remains; `invoker`/
 `invoker_source` is the uniform envelope-level attribution.
+
+**Delegated valve authority.** A maintainer MAY delegate the pressing of
+human valves to a named delegate (for this fleet, the coordinator seat under
+ruling R493). The delegation is first-class: the press asserts the reserved
+role `delegate`, as `--invoker delegate:<delegate-name>`, and MUST also name
+the delegation it acts under with `--delegation <ref>`. `drive` MUST verify
+the press against **`dispatcher.valve_delegations`** (committed
+`.livespec.jsonc`, a list; default empty), each entry an object with the
+non-empty strings `ref` (the delegation's identifier, e.g. `R493`),
+`delegate` (the `<delegate-name>` it authorizes), `grantor` (the delegating
+human, a `human:<name>` identity) and `record` (where the grant is recorded,
+e.g. the plan-scope-event's epic and timestamp). A press is a **verified
+delegated press** exactly when its invoker role is `delegate`, its
+`--delegation` ref equals one entry's `ref`, that entry's `delegate` equals
+the invoker's `<delegate-name>`, and the action's verb is on the **delegable
+valve allowlist**: `resolve-blocked`, `approve`, `accept`, `reject` and
+`release-spec-tier`. Like `dispatcher.require_invoker`,
+`dispatcher.valve_delegations` is deliberately NOT API-configurable: a
+delegation is granted only by a committed, reviewable change, so no press
+can invent the reference it cites. A list that does not parse, or an entry
+missing any of the four fields or whose `grantor` is not a named `human:`
+identity, makes the whole setting unreadable, and an unreadable setting
+verifies no press.
+
+The delegation NEVER covers a credential, irreversible or outward-facing
+act, and the allowlist is the mechanical form of that exclusion: the
+factory-safety opt-out and its clearance (host secrets and host machinery),
+the merge hold (a forge write), the policy, cap, queue and workflow-scope
+edits, `impl:` and `driver-dispatch:` dispatches, and every entry point
+outside `drive` (the provider-exhaustion and ACP-hold clearances among them)
+are not delegable. `drive` MUST refuse, before any store read that could
+lead to a write, any journal write or any ledger write: a `delegate:`
+invoker without `--delegation`; `--delegation` without a `delegate:`
+invoker; a delegated press of a verb off the allowlist; and a ref that
+matches no entry, or matches an entry for a different delegate, or cannot be
+verified because the setting is unreadable. Each refusal names the action,
+the asserted invoker and ref, and why. No environment variable or flag
+bypasses this verification.
+
+A verified delegated press satisfies every gate on the allowlisted valves
+that admits a human operator's press, the `human` answer disposition of
+§"Dispatcher policy settings" included. Its records MUST say plainly that
+the delegate acted under maintainer delegation and MUST NOT carry a
+`human:<name>` identity: `invoker` stays the asserted
+`delegate:<delegate-name>`, every journal record the press writes
+additionally carries a stamped `delegation` object (`ref`, `grantor`,
+`record`) applied by the same append layer that stamps `invoker`, an answer
+comment's header names the delegation ref and grantor after the invoker, and
+a green press appends one ledger comment to the item opening with the marker
+`livespec-delegated-valve-press` that names the action id, the delegate, the
+ref, the grantor and the record. A refused press writes none of these.
+Scenario 301 binds this behavior.
 
 **`dispatcher.require_invoker`** (boolean, committed `.livespec.jsonc`,
 default **`false`**) governs the fallback: when `true`, a published
@@ -7517,7 +7627,9 @@ An item's **effective answer disposition** resolves as its
 `dispatcher.answer_disposition`. `drive` MUST refuse a
 `resolve-blocked:<work-item-id>:ready|backlog` press carrying `--answer` that
 the effective answer disposition does not admit — under `human`, an
-automated/non-human disposition's press is refused — and the refusal MUST name
+automated/non-human disposition's press is refused, and a verified delegated
+press (§"Journal invoker attribution" → "Delegated valve authority") is
+admitted as a human operator's — and the refusal MUST name
 the work-item and the effective disposition, mirroring the effective-manual
 `approve` refusal (§"`drive`"). The `needs-attention` `resolve-blocked` lane
 MUST NOT advertise an answer handoff the effective disposition would refuse (the
@@ -8072,7 +8184,14 @@ This subsection governs the sandbox of a factory run that has ENDED and whose sa
 
 While the run's work-item rests at `blocked` or `needs-human`, the Dispatcher MUST NOT delete, and MUST NOT cause the deletion of, that run's sandbox, because a human resolving the item may need the run's workspace. Retention MUST NOT depend on how long the item has rested there.
 
-Once the run's work-item is closed, the Dispatcher MUST delete that run's sandbox through its provider's own delete operation, so that the driver record and the node workspace directory are both gone. The Dispatcher MUST NOT remove either one by any route other than that provider operation, because a workspace removed behind the provider leaves a driver record naming a directory that no longer exists. A deletion the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass; it MUST NOT reopen, block or otherwise transition the closed item.
+Once the run's work-item is closed, the Dispatcher MUST delete that run's sandbox, subject to the deletion pacing below, through its provider's own delete operation, so that the driver record and the node workspace directory are both gone. The Dispatcher MUST NOT remove either one by any route other than that provider operation, because a workspace removed behind the provider leaves a driver record naming a directory that no longer exists. A deletion the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass; it MUST NOT reopen, block or otherwise transition the closed item.
+
+**Deletion pacing on a busy factory.** A factory's run deletions contend with its live runs for the factory's run store, so a deletion burst can fail the record writes of every run the factory is executing. Two committed per-factory settings in `dispatcher.factories.<name>` therefore govern every run deletion the Dispatcher issues against that factory. The Dispatcher MUST read both on every pass, so a changed value takes effect without a restart.
+
+- `defer_collection_while_active` (boolean, default `true` when absent). While it is `true` and the factory's run inventory taken by the pass shows at least one running run, the pass MUST NOT delete any closed item's ended-run sandbox on that factory; it MUST journal each sandbox it defers, naming the run id and the factory, and MUST leave it collectable. On the first pass at which the factory's run inventory shows no running run, the Dispatcher MUST delete every deferred sandbox that is still collectable under the rule above. While it is `false` and the minimum interval below is greater than 0, one pass that sees a running run on the factory MUST delete at most one ended-run sandbox there and leave the rest for later passes.
+- `rm_min_interval_seconds` (non-negative number, default `60` when absent). While the factory's run inventory shows at least one running run, the Dispatcher MUST NOT start a run deletion against that factory until at least this many seconds have passed since the start of the previous run deletion against it by any Dispatcher process on the same host. This holds whichever caller issues the deletion: ended-run collection, a stall cancel, a whole-run wall-budget cancel, a stale-item reap, or a reconcile-runs termination. A deletion the interval defers MUST be journaled naming the run id, the factory, the deleting caller and the earliest instant the next deletion may start. A cancel whose deletion is deferred MUST still stop the run from progressing at the moment of the cancel decision; only the deletion of its record MAY wait.
+
+With `defer_collection_while_active` set to `false` and `rm_min_interval_seconds` set to `0`, the Dispatcher MUST delete exactly as it does without these settings. A deferral under either setting MUST NOT reopen, block or otherwise transition the run's work-item, and a deferred deletion remains subject to the retry and idempotence rules of this subsection.
 
 An ended run whose sandbox is still running, for instance because a Fabro server restart cancelled the run before its own end-of-run stop, MUST have that sandbox stopped through its provider's own stop operation by the Dispatcher's next pass, whatever its work-item's status, so that the sandbox's compute is released and the namespace quota it held counts only live runs. Stopping MUST NOT remove the driver record or the node workspace directory; those remain subject to the retention and collection rules above. A stop the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass. A pass finding an ended run's sandbox already stopped MUST record nothing further for it.
 

@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
+    DelegationGrant,
+    InvokerIdentity,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 
 
@@ -67,3 +70,19 @@ def test_the_refusal_names_every_forged_field(tmp_path: Path) -> None:
         journal.append(
             record={"stage": "x", "invoker": "forged", "invoker_source": "flag"},
         )
+
+
+def test_a_verified_delegation_is_stamped_and_cannot_be_supplied(tmp_path: Path) -> None:
+    identity = InvokerIdentity(
+        invoker="delegate:coordinator",
+        invoker_source="flag",
+        delegation=DelegationGrant(ref="R1", grantor="human:pat", record="r"),
+    )
+    journal = JournalFile(path=tmp_path / "journal.jsonl", identity=identity)
+
+    journal.append(record={"stage": "valve"})
+    with pytest.raises(ValueError, match="delegation"):
+        journal.append(record={"stage": "valve", "delegation": {}})
+
+    written = _records(path=tmp_path / "journal.jsonl")
+    assert written[0]["delegation"] == {"ref": "R1", "grantor": "human:pat", "record": "r"}

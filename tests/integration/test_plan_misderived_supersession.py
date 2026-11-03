@@ -97,6 +97,7 @@ _NOW = "2026-10-22T07:00:00Z"
 _LATER = "2026-10-22T09:00:00Z"
 _DESCRIPTION = "## Definition of Done\n\n- The plan reaches its archive.\n"
 _DEADLINE = "2099-10-10T12:00:00Z"
+_EXPIRED_DEADLINE = "2026-10-21T12:00:00Z"
 _MAX_HANDOFFS = 4
 _CONSUMED_HANDOFFS = 2
 _EPIC = "bd-ib-plan"
@@ -213,7 +214,11 @@ def _carrier(*, repo: Path, status: str) -> None:
 
 
 def _seed(
-    *, repo: Path, author: str, required_result: dict[str, object] = _SUPERSEDED_RESULT
+    *,
+    repo: Path,
+    author: str,
+    required_result: dict[str, object] = _SUPERSEDED_RESULT,
+    deadline: str = _DEADLINE,
 ) -> int:
     """An epic whose chain records a plan-level obligation one transition wrote.
 
@@ -239,7 +244,7 @@ def _seed(
                     "text": f"Capture the plan Proof of Done record for {_EPIC}.",
                     "required_result": required_result,
                     "budget": {
-                        "deadline": _DEADLINE,
+                        "deadline": deadline,
                         "max_handoffs": _MAX_HANDOFFS,
                         "epoch": "1",
                         "handoff_count": _CONSUMED_HANDOFFS,
@@ -269,7 +274,7 @@ def _seed(
             observed_head=head,
             authority=AuthorityState(
                 required_result=required_result,
-                original_deadline=_DEADLINE,
+                original_deadline=deadline,
                 max_handoffs=_MAX_HANDOFFS,
                 consumed_handoffs=_CONSUMED_HANDOFFS,
             ),
@@ -560,6 +565,115 @@ def test_disposed_supersession_on_a_handoff_consumes_only_the_handoff_unit_and_r
     assert retry is None, retry
     assert _progress_events(repo=repo) == events
     assert _fake(repo=repo).list_comments(issue_id=_EPIC) == handoffs
+
+
+def test_a_disposed_open_target_detached_from_the_plan_is_superseded_by_set_next_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A detached open target no longer binds the plan's obligation.
+
+    The target remains open, so acceptance cannot be attributed to the old
+    closed-as-superseded arm. Its lack of a parent-child edge to the epic is
+    the causal evidence that the plan no longer owns it.
+    """
+    module = importlib.import_module(_MODULE)
+    repo = _project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _implementation_target(repo=repo, item_id=_IMPLEMENTATION, factory_safe=False)
+    _implementation_target(repo=repo, item_id=_REPLACEMENT, factory_safe=False)
+    epoch = _seed(repo=repo, author="plan-session", required_result=_DISPOSED_RESULT)
+
+    refusal = set_next_action(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        action=_implementation_replacement(),
+        session="plan-session",
+        now=_LATER,
+        supersession=module.CausalSupersession(
+            superseded_result_identity=_canonical_identity(required_result=_DISPOSED_RESULT),
+            previous_epoch=epoch,
+            cause="disposed",
+            writer="plan-session",
+            disposed_target_id=_IMPLEMENTATION,
+        ),
+    )
+
+    assert refusal is None, refusal
+    assert _pointer(repo=repo)["required_result"] == _REPLACEMENT_RESULT
+    assert "event: supersession" in _progress_events(repo=repo)[-1]
+
+
+def test_an_expired_disposed_supersession_requires_or_records_a_continuation_ruling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ruling permits a verified replacement without refreshing its budget."""
+    module = importlib.import_module(_MODULE)
+    plan = importlib.import_module(f"{_PACKAGE}.plan")
+    repo = _project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _implementation_target(repo=repo, item_id=_IMPLEMENTATION, factory_safe=False)
+    _implementation_target(repo=repo, item_id=_REPLACEMENT, factory_safe=False)
+    epoch = _seed(
+        repo=repo,
+        author="plan-session",
+        required_result=_DISPOSED_RESULT,
+        deadline=_EXPIRED_DEADLINE,
+    )
+    supersession = module.CausalSupersession(
+        superseded_result_identity=_canonical_identity(required_result=_DISPOSED_RESULT),
+        previous_epoch=epoch,
+        cause="disposed",
+        writer="plan-session",
+        disposed_target_id=_IMPLEMENTATION,
+    )
+
+    refusal = set_next_action(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        action=_implementation_replacement(),
+        session="plan-session",
+        now=_LATER,
+        supersession=supersession,
+    )
+
+    assert refusal is not None
+    assert "is expired" in refusal.detail
+    assert _pointer(repo=repo)["required_result"] == _DISPOSED_RESULT
+    assert (
+        plan.record_scope_event(
+            config=_config(repo=repo),
+            epic_id=_EPIC,
+            requirements=(),
+            deferrals=(),
+            author="coordinator-session",
+            now=_LATER,
+            continuation=plan.PlanContinuationAuthorization(
+                until="archive",
+                by="legacy-coordinator-agent",
+                directive="Continue this re-prioritised plan through its archive.",
+            ),
+        )
+        is None
+    )
+
+    accepted = set_next_action(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        action=_implementation_replacement(),
+        session="plan-session",
+        now=_LATER,
+        supersession=supersession,
+    )
+
+    assert accepted is None, accepted
+    pointer = _pointer(repo=repo)
+    budget = cast("dict[str, object]", pointer["budget"])
+    assert pointer["required_result"] == _REPLACEMENT_RESULT
+    assert budget["deadline"] == _EXPIRED_DEADLINE
+    assert budget["handoff_count"] == _CONSUMED_HANDOFFS
+    event = _progress_events(repo=repo)[-1]
+    assert "event: supersession" in event
+    assert "continuation-ruling-by: legacy-coordinator-agent" in event
 
 
 def test_the_supersession_is_recorded_as_a_progress_event_before_the_pointer_changes(

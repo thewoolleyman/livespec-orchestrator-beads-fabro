@@ -94,9 +94,9 @@ _PULL_REQUEST_RE = re.compile(
 # stream's name field is namespaced on some builds (`fabro.stage.started`) and
 # bare on others — and a FAILED stage ends a node exactly as a completed one
 # does, since a retryable failure is followed by a fresh start event.
-_STARTED_SUFFIX = "stage.started"
-_ENDED_SUFFIXES: tuple[str, ...] = ("stage.completed", "stage.failed")
-_COMPLETED_SUFFIX = "stage.completed"
+_STARTED_SUFFIXES: tuple[str, ...] = ("stage.started", "step.started")
+_ENDED_SUFFIXES: tuple[str, ...] = ("stage.completed", "stage.failed", "step.finished")
+_COMPLETED_SUFFIXES: tuple[str, ...] = ("stage.completed", "step.finished")
 
 # Where a record's event name lives, in the same descending preference the
 # review-gate parser reads it in, so one stream shape is not read two ways.
@@ -177,7 +177,7 @@ def _completed_publish_draft(*, events: tuple[dict[str, Any], ...]) -> bool:
     """
     return any(
         _node_id(event=event) == PUBLISH_DRAFT_NODE
-        and _event_name(event=event).endswith(_COMPLETED_SUFFIX)
+        and _event_name(event=event).endswith(_COMPLETED_SUFFIXES)
         for event in events
     )
 
@@ -196,7 +196,7 @@ def _open_node(*, events: tuple[dict[str, Any], ...]) -> str | None:
         if node is None:
             continue
         name = _event_name(event=event)
-        if name.endswith(_STARTED_SUFFIX):
+        if name.endswith(_STARTED_SUFFIXES):
             unfinished[node] = unfinished.get(node, 0) + 1
         elif name.endswith(_ENDED_SUFFIXES):
             unfinished[node] = unfinished.get(node, 0) - 1
@@ -234,6 +234,18 @@ def _node_id(*, event: dict[str, Any]) -> str | None:
         value: object = source.get(_NODE_ID_KEY)
         if isinstance(value, str) and value.strip():
             return value
+    item = event.get("item")
+    if not isinstance(item, dict):
+        return None
+    subject = cast("dict[str, object]", item).get("subject")
+    if not isinstance(subject, dict):
+        return None
+    node = cast("dict[str, object]", subject).get("node")
+    if not isinstance(node, dict):
+        return None
+    value = cast("dict[str, object]", node).get("name")
+    if isinstance(value, str) and value.strip():
+        return value
     return None
 
 
@@ -256,4 +268,16 @@ def _event_name(*, event: dict[str, Any]) -> str:
         value: object = event.get(key)
         if isinstance(value, str):
             return value
+    item = event.get("item")
+    if not isinstance(item, dict):
+        return ""
+    record = cast("dict[str, object]", item).get("record")
+    if not isinstance(record, dict):
+        return ""
+    body = cast("dict[str, object]", record).get("body")
+    if not isinstance(body, dict):
+        return ""
+    value = cast("dict[str, object]", body).get("event")
+    if isinstance(value, str):
+        return value
     return ""

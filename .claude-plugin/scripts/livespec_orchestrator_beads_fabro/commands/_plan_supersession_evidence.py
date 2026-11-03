@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_carrier_tenancy import (
     carrier_tenancy,
     repository_for_carrier,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_disposed_supersession import (
+    plan_membership,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
     read_progress_events,
 )
@@ -148,6 +151,7 @@ def supersession_evidence(
             plan_level=False,
             disposed=disposed_evidence(
                 config=config,
+                epic_id=epic_id,
                 required_result=None if obligation is None else obligation.required_result,
             ),
         )
@@ -250,9 +254,9 @@ def implementation_evidence_for_reference(
 
 
 def disposed_evidence(
-    *, config: StoreConfig, required_result: object | None
+    *, config: StoreConfig, epic_id: str, required_result: object | None
 ) -> DisposedEvidence | None:
-    """Read the old item target and the resolution that closed it."""
+    """Read the old item target, its resolution and its plan-child membership."""
     parsed = parse_result_reference(value=required_result)
     if not isinstance(parsed, ResultReference) or not isinstance(parsed.target, ItemStatusTarget):
         return None
@@ -263,7 +267,8 @@ def disposed_evidence(
         return None
     labels = _labels(record=record)
     status = record.get(_STATUS_FIELD)
-    if labels is None or not isinstance(status, str):
+    is_plan_child = plan_membership(record=record, epic_id=epic_id)
+    if labels is None or not isinstance(status, str) or is_plan_child is None:
         return None
     resolution = next(
         (
@@ -277,6 +282,7 @@ def disposed_evidence(
         target_id=parsed.target.item_id,
         status=status,
         resolution=resolution,
+        is_plan_child=is_plan_child,
     )
 
 

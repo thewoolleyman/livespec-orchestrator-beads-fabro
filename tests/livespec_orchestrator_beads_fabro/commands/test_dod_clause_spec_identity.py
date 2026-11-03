@@ -58,7 +58,10 @@ _HELD_REPLY = '{"outcome": "failed", "failure_reason": "bd-ib-onrjh3: cite the s
 _STATED = (
     '{"kind": "stated", "stated_by": ["'
     + _HEADING
-    + '"], "generalization_target": null, "rationale": "The scenario states it."}'
+    + '"], "generalization_target": null, "rationale": "The scenario states it.",'
+    ' "evidence": [{"heading": "'
+    + _HEADING
+    + '", "quote": "A recorded verdict binds identical digests."}]}'
 )
 
 
@@ -136,7 +139,8 @@ def _repo(*, tmp_path: Path) -> Path:
         return repo
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_HEADING}\n\nBody.\n", encoding="utf-8"
+        f"# Scenarios\n\n{_HEADING}\n\nA recorded verdict binds identical digests.\n",
+        encoding="utf-8",
     )
     _ = (repo / ".livespec.jsonc").write_text(
         '{"livespec-orchestrator-beads-fabro": {"dispatcher": {"acp_nodes":'
@@ -219,7 +223,8 @@ def test_clause_identity_tracks_the_governing_clause_and_ignores_an_unrelated_re
     assert after.value == before.value
 
     _ = (repo / "SPECIFICATION" / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_HEADING}\n\nA changed body.\n", encoding="utf-8"
+        f"# Scenarios\n\n{_HEADING}\n\nA recorded verdict binds identical digests.\nA changed body.\n",
+        encoding="utf-8",
     )
     changed = governing_heading_verdict(item=_item(), repo=repo, run_model=lambda _p: _STATED)
     assert changed is not None

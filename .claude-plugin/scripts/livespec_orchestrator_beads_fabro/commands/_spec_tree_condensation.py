@@ -58,23 +58,35 @@ from collections.abc import Iterator, ValuesView
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
-from livespec_runtime.spec_stated import JUDGE_PROMPT, judge
+from livespec_runtime.spec_stated import JUDGE_PROMPT
 from typing_extensions import override
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
     reference_line_headings,
 )
-from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
-    judged_prompt_ceiling,
-    resolving_subsection_citations,
+from livespec_orchestrator_beads_fabro.commands._spec_tree_clause_resolution import (
+    clauses_named as _clauses_named,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_clause_resolution import (
+    headings_resolved,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_partial import (
     FUNCTION_TERMS,
     partially_selected_section,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_referenced_selection import (
+    ReferencedSection,
+    select_referenced_sections,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_relevance import (
     relevance_order,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_rendering import (
+    rendered_tree_length as _rendered_length,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_sections import (
+    sections_of as _split_sections,
 )
 
 if TYPE_CHECKING:
@@ -120,16 +132,6 @@ _SAFETY_MARGIN = 8192
 # Every character of the rendered prompt that is neither the tree nor the
 # statement, measured through the template itself rather than estimated.
 _TEMPLATE_OVERHEAD = len(JUDGE_PROMPT.format(spec_tree="", statement=""))
-
-# The upstream renderer's per-block framing: `--- {path} ---\n{text}`, blocks
-# joined by a blank line.
-_BLOCK_PREFIX = "--- "
-_BLOCK_SUFFIX = " ---\n"
-_BLOCK_SEPARATOR = "\n\n"
-
-# One H2 heading line. Deliberately the shared judgement's own pattern: `##`
-# followed by a third `#` is an H3 and is not a governing clause.
-_H2_HEADING = re.compile(r"^##[ \t][^\n]*?[ \t]*$", re.MULTILINE)
 
 # A retrieval term. Three characters or more, because a one- or two-character
 # token carries no topic and matches nearly every clause.
@@ -237,6 +239,10 @@ def condensed_spec_tree(
     complete: set[tuple[str, int]] = set()
     statement_terms = frozenset(_TERM.findall(statement.casefold()))
     definition = definition_of_done(description=statement)
+    asked_text = "\n".join(
+        line for line in statement.splitlines() if not line.lstrip().startswith("References:")
+    )
+    asked_terms = frozenset(_TERM.findall(asked_text.casefold())) - FUNCTION_TERMS
     references = (
         definition.references if definition.present else reference_line_headings(text=statement)
     )
@@ -246,8 +252,26 @@ def condensed_spec_tree(
         for section in sections
         if section.heading is not None and section.heading.rstrip(" \t") == reference.rstrip(" \t")
     ]
+    pinned = list(dict.fromkeys(pinned))
+    pinned_selected, pinned_complete, remaining = select_referenced_sections(
+        sections=[
+            ReferencedSection(
+                key=section.key,
+                heading=section.heading,
+                body=section.body,
+                full=section.full,
+                elided=section.elided,
+                terms=section.terms,
+            )
+            for section in pinned
+        ],
+        terms=asked_terms,
+        remaining=remaining,
+    )
+    selected.update(pinned_selected)
+    complete.update(pinned_complete)
     relevance_order = _relevance_order(sections=sections, statement=statement)
-    for section in [*pinned, *(section for section in relevance_order if section not in pinned)]:
+    for section in (section for section in relevance_order if section not in pinned):
         cost = len(section.full) - len(section.elided)
         if cost <= remaining:
             selected[section.key] = section.full
@@ -283,30 +307,11 @@ def condensed_spec_tree(
 def clauses_named(
     *, spec_tree: Mapping[str, str], headings: Collection[str]
 ) -> tuple[CondensedClause, ...]:
-    """Every full clause named by a verdict, independent of source position.
-
-    A heading is matched as the shared judgement validates it, without the
-    trailing blanks its source line may carry, so a verdict naming `## X` for a
-    `## X  ` line still resolves the clause it named.
-    """
-    wanted = frozenset(headings)
-    return tuple(
-        section.prompt_provenance_for(rendered=section.full)
-        for path in spec_tree
-        for section in _sections_of(path=path, text=spec_tree[path])
-        if section.heading is not None and section.heading.rstrip(" \t") in wanted
+    """Every full clause named by a verdict, independent of source position."""
+    return cast(
+        "tuple[CondensedClause, ...]",
+        _clauses_named(spec_tree=spec_tree, headings=headings, sections_of=_sections_of),
     )
-
-
-def headings_resolved(*, headings: Collection[str], clauses: Collection[CondensedClause]) -> bool:
-    """Whether every named heading resolved to at least one of `clauses`.
-
-    A heading resolving to nothing leaves provenance nobody can compare, so a
-    receipt carrying it must never be reused: comparing two empty sets would
-    be reuse earned by missing data.
-    """
-    resolved = {clause.heading.rstrip(" \t") for clause in clauses}
-    return all(heading in resolved for heading in headings)
 
 
 def judge_within_ceiling(
@@ -317,69 +322,24 @@ def judge_within_ceiling(
     ceiling: int = PROMPT_CHARACTER_CEILING,
     rubric: str = "",
 ) -> Result[SpecStatedVerdict, SpecStatedParseError]:
-    """The shared spec-stated judgement, taken against the condensed tree.
+    """The shared spec-stated judgement, taken against the condensed tree."""
+    from livespec_orchestrator_beads_fabro.commands._spec_tree_judge import (
+        judge_within_ceiling as _judge_within_ceiling,
+    )
 
-    `rubric` is judging guidance appended to the statement the model reads and
-    deliberately NOT to the statement the retrieval ranks clauses by, so words
-    that steer the judgement cannot also steer which clauses are shown. The
-    safety margin absorbs its length.
-
-    The ONE entry point every consumer of the judgement in this repository
-    takes, so the condensation cannot be remembered at one call site and
-    forgotten at the next — a dispatch that forgot it is not a smaller
-    judgement but no judgement at all, since the provider refuses the prompt.
-
-    And the SAME reason puts the citation resolution of `_spec_stated_citation`
-    here rather than at either consumer: a citation of an existing subsection
-    that nothing resolves is refused as unreadable, so a call site that forgot
-    the resolution would report an item it judged correctly as one it could not
-    judge. The resolution reads the UNREDUCED tree while the prompt carries the
-    condensed one, because a clause whose body the condensation withheld still
-    encloses the subsections the specification states it through.
-    """
-    return judge(
-        spec_tree=cast(
-            "Mapping[str, str]",
-            condensed_spec_tree(
-                spec_tree=spec_tree,
-                statement=statement,
-                ceiling=judged_prompt_ceiling(spec_tree=spec_tree, ceiling=ceiling),
-            ),
-        ),
-        statement=f"{statement}{rubric}",
-        run_model=resolving_subsection_citations(run_model=run_model, spec_tree=spec_tree),
+    return _judge_within_ceiling(
+        condense=condensed_spec_tree,
+        spec_tree=spec_tree,
+        statement=statement,
+        run_model=run_model,
+        ceiling=ceiling,
+        rubric=rubric,
     )
 
 
 def _sections_of(*, path: str, text: str) -> list[_Section]:
     """One file split at its H2 headings, preamble first when it carries one."""
-    matches = list(_H2_HEADING.finditer(text))
-    starts = [match.start() for match in matches]
-    # One end per MATCH, so a file carrying no H2 at all pairs nothing rather
-    # than pairing an end with a heading that does not exist. A governed tree
-    # legitimately holds such a file — a README, an index, a file whose whole
-    # content is its preamble — and the unconditional form raised from inside
-    # the strict zip below, which reaches every caller of the judgement as an
-    # unhandled error rather than as a verdict that could not be read.
-    ends = [*starts[1:], len(text)] if starts else []
-    preamble = text[: starts[0]] if starts else text
-    sections = (
-        [_section(path=path, index=0, full=preamble, elided=f"{ELIDED_BODY_MARKER}\n")]
-        if preamble
-        else []
-    )
-    for ordinal, (match, end) in enumerate(zip(matches, ends, strict=True)):
-        sections.append(
-            _section(
-                path=path,
-                index=ordinal + 1,
-                full=text[match.start() : end],
-                elided=f"{match.group()}\n{ELIDED_BODY_MARKER}\n",
-                heading=match.group(),
-                body=text[match.end() : end],
-            )
-        )
-    return sections
+    return _split_sections(path=path, text=text, make_section=_section)
 
 
 def _section(
@@ -427,13 +387,3 @@ def _condensed(
     for section in sections:
         parts[section.path].append(selected.get(section.key, section.elided))
     return {path: "".join(pieces) for path, pieces in parts.items()}
-
-
-def _rendered_length(*, tree: Mapping[str, str]) -> int:
-    """How many characters the upstream renderer turns `tree` into."""
-    if not tree:
-        return 0
-    blocks = [
-        len(_BLOCK_PREFIX) + len(path) + len(_BLOCK_SUFFIX) + len(tree[path]) for path in tree
-    ]
-    return sum(blocks) + len(_BLOCK_SEPARATOR) * (len(blocks) - 1)

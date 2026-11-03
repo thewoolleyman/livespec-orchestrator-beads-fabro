@@ -295,3 +295,75 @@ def test_an_unnamed_relevant_clause_is_still_carried_in_part_once_references_fit
     assert tempting_body[:200] in rendered
     assert tempting_body not in rendered
     assert "partially withheld" in rendered
+
+
+def test_overflowed_references_share_budget_with_deep_relevant_paragraphs_first() -> None:
+    """Referenced sections spend an overflow budget on their matching paragraphs.
+
+    Each cited section puts its governing paragraph after enough unrelated text
+    that the former leading-prefix selection withholds both paragraphs.  The
+    two cited paragraphs share different terms with the asked-for behaviour,
+    which also proves that one reference cannot consume the other reference's
+    useful share of the prompt.
+    """
+    first_heading = "## First cited contract"
+    second_heading = "## Second cited contract"
+    first_leading = "unrelated introduction " * 4_000
+    second_leading = "unrelated background " * 4_000
+    refresh_repair = "**Refresh repair.** A refused refresh commit restores the pre-refresh head.\n"
+    budget_sharing = "A cited section shares the prompt budget with every cited paragraph.\n"
+    tree = {
+        "contracts.md": (
+            f"{first_heading}\n\n{first_leading}\n\n{refresh_repair}\n"
+            f"{second_heading}\n\n{second_leading}\n\n{budget_sharing}\n"
+        )
+    }
+    statement = (
+        "## Definition of Done\n\n"
+        f"References: {first_heading}, {second_heading}\n\n"
+        "- A refused refresh commit takes refresh repair.\n"
+        "- Every cited paragraph shares the prompt budget.\n"
+    )
+
+    condensed = condensed_spec_tree(spec_tree=tree, statement=statement, ceiling=24_000)
+    rendered = condensed["contracts.md"]
+
+    assert refresh_repair in rendered
+    assert budget_sharing in rendered
+    assert first_leading not in rendered
+    assert second_leading not in rendered
+    assert condensed == condensed_spec_tree(spec_tree=tree, statement=statement, ceiling=24_000)
+
+
+def test_uq2ocd_overflow_keeps_the_whole_deep_refresh_repair_paragraph() -> None:
+    """The reported UQ2ocd shape preserves its cited refresh-repair evidence."""
+    references = (
+        "## Dispatcher admission, WIP cap, and post-merge acceptance, "
+        "## Scenario 176 — The spec-change tier is decided by the spec-stated judgement, "
+        "and a feature waits for ratification, "
+        "## Self-contained plugin dispatch, ## Work-item state semantics, "
+        "## Dispatch-time baseline conformance gate"
+    )
+    item = replace(
+        _ITEM,
+        id="bd-ib-uq2ocd",
+        title="A refresh commit refused by a hook takes the Refresh repair route",
+        description=(
+            "## Definition of Done\n\n"
+            f"References: {references}\n\n"
+            "- A refresh commit refused by the commit hook restores the pre-refresh head "
+            "and routes to refresh repair.\n"
+        ),
+    )
+    tree = {
+        path.name: path.read_text()
+        for path in sorted(Path(__file__).parents[3].joinpath("SPECIFICATION").glob("*.md"))
+    }
+    self_contained = _body(tree=tree, heading="## Self-contained plugin dispatch")
+    refresh_start = self_contained.index("**Refresh repair.**")
+    refresh_repair = self_contained[refresh_start:].split("\n\n", maxsplit=1)[0]
+    statement = asked_for_behaviour(item=item)
+
+    condensed = condensed_spec_tree(spec_tree=tree, statement=statement, ceiling=168_422)
+
+    assert refresh_repair in "".join(condensed.values())

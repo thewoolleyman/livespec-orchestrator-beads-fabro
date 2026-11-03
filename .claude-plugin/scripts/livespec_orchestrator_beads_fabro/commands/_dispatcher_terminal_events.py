@@ -120,14 +120,16 @@ _SUBJECT_NODE_NAME_KEYS: tuple[str, ...] = ("name",)
 # record: a top-level `stages` map keyed `<node>@<visit>`, each entry carrying
 # `handler`, `state`, `output` and `response` (sometimes `diff`). Measured
 # 2026-10-24 on gmktec runs `01M5QNH88NHN68ST28Y80CZJ48` and
-# `01M5N3J02GQ1423GRX25HW0NPN` for work-item `bd-ib-36d3x5`. The entry carries
-# NO `failure_reason` of its own; an agent stage's structured verdict is the
-# last line of its `output`, and a command stage whose output outgrew the
-# inline record holds a `blob://` reference there instead of text.
+# `01M5N3J02GQ1423GRX25HW0NPN` for work-item `bd-ib-36d3x5`. An agent stage's
+# structured verdict is the last line of its `output`; a timed-out agent has no
+# output but carries its reason at `completion.failure_reason`; and a command
+# stage whose output outgrew the inline record holds a `blob://` reference
+# instead of text.
 _STAGES_KEY = "stages"
 _STAGE_STATE_KEY = "state"
 _STAGE_FAILED_STATE = "failed"
 _STAGE_OUTPUT_KEY = "output"
+_STAGE_COMPLETION_KEY = "completion"
 _STAGE_VERDICT_REASON_KEY = "failure_reason"
 _BLOB_REFERENCE_PREFIX = "blob://"
 
@@ -447,8 +449,8 @@ def _stage_record_failure(*, payload: object | None, stage: str) -> FabroFailure
     engine HAD written — into `stages["<node>@<visit>"].output` — was reported
     as absent. Measured 2026-10-24 on gmktec runs `01M5QNH88NHN68ST28Y80CZJ48`
     and `01M5N3J02GQ1423GRX25HW0NPN`: a failed stage entry carries `handler`,
-    `state`, `output`, `response` and sometimes `diff`; it carries no
-    `failure_reason` key of its own.
+    `state`, `output`, `response` and sometimes `diff`. A timed-out agent has
+    no output, but records its own failure reason at `completion.failure_reason`.
 
     THE OUTPUT'S LAST LINE MAY BE THE STAGE'S STRUCTURED VERDICT. An agent
     stage ends its transcript with one JSON object —
@@ -461,7 +463,12 @@ def _stage_record_failure(*, payload: object | None, stage: str) -> FabroFailure
     """
     output = _failed_stage_output(payload=payload, stage=stage)
     if output is None:
-        return None
+        reason = _failed_stage_completion_reason(payload=payload, stage=stage)
+        return (
+            None
+            if reason is None
+            else fabro_failure_detail_from_payload(payload={"failure": {"causes": [reason]}})
+        )
     reason = _verdict_failure_reason(output=output)
     causes = [output] if reason is None else [output, reason]
     return fabro_failure_detail_from_payload(payload={"failure": {"causes": causes}})
@@ -493,6 +500,30 @@ def _failed_stage_output(*, payload: object | None, stage: str) -> str | None:
         if isinstance(text, str) and text.strip() and not text.startswith(_BLOB_REFERENCE_PREFIX):
             output = text.strip()
     return output
+
+
+def _failed_stage_completion_reason(*, payload: object | None, stage: str) -> str | None:
+    """The newest FAILED visit's recorded completion reason, if it has no output.
+
+    A turn that times out never emits its structured final line, so its stage
+    record has no `output`. Its completion still carries the engine's sentence;
+    that sentence is the cause, not an invitation to make the slow event-stream
+    read mandatory.
+    """
+    record = fabro_inspect_record(payload=payload)
+    if record is None:
+        return None
+    wanted = graph_node_id(node=stage)
+    reason: str | None = None
+    for key, raw in _mapping(value=record.get(_STAGES_KEY)).items():
+        entry = _mapping(value=raw)
+        if graph_node_id(node=key) != wanted or entry.get(_STAGE_STATE_KEY) != _STAGE_FAILED_STATE:
+            continue
+        completion = _mapping(value=entry.get(_STAGE_COMPLETION_KEY))
+        value = completion.get(_STAGE_VERDICT_REASON_KEY)
+        if isinstance(value, str) and value.strip():
+            reason = value.strip()
+    return reason
 
 
 def _verdict_failure_reason(*, output: str) -> str | None:

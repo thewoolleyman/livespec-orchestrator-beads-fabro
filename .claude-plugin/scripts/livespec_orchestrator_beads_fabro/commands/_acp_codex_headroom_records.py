@@ -33,6 +33,8 @@ from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
     CodexHeadroomReading,
     CodexWindowProjection,
     CodexWindowReading,
+    codex_window_effective_floor_percent,
+    codex_window_floor_relaxed_by_reset_proximity,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_skips import SkippedCandidate
 
@@ -58,7 +60,10 @@ def codex_headroom_assessment_record(
         "provider": CODEX_PROVIDER,
         "work_item_id": work_item_id,
         "session_headroom_floor_percent": floor_percent,
-        "assessments": [codex_headroom_reading_fields(reading=reading) for reading in assessments],
+        "assessments": [
+            codex_headroom_reading_fields(reading=reading, floor_percent=floor_percent)
+            for reading in assessments
+        ],
     }
 
 
@@ -83,11 +88,15 @@ def codex_headroom_skip_fields(
             if skip.headroom_skip_kind == CODEX_PROJECTION_SKIP_KIND
             else None
         ),
-        "codex_headroom": codex_headroom_reading_fields(reading=reading),
+        "codex_headroom": codex_headroom_reading_fields(
+            reading=reading, floor_percent=skip.headroom_floor_percent
+        ),
     }
 
 
-def codex_headroom_reading_fields(*, reading: CodexHeadroomReading) -> dict[str, object]:
+def codex_headroom_reading_fields(
+    *, reading: CodexHeadroomReading, floor_percent: int | None = None
+) -> dict[str, object]:
     """One reading's journaled facts, with nulls written rather than omitted."""
     return {
         "credential_identity": reading.credential_identity,
@@ -95,7 +104,14 @@ def codex_headroom_reading_fields(*, reading: CodexHeadroomReading) -> dict[str,
         "allowed": reading.allowed,
         "limit_reached": reading.limit_reached,
         "unobservable": reading.unobservable,
-        "windows": [_window_fields(window=window) for window in reading.windows],
+        "windows": [
+            _window_fields(
+                window=window,
+                observed_at=reading.observed_at,
+                floor_percent=floor_percent,
+            )
+            for window in reading.windows
+        ],
         "projection": codex_headroom_projection_fields(projection=reading.projection),
     }
 
@@ -123,12 +139,32 @@ def codex_headroom_projection_fields(
     }
 
 
-def _window_fields(*, window: CodexWindowReading) -> dict[str, object]:
+def _window_fields(
+    *, window: CodexWindowReading, observed_at: str, floor_percent: int | None
+) -> dict[str, object]:
+    effective_floor = (
+        None
+        if floor_percent is None
+        else codex_window_effective_floor_percent(
+            window=window, observed_at=observed_at, floor_percent=floor_percent
+        )
+    )
+    relaxed = (
+        None
+        if floor_percent is None
+        else codex_window_floor_relaxed_by_reset_proximity(
+            window=window, observed_at=observed_at, floor_percent=floor_percent
+        )
+    )
     return {
         "name": window.name,
         "used_percent": window.used_percent,
         "limit_window_seconds": window.limit_window_seconds,
         "remaining_percent": window.remaining_percent,
+        "reset_at": window.reset_at,
+        "reset_at_result": window.reset_at_result,
+        "effective_floor_percent": effective_floor,
+        "floor_relaxed_by_reset_proximity": relaxed,
         "drain_percent_per_hour": window.drain_percent_per_hour,
         "projection": codex_headroom_projection_fields(projection=window.projection),
     }

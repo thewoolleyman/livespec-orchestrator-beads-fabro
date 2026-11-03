@@ -122,6 +122,20 @@ def build_parser() -> argparse.ArgumentParser:
             "Defaults to the resolved invoker."
         ),
     )
+    # The delegated valve authority input: WHICH committed maintainer
+    # delegation a `delegate:<name>` press acts under. An ARGUMENT, never an
+    # environment variable, so the cited grant is in the recorded argv; it is
+    # verified against `dispatcher.valve_delegations` before any action runs.
+    _ = parser.add_argument(
+        "--delegation",
+        dest="delegation",
+        default=None,
+        metavar="REF",
+        help=(
+            "the committed dispatcher.valve_delegations ref a "
+            "--invoker delegate:<name> press acts under; delegable valves only"
+        ),
+    )
     add_invoker_argument(parser=parser)
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
     return parser

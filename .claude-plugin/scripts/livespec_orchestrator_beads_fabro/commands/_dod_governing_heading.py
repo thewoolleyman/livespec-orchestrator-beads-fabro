@@ -61,6 +61,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from livespec_runtime.spec_stated import ClauseEvidence
+
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     CondensedClause,
 )
@@ -123,6 +125,7 @@ class GoverningHeadingVerdict:
     selected_clauses: tuple[CondensedClause, ...] = ()
     named_clauses: tuple[CondensedClause, ...] = ()
     provenance_complete: bool = True
+    evidence: tuple[ClauseEvidence, ...] = ()
 
 
 def verdict_named_headings(
@@ -172,10 +175,11 @@ def governing_heading_findings(
     if verdict is None or verdict.kind == _UNSTATED_KIND:
         return ()
     named = {_title_of(heading=reference) for reference in section.references}
+    evidence = {entry.heading: entry.quote for entry in verdict.evidence}
     return tuple(
-        _omitted_heading_finding(item=item, heading=heading)
+        _omitted_heading_finding(item=item, heading=heading, quote=evidence[heading])
         for heading in verdict.stated_by
-        if _title_of(heading=heading) not in named
+        if _title_of(heading=heading) not in named and heading in evidence
     )
 
 
@@ -208,11 +212,12 @@ def governing_heading_block(*, verdict: GoverningHeadingVerdict | None) -> str:
     return "\n".join(lines)
 
 
-def _omitted_heading_finding(*, item: WorkItem, heading: str) -> str:
+def _omitted_heading_finding(*, item: WorkItem, heading: str, quote: str) -> str:
     return (
         f"work-item {item.id}: the Definition of Done reference line does not name"
         f" {heading!r}, which the spec-stated judgement returned as a clause governing"
-        " this item's assertions; add that heading to the reference line verbatim, so"
+        f" this item's assertions, quoting {quote!r} from that clause; add that heading"
+        " to the reference line verbatim, so"
         " the capture steps exercise the behaviour it states"
     )
 

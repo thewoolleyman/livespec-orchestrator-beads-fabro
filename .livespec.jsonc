@@ -282,6 +282,23 @@
       // capacity-deferred. Read on each admission pass; no restart needed.
       "wip_cap": 16,
       "acceptance_mode": "ai-only",
+      // Committed maintainer delegations of the human valves (contracts.md,
+      // journal invoker attribution, "Delegated valve authority"). A press
+      // `--invoker delegate:<delegate> --delegation <ref>` is admitted only on
+      // resolve-blocked, approve, accept, reject and release-spec-tier, and only
+      // when its ref and delegate match an entry here. NOT API-configurable:
+      // adding a grant is a reviewed commit. R493 is the maintainer's standing
+      // grant ("the coordinator presses human valves on the maintainer's
+      // authority, except credentials, irreversible or outward-facing acts"),
+      // made first-class by the maintainer's 2026-11-02T23:22:22Z ruling.
+      "valve_delegations": [
+        {
+          "ref": "R493",
+          "delegate": "legacy-coordinator-agent",
+          "grantor": "human:thewoolleyman",
+          "record": "livespec-dev-tooling-6tgd2z plan-scope-event 2026-11-01T22:36:24Z"
+        }
+      ],
       // The shared append-only records a refresh may merge entry by entry
       // instead of spending a repair round. Entries must remain independent:
       // default-branch records stay first and this run's additions follow.
@@ -1047,6 +1064,19 @@
           // factory-python: the toolchain-named catalog id (livespec-dev-tooling
           // SPECIFICATION, "Factory sandbox environment naming"). Its provider, not
           // this id, says where the sandbox runs, so a provider move changes nothing here.
+          "environment": "factory-python"
+        },
+        // `candidate` is gmktec's fabro-server-candidate (:32278), the permanent
+        // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
+        // ruling 2026-11-02T19:22:32Z). Same keys as `petri`; its address comes
+        // from the factory registry. `bin` is the client of the build it serves
+        // (0.393.0-nightly.1 at 84fb903b8). It is never the default: choose it per
+        // dispatch with `--factory candidate`, and count its runs against the
+        // shared gmktec fleet cap.
+        "candidate": {
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro",
+          "secret_channel": "native_secrets",
           "environment": "factory-python"
         }
       },

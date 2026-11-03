@@ -176,8 +176,22 @@ def render_answer_comment(*, answer: str, aid: str, identity: InvokerIdentity, a
     """
     return (
         f"{ANSWER_COMMENT_MARKER}{_HEADER_OPEN}{identity.invoker} via {identity.invoker_source}"
+        f"{_delegation_clause(identity=identity)}"
         f"{_HEADER_FIELD_SEPARATOR}{at}{_HEADER_FIELD_SEPARATOR}{aid}{_HEADER_CLOSE}\n{answer}"
     )
+
+
+def _delegation_clause(*, identity: InvokerIdentity) -> str:
+    """The header's statement that a delegate answered under a maintainer grant.
+
+    Empty for every press but a verified delegated one. It carries no field
+    separator, so `answering_action_id` still reads the action id as the last
+    field.
+    """
+    grant = identity.delegation
+    if grant is None:
+        return ""
+    return f" under maintainer delegation {grant.ref} granted by {grant.grantor}"
 
 
 def answering_action_id(*, text: str) -> str | None:
