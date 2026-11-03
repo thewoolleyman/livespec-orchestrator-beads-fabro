@@ -70,8 +70,10 @@ printf 'just %s\\n' "$*" >> "$FAKE_LOG"
         tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
     log = tmp_path / "calls.log"
     log.touch()
+    # The gate Job itself exports LIVESPEC_GATE_CONTEXT, so an inherited value
+    # would put every case in gate context; only `gate_context` may set it.
     environment = {
-        **os.environ,
+        **{key: value for key, value in os.environ.items() if key != "LIVESPEC_GATE_CONTEXT"},
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "FAKE_DELEGATE_STATUS": str(delegate_status),
         "FAKE_LOG": str(log),
