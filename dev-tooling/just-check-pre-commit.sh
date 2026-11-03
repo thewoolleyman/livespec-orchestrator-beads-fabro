@@ -49,7 +49,7 @@ staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
 impl_staged=$(echo "$staged" | grep -E '^(\.claude-plugin/scripts/|dev-tooling/checks/).*\.py$' || true)
-green_amend_staged=$(echo "$staged" | grep -Ev '^tests/.*\.py$' || true)
+green_amend_staged=$(echo "$py_staged" | grep -Ev '^tests/' || true)
 test_count=0
 impl_count=0
 [[ -n "$test_staged" ]] && test_count=$(echo "$test_staged" | wc -l)
