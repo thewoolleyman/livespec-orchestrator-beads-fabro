@@ -50,7 +50,10 @@ from hypothesis import settings
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
-from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
+    FabroHttpPort,
+    FabroHttpResult,
+)
 
 # Hypothesis's per-example WALL-CLOCK deadline, turned off suite-wide.
 #
@@ -80,6 +83,64 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHtt
 # genuinely outruns the old ceiling.
 settings.register_profile("livespec", deadline=None)
 settings.load_profile("livespec")
+
+
+@pytest.fixture(autouse=True)
+def _integration_dump_doubles_serve_run_state(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """Adapt the integration suite's old dump-only doubles to the state API."""
+    if request.module is None or request.module.__name__.rsplit(".", 1)[-1] not in {
+        "test_reconcile_runs_ledger_gate_scenarios",
+        "test_run_wall_budget_scenario175",
+    }:
+        return
+
+    class _Api:
+        def __init__(self, *, fallback: FabroHttpPort) -> None:
+            self._fallback = fallback
+
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={
+                    "stages": {
+                        "implement@1": {
+                            "first_event_seq": 2,
+                            "diff": "diff --git a/app.py b/app.py\n+print('kept')\n",
+                        }
+                    }
+                },
+                succeeded=True,
+            )
+
+        def bearer_token(self) -> str | None:
+            return self._fallback.bearer_token()
+
+        def questions(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            return self._fallback.questions(run_id=run_id, timeout_seconds=timeout_seconds)
+
+        def answer_question(
+            self, *, run_id: str, question_id: str, option_key: str, timeout_seconds: float
+        ) -> FabroHttpResult:
+            return self._fallback.answer_question(
+                run_id=run_id,
+                question_id=question_id,
+                option_key=option_key,
+                timeout_seconds=timeout_seconds,
+            )
+
+        def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            return self._fallback.cancel(run_id=run_id, timeout_seconds=timeout_seconds)
+
+    monkeypatch.setattr(
+        FabroPort,
+        "server_api",
+        lambda port: _Api(fallback=FabroHttpPort(target=port.target, transport=port.http)),
+    )
 
 
 @pytest.fixture(autouse=True)

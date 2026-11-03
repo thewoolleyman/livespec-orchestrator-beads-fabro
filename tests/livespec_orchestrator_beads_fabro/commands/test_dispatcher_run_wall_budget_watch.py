@@ -187,9 +187,7 @@ def test_the_pointer_is_written_and_read_back_before_the_run_is_cancelled(
     )
     assert verdict == watch.RunWallVerdict.CANCELLED
     assert "rm" in runner.calls
-    # The export's own `fabro dump` precedes the `rm`, and the ledger write and
-    # its read-back both land before it too.
-    assert runner.calls.index("dump") < runner.calls.index("rm")
+    # The selective projection and ledger read-back both precede `rm`.
     assert ledger.writes == [_WORK_ITEM_ID]
     assert len(ledger.reads) == 2
     assert ledger.comments[0]["text"].startswith(PRESERVE_POINTER_MARKER)
@@ -399,4 +397,4 @@ def test_a_failed_export_dump_holds_without_writing_a_pointer(tmp_path: Path) ->
     assert ledger.writes == []
     assert "rm" not in runner.calls
     assert [record["stage"] for record in journal.records] == [RUN_WALL_BUDGET_HELD_STAGE]
-    assert "fabro dump failed with exit code 1" in str(journal.records[0]["failed_measurement"])
+    assert "selective stage-diff read failed" in str(journal.records[0]["failed_measurement"])

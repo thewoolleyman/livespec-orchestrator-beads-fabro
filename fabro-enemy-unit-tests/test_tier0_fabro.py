@@ -162,6 +162,18 @@ def test_inspect_and_events_completed_run_field_sets(
     assert any(_has_event_timestamp(event=event) for event in event_records)
 
 
+def test_run_state_completed_run_carries_a_bounded_stage_projection(
+    *, config: _FabroTier0Config, port: FabroPort
+) -> None:
+    run_id = config.completed_run_id or _completed_run_id(port=port)
+
+    state = port.server_api().run_state(run_id=run_id, timeout_seconds=TIMEOUT_SECONDS)
+
+    assert state.succeeded is True
+    assert isinstance(state.payload, dict)
+    assert isinstance(state.payload.get("stages"), dict)
+
+
 def _event_records(*, stdout: str, payload: object | None) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [_mapping(value=item) for item in payload if isinstance(item, dict)]
