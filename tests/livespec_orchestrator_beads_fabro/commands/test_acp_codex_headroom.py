@@ -148,6 +148,73 @@ def test_a_window_below_the_floor_is_a_floor_skip() -> None:
     assert _skip_kind(primary_window=_window(used=85)) == codex.CODEX_FLOOR_SKIP_KIND
 
 
+def test_a_window_resetting_within_twelve_hours_uses_the_relaxed_floor() -> None:
+    kind = _skip_kind(
+        primary_window={
+            "used_percent": 90,
+            "limit_window_seconds": 18000,
+            "reset_at": 1793206800,
+        }
+    )
+
+    assert kind is None
+
+
+def test_a_window_resetting_after_twelve_hours_keeps_the_committed_floor() -> None:
+    kind = _skip_kind(
+        primary_window={
+            "used_percent": 90,
+            "limit_window_seconds": 18000,
+            "reset_at": 1793214000,
+        }
+    )
+
+    assert kind == codex.CODEX_FLOOR_SKIP_KIND
+
+
+def test_a_window_resetting_at_the_twelve_hour_boundary_uses_the_relaxed_floor() -> None:
+    kind = _skip_kind(
+        primary_window={
+            "used_percent": 90,
+            "limit_window_seconds": 18000,
+            "reset_at": 1793210400,
+        }
+    )
+
+    assert kind is None
+
+
+def test_an_unusable_or_absent_reset_at_keeps_the_committed_floor() -> None:
+    absent = _graded(_response(primary_window=_window(used=90)))
+    unusable = _graded(
+        _response(
+            primary_window={
+                "used_percent": 90,
+                "limit_window_seconds": 18000,
+                "reset_at": "not-an-epoch",
+            }
+        )
+    )
+
+    assert absent.windows[0].reset_at is None
+    assert absent.windows[0].reset_at_result == "absent"
+    assert unusable.windows[0].reset_at is None
+    assert unusable.windows[0].reset_at_result == "unusable"
+    assert codex.codex_headroom_skip_kind(reading=unusable, floor_percent=20) == "floor"
+
+
+def test_a_reset_proximity_floor_still_skips_below_five_percent() -> None:
+    kind = _skip_kind(
+        primary_window={
+            "used_percent": 96,
+            "limit_window_seconds": 18000,
+            "reset_at": 1793206800,
+        }
+    )
+
+    assert kind == codex.CODEX_FLOOR_SKIP_KIND
+
+
 def test_equality_passes_the_floor() -> None:
     assert _skip_kind(primary_window=_window(used=80)) is None
     assert _skip_kind(primary_window=_window(used=80.5)) == "floor"
