@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+    LivenessState,
     liveness_sample,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
@@ -861,11 +862,49 @@ def test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect(
         heartbeat_path=None,
         dispatch_id=None,
         observed_at=0.0,
+        state=LivenessState(),
     )
 
     assert sample.last_event_epoch is not None
     assert runner.verbs == ["events"]
     assert "inspect_json" not in signature(parse_last_event_epoch).parameters
+
+
+def test_an_incremental_event_read_advances_the_established_progress_instant(
+    tmp_path: Path,
+) -> None:
+    runner = _ScriptedFabroRunner(
+        events_jsons=[
+            '[{"timestamp": "2026-06-13T08:00:00Z"}]',
+            '[{"timestamp": "2026-06-13T08:01:00Z"}]',
+        ]
+    )
+    plan = _plan(repo=tmp_path)
+    state = LivenessState()
+    port = fabro_port_for_plan(plan=plan, runner=runner)
+
+    first = liveness_sample(
+        plan=plan,
+        port=port,
+        run_id="01RUN",
+        heartbeat_path=None,
+        dispatch_id=None,
+        observed_at=0.0,
+        state=state,
+    )
+    later = liveness_sample(
+        plan=plan,
+        port=port,
+        run_id="01RUN",
+        heartbeat_path=None,
+        dispatch_id=None,
+        observed_at=1.0,
+        state=state,
+    )
+
+    assert first.last_event_epoch is not None
+    assert later.last_event_epoch is not None
+    assert later.last_event_epoch > first.last_event_epoch
 
 
 def test_the_cancel_record_locates_the_run_before_the_rm_destroys_it(tmp_path: Path) -> None:

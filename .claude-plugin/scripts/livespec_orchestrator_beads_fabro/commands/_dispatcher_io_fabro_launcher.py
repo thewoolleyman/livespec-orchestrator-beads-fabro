@@ -21,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_fabro_factory_auth_login,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+    LivenessState,
     liveness_sample,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
@@ -76,7 +77,7 @@ __all__: list[str] = ["WatchedFabroLauncher"]
 # own run thread against the same number — the thread is waiting for the
 # `fabro run` that `rm` is what ends, so two different budgets would let the
 # join outlive or undercut the cancel it is waiting on.
-_WATCHDOG_POLL_INTERVAL_SECONDS = 30.0
+_WATCHDOG_POLL_INTERVAL_SECONDS = 60.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -241,6 +242,7 @@ class WatchedFabroLauncher:
         # the same number.
         stall_seconds = plan.stall_window.seconds
         samples: list[LivenessSample] = []
+        liveness_state = LivenessState()
         known_run_id: str | None = None
         # The run this watch loop has BOUND, and so the one every poll after
         # the first match reads BY ID rather than hunting for in a listing.
@@ -300,6 +302,7 @@ class WatchedFabroLauncher:
                     heartbeat_path=self.heartbeat_path,
                     dispatch_id=self.dispatch_id,
                     observed_at=self.clock(),
+                    state=liveness_state,
                 )
             )
             if known_run_id is None or run is None or run.status_kind != "running":
