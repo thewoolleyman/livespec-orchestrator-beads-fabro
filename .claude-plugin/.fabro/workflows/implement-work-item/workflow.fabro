@@ -1388,7 +1388,7 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         output_schema="routing"
-        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"continue\"}'; exit 0"
+        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-refresh-repair-exhausted\"; then echo 'LIVESPEC_REFRESH_REPAIR_EXHAUSTED_ROUTE: an exhausted refresh repair restored its recovery artifact, so route to needs_human for preservation rather than emit a repeated failed publication visit' >&2; printf '%s\\n' '{\"preferred_next_label\":\"needs_human\"}'; exit 0; fi; if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"continue\"}'; exit 0"
     ]
 
     pr_refresh_merged_reconcile_route [
@@ -1396,7 +1396,7 @@ digraph ImplementWorkItem {
         shape=parallelogram
         timeout="600s"
         output_schema="routing"
-        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"continue\"}'; exit 0"
+        script="state=$(git rev-parse --git-path livespec-publication); if test -f \"$state/livespec-refresh-repair-exhausted\"; then echo 'LIVESPEC_REFRESH_REPAIR_EXHAUSTED_ROUTE: an exhausted refresh repair restored its recovery artifact, so route to needs_human for preservation rather than emit a repeated failed publication visit' >&2; printf '%s\\n' '{\"preferred_next_label\":\"needs_human\"}'; exit 0; fi; if test -f \"$state/livespec-merged-reconcile\"; then echo 'LIVESPEC_MERGED_RECONCILE_ROUTE: publication already merged; bypassing pr and proceeding to final publication verification' >&2; printf '%s\\n' '{\"preferred_next_label\":\"merged\"}'; exit 0; fi; printf '%s\\n' '{\"preferred_next_label\":\"continue\"}'; exit 0"
     ]
 
     // The refresh's own postcondition breaker, and the node that owns the
@@ -2330,6 +2330,7 @@ digraph ImplementWorkItem {
     // same two-outcomes-three-ways shape `pr_refresh_head` already uses.
     publish_draft -> refresh_repair [label="Blocked", condition="outcome=failed"]
     publish_draft -> publish_merged_reconcile_route
+    publish_merged_reconcile_route -> needs_human [label="refresh repair exhausted", condition="preferred_label=needs_human"]
     publish_merged_reconcile_route -> verify_pr [label="publication already merged", condition="preferred_label=merged"]
     publish_merged_reconcile_route -> proof_capture
 
@@ -2590,6 +2591,7 @@ digraph ImplementWorkItem {
     // GRAPH rather than of a script's good intentions.
     pr_refresh -> refresh_repair [label="Blocked", condition="outcome=failed"]
     pr_refresh -> pr_refresh_merged_reconcile_route
+    pr_refresh_merged_reconcile_route -> needs_human [label="refresh repair exhausted", condition="preferred_label=needs_human"]
     pr_refresh_merged_reconcile_route -> verify_pr [label="publication already merged", condition="preferred_label=merged"]
     pr_refresh_merged_reconcile_route -> pr_refresh_head
     pr_refresh_head -> proof_capture [label="head changed: fresh proof owed", condition="outcome=failed"]
