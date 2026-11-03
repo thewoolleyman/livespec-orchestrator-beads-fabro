@@ -1009,10 +1009,10 @@ def end_run_and_await_launcher_return(*, run_done: threading.Event, work_item_id
     caller back the early wait it is replacing, and report it as the
     launcher-side one.
     """
-    run_done.set()
     name = f"{_LAUNCHER_RUN_THREAD_PREFIX}{work_item_id}"
     launcher_threads = [thread for thread in threading.enumerate() if thread.name == name]
     assert launcher_threads, f"no launcher run thread named {name} is alive"
+    run_done.set()
     for thread in launcher_threads:
         thread.join(timeout=_LAUNCHER_RETURN_TIMEOUT_SECONDS)
         assert not thread.is_alive(), f"{name} did not return within its wait"

@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
@@ -788,7 +789,7 @@ class _ScriptedFabroRunner:
     def _run(self) -> CommandResult:
         # Block until the watchdog cancels (or a healthy run completes —
         # the healthy-path tests set run_done during or before polling).
-        _ = self.run_done.wait(timeout=10.0)
+        _ = self.run_done.wait()
         self.run_returned.set()
         # The gap this fake declares, held between its signal and its return.
         _ = threading.Event().wait(timeout=self.return_gap_seconds)
@@ -810,6 +811,52 @@ class _ScriptedFabroRunner:
         return CommandResult(
             exit_code=self.events_exit, stdout=self.events_jsons[index], stderr="x"
         )
+
+
+def test_end_run_waits_for_the_launcher_found_before_releasing_the_fake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_done = threading.Event()
+    joined = False
+
+    class _LauncherThread:
+        name = f"fabro-run-{_WORK_ITEM_ID}"
+
+        def join(self, *, timeout: float) -> None:
+            nonlocal joined
+            assert timeout == 10.0
+            joined = True
+
+        def is_alive(self) -> bool:
+            return False
+
+    def _enumerate_launcher_while_blocked() -> list[_LauncherThread]:
+        assert not run_done.is_set()
+        return [_LauncherThread()]
+
+    monkeypatch.setattr(threading, "enumerate", _enumerate_launcher_while_blocked)
+
+    end_run_and_await_launcher_return(run_done=run_done, work_item_id=_WORK_ITEM_ID)
+
+    assert run_done.is_set()
+    assert joined
+
+
+def test_scripted_fabro_run_waits_only_for_the_run_done_event(tmp_path: Path) -> None:
+    wait_timeouts: list[float | None] = []
+
+    class _RecordedRunDone:
+        def wait(self, timeout: float | None = None) -> bool:
+            wait_timeouts.append(timeout)
+            return True
+
+    runner = _ScriptedFabroRunner(events_jsons=["[]"])
+    runner.run_done = cast(threading.Event, _RecordedRunDone())
+
+    result = runner.run(argv=["fabro", "run"], cwd=tmp_path, timeout_seconds=1.0)
+
+    assert result.exit_code == 0
+    assert wait_timeouts == [None]
 
 
 def _advancing_clock() -> object:

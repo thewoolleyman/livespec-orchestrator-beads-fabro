@@ -48,7 +48,6 @@ from livespec_orchestrator_beads_fabro.commands._session_telemetry_export import
     SessionTelemetry,
     TelemetryConfig,
     config_from_environ,
-    http_post,
 )
 
 _TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
@@ -103,14 +102,6 @@ def _values(*, span: dict[str, object]) -> dict[str, dict[str, object]]:
         cast("str", entry["key"]): cast("dict[str, object]", entry["value"])
         for entry in cast("list[dict[str, object]]", span["attributes"])
     }
-
-
-def _refused_port() -> int:
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    port = int(probe.getsockname()[1])
-    probe.close()
-    return port
 
 
 @contextmanager
@@ -291,18 +282,23 @@ def test_a_blocked_exporter_never_delays_emit_and_close_is_bounded() -> None:
 
 def test_an_unavailable_receiver_is_counted_failed_after_bounded_attempts() -> None:
     attempts: list[str] = []
+    both_attempts_finished = threading.Event()
 
     def counting_post(*, url: str, body: bytes, timeout_seconds: float) -> PostOutcome:
+        del body, timeout_seconds
         attempts.append(url)
-        return http_post(url=url, body=body, timeout_seconds=timeout_seconds)
+        if len(attempts) == 2:
+            both_attempts_finished.set()
+        return PostOutcome(delivered=False)
 
     reports = _Reports()
     telemetry = SessionTelemetry(
-        config=_config(url=f"http://127.0.0.1:{_refused_port()}/v1/traces"),
+        config=_config(url="http://unavailable.test/v1/traces"),
         post=counting_post,
         reporter=reports,
     )
     telemetry.emit(event=_event())
+    assert both_attempts_finished.wait(timeout=_HANG_GUARD_SECONDS), "the export never retried"
     report = telemetry.close()
 
     assert len(attempts) == 2
