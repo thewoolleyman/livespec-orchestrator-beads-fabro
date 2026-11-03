@@ -199,7 +199,9 @@ for argument in "$@"; do
             lock_state=released
             if [ -d "$STUB_LOCK_DIR" ]; then lock_state=held; fi
             printf '%s marker=%s mutex=%s\n' "$item" "$marker_state" "$lock_state" >> "$STUB_RESUME_OBSERVATION_LOG"
-            printf '%s %s\n' "$STUB_SERVER_GMK" "$item" > "$STUB_RESUMED_DIR/$item"
+            if [ -z "${STUB_RESUME_UNLISTED:-}" ]; then
+                printf '%s %s\n' "$STUB_SERVER_GMK" "$item" > "$STUB_RESUMED_DIR/$item"
+            fi
             exit 0
             ;;
     esac
@@ -366,6 +368,8 @@ new_case() {
     export FLEET_LAUNCH_LISTING_POLL_S=1
     export FLEET_LAUNCH_PREFLIGHT_REUSE_S=600
     export FLEET_LAUNCH_MUTEX_HOLD_S=60
+    export FLEET_LAUNCH_LISTING_WAIT_S=60
+    unset STUB_RESUME_UNLISTED
     unset ONLY_GMK ONLY_HL CAPTURE_NULL CAPTURE_EXPECT TICKET_NS REWORK RELEASE_BLOCKED
 }
 
@@ -776,6 +780,35 @@ if grep -q '^bd-ib-resume marker=present mutex=released$' "$RESUME_OBSERVATION_L
     pass "the resume in-flight marker exists before its mutex is released"
 else
     fail "the resume did not retain its marker through mutex release: $(tr '\n' ' ' < "$RESUME_OBSERVATION_LOG")"
+fi
+
+# --- 10. a resume marker stays counted until the board lists the run --------
+# The resume client returns at once, before the run lists on the board.  The
+# launcher must keep its in-flight marker so concurrent launchers still count
+# the resume, and drop it only after the board lists the run.
+echo "--- 10. a resume marker stays counted after the client returns, until the board lists the run"
+new_case resume-marker-retained
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+export STUB_RESUME_UNLISTED=1
+RESUME_CASE_LOG="$CASE_DIR/resume-launcher.log"
+"$RESUME_LAUNCHER" bd-ib-unlisted > "$RESUME_CASE_LOG" 2>&1 &
+resume_pid=$!
+waited=0
+while [ ! -s "$RESUME_LOG" ] && [ "$waited" -lt 30 ]; do sleep 1; waited=$((waited + 1)); done
+sleep 3
+if kill -0 "$resume_pid" 2>/dev/null && [ -n "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+    pass "the resume marker is still present after the client returned before the board listed it"
+else
+    fail "the resume marker was dropped before the board listed the run"
+fi
+printf '%s %s\n' "$GMK_URL" bd-ib-unlisted > "$CASE_DIR/resumed/bd-ib-unlisted"
+wait "$resume_pid"; resume_rc=$?
+if [ "$resume_rc" = 0 ] && [ -z "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+    pass "the resume marker is removed once the board lists the run"
+else
+    fail "the resume marker was not cleared after listing (rc=$resume_rc)"
 fi
 
 echo
