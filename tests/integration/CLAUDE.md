@@ -1403,6 +1403,17 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   foreign paths, divergent keyed records, and a rejected merged head still take
   refresh repair.
 
+- `test_implement_hook_refusal_cause_scenario285.py` — binds the attributable-cause
+  clause of `SPECIFICATION/contracts.md` "A refused commit's needs-human cause is
+  attributable from the ledger" (Scenario 285, work-item `bd-ib-2h512`) for the
+  `implement_hook_route` ending. The committed route script is executed by `sh` in a
+  throwaway clone with a stub pre-commit hook, once the re-entry budget is spent: the
+  single cause line must carry the hook's exit status, every failed target, one
+  excerpt of at most 200 characters (marked truncated), an unknown-target statement
+  naming absent, unreadable or target-free output, and never an environment value
+  (verbatim or JSON-escaped, 8 characters or longer). Each excerpt case sits beside a
+  sibling that would pass for a cause naming only the exit status.
+
 - `test_implement_completion_field_scenario204.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 204 and the v165 clause "An implement
   turn that ends incomplete does not succeed": the implement stage's outcome is
