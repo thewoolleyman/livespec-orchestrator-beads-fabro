@@ -25,6 +25,17 @@ Conventions:
   heading-coverage registry consumed by the shared
   `heading_coverage` check) live at `tests/<file>` directly;
   subdirectories cover code under test.
+- `tests/plan_resume_checkout.py` is the ONE derivation of the checkout
+  the plan-resume fixtures name in their typed `required_result`
+  (imported as `from tests.plan_resume_checkout import ...` from both
+  `tests/integration/` and `tests/livespec_orchestrator_beads_fabro/`).
+  A fixture naming this repository LITERALLY resolves only in a checkout
+  whose DIRECTORY is named after the repository, so it passed from the
+  primary clone and failed from every worktree and from the Dispatcher's
+  post-merge janitor checkout. Read that module's docstring before
+  adding a plan-resume fixture; `tests/
+  test_plan_resume_checkout_identity.py` is the guard that keeps the
+  three existing fixtures on it.
 - Tests use `tmp_path` for filesystem fixtures, `monkeypatch` to
   stub `os.environ` and the runtime version check, and `capsys` to
   capture stdout/stderr. Happy-path tests that exercise a
