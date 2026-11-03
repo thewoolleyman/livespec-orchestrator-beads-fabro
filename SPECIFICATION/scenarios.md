@@ -11716,3 +11716,31 @@ Feature: fork Rust gates and pinned carrier builds run on ARC k3s runner capacit
     Then it runs at nice 19 with CARGO_BUILD_JOBS=4
     And the work item that used it records the fallback
 ```
+
+## Scenario 301 — A verified delegated press satisfies a human valve and is recorded as delegated
+
+```gherkin
+Feature: The maintainer's delegation of human valves is a verified, first-class invoker form
+  As a maintainer who has delegated human valves to a coordinator
+  I want a delegated press to be verified against a committed delegation and recorded as delegated
+  So that delegated decisions stop blocking without anyone forging my identity
+
+  Scenario: A verified delegated answer is admitted and recorded under the delegation
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent granted by human:thewoolleyman
+    And a work-item at blocked with blocked_reason needs-human and effective answer disposition human
+    When drive runs resolve-blocked:<work-item-id>:ready with --answer, --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then the press is admitted and the answer lands as a ledger comment naming delegation R493 and grantor human:thewoolleyman
+    And every journal record of the press carries invoker delegate:legacy-coordinator-agent and a delegation object citing R493
+    And the item gains a livespec-delegated-valve-press ledger comment, and no record carries a human: identity
+
+  Scenario: A delegation that cannot be verified is refused before any write
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs an allowlisted valve with --invoker delegate:legacy-coordinator-agent and a --delegation ref that no entry carries, or with no --delegation at all, or with --delegation and a non-delegate invoker
+    Then drive refuses the press naming the action, the invoker, the ref and the reason
+    And nothing is written to the store, the journal or the ledger
+
+  Scenario: A delegated press of a non-delegable valve is refused
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs set-merge-hold, set-factory-safety or an impl: dispatch with --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then drive refuses the press because the verb is not on the delegable valve allowlist
+```
