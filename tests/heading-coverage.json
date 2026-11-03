@@ -2687,6 +2687,14 @@
     "work_item": "bd-ib-dqxcsh"
   },
   {
+    "heading": "## Scenario 301 \u2014 A verified delegated press satisfies a human valve and is recorded as delegated",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "tests.integration.test_delegated_valve_press_scenario301.test_scenario301_a_verified_delegated_answer_is_admitted_and_recorded_as_delegated",
+    "reason": "Bound by integration-tier cases over the public drive.run_action press: a verified delegate:<name> answer under a committed dispatcher.valve_delegations ref admitted at the human disposition, its answer header, journal records and livespec-delegated-valve-press comment all naming the delegation and no human: identity; an unknown ref, a ref granted to another delegate, a ref with no delegate role, a delegate role with no ref and an unreadable setting each refused with nothing written; and set-merge-hold, set-factory-safety, set-admission and impl: refused as not delegable.",
+    "work_item": "bd-ib-heat"
+  },
+  {
     "heading": "## Factory sandbox clone release tags",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",

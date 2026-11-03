@@ -4630,6 +4630,58 @@ assert. Where a ratified door already journals a door-specific actor
 field (the v051 valve records), that field remains; `invoker`/
 `invoker_source` is the uniform envelope-level attribution.
 
+**Delegated valve authority.** A maintainer MAY delegate the pressing of
+human valves to a named delegate (for this fleet, the coordinator seat under
+ruling R493). The delegation is first-class: the press asserts the reserved
+role `delegate`, as `--invoker delegate:<delegate-name>`, and MUST also name
+the delegation it acts under with `--delegation <ref>`. `drive` MUST verify
+the press against **`dispatcher.valve_delegations`** (committed
+`.livespec.jsonc`, a list; default empty), each entry an object with the
+non-empty strings `ref` (the delegation's identifier, e.g. `R493`),
+`delegate` (the `<delegate-name>` it authorizes), `grantor` (the delegating
+human, a `human:<name>` identity) and `record` (where the grant is recorded,
+e.g. the plan-scope-event's epic and timestamp). A press is a **verified
+delegated press** exactly when its invoker role is `delegate`, its
+`--delegation` ref equals one entry's `ref`, that entry's `delegate` equals
+the invoker's `<delegate-name>`, and the action's verb is on the **delegable
+valve allowlist**: `resolve-blocked`, `approve`, `accept`, `reject` and
+`release-spec-tier`. Like `dispatcher.require_invoker`,
+`dispatcher.valve_delegations` is deliberately NOT API-configurable: a
+delegation is granted only by a committed, reviewable change, so no press
+can invent the reference it cites. A list that does not parse, or an entry
+missing any of the four fields or whose `grantor` is not a named `human:`
+identity, makes the whole setting unreadable, and an unreadable setting
+verifies no press.
+
+The delegation NEVER covers a credential, irreversible or outward-facing
+act, and the allowlist is the mechanical form of that exclusion: the
+factory-safety opt-out and its clearance (host secrets and host machinery),
+the merge hold (a forge write), the policy, cap, queue and workflow-scope
+edits, `impl:` and `driver-dispatch:` dispatches, and every entry point
+outside `drive` (the provider-exhaustion and ACP-hold clearances among them)
+are not delegable. `drive` MUST refuse, before any store read that could
+lead to a write, any journal write or any ledger write: a `delegate:`
+invoker without `--delegation`; `--delegation` without a `delegate:`
+invoker; a delegated press of a verb off the allowlist; and a ref that
+matches no entry, or matches an entry for a different delegate, or cannot be
+verified because the setting is unreadable. Each refusal names the action,
+the asserted invoker and ref, and why. No environment variable or flag
+bypasses this verification.
+
+A verified delegated press satisfies every gate on the allowlisted valves
+that admits a human operator's press, the `human` answer disposition of
+§"Dispatcher policy settings" included. Its records MUST say plainly that
+the delegate acted under maintainer delegation and MUST NOT carry a
+`human:<name>` identity: `invoker` stays the asserted
+`delegate:<delegate-name>`, every journal record the press writes
+additionally carries a stamped `delegation` object (`ref`, `grantor`,
+`record`) applied by the same append layer that stamps `invoker`, an answer
+comment's header names the delegation ref and grantor after the invoker, and
+a green press appends one ledger comment to the item opening with the marker
+`livespec-delegated-valve-press` that names the action id, the delegate, the
+ref, the grantor and the record. A refused press writes none of these.
+Scenario 301 binds this behavior.
+
 **`dispatcher.require_invoker`** (boolean, committed `.livespec.jsonc`,
 default **`false`**) governs the fallback: when `true`, a published
 state-changing invocation whose identity would resolve by `fallback`
@@ -7575,7 +7627,9 @@ An item's **effective answer disposition** resolves as its
 `dispatcher.answer_disposition`. `drive` MUST refuse a
 `resolve-blocked:<work-item-id>:ready|backlog` press carrying `--answer` that
 the effective answer disposition does not admit — under `human`, an
-automated/non-human disposition's press is refused — and the refusal MUST name
+automated/non-human disposition's press is refused, and a verified delegated
+press (§"Journal invoker attribution" → "Delegated valve authority") is
+admitted as a human operator's — and the refusal MUST name
 the work-item and the effective disposition, mirroring the effective-manual
 `approve` refusal (§"`drive`"). The `needs-attention` `resolve-blocked` lane
 MUST NOT advertise an answer handoff the effective disposition would refuse (the
