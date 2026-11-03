@@ -389,10 +389,10 @@ class _RecordingJournal:
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
-    """Scripts fabro run/ps/inspect/events/rm; `events_jsons` per-poll feed.
+    """Scripts fabro run/ps/inspect/events; `events_jsons` per-poll feed.
 
-    `fabro run` BLOCKS on `run_done` so the foreground watch loop runs;
-    `fabro rm` sets `run_done`. The wall-clock event reading is whatever
+    `fabro run` BLOCKS on `run_done` so the foreground watch loop runs. The
+    wall-clock event reading is whatever
     `events_jsons` supplies — but with a heartbeat present the launcher's
     PRIMARY layer is the heartbeat file, not these events.
 
@@ -413,7 +413,7 @@ class _ScriptedFabroRunner:
     return_gap_seconds: float = 0.0
     run_done: threading.Event = field(default_factory=threading.Event)
     run_returned: threading.Event = field(default_factory=threading.Event)
-    rm_calls: list[str] = field(default_factory=list)
+    verbs: list[str] = field(default_factory=list)
     _poll: int = 0
 
     def run(
@@ -426,6 +426,7 @@ class _ScriptedFabroRunner:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env)
         verb = argv[1] if len(argv) > 1 else ""
+        self.verbs.append(verb)
         if verb == "run":
             _ = self.run_done.wait(timeout=10.0)
             self.run_returned.set()
@@ -440,10 +441,6 @@ class _ScriptedFabroRunner:
             index = min(self._poll, len(self.events_jsons) - 1)
             self._poll += 1
             return CommandResult(exit_code=0, stdout=self.events_jsons[index], stderr="")
-        if verb == "rm":
-            self.rm_calls.append(argv[-1])
-            self.run_done.set()
-            return CommandResult(exit_code=0, stdout="", stderr="")
         return CommandResult(exit_code=1, stdout="", stderr=f"unexpected argv {argv}")
 
 
@@ -473,7 +470,7 @@ def test_launcher_never_cancels_while_events_advance_past_a_frozen_heartbeat(
     #
     # This test asserted the OPPOSITE until bd-ib-qsk4o5: the heartbeat was
     # preferred whenever it carried any timestamp, so a frozen beat masked
-    # an advancing event stream and the watchdog `fabro rm -f`-ed healthy
+    # an advancing event stream and the watchdog cancelled a healthy
     # runs inside `janitor` and `publish_draft` — three of the six stall
     # cancels on hp since 2026-10-08.
     #
@@ -511,7 +508,7 @@ def test_launcher_never_cancels_while_events_advance_past_a_frozen_heartbeat(
     )
     result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
 
 
 def test_launcher_cancels_when_both_the_heartbeat_and_the_events_are_frozen(
@@ -534,7 +531,7 @@ def test_launcher_cancels_when_both_the_heartbeat_and_the_events_are_frozen(
     )
     result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id == "01RUN"
-    assert runner.rm_calls == ["01RUN"]
+    assert "rm" not in runner.verbs
 
 
 def test_launcher_falls_through_to_wall_clock_when_heartbeat_absent(tmp_path: Path) -> None:
@@ -553,7 +550,7 @@ def test_launcher_falls_through_to_wall_clock_when_heartbeat_absent(tmp_path: Pa
     )
     result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id == "01RUN"
-    assert runner.rm_calls == ["01RUN"]
+    assert "rm" not in runner.verbs
 
 
 def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -> None:
@@ -600,5 +597,5 @@ def test_launcher_with_fresh_advancing_heartbeat_never_cancels(tmp_path: Path) -
     )
     result = launcher.launch(plan=_watchdog_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
     assert polls["n"] == 4

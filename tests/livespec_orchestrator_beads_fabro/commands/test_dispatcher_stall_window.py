@@ -105,21 +105,21 @@ class _RecordingJournal:
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
-    """A CommandRunner scripting fabro's run/ps/inspect/events/rm subprocesses.
+    """A CommandRunner scripting fabro's run/ps/inspect/events subprocesses.
 
     `fabro run` BLOCKS on `run_done` so the background thread stays alive
-    while the foreground watch loop runs; `fabro rm` sets it, modelling fabro
-    killing the run. Never launches a real process.
+    while the foreground watch loop runs. Never launches a real process.
     """
 
     events_jsons: list[str]
     run_done: threading.Event = field(default_factory=threading.Event)
-    rm_calls: list[str] = field(default_factory=list)
+    verbs: list[str] = field(default_factory=list)
     _poll: int = 0
 
     def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
         _ = (cwd, timeout_seconds)
         verb = argv[1] if len(argv) > 1 else ""
+        self.verbs.append(verb)
         if verb == "run":
             _ = self.run_done.wait(timeout=10.0)
             return CommandResult(exit_code=0, stdout=f"    Run: {_RUN_ID}\n", stderr="")
@@ -131,10 +131,6 @@ class _ScriptedFabroRunner:
             index = min(self._poll, len(self.events_jsons) - 1)
             self._poll += 1
             return CommandResult(exit_code=0, stdout=self.events_jsons[index], stderr="")
-        if verb == "rm":
-            self.rm_calls.append(argv[-1])
-            self.run_done.set()
-            return CommandResult(exit_code=0, stdout="", stderr="")
         return CommandResult(exit_code=1, stdout="", stderr=f"unexpected argv {argv}")
 
 
@@ -185,7 +181,7 @@ def test_host_stall_watchdog_window_resolves_from_the_repository_stall_timeout_k
     )
 
     assert result.stalled_run_id == _RUN_ID
-    assert runner.rm_calls == [_RUN_ID]
+    assert "rm" not in runner.verbs
     cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
     assert [record.get("stall_seconds") for record in cancels] == [3000.0]
 
