@@ -232,6 +232,44 @@ def test_subject_bounds_a_large_referenced_heading_after_its_verdict_is_availabl
     assert "The governing clause remains verbatim." in subject
 
 
+def test_subject_keeps_every_named_clause_verbatim_even_past_the_shared_bound(
+    tmp_path: Path,
+) -> None:
+    """A clause the verdict names or selects is never dropped to fit the bound."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    _ = (spec / "contracts.md").write_text("## Governing\n\nBody.\n", encoding="utf-8")
+    named_body = "\n\nNamed clause marker. " + "n" * 160_000 + "\n"
+    selected_body = "\n\nSelected clause marker. " + "s" * 10_000 + "\n"
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n"
+            "- The named clause survives.\n\n"
+            "References: ## Governing, ## Second\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(
+        item=item,
+        cwd=tmp_path,
+        governing=GoverningHeadingVerdict(
+            kind="partial",
+            stated_by=("## Second",),
+            generalization_target="## Governing",
+            selected_clauses=(CondensedClause(heading="## Second", body=selected_body),),
+            named_clauses=(CondensedClause(heading="## Governing", body=named_body),),
+        ),
+    )
+
+    assert named_body in subject
+    assert selected_body in subject
+    assert "was omitted because" not in subject
+
+
 def test_subject_bounds_large_references_before_a_governing_verdict_is_available(
     tmp_path: Path,
 ) -> None:
