@@ -371,6 +371,7 @@ def _run(
         )
         assert overlay is not None
         env.update(tomli.loads(overlay)["environments"]["sandbox"]["env"])
+        env[SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR] = str(box.plugins_root)
     if title is not None:
         env[PR_TITLE_ENV_VAR] = title
     if body is not None:

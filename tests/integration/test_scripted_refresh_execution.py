@@ -1088,6 +1088,7 @@ def test_a_validated_resume_head_supplies_the_provenance_the_record_lacks(
     assert overlay is not None
     parsed = tomli.loads(overlay)
     overlay_env = parsed["environments"]["sandbox"]["env"]
+    overlay_env[SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR] = str(box.plugins_root)
     [checkout_step] = [
         step["script"]
         for step in parsed["run"]["prepare"]["steps"]

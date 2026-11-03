@@ -44,3 +44,4 @@ def test_the_dispatcher_places_the_default_plugin_root_in_the_durable_workspace(
     overlay = tomli.loads(rendered)
     environment = overlay["environments"]["sandbox"]["env"]
     assert environment.get("HOME") == "/workspace"
+    assert environment.get(SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR) == "/workspace/.claude/plugins"

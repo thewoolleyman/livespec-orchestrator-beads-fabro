@@ -107,6 +107,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
     COMMITTED_RUN_CONFIG_IMAGE,
     SandboxImageSource,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    sandbox_durable_environment_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_pack import (
     sandbox_worktree_pack_prepare_steps_block,
 )
@@ -134,10 +137,6 @@ __all__: list[str] = [
 # credential.
 CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
 CURRENCY_GATE_ENV_VALUE = "fail"
-# A re-acquired Fabro sandbox restores `/workspace`, but starts with a fresh
-# container home. The Agent SDK's plugin cache and Dispatcher helpers both use
-# `$HOME/.claude/plugins`, so their normal root must be the durable workspace.
-_SANDBOX_DURABLE_HOME = "/workspace"
 
 
 def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input.
@@ -300,14 +299,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     env_environment_id = environment_id if factory_environment is None else factory_environment
     rewritten = substitute_input_tokens(text=rewritten, prepare_inputs=prepare_inputs)
     token_literal = json.dumps(token)
-    github_token_literal = json.dumps(github_token)
     sibling_steps = "" if siblings is None else sibling_clone_steps_block(siblings=siblings)
     sibling_env_line = (
         ""
         if siblings is None
         else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
     )
-    currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
     core_plugin_env = core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
     tmux_steps = tmux_tmpdir_prepare_steps_block()
@@ -411,16 +408,16 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{env_environment_id}.env]\n"
-        + f"HOME = {json.dumps(_SANDBOX_DURABLE_HOME)}\n"
+        + sandbox_durable_environment_lines()
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
-        + f"GITHUB_TOKEN = {github_token_literal}\n"
+        + f"GITHUB_TOKEN = {json.dumps(github_token)}\n"
         + author_env_lines
         + tmux_env_line
         + harness_shell_env
         + gh_refresh_env_lines
         + sibling_env_line
         + core_plugin_env
-        + currency_gate_env_line
+        + f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
         + otel_env_lines
         + codex_env_lines
         + codex_otel_env

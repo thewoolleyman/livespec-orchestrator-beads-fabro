@@ -17,10 +17,19 @@ from __future__ import annotations
 
 __all__: list[str] = [
     "SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR",
+    "sandbox_durable_environment_lines",
     "sandbox_plugins_root_expansion",
 ]
 
 SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR = "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT"
+
+
+def sandbox_durable_environment_lines() -> str:
+    """Project the cache and Dispatcher helper root into Fabro's snapshot."""
+    return (
+        'HOME = "/workspace"\n'
+        'LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT = "/workspace/.claude/plugins"\n'
+    )
 
 
 def sandbox_plugins_root_expansion() -> str:
