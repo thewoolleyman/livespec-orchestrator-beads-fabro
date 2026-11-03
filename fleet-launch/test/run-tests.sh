@@ -479,10 +479,16 @@ fi
 rm -f "$HOLD_FILE"
 await_both "$earlier_pid" "$later_pid" 45
 earlier_rc=$FIRST_RC; later_rc=$SECOND_RC
-if [ "$(drive_log_items)" = "bd-ib-earlier bd-ib-later" ]; then
+# Binding order is what FIFO guarantees, not the order of the two drive calls:
+# the narrow mutex is released before drive, so after both bind the drives may
+# reach the stub in either order. A later ticket leaves the queue only once the
+# older ticket is dropped at its bind, so "queued behind the older ticket" plus
+# both launches is the order evidence.
+if [ "$(drive_log_items | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')" = "bd-ib-earlier bd-ib-later" ] \
+    && grep -qE "queued behind an older gmktec ticket: owner=harness-seat pid=[0-9]+ item=bd-ib-earlier$" "$LATER_LOG"; then
     pass "both queued tickets launched, oldest ticket first"
 else
-    fail "expected 'bd-ib-earlier bd-ib-later', got '$(drive_log_items)'"
+    fail "expected both launched with the later ticket queued behind bd-ib-earlier; drives '$(drive_log_items)'"
     tail -8 "$EARLIER_LOG" >&2
     tail -8 "$LATER_LOG" >&2
 fi
@@ -588,10 +594,13 @@ else
 fi
 touch "$STUB_PREFLIGHT_RELEASE"
 await_both "$older_pid" "$younger_pid" 90
-if [ "$(drive_log_items)" = "bd-ib-older bd-ib-younger" ]; then
+# As in case 3: the younger ticket leaves the queue only after the older one
+# was dropped at its bind; the two drive calls themselves may race.
+if [ "$(drive_log_items | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//')" = "bd-ib-older bd-ib-younger" ] \
+    && grep -qE "queued behind an older gmktec ticket: owner=harness-seat pid=[0-9]+ item=bd-ib-older$" "$CASE_DIR/younger.log"; then
     pass "queued launchers bind in FIFO ticket order after their preflights"
 else
-    fail "queued launchers did not bind in FIFO order: $(drive_log_items)"
+    fail "queued launchers did not bind in FIFO order (younger never queued behind bd-ib-older, or a launch is missing); drives: $(drive_log_items)"
 fi
 if [ "$(preflight_count bd-ib-younger)" = 1 ]; then
     pass "a fresh queued preflight pass is reused when the younger launcher reaches the head"

@@ -205,6 +205,10 @@ launch_preflight() {
 }
 
 target=""; taken=0
+# The give-up deadline is checked only AFTER the first evaluation, so a launcher
+# whose start-up alone outlasts FLEET_LAUNCH_MAX_WAIT_S on a loaded host still
+# reads the boards and reports why it gave up instead of giving up blind.
+evaluated=0
 # A gmktec-only launch takes its FIFO ticket NOW and holds it while it polls, so a launcher queued
 # later cannot win the next freed slot ahead of it.
 if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
@@ -215,7 +219,8 @@ while [ -z "$target" ]; do
   if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
     ahead=$(oldest_live_ticket "$GMK_Q")
     if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
-      [ "$(date +%s)" -lt "$deadline" ] || give_up
+      [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+      evaluated=1
       # Spend FIFO wait time on this launcher's own Definition-of-Done
       # preflight. Do it once while queued; launch_preflight decides whether
       # the cached pass is still reusable when this ticket reaches the head.
@@ -223,7 +228,8 @@ while [ -z "$target" ]; do
       echo "$(date -u +%T) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
     fi
   fi
-  [ "$(date +%s)" -lt "$deadline" ] || give_up
+  [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+  evaluated=1
   gmk_idle=
   if ! fleet_green; then echo "$(date -u +%T) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
   if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%T) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
