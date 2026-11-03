@@ -43,9 +43,12 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
     SPEC_CHANGE_TIER_MARKER,
     STAGE_FILING,
+    TierClauseProvenance,
     recorded_spec_change_tier,
+    reusable_spec_change_tier,
     spec_change_tier_comment,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 from livespec_orchestrator_beads_fabro.types import WorkItem
 from livespec_runtime.spec_stated import SpecStatedVerdict
 
@@ -190,5 +193,35 @@ def test_a_non_record_comment_and_an_incomplete_record_both_read_as_absence() ->
         recorded_spec_change_tier(
             comments=(f"{SPEC_CHANGE_TIER_MARKER}\n\nwork-item: bd-ib-one\nstage: filing",)
         )
+        is None
+    )
+
+
+def test_malformed_or_changed_clause_provenance_cannot_reuse_a_tier_record() -> None:
+    item = _item()
+    decision = decide_spec_change_tier(
+        item=item, classification="feature", verdict=_verdict(kind="unstated", target=_TARGET)
+    )
+    clause = CondensedClause(heading=_TARGET, body="\nThe original clause.\n")
+    body = spec_change_tier_comment(
+        item_id=item.id,
+        stage=STAGE_FILING,
+        decision=decision,
+        spec_version=_SPEC_VERSION,
+        digest=_DIGEST,
+        provenance=TierClauseProvenance(selected=(clause,), named=(clause,)),
+    )
+
+    assert (
+        reusable_spec_change_tier(
+            comments=(body,),
+            digest=_DIGEST,
+            selected_clauses=(clause,),
+            spec_tree={"contracts.md": f"{_TARGET}\n\nThe changed clause.\n"},
+        )
+        is None
+    )
+    assert (
+        recorded_spec_change_tier(comments=(body + "\nspec-change-tier-selected-clause: not-json",))
         is None
     )

@@ -67,6 +67,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
     item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments import (
+    ratified_proposal_topics,
+)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     verdict_named_headings,
 )
@@ -83,6 +86,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_outcome import (
     SpecChangeTierOutcome,
     TierRecordContext,
+    TierStandingContext,
     did_not_run_outcome,
     recorded_outcome,
     standing_outcome,
@@ -181,8 +185,12 @@ def classify_spec_change_tier(
     standing = standing_outcome(
         item=item,
         stage=stage,
-        snapshot=snapshot,
-        digest=digest,
+        context=TierStandingContext(
+            snapshot=snapshot,
+            digest=digest,
+            selected_clauses=selected_clauses,
+        ),
+        ratified_topics=ratified_proposal_topics(spec_root=repo / SPEC_DIRNAME),
         comments=comments,
         append=append,
     )
