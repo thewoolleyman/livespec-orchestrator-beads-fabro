@@ -80,6 +80,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NON_CONVERGED_MARKER,
+    RECAPTURE_EXHAUSTED_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
@@ -451,6 +452,29 @@ def test_a_newer_dispatch_or_an_unrelated_terminal_does_not_release_recovery() -
         is False
     )
     assert routing.released_for_recovery(records=unrelated, work_item_id=_ITEM_ID) is False
+
+
+def test_a_recapture_cap_ending_is_not_a_recovery_release() -> None:
+    """The recapture-cap terminal carries a needs-human kind yet is never released.
+
+    Its blocked outcome is a stage failure whose detail and reason name the
+    recapture-cap marker, so a human returning it to ready must not route it as
+    recovery.
+    """
+    reason = f"{RECAPTURE_EXHAUSTED_MARKER}: recapture cap reached"
+    records = _terminal_history(
+        outcome={
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+            "detail": f"run r ended at the non_converged terminal; {reason}",
+            "needs_human_kind": "stage-failure",
+            "needs_human_stages": ["recapture_route"],
+            "needs_human_reason": reason,
+        }
+    )
+
+    assert routing.released_for_recovery(records=records, work_item_id=_ITEM_ID) is False
 
 
 def test_an_unreadable_terminal_payload_is_not_a_recovery_release() -> None:
