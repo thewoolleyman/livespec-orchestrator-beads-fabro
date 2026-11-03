@@ -100,3 +100,29 @@ def test_an_uncited_or_irrelevant_clause_is_not_a_governing_heading(tmp_path: Pa
             )
             is None
         )
+
+
+def test_a_quote_sharing_only_incidental_or_one_term_does_not_state_the_behaviour(
+    tmp_path: Path,
+) -> None:
+    item = _item()
+    for index, quote in enumerate(
+        (
+            "A governing heading is named in this clause.",
+            "Evidence is gathered elsewhere entirely.",
+        )
+    ):
+        repo = tmp_path / str(index)
+        spec = repo / "SPECIFICATION"
+        spec.mkdir(parents=True)
+        _ = (spec / "scenarios.md").write_text(f"{_HEADING}\n\n{quote}\n", encoding="utf-8")
+        reply = (
+            '{"kind": "stated", "stated_by": ["'
+            + _HEADING
+            + '"], "generalization_target": null, "rationale": "It is stated.", '
+            '"evidence": [{"heading": "' + _HEADING + '", "quote": "' + quote + '"}]}'
+        )
+
+        verdict = governing_heading_verdict(item=item, repo=repo, run_model=lambda _p, r=reply: r)
+
+        assert verdict is None
