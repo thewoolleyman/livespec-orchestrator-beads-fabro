@@ -55,11 +55,13 @@ def test_the_host_timer_surveys_only_the_live_factories() -> None:
     `petri` is the live Petri-era instance declared by maintainer direction
     on 2026-10-19 (plan `petri-factory-on-gmktec`); the retired `vps` is not,
     and neither is `legacy`, the hp-xubuntu :32276 instance retired and
-    removed from the table on 2026-10-24 (plan fabro-currency).
+    removed from the table on 2026-10-24 (plan fabro-currency). `candidate` is
+    gmktec's live :32278 mirror of `petri` (maintainer ruling 2026-11-02, plan
+    fabro-currency), so its runs are reconciled too.
     """
     configured = dispatcher_block(cwd=_REPO_ROOT)
 
-    assert declared_factory_names(block=configured) == ("petri",)
+    assert declared_factory_names(block=configured) == ("candidate", "petri")
 
 
 def test_the_timer_fires_every_ten_minutes_and_catches_up_after_downtime() -> None:

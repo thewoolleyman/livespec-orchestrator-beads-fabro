@@ -45,11 +45,23 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge imp
     GoverningHeadingReader,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.spec_stated import ClauseEvidence
 
 _CITED = "## Scenario 141 — The referenced scenario governs the proof"
 _OMITTED = "## Scenario 206 — The spec-change tier is decided by the spec-stated judgement"
 _PASS_REPLY = '{"outcome": "passed"}'
 _REMEDY = "add that heading to the reference line"
+
+
+def _verdict(*, headings: tuple[str, ...]) -> GoverningHeadingVerdict:
+    return GoverningHeadingVerdict(
+        kind="stated",
+        stated_by=headings,
+        evidence=tuple(
+            ClauseEvidence(heading=heading, quote="The clause states the asserted behaviour.")
+            for heading in headings
+        ),
+    )
 
 
 def _item() -> WorkItem:
@@ -156,7 +168,7 @@ def test_an_omission_beside_a_governing_citation_admits_and_records_the_advisory
     tmp_path: Path,
 ) -> None:
     bodies: list[str] = []
-    verdict = GoverningHeadingVerdict(kind="stated", stated_by=(_CITED, _OMITTED))
+    verdict = _verdict(headings=(_CITED, _OMITTED))
 
     decision = _judge(tmp_path=tmp_path, bodies=bodies, verdict=verdict)
 
@@ -168,7 +180,7 @@ def test_an_omission_beside_a_governing_citation_admits_and_records_the_advisory
 
 def test_a_reference_line_that_governs_nothing_is_still_held(tmp_path: Path) -> None:
     bodies: list[str] = []
-    verdict = GoverningHeadingVerdict(kind="stated", stated_by=(_OMITTED,))
+    verdict = _verdict(headings=(_OMITTED,))
 
     decision = _judge(tmp_path=tmp_path, bodies=bodies, verdict=verdict)
 

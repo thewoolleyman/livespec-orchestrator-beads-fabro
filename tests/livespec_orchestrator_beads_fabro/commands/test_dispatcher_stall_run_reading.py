@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import json
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
+    release_comment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading import (
     executing_stage,
     last_publish_draft_publication,
@@ -37,6 +40,54 @@ def test_an_unreadable_stream_names_no_stage_and_no_publication() -> None:
     """
     assert executing_stage(events_json="not json at all") is None
     assert last_publish_draft_publication(events_json="not json at all", record_text="") is None
+
+
+def test_a_petri_run_names_its_open_stage_publication_and_missing_stage_in_comments() -> None:
+    """Petri's nested steps preserve both cancel evidence and its honest absence."""
+    head = "a" * 40
+    node = {"name": "publish_draft", "kind": "attractor/command"}
+    events = json.dumps(
+        [
+            {"item": {"record": {"body": {"event": "step.started"}}, "subject": {"node": node}}},
+            {"item": {"record": {"body": {"event": "step.finished"}}, "subject": {"node": node}}},
+            {
+                "item": {
+                    "record": {"body": {"event": "step.started"}},
+                    "subject": {"node": {"name": "janitor", "kind": "attractor/command"}},
+                }
+            },
+        ]
+    )
+    publication = last_publish_draft_publication(
+        events_json=events,
+        record_text=f"LIVESPEC_PUBLISH_DRAFT_PUBLISHED: head={head} pull_request=#7",
+    )
+
+    assert executing_stage(events_json=events) == "janitor"
+    assert publication is not None
+    assert publication.pull_request == 7
+    assert publication.published_head == head
+    assert "run's own record named no stage" in release_comment(
+        item_id="bd-ib-petri", row={"executing_stage": None}
+    )
+
+
+def test_malformed_petri_envelopes_name_no_stage_or_publication() -> None:
+    """Partial Petri records are ignored rather than guessed at."""
+    events = json.dumps(
+        [
+            {},
+            {"item": {}},
+            {"item": {"subject": {}}},
+            {"item": {"subject": {"node": {}}}},
+            {"item": {"record": {}}},
+            {"item": {"record": {"body": {}}}},
+            {"item": {"record": {"body": {"event": 1}}}},
+        ]
+    )
+
+    assert executing_stage(events_json=events) is None
+    assert last_publish_draft_publication(events_json=events, record_text="") is None
 
 
 def test_a_stream_with_no_lifecycle_events_names_no_stage() -> None:

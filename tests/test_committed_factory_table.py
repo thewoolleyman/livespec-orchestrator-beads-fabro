@@ -45,16 +45,19 @@ def _committed_factories() -> dict[str, Any]:
     return factories
 
 
-def test_the_committed_table_declares_exactly_petri() -> None:
-    """The one live instance, named for the instance and not its host.
+def test_the_committed_table_declares_exactly_petri_and_candidate() -> None:
+    """The live instances, each named for the instance and not its host.
 
     `petri` is the gmktec-xubuntu :32276 Petri-era server, a name the control
     node's rendered registry declares; a committed entry whose name the
     registry does not declare resolves to no address at all. `legacy`, the
     hp-xubuntu instance on the pinned 0.254 engine, was retired and removed on
-    2026-10-24 (plan fabro-currency).
+    2026-10-24 (plan fabro-currency). `candidate` is gmktec's :32278
+    fabro-server-candidate, the permanent mirror of `petri` and plan
+    fabro-currency's dogfood factory (maintainer ruling 2026-11-02); it is
+    never the default.
     """
-    assert sorted(_committed_factories()) == ["petri"]
+    assert sorted(_committed_factories()) == ["candidate", "petri"]
 
 
 def test_every_committed_entry_is_registry_backed_and_names_no_machine() -> None:

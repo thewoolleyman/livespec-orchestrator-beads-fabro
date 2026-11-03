@@ -17,6 +17,9 @@ that is running fine.
 
 from __future__ import annotations
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_ADMITTED,
     JUDGEMENT_HELD,
@@ -39,8 +42,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
+    governing_heading_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
+from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.spec_stated import ClauseEvidence
 
 _DIGEST = "a" * 64
 _OTHER_DIGEST = "b" * 64
@@ -383,3 +389,55 @@ def test_a_partial_receipt_keeps_its_generalization_target_and_names_it() -> Non
     recorded = recorded_governing_heading(comments=(body,))
     assert recorded is not None
     assert recorded.generalization_target == "## Broader"
+
+
+def test_a_reused_governing_receipt_reports_the_finding_the_first_taking_reported() -> None:
+    """The clause evidence a finding quotes survives the record, so reuse is not silent."""
+    quote = "The cited body states the behaviour."
+    taken = GoverningHeadingVerdict(
+        kind="stated",
+        stated_by=("## Named",),
+        selected_clauses=_SELECTED,
+        named_clauses=_NAMED,
+        evidence=(ClauseEvidence(heading="## Named", quote=quote),),
+    )
+    body = verdict_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_ADMISSION,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        judgement=DodJudgement(outcome=JUDGEMENT_ADMITTED),
+        governing=GoverningHeadingReceipt(verdict=taken, subject_digest=_DIGEST),
+    )
+    item = WorkItem(
+        id="bd-ib-1",
+        type="bug",
+        status="ready",
+        title="A title",
+        description="## Definition of Done\n\n- It behaves.\n\nReferences: ## Other\n",
+        origin="freeform",
+        gap_id=None,
+        rank="a0",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-11-03T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+        admission_policy="auto",
+        acceptance_policy="ai-only",
+    )
+    section = definition_of_done(description=item.description)
+
+    reused = reusable_governing_heading(
+        comments=(body,),
+        subject_digest=_DIGEST,
+        selected_clauses=_SELECTED,
+        named_clauses=_NAMED,
+    )
+
+    assert reused == taken
+    first = governing_heading_findings(item=item, section=section, verdict=taken)
+    assert len(first) == 1
+    assert governing_heading_findings(item=item, section=section, verdict=reused) == first

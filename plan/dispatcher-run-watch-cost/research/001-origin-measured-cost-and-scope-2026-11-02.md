@@ -30,7 +30,7 @@ maintainer's priority 2, load on the development VPS. The seat reports to legacy
 - Baseline, 2026-11-02 19:10:37-19:11:37Z (60 s), measured by /proc accounting of every loop and every child it reaped. 15 loops, each
   watching one run, used 57.8 CPU-s in their own Python and 57.0 CPU-s in their `fabro` children. That is 7.6 CPU-s per
   live run per minute, about 1.9 cores in total, on a VPS at load 40-52 on 18 CPUs. The sampler is reproduced verbatim in
-  research note 002, so the after leg runs the same method; the 20-minute before window is recorded in the plan timeline.
+  research note 002, so the after leg runs the same method; note 002 also records the formal 20-minute before figure: 7.18 CPU-s per live run per minute, 19:00:34-19:20:34Z.
 
 ## Does anything need the full history? (answered before filing)
 
@@ -56,8 +56,10 @@ They stay as they are. Endings and needs-human come from run STATUS, which `insp
 | `fabro inspect <run> --json` | 781 KB | 0.22 s | — |
 
 - Avoid `ps -a`: it has grown with the factory's retained history.
-- `fabro events --since <window>` is filtered on the server, so its size scales with the window. On a hot run emitting about
-  900 events a minute (01M6EPRPVNYJV2FCSJZB2TGH88), `--since 3m` returned 3.3 MB for 3.1 CPU-s.
+- `fabro events --since <window>` is filtered on the server, so its size scales with the window. During a burst on run
+  01M6EPRPVNYJV2FCSJZB2TGH88, `--since 3m` returned 3.3 MB for 3.1 CPU-s. The burst was about 640 events a minute, recorded
+  18:56:57-19:06:20Z; legacy-dispatcher-agent measured about 50 a minute from 19:05 to 19:17Z. Incremental windows are
+  usually small but can burst.
 
 ## Children
 

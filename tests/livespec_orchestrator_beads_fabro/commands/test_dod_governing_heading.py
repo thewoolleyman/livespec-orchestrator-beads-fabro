@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.spec_stated import ClauseEvidence
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -81,6 +82,14 @@ def _module() -> ModuleType:
 
 
 def _verdict(module: ModuleType, **fields: Any) -> Any:
+    stated_by = fields.get("stated_by", ())
+    fields.setdefault(
+        "evidence",
+        tuple(
+            ClauseEvidence(heading=heading, quote="The clause states the asserted behaviour.")
+            for heading in stated_by
+        ),
+    )
     return module.GoverningHeadingVerdict(**fields)
 
 
@@ -106,6 +115,7 @@ def test_an_omitted_governing_heading_is_a_finding_naming_it_and_the_remedy() ->
     assert _OTHER_GOVERNING in findings[1]
     for finding in findings:
         assert item.id in finding
+        assert "The clause states the asserted behaviour." in finding
         assert "add that heading to the reference line" in finding
 
 

@@ -191,7 +191,8 @@ def _repo(*, tmp_path: Path) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_HEADING}\n\nBody.\n", encoding="utf-8"
+        f"# Scenarios\n\n{_HEADING}\n\nThe judgement runs before admission.\n",
+        encoding="utf-8",
     )
     _ = (repo / ".livespec.jsonc").write_text(
         """{
@@ -560,7 +561,10 @@ def test_an_unrelated_spec_revision_reuses_the_governing_heading_verdict(
             run_model=lambda _prompt: (
                 '{"kind": "stated", "stated_by": ["'
                 + _HEADING
-                + '"], "generalization_target": null, "rationale": "The scenario states it."}'
+                + '"], "generalization_target": null, "rationale": "The scenario states it.",'
+                ' "evidence": [{"heading": "'
+                + _HEADING
+                + '", "quote": "The judgement runs before admission."}]}'
             ),
         )
 

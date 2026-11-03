@@ -46,8 +46,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attemp
     candidate_record_lines,
     unavailable_record_lines,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import clauses_from
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
+    clauses_from,
+    evidence_from,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_record import (
+    GOVERNING_EVIDENCE_FIELD,
     GOVERNING_GENERALIZATION_FIELD,
     GOVERNING_HEADING_FIELD,
     GOVERNING_KIND_FIELD,
@@ -131,6 +135,7 @@ _REPEATED_FIELDS = frozenset(
     {
         _FINDING_FIELD,
         GOVERNING_HEADING_FIELD,
+        GOVERNING_EVIDENCE_FIELD,
         GOVERNING_SELECTED_CLAUSE_FIELD,
         GOVERNING_NAMED_CLAUSE_FIELD,
         BOUND_ENDED_CANDIDATE_FIELD,
@@ -234,7 +239,8 @@ def reusable_governing_heading(
             values=_repeated(body=body, key=GOVERNING_SELECTED_CLAUSE_FIELD)
         )
         recorded_named = clauses_from(values=_repeated(body=body, key=GOVERNING_NAMED_CLAUSE_FIELD))
-        if recorded_selected is None or recorded_named is None:
+        recorded_evidence = evidence_from(values=_repeated(body=body, key=GOVERNING_EVIDENCE_FIELD))
+        if recorded_selected is None or recorded_named is None or recorded_evidence is None:
             continue
         if Counter(recorded_selected) != Counter(selected_clauses) or Counter(
             recorded_named
@@ -246,6 +252,7 @@ def reusable_governing_heading(
             generalization_target=fields.get(GOVERNING_GENERALIZATION_FIELD),
             selected_clauses=selected_clauses,
             named_clauses=named_clauses,
+            evidence=recorded_evidence,
         )
     return None
 
@@ -275,6 +282,7 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
             kind=kind,
             stated_by=_repeated(body=body, key=GOVERNING_HEADING_FIELD),
             generalization_target=fields.get(GOVERNING_GENERALIZATION_FIELD),
+            evidence=evidence_from(values=_repeated(body=body, key=GOVERNING_EVIDENCE_FIELD)) or (),
         )
     return None
 

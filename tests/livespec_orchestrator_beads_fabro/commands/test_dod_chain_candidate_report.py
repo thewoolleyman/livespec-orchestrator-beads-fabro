@@ -23,7 +23,10 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 _GOVERNING = "## Scenario 206 — The spec-change tier is decided by the spec-stated judgement"
 _VERDICT_REPLY = (
     '{"kind": "stated", "stated_by": ["' + _GOVERNING + '"],'
-    ' "generalization_target": null, "rationale": "The scenario states it."}'
+    ' "generalization_target": null, "rationale": "The scenario states it.",'
+    ' "evidence": [{"heading": "'
+    + _GOVERNING
+    + '", "quote": "The checks report their candidates."}]}'
 )
 _REPORT_MARKER = "dod-gate: candidate ran: "
 _CODEX_LINE = "agent=codex-acp model=gpt-5.6-terra exit-code=0 outcome=verdict"
@@ -83,7 +86,8 @@ def _repo(*, tmp_path: Path, fallback: bool) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_GOVERNING}\n\nIt states the behaviour.\n", encoding="utf-8"
+        f"# Scenarios\n\n{_GOVERNING}\n\nThe checks report their candidates.\n",
+        encoding="utf-8",
     )
     fallbacks = (
         ',\n          "fallbacks": [{\n'

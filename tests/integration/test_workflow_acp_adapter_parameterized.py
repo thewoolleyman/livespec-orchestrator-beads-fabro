@@ -205,8 +205,8 @@ def _code_text(*, text: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.strip().startswith("//"))
 
 
-def test_scenario20_review_routes_on_the_label_alone_with_no_cap_edges() -> None:
-    """Scenario 20: the three cap edges are gone; the review loop routes on the label.
+def test_scenario20_review_routes_on_the_label_alone_through_admission() -> None:
+    """Scenario 20: review's label route enters the git-state admission gate.
 
     Plan `fabro-currency` P4 (bd-ib-hti4zf) removed all three. Each read an
     `inputs.*` token inside an edge condition, which the Petri-era engine rejects
@@ -228,7 +228,7 @@ def test_scenario20_review_routes_on_the_label_alone_with_no_cap_edges() -> None
     # comments NAME the removed tokens in order to record why they went, and a
     # raw-text scan would read that record as the defect it documents.
     code = _code_text(text=dot)
-    assert 'review -> disposition [label="fix", condition="preferred_label=fix"]' in code
+    assert 'review -> review_fix_admission [label="fix", condition="preferred_label=fix"]' in code
     assert 'label="ship on review cap"' not in code
     assert "inputs.merge_on_review_cap_outcome" not in code
     assert "inputs.review_fix_visit_cap" not in code

@@ -64,8 +64,10 @@ item that has no reference line.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Protocol
 
+from livespec_runtime.spec_stated import ClauseEvidence
 from returns.result import Failure
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -82,6 +84,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     PROMPT_CHARACTER_CEILING,
+    CondensedClause,
     clauses_named,
     condensed_spec_tree,
     headings_resolved,
@@ -111,6 +114,49 @@ __all__: list[str] = [
 # is taken over have to name the SAME tree: two spellings would let a verdict be
 # reused across a change to a tree the digest was not watching.
 SPECIFICATION_DIRNAME = "SPECIFICATION"
+_EVIDENCE_REQUEST = (
+    "\n\nFor every heading in stated_by, also include evidence as a JSON list of objects "
+    "with that heading and one non-empty, verbatim single-line quote from its clause that "
+    "states the behaviour."
+)
+_CONTENT_TERM = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
+_MINIMUM_SHARED_TERMS = 2
+_REFERENCES_LINE_PREFIX = "References:"
+_NON_CONTENT_TERMS = frozenset(
+    {
+        "all",
+        "and",
+        "are",
+        "asserts",
+        "but",
+        "clause",
+        "clauses",
+        "each",
+        "for",
+        "from",
+        "governing",
+        "has",
+        "have",
+        "heading",
+        "headings",
+        "into",
+        "its",
+        "line",
+        "not",
+        "one",
+        "reference",
+        "references",
+        "that",
+        "the",
+        "their",
+        "this",
+        "title",
+        "was",
+        "when",
+        "which",
+        "with",
+    }
+)
 
 
 class GoverningHeadingReader(Protocol):
@@ -190,7 +236,7 @@ def governing_heading_verdict(
         action=lambda: judge_within_ceiling(
             spec_tree=read,
             statement=statement,
-            run_model=run_model,
+            run_model=lambda prompt: run_model(f"{prompt}{_EVIDENCE_REQUEST}"),
         ),
         exceptions=(OSError,),
     )
@@ -205,6 +251,13 @@ def governing_heading_verdict(
         return None
     headings = verdict_named_headings(stated_by=verdict.stated_by, generalization_target=target)
     named = clauses_named(spec_tree=read, headings=headings)
+    if not _evidence_matches_named_clauses(
+        stated_by=verdict.stated_by,
+        evidence=verdict.evidence,
+        named=named,
+        statement=statement,
+    ):
+        return None
     return GoverningHeadingVerdict(
         kind=verdict.kind,
         stated_by=verdict.stated_by,
@@ -212,4 +265,38 @@ def governing_heading_verdict(
         selected_clauses=condensed.clauses,
         named_clauses=named,
         provenance_complete=headings_resolved(headings=headings, clauses=named),
+        evidence=verdict.evidence,
+    )
+
+
+def _evidence_matches_named_clauses(
+    *,
+    stated_by: tuple[str, ...],
+    evidence: tuple[ClauseEvidence, ...],
+    named: tuple[CondensedClause, ...],
+    statement: str,
+) -> bool:
+    """Require each named heading to quote the item's asserted behaviour."""
+    clauses = {clause.heading: clause.body for clause in named}
+    behaviour = "\n".join(
+        line for line in statement.splitlines() if not line.startswith(_REFERENCES_LINE_PREFIX)
+    )
+    statement_terms = _content_terms(text=behaviour)
+    required_terms = min(_MINIMUM_SHARED_TERMS, max(len(statement_terms), 1))
+    for heading in stated_by:
+        quotations = [entry.quote for entry in evidence if entry.heading == heading]
+        if len(quotations) != 1:
+            return False
+        quote = quotations[0]
+        if "\n" in quote or quote not in clauses.get(heading, ""):
+            return False
+        if len(statement_terms.intersection(_content_terms(text=quote))) < required_terms:
+            return False
+    return len(evidence) == len(stated_by)
+
+
+def _content_terms(*, text: str) -> frozenset[str]:
+    """Meaningful terms a clause must share with the judged item statement."""
+    return frozenset(
+        term for term in _CONTENT_TERM.findall(text.lower()) if term not in _NON_CONTENT_TERMS
     )
