@@ -81,6 +81,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reacquired_sandbox_fault import (
+    HOST_FAULT_RELEASE_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
     ROUTE_HELD,
@@ -116,7 +119,11 @@ _PROOF_BODY = (
     f"{PUBLISH_HEAD_LABEL}: {_PUBLISHED_HEAD}\n"
 )
 
-_RELEASE_STAGES = (STALL_RELEASE_STAGE, PROVIDER_LIMIT_RELEASE_STAGE)
+_RELEASE_STAGES = (
+    STALL_RELEASE_STAGE,
+    PROVIDER_LIMIT_RELEASE_STAGE,
+    HOST_FAULT_RELEASE_STAGE,
+)
 
 
 class _Shell:
@@ -326,7 +333,7 @@ def _comparable_held_rows(*, rows: tuple[dict[str, Any], ...]) -> tuple[dict[str
 
 
 @pytest.mark.parametrize("world", _worlds(), ids=lambda one: one.name)
-def test_both_release_classes_route_identically_on_identical_measurements(
+def test_every_release_class_routes_identically_on_identical_measurements(
     world: _World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The route, the command log and the hold record, compared class against class.
@@ -337,18 +344,20 @@ def test_both_release_classes_route_identically_on_identical_measurements(
     the one the module docstring names: neither pass recognising its release and
     both routing `fresh` on an empty command log.
     """
-    stall, provider_limit = (
+    passes = tuple(
         _route_once(tmp_path=tmp_path, monkeypatch=monkeypatch, world=world, release_stage=stage)
         for stage in _RELEASE_STAGES
     )
+    stall = passes[0]
 
     assert stall.route is not None
     assert stall.route.route == world.route
-    assert provider_limit.route == stall.route
-    assert provider_limit.calls == stall.calls
-    assert _comparable_held_rows(rows=provider_limit.held_rows) == _comparable_held_rows(
-        rows=stall.held_rows
-    )
+    for released in passes[1:]:
+        assert released.route == stall.route
+        assert released.calls == stall.calls
+        assert _comparable_held_rows(rows=released.held_rows) == _comparable_held_rows(
+            rows=stall.held_rows
+        )
 
 
 def test_the_hold_record_comparison_drops_the_clock_stamp_and_nothing_else(
@@ -386,12 +395,11 @@ def test_the_hold_record_comparison_drops_the_clock_stamp_and_nothing_else(
         assert _comparable_held_rows(rows=(mutated,)) != _comparable_held_rows(rows=(row,))
 
 
-def test_the_two_release_stages_under_comparison_are_not_the_same_string() -> None:
+def test_the_release_stages_under_comparison_are_distinct() -> None:
     """The instrument's own control: the pairing must compare two different classes.
 
     Both stage names are imported from the modules that WRITE them, so a rename
     moves both ends together — and if the two ever resolved to one value every
     case above would pass by comparing a reading with itself.
     """
-    assert STALL_RELEASE_STAGE != PROVIDER_LIMIT_RELEASE_STAGE
     assert len(set(_RELEASE_STAGES)) == len(_RELEASE_STAGES)

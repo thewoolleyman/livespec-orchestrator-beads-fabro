@@ -27,6 +27,10 @@ from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_terminal_routing
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reacquired_sandbox_fault import (
+    HOST_FAULT_RELEASE_STAGE,
+    HOST_FAULT_RELEASE_STATUS,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
     UNREAD_CANCEL_ROW,
 )
@@ -285,6 +289,43 @@ def test_a_terminal_that_is_not_a_cancellation_is_left_alone(tmp_path: Path) -> 
     )
     assert _stages(journal=journal) == []
     assert read_work_item_comments(path=_config(), work_item_id=_ITEM_ID) == ()
+
+
+def test_a_reacquired_sandbox_host_fault_releases_the_claim(tmp_path: Path) -> None:
+    """The transient host fault stays eligible and records a recovery release."""
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+
+    dispose_terminal_routing(
+        repo=repo,
+        item=_item(),
+        outcome=_outcome(status=HOST_FAULT_RELEASE_STATUS),
+        journal=journal,
+        now_iso="2026-11-03T18:00:00Z",
+    )
+
+    released = materialize_work_items(records=read_work_items(path=_config()))[_ITEM_ID]
+    assert released.status == "ready"
+    assert released.assignee is None
+    assert released.blocked_reason is None
+    assert _stages(journal=journal) == [HOST_FAULT_RELEASE_STAGE]
+
+
+def test_a_failed_reacquired_sandbox_host_fault_release_is_journaled(tmp_path: Path) -> None:
+    """A failed ready transition records the error instead of a false release."""
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+
+    dispose_terminal_routing(
+        repo=repo,
+        item=_item(),
+        outcome=_outcome(status=HOST_FAULT_RELEASE_STATUS),
+        journal=journal,
+        now_iso="2026-11-03T18:00:00Z",
+    )
+
+    assert _stages(journal=journal) == [f"{HOST_FAULT_RELEASE_STAGE}-error"]
 
 
 def test_an_external_fabro_cancel_blocks_the_item_and_names_its_run_and_factory(

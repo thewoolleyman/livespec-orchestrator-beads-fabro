@@ -38,6 +38,9 @@ from collections.abc import Mapping, Sequence
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reacquired_sandbox_fault import (
+    HOST_FAULT_RELEASE_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
     STALL_RELEASE_STAGE,
 )
@@ -61,6 +64,7 @@ RELEASE_STAGES = frozenset(
     {
         STALL_RELEASE_STAGE,
         PROVIDER_LIMIT_RELEASE_STAGE,
+        HOST_FAULT_RELEASE_STAGE,
         ADAPTER_LAUNCH_RELEASE_STAGE,
     }
 )

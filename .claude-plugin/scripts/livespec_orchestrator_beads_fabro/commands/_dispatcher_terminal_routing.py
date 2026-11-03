@@ -57,6 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_dispo
     dispose_provider_limit_release,
     dispose_reclassified_turn_holds,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reacquired_sandbox_fault import (
+    HOST_FAULT_RELEASE_STAGE,
+    HOST_FAULT_RELEASE_STATUS,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_disposition import (
     dispose_run_wall_budget_cancel,
 )
@@ -71,6 +75,7 @@ from livespec_orchestrator_beads_fabro.errors import (
     BeadsTenantMissingError,
     WorkItemNotFoundError,
 )
+from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = ["dispose_terminal_routing"]
@@ -104,11 +109,46 @@ def dispose_terminal_routing(
     dispose_stall_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_run_wall_budget_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
     _dispose_external_fabro_cancel(repo=repo, item=item, outcome=outcome, journal=journal)
+    _dispose_reacquired_sandbox_fault(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_provider_limit_release(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
     )
     dispose_reclassified_turn_holds(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
+    )
+
+
+def _dispose_reacquired_sandbox_fault(
+    *, repo: Path, item: WorkItem, outcome: DispatchOutcome, journal: JournalFile
+) -> None:
+    """Release a host-faulted run so its published pull request can be resumed."""
+    if outcome.status != HOST_FAULT_RELEASE_STATUS or outcome.stage != "fabro-run":
+        return
+    released = attempt(
+        action=lambda: update_work_item_status(
+            path=store_config(repo=repo),
+            item_id=item.id,
+            status="ready",
+            clear_assignee=True,
+        ),
+        exceptions=_LEDGER_WRITE_ERRORS,
+    )
+    if isinstance(released, AttemptFailure):
+        journal.append(
+            record={
+                "stage": f"{HOST_FAULT_RELEASE_STAGE}-error",
+                "work_item_id": item.id,
+                "reason": type(released.error).__name__,
+            }
+        )
+        return
+    journal.append(
+        record={
+            "stage": HOST_FAULT_RELEASE_STAGE,
+            "work_item_id": item.id,
+            "run_id": outcome.fabro_run_id,
+            "status": "ready",
+        }
     )
 
 
