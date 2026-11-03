@@ -103,6 +103,15 @@ for marker in "$STUB_DRIVEN_DIR"/* "$STUB_RESUMED_DIR"/*; do
     [ "$marker_server" = "$server" ] || continue
     printf 'DRIVEN000001 stub-repo running 2026-10-25 0m05s %s\n' "$marker_item" >> "$rows"
 done
+# A one-shot hook that runs AFTER this read has captured its rows and before it
+# prints them.  It lets the harness move a launch from "in flight, unlisted" to
+# "listed" exactly between a launcher's board read and its marker read, which
+# is the window a concurrent impl launcher hits on a loaded host.
+if [ -n "${STUB_PS_AFTER_READ_HOOK:-}" ] && [ "$server" = "$STUB_SERVER_GMK" ] \
+    && [ ! -e "$STUB_PS_AFTER_READ_HOOK.done" ]; then
+    : > "$STUB_PS_AFTER_READ_HOOK.done"
+    bash "$STUB_PS_AFTER_READ_HOOK"
+fi
 # An idle board says so with an exit of zero and an empty stdout; `No runs
 # found.` goes to stderr, which is what the launcher counts as a real zero.
 if [ ! -s "$rows" ] && [ ! -s "$board" ]; then
@@ -768,6 +777,12 @@ else
     tail -8 "$IMPL_LOG" >&2
     tail -8 "$RESUME_CASE_LOG" >&2
 fi
+# The older run "ends" by leaving the board.  Remove its driven row only once
+# the impl's stub dispatch has finished writing it: the LAUNCH line is printed
+# BEFORE drive.py runs, so removing the row at LAUNCH raced the stub writing it,
+# the row came back, the board stayed at the cap and the resume gave up
+# (resume=75), measured 2 of 4 parallel harness runs on 2026-11-03.
+wait_for_line "$IMPL_LOG" "drive rc=" 120 || fail "the older impl's dispatch did not finish"
 rm -f "$CASE_DIR/driven/bd-ib-resume-older"
 wait "$impl_pid"; impl_rc=$?
 wait "$resume_pid"; resume_rc=$?
@@ -828,6 +843,66 @@ if [ "$resume_rc" = 75 ] && [ ! -s "$RESUME_LOG" ] && grep -q 'fleet=U' "$RESUME
     pass "the resume treats an unreadable in-flight directory as at the cap and does not start"
 else
     fail "the resume started or misread an unreadable in-flight directory (rc=$resume_rc resumes=$(tr '\n' ' ' < "$RESUME_LOG"))"
+fi
+
+# --- 12. a launch that lists between the board read and the marker read ----
+# Another launcher's in-flight marker covers a run the board does not list yet.
+# During the resume's board read, that launcher sees its run listed and removes
+# its marker (the hook below does both, after the read has captured its rows).
+# The resume must still count that launch: its board read predates the listing,
+# so the marker it read must be counted, and the fleet stays at the cap.
+echo "--- 12. a launch listed between the board read and the marker read stays counted"
+new_case resume-listing-race
+export FLEET_LAUNCH_MAX_WAIT_S=6
+write_board "$BOARD_GMK" 7 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+sleep 600 &
+racer_pid=$!
+racer_marker="$FLEET_LAUNCH_INFLIGHT_DIR/100-other-seat-bd-ib-racer"
+echo "owner=other-seat pid=$racer_pid item=bd-ib-racer factory=petri" > "$racer_marker"
+cat > "$CASE_DIR/list-racer.sh" <<HOOK
+printf '%s %s\\n' "$GMK_URL" bd-ib-racer > "$CASE_DIR/driven/bd-ib-racer"
+rm -f "$racer_marker"
+HOOK
+export STUB_PS_AFTER_READ_HOOK="$CASE_DIR/list-racer.sh"
+RESUME_CASE_LOG="$CASE_DIR/resume-launcher.log"
+"$RESUME_LAUNCHER" bd-ib-race-resume > "$RESUME_CASE_LOG" 2>&1; resume_rc=$?
+unset STUB_PS_AFTER_READ_HOOK
+kill "$racer_pid" 2>/dev/null; wait "$racer_pid" 2>/dev/null
+if [ "$resume_rc" = 75 ] && [ ! -s "$RESUME_LOG" ] && grep -q 'fleet at cap under mutex: fleet=8 cap=8' "$RESUME_CASE_LOG"; then
+    pass "a launch listed between the board read and the marker read keeps the fleet at the cap"
+else
+    fail "the resume undercounted a launch that listed mid-read (rc=$resume_rc resumes=$(tr '\n' ' ' < "$RESUME_LOG"))"
+    tail -6 "$RESUME_CASE_LOG" >&2
+fi
+
+# --- 13. the impl launcher counts a launch listed mid-read too -------------
+# The same race as case 12, against the impl launcher's fleet-green count.
+echo "--- 13. the impl launcher keeps a launch listed mid-read counted"
+new_case impl-listing-race
+export FLEET_LAUNCH_MAX_WAIT_S=6
+write_board "$BOARD_GMK" 7 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+sleep 600 &
+racer_pid=$!
+racer_marker="$FLEET_LAUNCH_INFLIGHT_DIR/100-other-seat-bd-ib-racer"
+echo "owner=other-seat pid=$racer_pid item=bd-ib-racer factory=petri" > "$racer_marker"
+cat > "$CASE_DIR/list-racer.sh" <<HOOK
+printf '%s %s\\n' "$GMK_URL" bd-ib-racer > "$CASE_DIR/driven/bd-ib-racer"
+rm -f "$racer_marker"
+HOOK
+export STUB_PS_AFTER_READ_HOOK="$CASE_DIR/list-racer.sh"
+IMPL_CASE_LOG="$CASE_DIR/impl-launcher.log"
+ONLY_GMK=1 "$LAUNCHER" bd-ib-race-impl > "$IMPL_CASE_LOG" 2>&1; impl_rc=$?
+unset STUB_PS_AFTER_READ_HOOK
+kill "$racer_pid" 2>/dev/null; wait "$racer_pid" 2>/dev/null
+if [ ! -s "$DRIVE_LOG" ] && grep -q 'fleet not green: gmktec=7 hl=0 markers=1 fleet=8 cap=8' "$IMPL_CASE_LOG"; then
+    pass "the impl launcher counts a launch listed between the board read and the marker read"
+else
+    fail "the impl launcher undercounted a launch that listed mid-read (rc=$impl_rc drives=$(tr '\n' ' ' < "$DRIVE_LOG"))"
+    tail -6 "$IMPL_CASE_LOG" >&2
 fi
 
 echo
