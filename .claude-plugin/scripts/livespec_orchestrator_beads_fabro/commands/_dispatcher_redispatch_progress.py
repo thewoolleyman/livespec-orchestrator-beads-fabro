@@ -14,6 +14,7 @@ __all__: list[str] = [
     "CompletedAttempt",
     "RedispatchProgressDecision",
     "RedispatchProgressRefusal",
+    "RedispatchRecovery",
     "redispatch_progress_decision",
 ]
 
@@ -34,6 +35,23 @@ class CompletedAttempt:
 
 
 @dataclass(frozen=True, kw_only=True)
+class RedispatchRecovery:
+    """A one-use, typed causal recovery authorization for a flat epoch.
+
+    The admission reader validates this record before passing it to the
+    progress decision.  Keeping the identity and the history it addresses
+    together makes a later gate able to reject a replay instead of treating
+    prose about a changed approach as a reset.
+    """
+
+    attempt_id: str
+    prior_run_ids: tuple[str, ...]
+    diagnosis: str
+    operation: str
+    execution_evidence: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class RedispatchProgressRefusal:
     """The evidence an operator needs to diagnose a repeated flat history."""
 
@@ -49,10 +67,15 @@ class RedispatchProgressDecision:
     refusal: RedispatchProgressRefusal | None
     diagnosis: str | None
     non_progress_run_ids: tuple[str, ...]
+    authorized_recovery_attempt_id: str | None = None
 
 
 def redispatch_progress_decision(
-    *, limit: int | None, attempts: tuple[CompletedAttempt, ...]
+    *,
+    limit: int | None,
+    attempts: tuple[CompletedAttempt, ...],
+    recovery: RedispatchRecovery | None = None,
+    consumed_recovery_attempt_ids: frozenset[str] = frozenset(),
 ) -> RedispatchProgressDecision:
     """Apply the prior-high-water rule to one item's observed attempt history.
 
@@ -88,14 +111,15 @@ def redispatch_progress_decision(
             continue
         flat.append(attempt)
         if len(flat) >= limit:
-            return RedispatchProgressDecision(
-                refusal=RedispatchProgressRefusal(
-                    run_ids=tuple(entry.run_id for entry in flat),
-                    causes=tuple(entry.terminal_cause for entry in flat),
-                    high_water_milestone=baseline.high_water_milestone,
-                ),
-                diagnosis=None,
-                non_progress_run_ids=tuple(entry.run_id for entry in flat),
+            refusal = RedispatchProgressRefusal(
+                run_ids=tuple(entry.run_id for entry in flat),
+                causes=tuple(entry.terminal_cause for entry in flat),
+                high_water_milestone=baseline.high_water_milestone,
+            )
+            return _recovery_decision(
+                refusal=refusal,
+                recovery=recovery,
+                consumed_recovery_attempt_ids=consumed_recovery_attempt_ids,
             )
     return RedispatchProgressDecision(
         refusal=None,
@@ -106,3 +130,51 @@ def redispatch_progress_decision(
 
 def _diagnosis(*, detail: str) -> RedispatchProgressDecision:
     return RedispatchProgressDecision(refusal=None, diagnosis=detail, non_progress_run_ids=())
+
+
+def _recovery_decision(
+    *,
+    refusal: RedispatchProgressRefusal,
+    recovery: RedispatchRecovery | None,
+    consumed_recovery_attempt_ids: frozenset[str],
+) -> RedispatchProgressDecision:
+    """Permit one refused epoch only when its typed recovery is fresh and causal."""
+    if recovery is None:
+        return RedispatchProgressDecision(
+            refusal=refusal,
+            diagnosis=None,
+            non_progress_run_ids=refusal.run_ids,
+        )
+    invalid = _invalid_recovery(recovery=recovery, refusal=refusal)
+    if invalid is not None:
+        return _diagnosis(detail=invalid)
+    if recovery.attempt_id in consumed_recovery_attempt_ids:
+        return RedispatchProgressDecision(
+            refusal=refusal,
+            diagnosis=None,
+            non_progress_run_ids=refusal.run_ids,
+        )
+    return RedispatchProgressDecision(
+        refusal=None,
+        diagnosis=None,
+        non_progress_run_ids=refusal.run_ids,
+        authorized_recovery_attempt_id=recovery.attempt_id,
+    )
+
+
+def _invalid_recovery(
+    *, recovery: RedispatchRecovery, refusal: RedispatchProgressRefusal
+) -> str | None:
+    """Return the missing causal field, without accepting prose-only recovery."""
+    fields = (
+        ("attempt id", recovery.attempt_id),
+        ("measured diagnosis", recovery.diagnosis),
+        ("executable operation", recovery.operation),
+        ("execution evidence", recovery.execution_evidence),
+    )
+    for name, value in fields:
+        if value.strip() == "":
+            return f"causal recovery requires {name}"
+    if recovery.prior_run_ids != refusal.run_ids:
+        return "causal recovery must name the refused non-progress run history"
+    return None
