@@ -533,6 +533,29 @@ def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
     assert refused.draft_created is False
 
 
+def test_a_pre_push_hook_refusal_names_its_failed_targets_after_the_push_marker(
+    tmp_path: Path,
+) -> None:
+    """Scenario 224 attributes a refused push to the hook that refused it."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    pre_push = run / ".git" / "hooks" / "pre-push"
+    pre_push.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' 'Failed targets (2): check-per-file-coverage, check-coverage' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    pre_push.chmod(pre_push.stat().st_mode | stat.S_IXUSR)
+
+    refused = _publish(tmp_path=tmp_path, run=run)
+
+    assert refused.result.returncode != 0
+    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
+    assert "pre-push hook refused the push" in message
+    assert "check-per-file-coverage, check-coverage" in message
+    assert refused.draft_created is False
+
+
 def test_a_landed_publication_whose_pr_head_is_not_the_tip_still_ends_as_landed(
     tmp_path: Path,
 ) -> None:
