@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
+    needs_human_cause_body,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     DispatchPlan,
@@ -87,6 +90,7 @@ _CODEX_CEILING = (
     "Visit https://chatgpt.com/codex/settings/usage or try again at Oct 25, 3pm (UTC)"
 )
 _WEEKLY_CEILING = "Internal error: You've hit your weekly limit · resets Oct 23, 3pm (UTC)"
+_AGENT_TURN_TIMEOUT = "the agent turn timed out after 7200000ms"
 _BLOB_REFERENCE = "blob://sha256/4c9fdf4e631bbfdd11e2dc79fad223d9a23ae7c54c64e67415771122e7e10371"
 _TERMINAL_OUTPUT = (
     f"{NEEDS_HUMAN_MARKER}_PRESERVED: refs/heads/needs-human/0209f2cfa52748f199e8383d99147eab\n"
@@ -302,3 +306,25 @@ def test_the_needs_human_outcome_journals_a_stage_output_ceiling(*, tmp_path: Pa
     assert outcome.provider_usage_limit_provider == "codex"
     assert outcome.fabro_failure_cause == _CODEX_CEILING
     assert "ABSENT" not in outcome.detail
+
+
+def test_an_agent_turn_timeout_in_completion_is_the_needs_human_innermost_cause(
+    *, tmp_path: Path
+) -> None:
+    """A timed-out agent has no output but does record its failure reason in completion."""
+    stages: dict[str, object] = {
+        "review_fix@1": {
+            "handler": "agent",
+            "state": "failed",
+            "diff": "",
+            "completion": {"failure_reason": _AGENT_TURN_TIMEOUT},
+        },
+        "needs_human@1": _stage(state="failed", handler="command", output=_TERMINAL_OUTPUT),
+    }
+    failure = _routed(stages=stages, stage="review_fix@1")
+    assert failure is not None
+    assert failure.cause == _AGENT_TURN_TIMEOUT
+
+    outcome = _terminal_outcome(tmp_path=tmp_path, stages=stages)
+    assert outcome.fabro_failure_cause == _AGENT_TURN_TIMEOUT
+    assert f"innermost cause: {_AGENT_TURN_TIMEOUT}" in needs_human_cause_body(outcome=outcome)
