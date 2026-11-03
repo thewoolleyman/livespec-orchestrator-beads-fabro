@@ -27,6 +27,10 @@ Never run `git push` and never publish a branch or pull request.
    The test must fail on a genuine assertion rather than during collection or
    import.
 4. Run only that test and capture its failure output. Do not make a commit.
+   Create, change or delete no product file: the implementation belongs to the
+   `green` turn. A product file is a path that the repository's product-path
+   classification counts as product. `commit_red` refuses a tree where any
+   product file differs from the dispatch base.
 5. Append, never rewrite an earlier section, using a `## red` section that names the Test file, the Definition of Done assertion it proves, the command that ran the test with its failure output, what the test verifies and does not verify, and the code locations for the change.
 
 The handoff is append-only: append your new section to the resolved file and

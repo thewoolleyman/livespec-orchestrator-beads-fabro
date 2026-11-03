@@ -215,7 +215,7 @@ digraph ImplementWorkItem {
         label="Already satisfied: no Red test is needed on the dispatch base"
         shape=parallelogram
         timeout="1800s"
-        script="if git diff --quiet \"origin/{{ inputs.default_branch }}...HEAD\"; then echo 'LIVESPEC_ALREADY_SATISFIED: red declared the work already satisfied on the unchanged dispatch base' >&2; exit 0; fi; echo 'LIVESPEC_ALREADY_SATISFIED_UNPROVABLE: red declared already-satisfied but the tree differs from dispatch base' >&2; exit 1"
+        script="if git diff --quiet \"origin/{{ inputs.default_branch }}...HEAD\"; then echo \"LIVESPEC_ALREADY_SATISFIED: base=$(git rev-parse \"origin/{{ inputs.default_branch }}\") red declared the work already satisfied on the unchanged dispatch base\" >&2; exit 0; fi; echo 'LIVESPEC_ALREADY_SATISFIED_UNPROVABLE: red declared already-satisfied but the tree differs from dispatch base' >&2; exit 1"
     ]
 
     // Dead-implementer circuit breaker (C5 / bd-ib-vdpb): after the

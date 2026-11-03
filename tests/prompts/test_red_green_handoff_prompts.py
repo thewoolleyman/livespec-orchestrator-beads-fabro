@@ -39,6 +39,7 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         "Write one failing test for one Definition of Done assertion.",
         "Run only that test and capture its failure output.",
         "Do not make a commit.",
+        "Create, change or delete no product file",
         _HANDOFF_COMMAND,
         "## red",
         "Test file",

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_already_satisfied import (
+    already_satisfied_base_from_text,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 
 _GRAPH = (
@@ -46,3 +49,18 @@ def test_the_implement_stage_is_a_red_green_command_graph() -> None:
     assert ("commit_green", "green", "outcome=failed") in edges
     assert ("red", "already_satisfied", "preferred_label=already-satisfied") in edges
     assert not [edge for edge in graph.edges if edge.source == "already_satisfied"]
+
+
+def test_the_already_satisfied_node_prints_the_line_the_dispatcher_reads() -> None:
+    """The node's printed line, with its base substituted, is the ending the engine parses."""
+    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    script = graph.nodes["already_satisfied"]["script"]
+    base = "e" * 40
+    substitution = '$(git rev-parse "origin/{{ inputs.default_branch }}")'
+
+    assert substitution in script
+    printed = script.split('echo "', 1)[1].split('" >&2', 1)[0].replace(substitution, base)
+
+    assert already_satisfied_base_from_text(text=printed) == base
+    assert already_satisfied_base_from_text(text=script) is None
