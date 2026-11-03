@@ -34,7 +34,10 @@ _GOVERNING = "## Scenario 206 — The spec-change tier is decided by the spec-st
 _CITED = "## Scenario 141 — The referenced scenario governs the proof"
 _REPLY = (
     '{"kind": "stated", "stated_by": ["' + _GOVERNING + '"],'
-    ' "generalization_target": null, "rationale": "The scenario states it."}'
+    ' "generalization_target": null, "rationale": "The scenario states it.",'
+    ' "evidence": [{"heading": "'
+    + _GOVERNING
+    + '", "quote": "The checks consult the judgement."}]}'
 )
 
 
@@ -64,7 +67,7 @@ def _tree(*, repo: Path, padding: int) -> dict[str, str]:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_GOVERNING}\n\nIt states the behaviour.\n\n"
+        f"# Scenarios\n\n{_GOVERNING}\n\nThe checks consult the judgement.\n\n"
         f"{_CITED}\n\n{'x' * padding}\n",
         encoding="utf-8",
     )
