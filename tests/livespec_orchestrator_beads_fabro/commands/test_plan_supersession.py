@@ -177,7 +177,10 @@ def test_a_disposed_cause_names_the_closed_as_superseded_prior_target() -> None:
             carrier=None,
             plan_level=False,
             disposed=DisposedEvidence(
-                target_id="bd-ib-old", status="closed", resolution="superseded"
+                target_id="bd-ib-old",
+                status="closed",
+                resolution="superseded",
+                is_plan_child=False,
             ),
         ),
         prior_identity=_IDENTITY,
@@ -189,15 +192,15 @@ def test_a_disposed_cause_names_the_closed_as_superseded_prior_target() -> None:
 
 
 @pytest.mark.parametrize(
-    ("target_id", "status", "resolution"),
+    ("target_id", "status", "resolution", "membership"),
     [
-        ("bd-ib-other", "closed", "superseded"),
-        ("bd-ib-old", "ready", "superseded"),
-        ("bd-ib-old", "closed", "fixed"),
+        ("bd-ib-other", "closed", "superseded", "detached"),
+        ("bd-ib-old", "ready", "superseded", "still-parented"),
+        ("bd-ib-old", "closed", "fixed", "detached"),
     ],
 )
 def test_a_disposed_cause_refuses_a_target_not_closed_as_superseded(
-    target_id: str, status: str, resolution: str
+    target_id: str, status: str, resolution: str, membership: str
 ) -> None:
     """A `disposed` label alone cannot replace an unmet obligation."""
     verdict = _refusal(
@@ -206,7 +209,12 @@ def test_a_disposed_cause_refuses_a_target_not_closed_as_superseded(
             deriving=None,
             carrier=None,
             plan_level=False,
-            disposed=DisposedEvidence(target_id=target_id, status=status, resolution=resolution),
+            disposed=DisposedEvidence(
+                target_id=target_id,
+                status=status,
+                resolution=resolution,
+                is_plan_child=membership == "still-parented",
+            ),
         ),
         prior_identity=_IDENTITY,
         current_epoch=_EPOCH,

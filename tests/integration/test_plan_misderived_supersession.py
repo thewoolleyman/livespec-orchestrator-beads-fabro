@@ -562,6 +562,42 @@ def test_disposed_supersession_on_a_handoff_consumes_only_the_handoff_unit_and_r
     assert _fake(repo=repo).list_comments(issue_id=_EPIC) == handoffs
 
 
+def test_a_disposed_open_target_detached_from_the_plan_is_superseded_by_set_next_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A detached open target no longer binds the plan's obligation.
+
+    The target remains open, so acceptance cannot be attributed to the old
+    closed-as-superseded arm.  Its lack of a parent-child edge to the epic is
+    the causal evidence that the plan no longer owns it.
+    """
+    module = importlib.import_module(_MODULE)
+    repo = _project(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    _implementation_target(repo=repo, item_id=_IMPLEMENTATION, factory_safe=False)
+    _implementation_target(repo=repo, item_id=_REPLACEMENT, factory_safe=False)
+    epoch = _seed(repo=repo, author="plan-session", required_result=_DISPOSED_RESULT)
+
+    refusal = set_next_action(
+        config=_config(repo=repo),
+        epic_id=_EPIC,
+        action=_implementation_replacement(),
+        session="plan-session",
+        now=_LATER,
+        supersession=module.CausalSupersession(
+            superseded_result_identity=_canonical_identity(required_result=_DISPOSED_RESULT),
+            previous_epoch=epoch,
+            cause="disposed",
+            writer="plan-session",
+            disposed_target_id=_IMPLEMENTATION,
+        ),
+    )
+
+    assert refusal is None, refusal
+    assert _pointer(repo=repo)["required_result"] == _REPLACEMENT_RESULT
+    assert "event: supersession" in _progress_events(repo=repo)[-1]
+
+
 def test_the_supersession_is_recorded_as_a_progress_event_before_the_pointer_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

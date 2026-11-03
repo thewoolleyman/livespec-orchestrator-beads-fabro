@@ -148,6 +148,7 @@ def supersession_evidence(
             plan_level=False,
             disposed=disposed_evidence(
                 config=config,
+                epic_id=epic_id,
                 required_result=None if obligation is None else obligation.required_result,
             ),
         )
@@ -250,9 +251,9 @@ def implementation_evidence_for_reference(
 
 
 def disposed_evidence(
-    *, config: StoreConfig, required_result: object | None
+    *, config: StoreConfig, epic_id: str, required_result: object | None
 ) -> DisposedEvidence | None:
-    """Read the old item target and the resolution that closed it."""
+    """Read the old item target, its resolution and its plan-child membership."""
     parsed = parse_result_reference(value=required_result)
     if not isinstance(parsed, ResultReference) or not isinstance(parsed.target, ItemStatusTarget):
         return None
@@ -277,6 +278,20 @@ def disposed_evidence(
         target_id=parsed.target.item_id,
         status=status,
         resolution=resolution,
+        is_plan_child=_is_plan_child(record=record, epic_id=epic_id),
+    )
+
+
+def _is_plan_child(*, record: dict[str, object], epic_id: str) -> bool:
+    """Whether the target still carries a parent-child edge to this plan."""
+    dependencies = record.get("dependencies")
+    if not isinstance(dependencies, list):
+        return False
+    return any(
+        edge.get("type") == "parent-child" and edge.get("depends_on_id") == epic_id
+        for raw_edge in dependencies
+        if isinstance(raw_edge, dict)
+        for edge in (cast("dict[str, object]", raw_edge),)
     )
 
 
