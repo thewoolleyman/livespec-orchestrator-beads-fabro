@@ -759,7 +759,9 @@ def test_a_hook_refused_publish_draft_refresh_is_restored_and_repaired(
     assert "failed-hook-targets: check-lint check-types" in brief
     assert "hook-output-last-80-lines:" in brief
     assert "hook detail 2\n" not in brief
+    assert "hook detail 3\n" in brief
     assert "hook detail 82\n" in brief
+    assert "Not committing merge" not in brief
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
 
 
