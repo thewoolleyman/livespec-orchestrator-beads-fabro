@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import CLOSED_STATUS
 
@@ -10,6 +11,7 @@ __all__: list[str] = [
     "DisposedEvidence",
     "SupersessionRefusal",
     "disposed_refusal",
+    "plan_membership",
 ]
 
 
@@ -47,3 +49,30 @@ def disposed_refusal(
             " from this plan, so its cause does not verify"
         )
     )
+
+
+def plan_membership(*, record: dict[str, object], epic_id: str) -> bool | None:
+    """Whether the target still carries a parent-child edge to this plan.
+
+    `None` is an edge list nobody can read, which the caller must refuse: reading
+    it as "no edge" would accept unreadable evidence as proof of detachment. An
+    OMITTED list is `False`, because bd omits an empty `dependencies` array. The
+    two surfaces name an edge differently (`depends_on_id`/`type` on a listing,
+    `id`/`dependency_type` on `bd show`), so both spellings are read.
+    """
+    raw = record.get("dependencies")
+    if raw is None:
+        return False
+    if not isinstance(raw, list):
+        return None
+    is_child = False
+    for raw_edge in cast("list[object]", raw):
+        if not isinstance(raw_edge, dict):
+            return None
+        edge = cast("dict[str, object]", raw_edge)
+        target = edge.get("depends_on_id", edge.get("id"))
+        kind = edge.get("type", edge.get("dependency_type"))
+        if not isinstance(target, str) or not isinstance(kind, str):
+            return None
+        is_child = is_child or (kind == "parent-child" and target == epic_id)
+    return is_child

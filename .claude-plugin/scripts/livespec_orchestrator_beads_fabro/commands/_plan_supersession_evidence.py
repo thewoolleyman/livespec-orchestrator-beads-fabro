@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.commands._plan_carrier_tenancy import (
     carrier_tenancy,
     repository_for_carrier,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_disposed_supersession import (
+    plan_membership,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
     read_progress_events,
 )
@@ -264,7 +267,8 @@ def disposed_evidence(
         return None
     labels = _labels(record=record)
     status = record.get(_STATUS_FIELD)
-    if labels is None or not isinstance(status, str):
+    is_plan_child = plan_membership(record=record, epic_id=epic_id)
+    if labels is None or not isinstance(status, str) or is_plan_child is None:
         return None
     resolution = next(
         (
@@ -278,20 +282,7 @@ def disposed_evidence(
         target_id=parsed.target.item_id,
         status=status,
         resolution=resolution,
-        is_plan_child=_is_plan_child(record=record, epic_id=epic_id),
-    )
-
-
-def _is_plan_child(*, record: dict[str, object], epic_id: str) -> bool:
-    """Whether the target still carries a parent-child edge to this plan."""
-    dependencies = record.get("dependencies")
-    if not isinstance(dependencies, list):
-        return False
-    return any(
-        edge.get("type") == "parent-child" and edge.get("depends_on_id") == epic_id
-        for raw_edge in cast("list[object]", dependencies)
-        if isinstance(raw_edge, dict)
-        for edge in (cast("dict[str, object]", raw_edge),)
+        is_plan_child=is_plan_child,
     )
 
 

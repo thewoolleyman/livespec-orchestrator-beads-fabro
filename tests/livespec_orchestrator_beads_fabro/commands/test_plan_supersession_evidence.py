@@ -68,6 +68,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 _NOW = "2026-10-22T07:00:00Z"
 _DEADLINE = "2099-10-10T12:00:00Z"
 _EPIC = "bd-ib-plan"
+_ABSENT = object()
 _OWN = "repo"
 _OWN_PREFIX = "bd-ib"
 _CARRIER_REPO = "carrier-repo"
@@ -590,6 +591,49 @@ def test_disposed_evidence_requires_a_readable_status_and_labels(
     else:
         assert observed is not None
         assert observed.resolution == (expected or None)
+
+
+@pytest.mark.parametrize(
+    ("dependencies", "expected"),
+    [
+        (_ABSENT, False),
+        ([], False),
+        ([{"depends_on_id": _EPIC, "type": "parent-child"}], True),
+        ([{"id": _EPIC, "dependency_type": "parent-child"}], True),
+        ([{"depends_on_id": "bd-ib-other", "type": "parent-child"}], False),
+        ([{"depends_on_id": _EPIC, "type": "blocks"}], False),
+        ("not-a-list", None),
+        (["not-an-edge"], None),
+        ([{"depends_on_id": 7, "type": "parent-child"}], None),
+        ([{"depends_on_id": _EPIC}], None),
+        ([{"depends_on_id": _EPIC, "type": "parent-child"}, "not-an-edge"], None),
+    ],
+)
+def test_disposed_evidence_reads_plan_membership_only_from_readable_edges(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dependencies: object,
+    expected: bool | None,
+) -> None:
+    """An omitted edge list is no edges; an edge list nobody can read is no evidence."""
+    record: dict[str, object] = {"labels": [], "status": "open"}
+    if dependencies is not _ABSENT:
+        record["dependencies"] = dependencies
+    monkeypatch.setattr(evidence_module, "read_target_record", lambda **_: record)
+    required: dict[str, object] = {
+        "repo": _OWN,
+        "item_status": {"item_id": "bd-ib-target", "status": "acceptance"},
+    }
+
+    observed = evidence_module.disposed_evidence(
+        config=_config(repo=tmp_path), epic_id=_EPIC, required_result=required
+    )
+
+    if expected is None:
+        assert observed is None
+    else:
+        assert observed is not None
+        assert observed.is_plan_child is expected
 
 
 def test_result_record_reader_refuses_each_unreadable_resolution_stage(
