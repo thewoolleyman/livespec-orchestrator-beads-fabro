@@ -120,6 +120,8 @@ _EVIDENCE_REQUEST = (
     "states the behaviour."
 )
 _CONTENT_TERM = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
+_MINIMUM_SHARED_TERMS = 2
+_REFERENCES_LINE_PREFIX = "References:"
 _NON_CONTENT_TERMS = frozenset(
     {
         "all",
@@ -127,15 +129,22 @@ _NON_CONTENT_TERMS = frozenset(
         "are",
         "asserts",
         "but",
+        "clause",
+        "clauses",
         "each",
         "for",
         "from",
+        "governing",
         "has",
         "have",
+        "heading",
+        "headings",
         "into",
         "its",
+        "line",
         "not",
         "one",
+        "reference",
         "references",
         "that",
         "the",
@@ -269,7 +278,11 @@ def _evidence_matches_named_clauses(
 ) -> bool:
     """Require each named heading to quote the item's asserted behaviour."""
     clauses = {clause.heading: clause.body for clause in named}
-    statement_terms = _content_terms(text=statement)
+    behaviour = "\n".join(
+        line for line in statement.splitlines() if not line.startswith(_REFERENCES_LINE_PREFIX)
+    )
+    statement_terms = _content_terms(text=behaviour)
+    required_terms = min(_MINIMUM_SHARED_TERMS, max(len(statement_terms), 1))
     for heading in stated_by:
         quotations = [entry.quote for entry in evidence if entry.heading == heading]
         if len(quotations) != 1:
@@ -277,7 +290,7 @@ def _evidence_matches_named_clauses(
         quote = quotations[0]
         if "\n" in quote or quote not in clauses.get(heading, ""):
             return False
-        if not statement_terms.intersection(_content_terms(text=quote)):
+        if len(statement_terms.intersection(_content_terms(text=quote))) < required_terms:
             return False
     return len(evidence) == len(stated_by)
 
