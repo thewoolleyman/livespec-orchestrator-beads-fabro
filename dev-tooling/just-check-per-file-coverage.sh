@@ -7,9 +7,13 @@ pytest_rc=0
 # the canonical verifier even under the dispatcher's namespaced export.
 # Keep pytest fixture paths short enough for AF_UNIX sockets when the concurrent
 # dispatcher gives this coverage lane an isolated TMPDIR.
+# Every test phase that takes 10 s or more is listed with its wall clock, so a
+# slow test's duration on the CI runner can be read from the job log rather
+# than inferred from the job's overall result (bd-ib-lwiila).
 env -u COVERAGE_FILE uv run pytest \
     -n "$(bash dev-tooling/just-test-nprocs.sh)" \
     --basetemp="${TMPDIR:-/tmp}/pytest" \
+    --durations=0 --durations-min=10 \
     --cov --cov-branch --cov-config=pyproject.toml --cov-report= || pytest_rc=$?
 
 # The canonical verifier performs the sole coverage-data analysis. Save its

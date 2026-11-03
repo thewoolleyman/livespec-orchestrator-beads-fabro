@@ -330,6 +330,11 @@ new_case() {
     export FLEET_LAUNCH_MAX_WAIT_S=4
     export FLEET_LAUNCH_ABANDON_S=60
     export FLEET_LAUNCH_POLL_S=1
+    # The mutex retry and the post-drive listing poll wait on an observed
+    # state too: a one-second step lets a case advance as soon as the lock frees
+    # or the run lists, rather than after a 10 s or 15 s production interval.
+    export FLEET_LAUNCH_MUTEX_POLL_S=1
+    export FLEET_LAUNCH_LISTING_POLL_S=1
     export FLEET_LAUNCH_PREFLIGHT_REUSE_S=600
     export FLEET_LAUNCH_MUTEX_HOLD_S=60
     unset ONLY_GMK ONLY_HL CAPTURE_NULL CAPTURE_EXPECT TICKET_NS REWORK RELEASE_BLOCKED
