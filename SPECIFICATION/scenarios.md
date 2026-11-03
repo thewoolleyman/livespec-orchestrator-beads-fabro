@@ -11375,6 +11375,29 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     Then the implement stage's outcome is failed
     And the needs-human cause names commit_green's recorded exit status and failed target names
 
+  Scenario: An exhausted commit re-entry's cause carries the first failure line of the hook's output
+    Given commit_green's hook has refused naming the failed target check-types
+    And the hook's recorded output reports a first error line longer than 200 characters
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause names commit_green's recorded exit status and the failed target check-types
+    And the cause carries that first error line shortened to 200 characters and marked as truncated
+
+  Scenario: A refused commit whose hook output names no target says the target is unknown and why
+    Given commit_red's hook has refused and its recorded output cannot be read
+    And the red node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause states that the failing target is unknown because the hook's recorded output could not be read
+    And the cause is not the hook script's exit status alone
+
+  Scenario: A failure line that quotes a sandbox credential is withheld from the cause
+    Given the dispatch supplied CODEX_AUTH_JSON to the run's sandbox
+    And commit_green's hook refused with a first error line that quotes that variable's value
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause does not contain the value of CODEX_AUTH_JSON
+    And the cause states that an excerpt line was withheld because it contained the value of CODEX_AUTH_JSON
+
   Scenario: An exhausted test-wrong route ends the stage failed with both sides' sections
     Given a green turn that ends with a test-wrong declaration
     And the red node's max_visits is exhausted
