@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.277.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.276.2...v0.277.0) (2026-11-03)
+
+
+### Features
+
+* project factory GitHub App declarations ([3561325](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3561325474c8220b0cae98d5c1592b6eeda1f983))
+
+
+### Bug Fixes
+
+* carry unnamed relevant clauses in part once pinned references fit ([fbf889a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fbf889a152b93e32ed8eeba2cf7dcd698f6ecdba))
+* exclude prereleases from plan release tags ([db11e77](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db11e776332955768def080ad9cdbaaac5cb3164))
+* pin bare reference lines and keep partial selection beside pinned clauses ([38666cb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/38666cb0b3d5025bbe4cf872ed24adb9aa7421f9))
+* pin referenced clauses in condensed spec trees ([c6e5ca8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6e5ca801cdf462f6529dfadf26e1cafcbf0cbf5))
+* record the governing-heading receipt at the prompt's headroom-reduced ceiling ([0dc3394](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0dc33941b3f284bffe327e574864dfb060f24e2b))
+* serialize factory github_app secret names as TOML strings ([2e66fe9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e66fe94f17fa284ef07967d49acda1630197c3f))
+
 ## [0.276.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.276.1...v0.276.2) (2026-11-02)
 
 
