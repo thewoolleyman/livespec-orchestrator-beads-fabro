@@ -229,6 +229,68 @@ def test_loop_without_item_drains_ranked_queue_by_default(
     assert recording.calls == ["a-1", "b-2"]
 
 
+def test_loop_journals_a_cpu_row_for_every_phase_before_the_first_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The drain's own pre-admission phases ride on the first dispatch it launches."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item(id="a-1", rank="a1"))
+    append_work_item(path=_config(), item=_item(id="b-2", rank="a2"))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _RecordingRunDispatch())
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "2",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    rows = [json.loads(line) for line in journal_text.splitlines()]
+    phases = {
+        item_id: [
+            row["phase"]
+            for row in rows
+            if row["stage"] == "pre-launch-cpu" and row["work_item_id"] == item_id
+        ]
+        for item_id in ("a-1", "b-2")
+    }
+    assert exit_code == 0
+    assert phases["a-1"][:6] == [
+        "drive-startup",
+        "dispatch-preamble",
+        "otel-egress",
+        "ledger-prepare",
+        "configuration-and-ledger-check",
+        "factory-size-check",
+    ]
+    for phase in (
+        "candidate-selection",
+        "acp-preflight",
+        "credential-wait",
+        "recovery-routing",
+        "admission",
+        "publish-branch-reclaim",
+        "recovery-route",
+        "record-dispatch",
+    ):
+        assert phase in phases["a-1"]
+    assert phases["b-2"][0] == "record-dispatch"
+    first_dispatch = {
+        row["dispatch_id"]
+        for row in rows
+        if row["stage"] == "pre-launch-cpu" and row["work_item_id"] == "a-1"
+    }
+    assert len(first_dispatch) == 1
+
+
 def test_loop_without_candidates_emits_nothing_dispatched(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,

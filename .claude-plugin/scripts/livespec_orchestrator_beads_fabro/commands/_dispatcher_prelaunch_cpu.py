@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import utc_now_iso
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
@@ -39,11 +40,13 @@ class _Journal(Protocol):
 class PrelaunchCpuProfile:
     """Append one CPU delta for each completed pre-launch phase."""
 
-    journal: _Journal
-    work_item_id: str
     dispatch_id: str
     cpu_seconds: Callable[[], float]
+    journal: _Journal | None = None
+    work_item_id: str | None = None
+    baseline_cpu_seconds: float | None = None
     _last_cpu_seconds: float = field(init=False)
+    _held: list[dict[str, object]] = field(init=False, default_factory=list)
 
     @classmethod
     def for_drive(
@@ -57,8 +60,34 @@ class PrelaunchCpuProfile:
             cpu_seconds=drive_tree_cpu_seconds,
         )
 
+    @classmethod
+    def for_drive_launch(cls, *, dispatch_id: str) -> PrelaunchCpuProfile:
+        """Profile from the drive's own start, before its journal or item is known.
+
+        Rows are held, stamped with the time each phase closed, until `bind`
+        names the journal and the work item the drive dispatches. The first row
+        carries the CPU the drive spent starting up, because the baseline is zero.
+        """
+        profile = cls(
+            dispatch_id=dispatch_id,
+            cpu_seconds=drive_tree_cpu_seconds,
+            baseline_cpu_seconds=0.0,
+        )
+        profile.checkpoint(name="drive-startup")
+        return profile
+
     def __post_init__(self) -> None:
-        self._last_cpu_seconds = self.cpu_seconds()
+        self._last_cpu_seconds = (
+            self.cpu_seconds() if self.baseline_cpu_seconds is None else self.baseline_cpu_seconds
+        )
+
+    def bind(self, *, journal: _Journal, work_item_id: str) -> None:
+        """Name the journal and work item, then append every row held so far."""
+        self.journal = journal
+        self.work_item_id = work_item_id
+        held, self._held = self._held, []
+        for record in held:
+            journal.append(record={**record, "work_item_id": work_item_id})
 
     def phase(self, *, name: str, action: Callable[[], _Result]) -> _Result:
         """Run one phase and append its whole-process-tree CPU delta."""
@@ -72,16 +101,17 @@ class PrelaunchCpuProfile:
     def checkpoint(self, *, name: str) -> None:
         """Record CPU since the preceding pre-launch phase boundary."""
         current = self.cpu_seconds()
-        self.journal.append(
-            record={
-                "stage": "pre-launch-cpu",
-                "work_item_id": self.work_item_id,
-                "dispatch_id": self.dispatch_id,
-                "phase": name,
-                "cpu_seconds": round(max(0.0, current - self._last_cpu_seconds), 6),
-            }
-        )
+        record: dict[str, object] = {
+            "stage": "pre-launch-cpu",
+            "dispatch_id": self.dispatch_id,
+            "phase": name,
+            "cpu_seconds": round(max(0.0, current - self._last_cpu_seconds), 6),
+        }
         self._last_cpu_seconds = current
+        if self.journal is None or self.work_item_id is None:
+            self._held.append({**record, "at": utc_now_iso()})
+        else:
+            self.journal.append(record={**record, "work_item_id": self.work_item_id})
 
 
 @contextmanager

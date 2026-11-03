@@ -6,11 +6,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-from returns.pipeline import is_successful
-from returns.unsafe import unsafe_perform_io
-
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
-    EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
     alarm_on_terminal_failure,
     dispatch_exit_code,
@@ -18,26 +14,24 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    apply_factory_size_dispatch_entry,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
-    ledger_blocked_after_normalization,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import (
     candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_dry_run import dry_run_outcomes
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
-    failed_dispatch_outcome,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     prepare,
+    run_id,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_size_gate import (
     factory_size_loop_exit,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_start_checks import (
+    configuration_or_ledger_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_wave import (
     dispatch_loop_wave,
@@ -48,7 +42,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     run_turn_sink_path,
     spans_path,
-    store_config,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
@@ -56,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import PrelaunchCpuProfile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
@@ -92,21 +86,27 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
 
 def _loop_in_pass(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
-    started = _start_loop(args=args, repo=repo)
+    # Started before anything else the drive does, so that every phase from its
+    # launch to the Fabro submission is closed into a row of its own. The rows
+    # wait inside the profile until the wave names the item it dispatches.
+    profile = PrelaunchCpuProfile.for_drive_launch(dispatch_id=run_id())
+    started = _start_loop(args=args, repo=repo, profile=profile)
     if isinstance(started, int):
         return started
     janitor = started.janitor
     items = started.items
     journal = started.journal
-    size_exit = factory_size_loop_exit(
-        args=args,
-        repo=repo,
-        items=items,
-        journal=journal,
-    )
+    with profile.during(name="factory-size-check"):
+        size_exit = factory_size_loop_exit(
+            args=args,
+            repo=repo,
+            items=items,
+            journal=journal,
+        )
     if size_exit is not None:
         return size_exit
-    selected_candidates = candidates(args=args, items=items, repo=repo)[: args.budget]
+    with profile.during(name="candidate-selection"):
+        selected_candidates = candidates(args=args, items=items, repo=repo)[: args.budget]
     # `--item` narrows BOTH legs to the named ids, and `--budget` bounds the
     # pass as a whole rather than each leg separately.
     rework = ReworkPass(
@@ -137,7 +137,11 @@ def _loop_in_pass(*, args: argparse.Namespace) -> int:
     # Every refusal that must land after selection and before the claim, as one
     # decision. The SAME wall the single dispatch runs, handed the whole wave.
     wall_exit = pre_dispatch_wall_exit(
-        args=args, repo=repo, items=selected_candidates, journal=journal
+        args=args,
+        repo=repo,
+        items=selected_candidates,
+        journal=journal,
+        prelaunch_checkpoint=profile.checkpoint,
     )
     if wall_exit is not None:
         return wall_exit
@@ -149,11 +153,22 @@ def _loop_in_pass(*, args: argparse.Namespace) -> int:
         journal=journal,
         janitor=janitor,
         rework=rework,
+        profile=profile,
     )
     if not outcomes:
         emit_outcomes(outcomes=[], as_json=args.as_json)
         return 0
     emit_outcomes(outcomes=outcomes, as_json=args.as_json)
+    return _post_verdict_stages(args=args, repo=repo, outcomes=outcomes, journal=journal)
+
+
+def _post_verdict_stages(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+    journal: JournalFile,
+) -> int:
     # Verdict is computed BEFORE the mechanical reflection stage and is
     # immutable by it (loop-reflection-gate best-practices §6: reflection
     # never changes a dispatch verdict). reflect() is fail-open and never
@@ -195,28 +210,35 @@ def _loop_in_pass(*, args: argparse.Namespace) -> int:
     return exit_code
 
 
-def _start_loop(*, args: argparse.Namespace, repo: Path) -> _LoopStart | int:
-    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
+def _start_loop(
+    *, args: argparse.Namespace, repo: Path, profile: PrelaunchCpuProfile
+) -> _LoopStart | int:
+    with profile.during(name="dispatch-preamble"):
+        janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
     if preamble_exit is not None:
         return preamble_exit
-    arm_otel_egress(args=args, repo=repo)
-    prepared = prepare(args=args, repo=repo)
+    with profile.during(name="otel-egress"):
+        arm_otel_egress(args=args, repo=repo)
+    with profile.during(name="ledger-prepare"):
+        prepared = prepare(args=args, repo=repo)
     if prepared is None:
         return EXIT_PRECONDITION_ERROR
     items, journal = prepared
-    start_exit = _configuration_or_ledger_exit(
-        args=args,
-        repo=repo,
-        items=items,
-        journal=journal,
-    )
+    with profile.during(name="configuration-and-ledger-check"):
+        start_exit = configuration_or_ledger_exit(
+            args=args,
+            repo=repo,
+            items=items,
+            journal=journal,
+        )
     if start_exit is not None:
         return start_exit
     requested_ids = set(args.items or [])
     if requested_ids:
-        preflight_error = requested_items_preflight_error(
-            requested_ids=requested_ids, items=items, repo=repo, journal=journal
-        )
+        with profile.during(name="requested-items-preflight"):
+            preflight_error = requested_items_preflight_error(
+                requested_ids=requested_ids, items=items, repo=repo, journal=journal
+            )
         if preflight_error is not None:
             _ = write_stderr(text=preflight_error)
             return EXIT_PRECONDITION_ERROR
@@ -228,33 +250,3 @@ def _start_loop(*, args: argparse.Namespace, repo: Path) -> _LoopStart | int:
     # stream the current engine cannot emit, so every reading failed, and the
     # gate stopped a drain for a surface nobody could ever have read.
     return _LoopStart(janitor=janitor, items=items, journal=journal)
-
-
-def _configuration_or_ledger_exit(
-    *, args: argparse.Namespace, repo: Path, items: list[WorkItem], journal: JournalFile
-) -> int | None:
-    """Refuse invalid size configuration before ledger normalization mutates."""
-    configuration = apply_factory_size_dispatch_entry(
-        cwd=repo,
-        path_factory=lambda: store_config(repo=repo),
-        items=(),
-        journal=journal,
-    )
-    if not is_successful(configuration):
-        failure = unsafe_perform_io(configuration.failure())
-        requested_ids = set(args.items or [])
-        outcome = failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=next(iter(sorted(requested_ids)), "dispatcher-loop"),
-            stage="configuration",
-            detail=failure.detail,
-        )
-        emit_outcomes(outcomes=[outcome], as_json=args.as_json)
-        return dispatch_exit_code(outcomes=[outcome])
-    if not args.skip_ledger_check and ledger_blocked_after_normalization(
-        items=items,
-        config=store_config(repo=repo),
-        journal=journal,
-    ):
-        return EXIT_FAILURE
-    return None
