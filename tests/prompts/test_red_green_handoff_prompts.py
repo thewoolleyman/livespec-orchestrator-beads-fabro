@@ -46,6 +46,7 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         "what the test verifies and does not verify",
         "code locations for the change",
         "declared `already-satisfied` outcome",
+        '{"preferred_next_label": "already-satisfied"}',
     ):
         assert phrase in red, f"the red prompt omits {phrase!r}"
 
