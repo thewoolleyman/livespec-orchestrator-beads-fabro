@@ -57,8 +57,15 @@ board_rows() {
   printf '%s\n' "$out" | awk 'NR>1 && length($1)==12 && $1 ~ /^[0-9A-Z]+$/ && $3 !~ /^(succeeded|failed|cancelled|canceled|timeout|timed_out|aborted|removed|dead|completed)$/ {print $1, $3, $5, $NF}'
 }
 rows_count() { if [ "$1" = U ]; then echo U; else printf '%s' "$1" | grep -c .; fi; }
-unlisted_markers() {
-  local listed="$1" f pid item count=0
+# Snapshot the live in-flight markers as "<item>" lines, or U when the
+# directory cannot be read.  Taken BEFORE the boards are read: a launcher drops
+# its marker only after a board lists its run, so any marker that disappears
+# after this snapshot belongs to a run the later board read already lists.
+# Reading the boards first left a window where a run was neither listed (board
+# read too early) nor marked (marker dropped since) and the fleet was
+# undercounted (bd-ib-uhcn36, run 01M6H3VFB451).
+marker_snapshot() {
+  local f pid item items=""
   [ -d "$INFLIGHT" ] && [ -r "$INFLIGHT" ] && [ -x "$INFLIGHT" ] && command ls -1 "$INFLIGHT" > /dev/null 2>&1 || { echo U; return; }
   for f in "$INFLIGHT"/*; do
     [ -e "$f" ] || continue
@@ -66,19 +73,33 @@ unlisted_markers() {
     pid=$(grep -oE 'pid=[0-9]+' "$f" | head -1 | cut -d= -f2)
     item=$(grep -oE 'item=[^ ]+' "$f" | head -1 | cut -d= -f2)
     if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then continue; fi
+    items="$items$item
+"
+  done
+  printf '%s' "$items"
+}
+# Count the snapshot's items that the (later) board rows do not list.
+unlisted_markers() {
+  local snapshot="$1" listed="$2" item count=0
+  [ "$snapshot" = U ] && { echo U; return; }
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
     printf '%s\n' "$listed" | awk -v it="$item" '$4==it {found=1} END{exit !found}' && continue
     count=$((count + 1))
-  done
+  done <<EOF_SNAPSHOT
+$snapshot
+EOF_SNAPSHOT
   echo "$count"
 }
 read_boards() {
-  local gmk_rows hl_rows
+  local gmk_rows hl_rows snapshot
+  snapshot=$(marker_snapshot)
   gmk_rows=$(board_rows "$GMK")
   hl_rows=$(board_rows "$HL")
   gmk_live=$(rows_count "$gmk_rows")
   hl_live=$(rows_count "$hl_rows")
   if [ "$gmk_live" = U ] || [ "$hl_live" = U ]; then markers=U; fleet=U; return; fi
-  markers=$(unlisted_markers "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
+  markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
   if [ "$markers" = U ]; then fleet=U; else fleet=$((gmk_live + hl_live + markers)); fi
 }
 oldest_live_ticket() {

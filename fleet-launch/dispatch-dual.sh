@@ -79,9 +79,14 @@ board_rows() {
 }
 rows_count() { if [ "$1" = U ]; then echo U; else printf '%s' "$1" | grep -c .; fi; }
 
-# unlisted_markers <listed-rows>: in-flight markers of launches whose run has not listed yet.
-unlisted_markers() {
-  local listed="$1" f p it n=0
+# marker_snapshot: the items of the live in-flight markers, one per line, or U
+# when the directory cannot be read.  Taken BEFORE the boards are read: a
+# launcher drops its marker only after a board lists its run, so a marker that
+# vanishes after this snapshot belongs to a run the later board read lists.
+# Reading the boards first undercounted a run that listed between the two
+# reads (bd-ib-uhcn36, run 01M6H3VFB451).
+marker_snapshot() {
+  local f p it items=""
   mkdir -p "$INFLIGHT" 2>/dev/null
   [ -d "$INFLIGHT" ] && [ -r "$INFLIGHT" ] && [ -x "$INFLIGHT" ] || { echo U; return; }
   for f in "$INFLIGHT"/*; do
@@ -93,19 +98,35 @@ unlisted_markers() {
     if ! { [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }; then
       [ -n "$it" ] && pgrep -u "$(id -u)" -f -- "drive.py .*--action impl:${it}( |$)" >/dev/null 2>&1 || continue
     fi
+    items="$items$it
+"
+  done
+  printf '%s' "$items"
+}
+
+# unlisted_markers <snapshot> <listed-rows>: the snapshot's launches whose run the (later) board read does not list.
+unlisted_markers() {
+  local snapshot="$1" listed="$2" it n=0
+  [ "$snapshot" = U ] && { echo U; return; }
+  while IFS= read -r it; do
+    [ -n "$it" ] || continue
     printf '%s\n' "$listed" | awk -v it="$it" '$4==it {found=1} END{exit !found}' && continue
     n=$((n + 1))
-  done
+  done <<EOF_SNAPSHOT
+$snapshot
+EOF_SNAPSHOT
   echo "$n"
 }
 
 # read_boards: sets gmk_live, hl_live, markers and fleet (a number, or U when any reading is unknown).
 read_boards() {
+  local snapshot
+  snapshot=$(marker_snapshot)
   gmk_rows=$(board_rows "$FABRO" "$GMK")
   hl_rows=$(board_rows "$FABRO" "$HL")
   gmk_live=$(rows_count "$gmk_rows"); hl_live=$(rows_count "$hl_rows")
   if [ "$gmk_live" = U ] || [ "$hl_live" = U ]; then markers=U; fleet=U; return; fi
-  markers=$(unlisted_markers "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
+  markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
   if [ "$markers" = U ]; then fleet=U; else fleet=$(( gmk_live + hl_live + markers )); fi
 }
 gt() { awk "BEGIN{exit !($1 > $2)}"; }
