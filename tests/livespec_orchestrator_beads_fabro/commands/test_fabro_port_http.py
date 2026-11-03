@@ -83,7 +83,7 @@ class _FakeResponse:
         _ = (exc_type, exc, traceback)
 
 
-def test_questions_and_answer_and_cancel_hit_the_documented_routes() -> None:
+def test_questions_answer_cancel_and_run_state_hit_the_documented_routes() -> None:
     transport = _RecordingTransport(result=_ok(body='{"data": [], "meta": {"has_more": false}}'))
     port = FabroHttpPort(
         target=FabroTarget(server_url="https://hp.example:32276/", dev_token=_DEV_TOKEN_VALUE),
@@ -98,12 +98,14 @@ def test_questions_and_answer_and_cancel_hit_the_documented_routes() -> None:
         timeout_seconds=5.0,
     )
     _ = port.cancel(run_id="01RUN", timeout_seconds=5.0)
+    state = port.run_state(run_id="01RUN", timeout_seconds=5.0)
 
     assert listed.payload == {"data": [], "meta": {"has_more": False}}
     assert [(call["method"], call["url"]) for call in transport.calls] == [
         ("GET", "https://hp.example:32276/api/v1/runs/01RUN/questions"),
         ("POST", "https://hp.example:32276/api/v1/runs/01RUN/questions/q1/answer"),
         ("POST", "https://hp.example:32276/api/v1/runs/01RUN/cancel"),
+        ("GET", "https://hp.example:32276/api/v1/runs/01RUN/state"),
     ]
     assert transport.calls[0]["headers"] == {
         "Accept": "application/json",
@@ -117,6 +119,7 @@ def test_questions_and_answer_and_cancel_hit_the_documented_routes() -> None:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {_DEV_TOKEN_VALUE}",
     }
+    assert state.payload == {"data": [], "meta": {"has_more": False}}
 
 
 def test_the_auth_file_token_rides_as_the_bearer_when_no_env_token_is_set(

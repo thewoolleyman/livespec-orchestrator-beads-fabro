@@ -137,8 +137,7 @@ class TransitionRequest:
     event_kind: str
     author: str
     now: str
-    continuation_ruling_by: str | None = None
-    continuation_ruling_recorded_at: str | None = None
+    replaced_result: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -229,8 +228,7 @@ def _close_and_project(
                 recorded_at=request.now,
             ),
         ),
-        continuation_ruling_by=request.continuation_ruling_by,
-        continuation_ruling_recorded_at=request.continuation_ruling_recorded_at,
+        replaced_result=request.replaced_result,
     )
     rendered = render_payload(payload=payload)
     attempt_close(client=client, token_id=head.current_token_id, reason=rendered)

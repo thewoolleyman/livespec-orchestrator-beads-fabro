@@ -112,7 +112,6 @@ def reconciled_directive(
             )
         )
     tracked = tracked_resume_directive(
-        action=action,
         observation=observation,
         findings=findings,
     )

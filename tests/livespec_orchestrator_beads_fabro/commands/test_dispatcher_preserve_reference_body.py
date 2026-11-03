@@ -21,15 +21,17 @@ import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-    CommandResult,
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference import (
     preserve_checkpointed_work_reference,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -53,27 +55,45 @@ class _ScriptedDumpRunner:
     stage_diffs: dict[str, str] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
 
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = (cwd, timeout_seconds, env, stdin)
-        self.calls.append(argv)
-        output_dir = Path(argv[argv.index("-o") + 1])
-        for stage, payload in self.stage_diffs.items():
-            diff = output_dir / "stages" / stage / "diff.patch"
-            diff.parent.mkdir(parents=True)
-            _ = diff.write_text(payload, encoding="utf-8")
-        return CommandResult(
-            exit_code=self.exit_code,
-            stdout="",
-            stderr="run storage not found" if self.exit_code else "",
+
+@pytest.fixture(autouse=True)
+def run_state_replaces_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StateApi:
+        def __init__(self, *, result: FabroHttpResult) -> None:
+            self._result = result
+
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return self._result
+
+    def _state_api(port: FabroPort) -> _StateApi:
+        runner = port.runner
+        assert isinstance(runner, _ScriptedDumpRunner)
+        if runner.exit_code:
+            return _StateApi(
+                result=FabroHttpResult(
+                    status=500,
+                    body="run storage not found",
+                    error=None,
+                    payload=None,
+                    succeeded=False,
+                )
+            )
+        stages = {
+            stage[4:]: {"first_event_seq": int(stage[:3]), "diff": payload}
+            for stage, payload in runner.stage_diffs.items()
+        }
+        return _StateApi(
+            result=FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={"stages": stages},
+                succeeded=True,
+            )
         )
+
+    monkeypatch.setattr(FabroPort, "server_api", _state_api)
 
 
 def _config() -> StoreConfig:
@@ -163,13 +183,13 @@ def _retrieval_line(*, body: str) -> str:
 def test_dump_failed_pointer_states_why_no_digest_could_be_computed(tmp_path: Path) -> None:
     body = _preserve(tmp_path=tmp_path, runner=_ScriptedDumpRunner(exit_code=2))
 
-    assert "sha256 unavailable because: the export failed (fabro dump exit 2)" in body
-    assert "no artifact bytes reached this host to digest" in body
+    assert "sha256 unavailable because: the preserve step failed" in body
+    assert "run-state read failed with HTTP status 500" in body
     # The placeholder alone was the whole defect: it reads as an oversight.
-    assert "sha256: (not recorded; dump failed)" in body
+    assert "sha256: (not recorded; preserve step failed)" in body
 
 
-def test_missing_artifact_pointer_states_why_no_digest_could_be_computed(tmp_path: Path) -> None:
+def test_diff_less_projection_states_why_no_digest_could_be_computed(tmp_path: Path) -> None:
     body = _preserve(tmp_path=tmp_path, runner=_ScriptedDumpRunner())
 
     assert "sha256 unavailable because: the export succeeded but matched no" in body
@@ -205,27 +225,29 @@ def test_printed_retrieval_command_names_the_binary_the_module_invoked(tmp_path:
     # Tied to the recorded argv, not to a literal: a bare `fabro` is not on
     # PATH under the credential wrapper, so the printed command must name
     # the same resolved binary the module ran.
-    assert runner.calls[0][0] == _FABRO_BIN
-    assert _retrieval_line(body=body).split()[0] == runner.calls[0][0]
+    assert runner.calls == []
+    assert _retrieval_line(body=body).split()[0] == _FABRO_BIN
     assert (
         _retrieval_line(body=body)
         == f"{_FABRO_BIN} dump 01M0RUN --server {_SERVER} -o <export-dir>"
     )
 
 
-def test_printed_retrieval_command_is_runnable_on_the_dump_failed_pointer(tmp_path: Path) -> None:
+def test_failed_projection_pointer_claims_no_retrieval_command(tmp_path: Path) -> None:
     runner = _ScriptedDumpRunner(exit_code=2)
 
     body = _preserve(tmp_path=tmp_path, runner=runner)
 
-    assert _retrieval_line(body=body).split()[0] == runner.calls[0][0]
+    assert runner.calls == []
+    assert "retrieval command:" not in body
 
 
-def test_printed_retrieval_command_is_runnable_on_the_missing_artifact_pointer(
+def test_diff_less_projection_pointer_keeps_the_documented_retrieval_command(
     tmp_path: Path,
 ) -> None:
     runner = _ScriptedDumpRunner()
 
     body = _preserve(tmp_path=tmp_path, runner=runner)
 
-    assert _retrieval_line(body=body).split()[0] == runner.calls[0][0]
+    assert runner.calls == []
+    assert _retrieval_line(body=body).split()[0] == _FABRO_BIN

@@ -1,2 +1,2 @@
-work_item=bd-ib-aqrdhl
-reason=Add the new repo-local check-acp-preflight-config target to the CI metadata batch in ci.yml so check-ci-matrix-completeness passes for the bd-ib-aqrdhl implementation (PR 4015).
+work_item=bd-ib-xufdwx
+reason=Move the root-uid half of the uid-doubled CI jobs (check-lint, check-format, check-types, check-python-batch, check-per-file-coverage, check-coverage) off pull requests into a 3-hourly scheduled master workflow, ci-root-uid.yml; nonroot stays on every PR. Maintainer direction 2026-11-03 (verbatim on bd-ib-xufdwx): 'root and non root . is overkill. move one to dschrduled master job'. Plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).

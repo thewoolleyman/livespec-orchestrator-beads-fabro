@@ -50,7 +50,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
-    from livespec_orchestrator_beads_fabro.commands._plan_supersession import CausalSupersession
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -258,7 +257,6 @@ def set_next_action(  # noqa: PLR0913 -- kw-only writer; each tracking input is 
     now: str,
     operation_id: str | None = None,
     recovery: CausalRecovery | None = None,
-    supersession: CausalSupersession | None = None,
 ) -> NextActionRefusal | None:
     """Update one epic's `next_action` and `last_session` metadata in place.
 
@@ -268,11 +266,10 @@ def set_next_action(  # noqa: PLR0913 -- kw-only writer; each tracking input is 
     every sanctioned writer takes, so the pointer it stores is a projection of
     the durable authority rather than whatever budget the caller proposed.
 
-    `supersession` is the ONE input that may rename an unmet obligation's
-    required result, and the clause admits it through exactly this writer and
-    `append_handoff`. It is not a budget input: the replacement inherits the
-    superseded obligation's original deadline and consumed handoff count
-    unchanged, so a caller cannot reach a new clock through it.
+    A write naming a different required result than the unmet obligation's
+    REPLACES it, under this write's own budget, recorded as a `replacement`
+    progress event; a passed deadline or an exhausted handoff count never
+    refuses it.
     """
     from livespec_orchestrator_beads_fabro.commands._plan_tracked_write import (
         TrackedWriteRequest,
@@ -288,7 +285,6 @@ def set_next_action(  # noqa: PLR0913 -- kw-only writer; each tracking input is 
             now=now,
             operation_id=operation_id,
             recovery=recovery,
-            supersession=supersession,
         )
     )
     return outcome if isinstance(outcome, NextActionRefusal) else None

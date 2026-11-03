@@ -59,26 +59,37 @@ def _install_fake_just(*, repo: Path) -> Path:
     bin_dir = repo / "fake-bin"
     bin_dir.mkdir()
     fake_just = bin_dir / "just"
-    fake_just.write_text(
-        '#!/usr/bin/env bash\nset -uo pipefail\nprintf "%s\\n" "$*" >> just.log\n',
+    _ = fake_just.write_text(
+        "\n".join(
+            (
+                "#!/usr/bin/env bash",
+                "set -uo pipefail",
+                "printf '%s\\n' \"$*\" >> just.log",
+                'if [[ "${FAKE_JUST_FAILURE_TARGET:-}" == "$*" ]]; then',
+                "    printf '%s\\n' \"${FAKE_JUST_FAILURE_OUTPUT:-synthetic failure}\" >&2",
+                "    exit 1",
+                "fi",
+            )
+        )
+        + "\n",
         encoding="utf-8",
     )
-    fake_just.chmod(fake_just.stat().st_mode | stat.S_IXUSR)
+    _ = fake_just.chmod(fake_just.stat().st_mode | stat.S_IXUSR)
     return bin_dir
 
 
 def _init_repo(*, tmp_path: Path, baseline_message: str) -> tuple[Path, dict[str, str]]:
     repo = tmp_path / "repo"
     repo.mkdir()
-    _run(argv=["git", "init"], cwd=repo)
-    _run(argv=["git", "config", "user.email", "test@example.com"], cwd=repo)
-    _run(argv=["git", "config", "user.name", "Test User"], cwd=repo)
+    _ = _run(argv=["git", "init"], cwd=repo)
+    _ = _run(argv=["git", "config", "user.email", "test@example.com"], cwd=repo)
+    _ = _run(argv=["git", "config", "user.name", "Test User"], cwd=repo)
     (repo / "tests").mkdir()
-    (repo / "tests" / "test_placeholder.py").write_text("", encoding="utf-8")
+    _ = (repo / "tests" / "test_placeholder.py").write_text("", encoding="utf-8")
     impl_dir = repo / ".claude-plugin" / "scripts"
     impl_dir.mkdir(parents=True)
-    (impl_dir / "widget.py").write_text("", encoding="utf-8")
-    _run(argv=["git", "add", "."], cwd=repo)
+    _ = (impl_dir / "widget.py").write_text("", encoding="utf-8")
+    _ = _run(argv=["git", "add", "."], cwd=repo)
     baseline = _run(argv=["git", "commit", "-m", baseline_message], cwd=repo)
     assert baseline.returncode == 0, baseline.stderr
     fake_bin = _install_fake_just(repo=repo)
@@ -86,14 +97,86 @@ def _init_repo(*, tmp_path: Path, baseline_message: str) -> tuple[Path, dict[str
 
 
 def _stage(*, repo: Path, relative_path: str, body: str) -> None:
-    (repo / relative_path).write_text(body, encoding="utf-8")
-    _run(argv=["git", "add", relative_path], cwd=repo)
+    _ = (repo / relative_path).write_text(body, encoding="utf-8")
+    _ = _run(argv=["git", "add", relative_path], cwd=repo)
 
 
 def _invoke_pre_commit(*, repo: Path, env: dict[str, str]) -> str:
     result = _run(argv=["bash", str(_SCRIPT)], cwd=repo, env=env)
     assert result.returncode == 0, result.stdout + result.stderr
     return (repo / "just.log").read_text(encoding="utf-8").strip()
+
+
+def _make_green_amend_shape(*, tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """Create the index and Red `HEAD` that a Green amend presents to the hook."""
+    tmp_path.mkdir()
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(
+        repo=repo,
+        relative_path="tests/test_placeholder.py",
+        body="def test_staged_red() -> None:\n    assert True\n",
+    )
+    red = _run(
+        argv=["git", "commit", "-m", f"fix: red test\n\n{_RED_TRAILER}\n"],
+        cwd=repo,
+    )
+    assert red.returncode == 0, red.stdout + red.stderr
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+    return repo, env
+
+
+def test_green_amend_runs_its_red_test_before_the_aggregate(*, tmp_path: Path) -> None:
+    """The fast lanes name their refusal and never start the later aggregate."""
+    static_repo, static_env = _make_green_amend_shape(tmp_path=tmp_path / "static")
+    static_result = _run(
+        argv=["bash", str(_SCRIPT)],
+        cwd=static_repo,
+        env={
+            **static_env,
+            "FAKE_JUST_FAILURE_TARGET": "check-staged-precheck",
+            "FAKE_JUST_FAILURE_OUTPUT": "widget.py:1:1: synthetic-rule",
+        },
+    )
+    assert static_result.returncode == 1
+    assert "staged pre-check" in static_result.stderr
+    assert (static_repo / "just.log").read_text(encoding="utf-8").splitlines() == [
+        "check-staged-precheck"
+    ]
+
+    test_repo, test_env = _make_green_amend_shape(tmp_path=tmp_path / "tests")
+    test_result = _run(
+        argv=["bash", str(_SCRIPT)],
+        cwd=test_repo,
+        env={
+            **test_env,
+            "FAKE_JUST_FAILURE_TARGET": "check-staged-tests tests/test_placeholder.py",
+        },
+    )
+    assert test_result.returncode == 1
+    assert "staged tests" in test_result.stderr
+    assert (test_repo / "just.log").read_text(encoding="utf-8").splitlines() == [
+        "check-staged-precheck",
+        "check-staged-tests tests/test_placeholder.py",
+    ]
+
+    passed_repo, passed_env = _make_green_amend_shape(tmp_path=tmp_path / "passed")
+    passed = _invoke_pre_commit(repo=passed_repo, env=passed_env)
+    assert passed.splitlines() == [
+        "check-staged-precheck",
+        "check-staged-tests tests/test_placeholder.py",
+        "check-skipping check-red-green-replay check-codex-skill-picker",
+    ]
+
+
+def test_doc_only_amend_on_a_red_only_head_keeps_the_doc_only_arm(*, tmp_path: Path) -> None:
+    """Documentation alone never takes the Green-amend staged pre-check and test phases."""
+    repo, env = _make_green_amend_shape(tmp_path=tmp_path / "doc")
+    _ = _run(argv=["git", "reset", "--quiet", ".claude-plugin/scripts/widget.py"], cwd=repo)
+    _stage(repo=repo, relative_path="README.md", body="notes\n")
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.splitlines() == ["check-pre-commit-doc-only"]
 
 
 def test_red_mode_arm_skips_the_incremental_coverage_gate(*, tmp_path: Path) -> None:

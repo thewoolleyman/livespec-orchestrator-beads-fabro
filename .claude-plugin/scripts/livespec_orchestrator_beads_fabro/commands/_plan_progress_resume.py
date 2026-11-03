@@ -1,43 +1,32 @@
 """The durable-progress reading a resume takes BEFORE deciding to dispatch.
 
 `contracts.md` section "Required result, budget and progress epoch":
-"resume_directive MUST report missing, expired and unobservable tracking
-findings. It MUST NOT automatically dispatch an exhausted or unobservable
-obligation. An unattended expired resume MUST retain the obligation and expose
-an authorized diagnosis/recovery action for the independent consumer. ... The
-progress check MUST precede the unattended dispatch decision."
+"resume_directive MUST report missing, overdue and unobservable tracking
+findings. A budget's deadline or handoff count MUST NOT change whether
+resume_directive takes or presents an executable action ... It MUST NOT
+automatically dispatch an unobservable obligation; an unattended unobservable
+resume MUST retain the obligation and expose an authorized diagnosis action for
+the independent consumer. ... The progress check MUST precede the unattended
+dispatch decision."
 
-THIS READS THE CHAIN, NOT THE POINTER, and that is the whole reason the module
-exists. The budget used to be read off the `next_action` metadata, which every
-sanctioned writer rewrites wholesale — so the one fact a resume most needs to be
-unable to lie about was stored exactly where a writer could hand it a new value.
-A pointer carrying a far-future deadline and a zero handoff count is perfectly
-well-formed, so a resume reading it reports a healthy obligation and dispatches
-it, with nothing in the result to distinguish that from a correct reading.
+THIS READS THE CHAIN, NOT THE POINTER. The budget used to be read off the
+`next_action` metadata, which every sanctioned writer rewrites wholesale, so a
+pointer carrying a far-future deadline would report a healthy obligation while
+the chain recorded an overdue one. The overdue FINDING is still the chain's.
 
-EVERY ARM HERE IS READ-ONLY. "An expired wall clock MUST be visible even when no
-new handoff is written", so reporting expiry cannot itself be a write — and the
-chain's authority is what the next writer will read, so a reader that advanced
-or cleared it would make the following reader see a healthy plan.
+AN OVERDUE OBLIGATION IS REPORTED AND NEVER WITHHELD. The expiry rule that made
+an exhausted budget withhold the pointer's own action and expose only
+`diagnose-plan-progress` was deleted on the maintainer's 2026-11-03 ruling
+("Whatever 'stall' rule is in effect here, completely delete it"). So the
+overdue arm returns `dispatch=True` with its finding, and the only arms that
+withhold are the ones that could not READ the obligation at all.
 
-WITHHOLDING AND EXPOSING ARE TWO SEPARATE OBLIGATIONS, and this module answers
-both because answering only the first leaves the independent consumer a dead
-end. An expired or unobservable obligation yields `dispatch=False` for its OWN
-action, plus an `authorized_action` that is executable: a still-bounded recorded
-recovery attempt's own operation where one exists, and otherwise the
-plan-progress diagnosis. A caller that returned no action at all would satisfy
-"does not dispatch the exhausted obligation" while stalling the plan.
+EVERY ARM HERE IS READ-ONLY. "An overdue obligation MUST be visible even when no
+new handoff is written", so reporting it cannot itself be a write.
 
-A RECORDED ATTEMPT IS HONOURED ONLY WHILE ITS OWN BOUND HOLDS. "A typed causal
-attempt MAY restore bounded execution without resetting the original deadline" —
-the bound is the attempt's, and an elapsed one authorizes nothing, because
-otherwise the first attempt ever recorded would authorize its operation forever,
-which is the self-renewing budget the clause forbids.
-
-THE FINDING NAMES THE LIMIT, THE OBLIGATION AND THE REMEDY, because the three
-have different remedies and an operator reading only "expired" cannot tell an
-exhausted ceiling from a passed clock — nor which operation they are now
-permitted to run.
+WITHHOLDING AND EXPOSING ARE TWO SEPARATE OBLIGATIONS for an UNREADABLE
+obligation: it yields `dispatch=False` for its own action plus the executable
+plan-progress diagnosis, because returning no action at all would stall the plan.
 
 THE CHAIN-HELD OBLIGATION IS READ THROUGH THE SHARED PLAN-OWNED READER, for a
 reason this module's position makes acute: `decide_plan_resume` RETURNS on this
@@ -55,9 +44,8 @@ remember, and the only part of it that announces its own absence is the root.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._plan_continuation import instant_expired
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import ChainHead
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import ChainFinding
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_reconcile import authorized_head
@@ -68,7 +56,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_obligation import (
 )
 from livespec_orchestrator_beads_fabro.commands._plan_recovery import (
     DIAGNOSIS_OPERATION_PREFIX,
-    is_executable_operation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
@@ -82,8 +69,8 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
-    "TRACKING_EXPIRED",
     "TRACKING_MISSING",
+    "TRACKING_OVERDUE",
     "TRACKING_UNOBSERVABLE",
     "ResumeProgress",
     "diagnosis_operation",
@@ -91,10 +78,9 @@ __all__: list[str] = [
 ]
 
 TRACKING_MISSING = "plan-progress-tracking: missing"
-TRACKING_EXPIRED = "plan-progress-tracking: expired"
+TRACKING_OVERDUE = "plan-progress-tracking: overdue"
 TRACKING_UNOBSERVABLE = "plan-progress-tracking: unobservable"
 
-_ATTEMPT_FIELD = "attempt"
 _SANCTIONED_MIGRATION = "migrate-plan-records"
 # The write that creates an obligation where a chain already stands. Named as
 # the remedy for a PRESENT chain tracking nothing, because `migrate-plan-records`
@@ -162,13 +148,7 @@ def evaluate_resume_progress(
     expiry = obligation_expiry(obligation=obligation, now=now)
     if expiry is None:
         return ResumeProgress()
-    return _expired_progress(
-        epic_id=epic_id,
-        obligation=obligation,
-        expiry=expiry,
-        head=head,
-        now=now,
-    )
+    return _overdue_progress(obligation=obligation, expiry=expiry)
 
 
 def _chain_finding_progress(*, epic_id: str, finding: ChainFinding) -> ResumeProgress:
@@ -273,68 +253,10 @@ def _unobservable_progress(
     )
 
 
-def _expired_progress(
-    *,
-    epic_id: str,
-    obligation: Obligation,
-    expiry: str,
-    head: ChainHead,
-    now: str,
-) -> ResumeProgress:
-    """An exhausted obligation, with whichever operation is still authorized."""
-    prefix = (
-        f"{TRACKING_EXPIRED}; limit={expiry}; deadline={obligation.original_deadline};"
+def _overdue_progress(*, obligation: Obligation, expiry: str) -> ResumeProgress:
+    """An overdue obligation is REPORTED, and its own action is still dispatchable."""
+    report = (
+        f"{TRACKING_OVERDUE}; limit={expiry}; deadline={obligation.original_deadline};"
         f" handoffs={obligation.consumed_handoffs}/{obligation.max_handoffs}"
     )
-    attempt = _bounded_attempt(authority_record=head.authority.last_recovery_attempt, now=now)
-    if attempt is None:
-        return ResumeProgress(
-            findings=(f"{prefix}; recovery={diagnosis_operation(epic_id=epic_id)}",),
-            reason=f"the plan's required result expired at its {expiry} limit",
-            dispatch=False,
-            authorized_action=diagnosis_operation(epic_id=epic_id),
-        )
-    attempt_id, operation, attempt_deadline = attempt
-    report = (
-        f"{prefix}; authorized-recovery={attempt_id} until {attempt_deadline};"
-        f" operation={operation}"
-    )
-    return ResumeProgress(
-        findings=(report,),
-        reason=f"bounded causal recovery attempt {attempt_id} is authorized",
-        dispatch=False,
-        authorized_action=operation,
-    )
-
-
-def _bounded_attempt(  # noqa: PLR0911 -- one fail-closed return per malformed shape; merging them loses which.
-    *,
-    authority_record: object,
-    now: str,
-) -> tuple[str, str, str] | None:
-    """A recorded attempt's id, operation and bound, while that bound holds.
-
-    Every arm fails CLOSED to `None`, which routes to a fresh diagnosis: the
-    operation read here is one a consumer will EXECUTE, so an unreadable or
-    unexecutable record must not become one. The operation is re-checked against
-    the closed grammar rather than trusted, because the record is ledger data
-    and a stored string is not evidence that it was ever validated.
-    """
-    if not isinstance(authority_record, dict):
-        return None
-    attempt = cast("dict[str, Any]", authority_record).get(_ATTEMPT_FIELD)
-    if not isinstance(attempt, dict):
-        return None
-    fields = cast("dict[str, Any]", attempt)
-    attempt_id = fields.get("attempt_id")
-    operation = fields.get("next_operation")
-    attempt_deadline = fields.get("attempt_deadline")
-    if not isinstance(attempt_id, str) or attempt_id.strip() == "":
-        return None
-    if not isinstance(operation, str) or not is_executable_operation(operation=operation):
-        return None
-    if not isinstance(attempt_deadline, str):
-        return None
-    if instant_expired(until=attempt_deadline, now=now):
-        return None
-    return attempt_id, operation, attempt_deadline
+    return ResumeProgress(findings=(report,))

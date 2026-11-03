@@ -22,8 +22,11 @@ def test_admission_passes_its_production_factory_reader_to_preflight(
     resolved: list[dict[str, object]] = []
 
     class _FactoryRunReader:
-        def __init__(self, *, repo: Path) -> None:
+        def __init__(self, *, repo: Path, journal: object) -> None:
             constructed.append(repo)
+            # The pass's own journal, so an unanswered record read is audited
+            # beside the refusal it may cause (bd-ib-fhmpik).
+            assert journal is not None
 
     def _resolve(**kwargs: object) -> object:
         resolved.append(kwargs)
@@ -72,8 +75,11 @@ def test_loop_wave_passes_its_production_factory_reader_to_preflight(
     resolved: list[dict[str, object]] = []
 
     class _FactoryRunReader:
-        def __init__(self, *, repo: Path) -> None:
+        def __init__(self, *, repo: Path, journal: object) -> None:
             constructed.append(repo)
+            # The pass's own journal, so an unanswered record read is audited
+            # beside the refusal it may cause (bd-ib-fhmpik).
+            assert journal is not None
 
     def _resolve(**kwargs: object) -> object:
         resolved.append(kwargs)

@@ -204,7 +204,7 @@ def test_a_failed_dump_holds_the_run_and_names_its_exit_code(tmp_path: Path) -> 
 
     assert verdict == RunWallVerdict.HELD
     held = next(record for record in journal.records if record.get("stage") == held_stage)
-    assert "fabro dump failed with exit code 124" in str(held["failed_measurement"])
+    assert "selective stage-diff read failed" in str(held["failed_measurement"])
     assert "rm" not in runner.calls
     assert all(record.get("stage") != RUN_WALL_BUDGET_EXCEEDED_STAGE for record in journal.records)
 

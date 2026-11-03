@@ -1,13 +1,13 @@
 """The read-only executor behind `diagnose-plan-progress:<epic>`.
 
-This is the operation an expired or unobservable resume EXPOSES, so it has to
+This is the operation an unobservable resume EXPOSES, so it has to
 exist and it has to run: `_plan_recovery`'s closed grammar admits
 `diagnose-plan-progress:<epic>` as executable, and "merely hardcoding a
 previously invented token does not make it executable". This module is what
 makes that token a real operation rather than a shape.
 
 IT WRITES NOTHING, and that is a requirement rather than an implementation
-choice. "An expired wall clock MUST be visible even when no new handoff is
+choice. "An overdue obligation MUST be visible even when no new handoff is
 written", and recording a recovery attempt is a SEPARATE sanctioned plan write
 with its own evidence requirements — so a diagnosis that repaired what it found
 would be recording an attempt nobody authored. It therefore reuses
@@ -30,7 +30,7 @@ shape some caller must then interrogate. There is nothing here to dereference.
 
 THE PAYLOAD IS `green` EVEN WHEN THE FINDING IS SEVERE. The status reports
 whether the DIAGNOSIS ran, not whether the plan is healthy — the plan's health
-is the finding's content. A diagnosis that reported `failed` for an expired
+is the finding's content. A diagnosis that reported `failed` for an overdue
 obligation would make a successful read indistinguishable from an unreadable
 one, which is the distinction the whole surface exists to draw.
 """

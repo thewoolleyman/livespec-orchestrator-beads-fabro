@@ -411,7 +411,7 @@ def admission_acp_verdict(
         journal_path=journal_path,
         now_iso=now_iso,
         headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
-        factory_runs=FactoryRunReader(repo=repo),
+        factory_runs=FactoryRunReader(repo=repo, journal=journal),
         confirmation=confirmation_for(journal=journal, evaluated=evaluated),
     )
 

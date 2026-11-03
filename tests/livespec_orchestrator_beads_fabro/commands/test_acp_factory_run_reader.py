@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMMANDS = (
@@ -44,6 +45,26 @@ class _Runner:
             }
         )
         return self.results.pop(0)
+
+
+class _RefusingTransport:
+    """A server that answers the state route with 404, as a build without it does.
+
+    The CLI reads below are what these tests grade, so the state route is
+    refused rather than left to reach a real host.
+    """
+
+    def send(
+        self,
+        *,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        timeout_seconds: float,
+    ) -> FabroHttpResult:
+        _ = (method, url, headers, body, timeout_seconds)
+        return FabroHttpResult(status=404, body="", error="404", payload=None, succeeded=False)
 
 
 def _module() -> Any:
@@ -94,7 +115,9 @@ def test_factory_reader_uses_the_port_for_server_qualified_reads_and_rejects_unr
             _result(stdout=json.dumps(["wrong inspect shape"])),
         ]
     )
-    reader = module.FactoryRunReader(repo=_repo(tmp_path=tmp_path), runner=runner)
+    reader = module.FactoryRunReader(
+        repo=_repo(tmp_path=tmp_path), runner=runner, http_transport=_RefusingTransport()
+    )
 
     runs = reader.list_runs(factory="hp")
 

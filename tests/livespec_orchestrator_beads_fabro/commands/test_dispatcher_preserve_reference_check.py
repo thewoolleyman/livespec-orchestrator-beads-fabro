@@ -18,12 +18,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     artifact_pointer_body,
     dump_failed_body,
     missing_artifact_body,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 
 _FABRO_BIN = "/home/factory/.fabro/bin/fabro"
 _SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
@@ -50,27 +53,48 @@ class _ExportRunner:
     payloads: dict[str, str] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
 
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = (cwd, timeout_seconds, env, stdin)
-        self.calls.append(argv)
-        output_dir = Path(argv[argv.index("-o") + 1])
-        for relative, payload in self.payloads.items():
-            path = output_dir / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            _ = path.write_text(payload, encoding="utf-8")
-        return CommandResult(
-            exit_code=self.exit_code,
-            stdout="",
-            stderr="run storage not found" if self.exit_code else "",
+
+@pytest.fixture(autouse=True)
+def run_state_replaces_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StateApi:
+        def __init__(self, *, result: FabroHttpResult) -> None:
+            self._result = result
+
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return self._result
+
+    def _state_api(port: FabroPort) -> _StateApi:
+        runner = port.runner
+        assert isinstance(runner, _ExportRunner)
+        if runner.exit_code:
+            return _StateApi(
+                result=FabroHttpResult(
+                    status=404,
+                    body="run storage not found",
+                    error=None,
+                    payload=None,
+                    succeeded=False,
+                )
+            )
+        stages = {
+            Path(relative).parts[1].split("-", 1)[1]: {
+                "first_event_seq": int(Path(relative).parts[1].split("-", 1)[0]),
+                "diff": payload,
+            }
+            for relative, payload in runner.payloads.items()
+        }
+        return _StateApi(
+            result=FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={"stages": stages},
+                succeeded=True,
+            )
         )
+
+    monkeypatch.setattr(FabroPort, "server_api", _state_api)
 
 
 def _digested_body(tmp_path: Path) -> str:
@@ -170,7 +194,7 @@ def test_a_pointer_whose_run_still_exports_matching_bytes_is_intact(tmp_path: Pa
 
     assert check.state == module.POINTER_INTACT
     assert "every sha256 matching" in check.detail
-    assert runner.calls[0][:2] == [_FABRO_BIN, "dump"]
+    assert runner.calls == []
 
 
 def test_a_pointer_whose_run_no_longer_exports_is_dangling(tmp_path: Path) -> None:
@@ -179,7 +203,7 @@ def test_a_pointer_whose_run_no_longer_exports_is_dangling(tmp_path: Path) -> No
     check = _check(body=_digested_body(tmp_path), runner=_ExportRunner(exit_code=1), repo=tmp_path)
 
     assert check.state == module.POINTER_DANGLING
-    assert "no longer exports" in check.detail
+    assert "no longer serves stage diffs" in check.detail
 
 
 def test_a_pointer_whose_artifact_vanished_from_the_export_is_dangling(tmp_path: Path) -> None:
