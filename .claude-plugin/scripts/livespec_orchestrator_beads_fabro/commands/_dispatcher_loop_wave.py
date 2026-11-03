@@ -227,6 +227,13 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
     with profile.during(name="recovery-route"):
         for item in picked:
             journal_recovery_route(route=routing.route_for(work_item_id=item.id), journal=journal)
+    # Every later launch in the wave waited behind the same pre-admission phases,
+    # so each gets its own profile (and dispatch id) carrying those rows.
+    profiles: dict[str, PrelaunchCpuProfile] = {}
+    for item in picked[1:]:
+        forked = profile.fork(dispatch_id=run_id())
+        forked.bind(journal=journal, work_item_id=item.id)
+        profiles[item.id] = forked
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = [
             pool.submit(
@@ -253,7 +260,7 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
                 journal=journal,
                 launch=DispatchLaunchContext(
                     janitor=janitor,
-                    prelaunch_profile=profile if item.id == picked[0].id else None,
+                    prelaunch_profile=profiles.get(item.id, profile),
                 ),
                 # The valve's OWN evaluation, so each launch selects its
                 # per-node ACP candidate from the read that admitted the item.
