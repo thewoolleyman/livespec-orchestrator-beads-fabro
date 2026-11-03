@@ -106,3 +106,41 @@ wrong. The plugin already takes `[[topology_spread]]` from its config, and the r
 therefore a config lever (`DoNotSchedule`, or a different skew). It does not need a binary. The 15:08Z read, with
 gmktec at 96% CPU requested, still says there is no capacity to spread into, so the decision of no placement change
 stands.
+
+## Review by fabro-currency, 2026-11-03, and the design as amended
+
+Reviewer: fabro-currency. Recorded by kubernetes-sandbox-backend (session 34f860). Verdict: APPROVED, with one
+design correction (question 1) and a yes on carrying bd-ib-3i3j3k before main (the new fourth question). Nothing has
+been applied.
+
+1. **A provider-path change needs no restart, and this corrects the design.** The Fabro fork (branch
+   `carrier-candidate-registered-20261023`) re-reads `settings.toml` every 5 s; see `lib/apps/fabro-server/src/serve.rs`,
+   around lines 790-850. On a change, it swaps the live settings through `AppState::replace_runtime_settings`
+   (`server.rs:1793`). `AppState::sandbox_provider_config` (`server.rs:1571`) reads `server.sandbox.providers` from
+   those live settings on every call. Every run launch, check, resume and prune builds its RuntimeSpec through that
+   function. So an edited provider path and sha256 take effect for the instance's next launch within about 5 s. The
+   09:01Z incident failed every launch at once for the same reason. Amended rollout:
+   - **The `settings.toml` edit IS the switch.** Install and verify the versioned binary first, then edit the pin.
+     Never the reverse.
+   - **Drop step 3 of each instance ("restart that one instance").** For main, waiting for zero runs still stands
+     under the coordinator's ruling. The reason is different, though: once the pin moves, a prune or resume of an
+     older run's sandbox runs under the new version. A restart is not the reason.
+   - **The role still notifies a restart.** In livespec-dev-tooling master, `ansible/roles/fabro_server`, the
+     settings write runs only with `fabro_server_manage_settings` true. The write notifies "Restart the Fabro
+     instance", which restarts only with `fabro_server_restart_allowed=true` (default false). Otherwise it records a
+     restart-pending marker and leaves the instance running. So apply the pin edit with the restart left disallowed.
+     The deferred-restart marker it leaves is cleared at the next permitted restart. Clearing it needs no extra
+     window.
+   - **Side finding, not acted on here.** The role's comment on "Install the instance's settings.toml" says Fabro
+     reads `settings.toml` only at start. The serve.rs reload above contradicts that, so the comment is stale on the
+     provider-config path.
+2. **No instance pins the proof binary.** None of the three gmktec `settings.toml` files mentions "proof". Outside
+   its own install task, `kubernetes-proof` appears nowhere in dev-tooling master, orchestrator master, the fork
+   carrier branch, `/etc/systemd/system`, or gmktec's `/usr/local/bin/*.sh`. The proof binary is versioned only so
+   proofs can run side by side, and the rnsfgg guard need not cover it.
+3. **Landing rnsfgg first is acceptable.** Its run 01M6H250K3KE was re-dispatched onto main after the 15:43Z restart.
+4. **Carry bd-ib-3i3j3k in the version that goes to main.** Because the pin is live, every prune and delete on an
+   instance runs the pinned version. Main has the most sandbox churn, on a node already at about 96% of its CPU
+   requested. So recreated orphan pods cost the most on main. The fix does not block mi-homelab or candidate, which
+   can run v0.7.0 as it is. For main, either cut v0.7.1 with the fix or hold main on v0.5.0 until the fix ships.
+   This also answers the "orphan sandboxes" precondition above: bd-ib-3i3j3k is its root cause.
