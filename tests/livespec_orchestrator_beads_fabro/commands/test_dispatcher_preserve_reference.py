@@ -22,6 +22,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.store import WorkItemComment, append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -84,6 +86,63 @@ class _FailingDumpRunner:
         _ = env
         _ = stdin
         return CommandResult(exit_code=2, stdout="", stderr=self.stderr)
+
+
+@pytest.fixture(autouse=True)
+def run_state_replaces_the_legacy_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Model the projection response that now supplies this module's diffs."""
+
+    class _StateApi:
+        def __init__(self, *, result: FabroHttpResult) -> None:
+            self._result = result
+
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return self._result
+
+    def _state_api(port: FabroPort) -> _StateApi:
+        runner = port.runner
+        if isinstance(runner, _FailingDumpRunner):
+            return _StateApi(
+                result=FabroHttpResult(
+                    status=500,
+                    body=runner.stderr,
+                    error=None,
+                    payload=None,
+                    succeeded=False,
+                )
+            )
+        assert isinstance(runner, _DumpRunner)
+        stage_diffs = runner.stage_diffs
+        if stage_diffs is None:
+            stage_diffs = (
+                {"002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n"}
+                if runner.export_diff
+                else {}
+            )
+        stage_numbers = [int(stage[:3]) for stage in stage_diffs]
+        stages: dict[str, object] = {
+            f"prior-{rank}@1": {"first_event_seq": rank, "diff": None}
+            for rank in range(1, max(stage_numbers, default=0) + 1)
+            if rank not in stage_numbers
+        }
+        stages.update(
+            {
+                stage[4:]: {"first_event_seq": int(stage[:3]), "diff": diff}
+                for stage, diff in stage_diffs.items()
+            }
+        )
+        return _StateApi(
+            result=FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={"stages": stages},
+                succeeded=True,
+            )
+        )
+
+    monkeypatch.setattr(FabroPort, "server_api", _state_api)
 
 
 def _module() -> ModuleType:
@@ -188,13 +247,7 @@ def test_failed_run_comment_records_resolvable_diff_pointer(tmp_path: Path) -> N
     assert "recorded sha256 is the integrity check" in body
     assert "normalized diff payload byte size" not in body
     assert "fabro dump 01M0RUN --server https://hp-xubuntu.perch-rudd.ts.net:32276 -o" in body
-    assert runner.calls[0][:5] == [
-        "fabro",
-        "dump",
-        "01M0RUN",
-        "--server",
-        "https://hp-xubuntu.perch-rudd.ts.net:32276",
-    ]
+    assert runner.calls == []
     assert journal.records[-1]["stage"] == "preserve-by-reference"
 
 
