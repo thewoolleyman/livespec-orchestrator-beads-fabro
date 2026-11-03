@@ -294,6 +294,112 @@ def test_fabro_port_live_ps_omits_history_flag(tmp_path: Path) -> None:
     ]
 
 
+def test_bounded_events_reads_back_off_and_journal_failed_attempts() -> None:
+    """A failed read is recorded once and cannot immediately start again."""
+    module_path = _MODULE_PATH.with_name("_dispatcher_bounded_events.py")
+    assert module_path.is_file()
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_bounded_events"
+    )
+    records: list[dict[str, object]] = []
+    attempts = [
+        CommandResult(exit_code=1, stdout="", stderr="timed out"),
+        CommandResult(exit_code=1, stdout="", stderr="still timed out"),
+        CommandResult(exit_code=0, stdout='[{"event": "done"}]', stderr=""),
+        CommandResult(exit_code=1, stdout="", stderr="refused"),
+    ]
+    clock = [100.0]
+
+    def read(*, timeout_seconds: float) -> CommandResult:
+        _ = timeout_seconds
+        return attempts.pop(0)
+
+    reader = module.BoundedEventsReader(
+        journal=records.append,
+        clock=lambda: clock[0],
+    )
+    first = reader.read(
+        work_item_id="bd-ib-2dlh7m",
+        run_id="01RUN",
+        factory="petri",
+        caller="cost-reader",
+        timeout_seconds=30.0,
+        read=read,
+    )
+    blocked = reader.read(
+        work_item_id="bd-ib-2dlh7m",
+        run_id="01RUN",
+        factory="petri",
+        caller="cost-reader",
+        timeout_seconds=30.0,
+        read=read,
+    )
+    clock[0] = 160.0
+    second = reader.read(
+        work_item_id="bd-ib-2dlh7m",
+        run_id="01RUN",
+        factory="petri",
+        caller="cost-reader",
+        timeout_seconds=30.0,
+        read=read,
+    )
+    clock[0] = 280.0
+    successful = reader.read(
+        work_item_id="bd-ib-2dlh7m",
+        run_id="01RUN",
+        factory="petri",
+        caller="cost-reader",
+        timeout_seconds=30.0,
+        read=read,
+    )
+    final = reader.read(
+        work_item_id="bd-ib-2dlh7m",
+        run_id="01RUN",
+        factory="petri",
+        caller="cost-reader",
+        timeout_seconds=30.0,
+        read=read,
+    )
+
+    assert first is not None and first.exit_code == 1
+    assert blocked is None
+    assert second is not None and second.exit_code == 1
+    assert successful is not None and successful.exit_code == 0
+    assert final is not None and final.exit_code == 1
+    assert records == [
+        {
+            "stage": "fabro-events-read-failed",
+            "work_item_id": "bd-ib-2dlh7m",
+            "run_id": "01RUN",
+            "factory": "petri",
+            "caller": "cost-reader",
+            "elapsed_seconds": 0.0,
+            "consecutive_attempt": 1,
+            "backoff_seconds": 60.0,
+        },
+        {
+            "stage": "fabro-events-read-failed",
+            "work_item_id": "bd-ib-2dlh7m",
+            "run_id": "01RUN",
+            "factory": "petri",
+            "caller": "cost-reader",
+            "elapsed_seconds": 0.0,
+            "consecutive_attempt": 2,
+            "backoff_seconds": 120.0,
+        },
+        {
+            "stage": "fabro-events-read-failed",
+            "work_item_id": "bd-ib-2dlh7m",
+            "run_id": "01RUN",
+            "factory": "petri",
+            "caller": "cost-reader",
+            "elapsed_seconds": 0.0,
+            "consecutive_attempt": 1,
+            "backoff_seconds": 60.0,
+        },
+    ]
+
+
 def test_fabro_port_preflight_builds_livespec_run_configuration_argv(tmp_path: Path) -> None:
     module = _port_module()
     runner = _Runner(
