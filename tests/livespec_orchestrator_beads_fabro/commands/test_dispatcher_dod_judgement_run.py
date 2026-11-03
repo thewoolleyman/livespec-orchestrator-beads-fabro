@@ -386,6 +386,8 @@ def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_clau
     assert verdict.outcome == JUDGEMENT_ADMITTED
     assert runner.argv is not None
     assert runner.argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
+    assert runner.environ is not None
+    assert "DISABLE_PROMPT_CACHING" not in runner.environ
 
 
 def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decides(
@@ -723,6 +725,7 @@ def test_a_host_claude_judge_has_no_interactive_settings_or_session(
     assert runner.environ is not None
     assert runner.environ["HOME"] == str(runner.cwd / "home")
     assert runner.environ["ZDOTDIR"] == str(runner.cwd / "home")
+    assert runner.environ.get("DISABLE_PROMPT_CACHING") == "1"
 
 
 def test_the_judge_uses_the_caam_selected_credential_slot(
