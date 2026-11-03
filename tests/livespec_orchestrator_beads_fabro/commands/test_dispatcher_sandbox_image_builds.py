@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -43,6 +44,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images impor
 _PROC = Path("/proc")
 _LEASE_DIRECTORY = ".in_use"
 _SLEEP_SECONDS = "600"
+_EXEC_TIMEOUT_SECONDS = 30.0
+_POLL_SECONDS = 0.01
 
 
 def _roots(*, plugin_cache: Path, proc: Path = _PROC) -> BuildDiscoveryRoots:
@@ -71,7 +74,28 @@ def _dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
     entry = build / "scripts" / "bin" / "dispatcher.py"
     entry.parent.mkdir(parents=True, exist_ok=True)
     _ = entry.write_text("", encoding="utf-8")
-    return subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
+    process = subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
+    try:
+        _wait_for_dispatcher_exec(process=process, entry=entry)
+    except BaseException:
+        process.kill()
+        _ = process.wait()
+        raise
+    return process
+
+
+def _wait_for_dispatcher_exec(*, process: subprocess.Popen[bytes], entry: Path) -> None:
+    """Wait, within a fixed budget, for `/proc` to expose the payload argv."""
+    deadline = time.monotonic() + _EXEC_TIMEOUT_SECONDS
+    cmdline = _PROC / str(process.pid) / "cmdline"
+    while time.monotonic() < deadline:
+        try:
+            if str(entry).encode() in cmdline.read_bytes().split(b"\0"):
+                return
+        except OSError:
+            pass
+        time.sleep(_POLL_SECONDS)
+    raise AssertionError(f"dispatcher fixture process {process.pid} did not exec {entry}")
 
 
 def _reaped_pid() -> int:
