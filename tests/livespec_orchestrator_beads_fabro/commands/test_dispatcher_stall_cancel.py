@@ -60,6 +60,11 @@ def _plan(*, tmp_path: Path) -> DispatchPlan:
     )
 
 
+def _reading(*, port: FabroPort, run_id: str) -> WatchdogRunReading:
+    _ = (port, run_id)
+    return WatchdogRunReading(events_json="[]", record_text="")
+
+
 def test_a_stall_cancel_uses_the_server_cancel_route_and_never_removes_the_run(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -70,7 +75,7 @@ def test_a_stall_cancel_uses_the_server_cancel_route_and_never_removes_the_run(
     monkeypatch.setattr(
         _dispatcher_stall_cancel,
         "watchdog_run_reading",
-        lambda **_kwargs: WatchdogRunReading(events_json="[]", record_text=""),
+        _reading,
     )
 
     _dispatcher_stall_cancel.cancel_stalled_run(
