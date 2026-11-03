@@ -1630,6 +1630,18 @@ def test_a_stale_changed_marker_is_cleared_at_every_entry(tmp_path: Path) -> Non
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
+def test_a_stale_needs_human_reason_is_cleared_at_every_entry(tmp_path: Path) -> None:
+    """A prior stage's reason cannot become this refresh's terminal cause."""
+    box = _build(root=tmp_path)
+    reason = box.clone / ".git" / _needs_human_reason_filename()
+    _ = reason.write_text("stale earlier-stage cause\n", encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert not reason.exists()
+
+
 def test_an_absent_exact_head_push_program_fails_closed(tmp_path: Path) -> None:
     """Without the materialized helper no rewrite can be PROVEN to carry a lease.
 
