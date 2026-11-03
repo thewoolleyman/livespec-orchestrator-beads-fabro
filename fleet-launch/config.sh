@@ -64,3 +64,6 @@
 # advances on that state instead of sitting out a production-sized interval.
 : "${FLEET_LAUNCH_MUTEX_POLL_S:=10}"
 : "${FLEET_LAUNCH_LISTING_POLL_S:=15}"
+# How long a resume launcher keeps its in-flight marker counted after the resume
+# client has exited, while it waits for the run to list on the factory board.
+: "${FLEET_LAUNCH_LISTING_WAIT_S:=600}"

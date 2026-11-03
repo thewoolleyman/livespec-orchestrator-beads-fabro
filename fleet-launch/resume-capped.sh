@@ -99,7 +99,7 @@ write_marker() {
   echo "owner=$SEAT pid=$$ item=$ITEM factory=petri at=$(date -u +%FT%TZ)" > "$marker" || { marker=""; return 1; }
 }
 wait_for_listing() {
-  local rows
+  local rows listing_deadline=""
   while :; do
     rows=$(board_rows "$GMK")
     if [ "$rows" != U ] && printf '%s\n' "$rows" | awk -v it="$ITEM" '$4==it {found=1} END{exit !found}'; then
@@ -107,7 +107,13 @@ wait_for_listing() {
       marker=""
       return
     fi
-    kill -0 "$1" 2>/dev/null || return
+    if ! kill -0 "$1" 2>/dev/null; then
+      [ -n "$listing_deadline" ] || listing_deadline=$(( $(date +%s) + FLEET_LAUNCH_LISTING_WAIT_S ))
+      if [ "$(date +%s)" -ge "$listing_deadline" ]; then
+        echo "$(date -u +%T) resume client ended and the board never listed item=$ITEM within ${FLEET_LAUNCH_LISTING_WAIT_S}s; releasing marker"
+        return
+      fi
+    fi
     sleep "$FLEET_LAUNCH_POLL_S"
   done
 }
