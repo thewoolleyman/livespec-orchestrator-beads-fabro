@@ -183,9 +183,34 @@ def _wait(*, sandbox: _Sandbox, run_id: str, seconds: str) -> dict[str, object]:
     return cast("dict[str, object]", report)
 
 
+def _release_path(*, sandbox: _Sandbox) -> Path:
+    return sandbox.repo / _git(sandbox=sandbox, argv=["rev-parse", "--git-path", _RELEASE])
+
+
+def _stage_hook_release(*, sandbox: _Sandbox, verdict: str) -> Path:
+    release = _release_path(sandbox=sandbox)
+    staged = release.with_name(f"{release.name}.tmp")
+    _ = staged.write_text(verdict, encoding="utf-8")
+    return staged
+
+
+def _publish_hook_release(*, sandbox: _Sandbox, staged: Path) -> None:
+    staged.replace(_release_path(sandbox=sandbox))
+
+
 def _release_hook(*, sandbox: _Sandbox, verdict: str) -> None:
-    release = sandbox.repo / _git(sandbox=sandbox, argv=["rev-parse", "--git-path", _RELEASE])
-    _ = release.write_text(verdict, encoding="utf-8")
+    _publish_hook_release(
+        sandbox=sandbox,
+        staged=_stage_hook_release(sandbox=sandbox, verdict=verdict),
+    )
+
+
+def _assert_terminal_state(*, report: dict[str, object], expected: str) -> None:
+    assert report["state"] == expected, (
+        "runner report: "
+        f"exit_status={report.get('exit_code')!r}; "
+        f"output_tail={report.get('output_tail')!r}"
+    )
 
 
 def _head(*, sandbox: _Sandbox) -> str:
@@ -204,10 +229,15 @@ def test_a_commit_whose_hook_outlasts_the_first_wait_completes_with_the_hooks_ve
     assert "exit_code" not in first
     assert _head(sandbox=sandbox) == before
 
-    _release_hook(sandbox=sandbox, verdict="pass")
+    staged = _stage_hook_release(sandbox=sandbox, verdict="pass")
+    assert staged.is_file()
+    assert not _release_path(sandbox=sandbox).exists()
+    assert _wait(sandbox=sandbox, run_id=run_id, seconds=_FIRST_WAIT_SECONDS)["state"] == "running"
+
+    _publish_hook_release(sandbox=sandbox, staged=staged)
     final = _wait(sandbox=sandbox, run_id=run_id, seconds=_TERMINAL_WAIT_SECONDS)
 
-    assert final["state"] == "passed"
+    _assert_terminal_state(report=final, expected="passed")
     assert final["exit_code"] == 0
     after = _head(sandbox=sandbox)
     assert after != before
@@ -228,10 +258,15 @@ def test_a_commit_refused_by_its_hook_is_failed_with_the_exit_status_and_head_un
     _release_hook(sandbox=sandbox, verdict="refuse")
     final = _wait(sandbox=sandbox, run_id=run_id, seconds=_TERMINAL_WAIT_SECONDS)
 
-    assert final["state"] == "failed"
+    _assert_terminal_state(report=final, expected="failed")
     assert final["exit_code"] == 1
     assert final["head"] is None
     assert f"  - {_FAILED_TARGET}" in str(final["output_tail"])
+    with pytest.raises(AssertionError) as failure:
+        _assert_terminal_state(report=final, expected="passed")
+    assert "exit_status=1" in str(failure.value)
+    assert "output_tail=" in str(failure.value)
+    assert _FAILED_TARGET in str(failure.value)
     assert _head(sandbox=sandbox) == before
 
 
@@ -250,7 +285,7 @@ def test_a_commit_ended_by_a_signal_has_no_verdict_and_is_never_reported_passed(
         _wait(sandbox=sandbox, run_id=run_id, seconds=_TERMINAL_WAIT_SECONDS) for _ in range(2)
     ]
     for report in reports:
-        assert report["state"] == "no-verdict"
+        _assert_terminal_state(report=report, expected="no-verdict")
         assert report["exit_code"] is None
         assert report["head"] is None
     assert _head(sandbox=sandbox) == before
@@ -279,4 +314,4 @@ def test_a_second_commit_does_not_start_while_the_first_is_still_running(
 
     _release_hook(sandbox=sandbox, verdict="pass")
     final = _wait(sandbox=sandbox, run_id=first_id, seconds=_TERMINAL_WAIT_SECONDS)
-    assert final["state"] == "passed"
+    _assert_terminal_state(report=final, expected="passed")
