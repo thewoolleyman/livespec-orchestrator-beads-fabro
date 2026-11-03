@@ -11305,11 +11305,27 @@ Feature: Sandbox retention and collection
     Given two ended factory runs on the Kubernetes provider, run A whose work-item rests at `needs-human` and run B whose work-item rests at `blocked`
     When the Dispatcher's next pass runs
     Then run A's and run B's driver records and node workspace directories still exist
-    When run A's work-item is closed and the Dispatcher's next pass runs
+    When run A's work-item is closed and the Dispatcher's next pass runs while no run on that factory is running
     Then run A's sandbox is deleted through the provider's delete operation, and its driver record and node workspace directory no longer exist
     And run B's driver record and node workspace directory still exist
     When a further pass runs
     Then nothing further is recorded for run A and the pass does not fail
+
+  Scenario: Collection is deferred while the factory runs any run
+    Given the factory's committed defer_collection_while_active setting is absent
+    And an ended run C whose work-item is closed, on a factory that is running run D
+    When the Dispatcher's next pass runs
+    Then run C's sandbox still exists and the pass journals run C's collection as deferred
+    When run D ends and the Dispatcher's next pass sees no running run on the factory
+    Then run C's sandbox is deleted through the provider's delete operation
+
+  Scenario: Deletions against a busy factory are paced host-wide
+    Given the factory's committed rm_min_interval_seconds is 60 and the factory is running a run
+    And one Dispatcher process started a run deletion against that factory 10 seconds ago
+    When a second Dispatcher process on the same host decides to cancel a stalled run on that factory
+    Then the stalled run stops progressing at once
+    And the deletion of its record waits until 60 seconds after the first deletion started
+    And the pass journals the deferred deletion with the run id, the factory, the caller and the earliest start instant
 ```
 
 ## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node
