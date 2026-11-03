@@ -17,7 +17,7 @@ def _run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
         text=True,
-        timeout=180,
+        timeout=60,
     )
 
 
