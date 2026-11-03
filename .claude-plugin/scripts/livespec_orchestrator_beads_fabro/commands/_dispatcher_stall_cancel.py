@@ -56,8 +56,14 @@ def cancel_stalled_run(
     journal: JournalWriter,
     run_id: str,
     quiet_seconds: float | None,
-) -> None:
+) -> bool:
     """Cancel the stalled run through its server and journal the decision.
+
+    Answers whether the server cancelled the run. A cancel the server refused,
+    could not be asked, or never answered leaves a run that may still be live,
+    so nothing is journaled and the caller keeps the claim and polls again:
+    a recorded cancel the factory never performed would release the item
+    while its run still holds a slot.
 
     THREE figures ride the record, and each answers a question the other
     two cannot. `plan.stall_window.seconds` is the resolved interval and
@@ -88,10 +94,12 @@ def cancel_stalled_run(
     judged dead.
     """
     reading = watchdog_run_reading(port=port, run_id=run_id)
-    _ = port.server_api().cancel(
+    cancelled = port.server_api().cancel(
         run_id=run_id,
         timeout_seconds=FABRO_RM_TIMEOUT_SECONDS,
     )
+    if not cancelled.succeeded:
+        return False
     journal.append(
         record={
             **stall_cancel_record(
@@ -110,3 +118,4 @@ def cancel_stalled_run(
             "quiet_seconds": quiet_seconds,
         }
     )
+    return True

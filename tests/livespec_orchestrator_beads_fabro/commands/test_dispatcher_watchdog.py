@@ -78,7 +78,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
 
-from tests.conftest import end_run_and_await_launcher_return
+from tests.conftest import ServerCancel, end_run_and_await_launcher_return
+
+pytestmark = pytest.mark.usefixtures("server_cancel")
 
 # ---------------------------------------------------------------------------
 # Shared fakes
@@ -975,6 +977,34 @@ def test_watched_launcher_cancels_a_confirmed_stall(tmp_path: Path) -> None:
     assert "rm" not in runner.verbs
     stages = [record.get("stage") for record in journal.records]
     assert "watchdog-stall-cancel" in stages
+
+
+def test_a_refused_server_cancel_is_not_reported_as_a_stall_and_polling_continues(
+    *, tmp_path: Path, server_cancel: ServerCancel
+) -> None:
+    """A cancel the server refused leaves a possibly live run, so the watch goes on.
+
+    The run only ends once the refused call has been made, which is what shows
+    the loop asked again rather than reporting a stall it never performed.
+    """
+    frozen = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
+    runner = _ScriptedFabroRunner(events_jsons=[frozen])
+    server_cancel.succeeds = False
+    server_cancel.on_refusal = lambda: end_run_and_await_launcher_return(
+        run_done=runner.run_done, work_item_id=_WORK_ITEM_ID
+    )
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
+
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
+
+    assert server_cancel.calls == 1
+    assert result.stalled_run_id is None
+    assert "rm" not in runner.verbs
+    stages = [record.get("stage") for record in journal.records]
+    assert "watchdog-stall-cancel" not in stages
 
 
 def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(

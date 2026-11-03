@@ -34,6 +34,8 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     WORKFLOW_DEFAULT_LAYER,
 )
 
+pytestmark = pytest.mark.usefixtures("server_cancel")
+
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window"
 _WATCHDOG_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog"
 
