@@ -260,7 +260,7 @@ def test_for_drive_uses_the_drive_tree_cpu_reader_for_each_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     records: list[dict[str, object]] = []
-    readings = iter((10.0, 10.0, 10.0))
+    readings = iter((0.0, 0.0, 0.0))
 
     class _Journal:
         def append(self, *, record: dict[str, object]) -> None:
