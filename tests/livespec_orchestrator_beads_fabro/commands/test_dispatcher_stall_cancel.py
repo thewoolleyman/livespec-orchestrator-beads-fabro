@@ -65,6 +65,15 @@ def _reading(*, port: FabroPort, run_id: str) -> WatchdogRunReading:
     return WatchdogRunReading(events_json="[]", record_text="")
 
 
+def test_the_port_fake_records_a_removal_attempt() -> None:
+    """The fake can expose a destructive call so the target test can reject it."""
+    port = _Port(api=_ServerApi())
+
+    _ = port.rm(run_id="01RUN", timeout_seconds=120.0)
+
+    assert port.rm_calls == [("01RUN", 120.0)]
+
+
 def test_a_stall_cancel_uses_the_server_cancel_route_and_never_removes_the_run(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
