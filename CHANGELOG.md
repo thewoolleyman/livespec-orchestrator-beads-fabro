@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.280.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.280.0...v0.280.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **dispatcher:** surface agent turn timeout cause ([5ec001a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5ec001aab624c591e9ff5154f81e5797322ecc5d))
+* prioritize relevant cited spec paragraphs ([51035f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/51035f1d233d0102ac10b4b2191b11a93654b053))
+
 ## [0.280.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.279.0...v0.280.0) (2026-11-03)
 
 
