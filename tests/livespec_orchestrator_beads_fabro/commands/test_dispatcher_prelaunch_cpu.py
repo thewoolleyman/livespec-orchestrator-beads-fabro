@@ -157,3 +157,30 @@ def test_the_drive_launch_profile_charges_startup_from_zero_cpu(
         ("drive-startup", 3.25)
     ]
     assert journal.records[0]["dispatch_id"] == "dispatch-3"
+
+
+def test_a_forked_profile_restates_every_row_so_far_under_its_own_dispatch() -> None:
+    """A later dispatch in a wave still shows the phases it waited behind."""
+    module = importlib.import_module(_MODULE)
+    journal = _Journal()
+    later = _Journal()
+    samples = iter((2.0, 5.0, 6.0, 9.0, 9.5))
+    profile = module.PrelaunchCpuProfile(
+        dispatch_id="dispatch-1",
+        cpu_seconds=lambda: next(samples),
+        baseline_cpu_seconds=0.0,
+    )
+    profile.checkpoint(name="drive-startup")
+    profile.bind(journal=journal, work_item_id="a-1")
+    profile.checkpoint(name="admission")
+
+    forked = profile.fork(dispatch_id="dispatch-2")
+    forked.bind(journal=later, work_item_id="b-2")
+    forked.checkpoint(name="record-dispatch")
+
+    assert [(row["dispatch_id"], row["work_item_id"], row["phase"]) for row in later.records] == [
+        ("dispatch-2", "b-2", "drive-startup"),
+        ("dispatch-2", "b-2", "admission"),
+        ("dispatch-2", "b-2", "record-dispatch"),
+    ]
+    assert {row["dispatch_id"] for row in journal.records} == {"dispatch-1"}
