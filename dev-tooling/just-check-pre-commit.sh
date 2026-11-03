@@ -49,10 +49,35 @@ staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
 impl_staged=$(echo "$staged" | grep -E '^(\.claude-plugin/scripts/|dev-tooling/checks/).*\.py$' || true)
+green_amend_staged=$(echo "$staged" | grep -Ev '^tests/.*\.py$' || true)
 test_count=0
 impl_count=0
 [[ -n "$test_staged" ]] && test_count=$(echo "$test_staged" | wc -l)
 [[ -n "$impl_staged" ]] && impl_count=$(echo "$impl_staged" | wc -l)
+head_msg=$(git log -1 --format=%B 2>/dev/null || true)
+red_test_staged=$(git diff-tree --no-commit-id --name-only --diff-filter=AM -r HEAD -- tests/ \
+    | grep -E '^tests/.*\.py$' || true)
+if [[ -n "$green_amend_staged" ]] \
+    && [[ -n "$red_test_staged" ]] \
+    && grep -q 'TDD-Red-Test-File-Checksum:' <<<"$head_msg" \
+    && ! grep -q 'TDD-Green-Verified-At:' <<<"$head_msg"; then
+    echo ":: Green-amend shape detected (implementation staged; HEAD carries Red-only trailers)"
+    if ! just check-staged-precheck; then
+        echo ":: staged pre-check phase refused the commit" >&2
+        exit 1
+    fi
+    if [[ -n "$red_test_staged" ]] && ! just check-staged-tests $red_test_staged; then
+        echo ":: staged tests phase refused the commit" >&2
+        exit 1
+    fi
+    echo ":: staged pre-check and staged tests passed; running the gate once"
+    echo ":: skipping no-arg check-red-green-replay and same-repo live TUI picker gate"
+    if ! just check-skipping check-red-green-replay check-codex-skill-picker "${sandbox_skips[@]}"; then
+        echo ":: gate phase refused the commit" >&2
+        exit 1
+    fi
+    exit 0
+fi
 if [[ -z "$py_staged" ]]; then
     echo ":: doc-only mode detected (zero .py files staged): running just check-pre-commit-doc-only"
     echo ":: pre-push + CI keep the full aggregate as the load-bearing safety net"
@@ -78,7 +103,6 @@ if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
         "${sandbox_skips[@]}"
     exit $?
 fi
-head_msg=$(git log -1 --format=%B 2>/dev/null || true)
 if [[ "$impl_count" -ge 1 ]] \
     && grep -q 'TDD-Red-Test-File-Checksum:' <<<"$head_msg" \
     && ! grep -q 'TDD-Green-Verified-At:' <<<"$head_msg"; then
