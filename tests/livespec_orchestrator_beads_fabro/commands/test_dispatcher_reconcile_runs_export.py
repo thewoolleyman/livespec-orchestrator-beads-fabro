@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_runs_export as export
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     PRESERVE_POINTER_MARKER,
 )
@@ -45,19 +44,6 @@ class _FakeLedger:
 class _DumpRunner:
     exit_code: int = 0
     calls: list[list[str]] = field(default_factory=list)
-
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = (cwd, timeout_seconds, env, stdin)
-        self.calls.append(argv)
-        return CommandResult(exit_code=self.exit_code, stdout="", stderr="")
 
 
 def test_a_pointer_is_written_then_read_back_through_the_text_key(tmp_path: Path) -> None:
@@ -189,7 +175,7 @@ def test_a_failed_dump_refuses_the_export_before_writing_a_pointer(tmp_path: Pat
 
     assert outcome.exported is False
     assert outcome.comment_id is None
-    assert "fabro dump failed with exit code 124" in outcome.detail
+    assert "selective stage-diff read failed" in outcome.detail
     assert ledger.verbs == []
 
 

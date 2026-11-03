@@ -152,11 +152,8 @@ class _FabroCli:
             if server in self.unreachable_servers:
                 return CommandResult(exit_code=7, stdout="", stderr="connection refused")
             return CommandResult(exit_code=0, stdout=self.ps_by_server.get(server, "[]"), stderr="")
-        if argv[1] == "inspect":
-            return CommandResult(
-                exit_code=0, stdout=self.inspect_by_run.get(argv[2], "[]"), stderr=""
-            )
-        return CommandResult(exit_code=0, stdout="", stderr="")
+        assert argv[1] == "inspect", argv
+        return CommandResult(exit_code=0, stdout=self.inspect_by_run.get(argv[2], "[]"), stderr="")
 
 
 @dataclass(kw_only=True)
@@ -238,7 +235,7 @@ def test_scenario104_an_item_that_left_active_releases_its_run(tmp_path: Path) -
     # The export ran before anything reached the factory's termination routes:
     # at the instant the FIRST route was contacted the pointer was already
     # readable back off the item.
-    assert runner.verbs == ["ps", "dump"]
+    assert runner.verbs == ["ps"]
     assert http.calls[0] == f"POST {_HP_SERVER}/api/v1/runs/01DEPARTED/cancel"
     assert _pointer_present(texts=http.ledger_at_call[0], run_id="01DEPARTED")
     reconciled = _orphan_records(journal=journal)[-1]
