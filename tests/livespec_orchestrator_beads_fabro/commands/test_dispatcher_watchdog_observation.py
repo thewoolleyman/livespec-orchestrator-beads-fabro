@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
     FabroTarget,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands._run_attribution import GOAL_TEXT_ONLY
 
 _PS_ROW = (
@@ -87,12 +88,43 @@ class _Runner:
         )
 
 
+@dataclass(kw_only=True)
+class _StagesTransport:
+    """The bound-poll transport double records the HTTP projection read."""
+
+    calls: list[tuple[str, str]]
+    result: FabroHttpResult
+
+    def send(
+        self,
+        *,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        timeout_seconds: float,
+    ) -> FabroHttpResult:
+        _ = (headers, body, timeout_seconds)
+        self.calls.append((method, url))
+        return self.result
+
+
 def _port(*, runner: _Runner) -> FabroPort:
     return FabroPort(
         fabro_bin="fabro",
         target=FabroTarget(server_url=None, dev_token=None, environment=None),
         runner=runner,
         cwd=Path("/tmp"),
+    )
+
+
+def _stages_port(*, runner: _Runner, transport: _StagesTransport) -> FabroPort:
+    return FabroPort(
+        fabro_bin="fabro",
+        target=FabroTarget(server_url="https://factory.example.test", dev_token="test-token"),
+        runner=runner,
+        cwd=Path("/tmp"),
+        http=transport,
     )
 
 
@@ -172,6 +204,32 @@ def test_a_bound_poll_reads_its_run_and_issues_no_listing() -> None:
     assert run is not None
     assert run.run_id == "01BOUND"
     assert [record["stage"] for record in journal.records] == [BOUND_POLL_JOURNAL_STAGE]
+
+
+def test_a_bound_poll_reads_the_compact_stage_projection_not_the_full_inspect_record() -> None:
+    """A stable bound watch must not parse a run's expanded workflow record."""
+    runner = _runner()
+    transport = _StagesTransport(
+        calls=[],
+        result=FabroHttpResult(
+            status=200,
+            body='[{"id": "implement@1", "handler": "acp", "status": "running"}]',
+            error=None,
+            payload=None,
+            succeeded=True,
+        ),
+    )
+
+    _ = observed_run(
+        work_item_id="bd-ib-mine",
+        port=_stages_port(runner=runner, transport=transport),
+        journal=_Journal(records=[]),
+        attribution=GOAL_TEXT_ONLY,
+        bound_run_id="01BOUND",
+    )
+
+    assert runner.argvs == []
+    assert transport.calls == [("GET", "https://factory.example.test/api/v1/runs/01BOUND/stages")]
 
 
 def test_a_bound_poll_names_the_bound_run_in_the_command_it_issues() -> None:
