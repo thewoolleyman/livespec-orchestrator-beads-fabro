@@ -11783,3 +11783,29 @@ Feature: The maintainer's delegation of human valves is a verified, first-class 
     When drive runs set-merge-hold, set-factory-safety or an impl: dispatch with --invoker delegate:legacy-coordinator-agent and --delegation R493
     Then drive refuses the press because the verb is not on the delegable valve allowlist
 ```
+
+## Scenario 302 — A fleet-launch resume launcher waits for the fleet cap and the factory FIFO
+
+```gherkin
+Feature: A resume launched through fleet-launch honours the caller-side gates
+  Scenario: A resume waits at the shared fleet cap and binds in FIFO order
+    Given an impl launcher and then a resume launcher queued on the gmktec FIFO
+    And the shared fleet count is at the fleet cap
+    When the impl launcher's run ends and the fleet count drops below the cap
+    Then the impl launcher binds before the resume launcher
+    And the resume launcher starts the resume only once the fleet count it reads under the gmktec mutex is below the cap
+    And it writes a fleet in-flight marker before it releases the mutex
+```
+
+## Scenario 303 — The committed launch-time preflight runs under a PATH-resetting wrapper with a string-form adapter entry
+
+```gherkin
+Feature: The committed launch-time preflight needs no launcher-local copy
+  Scenario: A preflight under a PATH-resetting tenant wrapper with a string-form adapter entry completes Codex-first
+    Given a tenant whose credential wrapper resets PATH to exclude the operator's user tool directory
+    And whose committed adapter entry is a string of environment assignments followed by a claude-agent-acp command line
+    When a fleet-launch launcher runs the committed dev-tooling/dod-preflight.sh for one of its items without exporting any judge model
+    Then the preflight resolves claude and codex and completes its judgement
+    And its judges run through the configured Codex-first chain, so a Codex pass completes it without a Claude judge call
+    And each judge runs on the model the repository's committed judge configuration names
+```
