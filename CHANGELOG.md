@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.279.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.278.0...v0.279.0) (2026-11-03)
+
+
+### Features
+
+* run recognized hook guards on the project virtualenv ([ba9941a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ba9941a050997c00a76a3e8ff246b970633b3974))
+
 ## [0.278.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.277.0...v0.278.0) (2026-11-03)
 
 
