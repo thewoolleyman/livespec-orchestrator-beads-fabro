@@ -1630,6 +1630,27 @@ def test_a_stale_changed_marker_is_cleared_at_every_entry(tmp_path: Path) -> Non
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
+def test_a_stale_needs_human_reason_is_cleared_at_refresh_entry(tmp_path: Path) -> None:
+    """A refresh failure without its own reason leaves the terminal's generic cause.
+
+    `needs_human` reads this file before its generic fallback.  It can therefore
+    never inherit a cause a prior stage wrote: this refresh entry deletes the
+    stale file before its first refusal, and the no-provenance refusal below
+    records only a stage cause rather than a terminal reason.
+    """
+    box = _build(root=tmp_path)
+    reason = box.clone / ".git" / _needs_human_reason_filename()
+    _ = reason.write_text("publish-draft-stale-cause\n", encoding="utf-8")
+    (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).unlink()
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_NO_PROVENANCE" in result.stderr
+    assert not reason.exists()
+    assert _generic_terminal_reason() == "loop cannot auto-resolve this work-item"
+
+
 def test_an_absent_exact_head_push_program_fails_closed(tmp_path: Path) -> None:
     """Without the materialized helper no rewrite can be PROVEN to carry a lease.
 
