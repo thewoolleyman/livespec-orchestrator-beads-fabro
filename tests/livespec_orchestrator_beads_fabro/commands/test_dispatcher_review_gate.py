@@ -400,7 +400,7 @@ def test_emit_review_gate_from_fabro_events_queries_and_journals(tmp_path: Path)
         )
     )
 
-    assert runner.calls == [(["fabro", "events", "run-1", "--json"], tmp_path)]
+    assert runner.calls == [(["fabro", "events", "run-1", "--json", "--tail", "200"], tmp_path)]
     assert json.loads(spans_path.read_text(encoding="utf-8"))["resourceSpans"]
     assert journal.records[-1]["stage"] == "review-gate-telemetry"
     assert journal.records[-1]["review_verdict"] == "approve"
@@ -612,7 +612,7 @@ def test_emit_review_gate_from_fabro_events_propagates_span_write_failure(
             )
         )
 
-    assert runner.calls == [(["fabro", "events", "run-1", "--json"], tmp_path)]
+    assert runner.calls == [(["fabro", "events", "run-1", "--json", "--tail", "200"], tmp_path)]
     assert journal.records == []
 
 

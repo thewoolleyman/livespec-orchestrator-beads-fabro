@@ -12,6 +12,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import
     memoized_inspection,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_auth import fabro_auth_login
+from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
+    FABRO_EVENTS_TAIL,
+    fabro_events_argv,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_factory import fabro_port_for_plan
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
@@ -48,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port_workflow import fabro_preflight
 
 __all__: list[str] = [
+    "FABRO_EVENTS_TAIL",
     "FabroCommand",
     "FabroCommandResult",
     "FabroEventsResult",
@@ -163,12 +168,22 @@ class FabroPort:
         )
 
     def events(
-        self, *, run_id: str, timeout_seconds: float, since: str | None = None
+        self,
+        *,
+        run_id: str,
+        timeout_seconds: float,
+        since: str | None = None,
+        tail: int = FABRO_EVENTS_TAIL,
     ) -> FabroEventsResult:
-        """Read one run's events, optionally after an already-observed instant."""
-        since_args = [] if since is None else ["--since", since]
+        """Read a bounded suffix of one run's events after an optional instant."""
         command = self._run(
-            argv=[self.fabro_bin, "events", run_id, "--json", *since_args, *self._server_suffix()],
+            argv=fabro_events_argv(
+                fabro_bin=self.fabro_bin,
+                run_id=run_id,
+                tail=tail,
+                since=since,
+                server_suffix=self._server_suffix(),
+            ),
             timeout_seconds=timeout_seconds,
         )
         return FabroEventsResult(command=command, payload=fabro_events_payload(command=command))

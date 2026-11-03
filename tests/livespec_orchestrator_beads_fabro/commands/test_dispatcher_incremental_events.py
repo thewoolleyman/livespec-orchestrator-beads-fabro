@@ -110,12 +110,23 @@ def test_incremental_event_reads_retain_one_watchs_established_facts(tmp_path: P
     assert completed.last_event_epoch == first.last_event_epoch
     assert completed.open_command_node is None
     assert runner.calls == [
-        ["fabro", "events", "01RUN", "--json", "--server", "https://factory.example.test"],
         [
             "fabro",
             "events",
             "01RUN",
             "--json",
+            "--tail",
+            "200",
+            "--server",
+            "https://factory.example.test",
+        ],
+        [
+            "fabro",
+            "events",
+            "01RUN",
+            "--json",
+            "--tail",
+            "200",
             "--since",
             "2026-11-02T19:00:00Z",
             "--server",
@@ -126,6 +137,8 @@ def test_incremental_event_reads_retain_one_watchs_established_facts(tmp_path: P
             "events",
             "01RUN",
             "--json",
+            "--tail",
+            "200",
             "--since",
             "2026-11-02T19:00:00Z",
             "--server",

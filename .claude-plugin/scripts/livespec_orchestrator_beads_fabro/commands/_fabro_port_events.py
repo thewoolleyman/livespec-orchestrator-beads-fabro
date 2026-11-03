@@ -1,4 +1,4 @@
-"""The `fabro events --json` output as event records, whatever container it uses.
+"""The `fabro events --json` invocation and output record shapes.
 
 ONE reader for the whole repository, because two readers of the same bytes
 cannot be proven to agree and the disagreement would be invisible: each would
@@ -28,8 +28,36 @@ from typing import Any, cast
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
+    "FABRO_EVENTS_TAIL",
     "fabro_event_records_from_stdout",
+    "fabro_events_argv",
 ]
+
+# Every Dispatcher caller needs recent terminal and progress facts, not an
+# unbounded transcript that grows with the run lifetime.
+FABRO_EVENTS_TAIL = 200
+
+
+def fabro_events_argv(
+    *,
+    fabro_bin: str,
+    run_id: str,
+    tail: int,
+    since: str | None,
+    server_suffix: list[str],
+) -> list[str]:
+    """Build one bounded, optionally incremental `fabro events` invocation."""
+    since_args = [] if since is None else ["--since", since]
+    return [
+        fabro_bin,
+        "events",
+        run_id,
+        "--json",
+        "--tail",
+        str(tail),
+        *since_args,
+        *server_suffix,
+    ]
 
 
 def fabro_event_records_from_stdout(*, stdout: str) -> tuple[dict[str, Any], ...] | None:
