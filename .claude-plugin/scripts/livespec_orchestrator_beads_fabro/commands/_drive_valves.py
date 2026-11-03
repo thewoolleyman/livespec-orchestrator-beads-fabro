@@ -49,6 +49,10 @@ from livespec_orchestrator_beads_fabro.commands._drive_release_spec_tier_valve i
     RELEASE_SPEC_TIER_ACTION,
     release_spec_tier,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_relink_spec_tier_valve import (
+    RELINK_SPEC_TIER_ACTION,
+    relink_spec_tier,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import (
     parse_human_valve_action,
 )
@@ -141,6 +145,15 @@ def _route(*, call: _ValveCall, answer: str | None) -> dict[str, Any]:
             heading=call.value,
             identity=call.identity,
             runner=call.runner,
+        )
+    if edit is None and call.action == RELINK_SPEC_TIER_ACTION:
+        edit = relink_spec_tier(
+            repo=call.repo,
+            config=call.config,
+            item=call.item,
+            aid=call.action_id,
+            topic=call.value,
+            identity=call.identity,
         )
     if edit is not None:
         return edit
