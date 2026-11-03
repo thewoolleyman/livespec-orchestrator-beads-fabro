@@ -52,8 +52,8 @@ reference is recorded in `.copier-answers.yml`
 
 The plugin's Planning Lane MUST distinguish a required result from activity:
 relay fulfillment requires authoritative target evidence, original deadlines
-survive cosmetic rewrites and repair work, and expired obligations trigger
-bounded causal recovery without inventing a human decision. Registered
+survive cosmetic rewrites and repair work, and an overdue obligation is
+reported without ever blocking the plan or inventing a human decision. Registered
 unfinished work MUST remain discoverable to an independent recovery consumer
 after coordinator turn completion. This includes the real Codex-in-Herdr
 no-wait incident and preserves valid HOLD, commit and Red-Green protections.
