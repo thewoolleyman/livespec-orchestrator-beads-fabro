@@ -1054,7 +1054,10 @@ check-no-direct-tool-invocation:
 # 2026-09-05 authorized workflow landing through the GitHub API, PR #2160), the
 # pack body honours a HUMAN authorization recorded on the ledger: a tracked
 # `.livespec-workflow-edit-exemption` declaration authored in the change, whose
-# named work item carries the human-set `approval:workflow-edit` label. The
+# named work item carries a tier label: `approval:workflow-edit-additive`
+# (delegable) for an add-only edit attested `change=additive` +
+# `ci_runtime=no-significant-increase`, the maintainer-only
+# `approval:workflow-edit` for anything else. The
 # Python module `_dispatcher_workflow_guard.py` (and its `workflow_guard.py` bin
 # wrapper) stays for the Dispatcher engine's programmatic use.
 check-no-workflow-edits:
