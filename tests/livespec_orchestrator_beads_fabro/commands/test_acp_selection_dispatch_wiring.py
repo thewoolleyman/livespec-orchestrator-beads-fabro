@@ -77,6 +77,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize imp
     MaterializationRefusal,
     materialize_dispatch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
+    PrelaunchCpuProfile,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
     RecoveryRouting,
 )
@@ -509,7 +512,12 @@ def test_a_resumed_dispatch_launches_with_the_admission_verdict(
         items=[item],
         item=item,
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
-        janitor=None,
+        launch=loop_module.DispatchLaunchContext(
+            prelaunch_profile=PrelaunchCpuProfile(
+                dispatch_id="resume-wiring",
+                cpu_seconds=lambda: 0.0,
+            )
+        ),
     )
 
     assert seen[0]["verdict"] is evaluated
