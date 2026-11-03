@@ -15,6 +15,12 @@ from pathlib import Path
 _SCRIPT = Path("dev-tooling/dod-preflight.sh")
 
 
+def _judge_program() -> str:
+    return (
+        _SCRIPT.read_text(encoding="utf-8").split("<<'JUDGE_PY'\n", 1)[1].rsplit("\nJUDGE_PY", 1)[0]
+    )
+
+
 def test_the_preflight_uses_the_resolved_candidate_chain_and_operator_cli_directory() -> None:
     text = _SCRIPT.read_text(encoding="utf-8")
 
@@ -28,3 +34,16 @@ def test_a_legacy_claude_agent_acp_adapter_string_remains_a_host_candidate() -> 
 
     assert '"claude-agent-acp" in adapter.command' in text
     assert 'agent_id="claude-acp"' in text
+
+
+def test_the_judge_program_imports_its_shell_runner_from_dispatcher_io() -> None:
+    program = _judge_program()
+
+    assert (
+        "from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner"
+        in program
+    )
+    assert (
+        "from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import ShellCommandRunner"
+        not in program
+    )
