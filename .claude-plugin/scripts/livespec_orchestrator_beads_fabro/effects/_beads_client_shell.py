@@ -150,7 +150,7 @@ def invoke(*, config: StoreConfig, argv: list[str]) -> subprocess.CompletedProce
             check=False,
             cwd=repo_root,
         )
-    except FileNotFoundError as exc:  # pragma: no cover
+    except (FileNotFoundError, PermissionError) as exc:  # pragma: no cover
         detail = (
             "credential wrapper not found: " + shlex.join(config.credential_wrapper)
             if config.credential_wrapper
@@ -219,7 +219,7 @@ def read_bd_config_value(*, config: StoreConfig, repo_root: Path, key: str) -> s
             check=False,
             cwd=repo_root,
         )
-    except FileNotFoundError as exc:  # pragma: no cover
+    except (FileNotFoundError, PermissionError) as exc:  # pragma: no cover
         detail = (
             "credential wrapper not found: " + shlex.join(config.credential_wrapper)
             if config.credential_wrapper
