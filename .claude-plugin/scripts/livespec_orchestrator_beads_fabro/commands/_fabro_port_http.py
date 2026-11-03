@@ -194,6 +194,15 @@ class FabroHttpPort:
             timeout_seconds=timeout_seconds,
         )
 
+    def stages(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+        """Read the compact projection of one run's stages."""
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/stages",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
     def answer_question(
         self,
         *,
