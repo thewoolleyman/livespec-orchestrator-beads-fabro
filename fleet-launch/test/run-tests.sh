@@ -795,6 +795,25 @@ else
     fail "the resume marker was not cleared after listing (rc=$resume_rc)"
 fi
 
+# --- 11. an unreadable in-flight directory counts as at the cap -------------
+# A regular file stands where the in-flight directory belongs, so the count of
+# in-flight launches cannot be read.  With empty boards and headroom under the
+# cap, the resume must still refuse to start.
+echo "--- 11. a resume refuses to start when the in-flight directory cannot be read"
+new_case resume-inflight-unreadable
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+rmdir "$FLEET_LAUNCH_INFLIGHT_DIR"
+: > "$FLEET_LAUNCH_INFLIGHT_DIR"
+RESUME_CASE_LOG="$CASE_DIR/resume-launcher.log"
+"$RESUME_LAUNCHER" bd-ib-blind > "$RESUME_CASE_LOG" 2>&1; resume_rc=$?
+if [ "$resume_rc" = 75 ] && [ ! -s "$RESUME_LOG" ] && grep -q 'fleet=U' "$RESUME_CASE_LOG"; then
+    pass "the resume treats an unreadable in-flight directory as at the cap and does not start"
+else
+    fail "the resume started or misread an unreadable in-flight directory (rc=$resume_rc resumes=$(tr '\n' ' ' < "$RESUME_LOG"))"
+fi
+
 echo
 echo "=== fleet-launch hermetic harness: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

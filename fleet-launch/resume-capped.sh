@@ -59,6 +59,7 @@ board_rows() {
 rows_count() { if [ "$1" = U ]; then echo U; else printf '%s' "$1" | grep -c .; fi; }
 unlisted_markers() {
   local listed="$1" f pid item count=0
+  [ -d "$INFLIGHT" ] && [ -r "$INFLIGHT" ] && [ -x "$INFLIGHT" ] && command ls -1 "$INFLIGHT" > /dev/null 2>&1 || { echo U; return; }
   for f in "$INFLIGHT"/*; do
     [ -e "$f" ] || continue
     [ -r "$f" ] || { echo U; return; }
