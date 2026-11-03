@@ -1048,6 +1048,19 @@
           // SPECIFICATION, "Factory sandbox environment naming"). Its provider, not
           // this id, says where the sandbox runs, so a provider move changes nothing here.
           "environment": "factory-python"
+        },
+        // `candidate` is gmktec's fabro-server-candidate (:32278), the permanent
+        // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
+        // ruling 2026-11-02T19:22:32Z). Same keys as `petri`; its address comes
+        // from the factory registry. `bin` is the client of the build it serves
+        // (0.393.0-nightly.1 at 84fb903b8). It is never the default: choose it per
+        // dispatch with `--factory candidate`, and count its runs against the
+        // shared gmktec fleet cap.
+        "candidate": {
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro",
+          "secret_channel": "native_secrets",
+          "environment": "factory-python"
         }
       },
       // The priority-epic idle-slot audit (contracts.md, "Priority-epic

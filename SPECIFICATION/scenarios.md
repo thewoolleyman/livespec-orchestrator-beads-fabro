@@ -8472,6 +8472,19 @@ Feature: New behaviour gets new spec before it is built
     When the governing-heading verdict is needed again
     Then the verdict is taken again against the new revision
 
+  Scenario: A spec revision that leaves the judged clauses unchanged reuses the spec-change tier decision
+    Given a feature whose spec-change tier record reads verdict stated and carries the clauses its verdict was judged against and every clause it names, each with its heading and body
+    And the item's asked-for behaviour is unchanged since the record was taken
+    And a new spec revision changes only clauses that the verdict neither selected nor names, and the selection against the new revision returns the same clauses
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused, no model is run, and the item is not held
+
+  Scenario: A spec revision that changes a judged clause takes the spec-change tier decision again
+    Given a feature whose spec-change tier record carries the clauses its verdict was judged against
+    And a new spec revision changes the body of one of those clauses, or the selection against it returns a different set
+    When the item reaches a dispatch path
+    Then the tier decision is taken again against the new revision
+
   Scenario: The release of a held spec-change-tier item never reuses a verdict across a revision
     Given a held spec-change-tier item whose linked proposal is ratified in a new revision
     And the selection against the new revision returns the same clauses as before
