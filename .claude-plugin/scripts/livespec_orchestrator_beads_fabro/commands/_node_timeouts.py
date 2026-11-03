@@ -75,6 +75,8 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # three visits with one retry each, so both are billed at six attempts. Each
 # successful Red and Green turn passes through its dedicated command node;
 # command refusal returns to the producing turn.
+# `implement_completion` sits on `green`'s single fallthrough and re-enters it on
+# failure, so it is reached once per `green` visit, THREE.
 # `implementation_diff` now follows a successful Green command exactly once.
 # `review_fix_commit_settle` follows `review_fix`'s three and
 # `fix_commit_settle` follows `fix`'s two. `janitor_admission` sits ahead of
@@ -148,6 +150,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "red": 6,
     "commit_red": 3,
     "green": 6,
+    "implement_completion": 3,
     "commit_green": 3,
     "implementation_diff": 1,
     "janitor_admission": 3,
