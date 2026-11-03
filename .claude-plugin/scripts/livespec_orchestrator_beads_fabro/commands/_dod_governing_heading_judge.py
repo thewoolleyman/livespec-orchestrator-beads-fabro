@@ -64,6 +64,7 @@ item that has no reference line.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Protocol
 
 from livespec_runtime.spec_stated import ClauseEvidence
@@ -117,6 +118,35 @@ _EVIDENCE_REQUEST = (
     "\n\nFor every heading in stated_by, also include evidence as a JSON list of objects "
     "with that heading and one non-empty, verbatim single-line quote from its clause that "
     "states the behaviour."
+)
+_CONTENT_TERM = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
+_NON_CONTENT_TERMS = frozenset(
+    {
+        "all",
+        "and",
+        "are",
+        "asserts",
+        "but",
+        "each",
+        "for",
+        "from",
+        "has",
+        "have",
+        "into",
+        "its",
+        "not",
+        "one",
+        "references",
+        "that",
+        "the",
+        "their",
+        "this",
+        "title",
+        "was",
+        "when",
+        "which",
+        "with",
+    }
 )
 
 
@@ -212,13 +242,11 @@ def governing_heading_verdict(
         return None
     headings = verdict_named_headings(stated_by=verdict.stated_by, generalization_target=target)
     named = clauses_named(spec_tree=read, headings=headings)
-    evidence = (
-        verdict.evidence
-        if verdict.evidence
-        else _legacy_clause_evidence(stated_by=verdict.stated_by, named=named)
-    )
     if not _evidence_matches_named_clauses(
-        stated_by=verdict.stated_by, evidence=evidence, named=named
+        stated_by=verdict.stated_by,
+        evidence=verdict.evidence,
+        named=named,
+        statement=statement,
     ):
         return None
     return GoverningHeadingVerdict(
@@ -228,7 +256,7 @@ def governing_heading_verdict(
         selected_clauses=condensed.clauses,
         named_clauses=named,
         provenance_complete=headings_resolved(headings=headings, clauses=named),
-        evidence=evidence,
+        evidence=verdict.evidence,
     )
 
 
@@ -237,9 +265,11 @@ def _evidence_matches_named_clauses(
     stated_by: tuple[str, ...],
     evidence: tuple[ClauseEvidence, ...],
     named: tuple[CondensedClause, ...],
+    statement: str,
 ) -> bool:
-    """Require one single-line, verbatim quotation for every reported heading."""
+    """Require each named heading to quote the item's asserted behaviour."""
     clauses = {clause.heading: clause.body for clause in named}
+    statement_terms = _content_terms(text=statement)
     for heading in stated_by:
         quotations = [entry.quote for entry in evidence if entry.heading == heading]
         if len(quotations) != 1:
@@ -247,20 +277,13 @@ def _evidence_matches_named_clauses(
         quote = quotations[0]
         if "\n" in quote or quote not in clauses.get(heading, ""):
             return False
+        if not statement_terms.intersection(_content_terms(text=quote)):
+            return False
     return len(evidence) == len(stated_by)
 
 
-def _legacy_clause_evidence(
-    *, stated_by: tuple[str, ...], named: tuple[CondensedClause, ...]
-) -> tuple[ClauseEvidence, ...]:
-    """Quote each named clause when a pre-evidence model response remains readable."""
-    bodies = {clause.heading: clause.body for clause in named}
-    return tuple(
-        ClauseEvidence(heading=heading, quote=_first_clause_line(body=bodies.get(heading, "")))
-        for heading in stated_by
+def _content_terms(*, text: str) -> frozenset[str]:
+    """Meaningful terms a clause must share with the judged item statement."""
+    return frozenset(
+        term for term in _CONTENT_TERM.findall(text.lower()) if term not in _NON_CONTENT_TERMS
     )
-
-
-def _first_clause_line(*, body: str) -> str:
-    """A compact, verbatim receipt for a legacy response with no quote field."""
-    return next((line.strip() for line in body.splitlines() if line.strip()), "")

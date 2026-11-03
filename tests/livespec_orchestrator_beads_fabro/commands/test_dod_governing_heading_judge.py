@@ -40,12 +40,18 @@ _CITED = "## Scenario 141 — The referenced scenario governs the proof"
 
 _VERDICT_REPLY = (
     '{"kind": "stated", "stated_by": ["' + _GOVERNING + '"],'
-    ' "generalization_target": null, "rationale": "The scenario states it."}'
+    ' "generalization_target": null, "rationale": "The scenario states it.",'
+    ' "evidence": [{"heading": "'
+    + _GOVERNING
+    + '", "quote": "The checks consult the judgement."}]}'
 )
 
 _PARTIAL_VERDICT_REPLY = (
     '{"kind": "partial", "stated_by": ["' + _GOVERNING + '"],'
-    ' "generalization_target": null, "rationale": "The scenario states part of it."}'
+    ' "generalization_target": null, "rationale": "The scenario states part of it.",'
+    ' "evidence": [{"heading": "'
+    + _GOVERNING
+    + '", "quote": "The checks consult the judgement."}]}'
 )
 
 
@@ -82,7 +88,7 @@ def _repo(*, tmp_path: Path, fallback: bool = False) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_GOVERNING}\n\nIt states the behaviour.\n\n{_CITED}\n\nOther text.\n",
+        f"# Scenarios\n\n{_GOVERNING}\n\nThe checks consult the judgement.\n\n{_CITED}\n\nOther text.\n",
         encoding="utf-8",
     )
     fallbacks = (
