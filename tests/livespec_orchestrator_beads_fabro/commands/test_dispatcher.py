@@ -4496,6 +4496,13 @@ def test_dispatch_green_closes_item_and_journals(
         "reflection",
     ]
     assert prelaunch_phases == [
+        "drive-startup",
+        "dispatch-preamble",
+        "otel-egress",
+        "ledger-prepare",
+        "factory-size-check",
+        "ledger-check",
+        "target-selection",
         "implementation-pr-override",
         "acp-node-override",
         "session-headroom-screen",

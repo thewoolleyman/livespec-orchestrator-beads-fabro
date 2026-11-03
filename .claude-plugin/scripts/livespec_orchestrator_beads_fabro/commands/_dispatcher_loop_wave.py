@@ -44,9 +44,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import DispatchLaunchContext
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import run_id
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     post_admission_publish_branch_reclaim,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import PrelaunchCpuProfile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_launch import (
     LaunchPins,
     journal_recovery_route,
@@ -78,7 +80,11 @@ def dispatch_loop_wave(  # noqa: PLR0913 — kw-only wave inputs; `rework` is th
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
     rework: ReworkPass,
+    profile: PrelaunchCpuProfile | None = None,
 ) -> list[DispatchOutcome]:
+    # `profile` is the drive's own pre-launch CPU profile, started when the
+    # drive did; the first item this wave launches adopts it, so the wave's
+    # admission-time phases land on that dispatch's rows as well.
     # A provider-limited worker credential holds the wave here instead of
     # ending the invocation: the probe's own next result retires the wait, and
     # no provider-stated reset instant gates it. Every other probe condition
@@ -94,17 +100,23 @@ def dispatch_loop_wave(  # noqa: PLR0913 — kw-only wave inputs; `rework` is th
     # in one pass costs nothing observable — no probe is supplied on either
     # side, so the resolution reads only committed configuration, the workflow
     # graph and the journal, and writes nothing.
-    await_usable_credential(
-        repo=repo,
-        journal=journal,
-        budget=args.budget,
-        preflight=resolve_acp_preflight(
+    launch_profile = profile or PrelaunchCpuProfile.for_drive_launch(dispatch_id=run_id())
+    preflight = launch_profile.phase(
+        name="acp-preflight",
+        action=lambda: resolve_acp_preflight(
             repo=repo,
             journal_path=journal.path,
             now_iso=utc_now_iso(),
             factory_runs=FactoryRunReader(repo=repo, journal=journal),
         ),
     )
+    with launch_profile.during(name="credential-wait"):
+        await_usable_credential(
+            repo=repo,
+            journal=journal,
+            budget=args.budget,
+            preflight=preflight,
+        )
     return _admit_and_dispatch_loop_wave(
         args=args,
         repo=repo,
@@ -113,6 +125,7 @@ def dispatch_loop_wave(  # noqa: PLR0913 — kw-only wave inputs; `rework` is th
         journal=journal,
         janitor=janitor,
         rework=rework,
+        profile=launch_profile,
     )
 
 
@@ -125,44 +138,58 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
     rework: ReworkPass,
+    profile: PrelaunchCpuProfile,
 ) -> list[DispatchOutcome]:
     # RECOVERY ROUTING, which the clause places after the pre-dispatch wall (run
     # by the command module above) and strictly BEFORE the valve, while every
     # candidate is still `ready`. It reads only; a candidate with no earlier
     # dispatch that released it is routed `fresh` without any remote measurement,
     # so an ordinary drain pays nothing for it.
-    routing = route_recovery(args=args, repo=repo, candidates=selected_candidates, journal=journal)
+    routing = profile.phase(
+        name="recovery-routing",
+        action=lambda: route_recovery(
+            args=args, repo=repo, candidates=selected_candidates, journal=journal
+        ),
+    )
     # The admission valve drains the candidate set up to the per-repo WIP cap:
     # host-only items are routed away, manual / unresolvable items are held +
     # surfaced, marked rework rows re-occupy the slots their own `active` rows
     # already hold BEFORE any new admission, and the highest-rank
     # admission-eligible items fill what free slots remain (ready -> active,
     # assignee set). Capacity-deferred items simply wait for the next pass.
-    admission = admit_and_select(
-        repo=repo,
-        items=items,
-        # A HELD item is withheld from the valve, which is the whole of "it stays
-        # `ready`": the valve is the only thing that writes `ready -> active`.
-        candidates=routing.offered(candidates=selected_candidates),
-        journal=journal,
-        enforce_cap=True,
-        rework=rework,
-        # This invocation's `--factory`, which the valve cannot read for itself:
-        # it is the top layer of the factory precedence the pending claim stamp
-        # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
-        # stand in for.
-        explicit_factory=explicit_dispatch_factory(args=args),
-        # The pre-dispatch session-headroom screen's reading, reused while fresh.
-        screened=screened_verdict_of(args=args),
-        # The route recovery routing assigned each candidate above, which the
-        # pending claim stamp's own factory precedence reads. A SET, because one
-        # wave may carry a resume beside fresh dispatches and the item's
-        # recorded factory is a pin for the first alone.
-        resume_ids=routing.resume_ids(),
+    admission = profile.phase(
+        name="admission",
+        action=lambda: admit_and_select(
+            repo=repo,
+            items=items,
+            # A HELD item is withheld from the valve, which is the whole of "it stays
+            # `ready`": the valve is the only thing that writes `ready -> active`.
+            candidates=routing.offered(candidates=selected_candidates),
+            journal=journal,
+            enforce_cap=True,
+            rework=rework,
+            # This invocation's `--factory`, which the valve cannot read for itself:
+            # it is the top layer of the factory precedence the pending claim stamp
+            # resolves under, and the one layer `LIVESPEC_FABRO_FACTORY` cannot
+            # stand in for.
+            explicit_factory=explicit_dispatch_factory(args=args),
+            # The pre-dispatch session-headroom screen's reading, reused while fresh.
+            screened=screened_verdict_of(args=args),
+            # The route recovery routing assigned each candidate above, which the
+            # pending claim stamp's own factory precedence reads. A SET, because one
+            # wave may carry a resume beside fresh dispatches and the item's
+            # recorded factory is a pin for the first alone.
+            resume_ids=routing.resume_ids(),
+        ),
     )
     # Rework first in the launch order too, so the audit record and the wave's
     # observable sequence report the same precedence the valve applied.
     picked = [*admission.rework, *admission.admitted]
+    # The wave's first launch is the dispatch the drive's profile belongs to, so
+    # it is named here: every phase held so far is appended, and each later one
+    # is appended as it closes.
+    if picked:
+        profile.bind(journal=journal, work_item_id=picked[0].id)
     journal.append(
         record={
             "stage": "loop-pick",
@@ -184,20 +211,22 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
     # branch is the branch its run resumes on, so preserving that head to a ref
     # and deleting the branch would destroy exactly what the resume exists to
     # finish, and the journal would read like a healthy reclaim.
-    post_admission_publish_branch_reclaim(
-        args=args,
-        repo=repo,
-        items=[item for item in picked if routing.reclaims(work_item_id=item.id)],
-        journal=journal,
-    )
+    with profile.during(name="publish-branch-reclaim"):
+        post_admission_publish_branch_reclaim(
+            args=args,
+            repo=repo,
+            items=[item for item in picked if routing.reclaims(work_item_id=item.id)],
+            journal=journal,
+        )
     # Each launching item's route, recorded now that the valve has decided it
     # will launch. Here rather than at the measurement, because a route is valid
     # only for the pass that measured it and a deferred item must carry nothing
     # out of this one. Written on this thread, in `picked` order, so the journal
     # reads as the wave's own sequence rather than as whatever order the pool
     # happened to start the launches in.
-    for item in picked:
-        journal_recovery_route(route=routing.route_for(work_item_id=item.id), journal=journal)
+    with profile.during(name="recovery-route"):
+        for item in picked:
+            journal_recovery_route(route=routing.route_for(work_item_id=item.id), journal=journal)
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = [
             pool.submit(
@@ -222,7 +251,10 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
                 repo=repo,
                 item=item,
                 journal=journal,
-                launch=DispatchLaunchContext(janitor=janitor),
+                launch=DispatchLaunchContext(
+                    janitor=janitor,
+                    prelaunch_profile=profile if item.id == picked[0].id else None,
+                ),
                 # The valve's OWN evaluation, so each launch selects its
                 # per-node ACP candidate from the read that admitted the item.
                 # Re-resolving one here would be a second read of the
