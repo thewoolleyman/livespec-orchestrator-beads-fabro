@@ -249,6 +249,33 @@ def test_legacy_needs_human_marker_on_run_stderr_still_blocks_the_item(
     assert f"refs/heads/needs-human/{_LEGACY_RUN_ID}" in outcome.detail
 
 
+def test_reacquired_sandbox_helper_absence_is_a_retryable_host_fault(tmp_path: Path) -> None:
+    """A lost Dispatcher helper after a resumed sandbox is not a human decision."""
+    payload = _PETRI_NEEDS_HUMAN_PAYLOAD.copy()
+    record = dict(payload[0])
+    record["events"] = [
+        {"message": "fencing a recorded sandbox after the run store failed"},
+        {"message": "scope environment acquired"},
+        {"message": "workspace brought to its durable snapshot"},
+    ]
+    payload[0] = record
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect(tmp_path=tmp_path, payload=payload),
+        exit_code=1,
+        stderr="LIVESPEC_PROOF_GRADE_PROGRAM_ABSENT",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "host-fault-release"
+    assert outcome.fabro_failure_category == "transient_infra"
+    assert outcome.fabro_failure_cause is not None
+    assert "host" in outcome.fabro_failure_cause
+
+
 def test_petri_cancelled_reason_is_a_cancelled_fabro_run_outcome(tmp_path: Path) -> None:
     """An external lifecycle cancel is not the generic deterministic failure."""
     outcome = fabro_run_terminal_outcome(
