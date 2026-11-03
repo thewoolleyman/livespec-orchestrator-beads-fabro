@@ -145,6 +145,14 @@ def _host_safe_rubric(*, gate_prompt: str) -> str:
     result = _inline_capability_section(gate_prompt=gate_prompt)
     for source, replacement in (
         (
+            "Read the\ngoal and the spec tree, decide, and end.",
+            "Use the supplied goal and subject, decide, and end.",
+        ),
+        (
+            "is the artifact you read. Read all of it before deciding anything.",
+            "is your complete input. Consider all of it before deciding anything.",
+        ),
+        (
             "Read /etc/livespec/sandbox-capabilities, then search SPECIFICATION/ before deciding.",
             "Use the inline sandbox capability set before deciding.",
         ),
@@ -154,8 +162,33 @@ question of fact — the spec tree above all.""",
             "Work through all six using the inline subject.",
         ),
         (
-            "Search `scenarios.md` for a scenario stating the behaviour",
-            "Use the inline governing-heading verdict for the stated behaviour",
+            """Read each assertion against the item's title, its description, and the
+   **referenced heading** you resolved in step 2, then ask:""",
+            """Assess each assertion against the item's title, its description, and the
+   **referenced heading** supplied in step 2, then ask:""",
+        ),
+        (
+            "The referenced heading you read is the named H2 together with",
+            "A referenced heading is the named H2 together with",
+        ),
+        (
+            """text, up to the next H2 of that file. Read the whole of that section
+   before judging any assertion against it.""",
+            """text, up to the next H2 of that file. Evaluate that whole section
+   before judging any assertion against it.""",
+        ),
+        (
+            """When the block says **no judgement was taken**, fall back on your own
+     reading: **Search `scenarios.md`** for a scenario stating the behaviour
+     **before concluding none does**""",
+            """When the block says **no judgement was taken**, use only the supplied
+     governing-heading verdict; do not infer an additional scenario""",
+        ),
+        (
+            """the record shows what was actually read. List any advisory omitted governing
+heading here""",
+            """the record identifies the basis for the judgement. State any advisory omitted
+governing heading here""",
         ),
     ):
         result = result.replace(source, replacement)
