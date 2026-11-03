@@ -47,6 +47,7 @@ class PrelaunchCpuProfile:
     baseline_cpu_seconds: float | None = None
     _last_cpu_seconds: float = field(init=False)
     _held: list[dict[str, object]] = field(init=False, default_factory=list)
+    _history: list[dict[str, object]] = field(init=False, default_factory=list)
 
     @classmethod
     def for_drive(
@@ -89,6 +90,21 @@ class PrelaunchCpuProfile:
         for record in held:
             journal.append(record={**record, "work_item_id": work_item_id})
 
+    def fork(self, *, dispatch_id: str) -> PrelaunchCpuProfile:
+        """Profile another dispatch this drive launches, starting from every row so far.
+
+        The fork re-states each row under its own dispatch id, held until `bind`
+        names its journal and work item, so a dispatch the drive launches after
+        the first still shows the pre-admission phases it waited behind.
+        """
+        forked = PrelaunchCpuProfile(dispatch_id=dispatch_id, cpu_seconds=self.cpu_seconds)
+        forked.restate(rows=self._history)
+        return forked
+
+    def restate(self, *, rows: list[dict[str, object]]) -> None:
+        """Hold each row, under this profile's dispatch id, until `bind` appends it."""
+        self._held.extend({**row, "dispatch_id": self.dispatch_id} for row in rows)
+
     def phase(self, *, name: str, action: Callable[[], _Result]) -> _Result:
         """Run one phase and append its whole-process-tree CPU delta."""
         with self.during(name=name):
@@ -108,8 +124,10 @@ class PrelaunchCpuProfile:
             "cpu_seconds": round(max(0.0, current - self._last_cpu_seconds), 6),
         }
         self._last_cpu_seconds = current
+        stamped: dict[str, object] = {**record, "at": utc_now_iso()}
+        self._history.append(stamped)
         if self.journal is None or self.work_item_id is None:
-            self._held.append({**record, "at": utc_now_iso()})
+            self._held.append(stamped)
         else:
             self.journal.append(record={**record, "work_item_id": self.work_item_id})
 

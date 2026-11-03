@@ -229,11 +229,11 @@ def test_loop_without_item_drains_ranked_queue_by_default(
     assert recording.calls == ["a-1", "b-2"]
 
 
-def test_loop_journals_a_cpu_row_for_every_phase_before_the_first_launch(
+def test_loop_journals_a_cpu_row_for_every_phase_before_each_launch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The drain's own pre-admission phases ride on the first dispatch it launches."""
+    """Every item the drain launches carries the drain's own pre-admission phases."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     append_work_item(path=_config(), item=_item(id="a-1", rank="a1"))
     append_work_item(path=_config(), item=_item(id="b-2", rank="a2"))
@@ -282,13 +282,19 @@ def test_loop_journals_a_cpu_row_for_every_phase_before_the_first_launch(
         "record-dispatch",
     ):
         assert phase in phases["a-1"]
-    assert phases["b-2"][0] == "record-dispatch"
-    first_dispatch = {
-        row["dispatch_id"]
-        for row in rows
-        if row["stage"] == "pre-launch-cpu" and row["work_item_id"] == "a-1"
+    shared = phases["a-1"].index("recovery-route") + 1
+    assert phases["b-2"][:shared] == phases["a-1"][:shared]
+    assert phases["b-2"][shared] == "record-dispatch"
+    dispatch_ids = {
+        item_id: {
+            row["dispatch_id"]
+            for row in rows
+            if row["stage"] == "pre-launch-cpu" and row["work_item_id"] == item_id
+        }
+        for item_id in ("a-1", "b-2")
     }
-    assert len(first_dispatch) == 1
+    assert [len(ids) for ids in dispatch_ids.values()] == [1, 1]
+    assert dispatch_ids["a-1"] != dispatch_ids["b-2"]
 
 
 def test_loop_without_candidates_emits_nothing_dispatched(
