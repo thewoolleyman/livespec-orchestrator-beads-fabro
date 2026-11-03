@@ -59,6 +59,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
     retained_authority,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_progress_unmet import (
+    SupersessionContext,
     continuation_decision,
     superseded_decision,
 )
@@ -136,9 +137,12 @@ def decide_tracked_write(  # noqa: PLR0911, PLR0913 -- one refusal ladder; a mer
             head=head,
             candidate=candidate,
             prior=prior,
-            supersession=supersession,
-            evidence=_supersession_evidence(
-                evidence=evidence, replacement_observation=replacement_observation
+            context=SupersessionContext(
+                supersession=supersession,
+                evidence=_supersession_evidence(
+                    evidence=evidence, replacement_observation=replacement_observation
+                ),
+                continuation_ruling=continuation_ruling,
             ),
             now=now,
         )

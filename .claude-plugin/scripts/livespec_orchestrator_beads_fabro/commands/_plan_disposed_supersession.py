@@ -6,6 +6,12 @@ from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import CLOSED_STATUS
 
+__all__: list[str] = [
+    "DisposedEvidence",
+    "SupersessionRefusal",
+    "disposed_refusal",
+]
+
 
 @dataclass(frozen=True, kw_only=True)
 class DisposedEvidence:
@@ -34,5 +40,8 @@ def disposed_refusal(
     ):
         return None
     return SupersessionRefusal(
-        detail=f"the disposed target {target_id!r} is neither closed as superseded nor detached from this plan, so its cause does not verify"
+        detail=(
+            f"the disposed target {target_id!r} is neither closed as superseded nor detached"
+            " from this plan, so its cause does not verify"
+        )
     )

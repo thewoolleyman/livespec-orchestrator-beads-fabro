@@ -287,12 +287,13 @@ def _is_plan_child(*, record: dict[str, object], epic_id: str) -> bool:
     dependencies = record.get("dependencies")
     if not isinstance(dependencies, list):
         return False
-    return any(
-        edge.get("type") == "parent-child" and edge.get("depends_on_id") == epic_id
-        for raw_edge in dependencies
-        if isinstance(raw_edge, dict)
-        for edge in (cast("dict[str, object]", raw_edge),)
-    )
+    for raw_edge in cast("list[object]", dependencies):
+        if not isinstance(raw_edge, dict):
+            continue
+        edge = cast("dict[str, object]", raw_edge)
+        if edge.get("type") == "parent-child" and edge.get("depends_on_id") == epic_id:
+            return True
+    return False
 
 
 def read_target_record(

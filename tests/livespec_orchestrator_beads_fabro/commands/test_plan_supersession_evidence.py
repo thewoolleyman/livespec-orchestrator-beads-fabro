@@ -592,6 +592,36 @@ def test_disposed_evidence_requires_a_readable_status_and_labels(
         assert observed.resolution == (expected or None)
 
 
+def test_disposed_evidence_recognizes_only_the_named_plan_parent_edge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An open target is detached only when no parent-child edge names this epic."""
+    monkeypatch.setattr(
+        evidence_module,
+        "read_target_record",
+        lambda **_: {
+            "labels": [],
+            "status": "open",
+            "dependencies": [
+                "malformed edge",
+                {"type": "parent-child", "depends_on_id": "bd-ib-another-plan"},
+                {"type": "parent-child", "depends_on_id": _EPIC},
+            ],
+        },
+    )
+    required: dict[str, object] = {
+        "repo": _OWN,
+        "item_status": {"item_id": "bd-ib-target", "status": "acceptance"},
+    }
+
+    observed = evidence_module.disposed_evidence(
+        config=_config(repo=tmp_path), epic_id=_EPIC, required_result=required
+    )
+
+    assert observed is not None
+    assert observed.is_plan_child
+
+
 def test_result_record_reader_refuses_each_unreadable_resolution_stage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

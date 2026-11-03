@@ -24,7 +24,7 @@ how a build comes to admit a rename on one path that the other still refuses.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import AuthorityState
@@ -62,9 +62,19 @@ if TYPE_CHECKING:
     )
 
 __all__: list[str] = [
+    "SupersessionContext",
     "continuation_decision",
     "superseded_decision",
 ]
+
+
+@dataclass(frozen=True, kw_only=True)
+class SupersessionContext:
+    """The claim and current readings a supersession decision needs together."""
+
+    supersession: CausalSupersession
+    evidence: SupersessionEvidence | None
+    continuation_ruling: ContinuationRuling | None
 
 
 def continuation_decision(  # noqa: PLR0913 -- continuation needs every prior and candidate fact.
@@ -185,17 +195,16 @@ def superseded_decision(
     head: ChainHead,
     candidate: NextAction,
     prior: Obligation,
-    supersession: CausalSupersession,
-    evidence: SupersessionEvidence | None,
+    context: SupersessionContext,
     now: str,
 ) -> TrackedDecision | TrackedRefusal:
     """Replace an unmet obligation's result, keeping BOTH of its original limits.
 
     THE EXPIRY RULES STILL BIND, which the clause says in as many words: "A
     supersession of an already expired obligation remains subject to the expiry
-    rules above." So an expired obligation is refused here exactly as it is on
-    the ordinary continuation path — a supersession is not a second route past a
-    deadline.
+    rules above." A current recorded continuation ruling is the human decision
+    those rules admit; absent that ruling, a supersession is not a second route
+    past a deadline.
 
     THE REPLACEMENT INHERITS THE ORIGINAL DEADLINE AND THE CONSUMED COUNT
     UNCHANGED, and consumes nothing: "A supersession never consumes a handoff
@@ -209,7 +218,7 @@ def superseded_decision(
     identity is one the caller could have chosen to match.
     """
     expiry = obligation_expiry(obligation=prior, now=now)
-    if expiry is not None:
+    if expiry is not None and context.continuation_ruling is None:
         return TrackedRefusal(
             detail=(
                 f"the obligation {prior.original_deadline} is expired at its {expiry} limit;"
@@ -222,7 +231,7 @@ def superseded_decision(
         return TrackedRefusal(
             detail="the prior obligation's required_result is unreadable; reconcile it first"
         )
-    if not (evidence is not None and evidence.replacement_unmet):
+    if not (context.evidence is not None and context.evidence.replacement_unmet):
         return TrackedRefusal(
             detail=(
                 "the replacement result is already satisfied or cannot be shown unmet, so a"
@@ -230,8 +239,8 @@ def superseded_decision(
             )
         )
     refusal = validate_causal_supersession(
-        supersession=supersession,
-        evidence=evidence,
+        supersession=context.supersession,
+        evidence=context.evidence,
         prior_identity=prior_parsed.identity,
         current_epoch=head.epoch,
         replacement=candidate.required_result,
@@ -248,4 +257,14 @@ def superseded_decision(
             last_recovery_attempt=head.authority.last_recovery_attempt,
         ),
         event_kind=EVENT_SUPERSESSION,
+        continuation_ruling_by=(
+            context.continuation_ruling.by
+            if expiry is not None and context.continuation_ruling is not None
+            else None
+        ),
+        continuation_ruling_recorded_at=(
+            context.continuation_ruling.created_at
+            if expiry is not None and context.continuation_ruling is not None
+            else None
+        ),
     )
