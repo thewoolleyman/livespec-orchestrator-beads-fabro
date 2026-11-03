@@ -67,13 +67,11 @@ def source_checkout_preflight(*, repo: Path, runner: CommandRunner) -> SourceChe
         return not_a_worktree_outcome(repo=str(repo))
     origin_refs = _origin_refs(repo=repo, runner=runner)
     head = _git_stdout(repo=repo, runner=runner, argv=["rev-parse", "HEAD"])
-    origin_ref = next(
-        (
-            ref
-            for ref in origin_refs
-            if head and _head_is_ancestor(repo=repo, runner=runner, head=head, ref=ref)
-        ),
-        None,
+    default_branch = resolve_default_branch(repo=repo, runner=runner) if head else None
+    origin_ref = _containing_origin_ref(
+        origin_refs=origin_refs,
+        containing_refs=_containing_origin_refs(repo=repo, runner=runner, head=head),
+        default_branch=default_branch,
     )
     if origin_ref is not None:
         return pass_outcome(head=head, origin_refs=origin_refs, origin_ref=origin_ref)
@@ -111,9 +109,42 @@ def _origin_refs(*, repo: Path, runner: CommandRunner) -> tuple[str, ...]:
     )
 
 
-def _head_is_ancestor(*, repo: Path, runner: CommandRunner, head: str, ref: str) -> bool:
-    result = _git(repo=repo, runner=runner, argv=["merge-base", "--is-ancestor", head, ref])
-    return result.exit_code == 0
+def _containing_origin_refs(*, repo: Path, runner: CommandRunner, head: str) -> tuple[str, ...]:
+    """Return every origin ref containing `head` in one Git process."""
+    if not head:
+        return ()
+    result = _git(
+        repo=repo,
+        runner=runner,
+        argv=[
+            "for-each-ref",
+            "--contains",
+            head,
+            "--format=%(refname:short)",
+            "refs/remotes/origin",
+        ],
+    )
+    if result.exit_code != 0:
+        return ()
+    return tuple(
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip() and line.strip() not in _ORIGIN_HEAD_SHORT_FORMS
+    )
+
+
+def _containing_origin_ref(
+    *,
+    origin_refs: tuple[str, ...],
+    containing_refs: tuple[str, ...],
+    default_branch: str | None,
+) -> str | None:
+    """Choose the default origin branch first, then an inventory-ordered witness."""
+    containing = frozenset(containing_refs)
+    default_ref = f"origin/{default_branch}" if default_branch is not None else None
+    if default_ref in containing:
+        return default_ref
+    return next((ref for ref in origin_refs if ref in containing), None)
 
 
 def _unpushed_commits(*, repo: Path, runner: CommandRunner) -> tuple[str, ...]:
