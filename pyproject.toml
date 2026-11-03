@@ -165,6 +165,12 @@ ban-relative-imports = "all"
 # constants, and `git` must resolve through the mise-managed PATH rather than
 # an absolute path. No other diagnostic is waived for this file.
 ".claude/hooks/livespec_tdd_order_guard.py" = ["S603", "S607"]
+# The launcher deliberately replaces itself with the project virtualenv's
+# interpreter after accepting only the fixed `mise exec -- uv run --no-sync
+# python` command shape.  That replacement is the measured hot-path behavior;
+# starting a child through subprocess would retain the launcher and defeat it.
+# S606 cannot infer that the executable is constrained to `.venv/bin/python`.
+".claude/hooks/livespec_uv_hook_launcher.py" = ["S606"]
 # The Stop hook runs the plugin's own `session_wait.py check` through ONE
 # subprocess whose argv is the interpreter, a fixed script path under the
 # plugin root and constant subcommand tokens. Only S603 is waived.
