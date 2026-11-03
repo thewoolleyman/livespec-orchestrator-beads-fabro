@@ -93,6 +93,9 @@ def test_prepare_step_replaces_a_partial_locked_cache_with_the_complete_archive(
     partial = home / ".cache" / "pyright-python" / _VERSION / "node_modules" / "pyright"
     partial.mkdir(parents=True)
     _ = (partial / "package.json").write_text(json.dumps({"version": _VERSION}), encoding="utf-8")
+    later_stub = partial / "dist/typeshed-fallback/stdlib/subprocess.pyi"
+    later_stub.parent.mkdir(parents=True)
+    _ = later_stub.write_text("subprocess", encoding="utf-8")
 
     rendered = tomli.loads(module.pyright_cache_prepare_steps_block())
     script = rendered["run"]["prepare"]["steps"][0]["script"]
