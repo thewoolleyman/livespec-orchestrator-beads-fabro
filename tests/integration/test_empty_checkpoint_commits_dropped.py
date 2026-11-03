@@ -965,3 +965,40 @@ def test_a_refresh_that_only_dropped_empty_commits_carries_the_proof_forward(
     assert len(posted) == 1
     assert "Decision: carried_forward" in posted[0]
     assert f"{PUBLISH_HEAD_LABEL}: {republished}" in posted[0]
+
+
+def test_an_unchanged_refresh_strips_empty_commits_and_carries_the_proof_forward(
+    tmp_path: Path,
+) -> None:
+    """Scenario 226 rewrites an otherwise unchanged published branch under lease.
+
+    The engine checkpoints after publication, so the recorded remote head still
+    contains the default branch while the run branch that `pr_refresh` receives
+    carries two own empty commits.  This is intentionally unlike the advanced
+    default case above: it proves the early unchanged exit does not bypass the
+    rewrite that removes those commits.
+    """
+    world, published = _published_run(root=tmp_path)
+    plugins_root = _refresh_plugins_root(root=tmp_path)
+    assert len(_commits_that_started_empty(world=world, base=published, head="HEAD")) == 2
+
+    refresh = _run_pr_refresh(world=world, plugins_root=plugins_root)
+
+    assert refresh.returncode == 0, refresh.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in refresh.stderr
+    republished = world.remote_head(ref=_BRANCH)
+    assert republished == world.head()
+    assert republished != published
+    assert _published_empties(world=world) == []
+    assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
+    assert not _ancestor_of(world=world, earlier=published, later=republished)
+
+    decision, posted = _run_carry_forward_decision(
+        world=world, root=tmp_path, record=_verified_record(world=world, head=published)
+    )
+
+    assert decision.returncode == 0, decision.stderr
+    assert "LIVESPEC_CARRY_FORWARD_CARRIED" in decision.stderr
+    assert len(posted) == 1
+    assert "Decision: carried_forward" in posted[0]
+    assert f"{PUBLISH_HEAD_LABEL}: {republished}" in posted[0]
