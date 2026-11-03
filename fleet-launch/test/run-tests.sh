@@ -34,9 +34,10 @@ set -uo pipefail
 HARNESS_DIR=$(cd -- "$(dirname -- "$0")" && pwd -P)
 LAUNCH_DIR=$(cd -- "$HARNESS_DIR/.." && pwd -P)
 LAUNCHER="$LAUNCH_DIR/dispatch-dual.sh"
+RESUME_LAUNCHER="$LAUNCH_DIR/resume-capped.sh"
 
-if [ ! -f "$LAUNCHER" ]; then
-    echo "run-tests.sh: launcher not found: $LAUNCHER" >&2
+if [ ! -f "$LAUNCHER" ] || [ ! -f "$RESUME_LAUNCHER" ]; then
+    echo "run-tests.sh: launcher not found" >&2
     exit 1
 fi
 
@@ -86,7 +87,7 @@ fi
 rows="$(mktemp)"
 trap 'rm -f "$rows"' EXIT
 if [ -s "$board" ]; then tail -n +2 "$board" >> "$rows"; fi
-for marker in "$STUB_DRIVEN_DIR"/*; do
+for marker in "$STUB_DRIVEN_DIR"/* "$STUB_RESUMED_DIR"/*; do
     [ -e "$marker" ] || continue
     marker_server=$(cut -d' ' -f1 "$marker")
     marker_item=$(cut -d' ' -f2 "$marker")
@@ -176,6 +177,22 @@ for argument in "$@"; do
             printf '{"status": "stub-dispatched", "work_item_id": "%s"}\n' "$item"
             exit 0
             ;;
+        resume)
+            item=""
+            previous=""
+            for token in "$@"; do
+                if [ "$previous" = --item ]; then item=$token; fi
+                previous=$token
+            done
+            printf '%s\n' "$item" >> "$STUB_RESUME_LOG"
+            marker_state=missing
+            if find "$STUB_INFLIGHT_DIR" -type f -print -quit | grep -q .; then marker_state=present; fi
+            lock_state=released
+            if [ -d "$STUB_LOCK_DIR" ]; then lock_state=held; fi
+            printf '%s marker=%s mutex=%s\n' "$item" "$marker_state" "$lock_state" >> "$STUB_RESUME_OBSERVATION_LOG"
+            printf '%s %s\n' "$STUB_SERVER_GMK" "$item" > "$STUB_RESUMED_DIR/$item"
+            exit 0
+            ;;
     esac
 done
 exec "$@"
@@ -255,6 +272,8 @@ CASE_LOG=""
 DRIVE_LOG=""
 DRIVE_MUTEX_LOG=""
 PREFLIGHT_LOG=""
+RESUME_LOG=""
+RESUME_OBSERVATION_LOG=""
 BOARD_GMK=""
 BOARD_HL=""
 CAP_FILE=""
@@ -264,7 +283,7 @@ HOLD_FILE=""
 # environment every launcher invocation of this case inherits.
 new_case() {
     CASE_DIR="$WORK/case/$1"
-    mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven}
+    mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven,resumed}
     rmdir "$CASE_DIR/lock"
     CASE_LOG="$CASE_DIR/launcher.log"
     DRIVE_LOG="$CASE_DIR/drive-log"
@@ -273,6 +292,10 @@ new_case() {
     : > "$DRIVE_MUTEX_LOG"
     PREFLIGHT_LOG="$CASE_DIR/preflight-log"
     : > "$PREFLIGHT_LOG"
+    RESUME_LOG="$CASE_DIR/resume-log"
+    : > "$RESUME_LOG"
+    RESUME_OBSERVATION_LOG="$CASE_DIR/resume-observation-log"
+    : > "$RESUME_OBSERVATION_LOG"
     BOARD_GMK="$CASE_DIR/boards/gmktec"
     BOARD_HL="$CASE_DIR/boards/mi-homelab"
     CAP_FILE="$CASE_DIR/state/fleet-cap"
@@ -284,9 +307,12 @@ new_case() {
     export STUB_BOARD_GMK="$BOARD_GMK"
     export STUB_BOARD_HL="$BOARD_HL"
     export STUB_DRIVEN_DIR="$CASE_DIR/driven"
+    export STUB_RESUMED_DIR="$CASE_DIR/resumed"
     export STUB_DRIVE_LOG="$DRIVE_LOG"
     export STUB_DRIVE_MUTEX_LOG="$DRIVE_MUTEX_LOG"
     export STUB_PREFLIGHT_LOG="$PREFLIGHT_LOG"
+    export STUB_RESUME_LOG="$RESUME_LOG"
+    export STUB_RESUME_OBSERVATION_LOG="$RESUME_OBSERVATION_LOG"
     export STUB_READY_EXIT=0
     export STUB_PREFLIGHT_EXIT=0
     unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM
@@ -311,11 +337,14 @@ new_case() {
     export FLEET_LAUNCH_INFLIGHT_DIR="$CASE_DIR/inflight"
     export FLEET_LAUNCH_GMK_QUEUE_DIR="$CASE_DIR/queue"
     export FLEET_LAUNCH_GMK_LOCK_DIR="$CASE_DIR/lock"
+    export STUB_INFLIGHT_DIR="$FLEET_LAUNCH_INFLIGHT_DIR"
     export STUB_LOCK_DIR="$FLEET_LAUNCH_GMK_LOCK_DIR"
     export FLEET_LAUNCH_PLUGIN_REGISTRY="$REGISTRY"
     export FLEET_LAUNCH_PLUGIN_CACHE="$PLUGIN_CACHE"
     export FLEET_LAUNCH_PLUGIN_KEY="$PLUGIN_KEY"
     export FLEET_LAUNCH_DEFAULT_WRAPPER="$STUB/wrapper"
+    export FLEET_LAUNCH_RESUME_WRAPPER="$STUB/wrapper"
+    export FLEET_LAUNCH_RESUME_COMMAND=resume
     # A short wait and a one-second poll: a refusal case must reach its
     # give-up exit in seconds rather than in the six hours a real launcher waits.
     export FLEET_LAUNCH_MAX_WAIT_S=4
@@ -682,6 +711,56 @@ fi
 touch "$STUB_PREFLIGHT_RELEASE"
 kill -TERM "$older_pid" 2>/dev/null
 wait "$older_pid" || true
+
+# --- 9. a resume shares FIFO and waits for fleet headroom -------------------
+# The older impl ticket reaches the head first, but the fleet begins at the
+# shared cap.  Once the board drops by one the impl binds, restoring the cap
+# with its in-flight marker/run.  The resume keeps its own ticket while it sees
+# that cap, then starts only after the older run disappears.
+echo "--- 9. a resume waits at the fleet cap and shares the gmktec FIFO"
+new_case resume-cap-fifo
+export FLEET_LAUNCH_MAX_WAIT_S=120
+write_board "$BOARD_GMK" 8 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+IMPL_LOG="$CASE_DIR/impl.log"
+RESUME_CASE_LOG="$CASE_DIR/resume-launcher.log"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-resume-older > "$IMPL_LOG" 2>&1 &
+impl_pid=$!
+if ! wait_for_line "$IMPL_LOG" "fleet not green" 30; then
+    fail "the older impl ticket did not wait at the fleet cap"
+fi
+TICKET_NS=200 "$RESUME_LAUNCHER" bd-ib-resume > "$RESUME_CASE_LOG" 2>&1 &
+resume_pid=$!
+if wait_for_line "$RESUME_CASE_LOG" "queued behind an older gmktec ticket" 30; then
+    pass "the resume ticket queues behind the older impl ticket"
+else
+    fail "the resume launcher did not queue behind the older impl ticket"
+    tail -8 "$RESUME_CASE_LOG" >&2
+fi
+write_board "$BOARD_GMK" 7 gmk
+if wait_for_line "$IMPL_LOG" "LAUNCH target=petri" 30 \
+    && wait_for_line "$RESUME_CASE_LOG" "fleet at cap under mutex" 30 \
+    && [ ! -s "$RESUME_LOG" ]; then
+    pass "the resume keeps its FIFO ticket while the older impl refills the fleet cap"
+else
+    fail "the resume did not wait at the cap after the older impl bound"
+    tail -8 "$IMPL_LOG" >&2
+    tail -8 "$RESUME_CASE_LOG" >&2
+fi
+rm -f "$CASE_DIR/driven/bd-ib-resume-older"
+wait "$impl_pid"; impl_rc=$?
+wait "$resume_pid"; resume_rc=$?
+if [ "$impl_rc" = 0 ] && [ "$resume_rc" = 0 ] && [ "$(cat "$RESUME_LOG")" = bd-ib-resume ]; then
+    pass "the resume starts after the fleet count drops below the cap"
+else
+    fail "the capped resume did not start cleanly (impl=$impl_rc resume=$resume_rc resumes=$(tr '\n' ' ' < "$RESUME_LOG"))"
+fi
+if grep -q '^bd-ib-resume marker=present mutex=released$' "$RESUME_OBSERVATION_LOG"; then
+    pass "the resume in-flight marker exists before its mutex is released"
+else
+    fail "the resume did not retain its marker through mutex release: $(tr '\n' ' ' < "$RESUME_OBSERVATION_LOG")"
+fi
 
 echo
 echo "=== fleet-launch hermetic harness: $PASS passed, $FAIL failed"
