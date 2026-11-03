@@ -604,10 +604,10 @@ def test_the_janitor_fix_loop_routes_on_outcome_and_is_bounded_by_max_visits() -
 
 
 def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_visits() -> None:
-    """The three review-cap conditions are gone; the loop's bound is on its nodes."""
+    """The admission gate routes the label; disposition retains the three-round bound."""
     text = _graph_text()
     conditions = _conditions(text=text)
-    assert conditions["review", "disposition"] == "preferred_label=fix"
+    assert conditions["review", "review_fix_admission"] == "preferred_label=fix"
     assert conditions["review", "proof_verify"] == "preferred_label=approve"
     bodies = _node_bodies(text=text)
     assert "max_visits=" in bodies["review_fix"]
@@ -636,7 +636,7 @@ def test_review_fix_bound_routes_before_the_spent_disposition_node() -> None:
     admission = bodies["review_fix_admission"]
     assert "max_visits=4" in admission
     assert "livespec-review-fix-admission-count" in admission
-    assert '"$count" -ge 3' in admission
+    assert '\\"$count\\" -ge 3' in admission
     assert "LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED" in admission
 
     terminal = bodies["non_converged"]
