@@ -31,7 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_tier_attestation import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Collection, Sequence
 
     from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
         SpecChangeTierDecision,
@@ -39,11 +39,13 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
         RecordedSpecChangeTier,
     )
+    from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
     from livespec_orchestrator_beads_fabro.types import SpecSnapshot, WorkItem
 
 __all__: list[str] = [
     "SpecChangeTierOutcome",
     "TierRecordContext",
+    "TierStandingContext",
     "did_not_run_outcome",
     "recorded_outcome",
     "standing_outcome",
@@ -92,12 +94,21 @@ class TierRecordContext:
     provenance: TierClauseProvenance = field(default_factory=TierClauseProvenance)
 
 
+@dataclass(frozen=True, kw_only=True)
+class TierStandingContext:
+    """The current spec identity used to decide whether a tier record stands."""
+
+    snapshot: SpecSnapshot
+    digest: str
+    selected_clauses: tuple[CondensedClause, ...]
+
+
 def standing_outcome(
     *,
     item: WorkItem,
     stage: str,
-    snapshot: SpecSnapshot,
-    digest: str,
+    context: TierStandingContext,
+    ratified_topics: Collection[str],
     comments: Sequence[str],
     append: Callable[..., None],
 ) -> SpecChangeTierOutcome | None:
@@ -107,15 +118,33 @@ def standing_outcome(
     standing attestation beats a reusable HELD record and yields to a reusable
     free one, which is already the answer the attestation would record.
     """
-    spec_version = str(snapshot.version)
-    reused = reusable_spec_change_tier(comments=comments, spec_version=spec_version, digest=digest)
-    cited = standing_attestation(item=item, comments=comments, spec_tree=snapshot.files)
+    spec_version = str(context.snapshot.version)
+    reused = reusable_spec_change_tier(
+        comments=comments,
+        digest=context.digest,
+        selected_clauses=context.selected_clauses,
+        spec_tree=context.snapshot.files,
+    )
+    if (
+        reused is not None
+        and reused.is_spec_change
+        and reused.linked_proposal_topic in ratified_topics
+    ):
+        reused = None
+    cited = standing_attestation(item=item, comments=comments, spec_tree=context.snapshot.files)
     if cited is not None and (reused is None or reused.is_spec_change):
         return recorded_outcome(
             item=item,
             stage=stage,
             decision=attested_decision(heading=cited.heading.rstrip()),
-            context=TierRecordContext(spec_version=spec_version, digest=digest),
+            context=TierRecordContext(
+                spec_version=spec_version,
+                digest=context.digest,
+                provenance=TierClauseProvenance(
+                    selected=context.selected_clauses,
+                    named=(cited,),
+                ),
+            ),
             append=append,
         )
     if reused is None:
