@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.282.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.3...v0.282.0) (2026-11-03)
+
+
+### Features
+
+* recover returned terminal work ([6e3e08a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6e3e08ae78c6d8391d3106f96419466d33fc42e0))
+
+
+### Bug Fixes
+
+* exclude the recapture-cap ending from the returned-terminal recovery release ([adadc0c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/adadc0c4202d1bf96a192e1e0db30c76fa99414f))
+* import preflight runner from dispatcher io ([ae66777](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ae66777f203701d5e6061d729d913570b6aed77a))
+* isolate Scenario 297 harness coverage ([359c2d1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/359c2d151976e0ea14406dba8ae6d0c4ab86b2c3))
+* provision pyright cache before sandbox agents ([ebae012](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ebae012a49e3dc654015eb3a9aeced566970478f))
+* reject partial pyright typeshed cache ([40b3966](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/40b39661c17c1ced3c8d9cc023af5ee72a6532fe))
+* route preflight judges through configured chain ([10db864](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/10db86445dddfc434522a6774fd3e0e2624e2d22))
+
 ## [0.281.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.2...v0.281.3) (2026-11-03)
 
 
