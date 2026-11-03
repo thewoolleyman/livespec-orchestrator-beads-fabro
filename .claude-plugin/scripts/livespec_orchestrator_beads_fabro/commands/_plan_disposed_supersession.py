@@ -60,9 +60,9 @@ def plan_membership(*, record: dict[str, object], epic_id: str) -> bool | None:
     two surfaces name an edge differently (`depends_on_id`/`type` on a listing,
     `id`/`dependency_type` on `bd show`), so both spellings are read.
     """
-    raw = record.get("dependencies")
-    if raw is None:
+    if "dependencies" not in record:
         return False
+    raw = record["dependencies"]
     if not isinstance(raw, list):
         return None
     is_child = False
