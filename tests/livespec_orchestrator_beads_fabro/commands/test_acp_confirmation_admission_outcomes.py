@@ -158,8 +158,9 @@ class _Engine:
 
 
 class _EmptyFactory:
-    def __init__(self, *, repo: Path) -> None:
+    def __init__(self, *, repo: Path, journal: object = None) -> None:
         self.repo = repo
+        self.journal = journal
 
     def list_runs(self, *, factory: str) -> tuple[()]:
         _ = factory
