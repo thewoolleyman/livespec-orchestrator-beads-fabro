@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     CAUSE_PROMPT_UNREADABLE,
     dod_gate_prompt_path,
     judgement_prompt,
+    judgement_rubric,
     resolve_judge_path,
     resolve_judge_timeout_seconds,
     run_dod_gate_prompt,
@@ -310,6 +311,26 @@ def test_the_host_prompt_names_its_inline_capabilities_and_never_directs_a_tool_
     assert "sandbox capabilities: terminal" in lowered
     assert "/etc/livespec/sandbox-capabilities" not in lowered
     assert "search specification/" not in lowered
+
+
+def test_the_shipped_host_prompt_never_directs_a_toolless_judge_to_read_or_search_files() -> None:
+    prompt = judgement_prompt(
+        gate_prompt=judgement_rubric() or "",
+        subject="work-item: bd-ib-ff5ohb",
+    )
+
+    forbidden_directions = (
+        "Read the\ngoal and the spec tree",
+        "Read all of it before deciding",
+        "Read files in the repository freely",
+        "Read each assertion against",
+        "The referenced heading you read",
+        "Read the whole of that section",
+        "**Search `scenarios.md`**",
+        "what was actually read. List any advisory",
+    )
+
+    assert [direction for direction in forbidden_directions if direction in prompt] == []
 
 
 def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_two(
