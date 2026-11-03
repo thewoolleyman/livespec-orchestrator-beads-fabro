@@ -168,6 +168,17 @@ def test_green_amend_runs_its_red_test_before_the_aggregate(*, tmp_path: Path) -
     ]
 
 
+def test_doc_only_amend_on_a_red_only_head_keeps_the_doc_only_arm(*, tmp_path: Path) -> None:
+    """Documentation alone never takes the Green-amend staged pre-check and test phases."""
+    repo, env = _make_green_amend_shape(tmp_path=tmp_path / "doc")
+    _ = _run(argv=["git", "reset", "--quiet", ".claude-plugin/scripts/widget.py"], cwd=repo)
+    _stage(repo=repo, relative_path="README.md", body="notes\n")
+
+    invocation = _invoke_pre_commit(repo=repo, env=env)
+
+    assert invocation.splitlines() == ["check-pre-commit-doc-only"]
+
+
 def test_red_mode_arm_skips_the_incremental_coverage_gate(*, tmp_path: Path) -> None:
     repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
     _stage(repo=repo, relative_path="tests/test_placeholder.py", body="def test_red(): assert 0\n")
