@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -247,6 +248,59 @@ def test_legacy_needs_human_marker_on_run_stderr_still_blocks_the_item(
     assert outcome.status == "blocked"
     assert outcome.fabro_run_id == _LEGACY_RUN_ID
     assert f"refs/heads/needs-human/{_LEGACY_RUN_ID}" in outcome.detail
+
+
+@pytest.mark.parametrize(
+    "missing_helper",
+    [
+        "LIVESPEC_PROOF_GRADE_PROGRAM_ABSENT",
+        "LIVESPEC_JANITOR_PLUGIN_GATE_FAILED",
+        "LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT",
+    ],
+)
+def test_reacquired_sandbox_missing_helper_releases_the_item_as_a_host_fault(
+    tmp_path: Path, missing_helper: str
+) -> None:
+    """A resumed run cannot park a missing Dispatcher helper at needs-human."""
+    payload = json.loads(json.dumps(_PETRI_NEEDS_HUMAN_PAYLOAD))
+    conclusion = payload[0]["conclusion"]
+    failure = conclusion["failure"]
+    detail = failure["detail"]
+    assert isinstance(detail, dict)
+    detail["message"] += (
+        f"\n{missing_helper}\nfencing a recorded sandbox\nscope environment acquired"
+    )
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect(tmp_path=tmp_path, payload=payload),
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "host-fault-release"
+    assert outcome.fabro_failure_category == "transient_infra"
+    assert (
+        outcome.fabro_failure_cause == "host fault: re-acquired sandbox omitted Dispatcher helper"
+    )
+
+
+def test_missing_helper_without_a_reacquired_sandbox_still_blocks_the_item(tmp_path: Path) -> None:
+    """The host-fault release is limited to the measured resume failure mode."""
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect(tmp_path=tmp_path, payload=_PETRI_NEEDS_HUMAN_PAYLOAD),
+        exit_code=1,
+        stderr="LIVESPEC_PROOF_GRADE_PROGRAM_ABSENT",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "blocked"
 
 
 def test_petri_cancelled_reason_is_a_cancelled_fabro_run_outcome(tmp_path: Path) -> None:
