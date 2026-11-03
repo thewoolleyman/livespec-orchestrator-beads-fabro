@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attemp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_subject_references import (
+    bounded_reference_blocks,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
     EffectiveCriteria,
@@ -96,9 +99,6 @@ _VERDICT_PASSED = "passed"
 _VERDICT_FAILED = "failed"
 _REMEDY_SEPARATOR = "; "
 _UNRESOLVED_HEADING_BODY = "(this heading does not resolve in the governed spec tree)"
-_UNSELECTED_HEADING_BODY = (
-    "(the governing-heading verdict named or selected no clause from this referenced heading)"
-)
 _ABSENT_CRITERIA_BODY = "(this item carries no effective acceptance criteria)"
 # The description is the item's own text, so it can carry any heading; the end
 # marker is what keeps the subject's next heading from reading as the item's.
@@ -187,21 +187,23 @@ def judgement_subject(
         "## Effective acceptance criteria",
         _effective_criteria_body(criteria=criteria, section=section),
     ]
-    for reference in section.references:
-        blocks.extend(
-            (
-                "",
-                f"## Referenced heading: {reference}",
-                _referenced_heading_body(
-                    repo=cwd,
-                    reference=reference,
-                    governing=governing,
-                ),
-            )
+    ending = [
+        "",
+        _RIDERS_HEADING,
+        _riders_body(comments=comments),
+        "",
+        governing_heading_block(verdict=governing),
+    ]
+    blocks.extend(
+        bounded_reference_blocks(
+            prefix=blocks,
+            references=section.references,
+            ending=ending,
+            governing=governing,
+            heading_body=lambda reference: _heading_body(repo=cwd, reference=reference),
         )
-    blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
-    blocks.extend(("", governing_heading_block(verdict=governing)))
-    return "\n".join(blocks)
+    )
+    return "\n".join([*blocks, *ending])
 
 
 def _effective_criteria_body(*, criteria: EffectiveCriteria, section: DefinitionOfDone) -> str:
@@ -359,15 +361,6 @@ def _heading_body(*, repo: Path, reference: str) -> str:
         if body is not None:
             return body
     return _UNRESOLVED_HEADING_BODY
-
-
-def _referenced_heading_body(
-    *, repo: Path, reference: str, governing: GoverningHeadingVerdict | None
-) -> str:
-    """Retain a full section only until the governing verdict supplies its scope."""
-    if governing is not None:
-        return _UNSELECTED_HEADING_BODY
-    return _heading_body(repo=repo, reference=reference)
 
 
 def _section_of(*, text: str, title: str) -> str | None:
