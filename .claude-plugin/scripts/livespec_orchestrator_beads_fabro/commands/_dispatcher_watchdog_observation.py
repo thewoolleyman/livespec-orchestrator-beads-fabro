@@ -50,9 +50,14 @@ status could be read, and never on a reading that yielded one.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    JournalWriter,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
     FABRO_PROBE_TIMEOUT_SECONDS,
 )
@@ -67,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
     FabroRunSummary,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
 
 __all__: list[str] = [
@@ -168,10 +174,7 @@ def observed_run(
     can take the result without leaving the record.
     """
     if bound_run_id is not None:
-        inspect = port.inspect(
-            run_id=bound_run_id,
-            timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
-        )
+        inspect = _bound_run_read(port=port, run_id=bound_run_id)
         return ObservedRun(
             run=journaled_bound_poll(
                 work_item_id=work_item_id,
@@ -193,6 +196,51 @@ def observed_run(
         ),
         record=None,
     )
+
+
+def _bound_run_read(*, port: FabroPort, run_id: str) -> FabroInspectResult:
+    """Project a bound run from its compact HTTP stage read.
+
+    A port with no server target is a local/unit-test seam rather than a
+    factory observation; retain the CLI path there so that an unconfigured
+    port cannot silently claim an HTTP result from no named factory.
+    """
+    if port.target.server_url is None:
+        return port.inspect(run_id=run_id, timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS)
+    stages = port.server_api().stages(run_id=run_id, timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS)
+    return FabroInspectResult(
+        command=CommandResult(
+            exit_code=0 if stages.succeeded else 1,
+            stdout=stages.body if stages.succeeded else "",
+            stderr="" if stages.succeeded else stages.body,
+        ),
+        payload=stages.payload,
+        status_kind=_stages_status_kind(result=stages),
+        failure=None,
+    )
+
+
+def _stages_status_kind(*, result: FabroHttpResult) -> str | None:
+    """Infer the run state from the live stage projection the server returned."""
+    raw_payload: object = result.payload
+    if not result.succeeded or not isinstance(raw_payload, dict):
+        return None
+    payload = cast("dict[str, object]", raw_payload)
+    data = payload.get("data")
+    if not isinstance(data, list):
+        return None
+    stages = cast("list[object]", data)
+    statuses: list[str] = []
+    for stage in stages:
+        if not isinstance(stage, Mapping):
+            continue
+        status = cast("Mapping[str, object]", stage).get("status")
+        if isinstance(status, str):
+            statuses.append(status)
+    for status in ("running", "runnable", "needs_human", "failed", "cancelled", "succeeded"):
+        if status in statuses:
+            return status
+    return None
 
 
 def journaled_bound_poll(
