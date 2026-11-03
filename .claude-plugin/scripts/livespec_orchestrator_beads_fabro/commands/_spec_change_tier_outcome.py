@@ -14,11 +14,12 @@ per specification version.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import attested_decision
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
+    TierClauseProvenance,
     classification_did_not_run_comment,
     recorded_did_not_run_causes,
     recorded_spec_change_tier,
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "SpecChangeTierOutcome",
+    "TierRecordContext",
     "did_not_run_outcome",
     "recorded_outcome",
     "standing_outcome",
@@ -81,6 +83,15 @@ class SpecChangeTierOutcome:
         return self.recorded is not None and self.recorded.is_spec_change
 
 
+@dataclass(frozen=True, kw_only=True)
+class TierRecordContext:
+    """The reusable identity and provenance of one tier-taking."""
+
+    spec_version: str
+    digest: str
+    provenance: TierClauseProvenance = field(default_factory=TierClauseProvenance)
+
+
 def standing_outcome(
     *,
     item: WorkItem,
@@ -104,8 +115,7 @@ def standing_outcome(
             item=item,
             stage=stage,
             decision=attested_decision(heading=cited.heading.rstrip()),
-            spec_version=spec_version,
-            digest=digest,
+            context=TierRecordContext(spec_version=spec_version, digest=digest),
             append=append,
         )
     if reused is None:
@@ -118,8 +128,7 @@ def recorded_outcome(
     item: WorkItem,
     stage: str,
     decision: SpecChangeTierDecision,
-    spec_version: str,
-    digest: str,
+    context: TierRecordContext,
     append: Callable[..., None],
 ) -> SpecChangeTierOutcome:
     """Write one decision's record and report the classification it leaves standing.
@@ -133,8 +142,9 @@ def recorded_outcome(
         item_id=item.id,
         stage=stage,
         decision=decision,
-        spec_version=spec_version,
-        digest=digest,
+        spec_version=context.spec_version,
+        digest=context.digest,
+        provenance=context.provenance,
     )
     append(body=body)
     return SpecChangeTierOutcome(

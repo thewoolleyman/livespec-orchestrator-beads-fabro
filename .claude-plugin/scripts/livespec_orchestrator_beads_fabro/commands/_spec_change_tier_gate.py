@@ -67,6 +67,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
     item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    verdict_named_headings,
+)
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     CONFIGURATION_RUBRIC,
@@ -79,14 +82,20 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
 )
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_outcome import (
     SpecChangeTierOutcome,
+    TierRecordContext,
     did_not_run_outcome,
     recorded_outcome,
     standing_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
+    TierClauseProvenance,
     recorded_spec_change_tier,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import judged_prompt_ceiling
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    PROMPT_CHARACTER_CEILING,
+    clauses_named,
+    condensed_spec_tree,
     judge_within_ceiling,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -157,6 +166,18 @@ def classify_spec_change_tier(
             append=append,
         )
     spec_version = str(snapshot.version)
+    statement = asked_for_behaviour(item=item)
+    selected_clauses = tuple(
+        clause
+        for clause in condensed_spec_tree(
+            spec_tree=snapshot.files,
+            statement=statement,
+            ceiling=judged_prompt_ceiling(
+                spec_tree=snapshot.files, ceiling=PROMPT_CHARACTER_CEILING
+            ),
+        ).clauses
+        if clause.heading
+    )
     standing = standing_outcome(
         item=item,
         stage=stage,
@@ -168,7 +189,6 @@ def classify_spec_change_tier(
     if standing is not None:
         return standing
     judge_runner = runner or ShellCommandRunner()
-    statement = asked_for_behaviour(item=item)
     classification = spec_stated.classify(
         title=item.title,
         description=item.description,
@@ -196,8 +216,7 @@ def classify_spec_change_tier(
             item=item,
             stage=stage,
             decision=exempt_decision(classification=item_class),
-            spec_version=spec_version,
-            digest=digest,
+            context=TierRecordContext(spec_version=spec_version, digest=digest),
             append=append,
         )
     verdict = judge_within_ceiling(
@@ -226,8 +245,20 @@ def classify_spec_change_tier(
             verdict=verdict.unwrap(),
             linked_proposal_topic=None if standing is None else standing.linked_proposal_topic,
         ),
-        spec_version=spec_version,
-        digest=digest,
+        context=TierRecordContext(
+            spec_version=spec_version,
+            digest=digest,
+            provenance=TierClauseProvenance(
+                selected=selected_clauses,
+                named=clauses_named(
+                    spec_tree=snapshot.files,
+                    headings=verdict_named_headings(
+                        stated_by=verdict.unwrap().stated_by,
+                        generalization_target=verdict.unwrap().generalization_target,
+                    ),
+                ),
+            ),
+        ),
         append=append,
     )
 

@@ -46,6 +46,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import clause_line
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import SPEC_CHANGE_TIER
 
 if TYPE_CHECKING:
@@ -54,6 +55,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
         SpecChangeTierDecision,
     )
+    from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
 __all__: list[str] = [
     "SPEC_CHANGE_TIER_MARKER",
@@ -63,6 +65,7 @@ __all__: list[str] = [
     "STAGE_GROOM",
     "STAGE_RELEASE",
     "RecordedSpecChangeTier",
+    "TierClauseProvenance",
     "classification_did_not_run_comment",
     "recorded_did_not_run_causes",
     "recorded_spec_change_tier",
@@ -94,6 +97,9 @@ _LINKED_TOPIC_FIELD = "linked-proposal-topic"
 _SPEC_VERSION_FIELD = "spec-version"
 _DIGEST_FIELD = "behaviour-digest"
 _RATIONALE_FIELD = "rationale"
+_PROVENANCE_FIELD = "spec-change-tier-clause-provenance"
+_SELECTED_CLAUSE_FIELD = "spec-change-tier-selected-clause"
+_NAMED_CLAUSE_FIELD = "spec-change-tier-named-clause"
 # Deliberately NOT the bare `cause`. The did-not-run scan below walks back over
 # whatever comments sit between the newest record and the last taken
 # classification — operator riders among them — and a field name a rider could
@@ -127,11 +133,22 @@ class RecordedSpecChangeTier:
     linked_proposal_topic: str | None
     spec_version: str
     digest: str
+    selected_clauses: tuple[CondensedClause, ...] = ()
+    named_clauses: tuple[CondensedClause, ...] = ()
+    provenance_complete: bool = False
 
     @property
     def is_spec_change(self) -> bool:
         """Whether the recorded tier puts the item in the spec-change tier."""
         return self.tier == SPEC_CHANGE_TIER
+
+
+@dataclass(frozen=True, kw_only=True)
+class TierClauseProvenance:
+    """The full clauses a tier verdict saw and named."""
+
+    selected: tuple[CondensedClause, ...] = ()
+    named: tuple[CondensedClause, ...] = ()
 
 
 def spec_change_tier_comment(
@@ -141,6 +158,7 @@ def spec_change_tier_comment(
     decision: SpecChangeTierDecision,
     spec_version: str,
     digest: str,
+    provenance: TierClauseProvenance | None = None,
 ) -> str:
     """The ledger comment recording one tier decision, verdict and all.
 
@@ -155,6 +173,7 @@ def spec_change_tier_comment(
     reader can tell "nobody asked the specification about this item" from "the
     judgement was taken and named no clause".
     """
+    actual_provenance = provenance or TierClauseProvenance()
     verdict = decision.verdict
     kind = _NOT_TAKEN if verdict is None else verdict.kind
     rationale = _NOT_TAKEN if verdict is None else verdict.rationale
@@ -174,6 +193,15 @@ def spec_change_tier_comment(
             f"{_SPEC_VERSION_FIELD}{_FIELD_SEPARATOR}{spec_version}",
             f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
             f"{_RATIONALE_FIELD}{_FIELD_SEPARATOR}{rationale}",
+            f"{_PROVENANCE_FIELD}{_FIELD_SEPARATOR}complete",
+            *(
+                clause_line(key=_SELECTED_CLAUSE_FIELD, clause=clause)
+                for clause in actual_provenance.selected
+            ),
+            *(
+                clause_line(key=_NAMED_CLAUSE_FIELD, clause=clause)
+                for clause in actual_provenance.named
+            ),
         )
     )
 
