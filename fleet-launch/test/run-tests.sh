@@ -40,6 +40,15 @@ if [ ! -f "$LAUNCHER" ]; then
     exit 1
 fi
 
+HARNESS_SLICE=${1:-all}
+case "$HARNESS_SLICE" in
+    all|scenario297) ;;
+    *)
+        echo "usage: run-tests.sh [scenario297]" >&2
+        exit 2
+        ;;
+esac
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -321,6 +330,11 @@ new_case() {
     export FLEET_LAUNCH_MAX_WAIT_S=4
     export FLEET_LAUNCH_ABANDON_S=60
     export FLEET_LAUNCH_POLL_S=1
+    # The mutex retry and the post-drive listing poll wait on an observed
+    # state too: a one-second step lets a case advance as soon as the lock frees
+    # or the run lists, rather than after a 10 s or 15 s production interval.
+    export FLEET_LAUNCH_MUTEX_POLL_S=1
+    export FLEET_LAUNCH_LISTING_POLL_S=1
     export FLEET_LAUNCH_PREFLIGHT_REUSE_S=600
     export FLEET_LAUNCH_MUTEX_HOLD_S=60
     unset ONLY_GMK ONLY_HL CAPTURE_NULL CAPTURE_EXPECT TICKET_NS REWORK RELEASE_BLOCKED
@@ -387,6 +401,7 @@ wait_for_line() {
 
 echo "=== fleet-launch hermetic harness"
 
+if [ "$HARNESS_SLICE" = all ]; then
 # --- 1. reading a factory board ---------------------------------------------
 # The count must be the LIVE rows only: not the header, and not the terminal
 # runs a real `ps -a` board carries beside them. The absent fleet-cap file is
@@ -565,6 +580,8 @@ else
     fail "an unknown fleet launched (rc=$RC, dispatches: $(drive_log_items))"
 fi
 
+fi
+
 # --- 6. queued preflights, reusable passes, and FIFO binds ------------------
 # The slow older ticket creates a real queue interval.  The younger ticket must
 # use that interval for its own Definition-of-Done preflight, rather than wait
@@ -625,7 +642,7 @@ fi
 echo "--- 7. re-runs a stale queued preflight at the FIFO head"
 new_case stale-preflight
 export FLEET_LAUNCH_MAX_WAIT_S=300
-export FLEET_LAUNCH_PREFLIGHT_REUSE_S=1
+export FLEET_LAUNCH_PREFLIGHT_REUSE_S=0
 export STUB_PREFLIGHT_SLOW_ITEM=bd-ib-stale-older
 export STUB_PREFLIGHT_SLOW_S=120
 : > "$BOARD_GMK"
@@ -639,9 +656,8 @@ younger_pid=$!
 if ! wait_for_preflight bd-ib-stale-younger 1 60 || [ -s "$DRIVE_LOG" ]; then
     fail "the stale-case younger launcher did not preflight while queued"
 fi
-# Let the younger pass outlive FLEET_LAUNCH_PREFLIGHT_REUSE_S=1 before the
-# older launcher is released to bind.
-sleep 2
+# A zero-second reuse window makes the observed queued pass stale as soon as
+# the older launcher is released; no wall-clock delay is part of this case.
 touch "$STUB_PREFLIGHT_RELEASE"
 await_both "$older_pid" "$younger_pid" 90
 if [ "$(preflight_count bd-ib-stale-younger)" = 2 ]; then
