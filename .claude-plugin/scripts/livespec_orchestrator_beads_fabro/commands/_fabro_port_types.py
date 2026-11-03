@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -117,6 +117,9 @@ class FabroInspectResult:
     status_kind: str | None
     failure: FabroFailureDetail | None
     events_payload: object | None = None
+    # Lazily exports the run's own log, which records an engine sandbox
+    # re-acquisition that neither the failure detail nor the events carry.
+    run_log: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

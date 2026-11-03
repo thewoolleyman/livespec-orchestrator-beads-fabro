@@ -29,6 +29,9 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause import (
+    exported_run_log_text,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import (
     attributed_provider_limit_failure,
     executed_candidate_identity,
@@ -82,6 +85,9 @@ def terminal_events_attachment(
     these records: a probe that errored and a run that emitted nothing support
     opposite conclusions, and collapsing them would let a probe outage read as a
     terminal that preserved nothing.
+
+    The run's log is attached as a lazy reader, never read here: only a run that
+    signalled a missing Dispatcher helper has a use for it.
     """
     if inspect.command.exit_code != 0 or inspect.status_kind != "failed":
         return inspect
@@ -98,6 +104,7 @@ def terminal_events_attachment(
     return replace(
         inspect,
         events_payload=events.payload if events.command.exit_code == 0 else None,
+        run_log=lambda: exported_run_log_text(plan=plan, runner=runner, run_id=run_id),
     )
 
 

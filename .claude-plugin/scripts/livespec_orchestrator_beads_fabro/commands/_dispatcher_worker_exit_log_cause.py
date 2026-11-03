@@ -97,6 +97,7 @@ __all__: list[str] = [
     "WORKER_EXIT_BEFORE_TERMINAL_EVENT",
     "WORKER_EXIT_ENGINE_FAILURE_STAGE",
     "WorkerExitEngineFailure",
+    "exported_run_log_text",
     "worker_exit_engine_failure_outcome",
 ]
 
@@ -178,7 +179,7 @@ def worker_exit_engine_failure_outcome(
     if conclusion != WORKER_EXIT_BEFORE_TERMINAL_EVENT:
         return terminal
     message = _engine_failure_message(
-        text=_exported_log_text(plan=plan, runner=runner, run_id=run_id)
+        text=exported_run_log_text(plan=plan, runner=runner, run_id=run_id)
     )
     recovered = (
         None
@@ -251,7 +252,7 @@ def _signature_category(*, signature: str | None) -> str | None:
     return fields[_SIGNATURE_CATEGORY_FIELD].strip() or None
 
 
-def _exported_log_text(*, plan: DispatchPlan, runner: CommandRunner, run_id: str) -> str:
+def exported_run_log_text(*, plan: DispatchPlan, runner: CommandRunner, run_id: str) -> str:
     """Export one run and read its log, or the empty text when either failed.
 
     The export goes through the port built from THIS dispatch's resolved

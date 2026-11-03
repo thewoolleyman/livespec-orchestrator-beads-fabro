@@ -151,7 +151,9 @@ def _terminal_outcome(
         inspect=inspect,
         client_text=client_text,
     )
-    if classified is None and reacquired_sandbox_helper_absence(text=client_text):
+    if classified is None and reacquired_sandbox_helper_absence(
+        text=client_text, run_log=None if inspect is None else inspect.run_log
+    ):
         classified = outcome_type(
             work_item_id=plan.work_item_id,
             status=HOST_FAULT_RELEASE_STATUS,

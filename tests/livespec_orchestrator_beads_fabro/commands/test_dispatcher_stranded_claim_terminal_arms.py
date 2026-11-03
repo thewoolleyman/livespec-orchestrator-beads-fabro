@@ -160,9 +160,10 @@ def _payload(*, status: str, message: str) -> list[dict[str, Any]]:
 class _Runner:
     """A fake `fabro`/`gh` seam with a scriptable `inspect` answer."""
 
-    def __init__(self, *, stdout: str, exit_code: int = 0) -> None:
+    def __init__(self, *, stdout: str, exit_code: int = 0, run_log: str | None = None) -> None:
         self.stdout = stdout
         self.exit_code = exit_code
+        self.run_log = run_log
 
     def run(
         self,
@@ -176,6 +177,10 @@ class _Runner:
         _ = (cwd, timeout_seconds, env, stdin)
         if argv[0] != "gh" and argv[1] == "inspect":
             return CommandResult(exit_code=self.exit_code, stdout=self.stdout, stderr="")
+        if argv[0] != "gh" and argv[1] == "dump" and self.run_log is not None:
+            _ = (Path(argv[argv.index("-o") + 1]) / "run.log").write_text(
+                self.run_log, encoding="utf-8"
+            )
         return CommandResult(exit_code=0, stdout="[]", stderr="")
 
 
@@ -312,6 +317,28 @@ def test_a_failure_that_never_reached_the_needs_human_terminal_still_rests(
     ]
     assert len(bodies) == 1
     assert _RUN_ID in bodies[0]
+
+
+def test_a_missing_helper_after_a_resume_recorded_in_the_run_log_is_released(
+    tmp_path: Path,
+) -> None:
+    """The re-acquisition evidence is read from the run's own exported log."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    _seed(item=item)
+    journal = _journal(repo=repo)
+    runner = _Runner(
+        stdout=json.dumps(
+            _payload(status="failed", message="LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT")
+        ),
+        run_log="INFO fencing a recorded sandbox\nINFO scope environment acquired\n",
+    )
+
+    survey = _survey(repo=repo, item=item, journal=journal, runner=runner)
+
+    assert survey.held == ()
+    released = next(iter(read_work_items(path=_config())))
+    assert (released.status, released.blocked_reason) == ("ready", None)
 
 
 def test_a_row_whose_state_cannot_be_re_read_withholds_the_rest(
