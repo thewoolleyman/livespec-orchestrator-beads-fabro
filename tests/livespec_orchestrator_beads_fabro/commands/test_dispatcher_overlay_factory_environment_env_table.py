@@ -123,6 +123,7 @@ def _credential_block(*, environment_id: str) -> str:
     """
     return (
         f"[environments.{environment_id}.env]\n"
+        'HOME = "/workspace"\n'
         f'CLAUDE_CODE_OAUTH_TOKEN = "{_FAKE_TOKEN}"\n'
         f'GITHUB_TOKEN = "{_FAKE_GITHUB_TOKEN}"\n'
     )

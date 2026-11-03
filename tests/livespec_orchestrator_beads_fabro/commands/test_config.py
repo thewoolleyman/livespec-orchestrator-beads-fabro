@@ -841,6 +841,7 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + "[environments.livespec-ci.env]\n"
+        + 'HOME = "/workspace"\n'
         + 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"\n'
         + 'GITHUB_TOKEN = "test-github-token"\n'
         + _dispatcher_tmux_socket_root.tmux_tmpdir_env_lines()

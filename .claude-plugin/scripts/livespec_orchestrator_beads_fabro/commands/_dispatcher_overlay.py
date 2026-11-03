@@ -134,6 +134,10 @@ __all__: list[str] = [
 # credential.
 CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
 CURRENCY_GATE_ENV_VALUE = "fail"
+# A re-acquired Fabro sandbox restores `/workspace`, but starts with a fresh
+# container home. The Agent SDK's plugin cache and Dispatcher helpers both use
+# `$HOME/.claude/plugins`, so their normal root must be the durable workspace.
+_SANDBOX_DURABLE_HOME = "/workspace"
 
 
 def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input.
@@ -407,6 +411,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{env_environment_id}.env]\n"
+        + f"HOME = {json.dumps(_SANDBOX_DURABLE_HOME)}\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
         + f"GITHUB_TOKEN = {github_token_literal}\n"
         + author_env_lines
