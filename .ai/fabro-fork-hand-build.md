@@ -60,7 +60,9 @@ measured on that walk.
   nice 19 the gate takes only the cycles the other sessions leave idle, so it
   pauses only when `mpstat 5 1` reports idle below 8%. There is no cluster
   venue for a fork build: `rust.yml` runs only for `main`, and an ad hoc
-  host build on gmktec is not sanctioned.
+  host build on gmktec is not sanctioned. The throttle protects the shared
+  box. It is never a reason to read a test verdict differently: see "A test
+  verdict never depends on load" below.
 
 ## Nightly tags are release tags
 
@@ -86,16 +88,54 @@ The fork's GitHub workflows run only on `main` (`rust.yml`,
 `typescript.yml`: `branches: [main]`), so a pull request against
 any carrier branch shows NO checks and `gh pr view` reports an empty
 status rollup. That is not a green signal; it is the absence of an
-instrument. The merge gate is therefore the same set the fork CI would run,
-executed locally against the branch tip:
+instrument. The merge gate is therefore run locally against the branch tip,
+and it is TARGETED (maintainer ruling 2026-11-03):
 
 ```bash
 cd ~/.worktrees/fabro/<branch>
 export CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
 cargo +nightly-2026-04-14 fmt --check --all
 cargo +nightly-2026-04-14 clippy --workspace --all-targets -- -D warnings
-cargo nextest run -p <every crate the diff touches>
+# RED: the change's own tests, with the fix reverted, must fail.
+# GREEN: the same tests, with the fix, must pass.
+cargo nextest run --profile ci -p <crate> -E '<the tests the diff adds or changes>'
 ```
+
+Do NOT run the whole crate or workspace test suite for a narrow diff. The
+RED/GREEN run of the change's own tests is the evidence. On 2026-11-03,
+full `fabro-petri` runs on two one-function diffs (`bd-ib-6r3yax`,
+`bd-ib-bpucez`) cost about an hour each on a loaded host and surfaced only
+pre-existing test defects. Widen the selection only when the diff reaches
+across modules or changes a shared interface, and then select the dependent
+tests, not the crate.
+
+### A test verdict never depends on load
+
+Maintainer ruling 2026-11-03: a test's verdict must never depend on host
+load or wall-clock time. The only time bound is the overall run timeout
+(locally, in the factory and in CI). A test that genuinely hangs is a
+separate bug. Consequences for a gate:
+
+- A test that fails or times out on load or timing is a TEST DEFECT. File
+  it once as a root-fix item, or add the instance to the existing item, and
+  move on. Retries, skips, `#[ignore]` and longer deadlines are not fixes.
+- Never clear a failure by rerunning it solo or at lower load; a rerun pass
+  is not evidence. Never spend runs comparing a flaky test across commits:
+  on 2026-11-03 that cost about two hours on the blob test and decided
+  nothing the root-fix item did not already say.
+- A failing test that the change's own diff cannot reach does not block the
+  merge once it is tracked; one the diff can reach does.
+
+Tracked fork test defects at 2026-11-03: `bd-ib-aqcgxz` (blob round-trip
+race), `bd-ib-4uge7u` (test-local wall-clock deadlines in two tests),
+`bd-ib-adrhkf` (the per-test nextest hard kill in `.config/nextest.toml`,
+about 120 s in `profile.ci` and 20 s for `fabro-petri` in
+`profile.default`, which kills healthy tests under load), and
+`bd-ib-gmuxd4` (the stall test's real-clock budget).
+
+Work independent fork items in PARALLEL, each in its own worktree on the
+carrier branch, and fold their merges into one engine build. Do not queue
+them one at a time.
 
 `nightly-2026-04-14` is the toolchain the fork's own CI pins for fmt and
 clippy; a different nightly reports different lints and is not evidence.
