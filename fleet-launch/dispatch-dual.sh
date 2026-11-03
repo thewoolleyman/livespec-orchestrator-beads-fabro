@@ -146,7 +146,7 @@ oldest_live_ticket() {
     rm -f "$q/$f"
   done
 }
-# take_mutex <queue-dir> <lock-dir>: FIFO ticket, 10 s polls, abandon after FLEET_LAUNCH_ABANDON_S.
+# take_mutex <queue-dir> <lock-dir>: FIFO ticket, FLEET_LAUNCH_MUTEX_POLL_S polls, abandon after FLEET_LAUNCH_ABANDON_S.
 take_mutex() {
   local q="$1" l="$2" queued early=""
   mkdir -p "$q"
@@ -161,7 +161,7 @@ take_mutex() {
       # FIFO place instead of polling ticketless. The ticket is dropped only once the launch binds.
       lock="$l"; echo "owner=$SEAT pid=$$ item=$ITEM at=$(date -u +%FT%TZ)" > "$l/holder"; [ -n "$early" ] || drop_ticket; return 0
     fi
-    sleep 10
+    sleep "$FLEET_LAUNCH_MUTEX_POLL_S"
   done
   [ -n "$early" ] || drop_ticket; return 1
 }
@@ -314,7 +314,7 @@ while :; do
   if [ -n "$run_row" ]; then echo "$(date -u +%T) LISTED on $target: $run_row"; break; fi
   if ! kill -0 "$drive_pid" 2>/dev/null; then echo "$(date -u +%T) drive exited before listing"; break; fi
   if [ -n "$lock" ] && [ $(( $(date +%s) - taken )) -ge "$FLEET_LAUNCH_MUTEX_HOLD_S" ]; then echo "$(date -u +%T) mutex hold elapsed: release (marker kept until listing or drive exit)"; release_lock; fi
-  sleep 15
+  sleep "$FLEET_LAUNCH_LISTING_POLL_S"
 done
 release_lock; rm -f "$marker"; marker=""
 echo "$(date -u +%FT%TZ) target=$target build=$build version=${build_version:-?} listed=${run_row:-none}" > "$OUT/$ITEM-r267.verdict"

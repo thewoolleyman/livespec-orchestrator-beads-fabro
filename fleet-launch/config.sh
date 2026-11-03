@@ -58,3 +58,8 @@
 : "${FLEET_LAUNCH_POLL_S:=30}"
 : "${FLEET_LAUNCH_PREFLIGHT_REUSE_S:=600}"
 : "${FLEET_LAUNCH_MUTEX_HOLD_S:=900}"
+# The two fixed poll intervals below are waits on an observed state (a free
+# mutex, a listed run); the hermetic harness shortens them so each of its cases
+# advances on that state instead of sitting out a production-sized interval.
+: "${FLEET_LAUNCH_MUTEX_POLL_S:=10}"
+: "${FLEET_LAUNCH_LISTING_POLL_S:=15}"

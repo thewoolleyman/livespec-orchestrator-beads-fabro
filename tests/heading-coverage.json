@@ -2717,5 +2717,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-pys5lt upstreams the launcher-local preflight deltas into dev-tooling/dod-preflight.sh and adds the test running it under a PATH-resetting wrapper with a string-form adapter entry.",
     "work_item": "bd-ib-pys5lt"
+  },
+  {
+    "heading": "## Dispatch pre-launch step attribution and concurrency",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-bpkqan journals start and end records for every pre-launch step, runs independent pre-launch steps concurrently, computes per-loop-pass facts once, and tests the default branch's ref first in the source-checkout preflight, with the test exercising those dispatcher behaviours.",
+    "work_item": "bd-ib-bpkqan"
   }
 ]
