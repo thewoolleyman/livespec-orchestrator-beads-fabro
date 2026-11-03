@@ -108,7 +108,15 @@ jobs:
       fail-fast: false
       matrix:
         # bd-ib-sfa2: every target runs under BOTH uids, and BOTH are
-        # required. Before this dimension existed the whole matrix ran as
+        # required — the nonroot leg HERE, on every pull request and master
+        # push, and the root leg in `ci-root-uid.yml`, on master every three
+        # hours (bd-ib-xufdwx, plan ci-runtime-and-cost, maintainer direction
+        # 2026-11-03: "root and non root . is overkill. move one to
+        # dschrduled master job"). Nonroot stays on pull requests because it
+        # is the production-shaped uid: the janitor and factory workers run
+        # non-root. A red scheduled root run is filed as a breakage work item
+        # (bd-ib-pgbr52), so a root-only divergence is found on master after
+        # merge rather than before it. Before this dimension existed the whole matrix ran as
         # root, so CI STRUCTURALLY COULD NOT exhibit a non-root divergence —
         # which is how `_dispatcher_janitor_lock.py:133` stayed uncovered for
         # every non-root runner while CI reported green on the same SHA, and
@@ -121,7 +129,9 @@ jobs:
         # leg, which then misses 100% and fails; a line reachable only as
         # non-root fails the root leg identically. So divergence cannot survive
         # two independently-gated legs — no comparison step, no report-diffing,
-        # no second invariant that could drift from the first.
+        # no second invariant that could drift from the first. Moving the root
+        # leg to a schedule changes WHEN it gates, not WHETHER: each uid is
+        # still gated at 100% on its own.
         #
         # THIS ARGUMENT DEPENDS ON THE COVERAGE FAIL-UNDER REMAINING 100%
         # (`pyproject.toml [tool.coverage.report] fail_under = 100`, which
@@ -135,15 +145,15 @@ jobs:
         # the defect class of `bd-ib-d9gf`. Uniformity costs runner minutes and
         # buys the absence of a list nobody would remember to update.
         uid:
-          - root
           - nonroot
         target:
           # Batched-CI shape (work-item livespec-dev-tooling-yilyxr.9,
           # porting dev-tooling PR #1469): tool-backed slugs must be
           # LITERAL matrix members (check-tool-backed-check-completeness)
           # and the cheap .py-scanning targets moved to
-          # check-python-batch below, which keeps the SAME uid matrix so
-          # the bd-ib-sfa2 both-uids invariant holds for every target
+          # check-python-batch below, which keeps the SAME uid matrix (here
+          # and in ci-root-uid.yml) so the bd-ib-sfa2 both-uids invariant
+          # holds for every target
           # (slug drift stays policed by ci-matrix-completeness). The
           # coverage PAIR left this matrix entirely (work-item
           # livespec-dev-tooling-yilyxr.8, porting dev-tooling PRs #1504
@@ -235,10 +245,6 @@ jobs:
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
 
-      - name: just ${{ matrix.target }} (root)
-        if: matrix.uid == 'root'
-        run: just ${{ matrix.target }}
-
       # No `--cov` or fail-under override here: this leg runs the SAME recipe
       # under a different uid, which is the whole point. Nothing about it is
       # advisory, warn-only, or gated behind an env lever — a failure here
@@ -278,7 +284,8 @@ jobs:
   # both legs ran the full suite on separate runners, under BOTH uids — four
   # suite runs per CI run; now it is two.
   #
-  # THE uid DIMENSION IS LOAD-BEARING HERE AND IS KEPT. bd-ib-sfa2's argument
+  # THE uid DIMENSION IS LOAD-BEARING HERE AND IS KEPT, split across two
+  # workflows: nonroot here, root in ci-root-uid.yml (bd-ib-xufdwx). bd-ib-sfa2's argument
   # (see check-python) is that the 100% coverage gate itself converts a
   # root/non-root divergence into a failure, because a line reachable only
   # under one uid misses 100% under the other. That argument lives in THESE
@@ -300,7 +307,6 @@ jobs:
       fail-fast: false
       matrix:
         uid:
-          - root
           - nonroot
     steps:
       # Per-step `if:` (not job-level) so the job still reports its own status
@@ -332,10 +338,6 @@ jobs:
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
-
-      - name: just check-per-file-coverage (root)
-        if: matrix.uid == 'root'
-        run: just check-per-file-coverage
 
       - name: just check-per-file-coverage (uid 1000)
         if: matrix.uid == 'nonroot'
@@ -389,7 +391,6 @@ jobs:
       fail-fast: false
       matrix:
         uid:
-          - root
           - nonroot
         target:
           - check-coverage
@@ -427,10 +428,6 @@ jobs:
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
 
-      - name: just ${{ matrix.target }} (root)
-        if: matrix.uid == 'root'
-        run: just ${{ matrix.target }}
-
       - name: just ${{ matrix.target }} (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
@@ -457,7 +454,7 @@ jobs:
   # porting dev-tooling PR #1469): one container setup per uid for 22
   # sub-minute targets that each previously paid it alone as a matrix leg
   # under BOTH uids. The uid dimension is KEPT (bd-ib-sfa2: every target
-  # runs as root and nonroot; the 100% coverage gates in the retained
+  # runs as nonroot here and as root in ci-root-uid.yml; the 100% coverage gates in the retained
   # coverage legs carry the divergence argument), so batching changes the
   # per-target setup cost, not the uid coverage. Failures are COLLECTED;
   # each target is a literal `just <slug>` line (ci-matrix-completeness
@@ -476,7 +473,6 @@ jobs:
       fail-fast: false
       matrix:
         uid:
-          - root
           - nonroot
     steps:
 
@@ -503,38 +499,6 @@ jobs:
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
-
-      - name: Run the batched python checks (root)
-        if: matrix.uid == 'root'
-        run: |
-          failed=""
-          just check-all-declared || failed="$failed check-all-declared"
-          just check-assert-never-exhaustiveness || failed="$failed check-assert-never-exhaustiveness"
-          just check-check-mutation || failed="$failed check-check-mutation"
-          just check-file-lloc || failed="$failed check-file-lloc"
-          just check-global-writes || failed="$failed check-global-writes"
-          just check-keyword-only-args || failed="$failed check-keyword-only-args"
-          just check-main-guard || failed="$failed check-main-guard"
-          just check-match-keyword-only || failed="$failed check-match-keyword-only"
-          just check-newtype-domain-primitives || failed="$failed check-newtype-domain-primitives"
-          just check-no-except-outside-io || failed="$failed check-no-except-outside-io"
-          just check-no-inheritance || failed="$failed check-no-inheritance"
-          just check-no-lloc-soft-warnings || failed="$failed check-no-lloc-soft-warnings"
-          just check-no-raise-outside-io || failed="$failed check-no-raise-outside-io"
-          just check-no-write-direct || failed="$failed check-no-write-direct"
-          just check-pbt-coverage-pure-modules || failed="$failed check-pbt-coverage-pure-modules"
-          just check-private-calls || failed="$failed check-private-calls"
-          just check-public-api-result-typed || failed="$failed check-public-api-result-typed"
-          just check-rop-pipeline-shape || failed="$failed check-rop-pipeline-shape"
-          just check-self-hosted-uv-lane || failed="$failed check-self-hosted-uv-lane"
-          just check-supervisor-discipline || failed="$failed check-supervisor-discipline"
-          just check-tests-mirror-pairing || failed="$failed check-tests-mirror-pairing"
-          just check-tests-no-subprocess-spawn || failed="$failed check-tests-no-subprocess-spawn"
-          just check-wrapper-shape || failed="$failed check-wrapper-shape"
-          if [ -n "$failed" ]; then
-            echo "Failed targets:$failed"
-            exit 1
-          fi
 
       - name: Run the batched python checks (nonroot)
         if: matrix.uid == 'nonroot'
@@ -571,6 +535,7 @@ jobs:
           run_nonroot just check-private-calls || failed="$failed check-private-calls"
           run_nonroot just check-public-api-result-typed || failed="$failed check-public-api-result-typed"
           run_nonroot just check-rop-pipeline-shape || failed="$failed check-rop-pipeline-shape"
+          run_nonroot just check-self-hosted-uv-lane || failed="$failed check-self-hosted-uv-lane"
           run_nonroot just check-supervisor-discipline || failed="$failed check-supervisor-discipline"
           run_nonroot just check-tests-mirror-pairing || failed="$failed check-tests-mirror-pairing"
           run_nonroot just check-tests-no-subprocess-spawn || failed="$failed check-tests-no-subprocess-spawn"
