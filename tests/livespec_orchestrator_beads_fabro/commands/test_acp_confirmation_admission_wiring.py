@@ -125,8 +125,9 @@ class _Engine:
 class _EmptyFactory:
     """A factory run listing that is readable and carries no run at all."""
 
-    def __init__(self, *, repo: Path) -> None:
+    def __init__(self, *, repo: Path, journal: object = None) -> None:
         self.repo = repo
+        self.journal = journal
 
     def list_runs(self, *, factory: str) -> tuple[()]:
         _ = factory

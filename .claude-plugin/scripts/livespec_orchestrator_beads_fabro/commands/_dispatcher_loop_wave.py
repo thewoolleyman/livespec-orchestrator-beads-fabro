@@ -101,7 +101,7 @@ def dispatch_loop_wave(  # noqa: PLR0913 — kw-only wave inputs; `rework` is th
             repo=repo,
             journal_path=journal.path,
             now_iso=utc_now_iso(),
-            factory_runs=FactoryRunReader(repo=repo),
+            factory_runs=FactoryRunReader(repo=repo, journal=journal),
         ),
     )
     return _admit_and_dispatch_loop_wave(

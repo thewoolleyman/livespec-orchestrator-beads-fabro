@@ -147,6 +147,18 @@ def _record_invocations(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
         return types_module.CommandResult(exit_code=1, stdout="", stderr="refused")
 
     monkeypatch.setattr(runner_module.ShellCommandRunner, "run", _refuse)
+    # The record read asks the server's state route first (bd-ib-fhmpik). It is
+    # answered with a refusal here, so the reader falls back to the engine CLI
+    # this guard records, and no test reaches a real host.
+    compressed_module = importlib.import_module(f"{_PACKAGE}._fabro_port_compressed")
+    http_module = importlib.import_module(f"{_PACKAGE}._fabro_port_http")
+
+    def _decline(_self: object, **_rest: object) -> Any:
+        return http_module.FabroHttpResult(
+            status=404, body="", error="404", payload=None, succeeded=False
+        )
+
+    monkeypatch.setattr(compressed_module.CompressedUrllibTransport, "send", _decline)
     return recorded
 
 

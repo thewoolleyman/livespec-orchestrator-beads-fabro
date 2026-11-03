@@ -1274,6 +1274,18 @@ check-pre-commit-gated-tree:
 check-pre-commit-doc-only:
     bash dev-tooling/just-check-pre-commit-doc-only.sh
 
+# Green amends run this staged pre-check before their Red test and the full
+# aggregate.  The workflow check reports the configured ruff and pyright
+# finding verbatim, including its file, line and rule.
+check-staged-precheck:
+    uv run python -m livespec_dev_tooling.workflow_checks.staged_precheck
+
+# The Green-amend fast lane receives the test modules added or changed by the
+# Red commit at HEAD.  The whole suite still runs in check-skipping afterwards.
+[positional-arguments]
+check-staged-tests *test_paths:
+    uv run pytest "$@"
+
 # Run the full `just check` aggregate (PR gate ≡ master gate — the zero-.py
 # pre-push subset was retired so a doc-only push runs the same gate a code
 # push does). The only skip is the green-token clean-tree memoization: when

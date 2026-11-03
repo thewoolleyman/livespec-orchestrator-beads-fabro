@@ -568,6 +568,27 @@ def test_both_refreshing_stages_declare_the_same_failed_outcome_arm() -> None:
     ]
 
 
+def test_an_exhausted_draft_refresh_reaches_needs_human_without_a_failed_publish_visit() -> None:
+    """The terminal repair outcome bypasses the engine failure-cycle breaker.
+
+    A conflicted refresh still fails and enters ``refresh_repair`` so the fix
+    loop can repair it.  Exhaustion is different: its restored head must reach
+    the preserving terminal through a successful ``publish_draft`` visit, then
+    a post-publication classifier outcome that ordinary repaired conflicts do
+    not emit.  Routing it as another failed publish visit repeats the rebase
+    transcript and lets the Petri circuit breaker end the run before the
+    terminal can push the recovery artifact.
+    """
+    assert _routed(source="publish_draft", condition=_FAILED) == _REPAIR_NODE
+    assert (
+        _routed(
+            source="publish_merged_reconcile_route",
+            condition="preferred_label=needs_human",
+        )
+        == "needs_human"
+    )
+
+
 def test_a_conflicted_draft_refresh_restores_the_head_janitor_passed(tmp_path: Path) -> None:
     """The conflict is UNDONE, not merely reported, and nothing is published.
 
@@ -1231,7 +1252,7 @@ def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
     )
 
 
-def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
+def test_a_third_refresh_needing_repair_restores_the_head_and_reports_exhaustion(
     tmp_path: Path,
 ) -> None:
     """The budget is two rounds, and the third says so by name with a pointer.
@@ -1262,13 +1283,79 @@ def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
     result = _run_publish_draft(world=world)
     reason = (world.clone / ".git" / "livespec-needs-human-reason").read_text(encoding="utf-8")
 
-    assert result.returncode != 0, result.stdout
+    assert result.returncode == 0, result.stdout
     assert "LIVESPEC_REFRESH_REPAIR_EXHAUSTED" in result.stderr
     assert world.state(name=_BRIEF_FILENAME) is None
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "2\n"
+    assert world.state(name="livespec-refresh-repair-exhausted") == ""
     assert reason.splitlines()[0].startswith("refresh-repair-exhausted:")
     assert janitor_head in reason.splitlines()[0]
     assert world.head() == janitor_head
+
+
+def test_needs_human_pushes_the_restored_exhausted_refresh_head_to_its_run_ref(
+    tmp_path: Path,
+) -> None:
+    """The terminal receives the recovered head without re-running publication.
+
+    The draft stage records the restored pre-refresh head in its recovery
+    reason, then its exhaustion marker makes the post-publication classifier
+    select ``needs_human``.  This fixture replaces the terminal's push helper
+    with an argv recorder: it proves the preserving node names its run-scoped
+    needs-human ref and carries the restored HEAD, without granting the test a
+    second publication path.
+    """
+    world = _world(root=tmp_path)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / _REPAIR_COUNT_FILENAME).write_text("2\n", encoding="utf-8")
+    restored = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _advance_default(world=world, path=_SHARED_FILE, text="a conflicting default edit\n")
+
+    exhausted = _run_publish_draft(world=world)
+    reason = (world.clone / ".git" / "livespec-needs-human-reason").read_text(encoding="utf-8")
+    recorder_root = tmp_path / "push-recorder"
+    recorder = recorder_root / "args"
+    helper = recorder_root / "bin" / "push_origin"
+    helper.parent.mkdir(parents=True)
+    _ = helper.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$LIVESPEC_PUSH_RECORD"\n',
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+    needs_human = _node_attribute(node="needs_human", attribute="script").replace(
+        "{{ inputs.default_branch }}", _DEFAULT_BRANCH
+    )
+    run_id = "01M6EXHAUSTEDREFRESH"
+    preserved = subprocess.run(
+        ["bash", "-c", needs_human],
+        cwd=world.clone,
+        capture_output=True,
+        input=f"{run_id}\n",
+        text=True,
+        check=False,
+        env={
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(tmp_path / "home"),
+            "LIVESPEC_GIT_AUTHOR_NAME": "Test",
+            "LIVESPEC_GIT_AUTHOR_EMAIL": "t@example.invalid",
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(recorder_root),
+            "LIVESPEC_PUSH_RECORD": str(recorder),
+        },
+    )
+
+    assert exhausted.returncode == 0, exhausted.stderr
+    assert restored in reason
+    assert world.head() == restored
+    assert preserved.returncode == 1
+    assert recorder.read_text(encoding="utf-8").splitlines()[-1] == (
+        f"HEAD:refs/heads/needs-human/{run_id}"
+    )
+    assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: refs/heads/needs-human/{run_id}" in preserved.stderr
 
 
 def _materialized_push_program(*, root: Path) -> Path:

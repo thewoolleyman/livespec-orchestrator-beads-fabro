@@ -3262,7 +3262,7 @@ Feature: the next action is typed epic metadata
   So that a wrapped sentence in a comment can never delete a constraint or a route
 
   Background:
-    Given each impl or spec-op pointer below has an observable required_result and an unexpired budget
+    Given each impl or spec-op pointer below has an observable required_result and a budget
     And human and none pointers carry explicit null required_result and budget fields
     And the existing lifecycle and authorization checks still apply
 
@@ -5252,24 +5252,30 @@ Feature: one authoritative result reader for deadline and relay callers
 Governing clause: `contracts.md` §"Required result, budget and progress epoch".
 
 ```gherkin
-Feature: the original obligation budget survives activity
+Feature: the original obligation budget survives activity and never blocks the plan
   Scenario: every writer retains the first budget
     Given an unsatisfied required result with an absolute UTC deadline and positive max_handoffs
     When ordinary handoffs, supervisor handoffs and direct next_action writes repeat or change wording
     Then accepted handoffs consume units and direct pointer writes consume none
     And the original deadline and existing consumed units are unchanged
     When either exact budget boundary is reached
-    Then continued work without fresh causal recovery is refused before a partial handoff or pointer mutation
-    And expiry is observable even if no subsequent handoff is written
+    Then the obligation is reported overdue
+    And further handoffs and pointer writes for the same obligation are accepted with no recovery attempt, ruling or human decision
+    And the overdue finding is observable even if no subsequent handoff is written
+    And a same-obligation handoff past max_handoffs appends its comment, updates the pointer and increases the accepted count by one
 
-  Scenario: a fresh causal attempt permits bounded recovery, not a new original deadline
-    Given an expired unmet result and measured item, host or unknown cause evidence
+  Scenario: an unmet result is re-aimed by an ordinary replacement write
+    Given an unmet required result, whether within budget or overdue
+    When a sanctioned write names a different typed required result
+    Then a plan-progress-event of kind replacement naming the replaced result identity and epoch is recorded before the pointer changes
+    And the new obligation begins under the write's own budget
+    And no supersession cause, typed causal recovery attempt or continuation ruling is required
+
+  Scenario: a typed causal recovery attempt is optional and never required
+    Given an unmet result and measured item, host or unknown cause evidence
     When an authorized typed attempt names the previous epoch, executable next operation, unique attempt id and bounded attempt deadline
-    Then it permits one cause-appropriate recovery attempt and retains the original obligation deadline
+    Then it is recorded and retains the original obligation deadline
     And attempt registration, claim, actual command execution and fulfillment remain separately observable
-    And unknown causes require diagnosis and known host causes do not alter the item repetition count
-    When a repair child merges, a target is renamed, a relay is acknowledged, or approach prose changes
-    Then none of those observations postpones the deadline or fulfills the original target
     And an old attempt, concurrent stale writer or duplicate operation cannot reset the budget
     And a partial write must be reconciled before dispatch
 ```
@@ -5279,13 +5285,20 @@ Feature: the original obligation budget survives activity
 Governing clause: `contracts.md` §"Required result, budget and progress epoch".
 
 ```gherkin
-Feature: tracking findings preserve obligations without invented decisions
-  Scenario: expired or unreadable results require authorized recovery
-    Given an expired or unobservable obligation on an unattended plan resume
+Feature: tracking findings never block an executable plan step
+  Scenario: an overdue result is reported and its action is still taken
+    Given an overdue obligation whose required result is unsatisfied on an unattended plan resume
+    When resume_directive evaluates the pointer
+    Then it reports the overdue finding with the original budget and target
+    And it takes the pointer's executable action exactly as it would within budget
+    And it does not rewrite the pointer to a diagnosis action
+
+  Scenario: an unreadable result requires authorized diagnosis
+    Given an unobservable obligation on an unattended plan resume
     When resume_directive evaluates the pointer
     Then it reports the precise finding and preserves the original budget and target
-    And it does not blindly auto-dispatch the exhausted or unobservable action
-    And it exposes an authorized causal diagnosis or recovery action to the independent consumer
+    And it does not auto-dispatch the unobservable action
+    And it exposes an authorized diagnosis action to the independent consumer
     And human escalation requires a genuine human decision or authorization deficit
     And existing admission, HOLD and Red-Green guards remain enforced
 
@@ -5330,8 +5343,8 @@ Governing clause: `contracts.md` §"Attention without confusing activity with re
 
 ```gherkin
 Feature: activity does not hide the required result
-  Scenario: unrelated progress does not clear original expiry
-    Given an expired unmet required result and a newly merged ancillary repair
+  Scenario: unrelated progress does not clear an overdue result
+    Given an overdue unmet required result and a newly merged ancillary repair
     When needs-attention composes the normal attention envelope
     Then it retains the overdue-result fact with target, original budget, observation and sanctioned recovery action
     And the independently readable obligation remains available without another handoff
@@ -5342,7 +5355,7 @@ Feature: activity does not hide the required result
     When the window has threshold handoffs but no new attributable merged PR, closed child or verified proof
     Then the report names UTC window bounds, entry count and last required result or legacy marker
     When a new attributable milestone is observed
-    Then only the historical-window condition clears while an unmet expired result remains overdue
+    Then only the historical-window condition clears while an unmet overdue result remains overdue
     And unreadable sources yield unobservable findings rather than a confident no-result claim
     And missing or invalid policy produces a configuration finding rather than an invented limit
 ```
@@ -5897,7 +5910,7 @@ Feature: a plan session drives to the archive under a recorded authorization
 
   Scenario: a continuation ruling lets an attended resume take the pointer
     Given an open plan epic carrying a current continuation ruling until archive
-    And next_action kind impl with a non-empty ref and an unexpired budget
+    And next_action kind impl with a non-empty ref and a budget
     When the plan operation resumes attended
     Then resume_directive returns ask false and the action impl:<ref>
     And the reason names the continuation ruling
@@ -5927,7 +5940,7 @@ Feature: a plan session drives to the archive under a recorded authorization
     Given a plan assertion carried by another plan's host record that does not exist yet
     When the session records the next action
     Then the pointer is kind await with ref epic:<other-epic-id>, a required result of kind verified_proof on that epic and a budget deadline
-    And a resume after the deadline reports the obligation expired rather than waiting again
+    And a resume after the deadline keeps waiting on that epic and reports the obligation overdue
 
   Scenario: a stale pointer is reconciled, not executed
     Given next_action kind impl whose required_result is item_status closed for the item its ref names
@@ -8583,69 +8596,6 @@ Feature: Implementation that outruns the specification is caught at every merge
     Then the merges are judged across exactly two judge prompts
     And the outcome reports two prompts sent
     And one proposed change is filed per unstated behaviour per merge under its usual finding identity
-```
-
-## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget
-
-```gherkin
-Feature: A wrong obligation can be retired without letting a rename evade expiry
-  As the maintainer whose plan pointer was overwritten by a derivation
-  I want an evidenced supersession that the ledger can verify
-  So that a mis-derived or disposed obligation is replaced while the original budget still binds
-
-  Scenario: A mis-derived obligation is superseded with its deriving operation as evidence
-    Given an unmet plan obligation written by the plan-resume actor in a recorded epoch transition
-    And it names an impl step whose target work-item already carried a factory-safety label when that transition was recorded
-    When set_next_action carries a supersession with cause misderived naming that operation identity and a replacement result
-    Then a plan-progress-event of kind supersession is recorded before the pointer changes
-    And the replacement result carries the superseded obligation's original deadline and consumed handoff count
-
-  Scenario: A rename without a verified cause is refused
-    Given an unmet plan obligation written by an accepted handoff
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused because no derivation wrote that obligation
-    And the pointer and the obligation are unchanged
-
-  Scenario: A correctly derived obligation is not misderived
-    Given an unmet plan obligation written by the plan-resume actor naming an impl step whose target carries no factory-safety label
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused and the obligation is unchanged
-
-  Scenario: A label applied after the derivation does not make it misderived
-    Given an unmet plan obligation written by the plan-resume actor naming an impl step whose target was factory-eligible when it was derived
-    And a factory-safety label was applied to that target after the deriving transition
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused and the obligation is unchanged
-
-  Scenario: A plan-level step derived while a carrier was open is superseded by an await on that carrier
-    Given an unmet plan obligation written by the plan-resume actor in a recorded epoch transition
-    And it names a proof step while a work-item carrier named by the epic's latest carrier-map scope event was not closed at that transition
-    And that carrier is still not closed when the supersession is written
-    When set_next_action carries a supersession with cause misderived naming that operation identity and, as the replacement result, an await whose required result is that carrier's item_status closed
-    Then a plan-progress-event of kind supersession is recorded before the pointer changes
-    And the replacement result carries the superseded obligation's original deadline and consumed handoff count
-
-  Scenario: A plan-level step derived after its carriers closed is not misderived
-    Given an unmet plan obligation written by the plan-resume actor naming a proof step
-    And every work-item carrier named by the epic's latest carrier-map scope event was closed when that transition was recorded
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused and the obligation is unchanged
-
-  Scenario: A supersession to an already satisfied result is refused
-    Given an unmet plan obligation that qualifies for supersession
-    When the supersession names a replacement result that is already satisfied
-    Then the write is refused and the original obligation and its budget stand
-
-  Scenario: A disposed target is superseded with its ledger record as evidence
-    Given an unmet plan obligation whose target work-item is closed as superseded
-    When append_handoff carries a supersession with cause disposed naming that record
-    Then the supersession is recorded and consumes no handoff unit of its own
-    And the handoff itself consumes its one unit against the inherited count
-
-  Scenario: A retried supersession records nothing new
-    Given a recorded supersession under an operation identity
-    When the same operation identity is retried
-    Then the recorded event is returned and no second event is written
 ```
 
 ## Scenario 212 — The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing
@@ -11375,12 +11325,65 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     Then the implement stage's outcome is failed
     And the needs-human cause names commit_green's recorded exit status and failed target names
 
+  Scenario: An exhausted commit re-entry's cause carries the first failure line of the hook's output
+    Given commit_green's hook has refused naming the failed target check-types
+    And the hook's recorded output reports a first error line longer than 200 characters
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause names commit_green's recorded exit status and the failed target check-types
+    And the cause carries that first error line shortened to 200 characters and marked as truncated
+
+  Scenario: A refused commit whose hook output names no target says the target is unknown and why
+    Given commit_red's hook has refused and its recorded output cannot be read
+    And the red node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause states that the failing target is unknown because the hook's recorded output could not be read
+    And the cause is not the hook script's exit status alone
+
+  Scenario: A failure line that quotes a sandbox credential is withheld from the cause
+    Given the dispatch supplied CODEX_AUTH_JSON to the run's sandbox
+    And commit_green's hook refused with a first error line that quotes that variable's value
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause does not contain the value of CODEX_AUTH_JSON
+    And the cause states that an excerpt line was withheld because it contained the value of CODEX_AUTH_JSON
+
   Scenario: An exhausted test-wrong route ends the stage failed with both sides' sections
     Given a green turn that ends with a test-wrong declaration
     And the red node's max_visits is exhausted
     When the run evaluates the implement stage's outcome
     Then the implement stage's outcome is failed
     And the cause carries the latest red and green sections of the handoff file
+
+  Scenario: A green turn repairs what its gate preview refuses before it ends
+    Given a green turn whose change fails the repository's check-keyword-only-args target
+    When the turn runs the gate preview before ending
+    Then the preview names check-keyword-only-args as failed and creates no commit
+    When the turn fixes the change and runs the preview again
+    Then the preview passes and the turn's handoff section records that last preview run
+    And no re-entry budget was spent on either preview run
+
+  Scenario: A purely mechanical Green refusal re-enters green without spending its ordinary re-entry
+    Given a repository that declares check-lint and check-per-file-coverage as mechanical targets
+    And commit_green's hook refuses naming only check-per-file-coverage
+    When the run routes the refusal
+    Then the run re-enters green with one fewer mechanical re-entry remaining
+    And the green node's ordinary re-entry is unspent
+    And commit_green's handoff section names the refusal as mechanical and names check-per-file-coverage
+
+  Scenario: A refusal naming a substantive target spends the ordinary re-entry
+    Given a repository that declares check-lint as a mechanical target
+    And commit_green's hook refuses naming check-lint and check-types
+    When the run routes the refusal
+    Then the run re-enters green spending its ordinary re-entry
+    And no mechanical re-entry is spent
+
+  Scenario: Spent mechanical and ordinary re-entries end the stage failed naming both budgets
+    Given a repository that declares check-lint as a mechanical target with one mechanical re-entry
+    And green has spent its mechanical re-entry and its ordinary re-entry
+    When commit_green's hook refuses naming only check-lint
+    Then the implement stage's outcome is failed
+    And the needs-human cause names both the mechanical and the ordinary re-entry budgets as exhausted
 ```
 
 ## Scenario 289 — A Green amend whose staged test fails is refused before the rest of its gate's tests run
@@ -11759,4 +11762,30 @@ Feature: The maintainer's delegation of human valves is a verified, first-class 
     Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
     When drive runs set-merge-hold, set-factory-safety or an impl: dispatch with --invoker delegate:legacy-coordinator-agent and --delegation R493
     Then drive refuses the press because the verb is not on the delegable valve allowlist
+```
+
+## Scenario 302 — A fleet-launch resume launcher waits for the fleet cap and the factory FIFO
+
+```gherkin
+Feature: A resume launched through fleet-launch honours the caller-side gates
+  Scenario: A resume waits at the shared fleet cap and binds in FIFO order
+    Given an impl launcher and then a resume launcher queued on the gmktec FIFO
+    And the shared fleet count is at the fleet cap
+    When the impl launcher's run ends and the fleet count drops below the cap
+    Then the impl launcher binds before the resume launcher
+    And the resume launcher starts the resume only once the fleet count it reads under the gmktec mutex is below the cap
+    And it writes a fleet in-flight marker before it releases the mutex
+```
+
+## Scenario 303 — The committed launch-time preflight runs under a PATH-resetting wrapper with a string-form adapter entry
+
+```gherkin
+Feature: The committed launch-time preflight needs no launcher-local copy
+  Scenario: A preflight under a PATH-resetting tenant wrapper with a string-form adapter entry completes Codex-first
+    Given a tenant whose credential wrapper resets PATH to exclude the operator's user tool directory
+    And whose committed adapter entry is a string of environment assignments followed by a claude-agent-acp command line
+    When a fleet-launch launcher runs the committed dev-tooling/dod-preflight.sh for one of its items without exporting any judge model
+    Then the preflight resolves claude and codex and completes its judgement
+    And its judges run through the configured Codex-first chain, so a Codex pass completes it without a Claude judge call
+    And each judge runs on the model the repository's committed judge configuration names
 ```

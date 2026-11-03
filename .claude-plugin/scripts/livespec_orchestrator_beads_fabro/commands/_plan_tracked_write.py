@@ -11,9 +11,10 @@ maintainer ruling 2026-10-12).
 
 THE ORDER OF THE SEQUENCE IS THE CLAUSE'S AND IS LOAD-BEARING AT EVERY STEP.
 A committed operation identity is recognised FIRST, then the prior obligation is
-read and the decision taken, and both happen before any mutation — "After
-expiry, same-obligation continuation MUST be refused BEFORE appending a handoff
-or updating the pointer". The chain transition then commits, and only a
+read and the decision taken, and both happen before any mutation, so a refused
+write (an unreadable result reference, a malformed budget, an invalid recovery
+attempt) leaves no partial handoff or pointer behind. The chain transition then
+commits, and only a
 transition that actually committed appends the comment and writes the pointer —
 which is what makes both of those PROJECTIONS of the chain rather than
 independent records that could disagree with it.
@@ -29,12 +30,10 @@ with `idempotent=True` and performs no write at all.
 AND WHY THE RECOGNITION RUNS AHEAD OF THE DECISION RATHER THAN INSIDE THE
 COMMIT. `commit_transition` carries its own retry guard, which is the chain's
 last word and stays exactly where it is — but a write refused before it is
-reached never gets the recovery the clause owes. The decision's expiry ladder
-reads the OBSERVED head, so the retry of the handoff that consumed the final
-`max_handoffs` unit is read as an expired continuation and refused, although the
-write it is retrying succeeded: the caller is told to register a causal recovery
-for an obligation it had just met. The identity question is therefore asked
-first, where it cannot be pre-empted by any refusal the ladder grows later, and
+reached never gets the recovery the clause owes. The decision reads the
+OBSERVED head, so a retry whose original write already moved the chain would be
+decided against a state that write itself produced. The identity question is
+therefore asked first, where it cannot be pre-empted by any refusal the ladder grows later, and
 a recognised retry short-circuits the whole sequence. `recover_committed_
 operation` performs no write, so asking early costs one comment read and can
 change nothing; a twin that commits in the window between that scan and the
@@ -63,9 +62,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._plan_continuation import (
-    current_continuation_ruling,
-)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     COMMITTED,
     ChainHead,
@@ -102,12 +98,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
     TrackedRefusal,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
-from livespec_orchestrator_beads_fabro.commands._plan_supersession_evidence import (
-    supersession_evidence,
-)
-from livespec_orchestrator_beads_fabro.commands._plan_supersession_replacement import (
-    supersession_replacement_observation,
-)
 from livespec_orchestrator_beads_fabro.commands._plan_tracked_observation import (
     prior_observation,
 )
@@ -117,7 +107,6 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
         ResultObservation,
     )
-    from livespec_orchestrator_beads_fabro.commands._plan_supersession import CausalSupersession
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -134,11 +123,9 @@ class TrackedWriteRequest:
     `body` is the handoff entry's prose and is present exactly when `is_handoff`
     is true. `operation_id` is the identity a retry is recognised by; a caller
     that supplies none gets `derived_operation_id`'s deterministic value.
-    `recovery` is the typed causal attempt an EXPIRED obligation needs before it
-    will accept any continuation at all, and `supersession` is the evidenced
-    causal event an UNMET one needs before its required result may be renamed.
-    The two are never carried together: they answer different questions about one
-    obligation, and a write claiming each would leave neither graded.
+    `recovery` is an OPTIONAL typed causal recovery attempt on an unmet
+    obligation; no write requires one, and one that is carried is graded and
+    recorded so the independent consumer never executes an unvalidated operation.
     """
 
     config: StoreConfig
@@ -150,7 +137,6 @@ class TrackedWriteRequest:
     body: str | None = None
     operation_id: str | None = None
     recovery: CausalRecovery | None = None
-    supersession: CausalSupersession | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -180,7 +166,7 @@ def commit_tracked_write(*, request: TrackedWriteRequest) -> TrackedWrite | Next
                 return NextActionRefusal(
                     detail=(
                         "causal recovery is invalid: this epic carries no authority chain,"
-                        " so it holds no obligation that could have expired"
+                        " so it holds no obligation that could be recovered"
                     )
                 )
             return _legacy_write(request=request)
@@ -217,26 +203,7 @@ def _tracked_write(
         now=request.now,
         is_handoff=request.is_handoff,
         observation=_prior_observation(request=request, head=head),
-        replacement_observation=supersession_replacement_observation(
-            config=request.config,
-            epic_id=request.epic_id,
-            required_result=request.action.required_result,
-            supersession=request.supersession,
-            now=request.now,
-        ),
         recovery=request.recovery,
-        supersession=request.supersession,
-        continuation_ruling=current_continuation_ruling(
-            config=request.config,
-            epic_id=request.epic_id,
-            now=request.now,
-        ),
-        evidence=supersession_evidence(
-            config=request.config,
-            epic_id=request.epic_id,
-            supersession=request.supersession,
-            head=head,
-        ),
     )
     if isinstance(decision, TrackedRefusal):
         return NextActionRefusal(detail=decision.detail)
@@ -250,8 +217,7 @@ def _tracked_write(
             event_kind=decision.event_kind,
             author=request.author,
             now=request.now,
-            continuation_ruling_by=decision.continuation_ruling_by,
-            continuation_ruling_recorded_at=decision.continuation_ruling_recorded_at,
+            replaced_result=decision.replaced_result,
         ),
     )
     if isinstance(committed, StaleEpochRefusal):
