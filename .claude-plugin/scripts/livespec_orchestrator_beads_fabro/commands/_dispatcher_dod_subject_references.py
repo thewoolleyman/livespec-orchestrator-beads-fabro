@@ -29,32 +29,27 @@ def bounded_reference_blocks(
     governing: GoverningHeadingVerdict | None,
     heading_body: Callable[[str], str],
 ) -> list[str]:
-    """Render only cited clause text that fits the shared judgement bound."""
+    """Render every verdict-named clause whole; bound only the no-verdict full bodies."""
+    if governing is not None:
+        return _reference_blocks(
+            references=references,
+            bodies=[
+                _clause_body(reference=reference, governing=governing) for reference in references
+            ],
+        )
     bodies = [_OVER_LIMIT_HEADING_BODY for _ in references]
     for index, reference in enumerate(references):
-        candidate = _reference_body(
-            reference=reference,
-            governing=governing,
-            heading_body=heading_body,
-        )
         proposed = [*bodies]
-        proposed[index] = candidate
+        proposed[index] = heading_body(reference)
         if len(_render(prefix=prefix, references=references, bodies=proposed, ending=ending)) <= (
             _SUBJECT_CHARACTER_LIMIT
         ):
-            bodies[index] = candidate
+            bodies[index] = proposed[index]
     return _reference_blocks(references=references, bodies=bodies)
 
 
-def _reference_body(
-    *,
-    reference: str,
-    governing: GoverningHeadingVerdict | None,
-    heading_body: Callable[[str], str],
-) -> str:
-    """Retain every named or selected clause for the cited heading."""
-    if governing is None:
-        return heading_body(reference)
+def _clause_body(*, reference: str, governing: GoverningHeadingVerdict) -> str:
+    """Retain every named or selected clause for the cited heading, verbatim."""
     clauses = tuple(
         dict.fromkeys(
             clause
