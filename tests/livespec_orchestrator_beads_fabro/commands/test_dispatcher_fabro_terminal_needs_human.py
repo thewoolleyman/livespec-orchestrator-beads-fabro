@@ -27,7 +27,8 @@ line, so the assertion is on the ROUTING, never on the sentence.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -178,6 +179,10 @@ def _inspect(*, tmp_path: Path, payload: list[dict[str, Any]]) -> FabroInspectRe
     ).inspect(run_id="01RUN", timeout_seconds=1)
 
 
+def _inspect_with_run_log(*, tmp_path: Path, run_log: Callable[[], str]) -> FabroInspectResult:
+    return replace(_inspect(tmp_path=tmp_path, payload=_PETRI_NEEDS_HUMAN_PAYLOAD), run_log=run_log)
+
+
 def _plan(*, tmp_path: Path) -> DispatchPlan:
     return DispatchPlan(
         repo=tmp_path,
@@ -286,6 +291,80 @@ def test_reacquired_sandbox_missing_helper_releases_the_item_as_a_host_fault(
     assert (
         outcome.fabro_failure_cause == "host fault: re-acquired sandbox omitted Dispatcher helper"
     )
+
+
+_RUN_LOG_RESUME_EVIDENCE = (
+    "2026-11-03T13:53:51Z  INFO fencing a recorded sandbox\n"
+    "2026-11-03T13:53:58Z  INFO scope environment acquired\n"
+    "2026-11-03T13:54:03Z  INFO workspace brought to its durable snapshot\n"
+)
+
+
+def test_reacquisition_recorded_only_in_the_run_log_releases_the_item_as_a_host_fault(
+    tmp_path: Path,
+) -> None:
+    """The resume evidence lives in run.log, not in the failure the client saw."""
+    reads: list[str] = []
+
+    def run_log() -> str:
+        reads.append("read")
+        return _RUN_LOG_RESUME_EVIDENCE
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect_with_run_log(tmp_path=tmp_path, run_log=run_log),
+        exit_code=1,
+        stderr="LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "host-fault-release"
+    assert outcome.fabro_failure_category == "transient_infra"
+    assert reads == ["read"]
+
+
+def test_a_run_log_without_resume_evidence_leaves_the_missing_helper_blocked(
+    tmp_path: Path,
+) -> None:
+    """A first-acquisition log is not a re-acquired sandbox."""
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect_with_run_log(
+            tmp_path=tmp_path, run_log=lambda: "scope environment acquired\n"
+        ),
+        exit_code=1,
+        stderr="LIVESPEC_PROOF_GRADE_PROGRAM_ABSENT",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "blocked"
+
+
+def test_the_run_log_is_not_read_when_no_helper_signal_was_emitted(tmp_path: Path) -> None:
+    """The export is only spent on a run that signalled a missing helper."""
+
+    reads: list[str] = []
+
+    def run_log() -> str:
+        reads.append("read")
+        return _RUN_LOG_RESUME_EVIDENCE
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect_with_run_log(tmp_path=tmp_path, run_log=run_log),
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "blocked"
+    assert reads == []
 
 
 def test_missing_helper_without_a_reacquired_sandbox_still_blocks_the_item(tmp_path: Path) -> None:
