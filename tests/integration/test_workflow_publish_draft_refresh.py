@@ -557,7 +557,9 @@ def test_a_pre_push_hook_refusal_names_its_failed_targets_after_the_push_marker(
     pre_push = run / ".git" / "hooks" / "pre-push"
     pre_push.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' 'Failed targets (2): check-per-file-coverage, check-coverage' >&2\n"
+        "printf '%s\\n' 'Failed targets (2):' >&2\n"
+        "printf '%s\\n' '  - check-per-file-coverage' >&2\n"
+        "printf '%s\\n' '  - check-coverage' >&2\n"
         "exit 1\n",
         encoding="utf-8",
     )
