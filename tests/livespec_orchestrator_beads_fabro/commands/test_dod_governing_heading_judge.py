@@ -241,6 +241,21 @@ def test_a_response_the_shared_parser_refuses_answers_no_verdict(tmp_path: Path)
     assert verdict is None
 
 
+def test_a_heading_without_a_quote_from_its_clause_answers_no_verdict(tmp_path: Path) -> None:
+    """A finding cannot ask for a heading the response did not evidence from its clause."""
+    reply = (
+        '{"kind": "stated", "stated_by": ["' + _GOVERNING + '"], "generalization_target": null, '
+        '"rationale": "The scenario states it.", "evidence": ['
+        '{"heading": "' + _GOVERNING + '", "quote": "Text from a different clause."}]}'
+    )
+
+    verdict = governing_heading_verdict(
+        item=_item(), repo=_repo(tmp_path=tmp_path), run_model=lambda _prompt: reply
+    )
+
+    assert verdict is None
+
+
 def test_a_multiline_generalization_target_answers_no_verdict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

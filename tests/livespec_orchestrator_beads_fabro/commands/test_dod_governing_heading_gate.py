@@ -65,14 +65,18 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge imp
 )
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.spec_stated import ClauseEvidence
 
 _GOVERNING = "## Scenario 206 — The spec-change tier is decided by the spec-stated judgement"
 _CITED = "## Scenario 141 — The referenced scenario governs the proof"
 _PASS_REPLY = '{"outcome": "passed"}'
 _REMEDY = "add that heading to the reference line"
 
-_VERDICT = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,))
-_PARTIAL_VERDICT = GoverningHeadingVerdict(kind="partial", stated_by=(_GOVERNING,))
+_EVIDENCE = (ClauseEvidence(heading=_GOVERNING, quote="It states the behaviour."),)
+_VERDICT = GoverningHeadingVerdict(kind="stated", stated_by=(_GOVERNING,), evidence=_EVIDENCE)
+_PARTIAL_VERDICT = GoverningHeadingVerdict(
+    kind="partial", stated_by=(_GOVERNING,), evidence=_EVIDENCE
+)
 
 
 def _item() -> WorkItem:

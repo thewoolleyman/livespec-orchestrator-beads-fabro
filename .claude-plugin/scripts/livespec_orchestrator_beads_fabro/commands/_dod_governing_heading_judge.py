@@ -66,6 +66,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from livespec_runtime.spec_stated import ClauseEvidence
 from returns.result import Failure
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -82,6 +83,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     PROMPT_CHARACTER_CEILING,
+    CondensedClause,
     clauses_named,
     condensed_spec_tree,
     headings_resolved,
@@ -111,6 +113,11 @@ __all__: list[str] = [
 # is taken over have to name the SAME tree: two spellings would let a verdict be
 # reused across a change to a tree the digest was not watching.
 SPECIFICATION_DIRNAME = "SPECIFICATION"
+_EVIDENCE_REQUEST = (
+    "\n\nFor every heading in stated_by, also include evidence as a JSON list of objects "
+    "with that heading and one non-empty, verbatim single-line quote from its clause that "
+    "states the behaviour."
+)
 
 
 class GoverningHeadingReader(Protocol):
@@ -190,7 +197,7 @@ def governing_heading_verdict(
         action=lambda: judge_within_ceiling(
             spec_tree=read,
             statement=statement,
-            run_model=run_model,
+            run_model=lambda prompt: run_model(f"{prompt}{_EVIDENCE_REQUEST}"),
         ),
         exceptions=(OSError,),
     )
@@ -205,6 +212,15 @@ def governing_heading_verdict(
         return None
     headings = verdict_named_headings(stated_by=verdict.stated_by, generalization_target=target)
     named = clauses_named(spec_tree=read, headings=headings)
+    evidence = (
+        verdict.evidence
+        if verdict.evidence
+        else _legacy_clause_evidence(stated_by=verdict.stated_by, named=named)
+    )
+    if not _evidence_matches_named_clauses(
+        stated_by=verdict.stated_by, evidence=evidence, named=named
+    ):
+        return None
     return GoverningHeadingVerdict(
         kind=verdict.kind,
         stated_by=verdict.stated_by,
@@ -212,4 +228,39 @@ def governing_heading_verdict(
         selected_clauses=condensed.clauses,
         named_clauses=named,
         provenance_complete=headings_resolved(headings=headings, clauses=named),
+        evidence=evidence,
     )
+
+
+def _evidence_matches_named_clauses(
+    *,
+    stated_by: tuple[str, ...],
+    evidence: tuple[ClauseEvidence, ...],
+    named: tuple[CondensedClause, ...],
+) -> bool:
+    """Require one single-line, verbatim quotation for every reported heading."""
+    clauses = {clause.heading: clause.body for clause in named}
+    for heading in stated_by:
+        quotations = [entry.quote for entry in evidence if entry.heading == heading]
+        if len(quotations) != 1:
+            return False
+        quote = quotations[0]
+        if "\n" in quote or quote not in clauses.get(heading, ""):
+            return False
+    return len(evidence) == len(stated_by)
+
+
+def _legacy_clause_evidence(
+    *, stated_by: tuple[str, ...], named: tuple[CondensedClause, ...]
+) -> tuple[ClauseEvidence, ...]:
+    """Quote each named clause when a pre-evidence model response remains readable."""
+    bodies = {clause.heading: clause.body for clause in named}
+    return tuple(
+        ClauseEvidence(heading=heading, quote=_first_clause_line(body=bodies.get(heading, "")))
+        for heading in stated_by
+    )
+
+
+def _first_clause_line(*, body: str) -> str:
+    """A compact, verbatim receipt for a legacy response with no quote field."""
+    return next((line.strip() for line in body.splitlines() if line.strip()), "")
