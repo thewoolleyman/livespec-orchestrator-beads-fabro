@@ -38,4 +38,4 @@ def test_a_section_finding_is_printed_unchanged_and_stops_before_candidate_legs(
 
     assert section_guard in text
     assert text.index(section_guard) < text.index('cat "$judgement_input.governing"')
-    assert text.index(section_guard) < text.index("while read -r agent model effort; do")
+    assert text.index(section_guard) < text.index("run_candidate_chain")

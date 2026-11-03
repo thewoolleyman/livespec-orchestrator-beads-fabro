@@ -128,6 +128,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Dispatch pre-launch step attribution and concurrency",
+    "work_item": "bd-ib-bpkqan",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Dispatch-brief lessons injection",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"

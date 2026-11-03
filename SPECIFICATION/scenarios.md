@@ -9682,6 +9682,16 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     And the node's rendered goal for a dispatch of that item carries the rider and omits the verdict comment
     And appending the new verdict comment leaves the item's subject digest unchanged
 
+  Scenario: A filing-time tier record and mechanical finding are omitted after a revision ratifies the referenced heading
+    Given an item whose ledger carries a livespec-spec-change-tier record and a definition-of-done finding (mechanical) comment, each written against an earlier spec version that lacked its referenced heading
+    And a rider appended after filing
+    And a later revision ratified that heading verbatim
+    When the pre-admission judgement is taken at approve
+    Then the subject and the node's rendered goal carry the rider and omit the tier record and the mechanical finding comment
+    And the judgement resolves the reference line against the ratified spec tree and reports no unresolved-reference finding for it
+    And the tier record and the mechanical finding comment remain on the item's ledger
+    And appending a further tier record or a further mechanical finding comment leaves the item's subject digest unchanged
+
   Scenario Outline: A reference line missing one of several governing headings is reported as advisory by every host taking
     Given an item whose reference line names one of the two scenario headings that state its first assertion's behaviour
     And a non-scenario H2 of contracts.md whose clauses govern its second assertion is not on its reference line

@@ -17,7 +17,7 @@ def _run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
         text=True,
-        timeout=180,
+        timeout=60,
     )
 
 
@@ -27,7 +27,7 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
     assert targets.returncode == 0, targets.stderr
     assert "check-fleet-launch" in targets.stdout.split()
 
-    checked = _run(argv=["bash", str(_CHECK_DRIVER)])
+    checked = _run(argv=["bash", str(_CHECK_DRIVER), "scenario297"])
     combined = checked.stdout + checked.stderr
     assert checked.returncode == 0, combined
     for assertion in (
@@ -39,4 +39,5 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
         "the mutex is released before either drive --action impl starts",
     ):
         assert assertion in combined, combined
+    assert "--- 1. reads a stub factory board" not in combined, combined
     assert "0 failed" in combined, combined
