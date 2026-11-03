@@ -11354,6 +11354,36 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     When the run evaluates the implement stage's outcome
     Then the implement stage's outcome is failed
     And the cause carries the latest red and green sections of the handoff file
+
+  Scenario: A green turn repairs what its gate preview refuses before it ends
+    Given a green turn whose change fails the repository's check-keyword-only-args target
+    When the turn runs the gate preview before ending
+    Then the preview names check-keyword-only-args as failed and creates no commit
+    When the turn fixes the change and runs the preview again
+    Then the preview passes and the turn's handoff section records that last preview run
+    And no re-entry budget was spent on either preview run
+
+  Scenario: A purely mechanical Green refusal re-enters green without spending its ordinary re-entry
+    Given a repository that declares check-lint and check-per-file-coverage as mechanical targets
+    And commit_green's hook refuses naming only check-per-file-coverage
+    When the run routes the refusal
+    Then the run re-enters green with one fewer mechanical re-entry remaining
+    And the green node's ordinary re-entry is unspent
+    And commit_green's handoff section names the refusal as mechanical and names check-per-file-coverage
+
+  Scenario: A refusal naming a substantive target spends the ordinary re-entry
+    Given a repository that declares check-lint as a mechanical target
+    And commit_green's hook refuses naming check-lint and check-types
+    When the run routes the refusal
+    Then the run re-enters green spending its ordinary re-entry
+    And no mechanical re-entry is spent
+
+  Scenario: Spent mechanical and ordinary re-entries end the stage failed naming both budgets
+    Given a repository that declares check-lint as a mechanical target with one mechanical re-entry
+    And green has spent its mechanical re-entry and its ordinary re-entry
+    When commit_green's hook refuses naming only check-lint
+    Then the implement stage's outcome is failed
+    And the needs-human cause names both the mechanical and the ordinary re-entry budgets as exhausted
 ```
 
 ## Scenario 289 — A Green amend whose staged test fails is refused before the rest of its gate's tests run
