@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _session_telemetry_export
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -48,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._session_telemetry_export import
     SessionTelemetry,
     TelemetryConfig,
     config_from_environ,
+    http_post,
 )
 
 _TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
@@ -309,6 +311,20 @@ def test_an_unavailable_receiver_is_counted_failed_after_bounded_attempts() -> N
         "session telemetry degraded: exported=0 dropped=0 failed=1 rejected=0 abandoned=0;"
     )
     assert reports.lines[0].endswith("local results are unaffected")
+
+
+def test_a_transport_fault_is_counted_undelivered_without_a_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_transport_fault(*, request: object, timeout_seconds: float) -> str:
+        del request, timeout_seconds
+        raise OSError("refused")
+
+    monkeypatch.setattr(_session_telemetry_export, "_read_answer", raise_transport_fault)
+
+    outcome = http_post(url="http://unavailable.test/v1/traces", body=b"{}", timeout_seconds=0.1)
+
+    assert outcome == PostOutcome(delivered=False)
 
 
 def test_a_partially_rejecting_receiver_is_counted_rejected() -> None:
