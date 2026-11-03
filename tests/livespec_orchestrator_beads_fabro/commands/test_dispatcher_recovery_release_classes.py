@@ -78,6 +78,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    NON_CONVERGED_MARKER,
+    RECAPTURE_EXHAUSTED_MARKER,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
@@ -251,6 +255,26 @@ def _history(*, release_stage: str) -> Sequence[dict[str, object]]:
     )
 
 
+def _terminal_history(*, outcome: dict[str, object]) -> Sequence[dict[str, object]]:
+    """One dispatch whose terminal, rather than a release row, returns it to ready.
+
+    A human valve or a groom writes the ready state in the ledger, not in this
+    append-only journal.  The routing input is already a ready candidate, so the
+    history needs only establish the terminal that made its preserved work a
+    recovery subject.
+    """
+    return (
+        {
+            "stage": "dispatch-id",
+            "work_item_id": _ITEM_ID,
+            "dispatch_id": _DISPATCH,
+            "workflow_name": "implement-work-item",
+        },
+        {"stage": "fabro-run", "work_item_id": _ITEM_ID, "run_id": _RUN},
+        {"stage": "outcome", "outcome": outcome},
+    )
+
+
 def _args(*, repo: Path, journal: JournalFile) -> argparse.Namespace:
     return argparse.Namespace(
         repo=str(repo),
@@ -275,11 +299,17 @@ def _route_once(
     monkeypatch: pytest.MonkeyPatch,
     world: _World,
     release_stage: str,
+    records: Sequence[dict[str, object]] | None = None,
 ) -> _Pass:
     """Route the one candidate in `world`, from a history ending in `release_stage`."""
     journal = JournalFile(path=tmp_path / f"journal-{world.name}-{release_stage}.jsonl")
     _ = journal.path.write_text(
-        "".join(f"{json.dumps(record)}\n" for record in _history(release_stage=release_stage)),
+        "".join(
+            f"{json.dumps(record)}\n"
+            for record in (
+                records if records is not None else _history(release_stage=release_stage)
+            )
+        ),
         encoding="utf-8",
     )
     _Shell.answers = dict(world.answers)
@@ -349,6 +379,116 @@ def test_both_release_classes_route_identically_on_identical_measurements(
     assert _comparable_held_rows(rows=provider_limit.held_rows) == _comparable_held_rows(
         rows=stall.held_rows
     )
+
+
+@pytest.mark.parametrize("world", _worlds(), ids=lambda one: one.name)
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        {
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+            "needs_human_kind": "agent-request",
+        },
+        {
+            "work_item_id": _ITEM_ID,
+            "status": "failed",
+            "stage": "fabro-run",
+            "detail": NON_CONVERGED_MARKER,
+        },
+    ],
+    ids=("needs_human", "non_converged"),
+)
+def test_a_returned_terminal_routes_like_an_explicit_recovery_release(
+    world: _World,
+    outcome: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Returned needs-human and non-converged work takes the full route ladder.
+
+    The four worlds include a proof anchor (`resume`) and a verified terminal
+    tree with no anchor (`seeded`).  They therefore prove that the terminal
+    release unlocks the existing preserved-work preference rather than merely
+    changing a Boolean that later code ignores.
+    """
+    terminal = _route_once(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        world=world,
+        release_stage="terminal",
+        records=_terminal_history(outcome=outcome),
+    )
+
+    assert terminal.route is not None
+    assert terminal.route.route == world.route
+
+
+def test_a_newer_dispatch_or_an_unrelated_terminal_does_not_release_recovery() -> None:
+    """The terminal must be this item's latest dispatch and a named terminal kind."""
+    needs_human = _terminal_history(
+        outcome={
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+            "needs_human_kind": "agent-request",
+        }
+    )
+    unrelated = _terminal_history(
+        outcome={
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+        }
+    )
+
+    assert routing.released_for_recovery(records=needs_human, work_item_id=_ITEM_ID) is True
+    assert (
+        routing.released_for_recovery(
+            records=(*needs_human, {"stage": "dispatch-id", "work_item_id": _ITEM_ID}),
+            work_item_id=_ITEM_ID,
+        )
+        is False
+    )
+    assert routing.released_for_recovery(records=unrelated, work_item_id=_ITEM_ID) is False
+
+
+def test_a_recapture_cap_ending_is_not_a_recovery_release() -> None:
+    """The recapture-cap terminal carries a needs-human kind yet is never released.
+
+    Its blocked outcome is a stage failure whose detail and reason name the
+    recapture-cap marker, so a human returning it to ready must not route it as
+    recovery.
+    """
+    reason = f"{RECAPTURE_EXHAUSTED_MARKER}: recapture cap reached"
+    records = _terminal_history(
+        outcome={
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+            "detail": f"run r ended at the non_converged terminal; {reason}",
+            "needs_human_kind": "stage-failure",
+            "needs_human_stages": ["recapture_route"],
+            "needs_human_reason": reason,
+        }
+    )
+
+    assert routing.released_for_recovery(records=records, work_item_id=_ITEM_ID) is False
+
+
+def test_an_unreadable_terminal_payload_is_not_a_recovery_release() -> None:
+    """An outcome row that cannot name its item is not evidence of a terminal."""
+    records = (
+        {
+            "stage": "dispatch-id",
+            "work_item_id": _ITEM_ID,
+            "dispatch_id": _DISPATCH,
+        },
+        {"stage": "outcome", "outcome": "not an outcome record"},
+    )
+
+    assert routing.released_for_recovery(records=records, work_item_id=_ITEM_ID) is False
 
 
 def test_the_hold_record_comparison_drops_the_clock_stamp_and_nothing_else(
