@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.281.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.2...v0.281.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* repair recorded publish hook refusals ([3da03d7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3da03d7bc803f615ccc032b6d504b283c6fffc49))
+
 ## [0.281.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.1...v0.281.2) (2026-11-03)
 
 
