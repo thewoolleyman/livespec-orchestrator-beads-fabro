@@ -59,3 +59,6 @@
 : "${FLEET_LAUNCH_POLL_S:=30}"
 : "${FLEET_LAUNCH_PREFLIGHT_REUSE_S:=600}"
 : "${FLEET_LAUNCH_MUTEX_HOLD_S:=900}"
+# How long a resume launcher keeps its in-flight marker counted after the resume
+# client has exited, while it waits for the run to list on the factory board.
+: "${FLEET_LAUNCH_LISTING_WAIT_S:=600}"
