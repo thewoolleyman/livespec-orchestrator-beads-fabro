@@ -8472,6 +8472,19 @@ Feature: New behaviour gets new spec before it is built
     When the governing-heading verdict is needed again
     Then the verdict is taken again against the new revision
 
+  Scenario: A spec revision that leaves the judged clauses unchanged reuses the spec-change tier decision
+    Given a feature whose spec-change tier record reads verdict stated and carries the clauses its verdict was judged against and every clause it names, each with its heading and body
+    And the item's asked-for behaviour is unchanged since the record was taken
+    And a new spec revision changes only clauses that the verdict neither selected nor names, and the selection against the new revision returns the same clauses
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused, no model is run, and the item is not held
+
+  Scenario: A spec revision that changes a judged clause takes the spec-change tier decision again
+    Given a feature whose spec-change tier record carries the clauses its verdict was judged against
+    And a new spec revision changes the body of one of those clauses, or the selection against it returns a different set
+    When the item reaches a dispatch path
+    Then the tier decision is taken again against the new revision
+
   Scenario: The release of a held spec-change-tier item never reuses a verdict across a revision
     Given a held spec-change-tier item whose linked proposal is ratified in a new revision
     And the selection against the new revision returns the same clauses as before
@@ -9166,6 +9179,43 @@ Feature: A Codex-primary chain falls back before a run meets the Codex limit
     And the Codex usage read reports rate_limit.limit_reached true for a covered candidate
     When admission assesses the candidate
     Then no Codex headroom skip applies and the reading is still journaled
+
+  Scenario: A Codex window within 12 hours of its reset is assessed against a floor of 5
+    Given dispatcher.session_headroom_floor_percent is 20
+    And an admission-required node whose primary is a covered codex-acp candidate and whose fallback is an eligible claude-acp candidate
+    And the Codex usage read reports a primary window used_percent of 90 whose reset_at is 11 hours after the observation time
+    When admission assesses the node
+    Then the primary window's effective floor is 5 and is journaled as relaxed by reset proximity
+    And the codex-acp candidate is not skipped by a floor skip
+
+  Scenario: A Codex window more than 12 hours from its reset keeps the committed floor
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 90 whose reset_at is 13 hours after the observation time
+    When admission assesses the candidate
+    Then the primary window's effective floor is 20 and is journaled as not relaxed
+    And the candidate is skipped by a floor skip naming provider codex
+
+  Scenario: A Codex window exactly 12 hours from its reset is relaxed
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 90 whose reset_at is exactly 43200 seconds after the observation time
+    When admission assesses the candidate
+    Then the primary window's effective floor is 5
+    And the candidate is not skipped by a floor skip
+
+  Scenario: A relaxed Codex window still refuses below 5 percent, and the Claude floor is unchanged
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 96 whose reset_at is 2 hours after the observation time
+    And a covered claude-acp candidate whose Claude session headroom reading is 15 percent remaining
+    When admission assesses both candidates
+    Then the codex-acp candidate is skipped by a floor skip against an effective floor of 5
+    And the claude-acp candidate is skipped by a floor skip against the committed floor of 20
+
+  Scenario: A Codex window with no usable reset_at keeps the committed floor
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a valid primary window used_percent of 90 with no reset_at
+    When admission assesses the candidate
+    Then the reading is valid and the primary window's reset_at is journaled as absent
+    And the candidate is skipped by a floor skip against the committed floor of 20
 ```
 
 ## Scenario 215 — A tracks edge links a record to its epic on every surface

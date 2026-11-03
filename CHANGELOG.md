@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.279.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.278.0...v0.279.0) (2026-11-03)
+
+
+### Features
+
+* run recognized hook guards on the project virtualenv ([ba9941a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ba9941a050997c00a76a3e8ff246b970633b3974))
+
+## [0.278.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.277.0...v0.278.0) (2026-11-03)
+
+
+### Features
+
+* define a shared dispatcher dump timeout ([ef2897e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ef2897e1bad077c339449bcf2786560e43d48aca))
+* read live Fabro status without history ([9eb6c37](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9eb6c3753f71845a3cc3951ae68c764a0bca4fea))
+* read watchdog events incrementally ([4469d11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4469d1192adb8851c4f312fed766e1a256eefd02))
+
+
+### Bug Fixes
+
+* pin the moved fabro_port_for_plan docstring ([2092ace](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2092ace0742135826a41a84f02a77b59b1ed108a))
+* share the dispatcher fabro dump bound ([b329382](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b329382f597c0f2594e23d128453e877f864123b))
+
 ## [0.277.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.276.2...v0.277.0) (2026-11-03)
 
 
