@@ -81,6 +81,7 @@ __all__: list[str] = [
     "RESUME_ENTRY_NODE_ARG",
     "RESUME_FETCH_REF_ARG",
     "RESUME_HEAD_ARG",
+    "RESUME_PROOF_ONLY_ARG",
     "ResumeCheckout",
     "graph_entered_at",
     "proof_only_graph",
@@ -102,6 +103,11 @@ RESUME_HEAD_ARG = "resume_head"
 # one the reclaim deletes before the run starts. Absent for a resume, which fetches
 # the publish branch the resumed run goes on to push to.
 RESUME_FETCH_REF_ARG = "resume_fetch_ref"
+
+# The explicit selector for the merged-resume arm. It is its own attribute rather
+# than a node name carried in `resume_entry_node`, because the arm is not "the
+# ordinary graph entered at a node" but a different graph with every edge replaced.
+RESUME_PROOF_ONLY_ARG = "resume_proof_only"
 
 # The unconditional `start` edge, as the committed graph spells it: a bare
 # `start -> <target>` line carrying no attribute list. The CONDITIONAL form is
