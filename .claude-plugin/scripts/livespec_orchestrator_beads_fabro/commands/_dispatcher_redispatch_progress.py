@@ -14,6 +14,7 @@ __all__: list[str] = [
     "CompletedAttempt",
     "RedispatchProgressDecision",
     "RedispatchProgressRefusal",
+    "RedispatchRecovery",
     "redispatch_progress_decision",
 ]
 
@@ -31,6 +32,23 @@ class CompletedAttempt:
     workflow_identity: str = "default"
     high_water_order: int = 0
     completed: bool = True
+
+
+@dataclass(frozen=True, kw_only=True)
+class RedispatchRecovery:
+    """A one-use, typed causal recovery authorization for a flat epoch.
+
+    The admission reader validates this record before passing it to the
+    progress decision.  Keeping the identity and the history it addresses
+    together makes a later gate able to reject a replay instead of treating
+    prose about a changed approach as a reset.
+    """
+
+    attempt_id: str
+    prior_run_ids: tuple[str, ...]
+    diagnosis: str
+    operation: str
+    execution_evidence: str
 
 
 @dataclass(frozen=True, kw_only=True)
