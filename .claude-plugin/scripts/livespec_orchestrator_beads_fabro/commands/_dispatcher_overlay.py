@@ -370,8 +370,8 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # The resume checkout is appended LAST among the prepare steps, after the
     # committed provisioning: every committed step acts on `.git` or on untracked
     # state a checkout does not disturb, while a checkout performed BEFORE the
-    # unshallow would be unshallowed out from under. For an ordinary dispatch it
-    # renders the empty string, so no other dispatch sees a byte of it.
+    # unshallow would be unshallowed out from under. The returned block always
+    # includes serial pyright cache provisioning; only a resume adds checkout.
     resume_checkout_steps = resume_checkout_prepare_steps_block(checkout=resume_checkout)
     credential_use_steps = credential_use_guard_prepare_steps_block(projection=credential_use)
     credential_use_env = credential_use_env_lines(projection=credential_use)
