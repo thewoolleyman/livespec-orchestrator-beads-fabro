@@ -22,7 +22,12 @@ Never run `git push` and never publish a branch or pull request.
    If it does, do not write or run a test. Append a `## already-satisfied`
    section to the handoff file with a declared `already-satisfied` outcome and
    the evidence for it, then end the turn with that declared
-   `already-satisfied` outcome.
+   `already-satisfied` outcome. The graph routes only on the label, so end your
+   reply with exactly:
+
+       `{"preferred_next_label": "already-satisfied"}`
+
+   Without that label the turn falls through to the commit of a Red test.
 3. Otherwise, continue with the failing-test path. Write one failing test for one Definition of Done assertion.
    The test must fail on a genuine assertion rather than during collection or
    import.
