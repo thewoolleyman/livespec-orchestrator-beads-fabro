@@ -8503,6 +8503,43 @@ Feature: New behaviour gets new spec before it is built
     And the selection against the new revision returns the same clauses as before
     When the next drain pass decides whether to release the item
     Then the governing-heading verdict is taken again against the new revision
+
+  Scenario: A held item is relinked to the proposal actually filed for it and released when that proposal ratifies
+    Given a held spec-change-tier item whose linked topic is the stem the Dispatcher derived for it
+    And its proposal was filed under a different topic stem
+    When relink-spec-tier is driven for the item naming the filed stem
+    Then the hold names the filed stem as the topic awaiting ratification
+    And a durable ledger comment on the item records the actor, the previous topic and the replacement topic
+    And once the filed topic's revision record carries decision accept and the re-run judgement returns stated, the next intake or drain pass releases the hold with no human valve
+
+  Scenario: Relinking to an already ratified topic changes only the linked topic
+    Given a held spec-change-tier item resting at pending-approval
+    And a proposal topic whose revision record already carries decision accept
+    When relink-spec-tier is driven for the item naming that topic
+    Then the item still rests at pending-approval and still carries its spec-change-tier hold
+    And no other item's linked topic, status or ledger comments change
+    And the hold is released only when the next intake or drain pass re-runs the judgement and it returns stated
+
+  Scenario: A relinked topic is carried forward by every later tier record
+    Given a held spec-change-tier item whose linked topic was replaced by relink-spec-tier
+    When the item is classified again at groom, on a dispatch path or on an intake or drain pass before its replacement topic ratifies
+    Then the new spec-change tier record carries the replacement topic as its linked topic
+    And the stem derived from the item's title is not recorded again
+    And a dispatch of the item is refused with exit code 5 naming the replacement topic
+
+  Scenario Outline: Relinking is refused and writes nothing
+    Given <item>
+    When relink-spec-tier is driven for the item naming <topic>
+    Then the route refuses naming <reason>
+    And the item's linked topic, status and ledger comments are unchanged
+    And no spec-change tier record and no dispatch-journal entry is appended
+
+    Examples:
+      | item                                          | topic                                                                  | reason                  |
+      | an item that carries no spec-change-tier hold | the stem of a pending proposed change                                  | the item is not held    |
+      | a held spec-change-tier item                  | a stem that propose-change's topic canonicalization would change       | the non-canonical topic |
+      | a held spec-change-tier item                  | a stem with no proposed change under proposed_changes or the history   | the unknown topic       |
+      | a held spec-change-tier item                  | a stem with no pending proposal whose latest revision record is reject | the rejected topic      |
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
