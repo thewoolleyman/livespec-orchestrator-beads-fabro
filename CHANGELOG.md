@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.281.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.1...v0.281.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* an overdue plan obligation never blocks the plan (bd-ib-ieuz6w) ([7fc01e4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7fc01e4dbd99e32e6096f48820103d95e2dcf9e1))
+* preserve-by-reference exports only the stage diffs, not the whole event log (bd-ib-d2qm5d) ([59f71e7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/59f71e7e13ea0981ed1c494d6613b2fdc230c63d))
+
 ## [0.281.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.0...v0.281.1) (2026-11-03)
 
 
