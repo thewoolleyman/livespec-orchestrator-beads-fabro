@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.281.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.280.1...v0.281.0) (2026-11-03)
+
+
+### Features
+
+* precheck Green amend tests ([bcabe74](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bcabe7405fb1b0563da71474e70eb07e1156d417))
+* record tier clause provenance ([6c6a7c9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6c6a7c9f05ed262b687e9e8d4b438b5a08070791))
+* reuse tier verdicts by clause provenance ([0bd87fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0bd87fb111e037ecac31d4259e1916043111fc1f))
+
+
+### Bug Fixes
+
+* cancel stalled runs through the factory server ([49fb52f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/49fb52f39b67e9a6ab2f2a799e49732e9e1c9896))
+* clear stale pr refresh reason ([3afaec2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3afaec22b98b0bd7a9299cd72c04b53526dd6dd8))
+* do not journal a stall cancel the factory server refused ([550141e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/550141e4063d03f3c696ff6cabcd4dc764870d1e))
+* identify recycled commit-runner groups ([1d3e601](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1d3e601a528ce28abeb42670755eebac392adf53))
+* keep doc-only amends out of the Green-amend staged phases ([594a51f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/594a51fc5158ec8a00841bdd9e1271540f420ff9))
+* read ACP availability evidence through a bounded, compressed state read (bd-ib-fhmpik) ([091e46e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/091e46ee9bf32076cd8205028a05b94ef7dea588))
+
 ## [0.280.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.280.0...v0.280.1) (2026-11-03)
 
 
