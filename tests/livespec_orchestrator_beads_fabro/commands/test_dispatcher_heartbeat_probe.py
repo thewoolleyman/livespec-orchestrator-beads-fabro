@@ -65,6 +65,8 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSi
 
 from tests.conftest import end_run_and_await_launcher_return
 
+pytestmark = pytest.mark.usefixtures("server_cancel")
+
 # ---------------------------------------------------------------------------
 # Shared fakes / helpers
 # ---------------------------------------------------------------------------
