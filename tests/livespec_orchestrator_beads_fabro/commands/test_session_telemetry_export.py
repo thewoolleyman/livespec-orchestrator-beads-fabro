@@ -282,13 +282,21 @@ def test_a_blocked_exporter_never_delays_emit_and_close_is_bounded() -> None:
 
 def test_an_unavailable_receiver_is_counted_failed_after_bounded_attempts() -> None:
     attempts: list[str] = []
-    attempts_finished = threading.Event()
+    second_attempt_began = threading.Event()
+    first_batch_settled = threading.Event()
+    release = threading.Event()
 
     def counting_post(*, url: str, body: bytes, timeout_seconds: float) -> PostOutcome:
         attempts.append(url)
-        if len(attempts) == 2:
-            attempts_finished.set()
         del body, timeout_seconds
+        if len(attempts) == 2:
+            second_attempt_began.set()
+        if len(attempts) == 3:
+            # The single export worker reaches the second batch only after it
+            # has counted the first batch, so this proves the first batch is
+            # settled; holding here keeps close() from racing the second one.
+            first_batch_settled.set()
+            _ = release.wait(timeout=_HANG_GUARD_SECONDS)
         return PostOutcome(delivered=False)
 
     reports = _Reports()
@@ -298,17 +306,24 @@ def test_an_unavailable_receiver_is_counted_failed_after_bounded_attempts() -> N
         reporter=reports,
     )
     telemetry.emit(event=_event())
-    assert attempts_finished.wait(
+    assert second_attempt_began.wait(
         timeout=_HANG_GUARD_SECONDS
-    ), "the export did not finish both attempts"
+    ), "the export did not make its second attempt"
+    telemetry.emit(event=_event())
+    assert first_batch_settled.wait(
+        timeout=_HANG_GUARD_SECONDS
+    ), "the export never moved past the first batch"
+    first_batch_attempts = list(attempts[:2])
     report = telemetry.close()
+    release.set()
 
-    assert len(attempts) == 2
+    assert first_batch_attempts == ["http://receiver.invalid/v1/traces"] * 2
     assert report.failed == 1
     assert report.exported == 0
+    assert report.abandoned == 1
     assert len(reports.lines) == 1
     assert reports.lines[0].startswith(
-        "session telemetry degraded: exported=0 dropped=0 failed=1 rejected=0 abandoned=0;"
+        "session telemetry degraded: exported=0 dropped=0 failed=1 rejected=0 abandoned=1;"
     )
     assert reports.lines[0].endswith("local results are unaffected")
 
