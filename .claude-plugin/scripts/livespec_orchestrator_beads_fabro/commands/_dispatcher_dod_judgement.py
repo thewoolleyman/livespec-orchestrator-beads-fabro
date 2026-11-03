@@ -96,6 +96,9 @@ _VERDICT_PASSED = "passed"
 _VERDICT_FAILED = "failed"
 _REMEDY_SEPARATOR = "; "
 _UNRESOLVED_HEADING_BODY = "(this heading does not resolve in the governed spec tree)"
+_UNSELECTED_HEADING_BODY = (
+    "(the governing-heading verdict named or selected no clause from this referenced heading)"
+)
 _ABSENT_CRITERIA_BODY = "(this item carries no effective acceptance criteria)"
 # The description is the item's own text, so it can carry any heading; the end
 # marker is what keeps the subject's next heading from reading as the item's.
@@ -189,7 +192,11 @@ def judgement_subject(
             (
                 "",
                 f"## Referenced heading: {reference}",
-                _heading_body(repo=cwd, reference=reference),
+                _referenced_heading_body(
+                    repo=cwd,
+                    reference=reference,
+                    governing=governing,
+                ),
             )
         )
     blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
@@ -352,6 +359,15 @@ def _heading_body(*, repo: Path, reference: str) -> str:
         if body is not None:
             return body
     return _UNRESOLVED_HEADING_BODY
+
+
+def _referenced_heading_body(
+    *, repo: Path, reference: str, governing: GoverningHeadingVerdict | None
+) -> str:
+    """Retain a full section only until the governing verdict supplies its scope."""
+    if governing is not None:
+        return _UNSELECTED_HEADING_BODY
+    return _heading_body(repo=repo, reference=reference)
 
 
 def _section_of(*, text: str, title: str) -> str | None:

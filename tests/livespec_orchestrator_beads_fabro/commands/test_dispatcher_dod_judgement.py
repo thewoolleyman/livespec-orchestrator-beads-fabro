@@ -7,6 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -183,6 +186,40 @@ def test_heading_lookup_skips_irrelevant_sections_and_ends_at_the_next_heading(
 
     assert "Target body." in subject
     assert "Following body." not in subject
+
+
+def test_subject_bounds_a_large_referenced_heading_after_its_verdict_is_available(
+    tmp_path: Path,
+) -> None:
+    """A cited body outside the governing verdict cannot consume the host bound."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    large_body = "x" * 270_000
+    _ = (spec / "contracts.md").write_text(
+        "## Governing\n\n" + large_body + "\n",
+        encoding="utf-8",
+    )
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n"
+            "- The bounded brief remains gradeable.\n\n"
+            "References: ## Governing\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(
+        item=item,
+        cwd=tmp_path,
+        governing=GoverningHeadingVerdict(kind="stated", stated_by=("## Governing",)),
+    )
+
+    assert len(subject) <= 150_000
+    assert large_body not in subject
+    assert "named or selected no clause" in subject
 
 
 def test_subject_carries_the_goal_fields_the_rubric_grades(tmp_path: Path) -> None:
