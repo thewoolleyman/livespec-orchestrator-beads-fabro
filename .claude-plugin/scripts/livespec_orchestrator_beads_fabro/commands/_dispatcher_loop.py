@@ -175,6 +175,9 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     profile = prelaunch_profile or PrelaunchCpuProfile.for_drive(
         journal=journal, work_item_id=item.id, dispatch_id=identity.dispatch_id
     )
+    # Entry commands whose work begins before an item is selected hold rows
+    # until this common launch boundary can attribute them to that item.
+    profile.bind(journal=journal, work_item_id=item.id)
     with profile.during(name="record-dispatch"):
         recorded = record_dispatch(
             args=args,
