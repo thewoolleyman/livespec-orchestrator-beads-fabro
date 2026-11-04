@@ -2735,6 +2735,14 @@
     "work_item": "bd-ib-fvgkw4"
   },
   {
+    "heading": "## Scenario 306 \u2014 A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: a-janitor-green-run-cancelled was ratified 2026-11-04 and the owning work-item bd-ib-vraou4 adds the Dispatcher's cancel-for-restart command, which publishes a janitor-green run's committed tree to refs/livespec/preserved-publish/<work-item-id>/ before cancelling it, the same best-effort publication when an outside cancel of a janitor-green run is reported, the livespec-preserved-tree ledger comment, and a re-dispatch brief naming the preserved tree, with the test exercising each of those paths.",
+    "work_item": "bd-ib-vraou4"
+  },
+  {
     "heading": "## Dispatch pre-launch step attribution and concurrency",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
