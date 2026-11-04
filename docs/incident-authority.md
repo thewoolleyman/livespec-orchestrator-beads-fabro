@@ -87,3 +87,14 @@ current authority again after appending. If ownership changed, the partial
 record survives but the command refuses. A receipt reply always has
 `authorizes_current_effects: false` and `normal_factory_proof: false`.
 It cannot satisfy normal validation or supply current authorization by itself.
+
+Before repeating local gates after a lost reply, invoke `read-local-gates` with
+the same current-identity arguments and `--receipt-id`. A verified result names
+`status: recorded|absent`, the exact receipt id and committed/current token ids.
+A recorded result includes its complete original receipt and the SHA256 checksum
+of the canonical retained comment; an absent result carries null receipt and
+checksum after a successful canonical read. The command checks current authority
+before and after reading evidence. Conflicting records, foreign envelopes, stale
+ownership and tenant outages refuse instead of reporting absence. It never
+appends, reruns gates, changes durations, grants current effect authority or
+supplies normal factory proof. Consumers preserve an original failure on retry.

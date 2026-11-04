@@ -28,7 +28,15 @@ from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 
-__all__: list[str] = ["LocalGateReceipt", "record_local_gates"]
+__all__: list[str] = [
+    "LocalGateReceipt",
+    "current_receipt_authority",
+    "decode_receipt",
+    "matching_receipts",
+    "receipt_body",
+    "receipt_mapping",
+    "record_local_gates",
+]
 MARKER = "livespec-incident-local-gates-v1\n"
 _RECEIPT_KEYS = frozenset(
     ("receipt_id", "hook", "tree", "mode", "evidence_kind", "exit_status", "results")
@@ -49,12 +57,13 @@ class LocalGateReceipt:
     current_token_id: str
 
 
-def _mapping(*, value: object) -> dict[str, Any]:
+def receipt_mapping(*, value: object) -> dict[str, Any]:
+    """Interpret a receipt field without accepting a non-mapping value."""
     return cast("dict[str, Any]", value) if isinstance(value, dict) else {}
 
 
 def _valid_result(*, raw: object) -> bool:
-    row = _mapping(value=raw)
+    row = receipt_mapping(value=raw)
     if frozenset(row) != _RESULT_KEYS:
         return False
     if not all(isinstance(row[k], str) and row[k] for k in ("name", "reason")) or not isinstance(
@@ -79,10 +88,11 @@ def _valid_result(*, raw: object) -> bool:
     ) and code is None
 
 
-def _decode(*, text: str, observed: IncidentReading) -> dict[str, Any] | None:
+def decode_receipt(*, text: str, observed: IncidentReading) -> dict[str, Any] | None:
+    """Validate canonical partial results against their observed incident phase."""
     if len(text.encode("utf-8", "surrogatepass")) > _MAX_BYTES:
         return None
-    value = _mapping(value=parse_json(text=text))
+    value = receipt_mapping(value=parse_json(text=text))
     if frozenset(value) != _RECEIPT_KEYS or text != json.dumps(
         value, sort_keys=True, separators=(",", ":")
     ):
@@ -124,9 +134,10 @@ def _decode(*, text: str, observed: IncidentReading) -> dict[str, Any] | None:
     return value if valid else None
 
 
-def _current(
+def current_receipt_authority(
     *, client: BeadsClient, observed: IncidentReading
 ) -> IncidentReading | AuthorityRefusal:
+    """Re-read the exact current identity for an evidence operation."""
     attempt = observed.attempt
     current = read_authority(
         client=client,
@@ -147,53 +158,63 @@ def _current(
     )
 
 
-def _matching(*, client: BeadsClient, observed: IncidentReading, receipt_id: str) -> set[str]:
+def matching_receipts(
+    *, client: BeadsClient, observed: IncidentReading, receipt_id: str
+) -> set[str]:
+    """Read every distinct retained canonical comment naming one receipt id."""
     matches: set[str] = set()
     for row in client.list_comments(issue_id=observed.attempt.item_id):
         text = row.get("text")
         if not isinstance(text, str) or not text.startswith(MARKER):
             continue
-        record = _mapping(value=parse_json(text=text[len(MARKER) :]))
-        receipt = _mapping(value=record.get("receipt"))
+        record = receipt_mapping(value=parse_json(text=text[len(MARKER) :]))
+        receipt = receipt_mapping(value=record.get("receipt"))
         if receipt.get("receipt_id") == receipt_id:
             matches.add(text)
     return matches
+
+
+def receipt_body(*, observed: IncidentReading, receipt: dict[str, Any]) -> str:
+    """Encode the full immutable envelope shared by append and readback."""
+    return MARKER + json.dumps(
+        dict(
+            schema=1,
+            attempt=asdict(observed.attempt),
+            committed_token_id=observed.committed_token_id,
+            current_token_id=observed.current_token_id,
+            receipt=receipt,
+            normal_factory_proof=False,
+        ),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 @impure_safe
 def _record(
     *, client: BeadsClient, observed: IncidentReading, text: str
 ) -> LocalGateReceipt | AuthorityRefusal:
-    value = _decode(text=text, observed=observed)
+    value = decode_receipt(text=text, observed=observed)
     if value is None:
         return AuthorityRefusal(code="incident-receipt-invalid", detail=observed.attempt.item_id)
-    current = _current(client=client, observed=observed)
+    current = current_receipt_authority(client=client, observed=observed)
     if isinstance(current, AuthorityRefusal):
         return current
-    body = MARKER + json.dumps(
-        dict(
-            schema=1,
-            attempt=asdict(observed.attempt),
-            committed_token_id=observed.committed_token_id,
-            current_token_id=observed.current_token_id,
-            receipt=value,
-            normal_factory_proof=False,
-        ),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    matches = _matching(client=client, observed=observed, receipt_id=value["receipt_id"])
+    body = receipt_body(observed=observed, receipt=value)
+    matches = matching_receipts(client=client, observed=observed, receipt_id=value["receipt_id"])
     if matches and matches != {body}:
         return AuthorityRefusal(
             code="incident-receipt-operation-conflict", detail=value["receipt_id"]
         )
     if not matches:
         client.add_comment(issue_id=observed.attempt.item_id, body=body)
-    if _matching(client=client, observed=observed, receipt_id=value["receipt_id"]) != {body}:
+    if matching_receipts(client=client, observed=observed, receipt_id=value["receipt_id"]) != {
+        body
+    }:
         return AuthorityRefusal(
             code="incident-receipt-readback-conflict", detail=value["receipt_id"]
         )
-    standing = _current(client=client, observed=observed)
+    standing = current_receipt_authority(client=client, observed=observed)
     if isinstance(standing, AuthorityRefusal):
         return standing
     return LocalGateReceipt(

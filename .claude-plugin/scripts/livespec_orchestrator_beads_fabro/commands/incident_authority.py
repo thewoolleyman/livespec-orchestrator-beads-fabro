@@ -12,6 +12,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._incident_authority_payload import decode_attempt
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands.incident_local_gate_lookup import read_local_gates
 from livespec_orchestrator_beads_fabro.commands.incident_local_gate_receipt import (
     record_local_gates,
 )
@@ -32,10 +33,17 @@ def main(*, argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="incident-authority")
     _ = parser.add_argument(
         "action",
-        choices=("read-current", "read-history", "commit-transition", "record-local-gates"),
+        choices=(
+            "read-current",
+            "read-history",
+            "commit-transition",
+            "record-local-gates",
+            "read-local-gates",
+        ),
     )
     _ = parser.add_argument("--successor-json")
     _ = parser.add_argument("--receipt-json")
+    _ = parser.add_argument("--receipt-id")
     _ = parser.add_argument("--repo", required=True, type=Path)
     for name in ("repository", "item", "attempt", "phase", "operation", "owner"):
         _ = parser.add_argument(f"--{name}", required=True)
@@ -47,6 +55,8 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         parser.error("--successor-json is only valid for commit-transition")
     if (args.action == "record-local-gates") != (args.receipt_json is not None):
         parser.error("record-local-gates alone requires --receipt-json")
+    if (args.action == "read-local-gates") != (args.receipt_id is not None):
+        parser.error("read-local-gates alone requires --receipt-id")
     client = make_beads_client(config=store_config(repo=args.repo))
     result = read_incident_authority(
         client=client,
@@ -72,6 +82,8 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         )
     if args.action == "record-local-gates" and isinstance(result, IncidentReading):
         result = record_local_gates(client=client, observed=result, text=args.receipt_json)
+    if args.action == "read-local-gates" and isinstance(result, IncidentReading):
+        result = read_local_gates(client=client, observed=result, receipt_id=args.receipt_id)
     response: dict[str, object] = {
         "schema": 1,
         "status": "refused" if isinstance(result, AuthorityRefusal) else "verified",
