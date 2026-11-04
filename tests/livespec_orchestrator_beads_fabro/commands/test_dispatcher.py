@@ -4506,6 +4506,7 @@ def test_dispatch_green_closes_item_and_journals(
         "factory-safety-screen",
         "implementation-pr-override",
         "acp-node-override",
+        "redispatch-no-progress",
         "session-headroom-screen",
         "app-reach",
         "fabro-currency",

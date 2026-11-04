@@ -128,6 +128,7 @@ def _stub_wall(
     monkeypatch.setattr(wall, "codex_routing_for_dispatch", lambda **_kwargs: decision)
     monkeypatch.setattr(wall, "implementation_pr_override_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "fabro_currency_refusal", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "redispatch_progress_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)

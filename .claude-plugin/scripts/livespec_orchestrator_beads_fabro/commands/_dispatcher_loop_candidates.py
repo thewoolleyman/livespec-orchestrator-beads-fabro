@@ -22,6 +22,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall i
     dod_unrefused_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_redispatch_gate import (
+    redispatch_unrefused_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
     spec_change_unrefused_candidates,
 )
@@ -30,6 +33,7 @@ if TYPE_CHECKING:
     import argparse
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = ["candidates"]
@@ -40,6 +44,7 @@ def candidates(
     args: argparse.Namespace,
     items: list[WorkItem],
     repo: Path,
+    journal: JournalFile | None = None,
 ) -> list[WorkItem]:
     """The drain's selection for one pass, in the canonical ranked order.
 
@@ -66,6 +71,12 @@ def candidates(
     WHOLE selection, so without this filter the drain would keep picking a row
     that cannot run until its linked proposal ratifies.
 
+    It finally drops every row the across-dispatch progress gate refuses, for the
+    same reason: the wall row that carries that decision refuses the WHOLE
+    selection, so a row whose recent attempts stopped advancing would otherwise
+    be picked on every pass and stop the queue behind it. A pass handed no
+    journal (a caller with no dispatch history to read) applies no such filter.
+
     A NAMED id is narrowed to and deliberately NOT filtered. The clause keeps the
     hand-picked path protected by the wall "even when candidate enumerations
     filtered the item earlier", and that only holds if the named row still
@@ -77,7 +88,7 @@ def candidates(
     requested = set(args.items or [])
     if requested:
         return [item for item in ranked if item.id in requested]
-    return spec_change_unrefused_candidates(
+    eligible = spec_change_unrefused_candidates(
         items=dod_unrefused_candidates(
             items=acceptance_eligible_candidates(
                 items=ranked, cwd=repo, workflow_name=args.workflow_name
@@ -88,3 +99,6 @@ def candidates(
         repo=repo,
         workflow_name=args.workflow_name,
     )
+    if journal is None:
+        return eligible
+    return redispatch_unrefused_candidates(items=eligible, repo=repo, journal=journal)

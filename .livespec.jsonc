@@ -281,6 +281,15 @@
       // orchestrator's own active items filled it and further tickets were
       // capacity-deferred. Read on each admission pass; no restart needed.
       "wip_cap": 16,
+      // redispatch_no_progress_limit: how many consecutive item-attributable
+      // attempts may fail to advance the item's prior high-water milestone before
+      // the NEXT dispatch is refused before claim (contracts.md, "Across-dispatch
+      // required-result progress"). Quantitative limits have no inferred default,
+      // so an item with dispatch history is refused with a configuration
+      // diagnostic when this is absent or not a positive integer. 3 is the
+      // initial value (2026-11-04); a refused item is released again by
+      // `dispatcher.py record-redispatch-recovery`, never by raising this.
+      "redispatch_no_progress_limit": 3,
       "acceptance_mode": "ai-only",
       // Committed maintainer delegations of the human valves (contracts.md,
       // journal invoker attribution, "Delegated valve authority"). A press

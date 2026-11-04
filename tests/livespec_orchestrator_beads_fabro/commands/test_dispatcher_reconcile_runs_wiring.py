@@ -40,8 +40,10 @@ def test_the_loop_reconciles_once_per_tick_before_it_selects_anything(
         order.append("reconcile-runs-pass")
         return object()
 
-    def _candidates(*, args: argparse.Namespace, items: list[WorkItem], repo: Path) -> list[Any]:
-        _ = (args, items, repo)
+    def _candidates(
+        *, args: argparse.Namespace, items: list[WorkItem], repo: Path, journal: object
+    ) -> list[Any]:
+        _ = (args, items, repo, journal)
         order.append("candidates")
         return []
 

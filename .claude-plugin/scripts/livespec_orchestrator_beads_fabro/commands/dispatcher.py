@@ -49,6 +49,10 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                             human_attested>
                                  --record <path> [--invoker <id>]
   dispatcher.py file-canary --repo <path>
+  dispatcher.py record-redispatch-recovery --repo <path> --item <id> --attempt-id <id>
+                                 --prior-run <run-id> [--prior-run <run-id> ...]
+                                 --diagnosis <text> --operation <text>
+                                 --execution-evidence <text>
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py resume --repo <path> --item <id> [common flags]
@@ -385,6 +389,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_command import (
     run_reconcile_runs_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_redispatch_recovery_command import (
+    add_record_redispatch_recovery_arguments,
+    run_record_redispatch_recovery_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command import (
     add_resume_arguments,
@@ -469,6 +477,7 @@ __all__: list[str] = [
     "run_probe_command",
     "run_reconcile_merged_command",
     "run_reconcile_runs_command",
+    "run_record_redispatch_recovery_command",
     "run_sandbox_images_command",
     "run_spec_check",
     "warn_item_sizing",
@@ -493,6 +502,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "post-host-record": run_post_host_record_cli,
     "post-plan-record": run_post_plan_record_cli,
     "probe": run_probe_command,
+    "record-redispatch-recovery": run_record_redispatch_recovery_command,
     "reconcile-merged": run_reconcile_merged_command,
     "reconcile-runs": run_reconcile_runs_command,
     "resume": run_resume_command,
@@ -508,33 +518,36 @@ def main(*, argv: list[str] | None = None) -> int:
     return handler(args=args)
 
 
+_SUBCOMMAND_ARGUMENTS: tuple[tuple[str, Callable[..., None]], ...] = (
+    ("classify-tier", add_classify_tier_arguments),
+    ("ledger-check", add_ledger_check_arguments),
+    ("ledger-normalize", add_ledger_normalize_arguments),
+    ("codex-cred-refresh", add_codex_cred_refresh_arguments),
+    ("codex-cred-status", add_codex_cred_status_arguments),
+    ("claude-cred-status", add_claude_cred_status_arguments),
+    ("clear-provider-exhaustion", add_clear_provider_exhaustion_arguments),
+    ("clear-acp-availability-hold", add_clear_acp_availability_hold_arguments),
+    ("spec-check", add_spec_check_arguments),
+    ("janitor-check", add_janitor_check_arguments),
+    ("idle-slot-audit", add_idle_slot_audit_arguments),
+    ("sandbox-images", add_sandbox_images_arguments),
+    ("drift-run", add_drift_run_arguments),
+    ("reconcile-runs", add_reconcile_runs_arguments),
+    ("reconcile-merged", add_reconcile_merged_arguments),
+    ("post-host-record", add_post_host_record_arguments),
+    ("post-plan-record", add_post_plan_record_arguments),
+    ("file-canary", add_file_canary_arguments),
+    ("inspect", add_factory_inspect_arguments),
+    ("probe", add_probe_arguments),
+    ("record-redispatch-recovery", add_record_redispatch_recovery_arguments),
+)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
-    add_classify_tier_arguments(parser=subparsers.add_parser("classify-tier"))
-    add_ledger_check_arguments(parser=subparsers.add_parser("ledger-check"))
-    add_ledger_normalize_arguments(parser=subparsers.add_parser("ledger-normalize"))
-    add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
-    add_codex_cred_status_arguments(parser=subparsers.add_parser("codex-cred-status"))
-    add_claude_cred_status_arguments(parser=subparsers.add_parser("claude-cred-status"))
-    add_clear_provider_exhaustion_arguments(
-        parser=subparsers.add_parser("clear-provider-exhaustion")
-    )
-    add_clear_acp_availability_hold_arguments(
-        parser=subparsers.add_parser("clear-acp-availability-hold")
-    )
-    add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
-    add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
-    add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
-    add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
-    add_drift_run_arguments(parser=subparsers.add_parser("drift-run"))
-    add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
-    add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
-    add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
-    add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
-    add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
-    add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
-    add_probe_arguments(parser=subparsers.add_parser("probe"))
+    for name, add_arguments in _SUBCOMMAND_ARGUMENTS:
+        add_arguments(parser=subparsers.add_parser(name))
     add_dispatch_common(parser=(dispatch := subparsers.add_parser("dispatch")))
     _ = dispatch.add_argument("--item", dest="item", required=True)
     add_resume_arguments(parser=subparsers.add_parser("resume"))
