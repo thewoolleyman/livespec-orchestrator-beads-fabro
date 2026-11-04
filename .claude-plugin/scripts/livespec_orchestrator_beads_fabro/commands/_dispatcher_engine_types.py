@@ -208,6 +208,10 @@ class DispatchOutcome:
     # acceptance pass needs the merged head, and a record of what the ending
     # proved cannot be recovered from the pull request alone.
     merged_reconcile: MergedReconcile | None = None
+    # The dispatch base a `red` turn declared the work already satisfied on, when the run
+    # ended that way. Typed rather than re-read from `detail`, for the seam reason
+    # `dead_implementer_condition` above is.
+    already_satisfied_base: str | None = None
 
 
 SleepFn = Callable[[float], None]

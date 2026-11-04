@@ -408,9 +408,9 @@ def test_the_registered_variant_declares_the_capture_node_and_leaves_it_unreache
     # through COMMAND stages and declares no ACP `pr` node, while the groom
     # variant keeps one for its filing plan. Read off the module that owns
     # that scoping rather than respelled here.
-    assert (
-        _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE) | GROOM_ONLY_ACP_NODES
-    )
+    assert _acp_node_names(payload=_VARIANT) == (
+        _acp_node_names(payload=_BUNDLE) - {"red", "green"}
+    ) | GROOM_ONLY_ACP_NODES | {"implement"}
     assert re.search(
         rf'^\s*{_CAPTURE_ADAPTER_INPUT}\s*=\s*"', _toml(payload=_VARIANT), re.MULTILINE
     )

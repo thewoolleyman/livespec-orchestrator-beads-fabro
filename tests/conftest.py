@@ -97,8 +97,22 @@ def _integration_dump_doubles_serve_run_state(
         return
 
     class _Api:
-        def __init__(self, *, fallback: FabroHttpPort) -> None:
+        def __init__(self, *, fallback: FabroHttpPort, port: FabroPort) -> None:
             self._fallback = fallback
+            self._port = port
+
+        def stream(
+            self, *, run_id: str, after: int | None, timeout_seconds: float
+        ) -> FabroHttpResult:
+            _ = after
+            events = self._port.events(run_id=run_id, timeout_seconds=timeout_seconds)
+            return FabroHttpResult(
+                status=200 if events.command.exit_code == 0 else 503,
+                body=events.command.stdout,
+                error=None,
+                payload=events.payload,
+                succeeded=events.command.exit_code == 0,
+            )
 
         def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
             _ = (run_id, timeout_seconds)
@@ -139,7 +153,9 @@ def _integration_dump_doubles_serve_run_state(
     monkeypatch.setattr(
         FabroPort,
         "server_api",
-        lambda port: _Api(fallback=FabroHttpPort(target=port.target, transport=port.http)),
+        lambda port: _Api(
+            fallback=FabroHttpPort(target=port.target, transport=port.http), port=port
+        ),
     )
 
 
@@ -1106,6 +1122,22 @@ def server_cancel(monkeypatch: pytest.MonkeyPatch) -> ServerCancel:
     state = ServerCancel()
 
     class _Api:
+        def __init__(self, *, port: FabroPort) -> None:
+            self._port = port
+
+        def stream(
+            self, *, run_id: str, after: int | None, timeout_seconds: float
+        ) -> FabroHttpResult:
+            _ = after
+            events = self._port.events(run_id=run_id, timeout_seconds=timeout_seconds)
+            return FabroHttpResult(
+                status=200 if events.command.exit_code == 0 else 503,
+                body=events.command.stdout,
+                error=None,
+                payload=events.payload,
+                succeeded=events.command.exit_code == 0,
+            )
+
         def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
             _ = (run_id, timeout_seconds)
             state.calls += 1
@@ -1119,7 +1151,7 @@ def server_cancel(monkeypatch: pytest.MonkeyPatch) -> ServerCancel:
                 status=503, body="", error="HTTPError: 503", payload=None, succeeded=False
             )
 
-    monkeypatch.setattr(FabroPort, "server_api", lambda _self: _Api())
+    monkeypatch.setattr(FabroPort, "server_api", lambda port: _Api(port=port))
     return state
 
 
