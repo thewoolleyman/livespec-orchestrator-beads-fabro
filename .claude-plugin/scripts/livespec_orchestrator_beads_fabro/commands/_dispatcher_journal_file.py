@@ -48,6 +48,7 @@ __all__: list[str] = [
 _STAMPED_INVOKER_FIELDS: tuple[str, ...] = (
     "invoker",
     "invoker_source",
+    "delegation",
 )
 
 
@@ -81,6 +82,8 @@ class JournalFile:
             "invoker_source": self.identity.invoker_source,
             **record,
         }
+        if self.identity.delegation is not None:
+            stamped["delegation"] = self.identity.delegation.as_record()
         line = (json.dumps(stamped, sort_keys=True) + "\n").encode("utf-8")
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)

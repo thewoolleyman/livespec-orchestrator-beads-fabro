@@ -27,6 +27,8 @@ from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
     EVENT_HANDOFF,
     EVENT_PICKER,
     EVENT_POINTER,
+    EVENT_RECOVERY,
+    EVENT_REPLACEMENT,
     TrackedDecision,
     TrackedRefusal,
 )
@@ -36,13 +38,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     satisfied,
     unobservable,
     unsatisfied,
-)
-from livespec_orchestrator_beads_fabro.commands._plan_supersession import (
-    CAUSE_MISDERIVED,
-    CausalSupersession,
-    DerivingTransition,
-    ImplementationEvidence,
-    SupersessionEvidence,
 )
 
 _EPIC_ID = "bd-ib-decisionepic"
@@ -226,41 +221,67 @@ def test_an_unsatisfied_result_preserves_both_limits_and_counts_only_handoffs(
     assert decision.action.required_result == _PRIOR_RESULT
 
 
-def test_renaming_an_unmet_target_is_refused_rather_than_read_as_new_work() -> None:
-    """The one rewrite that would otherwise look like legitimate advancement."""
-    refusal = _refusal(
+@pytest.mark.parametrize("status", ["unsatisfied", "unobservable"])
+@pytest.mark.parametrize(("is_handoff", "consumed"), [(True, 1), (False, 0)])
+def test_renaming_an_unmet_target_replaces_it_under_the_writes_own_budget(
+    status: str,
+    is_handoff: bool,  # noqa: FBT001 -- parametrized pytest argument.
+    consumed: int,
+) -> None:
+    """A different required result is a REPLACEMENT, never a refusal.
+
+    The rename refusal existed only to stop a rename from evading expiry, and
+    expiry is deleted, so the write begins a new obligation under its own budget
+    and records the replaced identity. An unobservable target is re-aimable too:
+    a reader that cannot measure the old target must not pin the plan to it.
+    """
+    decision = _decision(
         decide_tracked_write(
             epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(required_result=_RENAMED_RESULT),
             now=_NOW,
-            is_handoff=False,
+            is_handoff=is_handoff,
+            observation=_observation(status=status),
+        )
+    )
+
+    assert decision.event_kind == EVENT_REPLACEMENT
+    assert decision.authority.required_result == _RENAMED_RESULT
+    assert decision.authority.original_deadline == _LATER_DEADLINE
+    assert decision.authority.max_handoffs == 99
+    assert decision.authority.consumed_handoffs == consumed
+    assert decision.replaced_result is not None
+    assert "bd-ib-prior" in decision.replaced_result
+
+
+def test_an_overdue_obligation_continues_with_no_recovery_or_ruling() -> None:
+    """Both limits reached, an unsatisfied result: the handoff is accepted.
+
+    This is the deleted expiry gate's own case. The decision is the ordinary
+    continuation, consuming one unit past the ceiling.
+    """
+    decision = _decision(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(
+                authority=AuthorityState(
+                    required_result=_PRIOR_RESULT,
+                    original_deadline="2020-01-01T00:00:00Z",
+                    max_handoffs=2,
+                    consumed_handoffs=2,
+                )
+            ),
+            candidate=_candidate(),
+            now=_NOW,
+            is_handoff=True,
             observation=_observation(status="unsatisfied"),
         )
     )
 
-    assert "cannot be renamed" in refusal.detail
-    assert "causal supersession" in refusal.detail
-
-
-def test_renaming_an_unobservable_target_is_refused_naming_the_measurement() -> None:
-    """The remedy differs, so the refusal says the target was UNOBSERVABLE.
-
-    A reader told only "cannot be renamed" would look for a supersession to
-    author, when what is actually owed is a diagnosis of the broken reading.
-    """
-    refusal = _refusal(
-        decide_tracked_write(
-            epic_id=_EPIC_ID,
-            head=_head(authority=_prior_authority()),
-            candidate=_candidate(required_result=_RENAMED_RESULT),
-            now=_NOW,
-            is_handoff=False,
-            observation=_observation(status="unobservable"),
-        )
-    )
-
-    assert "is unobservable" in refusal.detail
+    assert decision.event_kind == EVENT_HANDOFF
+    assert decision.authority.consumed_handoffs == 3
+    assert decision.authority.original_deadline == "2020-01-01T00:00:00Z"
 
 
 @pytest.mark.parametrize(
@@ -429,7 +450,7 @@ def _recovery() -> CausalRecovery:
 
 
 def test_recovery_against_an_epic_with_no_obligation_at_all_is_refused() -> None:
-    """There is nothing expired, so there is nothing to recover.
+    """There is no obligation, so there is nothing to recover.
 
     Admitting one would let a session bank attempts before any obligation
     exists and spend them against whatever obligation arrived later.
@@ -446,7 +467,7 @@ def test_recovery_against_an_epic_with_no_obligation_at_all_is_refused() -> None
         )
     )
 
-    assert "not expired" in refusal.detail
+    assert "no obligation stands" in refusal.detail
 
 
 def test_recovery_against_a_satisfied_obligation_is_refused() -> None:
@@ -463,33 +484,29 @@ def test_recovery_against_a_satisfied_obligation_is_refused() -> None:
         )
     )
 
-    assert "not expired" in refusal.detail
+    assert "already satisfied" in refusal.detail
 
 
-def _supersession() -> CausalSupersession:
-    """One well-formed supersession naming the prior obligation at its epoch.
-
-    Every case below refuses BEFORE the cause's own evidence is read, so the
-    claim's shape only has to be well-formed: what the cases discriminate is
-    which obligation state a supersession may be carried against at all.
-    """
-    return CausalSupersession(
-        superseded_result_identity="repo item_status bd-ib-prior status done",
-        previous_epoch=3,
-        cause=CAUSE_MISDERIVED,
-        deriving_operation_id="op-derived",
-        open_carrier_id="cr-open",
-        writer="plan-session",
+def test_a_valid_recovery_on_an_unexpired_unmet_obligation_is_recorded() -> None:
+    """An attempt is optional and no longer gated on expiry: it is graded and recorded."""
+    decision = _decision(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(authority=_prior_authority()),
+            candidate=_candidate(),
+            now=_NOW,
+            is_handoff=False,
+            observation=_observation(status="unsatisfied"),
+            recovery=_recovery(),
+        )
     )
 
+    assert decision.event_kind == EVENT_RECOVERY
+    assert decision.authority.original_deadline == _ORIGINAL_DEADLINE
 
-def test_a_write_carrying_both_a_recovery_and_a_supersession_is_refused() -> None:
-    """The two answer different questions about one obligation.
 
-    A recovery reopens an expired obligation and a supersession replaces an
-    unmet one, so a write claiming both would have one of them graded and the
-    other silently dropped — and the write would report success either way.
-    """
+def test_a_recovery_cannot_ride_on_a_replacement() -> None:
+    """The attempt names the obligation it recovers, so it cannot replace that obligation."""
     refusal = _refusal(
         decide_tracked_write(
             epic_id=_EPIC_ID,
@@ -499,133 +516,24 @@ def test_a_write_carrying_both_a_recovery_and_a_supersession_is_refused() -> Non
             is_handoff=False,
             observation=_observation(status="unsatisfied"),
             recovery=_recovery(),
-            supersession=_supersession(),
         )
     )
 
-    assert "never both" in refusal.detail
+    assert "replaces" in refusal.detail
 
 
-def test_a_supersession_against_an_epic_with_no_obligation_is_refused() -> None:
-    """There is nothing standing that could be replaced.
-
-    Admitting one would let a write bank a rename before any obligation exists
-    and have it apply to whatever obligation arrived next.
-    """
-    refusal = _refusal(
-        decide_tracked_write(
-            epic_id=_EPIC_ID,
-            head=_head(),
-            candidate=_candidate(required_result=_RENAMED_RESULT),
-            now=_NOW,
-            is_handoff=False,
-            observation=None,
-            supersession=_supersession(),
-        )
-    )
-
-    assert "no obligation stands" in refusal.detail
-
-
-def test_a_supersession_against_a_satisfied_obligation_is_refused() -> None:
-    """A satisfied result already permits a new result AND a new budget.
-
-    This is the one state in which a supersession could carry a budget of the
-    caller's own choosing, because the satisfied arm is the arm that replaces
-    one — so the claim is refused rather than merged into it.
-    """
+def test_an_invalid_recovery_is_refused() -> None:
+    """A carried attempt is still graded: an elapsed attempt bound is refused."""
     refusal = _refusal(
         decide_tracked_write(
             epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
-            candidate=_candidate(required_result=_RENAMED_RESULT),
-            now=_NOW,
-            is_handoff=False,
-            observation=_observation(status="satisfied"),
-            supersession=_supersession(),
-        )
-    )
-
-    assert "already permits" in refusal.detail
-
-
-def test_a_supersession_of_an_expired_obligation_remains_subject_to_expiry() -> None:
-    """A supersession does not reopen an obligation that has run out.
-
-    The clause says so in as many words, and it is the one route that would
-    otherwise turn an exhausted budget into a fresh one: a rename is admitted
-    only while the obligation it renames still has budget left.
-    """
-    refusal = _refusal(
-        decide_tracked_write(
-            epic_id=_EPIC_ID,
-            head=_head(authority=_prior_authority(consumed=5)),
-            candidate=_candidate(required_result=_RENAMED_RESULT),
-            now=_NOW,
+            candidate=_candidate(),
+            now="2026-10-21T00:00:00Z",
             is_handoff=False,
             observation=_observation(status="unsatisfied"),
-            supersession=_supersession(),
+            recovery=_recovery(),
         )
     )
 
-    assert "does not reopen it" in refusal.detail
-
-
-def test_a_supersession_of_an_unreadable_prior_obligation_is_reconciled_first() -> None:
-    """An obligation nobody can parse names no identity to supersede.
-
-    Its own control is the expired case above, which reaches the same write with
-    a READABLE obligation and reports the other refusal: a build that had
-    stopped parsing the prior obligation would answer this one for both.
-    """
-    refusal = _refusal(
-        decide_tracked_write(
-            epic_id=_EPIC_ID,
-            head=_head(
-                authority=AuthorityState(
-                    required_result={"shell": "test -f done"},
-                    original_deadline=_LATER_DEADLINE,
-                    max_handoffs=5,
-                    consumed_handoffs=1,
-                )
-            ),
-            candidate=_candidate(required_result=_RENAMED_RESULT),
-            now=_NOW,
-            is_handoff=False,
-            observation=_observation(status="unsatisfied"),
-            supersession=_supersession(),
-        )
-    )
-
-    assert "unreadable" in refusal.detail
-
-
-def test_an_accepted_supersession_handoff_consumes_one_inherited_unit() -> None:
-    """The causal event consumes none; the handoff carrying it consumes exactly one."""
-    decision = _decision(
-        decide_tracked_write(
-            epic_id=_EPIC_ID,
-            head=_head(authority=_prior_authority(consumed=1)),
-            candidate=_candidate(required_result=_RENAMED_RESULT),
-            now=_NOW,
-            is_handoff=True,
-            observation=_observation(status="unsatisfied"),
-            replacement_observation=_observation(status="unsatisfied"),
-            supersession=_supersession(),
-            evidence=SupersessionEvidence(
-                deriving=DerivingTransition(
-                    author="plan-resume",
-                    recorded_at="2026-10-01T00:00:00Z",
-                    required_result=_PRIOR_RESULT,
-                    later_results=(),
-                ),
-                carrier=None,
-                plan_level=False,
-                implementation=ImplementationEvidence(
-                    factory_safe=True, recorded_at="2026-10-01T00:00:00Z"
-                ),
-            ),
-        )
-    )
-
-    assert decision.authority.consumed_handoffs == 2
+    assert "already" in refusal.detail

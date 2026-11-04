@@ -78,6 +78,9 @@ import base64
 import json
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
+    record_reader_fragment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     effective_criteria,
 )
@@ -193,7 +196,7 @@ from _dispatcher_proof_record import (  # noqa: E402
     latest_proof_record,
     proof_records,
 )
-
+__RECORD_READER_FRAGMENT__
 
 def run_text(argv):
     """One subprocess reading's stdout, stripped, or None when it would not answer."""
@@ -376,6 +379,11 @@ def grade(number):
         return 1, ("LIVESPEC_PROOF_GRADE_NO_RECORD: pull request #" + number + " carries "
                    "no verified Proof of Done record for " + " or ".join(run_ids)
                    + ", so there is nothing to grade")
+    if published_head(record.body) is None:
+        return 1, ("LIVESPEC_PROOF_GRADE_PUBLISH_HEAD_UNESTABLISHED: the verified "
+                   "record " + record.url + " names no single full publish-branch "
+                   "head, so the tree it proved cannot be established; failing closed "
+                   "rather than advancing to pr_refresh")
     ungraded = ungraded_assertions(record, assertions)
     if ungraded:
         return 1, ("LIVESPEC_PROOF_GRADE_UNGRADEABLE: the verified record "
@@ -492,6 +500,7 @@ def proof_grade_program_source() -> str:
         .replace("__FAILURE_COUNT_FILENAME__", PROOF_GRADE_FAILURE_COUNT_FILENAME)
         .replace("__FINDING_FILENAME__", PROOF_GRADE_FINDING_FILENAME)
         .replace("__FAILURE_CAP__", str(PROOF_GRADE_FAILURE_CAP))
+        .replace("__RECORD_READER_FRAGMENT__", record_reader_fragment())
     )
 
 

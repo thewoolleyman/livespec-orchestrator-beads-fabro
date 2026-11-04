@@ -28,8 +28,10 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_hook_limit_program,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
+    _dispatcher_pyright_cache,
     _dispatcher_review_guard,
     _dispatcher_tmux_socket_root,
+    _factory_presence,
 )
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
@@ -360,10 +362,12 @@ def test_non_object_root_names_the_shape_not_a_missing_prefix(
     "call",
     [
         pytest.param(
-            lambda cwd: _config.has_fabro_factory(cwd=cwd, factory="default"),
+            lambda cwd: _factory_presence.has_fabro_factory(cwd=cwd, factory="default"),
             id="has_fabro_factory",
         ),
-        pytest.param(lambda cwd: _config.has_fabro_factories(cwd=cwd), id="has_fabro_factories"),
+        pytest.param(
+            lambda cwd: _factory_presence.has_fabro_factories(cwd=cwd), id="has_fabro_factories"
+        ),
         pytest.param(
             lambda cwd: _config.resolve_fabro_factory(cwd=cwd), id="resolve_fabro_factory"
         ),
@@ -835,6 +839,7 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + _dispatcher_hook_limit_program.hook_limit_prepare_steps_block(limit_seconds=None)
         + _dispatcher_commit_runner.commit_runner_prepare_steps_block()
         + _dispatcher_review_guard.review_guard_prepare_steps_block()
+        + _dispatcher_pyright_cache.pyright_cache_prepare_steps_block()
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + "[environments.livespec-ci.env]\n"
@@ -884,7 +889,7 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     # record-file merger), plus the
     # repository-hook limit observer (bd-ib-xi63mq) — the hostile value
     # smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 16
+    assert rendered.count("[[run.prepare.steps]]") == 17
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

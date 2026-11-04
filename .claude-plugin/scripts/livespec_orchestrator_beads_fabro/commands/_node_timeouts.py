@@ -47,6 +47,7 @@ __all__: list[str] = [
 
 _NODE_TIMEOUTS_KEY = "node_timeouts"
 _STALL_TIMEOUT_KEY = "stall_timeout_seconds"
+_IMPLEMENT_STAGE_NODES: frozenset[str] = frozenset({"red", "green"})
 
 DEFAULT_NODE_TIMEOUT_SECONDS = 1800
 DEFAULT_STALL_TIMEOUT_SECONDS = 7200
@@ -92,7 +93,10 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # is reached by three visits of two attempts each, SIX, and the route, the
 # completion gate, the diff breaker and `implement_commit_settle` once per
 # visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three and
-# `fix_commit_settle` follows `fix`'s two. The
+# `fix_commit_settle` follows `fix`'s two. `janitor_admission` sits ahead of
+# each janitor visit and is likewise billed three times; it has its own
+# engine-side ninth visit only to name the exhausted eight-visit bound and
+# preserve the tree, which is not part of a successful run's longest path. The
 # route runs the repository's pre-commit hook, which can take the better part
 # of its timeout, so it is billed at its full visit count like any node that can
 # spend its ceiling.
@@ -166,6 +170,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "implement_completion": 3,
     "implement_hook_route": 3,
     "implementation_diff": 3,
+    "janitor_admission": 3,
     "janitor": 3,
     "fix": 2,
     "fix_commit_settle": 2,
@@ -208,11 +213,15 @@ class NodeTimeouts:
 
     def seconds_for(self, *, node: str) -> int:
         """The resolved timeout in seconds for `node`."""
-        return self.configured.get(node, DEFAULT_NODE_TIMEOUT_SECONDS)
+        return self.configured.get(_configuration_node(node=node), DEFAULT_NODE_TIMEOUT_SECONDS)
 
     def layer_for(self, *, node: str) -> str:
         """Which layer supplied `node`'s timeout."""
-        return REPOSITORY_LAYER if node in self.configured else WORKFLOW_DEFAULT_LAYER
+        return (
+            REPOSITORY_LAYER
+            if _configuration_node(node=node) in self.configured
+            else WORKFLOW_DEFAULT_LAYER
+        )
 
 
 def default_node_timeouts() -> NodeTimeouts:
@@ -336,6 +345,16 @@ def positive_int_seconds(*, value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value if value > 0 else None
+
+
+def _configuration_node(*, node: str) -> str:
+    """The timeout configuration key that governs one workflow node.
+
+    `red` and `green` are the two future ACP turns of the implement stage.
+    They retain the stage's single `implement` configuration key; command nodes
+    such as `commit_red` and `commit_green` deliberately do not share it.
+    """
+    return "implement" if node in _IMPLEMENT_STAGE_NODES else node
 
 
 # The fully-defaulted resolution as a VALUE, for a caller that needs to put

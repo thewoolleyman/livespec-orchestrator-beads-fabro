@@ -317,6 +317,46 @@ The patch was based on the serving branch and rebase-merged into it, not cut as 
 branch on upstream `main` and merge-committed, as the convention above says. Before it is
 offered upstream, re-cut it as a topic branch on upstream `main`; the change is one file.
 
+**The fleet instance's build (2026-11-02).** Since 2026-11-02T15:04:02Z, gmktec's fleet
+instance `fabro-server` (`:32276`) serves `613add19c`. That is the next commit on the same
+Fabro carrier branch `carrier-candidate-registered-20261023`: `9f6c38fab` plus one
+fork-local carry. Its `Cargo.lock` still pins Petri `e92b191`, so `565ac47` above stays
+undeployed. `fabro-server-candidate` and `fabro-server-mi-homelab` keep `9f6c38fab`, by
+coordinator ruling. The build is `fabro 0.393.0-nightly.1 (613add1 2026-11-02)`, sha256
+`def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-613add19c/` on
+vps. The pin is livespec-dev-tooling PR #3141 (`9657a61e`), and its rollback target is
+`v0393-9f6c38fab` (sha256 `e8ebf8ac…09d6`).
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `613add19c` (thewoolleyman/fabro#13) | per-run GitHub App selection: a run config's `[run.integrations.github.app]` names the App a run publishes as, in place of the server's global App | one shared main-Petri instance serves repositories owned by different GitHub organizations, and each run must publish as its target repository's own App (homelab's org App beside the fleet's) | **YES**, on `fabro-server` `:32276` only, since 2026-11-02 | `bd-ib-voozdp` (plan `fabro-currency`) |
+
+**The serving build (2026-11-04).** Since 2026-11-04 all three gmktec instances —
+`fabro-server` (`:32276`), `fabro-server-candidate` (`:32278`) and
+`fabro-server-mi-homelab` (`:32277`) — serve `8764f1de8`, the tip of the same carrier
+branch: `613add19c` plus the four rows below. Its `Cargo.lock` still pins Petri
+`e92b191`. The build is `fabro 0.393.0-nightly.1 (8764f1d 2026-11-04)`, sha256
+`bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-8764f1de8/` on
+vps. The pin is livespec-dev-tooling PR #3351 (`d798118b`); candidate and mi-homelab
+restarted at zero runs (~04:20Z) and main by cancel-and-redispatch (~04:52Z). Its
+rollback target is `v0393-95a2e5b80` (sha256 `996d4e23…b072`), named in `host_vars`.
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `84fb903b8` (thewoolleyman/fabro#14) | a Kubernetes sandbox pod's node name on each `run_turn` span | per-node attribution of factory turns in Honeycomb | **YES**, all three gmktec instances | `bd-ib-motuct` (plan `fabro-currency`) |
+| `95a2e5b80` (thewoolleyman/fabro#16) | the run store retries a locked SQLite write and deletes a run in short batches | a run DELETE on the 102 GB main store held the write lock past the 5 s busy timeout and failed concurrent runs' appends ("database is locked") | **YES**, all three gmktec instances | `bd-ib-h7kbco` (plan `fabro-currency`); twin PR #17 against `factory-integration` still open |
+| `d6affc34f` (thewoolleyman/fabro#15) | a sandbox provider transport failure is reported as `transient_infra` | a run killed by a provider connection failure was filed as a deterministic failure, so it was not retried | **YES**, all three gmktec instances | `bd-ib-6r3yax` (plan `fabro-currency`) |
+| `b4d9d6583` (thewoolleyman/fabro#18) | a run-store failure is reported as `transient_infra` | a run killed by the server's own store fault was charged to the work item | **YES**, all three gmktec instances | `bd-ib-bpucez` (plan `fabro-currency`) |
+| `8764f1de8` (thewoolleyman/fabro#19) | a run resumed onto a re-acquired sandbox re-runs its prepare steps | the resumed run lost the Dispatcher-made sandbox preparation | **YES**, all three gmktec instances; the live-server proof is still owed | `bd-ib-ljw2xg` (plan `fabro-currency`) |
+
+Deploying it exposed a role defect. The `fabro_server` role's restart-deferred apply
+renamed the new build over the binary of a running server. That server spawns each run's
+worker from its own executable path, so every new run failed to launch from 14:42:47Z
+until the 15:04:02Z restart. The fix is livespec-dev-tooling-udma. Until it ships, any
+apply that stages a Fabro binary MUST restart that instance in the same step.
+
 **The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
 `fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
 `thewoolleyman/fabro`. It is upstream `v0.389.0-nightly.0` (`5c90ad2e0`) plus the two

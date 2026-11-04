@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.spec_stated import ClauseEvidence
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -81,6 +82,14 @@ def _module() -> ModuleType:
 
 
 def _verdict(module: ModuleType, **fields: Any) -> Any:
+    stated_by = fields.get("stated_by", ())
+    fields.setdefault(
+        "evidence",
+        tuple(
+            ClauseEvidence(heading=heading, quote="The clause states the asserted behaviour.")
+            for heading in stated_by
+        ),
+    )
     return module.GoverningHeadingVerdict(**fields)
 
 
@@ -106,6 +115,7 @@ def test_an_omitted_governing_heading_is_a_finding_naming_it_and_the_remedy() ->
     assert _OTHER_GOVERNING in findings[1]
     for finding in findings:
         assert item.id in finding
+        assert "The clause states the asserted behaviour." in finding
         assert "add that heading to the reference line" in finding
 
 
@@ -165,6 +175,18 @@ def test_the_statement_the_judgement_grades_is_the_title_and_every_assertion() -
     assert item.title in statement
     assert _FIRST_ASSERTION in statement
     assert _SECOND_ASSERTION in statement
+
+
+def test_the_statement_omits_a_reference_line_when_the_definition_has_none() -> None:
+    """A reference-free Definition of Done does not invent prompt evidence."""
+    module = _module()
+    item = _item(description=f"## Definition of Done\n\n- {_FIRST_ASSERTION}\n")
+
+    statement = module.governing_heading_statement(
+        item=item, section=definition_of_done(description=item.description)
+    )
+
+    assert "References:" not in statement
 
 
 def test_the_subject_block_carries_every_returned_heading_and_names_an_absence() -> None:

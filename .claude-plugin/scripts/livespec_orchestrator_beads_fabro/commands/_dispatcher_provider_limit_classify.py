@@ -38,13 +38,10 @@ facts put the cause on the message:
 SO THE TERMINAL-DIAGNOSTIC FIELD IS LEFT EMPTY, DELIBERATELY. Populating both
 from the one recorded text would widen every terminal-sourced signature onto a
 channel it was not measured on, which is the structural half of the contract's
-"never an arbitrary exec-output tail" rule turned off. The consequence is
-worth stating plainly rather than discovering later: a signature declared for
-`process.terminal_diagnostic` -- the built-in `model_unsupported` and
-`model_not_found` mappings among them -- cannot match through THIS reading,
-and keeps its existing route. That is the conservative direction, and a
-repository needing those causes released from a terminal declares them for
-`protocol.message`, which is the channel the record actually carries.
+"never an arbitrary exec-output tail" rule turned off. Built-in Codex
+model-removal mappings therefore declare `protocol.message`, the channel this
+record actually carries; a repository mapping a separately captured terminal
+diagnostic must declare that source itself.
 
 RELEASE IS A DISJUNCTION OF TWO ARMS, NOT ONE LADDER. An eligible
 classification releases AND mints a typed hold. A failure carrying the typed

@@ -29,16 +29,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     correlation_label_args,
     dispatch_traceparent,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_payload import fabro_json_payload
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_run_id_from_output,
+    fabro_run_summaries_from_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
+    FabroPsResult,
     FabroRunner,
     FabroRunResult,
 )
 
 __all__: list[str] = [
     "TRACEPARENT_ENV_VAR",
+    "fabro_ps_result",
     "fabro_run_argv",
     "fabro_run_env",
     "launch_fabro_run",
@@ -81,6 +85,30 @@ _FOREIGN_CLIENT_SETTINGS: dict[str, str | None] = {
     "FABRO_HOME": None,
     "FABRO_DEV_TOKEN": None,
 }
+
+
+def fabro_ps_result(
+    *,
+    fabro_bin: str,
+    runner: FabroRunner,
+    cwd: Path,
+    server_suffix: list[str],
+    timeout_seconds: float,
+    include_history: bool,
+) -> FabroPsResult:
+    """Read factory runs, optionally including terminal history."""
+    history_flag = ["-a"] if include_history else []
+    command = runner.run(
+        argv=[fabro_bin, "ps", *history_flag, "--json", *server_suffix],
+        cwd=cwd,
+        timeout_seconds=timeout_seconds,
+    )
+    payload = fabro_json_payload(command=command)
+    return FabroPsResult(
+        command=command,
+        payload=payload,
+        runs=fabro_run_summaries_from_payload(payload=payload),
+    )
 
 
 def launch_fabro_run(  # noqa: PLR0913 — kw-only launch assembly; each argument is one INDEPENDENT input the invocation needs, and folding any pair into a carrier would invent a grouping the launch does not have.

@@ -753,9 +753,10 @@ def test_scenario61_a_changed_tree_still_reaches_review_normally(
     assert exit_code == 0
     [graph] = graphs
     assert re.search(
-        r'\bimplementation_diff\s*->\s*janitor\b[^\n]*condition="outcome=succeeded"',
+        r'\bimplementation_diff\s*->\s*janitor_admission\b[^\n]*condition="outcome=succeeded"',
         graph,
     )
+    assert re.search(r"\bjanitor_admission\s*->\s*janitor\b", graph)
     # The green janitor reaches `review` THROUGH `publish_draft` and
     # `proof_capture` since S5 (bd-ib-b4u6b7), so the route is asserted rather
     # than the single edge that used to carry it.

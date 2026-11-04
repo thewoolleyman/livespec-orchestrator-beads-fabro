@@ -187,7 +187,7 @@ def observed_run(
     return ObservedRun(
         run=journaled_discovery(
             work_item_id=work_item_id,
-            ps=port.ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
+            ps=port.live_ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
             journal=journal,
             attribution=attribution,
         ),

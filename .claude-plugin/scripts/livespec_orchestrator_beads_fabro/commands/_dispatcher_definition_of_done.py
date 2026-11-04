@@ -89,6 +89,7 @@ __all__: list[str] = [
     "declared_proof_mode",
     "definition_of_done",
     "definition_of_done_source",
+    "reference_line_headings",
 ]
 
 DEFINITION_OF_DONE_TITLE = "definition of done"
@@ -292,6 +293,16 @@ def definition_of_done_source(*, description: str) -> str:
     while not section[-1].strip():
         _ = section.pop()
     return "".join(section)
+
+
+def reference_line_headings(*, text: str) -> tuple[str, ...]:
+    """The heading texts the first `References:` line of `text` names, in order.
+
+    For a statement that carries the reference line without the Definition of
+    Done heading that ordinarily encloses it, such as the governing-heading
+    statement. It reads the line exactly as the section parse does.
+    """
+    return _references(body=text.splitlines())
 
 
 def declared_proof_mode(*, sub_heading: str, subject: str = SUBJECT_WORK_ITEM) -> str:

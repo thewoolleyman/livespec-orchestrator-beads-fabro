@@ -9,6 +9,13 @@ requires for a `scenarios.md` heading binding (integration-tier-or-above, never
 a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 `heading_coverage` check's default allowlist.
 
+- `test_fleet_launch_scenario297.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 297 by running the shipped `check-fleet-launch` driver over the
+  committed tree. The hermetic harness proves a queued younger ticket begins
+  its preflight before the older ticket binds, preserves FIFO bind order,
+  reuses fresh passes, renews stale passes at the head, releases the mutex
+  before drive, and drops a failed queued ticket without taking that mutex.
+
 - `test_merge_poll_budget_exhausted_scenario220.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 220": an exhausted merge-poll budget
   re-reads the pull request, proceeds on MERGED and otherwise rests the item at
@@ -1396,6 +1403,17 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   foreign paths, divergent keyed records, and a rejected merged head still take
   refresh repair.
 
+- `test_implement_hook_refusal_cause_scenario285.py` — binds the attributable-cause
+  clause of `SPECIFICATION/contracts.md` "A refused commit's needs-human cause is
+  attributable from the ledger" (Scenario 285, work-item `bd-ib-2h512`) for the
+  `implement_hook_route` ending. The committed route script is executed by `sh` in a
+  throwaway clone with a stub pre-commit hook, once the re-entry budget is spent: the
+  single cause line must carry the hook's exit status, every failed target, one
+  excerpt of at most 200 characters (marked truncated), an unknown-target statement
+  naming absent, unreadable or target-free output, and never an environment value
+  (verbatim or JSON-escaped, 8 characters or longer). Each excerpt case sits beside a
+  sibling that would pass for a cause naming only the exit status.
+
 - `test_implement_completion_field_scenario204.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 204 and the v165 clause "An implement
   turn that ends incomplete does not succeed": the implement stage's outcome is
@@ -1492,27 +1510,6 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `required_paths` reading alone. `publish_draft` carries no re-entry of its own
   and the last case measures WHY — `janitor` is its only in-edge — rather than
   trusting it.
-
-- `test_plan_misderived_supersession_retained.py` — the half of Scenario 211 the
-  first supersession build could not reach (`bd-ib-4hznqp`): a misderived
-  plan-level obligation RETAINED by a later pointer write, so the chain stands
-  past the derivation. All three cases drive the real `set_next_action` over the
-  real store/client seam with nothing stood in. Three things to know before
-  editing. The retaining write is a real `set_next_action` HUMAN pointer, because
-  that is the write the measured incident turned on and the one the derivation
-  gate prescribes for an open carrier — while the derivation itself is
-  hand-committed, since a derivation recorded against an open mapped carrier is
-  exactly the state that gate now prevents, so the only honest way to reach it is
-  to seed the ledger a pre-gate build left behind. Both refusal cases advance the
-  chain through `commit_transition` alone, which is what leaves the DERIVED
-  pointer standing for them to assert unchanged — and each asserts the chain's
-  own authority as well, because the pointer is a projection every writer
-  rewrites wholesale while the chain is what the next write grades against. And
-  the two refusals assert each other's words ABSENT: a reader told its derivation
-  recorded another obligation, about a chain that in fact changed the result and
-  changed it back, fixes the identity and meets the same refusal again. The
-  changed-and-changed-back case is the one no cheaper reading catches, because
-  the named derivation DID record the result standing now.
 
 - `test_sandbox_images_scenario212.py` — the read-only sandbox-image enumeration,
   driven through the production `dispatcher.py` parser and handler table over

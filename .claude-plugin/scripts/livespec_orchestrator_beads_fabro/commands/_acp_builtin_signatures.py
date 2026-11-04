@@ -17,10 +17,10 @@ THE 400 CASE IS THE WHOLE POINT OF THE SLICE. The v107 `pr`-node outage
 was `HTTP 400 'model is not supported when using Codex with a ChatGPT
 account'` after `gpt-5.4-mini` left the ChatGPT-account catalog
 (`SPECIFICATION/history/v107/proposed_changes/pr-node-default-claude-haiku.md`).
-The eligible discriminator is the SENTENCE, never the status: the
-signature conjoins "requested model" with the unsupported clause, so it
-names the model the account asked for. A 400 carrying neither literal
-stays generic and terminates with its own identity, which
+The eligible discriminator is the SENTENCE, never the status: both
+measured model-naming forms are carried on the ACP protocol-message
+channel. A 400 carrying neither discriminator stays generic and terminates
+with its own identity, which
 `_acp_failure_matching.generic_status_reason` is what enforces.
 
 SCOPE IS NOT DECORATION. A removed or unentitled model is CANDIDATE-
@@ -52,7 +52,6 @@ __all__: list[str] = [
     "effective_signatures",
 ]
 
-_TERMINAL_SOURCE = "process.terminal_diagnostic"
 _MESSAGE_SOURCE = "protocol.message"
 _MACHINE_CODE_SOURCE = "protocol.machine_code"
 _FINAL_OUTPUT_SOURCE = "turn.final_output"
@@ -98,9 +97,10 @@ def _quota_machine_code(*, machine_code: str) -> AcpAvailabilitySignature:
 # MEASURED 2026-09-09, the `pr`-node outage that motivated this contract:
 # the pinned Codex adapter returned HTTP 400 naming the requested model as
 # unsupported for a ChatGPT account. Candidate-scoped: the account works,
-# this one slug does not.
-_CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
-    source=_TERMINAL_SOURCE,
+# this one slug does not. The Dispatcher reads failed ACP causes as protocol
+# messages, so the signature names that recorded channel.
+_CODEX_REQUESTED_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
+    source=_MESSAGE_SOURCE,
     cause="model_unsupported",
     scope=_CANDIDATE_SCOPE,
     all_literals=(
@@ -109,13 +109,24 @@ _CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
     ),
 )
 
+# MEASURED 2026-11-02 on gmktec, run 01M6DXH0CHT8: the pinned Codex adapter
+# returned HTTP 400 `model_not_found` with ``The '<model>' model is not
+# supported when using Codex with a ChatGPT account``. This wording omits the
+# earlier "requested model" phrase, so it needs its own exact discriminator.
+_CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
+    source=_MESSAGE_SOURCE,
+    cause="model_unsupported",
+    scope=_CANDIDATE_SCOPE,
+    all_literals=("model is not supported when using codex with a chatgpt account",),
+)
+
 # MEASURED 2026-08 on the Wave B fork validation (`plan/archive/
 # fabro-fork-control-plane-gaps/research/005-...`): `-m gpt-5.5` returned
 # `404 Not Found: The model 'gpt-5.5' does not exist or you do not have
 # access to it`. The model-naming clause is the discriminator; the bare
 # 404 around it is not.
 _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
-    source=_TERMINAL_SOURCE,
+    source=_MESSAGE_SOURCE,
     cause="model_not_found",
     scope=_CANDIDATE_SCOPE,
     all_literals=("the model", "does not exist or you do not have access to it"),
@@ -199,6 +210,7 @@ _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
         _ANTHROPIC_ORG_SPEND_LIMIT,
     ),
     CODEX_DOMAIN: (
+        _CODEX_REQUESTED_MODEL_UNSUPPORTED,
         _CODEX_MODEL_UNSUPPORTED,
         _CODEX_MODEL_NOT_FOUND,
         _CODEX_CAPACITY,

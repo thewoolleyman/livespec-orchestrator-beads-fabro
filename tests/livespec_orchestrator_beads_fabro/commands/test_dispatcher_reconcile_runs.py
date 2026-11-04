@@ -129,12 +129,6 @@ class _Runner:
             return CommandResult(
                 exit_code=0, stdout=self.inspect_by_run.get(argv[2], "[]"), stderr=""
             )
-        if argv[1] == "dump":
-            return CommandResult(
-                exit_code=self.dump_exit_code,
-                stdout="",
-                stderr="timeout after 300.0s" if self.dump_exit_code else "",
-            )
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 
@@ -301,7 +295,6 @@ def test_every_cli_call_for_one_orphan_runs_that_factorys_declared_client(
     # reaching the candidate's server.
     assert [(call[0], call[1]) for call in runner.calls] == [
         (_CANDIDATE_BIN, "ps"),
-        (_CANDIDATE_BIN, "dump"),
     ]
 
 
@@ -645,10 +638,10 @@ def test_a_failed_dump_leaves_an_orphan_run_untouched(tmp_path: Path) -> None:
 
     assert summary.reconciled == ()
     assert [error.reason for error in summary.errors] == ["export-not-verified"]
-    assert "fabro dump failed with exit code 124" in summary.errors[0].detail
+    assert "selective stage-diff read failed" in summary.errors[0].detail
     assert transport.calls == []
     assert ledger.verbs == []
-    assert [call[1] for call in runner.calls] == ["ps", "dump"]
+    assert [call[1] for call in runner.calls] == ["ps"]
     assert [record["stage"] for record in journal.written] == ["orphan-run-reconcile-error"]
 
 
@@ -889,7 +882,7 @@ def test_a_zero_grace_inspects_nothing_and_holds_nothing(tmp_path: Path) -> None
     # With the arm off, the moot-question reading stands and terminates at once.
     assert [run.orphan_reason for run in summary.reconciled] == ["item-not-active"]
     # No `inspect` was spent: a disabled arm measures nothing.
-    assert [call[1] for call in runner.calls] == ["ps", "dump"]
+    assert [call[1] for call in runner.calls] == ["ps"]
 
 
 def _inputs(

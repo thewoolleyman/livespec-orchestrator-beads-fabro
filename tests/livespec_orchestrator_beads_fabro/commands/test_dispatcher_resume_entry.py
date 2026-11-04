@@ -63,7 +63,10 @@ import importlib
 from pathlib import Path
 from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
+    DotGraph,
+    parse_dot_graph,
+)
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry"
 _MODULE_PATH = Path(
@@ -210,10 +213,12 @@ def test_the_checkout_step_fails_the_run_when_it_cannot_land() -> None:
     assert "set -e" in block
 
 
-def test_no_resume_renders_no_checkout_step_at_all() -> None:
-    """An ordinary dispatch's overlay is byte-for-byte what it always was."""
+def test_no_resume_renders_cache_provisioning_but_no_checkout_step() -> None:
+    """A fresh sandbox warms pyright, but does not fetch a published head."""
     module = _entry_module()
-    assert module.resume_checkout_prepare_steps_block(checkout=None) == ""
+    block = module.resume_checkout_prepare_steps_block(checkout=None)
+    assert "pyright cache provisioning" in block
+    assert "git checkout" not in block
 
 
 def _committed_graph() -> str:
@@ -291,3 +296,65 @@ def test_a_resume_entered_at_proof_capture_can_reach_neither_dod_gate_nor_implem
     assert "proof_capture" in reachable
     assert "dod_gate" not in reachable
     assert "implement" not in reachable
+
+
+def test_the_proof_only_arm_visits_its_three_proof_stages_in_order_and_nothing_else() -> None:
+    """Scenario 257: the merged-resume graph excludes every ordinary workflow leg."""
+    module = _entry_module()
+    assert hasattr(module, "proof_only_graph")
+    derived = module.proof_only_graph(graph_text=_committed_graph())
+    assert derived is not None
+    graph = parse_dot_graph(text=derived)
+    assert not isinstance(graph, str), graph
+    proof_stages = ("proof_capture", "proof_verify", "proof_grade")
+    assert set(graph.nodes) == {"start", "exit", *proof_stages}
+    assert [
+        (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
+    ] == [
+        ("start", "proof_capture", None),
+        ("proof_capture", "exit", "outcome=failed"),
+        ("proof_capture", "exit", "preferred_label=fix"),
+        ("proof_capture", "proof_verify", None),
+        ("proof_verify", "proof_grade", "preferred_label=approve"),
+        ("proof_verify", "exit", None),
+        ("proof_grade", "exit", None),
+    ]
+
+
+def _selected_destination(
+    *, graph: DotGraph, source: str, outcome: str, preferred_label: str
+) -> str:
+    """The destination the engine's edge selection picks: a matching condition, else the bare edge."""
+    candidates = [edge for edge in graph.edges if edge.source == source]
+    for edge in candidates:
+        condition = edge.attributes.get("condition")
+        if condition is not None and condition in (
+            f"outcome={outcome}",
+            f"preferred_label={preferred_label}",
+        ):
+            return edge.destination
+    return next(edge.destination for edge in candidates if edge.attributes.get("condition") is None)
+
+
+def test_every_outcome_of_the_proof_only_arm_other_than_the_routed_one_ends_the_run() -> None:
+    """Scenario 257: a failed or fix capture and any non-verified verification end the run."""
+    module = _entry_module()
+    derived = module.proof_only_graph(graph_text=_committed_graph())
+    assert derived is not None
+    graph = parse_dot_graph(text=derived)
+    assert not isinstance(graph, str), graph
+
+    def route(source: str, outcome: str, label: str) -> str:
+        return _selected_destination(
+            graph=graph, source=source, outcome=outcome, preferred_label=label
+        )
+
+    assert route("proof_capture", "succeeded", "") == "proof_verify"
+    assert route("proof_capture", "failed", "") == "exit"
+    assert route("proof_capture", "succeeded", "fix") == "exit"
+    assert route("proof_verify", "succeeded", "approve") == "proof_grade"
+    for label in ("fix", "recapture", "unmatched", ""):
+        assert route("proof_verify", "succeeded", label) == "exit"
+    assert route("proof_verify", "failed", "") == "exit"
+    assert route("proof_grade", "succeeded", "") == "exit"
+    assert route("proof_grade", "failed", "") == "exit"

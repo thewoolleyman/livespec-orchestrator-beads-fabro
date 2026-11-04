@@ -192,6 +192,42 @@ def test_a_credential_refusal_never_echoes_the_credential() -> None:
     assert "sk-live-do-not-print" not in refusal
 
 
+def test_numeric_codex_compaction_limits_are_the_only_token_named_args_that_pass() -> None:
+    """A numeric limit is configuration; every other credential-shaped text refuses."""
+    secrets = _secrets()
+    clean = {"command": "codex-acp", "args": (), "env": {}, "key": "dispatcher.acp_nodes.pr"}
+    limit = "model_auto_compact_token_limit=245000"
+
+    assert secrets.adapter_secret_refusal(**{**clean, "args": ("-c", limit)}) is None
+    parsed = _chains().parse_node_chain(
+        entry={
+            **_IDENTITY,
+            "command": "codex-acp",
+            "args": ["-c", limit],
+            "fallbacks": [{**_candidate(), "args": ["-c", limit]}],
+        },
+        key="dispatcher.acp_nodes.pr",
+        node="pr",
+        catalogs=_catalogs(),
+    )
+    assert not isinstance(parsed, str), parsed
+    assert parsed.fallbacks[0].adapter.args == ("-c", limit)
+    standalone = secrets.adapter_secret_refusal(**{**clean, "args": (limit,)})
+    assert standalone is not None
+    assert "args[0]" in standalone
+    assert "'token'" in standalone
+    for value in ("not-an-integer", "", "245000token"):
+        argument = f"model_auto_compact_token_limit={value}"
+        refusal = secrets.adapter_secret_refusal(**{**clean, "args": ("-c", argument)})
+        assert refusal is not None
+        assert "args[1]" in refusal
+        assert "'token'" in refusal
+        assert argument not in refusal
+    assert secrets.adapter_secret_refusal(**{**clean, "args": ("--api_key",)}) is not None
+    assert secrets.adapter_secret_refusal(**{**clean, "env": {"X_SECRET": "safe"}}) is not None
+    assert secrets.adapter_secret_refusal(**{**clean, "env": {"X": "my-token"}}) is not None
+
+
 def test_each_signature_source_requires_its_own_discriminator() -> None:
     """A machine code and a literal conjunction are mutually exclusive."""
     signatures = _signatures()

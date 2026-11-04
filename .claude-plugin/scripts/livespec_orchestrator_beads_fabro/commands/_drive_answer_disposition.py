@@ -104,6 +104,11 @@ def answer_press_refusal(
     admitted = _ADMITTED_ROLES.get(disposition, frozenset({_HUMAN_ROLE}))
     if _asserted_role(invoker=delivery.identity.invoker) in admitted:
         return None
+    if _HUMAN_ROLE in admitted and delivery.identity.delegation is not None:
+        # A VERIFIED delegated press: `drive` matched its `--delegation` ref
+        # against a committed maintainer grant before any valve ran, and only
+        # that verifier attaches a grant, so it is admitted as a human's.
+        return None
     identities = ", ".join(f"{role}:<name>" for role in sorted(admitted))
     return valve_refusal(
         aid=aid,

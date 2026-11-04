@@ -177,17 +177,20 @@ def test_a_progress_event_carries_the_readable_lines_and_the_canonical_payload()
     assert "{#" not in body
 
 
-def test_a_progress_event_names_the_continuation_ruling_that_authorized_it() -> None:
+def test_a_replacement_progress_event_names_the_result_it_replaced() -> None:
     payload = replace(
         _payload(),
-        continuation_ruling_by="Chad Woolley",
-        continuation_ruling_recorded_at="2026-10-15T08:00:00Z",
+        event_kind="replacement",
+        replaced_result="repo|item_status|bd-ib-old|done",
     )
 
     body = progress_event_body(payload=payload, now="2026-10-15T09:00:00Z")
 
-    assert "continuation-ruling-recorded-at: 2026-10-15T08:00:00Z" in body
-    assert "continuation-ruling-by: Chad Woolley" in body
+    assert "event: replacement" in body
+    assert "replaced-result: repo|item_status|bd-ib-old|done" in body
+    assert "replaced-result:" not in progress_event_body(
+        payload=_payload(), now="2026-10-15T09:00:00Z"
+    )
 
 
 def test_a_written_progress_event_reads_back_with_its_payload() -> None:

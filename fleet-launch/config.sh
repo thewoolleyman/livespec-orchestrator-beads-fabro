@@ -30,8 +30,19 @@
 # Minimum gmktec idle CPU percentage before a launch.
 : "${FLEET_LAUNCH_GMK_MIN_IDLE:=25}"
 
-# The Fabro client that reads the boards.
-: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro}"
+# The Fabro client that reads the boards: the build gmktec serves, c39bdbded,
+# which requests compressed board reads and filters plain `ps` on the server
+# (bd-ib-xoh477). Keep it equal to dispatcher.factories.petri.bin.
+: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro}"
+
+# The shared factory-board snapshot (board-snapshot.sh). Every launcher on the host reads a factory's
+# board through one snapshot file per factory, so the factory server receives at most one run listing
+# per FLEET_LAUNCH_BOARD_TTL_S from them however many launchers are queued. 0 turns the sharing off.
+# A launcher waits at most FLEET_LAUNCH_BOARD_REFRESH_WAIT_S for another launcher's refresh to finish
+# (one listing costs the petri server 25-40 s) before it reads the board as unknown.
+: "${FLEET_LAUNCH_BOARD_SNAPSHOT_DIR:=/run/user/1000/fleet-board-snapshot.d}"
+: "${FLEET_LAUNCH_BOARD_TTL_S:=60}"
+: "${FLEET_LAUNCH_BOARD_REFRESH_WAIT_S:=180}"
 
 # Cross-seat coordination directories (shared by every seat on this host).
 : "${FLEET_LAUNCH_INFLIGHT_DIR:=/run/user/1000/fleet-inflight.d}"
@@ -49,6 +60,7 @@
 : "${FLEET_LAUNCH_DOLT_SERVER_WRAPPER:=/usr/local/bin/with-dolt-server-env.sh}"
 : "${FLEET_LAUNCH_OPENBRAIN_WRAPPER:=/data/projects/1password-env-wrapper/with-openbrain-env.sh}"
 : "${FLEET_LAUNCH_RESUME_WRAPPER:=/data/projects/resume/with-resume-env.sh}"
+: "${FLEET_LAUNCH_RESUME_COMMAND:=resume}"
 : "${FLEET_LAUNCH_HOMELAB_AWS_WRAPPER:=/usr/local/bin/with-homelab-aws.sh}"
 : "${FLEET_LAUNCH_HL_CLI:=/home/ubuntu/.nix-profile/bin/hl}"
 
@@ -58,3 +70,11 @@
 : "${FLEET_LAUNCH_POLL_S:=30}"
 : "${FLEET_LAUNCH_PREFLIGHT_REUSE_S:=600}"
 : "${FLEET_LAUNCH_MUTEX_HOLD_S:=900}"
+# The two fixed poll intervals below are waits on an observed state (a free
+# mutex, a listed run); the hermetic harness shortens them so each of its cases
+# advances on that state instead of sitting out a production-sized interval.
+: "${FLEET_LAUNCH_MUTEX_POLL_S:=10}"
+: "${FLEET_LAUNCH_LISTING_POLL_S:=15}"
+# How long a resume launcher keeps its in-flight marker counted after the resume
+# client has exited, while it waits for the run to list on the factory board.
+: "${FLEET_LAUNCH_LISTING_WAIT_S:=600}"

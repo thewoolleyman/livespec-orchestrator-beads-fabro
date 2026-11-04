@@ -23,7 +23,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     DodJudgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
-    is_judgement_record,
+    is_receipt_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     recorded_governing_heading,
@@ -36,10 +36,14 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     governing_heading_statement,
     verdict_named_headings,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
+    judged_prompt_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tier_attested_verdict import (
     attested_governing_heading,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    PROMPT_CHARACTER_CEILING,
     clauses_named,
     condensed_spec_tree,
 )
@@ -67,7 +71,7 @@ def governing_heading_subject_digest(*, item: WorkItem, comments: Sequence[str])
     section = definition_of_done(description=item.description)
     statement = governing_heading_statement(item=item, section=section)
     source = definition_of_done_source(description=item.description)
-    riders = "\n".join(comment for comment in comments if not is_judgement_record(body=comment))
+    riders = "\n".join(comment for comment in comments if not is_receipt_comment(body=comment))
     return hashlib.sha256(f"{statement}\n{source}\n{riders}".encode()).hexdigest()
 
 
@@ -91,7 +95,11 @@ def reusable_governing_heading_verdict(
     except (OSError, UnicodeDecodeError):
         return None
     statement = governing_heading_statement(item=item, section=section)
-    condensed = condensed_spec_tree(spec_tree=spec_tree, statement=statement)
+    condensed = condensed_spec_tree(
+        spec_tree=spec_tree,
+        statement=statement,
+        ceiling=judged_prompt_ceiling(spec_tree=spec_tree, ceiling=PROMPT_CHARACTER_CEILING),
+    )
     subject_digest = governing_heading_subject_digest(item=item, comments=comments)
     for body in comments:
         verdict = reusable_governing_heading(

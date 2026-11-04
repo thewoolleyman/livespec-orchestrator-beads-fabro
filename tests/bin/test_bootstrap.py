@@ -273,6 +273,8 @@ def test_self_heal_reexec_supervises_subprocess_and_propagates_output_and_exit(
     # argv-identity assertion holds when the suite itself is run from an
     # unattended plan session rather than an operator's terminal.
     monkeypatch.delenv("LIVESPEC_PLAN_UNATTENDED", raising=False)
+    for name in ("CODEX_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "PI_SESSION_ID"):
+        monkeypatch.delenv(name, raising=False)
     reexec_argv = ("/usr/local/bin/with-livespec-env.sh", "--", "/usr/bin/python3", "next.py")
     monkeypatch.setattr(
         "livespec_runtime.credentials.decide_credentials",

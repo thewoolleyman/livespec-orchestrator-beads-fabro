@@ -48,7 +48,8 @@ import os
 import signal
 import subprocess
 import time
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,58 @@ _SETTLE_SECONDS = 10
 # per controlled-clock step; it never decides a verdict.
 _CONTROLLED_CLOCK_HANG_GUARD_SECONDS = 120
 
+# EVERY PROCESS A CASE SPAWNS CARRIES THIS CASE'S TAG. The guard's reaper is
+# detached BY DESIGN -- it must outlive the shell that started it -- and it runs
+# the controlled-clock shims, so killing the child a case knows about leaves the
+# reaper, its heartbeat and its shims running long after pytest exits (measured
+# 2026-11-01: up to five days, bd-ib-degyxj). The tag rides the environment, which
+# every descendant inherits whatever its process group or session, so teardown
+# finds and stops exactly what THIS case started and nothing another case or run
+# owns.
+_CASE_TAG_ENV_VAR = "LIVESPEC_CREDENTIAL_GUARD_TEST_CASE"
+_case_tag = ""
+# How long teardown waits for a SIGKILLed process to leave `/proc`.
+_TEARDOWN_SECONDS = 10
+
+
+def _tagged_pids(*, tag: str, proc_root: Path = Path("/proc")) -> list[int]:
+    """Every live process whose environment carries `tag`, this test process excepted."""
+    needle = f"{_CASE_TAG_ENV_VAR}={tag}".encode()
+    found: list[int] = []
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        try:
+            environ = (entry / "environ").read_bytes()
+        except OSError:
+            continue
+        if needle in environ.split(b"\0") and _executing(pid=int(entry.name)):
+            found.append(int(entry.name))
+    return found
+
+
+@pytest.fixture(autouse=True)
+def _reap_this_cases_processes() -> Iterator[None]:
+    """Stop every process this case spawned, whether it passed, failed or raised."""
+    global _case_tag  # noqa: PLW0603 -- one tag per case, read by `_hermetic_env`.
+    _case_tag = uuid.uuid4().hex
+    try:
+        yield
+    finally:
+        tag = _case_tag
+        _ = _eventually(
+            condition=lambda: _kill_all(pids=_tagged_pids(tag=tag)), guard_seconds=_TEARDOWN_SECONDS
+        )
+        assert _tagged_pids(tag=tag) == [], "this case left a process running after teardown"
+
+
+def _kill_all(*, pids: list[int]) -> bool:
+    """SIGKILL each pid; True once there was nothing left to kill."""
+    for pid in pids:
+        with contextlib.suppress(OSError):
+            os.kill(pid, signal.SIGKILL)
+    return not pids
+
 
 def _guard(*, tmp_path: Path) -> Path:
     """Render the SHIPPED guard script and make it executable."""
@@ -112,6 +165,7 @@ def _hermetic_env() -> dict[str, str]:
         CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     ):
         env.pop(name, None)
+    env[_CASE_TAG_ENV_VAR] = _case_tag
     return env
 
 
@@ -518,6 +572,16 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
     try:
         assert _appears(path=pid_file), "the guarded child never started"
         pid = int(pid_file.read_text(encoding="utf-8").strip())
+        # THE RACE THIS CLOSES (CI run 41487043712, PR #4193). The child writes
+        # its pid as soon as it runs, which on a loaded host can be BEFORE the
+        # guard has forked its reaper. Killing the waiter then kills the only
+        # process that was about to arm the bound, and the case read that as
+        # "the agent was never stopped" -- a fact about the test's timing, not
+        # about the guard. The property under test starts once the reaper is
+        # armed, so the waiter is lost only after the reaper's first poll.
+        assert _eventually(
+            condition=_reaper_armed(clock=clock).exists
+        ), "the guard never armed its reaper"
 
         guarded.send_signal(signal.SIGKILL)
         _ = guarded.wait(timeout=_CONTROLLED_CLOCK_HANG_GUARD_SECONDS)
@@ -632,6 +696,7 @@ def _controlled_clock(
     sleep_shim = bin_dir / "sleep"
     _ = sleep_shim.write_text(
         "#!/bin/sh\n"
+        f": > {_reaper_armed(clock=clock)}\n"
         + (f"while [ ! -e {hold} ]; do /bin/sleep 0.05; done\n" if hold is not None else "")
         + f'now="$(cat {clock})"\n'
         f"""awk -v n="$now" -v d="$1" 'BEGIN{{printf "%.6f\\n", n+d}}' > {clock}.next\n"""
@@ -641,6 +706,17 @@ def _controlled_clock(
     date_shim.chmod(0o755)
     sleep_shim.chmod(0o755)
     return bin_dir, clock
+
+
+def _reaper_armed(*, clock: Path) -> Path:
+    """The marker the controlled `sleep` leaves on its first call.
+
+    Only the guard's reaper calls `sleep` off PATH -- every child in this module
+    runs `/bin/sleep` -- so the marker existing means the reaper has been forked
+    and is polling. Nothing else proves it: the guarded child can write its pid
+    BEFORE the guard has forked the reaper.
+    """
+    return clock.with_name(f"{clock.name}.reaper-armed")
 
 
 def _executing(*, pid: int) -> bool:
@@ -691,6 +767,47 @@ def test_a_process_with_no_proc_entry_is_not_executing() -> None:
     """
     pid_max = int(Path("/proc/sys/kernel/pid_max").read_text(encoding="utf-8"))
     assert not _executing(pid=pid_max + 1)
+
+
+def test_the_reaper_skips_a_proc_entry_that_vanishes_mid_scan(tmp_path: Path) -> None:
+    """A process that exits between the scan and the environ read is not an error.
+
+    Whether a real `/proc` scan meets such an entry depends on which process
+    exits when, so under a loaded gate Job the branch went uncovered (janitor
+    Job gate-livespec-orchestrator-beads-fabro-6zr7x, 2026-11-03). A numbered
+    directory with no `environ` file is that entry on every host.
+    """
+    (tmp_path / "4194305").mkdir()
+    assert _tagged_pids(tag=_case_tag, proc_root=tmp_path) == []
+
+
+def test_the_reaper_finds_and_kills_a_tagged_process_left_running() -> None:
+    """A tagged process still running at teardown is found and killed.
+
+    Teardown reaches its kill loop only when a case's process outlives the
+    case, which depends on scheduling, so this case leaves one running on
+    purpose and drives the reaper's own helpers over it.
+    """
+    child = subprocess.Popen(["/bin/sleep", "60"], env=_hermetic_env())
+    try:
+        assert _eventually(condition=lambda: child.pid in _tagged_pids(tag=_case_tag))
+        assert _kill_all(pids=[child.pid]) is False
+        assert child.wait(timeout=_CONTROLLED_CLOCK_HANG_GUARD_SECONDS) == -signal.SIGKILL
+    finally:
+        with contextlib.suppress(OSError):
+            child.kill()
+
+
+def test_the_hang_guard_polls_until_a_late_condition_holds() -> None:
+    """A condition false at first and true later is waited for, not given up on."""
+    checks: list[int] = []
+
+    def holds_on_the_second_check() -> bool:
+        checks.append(1)
+        return len(checks) >= 2
+
+    assert _eventually(condition=holds_on_the_second_check)
+    assert len(checks) == 2
 
 
 @pytest.mark.parametrize("start_fraction", [0.65, 0.95])

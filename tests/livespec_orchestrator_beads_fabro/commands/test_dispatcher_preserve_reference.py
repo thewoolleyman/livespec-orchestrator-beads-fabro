@@ -8,10 +8,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-    CommandResult,
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
@@ -20,6 +20,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.store import WorkItemComment, append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -38,50 +40,82 @@ class _DumpRunner:
     stage_diffs: dict[str, str] | None = None
     calls: list[list[str]] = field(default_factory=list)
 
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = cwd
-        _ = timeout_seconds
-        _ = env
-        _ = stdin
-        self.calls.append(argv)
-        output_dir = Path(argv[argv.index("-o") + 1])
-        stage_diffs = self.stage_diffs
-        if stage_diffs is None and self.export_diff:
-            stage_diffs = {"002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n"}
-        for stage, payload in (stage_diffs or {}).items():
-            diff = output_dir / "stages" / stage / "diff.patch"
-            diff.parent.mkdir(parents=True)
-            _ = diff.write_text(payload, encoding="utf-8")
-        return CommandResult(exit_code=0, stdout="", stderr="")
-
 
 @dataclass(kw_only=True)
 class _FailingDumpRunner:
     stderr: str
 
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = argv
-        _ = cwd
-        _ = timeout_seconds
-        _ = env
-        _ = stdin
-        return CommandResult(exit_code=2, stdout="", stderr=self.stderr)
+
+@dataclass(kw_only=True)
+class _SixHundredSecondDumpRunner:
+    timeouts: list[float] = field(default_factory=list)
+
+
+@pytest.fixture(autouse=True)
+def run_state_replaces_the_legacy_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Model the projection response that now supplies this module's diffs."""
+
+    class _StateApi:
+        def __init__(self, *, result: FabroHttpResult) -> None:
+            self._result = result
+
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return self._result
+
+    def _state_api(port: FabroPort) -> _StateApi:
+        runner = port.runner
+        if isinstance(runner, _FailingDumpRunner):
+            return _StateApi(
+                result=FabroHttpResult(
+                    status=500,
+                    body=runner.stderr,
+                    error=None,
+                    payload=None,
+                    succeeded=False,
+                )
+            )
+        if isinstance(runner, _DumpRunner):
+            stage_diffs = runner.stage_diffs
+            if stage_diffs is None:
+                stage_diffs = (
+                    {"002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n"}
+                    if runner.export_diff
+                    else {}
+                )
+        else:
+            stage_diffs = {"002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n"}
+        stages = {
+            stage[4:]: {"first_event_seq": int(stage[:3]), "diff": diff}
+            for stage, diff in stage_diffs.items()
+        }
+        return _StateApi(
+            result=FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={"stages": stages},
+                succeeded=True,
+            )
+        )
+
+    monkeypatch.setattr(FabroPort, "server_api", _state_api)
+
+
+def test_preserve_pointer_reads_stage_diffs_without_running_fabro_dump(*, tmp_path: Path) -> None:
+    append_work_item(path=_config(), item=_item())
+    runner = _DumpRunner(export_diff=True)
+
+    _module().preserve_checkpointed_work_reference(
+        args=_args(),
+        repo=_repo(tmp_path),
+        item=_item(),
+        outcome=_outcome(status="failed"),
+        journal=_RecordingJournal(),
+        runner=runner,
+    )
+
+    assert runner.calls == []
 
 
 def _module() -> ModuleType:
@@ -159,6 +193,56 @@ def _args() -> argparse.Namespace:
     )
 
 
+def test_fabro_dump_timeout_is_defined_once_at_nine_hundred_seconds() -> None:
+    module_path = (
+        Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+        / "_dispatcher_fabro_dump_timeout.py"
+    )
+
+    assert module_path.is_file()
+    timeout = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout"
+    )
+    assert timeout.FABRO_DUMP_TIMEOUT_SECONDS == 900
+
+
+def test_every_dispatcher_dump_consumer_imports_the_shared_timeout() -> None:
+    timeout = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout"
+    )
+    checker = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_check"
+    )
+    worker_exit = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause"
+    )
+
+    assert not hasattr(_module(), "FABRO_DUMP_TIMEOUT_SECONDS")
+    assert checker.FABRO_DUMP_TIMEOUT_SECONDS is timeout.FABRO_DUMP_TIMEOUT_SECONDS
+    assert worker_exit.FABRO_DUMP_TIMEOUT_SECONDS is timeout.FABRO_DUMP_TIMEOUT_SECONDS
+
+
+def test_a_six_hundred_second_dump_writes_a_digested_preserve_pointer(tmp_path: Path) -> None:
+    module = _module()
+    append_work_item(path=_config(), item=_item())
+    runner = _SixHundredSecondDumpRunner()
+
+    module.preserve_checkpointed_work_reference(
+        args=_args(),
+        repo=_repo(tmp_path),
+        item=_item(),
+        outcome=_outcome(status="failed"),
+        journal=_RecordingJournal(),
+        runner=runner,
+    )
+
+    comments = make_beads_client(config=_config()).list_comments(issue_id="bd-ib-preserve")
+    body = str(comments[-1]["text"])
+    assert runner.timeouts == []
+    assert "sha256: 66cea3fffd55d2674c51819b19f4a7dee70484243ba4ed26408fa70e05b074dd" in body
+    assert "fabro dump failed" not in body
+
+
 def test_failed_run_comment_records_resolvable_diff_pointer(tmp_path: Path) -> None:
     module = _module()
     append_work_item(path=_config(), item=_item())
@@ -186,13 +270,7 @@ def test_failed_run_comment_records_resolvable_diff_pointer(tmp_path: Path) -> N
     assert "recorded sha256 is the integrity check" in body
     assert "normalized diff payload byte size" not in body
     assert "fabro dump 01M0RUN --server https://hp-xubuntu.perch-rudd.ts.net:32276 -o" in body
-    assert runner.calls[0][:5] == [
-        "fabro",
-        "dump",
-        "01M0RUN",
-        "--server",
-        "https://hp-xubuntu.perch-rudd.ts.net:32276",
-    ]
+    assert runner.calls == []
     assert journal.records[-1]["stage"] == "preserve-by-reference"
 
 

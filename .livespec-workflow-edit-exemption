@@ -1,2 +1,4 @@
-work_item=bd-ib-aqrdhl
-reason=Add the new repo-local check-acp-preflight-config target to the CI metadata batch in ci.yml so check-ci-matrix-completeness passes for the bd-ib-aqrdhl implementation (PR 4015).
+work_item=bd-ib-xevgsx
+reason=Ship the producer's canonical per-file verdict (.coverage-gates/per-file.{status,log}) as a second artifact beside .coverage, and download it in the check-coverage consumer, in ci.yml and ci-root-uid.yml. Since 704a96ded the consumer re-runs the whole suite when that verdict is absent: 405 jobs x 19.2 min = 130.6 k3s job-hours per 24 h. Two added steps per file; nothing deleted or modified. approval:workflow-edit-additive set under legacy-coordinator-agent's delegation.
+change=additive
+ci_runtime=no-significant-increase

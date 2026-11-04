@@ -731,6 +731,33 @@ Scenario: Preflight verifies the serving App reaches the target repo
   Then it refuses before launching with a diagnostic naming the per-tenant server requirement (the target tenant's own App identity)
   And the diagnostic surfaces the App workflows read-write grant as deliberately withheld from the dispatch credential, naming the attended-host-session route
 
+Scenario: A shared server serves a run under the target's per-run selected App
+  Given a shared Fabro server whose global integration is an App not installed for the adopter target repo
+  And the target declares dispatcher.factories.<name>.github_app naming an App-id secret and a private-key secret provisioned in that server's vault for an App installed on the target repo
+  When the Dispatcher dispatches an item of the target to that factory
+  Then the rendered run configuration selects that credential source by secret name and carries no secret value
+  And the run's native checkout, each managed stage GITHUB_TOKEN renewal and its publication all authenticate as the selected App
+  And the server's global integration is unchanged
+
+Scenario: An unresolvable per-run App selection refuses before any forge operation
+  Given a run whose configuration selects a GitHub credential source
+  And a selected secret is absent, empty, unparseable, or names an App not installed for the target repo
+  When the run's worker starts
+  Then the run fails before any protected forge operation with a diagnostic naming the selected secret names and the failing condition
+  And it does not fall back to the server's global App or to anonymous access
+
+Scenario: A malformed github_app declaration refuses before claim naming the key
+  Given a dispatch target whose dispatcher.factories.<name>.github_app is not an object, omits the App-id or private-key secret name, carries an empty or non-string name, or carries any other key
+  When the Dispatcher selects an item of that target for that factory
+  Then it refuses before claim with a diagnostic naming dispatcher.factories.<name>.github_app and the malformation
+  And no run is launched and no item is claimed
+
+Scenario: Concurrent runs under different Apps keep distinct authority
+  Given two concurrent runs on one shared server, one selecting no source and one selecting an org App
+  When each run refreshes its credentials and snapshots its vault
+  Then the first run authenticates only as the server's global App and the second only as the selected org App
+  And neither run's inspect or dump output, workflow version or sandbox environment contains a private key or a minted token
+
 Scenario: A target-local workflow supplies the target's toolchain facts
   Given an adopter repo carrying its own .fabro/workflows/implement-work-item workflow
   And the dispatch names no --workflow override and no --workflow-name
@@ -3235,7 +3262,7 @@ Feature: the next action is typed epic metadata
   So that a wrapped sentence in a comment can never delete a constraint or a route
 
   Background:
-    Given each impl or spec-op pointer below has an observable required_result and an unexpired budget
+    Given each impl or spec-op pointer below has an observable required_result and a budget
     And human and none pointers carry explicit null required_result and budget fields
     And the existing lifecycle and authorization checks still apply
 
@@ -5225,24 +5252,30 @@ Feature: one authoritative result reader for deadline and relay callers
 Governing clause: `contracts.md` §"Required result, budget and progress epoch".
 
 ```gherkin
-Feature: the original obligation budget survives activity
+Feature: the original obligation budget survives activity and never blocks the plan
   Scenario: every writer retains the first budget
     Given an unsatisfied required result with an absolute UTC deadline and positive max_handoffs
     When ordinary handoffs, supervisor handoffs and direct next_action writes repeat or change wording
     Then accepted handoffs consume units and direct pointer writes consume none
     And the original deadline and existing consumed units are unchanged
     When either exact budget boundary is reached
-    Then continued work without fresh causal recovery is refused before a partial handoff or pointer mutation
-    And expiry is observable even if no subsequent handoff is written
+    Then the obligation is reported overdue
+    And further handoffs and pointer writes for the same obligation are accepted with no recovery attempt, ruling or human decision
+    And the overdue finding is observable even if no subsequent handoff is written
+    And a same-obligation handoff past max_handoffs appends its comment, updates the pointer and increases the accepted count by one
 
-  Scenario: a fresh causal attempt permits bounded recovery, not a new original deadline
-    Given an expired unmet result and measured item, host or unknown cause evidence
+  Scenario: an unmet result is re-aimed by an ordinary replacement write
+    Given an unmet required result, whether within budget or overdue
+    When a sanctioned write names a different typed required result
+    Then a plan-progress-event of kind replacement naming the replaced result identity and epoch is recorded before the pointer changes
+    And the new obligation begins under the write's own budget
+    And no supersession cause, typed causal recovery attempt or continuation ruling is required
+
+  Scenario: a typed causal recovery attempt is optional and never required
+    Given an unmet result and measured item, host or unknown cause evidence
     When an authorized typed attempt names the previous epoch, executable next operation, unique attempt id and bounded attempt deadline
-    Then it permits one cause-appropriate recovery attempt and retains the original obligation deadline
+    Then it is recorded and retains the original obligation deadline
     And attempt registration, claim, actual command execution and fulfillment remain separately observable
-    And unknown causes require diagnosis and known host causes do not alter the item repetition count
-    When a repair child merges, a target is renamed, a relay is acknowledged, or approach prose changes
-    Then none of those observations postpones the deadline or fulfills the original target
     And an old attempt, concurrent stale writer or duplicate operation cannot reset the budget
     And a partial write must be reconciled before dispatch
 ```
@@ -5252,13 +5285,20 @@ Feature: the original obligation budget survives activity
 Governing clause: `contracts.md` §"Required result, budget and progress epoch".
 
 ```gherkin
-Feature: tracking findings preserve obligations without invented decisions
-  Scenario: expired or unreadable results require authorized recovery
-    Given an expired or unobservable obligation on an unattended plan resume
+Feature: tracking findings never block an executable plan step
+  Scenario: an overdue result is reported and its action is still taken
+    Given an overdue obligation whose required result is unsatisfied on an unattended plan resume
+    When resume_directive evaluates the pointer
+    Then it reports the overdue finding with the original budget and target
+    And it takes the pointer's executable action exactly as it would within budget
+    And it does not rewrite the pointer to a diagnosis action
+
+  Scenario: an unreadable result requires authorized diagnosis
+    Given an unobservable obligation on an unattended plan resume
     When resume_directive evaluates the pointer
     Then it reports the precise finding and preserves the original budget and target
-    And it does not blindly auto-dispatch the exhausted or unobservable action
-    And it exposes an authorized causal diagnosis or recovery action to the independent consumer
+    And it does not auto-dispatch the unobservable action
+    And it exposes an authorized diagnosis action to the independent consumer
     And human escalation requires a genuine human decision or authorization deficit
     And existing admission, HOLD and Red-Green guards remain enforced
 
@@ -5303,8 +5343,8 @@ Governing clause: `contracts.md` §"Attention without confusing activity with re
 
 ```gherkin
 Feature: activity does not hide the required result
-  Scenario: unrelated progress does not clear original expiry
-    Given an expired unmet required result and a newly merged ancillary repair
+  Scenario: unrelated progress does not clear an overdue result
+    Given an overdue unmet required result and a newly merged ancillary repair
     When needs-attention composes the normal attention envelope
     Then it retains the overdue-result fact with target, original budget, observation and sanctioned recovery action
     And the independently readable obligation remains available without another handoff
@@ -5315,7 +5355,7 @@ Feature: activity does not hide the required result
     When the window has threshold handoffs but no new attributable merged PR, closed child or verified proof
     Then the report names UTC window bounds, entry count and last required result or legacy marker
     When a new attributable milestone is observed
-    Then only the historical-window condition clears while an unmet expired result remains overdue
+    Then only the historical-window condition clears while an unmet overdue result remains overdue
     And unreadable sources yield unobservable findings rather than a confident no-result claim
     And missing or invalid policy produces a configuration finding rather than an invented limit
 ```
@@ -5870,7 +5910,7 @@ Feature: a plan session drives to the archive under a recorded authorization
 
   Scenario: a continuation ruling lets an attended resume take the pointer
     Given an open plan epic carrying a current continuation ruling until archive
-    And next_action kind impl with a non-empty ref and an unexpired budget
+    And next_action kind impl with a non-empty ref and a budget
     When the plan operation resumes attended
     Then resume_directive returns ask false and the action impl:<ref>
     And the reason names the continuation ruling
@@ -5900,7 +5940,7 @@ Feature: a plan session drives to the archive under a recorded authorization
     Given a plan assertion carried by another plan's host record that does not exist yet
     When the session records the next action
     Then the pointer is kind await with ref epic:<other-epic-id>, a required result of kind verified_proof on that epic and a budget deadline
-    And a resume after the deadline reports the obligation expired rather than waiting again
+    And a resume after the deadline keeps waiting on that epic and reports the obligation overdue
 
   Scenario: a stale pointer is reconciled, not executed
     Given next_action kind impl whose required_result is item_status closed for the item its ref names
@@ -6045,26 +6085,55 @@ Feature: attribute a failed engine checkpoint commit and route its decision to t
 ```gherkin
 Feature: Master-CI preflight waits on a pending run instead of treating it as failed
   As an operator dispatching work while the default branch's CI is still running
-  I want the preflight to wait for that run's verdict
-  So that a run that has not failed is never reported as a failure
+  I want the preflight to pass on a concluded green ancestor run, or else wait for the pending run's verdict
+  So that a run that has not failed is never reported as a failure and overlapping runs never starve dispatch
+
+  Scenario: a concluded green ancestor passes while the latest run is pending
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded green on a commit that is an ancestor of the current default-branch head
+    When the preflight reads the runs
+    Then the dispatch proceeds without waiting
+      And the journaled pass names the green run, its head commit and the still-pending latest run
+
+  Scenario: a red newest concluded run does not pass, and the preflight waits on the latest run
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded red
+    When the preflight reads the runs
+    Then the dispatch is neither started nor refused on that red run
+      And the preflight waits on the latest run
+
+  Scenario: a concluded green run that is not an ancestor of the head does not pass
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded green on a commit that is not an ancestor of the current default-branch head
+    When the preflight reads the runs
+    Then the dispatch does not proceed on that run
+      And the preflight waits on the latest run
 
   Scenario: a pending run that concludes green lets the dispatch proceed
     Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And no concluded green ancestor run satisfies the pass conditions
     When that job concludes green within the bounded wait
     Then the dispatch proceeds and the journaled pass names the run that concluded green
 
   Scenario: a pending run that concludes red refuses as red
     Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And no concluded green ancestor run satisfies the pass conditions
     When that job concludes red within the bounded wait
     Then the dispatch is refused naming the red run with the reason master-ci-red
 
   Scenario: a newer run replaces the one being waited on
-    Given the preflight is waiting on an in-progress run
-    When a newer run starts on the default branch and concludes green within the original bounded wait
+    Given the preflight is waiting on an in-progress run because the newest concluded run is red
+    When a newer run starts on the default branch and concludes green within the original bounded wait while it is still the latest run
     Then the preflight waits on the newer run and the journaled pass names the newer run
+
+  Scenario: a run concluding green during the wait passes as a green ancestor while a newer run is pending
+    Given the preflight is waiting on an in-progress run because the newest concluded run is red
+    When that run concludes green on an ancestor of the current head while a newer run is still in progress
+    Then the next poll passes on that green run and the journaled pass names it and the still-pending newer run
 
   Scenario: a run still pending at the bound is deferred, not failed
     Given the latest default-branch run stays in progress for the whole bounded wait
+      And no poll finds a concluded green ancestor run satisfying the pass conditions
     When the bound expires
     Then the dispatch does not start and the work item is not claimed
       And the journal records reason master-ci-pending with status deferred
@@ -6409,34 +6478,34 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
 ## Scenario 176 — A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human
 
 ```gherkin
-Feature: A janitor-green run survives a default branch that moved under it
+Feature: A green run survives a default branch that moved under it
   As the maintainer of a repository dispatched to the factory
   I want a refresh conflict or a post-refresh gate failure repaired inside the run
   So that hours of finished, green work are not discarded at publication
 
-  Scenario: A conflicted publish_draft refresh routes to a repair turn
-    Given a run whose janitor stage succeeded at head H
+  Scenario: A conflicted pre-aggregate janitor refresh routes to a repair turn
+    Given a run whose implement stage left head H
     And origin's default branch has advanced with a commit that conflicts with the run's work
-    When publish_draft refreshes the run onto the default branch
-    Then publish_draft aborts the rebase and the run's working branch is at H
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch
+    Then the janitor aborts the rebase and the run's working branch is at H
     And a refresh-repair brief names H, the conflicted paths and the run commit being applied
     And the run enters the fix node rather than needs_human
     And after the fix turn the run re-enters janitor, then publish_draft, then proof_capture
 
   Scenario: A refreshed head that fails the gate is restored and repaired
-    Given a run whose janitor stage succeeded at head H
-    And the refresh onto the advanced default branch completes without conflict
-    And the repository-declared gate rejects the refreshed head
-    When publish_draft publishes
+    Given a run whose implement stage left head H
+    And the janitor's pre-aggregate refresh onto the advanced default branch completes without conflict and changes the tree
+    And the janitor's full check aggregate rejects the refreshed head
+    When the janitor finishes its aggregate
     Then the run's working branch is reset to H
     And the run enters the fix node with a brief naming each failed gate target
     And the run does not end at needs_human
 
   Scenario: A refresh commit refused by the commit hook is restored and repaired
-    Given a run whose janitor stage succeeded at head H
-    And the refresh onto the advanced default branch conflicts on no path
+    Given a run whose implement stage left head H
+    And the janitor's pre-aggregate refresh onto the advanced default branch conflicts on no path
     And the repository's commit hook refuses the commit the refresh makes
-    When publish_draft refreshes the run onto the default branch
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch
     Then the run's working branch is reset to H with no merge or rebase in progress
     And a refresh-repair brief names H, the targeted default-branch commit and each target the hook named as failed
     And the run enters the fix node rather than needs_human
@@ -6470,7 +6539,7 @@ Feature: A janitor-green run survives a default branch that moved under it
 
   Scenario: A repair round leaves the review-fix budget untouched
     Given a run that has used one review-fix round
-    When a publish_draft refresh conflict routes the run to a refresh-repair round
+    When a conflict in the janitor's pre-aggregate refresh routes the run to a refresh-repair round
     Then the run still has the same number of review-fix rounds remaining as before the repair
 
   Scenario: Only conflicting or gate-failing refreshes count toward the non-convergence bound
@@ -6486,7 +6555,7 @@ Feature: A janitor-green run survives a default branch that moved under it
     And pr arms auto-merge for the head the latest verified or carried_forward record names, and the run does not end pr-refresh-non-converged
 
   Scenario: The repair budget is bounded
-    Given a run that has already taken two refresh-repair rounds across publish_draft and pr_refresh
+    Given a run that has already taken two refresh-repair rounds across the janitor's pre-aggregate refresh and pr_refresh
     When its next refresh conflicts again
     Then the stage fails closed to needs_human with the cause refresh-repair-exhausted
     And the recovery artifact pointer names that stage's pre-refresh head
@@ -7805,7 +7874,7 @@ Feature: Concurrent additions to shared record files do not cost a run a repair 
   Scenario: Insertions by both sides at the same place in a declared Markdown record keep both
     Given a repository that declares tests/integration/CLAUDE.md with format markdown-insertions
     And the default branch and the run each inserted a section at the same position in that file
-    When publish_draft or pr_refresh refreshes the run and the refresh conflicts only in that file
+    When the janitor's pre-aggregate refresh or pr_refresh refreshes the run and the refresh conflicts only in that file
     Then the merged file holds the default branch's inserted lines followed by the run's inserted lines
     And the stage proceeds as after a refresh that did not conflict
 
@@ -7896,7 +7965,7 @@ Feature: An agent stage does not act on instructions its stage prompt never gave
   Scenario: A spec change that arrived through the default branch is not refused
     Given an implement-kind run whose own commits change no spec-root path
     And the default branch gained a ratified spec revision after the run started
-    When publish_draft refreshes the run onto the default branch and prepares to publish
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch and publish_draft prepares to publish
     Then no spec-root refusal applies
 
   Scenario: Spec-root and workflow refusals are reported separately
@@ -8416,11 +8485,61 @@ Feature: New behaviour gets new spec before it is built
     When the governing-heading verdict is needed again
     Then the verdict is taken again against the new revision
 
+  Scenario: A spec revision that leaves the judged clauses unchanged reuses the spec-change tier decision
+    Given a feature whose spec-change tier record reads verdict stated and carries the clauses its verdict was judged against and every clause it names, each with its heading and body
+    And the item's asked-for behaviour is unchanged since the record was taken
+    And a new spec revision changes only clauses that the verdict neither selected nor names, and the selection against the new revision returns the same clauses
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused, no model is run, and the item is not held
+
+  Scenario: A spec revision that changes a judged clause takes the spec-change tier decision again
+    Given a feature whose spec-change tier record carries the clauses its verdict was judged against
+    And a new spec revision changes the body of one of those clauses, or the selection against it returns a different set
+    When the item reaches a dispatch path
+    Then the tier decision is taken again against the new revision
+
   Scenario: The release of a held spec-change-tier item never reuses a verdict across a revision
     Given a held spec-change-tier item whose linked proposal is ratified in a new revision
     And the selection against the new revision returns the same clauses as before
     When the next drain pass decides whether to release the item
     Then the governing-heading verdict is taken again against the new revision
+
+  Scenario: A held item is relinked to the proposal actually filed for it and released when that proposal ratifies
+    Given a held spec-change-tier item whose linked topic is the stem the Dispatcher derived for it
+    And its proposal was filed under a different topic stem
+    When relink-spec-tier is driven for the item naming the filed stem
+    Then the hold names the filed stem as the topic awaiting ratification
+    And a durable ledger comment on the item records the actor, the previous topic and the replacement topic
+    And once the filed topic's revision record carries decision accept and the re-run judgement returns stated, the next intake or drain pass releases the hold with no human valve
+
+  Scenario: Relinking to an already ratified topic changes only the linked topic
+    Given a held spec-change-tier item resting at pending-approval
+    And a proposal topic whose revision record already carries decision accept
+    When relink-spec-tier is driven for the item naming that topic
+    Then the item still rests at pending-approval and still carries its spec-change-tier hold
+    And no other item's linked topic, status or ledger comments change
+    And the hold is released only when the next intake or drain pass re-runs the judgement and it returns stated
+
+  Scenario: A relinked topic is carried forward by every later tier record
+    Given a held spec-change-tier item whose linked topic was replaced by relink-spec-tier
+    When the item is classified again at groom, on a dispatch path or on an intake or drain pass before its replacement topic ratifies
+    Then the new spec-change tier record carries the replacement topic as its linked topic
+    And the stem derived from the item's title is not recorded again
+    And a dispatch of the item is refused with exit code 5 naming the replacement topic
+
+  Scenario Outline: Relinking is refused and writes nothing
+    Given <item>
+    When relink-spec-tier is driven for the item naming <topic>
+    Then the route refuses naming <reason>
+    And the item's linked topic, status and ledger comments are unchanged
+    And no spec-change tier record and no dispatch-journal entry is appended
+
+    Examples:
+      | item                                          | topic                                                                  | reason                  |
+      | an item that carries no spec-change-tier hold | the stem of a pending proposed change                                  | the item is not held    |
+      | a held spec-change-tier item                  | a stem that propose-change's topic canonicalization would change       | the non-canonical topic |
+      | a held spec-change-tier item                  | a stem with no proposed change under proposed_changes or the history   | the unknown topic       |
+      | a held spec-change-tier item                  | a stem with no pending proposal whose latest revision record is reject | the rejected topic      |
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
@@ -8514,69 +8633,6 @@ Feature: Implementation that outruns the specification is caught at every merge
     Then the merges are judged across exactly two judge prompts
     And the outcome reports two prompts sent
     And one proposed change is filed per unstated behaviour per merge under its usual finding identity
-```
-
-## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget
-
-```gherkin
-Feature: A wrong obligation can be retired without letting a rename evade expiry
-  As the maintainer whose plan pointer was overwritten by a derivation
-  I want an evidenced supersession that the ledger can verify
-  So that a mis-derived or disposed obligation is replaced while the original budget still binds
-
-  Scenario: A mis-derived obligation is superseded with its deriving operation as evidence
-    Given an unmet plan obligation written by the plan-resume actor in a recorded epoch transition
-    And it names an impl step whose target work-item already carried a factory-safety label when that transition was recorded
-    When set_next_action carries a supersession with cause misderived naming that operation identity and a replacement result
-    Then a plan-progress-event of kind supersession is recorded before the pointer changes
-    And the replacement result carries the superseded obligation's original deadline and consumed handoff count
-
-  Scenario: A rename without a verified cause is refused
-    Given an unmet plan obligation written by an accepted handoff
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused because no derivation wrote that obligation
-    And the pointer and the obligation are unchanged
-
-  Scenario: A correctly derived obligation is not misderived
-    Given an unmet plan obligation written by the plan-resume actor naming an impl step whose target carries no factory-safety label
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused and the obligation is unchanged
-
-  Scenario: A label applied after the derivation does not make it misderived
-    Given an unmet plan obligation written by the plan-resume actor naming an impl step whose target was factory-eligible when it was derived
-    And a factory-safety label was applied to that target after the deriving transition
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused and the obligation is unchanged
-
-  Scenario: A plan-level step derived while a carrier was open is superseded by an await on that carrier
-    Given an unmet plan obligation written by the plan-resume actor in a recorded epoch transition
-    And it names a proof step while a work-item carrier named by the epic's latest carrier-map scope event was not closed at that transition
-    And that carrier is still not closed when the supersession is written
-    When set_next_action carries a supersession with cause misderived naming that operation identity and, as the replacement result, an await whose required result is that carrier's item_status closed
-    Then a plan-progress-event of kind supersession is recorded before the pointer changes
-    And the replacement result carries the superseded obligation's original deadline and consumed handoff count
-
-  Scenario: A plan-level step derived after its carriers closed is not misderived
-    Given an unmet plan obligation written by the plan-resume actor naming a proof step
-    And every work-item carrier named by the epic's latest carrier-map scope event was closed when that transition was recorded
-    When set_next_action carries a supersession with cause misderived
-    Then the write is refused and the obligation is unchanged
-
-  Scenario: A supersession to an already satisfied result is refused
-    Given an unmet plan obligation that qualifies for supersession
-    When the supersession names a replacement result that is already satisfied
-    Then the write is refused and the original obligation and its budget stand
-
-  Scenario: A disposed target is superseded with its ledger record as evidence
-    Given an unmet plan obligation whose target work-item is closed as superseded
-    When append_handoff carries a supersession with cause disposed naming that record
-    Then the supersession is recorded and consumes no handoff unit of its own
-    And the handoff itself consumes its one unit against the inherited count
-
-  Scenario: A retried supersession records nothing new
-    Given a recorded supersession under an operation identity
-    When the same operation identity is retried
-    Then the recorded event is returned and no second event is written
 ```
 
 ## Scenario 212 — The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing
@@ -9110,6 +9166,43 @@ Feature: A Codex-primary chain falls back before a run meets the Codex limit
     And the Codex usage read reports rate_limit.limit_reached true for a covered candidate
     When admission assesses the candidate
     Then no Codex headroom skip applies and the reading is still journaled
+
+  Scenario: A Codex window within 12 hours of its reset is assessed against a floor of 5
+    Given dispatcher.session_headroom_floor_percent is 20
+    And an admission-required node whose primary is a covered codex-acp candidate and whose fallback is an eligible claude-acp candidate
+    And the Codex usage read reports a primary window used_percent of 90 whose reset_at is 11 hours after the observation time
+    When admission assesses the node
+    Then the primary window's effective floor is 5 and is journaled as relaxed by reset proximity
+    And the codex-acp candidate is not skipped by a floor skip
+
+  Scenario: A Codex window more than 12 hours from its reset keeps the committed floor
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 90 whose reset_at is 13 hours after the observation time
+    When admission assesses the candidate
+    Then the primary window's effective floor is 20 and is journaled as not relaxed
+    And the candidate is skipped by a floor skip naming provider codex
+
+  Scenario: A Codex window exactly 12 hours from its reset is relaxed
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 90 whose reset_at is exactly 43200 seconds after the observation time
+    When admission assesses the candidate
+    Then the primary window's effective floor is 5
+    And the candidate is not skipped by a floor skip
+
+  Scenario: A relaxed Codex window still refuses below 5 percent, and the Claude floor is unchanged
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 96 whose reset_at is 2 hours after the observation time
+    And a covered claude-acp candidate whose Claude session headroom reading is 15 percent remaining
+    When admission assesses both candidates
+    Then the codex-acp candidate is skipped by a floor skip against an effective floor of 5
+    And the claude-acp candidate is skipped by a floor skip against the committed floor of 20
+
+  Scenario: A Codex window with no usable reset_at keeps the committed floor
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a valid primary window used_percent of 90 with no reset_at
+    When admission assesses the candidate
+    Then the reading is valid and the primary window's reset_at is journaled as absent
+    And the candidate is skipped by a floor skip against the committed floor of 20
 ```
 
 ## Scenario 215 — A tracks edge links a record to its epic on every surface
@@ -9588,6 +9681,16 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     Then the subject carries the rider's text and omits the verdict comment
     And the node's rendered goal for a dispatch of that item carries the rider and omits the verdict comment
     And appending the new verdict comment leaves the item's subject digest unchanged
+
+  Scenario: A filing-time tier record and mechanical finding are omitted after a revision ratifies the referenced heading
+    Given an item whose ledger carries a livespec-spec-change-tier record and a definition-of-done finding (mechanical) comment, each written against an earlier spec version that lacked its referenced heading
+    And a rider appended after filing
+    And a later revision ratified that heading verbatim
+    When the pre-admission judgement is taken at approve
+    Then the subject and the node's rendered goal carry the rider and omit the tier record and the mechanical finding comment
+    And the judgement resolves the reference line against the ratified spec tree and reports no unresolved-reference finding for it
+    And the tier record and the mechanical finding comment remain on the item's ledger
+    And appending a further tier record or a further mechanical finding comment leaves the item's subject digest unchanged
 
   Scenario Outline: A reference line missing one of several governing headings is reported as advisory by every host taking
     Given an item whose reference line names one of the two scenario headings that state its first assertion's behaviour
@@ -10406,7 +10509,7 @@ Feature: A push of a tree the aggregate just passed does not run the aggregate a
 
   Scenario: A push of a different tree runs the full gate
     Given the just check aggregate passed on a tree
-    When publish_draft refreshes onto a moved default branch and pushes a commit whose tree differs
+    When pr_refresh refreshes onto a moved default branch and pushes a commit whose tree differs
     Then the pre-push gate runs the full pre-push gate
 
   Scenario: No flag or variable reaches the verdict skip
@@ -10484,7 +10587,7 @@ Feature: publish_draft tells a landed publication from a failure
   Scenario: publish_draft finds the item's change already merged
     Given a run whose head adds no change to the default branch's tip
     And an earlier dispatch of the item has a pull request that the forge reports MERGED into the default branch with merge commit M contained in the tip
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft does not push or open a pull request
     And the run takes the merged-reconcile ending and records the pull request, merge commit M and the merged head
 
@@ -10498,19 +10601,19 @@ Feature: publish_draft tells a landed publication from a failure
   Scenario: A run that adds a change has not landed
     Given a run whose head adds a change to the default branch's tip
     And an earlier dispatch of the item has a MERGED pull request
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft pushes and opens a pull request as before
 
   Scenario: A reused branch name does not make a publication landed
     Given a run whose head adds no change to the default branch's tip
     And a MERGED pull request on the same branch name that no dispatch of this item produced
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
 
   Scenario: A merge into another base does not make a publication landed
     Given a run whose head adds no change to the default branch's tip
     And a pull request of an earlier dispatch of the item MERGED into a branch other than the default branch
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
 ```
 
@@ -11199,11 +11302,27 @@ Feature: Sandbox retention and collection
     Given two ended factory runs on the Kubernetes provider, run A whose work-item rests at `needs-human` and run B whose work-item rests at `blocked`
     When the Dispatcher's next pass runs
     Then run A's and run B's driver records and node workspace directories still exist
-    When run A's work-item is closed and the Dispatcher's next pass runs
+    When run A's work-item is closed and the Dispatcher's next pass runs while no run on that factory is running
     Then run A's sandbox is deleted through the provider's delete operation, and its driver record and node workspace directory no longer exist
     And run B's driver record and node workspace directory still exist
     When a further pass runs
     Then nothing further is recorded for run A and the pass does not fail
+
+  Scenario: Collection is deferred while the factory runs any run
+    Given the factory's committed defer_collection_while_active setting is absent
+    And an ended run C whose work-item is closed, on a factory that is running run D
+    When the Dispatcher's next pass runs
+    Then run C's sandbox still exists and the pass journals run C's collection as deferred
+    When run D ends and the Dispatcher's next pass sees no running run on the factory
+    Then run C's sandbox is deleted through the provider's delete operation
+
+  Scenario: Deletions against a busy factory are paced host-wide
+    Given the factory's committed rm_min_interval_seconds is 60 and the factory is running a run
+    And one Dispatcher process started a run deletion against that factory 10 seconds ago
+    When a second Dispatcher process on the same host decides to cancel a stalled run on that factory
+    Then the stalled run stops progressing at once
+    And the deletion of its record waits until 60 seconds after the first deletion started
+    And the pass journals the deferred deletion with the run id, the factory, the caller and the earliest start instant
 ```
 
 ## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node
@@ -11253,12 +11372,65 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     Then the implement stage's outcome is failed
     And the needs-human cause names commit_green's recorded exit status and failed target names
 
+  Scenario: An exhausted commit re-entry's cause carries the first failure line of the hook's output
+    Given commit_green's hook has refused naming the failed target check-types
+    And the hook's recorded output reports a first error line longer than 200 characters
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause names commit_green's recorded exit status and the failed target check-types
+    And the cause carries that first error line shortened to 200 characters and marked as truncated
+
+  Scenario: A refused commit whose hook output names no target says the target is unknown and why
+    Given commit_red's hook has refused and its recorded output cannot be read
+    And the red node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause states that the failing target is unknown because the hook's recorded output could not be read
+    And the cause is not the hook script's exit status alone
+
+  Scenario: A failure line that quotes a sandbox credential is withheld from the cause
+    Given the dispatch supplied CODEX_AUTH_JSON to the run's sandbox
+    And commit_green's hook refused with a first error line that quotes that variable's value
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause does not contain the value of CODEX_AUTH_JSON
+    And the cause states that an excerpt line was withheld because it contained the value of CODEX_AUTH_JSON
+
   Scenario: An exhausted test-wrong route ends the stage failed with both sides' sections
     Given a green turn that ends with a test-wrong declaration
     And the red node's max_visits is exhausted
     When the run evaluates the implement stage's outcome
     Then the implement stage's outcome is failed
     And the cause carries the latest red and green sections of the handoff file
+
+  Scenario: A green turn repairs what its gate preview refuses before it ends
+    Given a green turn whose change fails the repository's check-keyword-only-args target
+    When the turn runs the gate preview before ending
+    Then the preview names check-keyword-only-args as failed and creates no commit
+    When the turn fixes the change and runs the preview again
+    Then the preview passes and the turn's handoff section records that last preview run
+    And no re-entry budget was spent on either preview run
+
+  Scenario: A purely mechanical Green refusal re-enters green without spending its ordinary re-entry
+    Given a repository that declares check-lint and check-per-file-coverage as mechanical targets
+    And commit_green's hook refuses naming only check-per-file-coverage
+    When the run routes the refusal
+    Then the run re-enters green with one fewer mechanical re-entry remaining
+    And the green node's ordinary re-entry is unspent
+    And commit_green's handoff section names the refusal as mechanical and names check-per-file-coverage
+
+  Scenario: A refusal naming a substantive target spends the ordinary re-entry
+    Given a repository that declares check-lint as a mechanical target
+    And commit_green's hook refuses naming check-lint and check-types
+    When the run routes the refusal
+    Then the run re-enters green spending its ordinary re-entry
+    And no mechanical re-entry is spent
+
+  Scenario: Spent mechanical and ordinary re-entries end the stage failed naming both budgets
+    Given a repository that declares check-lint as a mechanical target with one mechanical re-entry
+    And green has spent its mechanical re-entry and its ordinary re-entry
+    When commit_green's hook refuses naming only check-lint
+    Then the implement stage's outcome is failed
+    And the needs-human cause names both the mechanical and the ordinary re-entry budgets as exhausted
 ```
 
 ## Scenario 289 — A Green amend whose staged test fails is refused before the rest of its gate's tests run
@@ -11478,4 +11650,339 @@ Feature: Sandbox retention and collection
     And the run's driver record and node workspace directory still exist
     When a further pass runs
     Then nothing further is recorded for that run and the pass does not fail
+```
+
+## Scenario 296 — The provisional launcher's shared-node gate holds on factory-class pressure, not whole-host idle
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a CI burst on a shared factory node does not hold factory launches
+  Scenario: CI pods drive whole-host idle down while factory-class pressure stays low
+    Given fleet-launch/config.sh values overridden to a stub node reading and throwaway directories
+    And the stub reading shows CI workflow pods in non-factory namespaces, burstable or best-effort, taking whole-host idle below the launcher's old idle floor
+    And the stub reading shows the factory namespaces plus system.slice using CPU at or below the factory-pressure threshold
+    When the launcher evaluates that factory for a ready item
+    Then it treats the factory as green and proceeds to that factory's mutex
+    And its log names the factory-class pressure value it used and the threshold
+
+  Scenario: factory-class pressure above the threshold holds the launch
+    Given a stub node reading whose factory namespaces plus system.slice use CPU above the factory-pressure threshold
+    When the launcher evaluates that factory for a ready item
+    Then it holds the launch
+    And its log names the factory-class pressure value and the threshold that held it
+
+  Scenario: an unreadable reading holds the launch
+    Given a stub node reading that cannot be taken or cannot be parsed
+    When the launcher evaluates that factory for a ready item
+    Then it holds the launch
+    And its log names the pressure reading as unknown and the threshold
+    And it does not treat the factory as green
+
+  Scenario: the threshold is a declared, overridable host value
+    Given the factory-pressure threshold the launcher reads
+    When the scripts are searched for where it is assigned
+    Then it is assigned only in fleet-launch/config.sh
+    And setting its FLEET_LAUNCH_ environment variable before the launcher runs changes the threshold the launcher uses
+```
+
+## Scenario 297 — A queued provisional launcher runs its preflight while it waits and still binds in FIFO order
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a launcher queued on a factory's FIFO spends its wait on its own preflight
+  Scenario: two queued launchers preflight concurrently
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub preflight that records its start time, and throwaway queue, lock, in-flight and state directories
+    And two launchers hold FIFO tickets for the same factory, the older ahead of the younger
+    When both launchers poll while the older holds the head of the FIFO
+    Then the younger launcher's preflight starts before the older launcher binds
+    And the older launcher binds before the younger launcher
+
+  Scenario: a fresh pass is reused at the head of the FIFO
+    Given a queued launcher whose preflight passed less than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds ago
+    When it reaches the head of the FIFO and the factory is green
+    Then it takes the factory's mutex without running the preflight again
+
+  Scenario: a reused pass does not skip the hold check
+    Given a queued launcher holding a preflight pass younger than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds
+    And the hold file is created after that pass was taken
+    When the launcher reaches the head of the FIFO and makes its hold-file check
+    Then it holds the launch
+    And it does not start drive --action impl
+
+  Scenario: a stale pass is re-taken at the head of the FIFO
+    Given a queued launcher whose only preflight pass is older than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds
+    When it reaches the head of the FIFO
+    Then it runs the preflight again before it takes the factory's mutex
+
+  Scenario: a preflight that fails while queued drops the ticket
+    Given a queued launcher whose stub preflight fails
+    When the preflight returns
+    Then the launcher exits without a launch
+    And its FIFO ticket is gone from the queue directory
+    And it never created the factory's mutex
+```
+
+## Scenario 298 — A factory sandbox clone carries the remote's release tags after its prepare steps
+
+Governing clause: `contracts.md` §"Factory sandbox clone release tags".
+
+```gherkin
+Feature: A factory run reads the remote's release tags, not a stale tag set
+
+  Scenario: A clone whose tags lag the remote is refreshed during preparation
+    Given a governed repository whose remote holds release tags through v1.153.2 on its default branch
+    And a sandbox clone of that repository whose local release tags stop at v1.99.0
+    When the Dispatcher launches a run against that repository and the run's prepare steps complete
+    Then the newest release tag the clone lists by version order is v1.153.2
+    And every remote release tag whose target is reachable from the fetched default branch is present locally and points at the same object as on the remote
+    And git describe --tags on the fetched default branch's tip names the same tag as in a fresh full clone of the remote
+
+  Scenario: A local tag that disagrees with the remote is overwritten
+    Given a sandbox clone holding a release tag whose name the remote holds pointing at a different commit
+    When the run's prepare steps complete
+    Then that tag in the clone points at the remote's commit
+
+  Scenario: A tag-reading check in the run reads the refreshed tags
+    Given a governed repository whose check suite includes a check that reads its release tags
+    And a sandbox clone whose local release tags lag the remote's
+    When that check runs in a factory run after the prepare steps
+    Then it reads the remote's newest release tag and passes or fails on the change under test
+
+  Scenario: A failed tag refresh fails preparation
+    Given a run whose tag refresh fetch exits non-zero
+    When the run's prepare steps execute
+    Then the prepare chain fails
+    And no later prepare step or graph node runs on the clone's previous tag set
+```
+
+## Scenario 300 — Fabro-fork gates and carrier builds run on the cluster, not the dev host
+
+Governing clause: `constraints.md` §"Fabro runtime constraints".
+
+```gherkin
+Feature: fork Rust gates and pinned carrier builds run on ARC k3s runner capacity
+  Scenario: a fork pull request against a carrier branch carries cluster-run gate verdicts
+    Given a pull request in thewoolleyman/fabro targeting a carrier branch a pinned factory build is cut from
+    When its checks run
+    Then the format, clippy and test gates run on an ARC k3s runner pod
+    And the pull request's status rollup carries their verdicts
+    And no cargo or rustc process for that pull request runs on the dev host
+
+  Scenario: a pinned carrier build is produced off the dev host
+    Given a named carrier ref
+    When the carrier build runs
+    Then the release binary is built on the ARC k3s runner capacity or in a k3s Job
+    And it is published with a BUILD_INFO naming the source ref and commit
+
+  Scenario: a dev-host fallback is throttled and recorded
+    Given the cluster venue is unavailable
+    When a fork gate runs on the dev host
+    Then it runs at nice 19 with CARGO_BUILD_JOBS=4
+    And the work item that used it records the fallback
+```
+
+## Scenario 301 — A verified delegated press satisfies a human valve and is recorded as delegated
+
+```gherkin
+Feature: The maintainer's delegation of human valves is a verified, first-class invoker form
+  As a maintainer who has delegated human valves to a coordinator
+  I want a delegated press to be verified against a committed delegation and recorded as delegated
+  So that delegated decisions stop blocking without anyone forging my identity
+
+  Scenario: A verified delegated answer is admitted and recorded under the delegation
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent granted by human:thewoolleyman
+    And a work-item at blocked with blocked_reason needs-human and effective answer disposition human
+    When drive runs resolve-blocked:<work-item-id>:ready with --answer, --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then the press is admitted and the answer lands as a ledger comment naming delegation R493 and grantor human:thewoolleyman
+    And every journal record of the press carries invoker delegate:legacy-coordinator-agent and a delegation object citing R493
+    And the item gains a livespec-delegated-valve-press ledger comment, and no record carries a human: identity
+
+  Scenario: A delegation that cannot be verified is refused before any write
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs an allowlisted valve with --invoker delegate:legacy-coordinator-agent and a --delegation ref that no entry carries, or with no --delegation at all, or with --delegation and a non-delegate invoker
+    Then drive refuses the press naming the action, the invoker, the ref and the reason
+    And nothing is written to the store, the journal or the ledger
+
+  Scenario: A delegated press of a non-delegable valve is refused
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs set-merge-hold, set-factory-safety or an impl: dispatch with --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then drive refuses the press because the verb is not on the delegable valve allowlist
+```
+
+## Scenario 302 — A fleet-launch resume launcher waits for the fleet cap and the factory FIFO
+
+```gherkin
+Feature: A resume launched through fleet-launch honours the caller-side gates
+  Scenario: A resume waits at the shared fleet cap and binds in FIFO order
+    Given an impl launcher and then a resume launcher queued on the gmktec FIFO
+    And the shared fleet count is at the fleet cap
+    When the impl launcher's run ends and the fleet count drops below the cap
+    Then the impl launcher binds before the resume launcher
+    And the resume launcher starts the resume only once the fleet count it reads under the gmktec mutex is below the cap
+    And it writes a fleet in-flight marker before it releases the mutex
+```
+
+## Scenario 303 — The committed launch-time preflight runs under a PATH-resetting wrapper with a string-form adapter entry
+
+```gherkin
+Feature: The committed launch-time preflight needs no launcher-local copy
+  Scenario: A preflight under a PATH-resetting tenant wrapper with a string-form adapter entry completes Codex-first
+    Given a tenant whose credential wrapper resets PATH to exclude the operator's user tool directory
+    And whose committed adapter entry is a string of environment assignments followed by a claude-agent-acp command line
+    When a fleet-launch launcher runs the committed dev-tooling/dod-preflight.sh for one of its items without exporting any judge model
+    Then the preflight resolves claude and codex and completes its judgement
+    And its judges run through the configured Codex-first chain, so a Codex pass completes it without a Claude judge call
+    And each judge runs on the model the repository's committed judge configuration names
+```
+
+## Scenario 304 — The check aggregate refuses a test that sleeps in real time or judges a wall-clock bound, unless an exemption marker states why
+
+```gherkin
+Feature: Tests order by injected clocks and deterministic events, not real time
+  Scenario: A real-time sleep and a wall-clock verdict are refused, and a reasoned exemption marker is honoured
+    Given a test file under tests/ that calls time.sleep to wait for a condition
+    And another test file under tests/ that asserts on a difference of two time.monotonic readings
+    When the just check aggregate runs
+    Then the real-time-test check fails
+    And its refusal names each offending file and line
+    When the time.sleep line is given the per-line exemption marker with a written reason
+    And the just check aggregate runs again
+    Then the check does not refuse that line
+    And the same marker with an empty reason is still refused
+```
+
+## Scenario 305 — The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate
+
+```gherkin
+Feature: A green run pays the full check aggregate once, on the tree it pushes
+  As the operator of a factory whose default branch moves during long runs
+  I want the refresh onto the default branch to happen before the janitor
+  So that publish_draft's push reuses the janitor's green verdict instead of re-running the aggregate
+
+  Scenario: A moved default branch is integrated before the aggregate runs
+    Given a run whose implement stage committed green on a base the default branch has since advanced past
+    When the janitor visit that precedes publish_draft runs
+    Then it refreshes the run's working branch onto the default branch's current tip before it runs the full check aggregate
+    And the aggregate's green verdict is recorded for the refreshed tree
+
+  Scenario: publish_draft pushes the janitor-passed head without refreshing
+    Given a janitor visit passed the full check aggregate on a refreshed head
+    And the default branch has advanced again since that refresh
+    When publish_draft runs
+    Then it pushes exactly the janitor-passed head without refreshing
+    And the pre-push gate honours the recorded green verdict and does not run the tree-pure members again
+
+  Scenario: A conflicting pre-aggregate refresh takes the refresh-repair route
+    Given the default branch advanced with a change that conflicts with the run's commits
+    When the janitor's pre-aggregate refresh conflicts
+    Then the janitor restores the head the preceding agent stage left, records a refresh-repair brief naming the conflicted paths, and routes to fix
+    And the run does not end at needs_human with LIVESPEC_REFRESH_REPAIR_ABSENT
+
+  Scenario: An aggregate failure on a changed refreshed head takes the refresh-repair route
+    Given the janitor's pre-aggregate refresh changed the tree
+    When the full check aggregate fails on the refreshed head
+    Then the janitor restores the pre-refresh head and records a refresh-repair brief naming each failed target
+```
+
+## Scenario: an incident keeps one item with explicit current operation ownership
+
+```gherkin
+Feature: an incident keeps one item with explicit current operation ownership
+
+  Scenario: an incident keeps one item with explicit current operation ownership
+    Given an identified incident item with a queued or live factory attempt
+    When the authorized host claims an expedited repair
+    Then canonical identity and prior attempt evidence remain on the same item
+    And its repair phase is active under the host owner without a factory slot
+    And the sanctioned server-side conditional transition fences the old generation and duplicate dispatch
+    And a late old run cannot write proof or close the incident
+    And absent conditional capability produces a named refusal instead of an apparent fence
+```
+
+## Scenario: incident entry defers slow admission without creating another identity
+
+```gherkin
+Feature: incident entry defers slow admission without creating another identity
+
+  Scenario: incident entry defers slow admission without creating another identity
+    Given an authorized incident repair and a reachable tenant
+    When no existing incident item covers its identified scope
+    Then canonical intake records its impact owner scope and behavioral intent without slow model judgement
+    And ordinary admission and spec debt remain owed before normal factory repayment
+
+  Scenario: Recovery resumes a previously recorded incident during tenant failure
+    Given the tenant is unavailable and a trusted canonical incident receipt already exists
+    When recovery resumes
+    Then that same identity is used without a new item or a fresh dependency on the failed tenant
+```
+
+## Scenario: incident provenance exceptions remain exact and repayable
+
+```gherkin
+Feature: incident provenance exceptions remain exact and repayable
+
+  Scenario: incident provenance exceptions remain exact and repayable
+    Given a recorded incident repair or emergency revert carrier and exact PR head and landed identities
+    When provenance and retrospective bypass audit inspect it after its labels and environment disappear
+    Then its trusted incident receipt is recognized as deferred verification with normal repayment outstanding
+    And an arbitrary flag label trailer or marker does not admit another carrier
+    And normal factory repayment still requires normal factory provenance
+```
+
+## Scenario: a successful incident merge reenters normal factory on the same item
+
+```gherkin
+Feature: a successful incident merge reenters normal factory on the same item
+
+  Scenario: a successful incident merge reenters normal factory on the same item
+    Given a merged expedited repair whose complete normal master CI succeeded
+    And current ordinary admission is complete for its outstanding repayment
+    When the dispatcher resumes the incident
+    Then normal repayment admission passes through pending-approval and ready before one active factory claim
+    And one fresh normal factory run and carrier PR use the same work-item id with a new phase identity
+    And no incident execution flag is set before provider and sandbox execution
+    And the PR removes the marker while validating cumulative original incident scope and debt
+    And restart or duplicate delivery resumes that operation without another repayment run
+```
+
+## Scenario: a deferred-proof-only finding is repaired without reverting healthy master
+
+```gherkin
+Feature: a deferred-proof-only finding is repaired without reverting healthy master
+
+  Scenario: a deferred-proof-only finding is repaired without reverting healthy master
+    Given a successful incident master merge and its normal factory repayment in progress
+    When deferred factory verification alone reveals a defect while deployed master remains healthy
+    Then that defect is repaired in the repayment PR under normal validation
+    And the original successful merge is not reverted solely for that deferred finding
+```
+
+## Scenario: incident completion requires final normal proof rather than an old repair merge
+
+```gherkin
+Feature: incident completion requires final normal proof rather than an old repair merge
+
+  Scenario: incident completion requires final normal proof rather than an old repair merge
+    Given an incident with an earlier expedited merge and a marker-removal follow-up
+    When acceptance reconcile-merged close no-change or proof-only resume evaluates it
+    Then it grades cumulative original incident behavior and the current normal carrier
+    And it leaves the incident unfinished until the normal factory PR and its master CI succeed
+    And it requires marker removal manual outcome repaid debt and disposition of related failures
+    And missing cancelled or unreadable evidence remains an explicit obligation
+```
+
+## Scenario: an attributable regression fences repayment and reopens the same incident
+
+```gherkin
+Feature: an attributable regression fences repayment and reopens the same incident
+
+  Scenario: an attributable regression fences repayment and reopens the same incident
+    Given an incident whose normal repayment is live or whose item is already closed
+    When a related failure on master another PR or an adopted consumer is attributed with change evidence
+    Then the same incident item is reopened with a new fenced generation and recovery requested
+    And stale cleanup cannot merge or close the corrected attempt
+    And failed original CI evidence is retained while a corrected attempt requires new repair or resolution evidence
+    And final normal factory repayment remains owed on that item
 ```

@@ -159,8 +159,15 @@ def write_record(path, value):
     temporary.replace(path)
 
 
-def group_alive(group, proc_root="/proc"):
+def group_alive(group, proc_root="/proc", expected_start_ticks=None):
     """True while any non-zombie process of the run's session group remains."""
+    if expected_start_ticks is not None:
+        leader = process_table(proc_root).get(group)
+        return (
+            leader is not None
+            and leader[0] != "Z"
+            and leader[4] == expected_start_ticks
+        )
     if not os.path.isdir(proc_root):
         try:
             os.killpg(group, 0)
@@ -199,7 +206,13 @@ def settled(path, record):
     except (OSError, ValueError):
         # The launch window: the worker exists before its pid file does.
         return record, RUNNING
-    if group_alive(group):
+    start_ticks = record.get("group_start_ticks")
+    alive = (
+        group_alive(group, expected_start_ticks=start_ticks)
+        if isinstance(start_ticks, int)
+        else group_alive(group)
+    )
+    if alive:
         return record, RUNNING
     fresh = read_record(path) or record
     if recorded_state(fresh) != RUNNING:
@@ -285,6 +298,10 @@ def worker(run_id):
     # this worker cannot leave a run that reads as running forever.
     path.with_suffix(".pid").write_text(str(os.getpid()) + "\n", encoding="utf-8")
     record = read_record(path) or {}
+    worker = process_table("/proc").get(os.getpid())
+    if worker is not None:
+        record = {**record, "group_start_ticks": worker[4]}
+        write_record(path, record)
     command, root = record.get("command"), record.get("root")
     with path.with_suffix(".output").open("w", encoding="utf-8") as output:
         result = subprocess.run(

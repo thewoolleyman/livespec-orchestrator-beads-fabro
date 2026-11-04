@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _config as config_module
+from livespec_orchestrator_beads_fabro.commands import _factory_presence as factory_presence_module
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
     resolve_dispatch_factory_target,
@@ -119,8 +119,8 @@ def test_missing_factories_block_has_no_configured_factory(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    assert hasattr(config_module, "has_fabro_factory")
-    assert config_module.has_fabro_factory(cwd=repo, factory="default") is False
+    assert hasattr(factory_presence_module, "has_fabro_factory")
+    assert factory_presence_module.has_fabro_factory(cwd=repo, factory="default") is False
 
 
 def test_recorded_factory_is_reused_by_a_resume_when_names_are_unconstrained(

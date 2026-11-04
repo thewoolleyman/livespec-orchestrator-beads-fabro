@@ -458,6 +458,7 @@ check:
         check-codex-plugin-structure
         check-pi-plugin-structure
         check-bd-guard
+        check-fleet-launch
         check-codex-skill-picker
         check-no-fleet-pat-dispatch-surface
         check-spec-governance-default-block
@@ -755,6 +756,11 @@ check-no-fleet-toolchain-literals:
 # private block.
 check-bd-guard:
     bash dev-tooling/just-check-bd-guard.sh
+
+# Lints every fleet-launch shell script and drives its stubbed, hermetic
+# launcher harness; syntax alone cannot verify FIFO launch behaviour.
+check-fleet-launch:
+    bash dev-tooling/just-check-fleet-launch.sh
 
 # `check-bd-guard-candidate` — explicit Beads v1.2.2 qualification leg. It
 # downloads the official Linux amd64 release into a temporary directory, verifies
@@ -1054,7 +1060,10 @@ check-no-direct-tool-invocation:
 # 2026-09-05 authorized workflow landing through the GitHub API, PR #2160), the
 # pack body honours a HUMAN authorization recorded on the ledger: a tracked
 # `.livespec-workflow-edit-exemption` declaration authored in the change, whose
-# named work item carries the human-set `approval:workflow-edit` label. The
+# named work item carries a tier label: `approval:workflow-edit-additive`
+# (delegable) for an add-only edit attested `change=additive` +
+# `ci_runtime=no-significant-increase`, the maintainer-only
+# `approval:workflow-edit` for anything else. The
 # Python module `_dispatcher_workflow_guard.py` (and its `workflow_guard.py` bin
 # wrapper) stays for the Dispatcher engine's programmatic use.
 check-no-workflow-edits:
@@ -1256,11 +1265,26 @@ reap-e2e-repos *ARGS:
 check-pre-commit:
     bash dev-tooling/just-check-pre-commit.sh
 
+check-pre-commit-gated-tree:
+    bash dev-tooling/check-pre-commit-gated-tree.sh
+
 # When zero `.py` files are staged, `check-pre-commit` delegates to this
 # conservative doc-only subset. This is a LOCAL pre-commit speed optimization
 # only — it is NOT a merge gate, and pre-push no longer delegates here.
 check-pre-commit-doc-only:
     bash dev-tooling/just-check-pre-commit-doc-only.sh
+
+# Green amends run this staged pre-check before their Red test and the full
+# aggregate.  The workflow check reports the configured ruff and pyright
+# finding verbatim, including its file, line and rule.
+check-staged-precheck:
+    uv run python -m livespec_dev_tooling.workflow_checks.staged_precheck
+
+# The Green-amend fast lane receives the test modules added or changed by the
+# Red commit at HEAD.  The whole suite still runs in check-skipping afterwards.
+[positional-arguments]
+check-staged-tests *test_paths:
+    uv run pytest "$@"
 
 # Run the full `just check` aggregate (PR gate ≡ master gate — the zero-.py
 # pre-push subset was retired so a doc-only push runs the same gate a code

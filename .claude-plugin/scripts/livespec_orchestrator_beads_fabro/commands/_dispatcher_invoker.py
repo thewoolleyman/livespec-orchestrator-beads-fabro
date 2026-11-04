@@ -38,11 +38,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 )
 
 __all__: list[str] = [
+    "DELEGATE_ROLE",
     "ENV_SOURCE",
     "FALLBACK_SOURCE",
     "FLAG_SOURCE",
     "INVOKER_ENV_VAR",
     "INVOKER_FLAG",
+    "DelegationGrant",
     "InvokerIdentity",
     "add_invoker_argument",
     "default_invoker_identity",
@@ -57,6 +59,10 @@ INVOKER_ENV_VAR = "LIVESPEC_INVOKER"
 INVOKER_FLAG = "--invoker"
 
 FLAG_SOURCE = "flag"
+# The reserved `<role>` a press asserts when it acts under a recorded maintainer
+# delegation rather than as the human who granted it (the delegated valve
+# authority paragraph of the journal invoker attribution contract).
+DELEGATE_ROLE = "delegate"
 ENV_SOURCE = "env"
 FALLBACK_SOURCE = "fallback"
 
@@ -72,11 +78,35 @@ _INVOKER_HELP = (
 
 
 @dataclass(frozen=True, kw_only=True)
+class DelegationGrant:
+    """One VERIFIED maintainer delegation a press acts under.
+
+    Only `drive`'s delegation verifier constructs one for a live press, after
+    matching the press's `--delegation` ref against a committed
+    `dispatcher.valve_delegations` entry; the append layer then stamps it onto
+    every journal record the press writes, beside `invoker`.
+    """
+
+    ref: str
+    grantor: str
+    record: str
+
+    def as_record(self) -> dict[str, str]:
+        """The `delegation` object a journal record and a result payload carry."""
+        return {"ref": self.ref, "grantor": self.grantor, "record": self.record}
+
+
+@dataclass(frozen=True, kw_only=True)
 class InvokerIdentity:
-    """One resolved invocation identity plus the input it was resolved from."""
+    """One resolved invocation identity plus the input it was resolved from.
+
+    `delegation` is `None` for every identity except a verified delegated
+    press, so the invoker string itself never has to carry the grant.
+    """
 
     invoker: str
     invoker_source: str
+    delegation: DelegationGrant | None = None
 
 
 def resolve_invoker(

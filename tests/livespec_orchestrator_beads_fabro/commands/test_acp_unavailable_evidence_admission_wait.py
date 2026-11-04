@@ -350,6 +350,11 @@ def test_an_unreadable_run_record_leaves_the_item_ready_under_its_own_condition(
     assert record["scheduled_reevaluation_at"] == _NOW_PLUS_INTERVAL
     assert record["scheduled_reevaluation_at"] != _NOW_PLUS_DEFAULT
     assert record["unobservable_observations"] == 1
+    # The refusal names WHICH record was unreadable (bd-ib-fhmpik): its run, its
+    # factory and the reason, not only how many sources were unreadable.
+    assert record["unreadable_runs"] == [
+        {"run_id": _RUN_ID, "factory": "hp", "reason": "run-record-unreadable"}
+    ]
     # "It MUST NOT invent a hold identity or expiry": nothing was observed.
     assert record["governing_hold_observations"] == []
     # "The item MUST remain ready without a claim or blocked reason", read back

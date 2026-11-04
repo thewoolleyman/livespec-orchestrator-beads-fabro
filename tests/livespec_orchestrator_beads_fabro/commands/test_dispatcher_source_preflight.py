@@ -30,6 +30,20 @@ class _Runner:
         _ = (cwd, timeout_seconds, env, stdin)
         key = tuple(argv[1:])
         self.calls.append(key)
+        if key[:2] == ("for-each-ref", "--contains") and key not in self.results:
+            head = key[2]
+            inventory = self.results[
+                ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin")
+            ]
+            containing = [
+                ref
+                for ref in inventory.stdout.splitlines()
+                if self.results.get(
+                    ("merge-base", "--is-ancestor", head, ref), _result(exit_code=1)
+                ).exit_code
+                == 0
+            ]
+            return _result(stdout="\n".join(containing) + ("\n" if containing else ""))
         return self.results[key]
 
 
@@ -42,6 +56,7 @@ def _base_results() -> dict[tuple[str, ...], CommandResult]:
         ("rev-parse", "--is-inside-work-tree"): _result(stdout="true\n"),
         ("rev-parse", "HEAD"): _result(stdout="abc123\n"),
         ("rev-parse", "--abbrev-ref", "HEAD"): _result(stdout="master\n"),
+        ("symbolic-ref", "--short", "refs/remotes/origin/HEAD"): _result(stdout="origin/master\n"),
         ("push", "--dry-run", "origin", "HEAD:master"): _result(
             exit_code=1,
             stderr="livespec: refusing commit/push at primary checkout; use a worktree\n",
@@ -302,7 +317,14 @@ def test_preflight_records_the_ref_that_actually_contains_the_pinned_source_head
         == hashlib.sha256(b"origin/unrelated\norigin/containing").hexdigest()
     )
     assert "origin_refs" not in outcome.record
-    assert ("merge-base", "--is-ancestor", "abc123", "origin/containing") in runner.calls
+    assert (
+        "for-each-ref",
+        "--contains",
+        "abc123",
+        "--format=%(refname:short)",
+        "refs/remotes/origin",
+    ) in runner.calls
+    assert not any(call[0] == "merge-base" for call in runner.calls)
 
 
 def test_unreadable_head_cannot_produce_an_unpinned_containment_witness(*, tmp_path: Path) -> None:
@@ -350,3 +372,53 @@ def test_source_preflight_drops_origin_head_in_the_short_form_newer_git_prints(
     outcome = source_checkout_preflight(repo=tmp_path, runner=_Runner(results=results))
 
     assert outcome.record["origin_refs"] == ["origin/master"]
+
+
+_CONTAINS_ABC123 = (
+    "for-each-ref",
+    "--contains",
+    "abc123",
+    "--format=%(refname:short)",
+    "refs/remotes/origin",
+)
+
+
+def test_source_preflight_fails_closed_when_the_containment_query_fails(tmp_path: Path) -> None:
+    """A failed `for-each-ref --contains` yields no witness, so the source is not origin-reachable."""
+    results = _base_results() | {
+        ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
+            stdout="origin/master\n"
+        ),
+        _CONTAINS_ABC123: _result(exit_code=129, stderr="error: malformed object name\n"),
+        (
+            "log",
+            "--oneline",
+            "--decorate",
+            "--max-count=20",
+            "HEAD",
+            "--not",
+            "--remotes=origin",
+        ): _result(stdout=""),
+    }
+    runner = _Runner(results=results)
+
+    outcome = source_checkout_preflight(repo=tmp_path, runner=runner)
+
+    assert outcome.refusal is not None
+    assert runner.calls.count(_CONTAINS_ABC123) == 1
+    assert not any(call[0] == "merge-base" for call in runner.calls)
+
+
+def test_source_preflight_never_names_origin_head_as_the_containing_ref(tmp_path: Path) -> None:
+    """`origin` (git 2.51's short form of origin/HEAD) in the containing set is not a witness."""
+    results = _base_results() | {
+        ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
+            stdout="origin\norigin/feature\n"
+        ),
+        _CONTAINS_ABC123: _result(stdout="origin\norigin/feature\n"),
+    }
+
+    outcome = source_checkout_preflight(repo=tmp_path, runner=_Runner(results=results))
+
+    assert outcome.refusal is None
+    assert outcome.record["origin_ref"] == "origin/feature"

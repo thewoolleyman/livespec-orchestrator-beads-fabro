@@ -220,7 +220,7 @@
       // contract-version-compatibility invariant fires `warn` against
       // "master" pins; that is expected during bootstrap.
       "livespec": ">=0.1.0,<1.0.0",
-      "pinned": "v0.45.0"
+      "pinned": "v0.45.1"
     },
     // Per-repo beads tenant CONNECTION block. These keys are read by
     // commands/_config.py and overlaid by the LIVESPEC_BD_PATH /
@@ -282,6 +282,23 @@
       // capacity-deferred. Read on each admission pass; no restart needed.
       "wip_cap": 16,
       "acceptance_mode": "ai-only",
+      // Committed maintainer delegations of the human valves (contracts.md,
+      // journal invoker attribution, "Delegated valve authority"). A press
+      // `--invoker delegate:<delegate> --delegation <ref>` is admitted only on
+      // resolve-blocked, approve, accept, reject and release-spec-tier, and only
+      // when its ref and delegate match an entry here. NOT API-configurable:
+      // adding a grant is a reviewed commit. R493 is the maintainer's standing
+      // grant ("the coordinator presses human valves on the maintainer's
+      // authority, except credentials, irreversible or outward-facing acts"),
+      // made first-class by the maintainer's 2026-11-02T23:22:22Z ruling.
+      "valve_delegations": [
+        {
+          "ref": "R493",
+          "delegate": "legacy-coordinator-agent",
+          "grantor": "human:thewoolleyman",
+          "record": "livespec-dev-tooling-6tgd2z plan-scope-event 2026-11-01T22:36:24Z"
+        }
+      ],
       // The shared append-only records a refresh may merge entry by entry
       // instead of spending a repair round. Entries must remain independent:
       // default-branch records stay first and this run's additions follow.
@@ -898,10 +915,16 @@
       // the derivation bills it at that loop's own visit count and every
       // inherited second would land in the Codex credential-lifetime floor
       // tests/test_factory_checkpoint_declaration.py guards.
+      //
+      // `janitor_admission` is declared downward for the same reason
+      // (bd-ib-tusqrf): it reads and increments one counter under `$GIT_DIR`
+      // before a fresh janitor suite run, or records the named exhausted bound
+      // for needs_human. It never runs the suite itself.
       "node_timeouts": {
         "implement": 14400,
         "implement_completion": 600,
         "dod_gate": 600,
+        "janitor_admission": 600,
         "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200,
@@ -1036,11 +1059,29 @@
       "factories": {
         "petri": {
           "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
+          // `bin` is the client of the build gmktec serves (0.393.0-nightly.1 at
+          // c39bdbded, 2026-11-04). It requests compressed board reads and asks the
+          // server for only active statuses on plain `ps` (bd-ib-xoh477): against
+          // :32276 plain `ps` took 2.4-5.5 s where the 0.382 adeefec4c client took
+          // 16-26 s, measured 2026-11-04 from vps.
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro",
           "secret_channel": "native_secrets",
           // factory-python: the toolchain-named catalog id (livespec-dev-tooling
           // SPECIFICATION, "Factory sandbox environment naming"). Its provider, not
           // this id, says where the sandbox runs, so a provider move changes nothing here.
+          "environment": "factory-python"
+        },
+        // `candidate` is gmktec's fabro-server-candidate (:32278), the permanent
+        // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
+        // ruling 2026-11-02T19:22:32Z). Same keys as `petri`; its address comes
+        // from the factory registry. `bin` is the client of the build it serves
+        // (0.393.0-nightly.1 at c39bdbded). It is never the default: choose it per
+        // dispatch with `--factory candidate`, and count its runs against the
+        // shared gmktec fleet cap.
+        "candidate": {
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro",
+          "secret_channel": "native_secrets",
           "environment": "factory-python"
         }
       },

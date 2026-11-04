@@ -21,12 +21,10 @@ cross-tenant: nine carriers of ordinal 6 sat open across five sibling tenants
 while the resume advanced to `proof:capture:bd-ib-fyozyd`.
 
 AND WHY THE DERIVATION IS WHERE THAT GATE BELONGS, rather than a correction
-applied afterwards. Once a plan-level obligation is PERSISTED it cannot be
-re-aimed: replacing an unmet obligation is refused without evidenced causal
-supersession, and the `await` a human would reach for names another tenant's
-item, so the only state left is a human pointer. The gate therefore runs before
-the pointer is written, and `_plan_supersession` is what unlocks the epics whose
-records already carry a falsely derived step.
+applied afterwards. A falsely derived plan-level obligation can be re-aimed by an
+ordinary replacement write, but a pointer that should never have been written
+still sends the next resume to a step nobody can honestly take, so the gate runs
+before the pointer is written.
 
 WHY THE PLAN-LEVEL LEG IS DERIVED FROM THE SATISFIED POINTER'S OWN KIND. Once
 every child is disposed the ledger's only record of how far the plan has come is
@@ -50,9 +48,9 @@ advancing to a new result and budget", so the obligation is new — fresh epoch,
 handoff count back to zero. The wall clock is NOT new: the plan's recorded
 deadline is the only deadline evidence the ledger holds, and minting a longer one
 here would let each satisfied step silently postpone a deadline the maintainer
-set, which every neighbouring clause forbids. If that deadline has already
-passed, the next resume reports expiry — which is the correct reading of a plan
-that has run out of time, not a fault in this advance.
+set. If that deadline has already passed, the next resume reports the new
+obligation overdue and still takes its step: the budget is a reporting datum
+only, so an overdue plan is reported, never stopped.
 """
 
 from __future__ import annotations

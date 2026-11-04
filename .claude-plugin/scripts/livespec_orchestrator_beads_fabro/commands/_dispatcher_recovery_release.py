@@ -34,7 +34,12 @@ release row is still there.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    NON_CONVERGED_MARKER,
+    RECAPTURE_EXHAUSTED_MARKER,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
@@ -71,27 +76,67 @@ RELEASE_STAGES = frozenset(
 # same literal: its writer keeps it private, and recognising the row is all this
 # reading needs.
 _DISPATCH_ID_STAGE = "dispatch-id"
+_OUTCOME_STAGE = "outcome"
 
 _STAGE_KEY = "stage"
 _WORK_ITEM_KEY = "work_item_id"
+_OUTCOME_KEY = "outcome"
+_STATUS_KEY = "status"
+_DETAIL_KEY = "detail"
+_NEEDS_HUMAN_KIND_KEY = "needs_human_kind"
 
 
 def released_for_recovery(*, records: Sequence[Mapping[str, object]], work_item_id: str) -> bool:
-    """Whether the item's newest journaled dispatch ended in one of the releases.
+    """Whether the item's newest journaled dispatch ended in a recovery release.
 
     A single forward pass, because the journal is append-only and its order is
     the order the dispatches happened in: a launch row CLEARS the answer and a
-    release row SETS it, so whatever the last of the two was is what the latest
-    dispatch ended with. An item the journal never mentions reaches the end with
-    the answer unset, which is the right reading for a first dispatch.
+    release or eligible terminal SETS it, so whatever the last of those was is
+    what the latest dispatch ended with. An item the journal never mentions
+    reaches the end with the answer unset, which is the right reading for a
+    first dispatch.
+
+    Terminal outcomes nest their work-item id under ``outcome`` whereas every
+    other row carries it at top level. That shape is deliberate: the journal
+    stores the complete ``DispatchOutcome`` payload, and reading the terminal
+    as if it were an ordinary row would silently route every returned item
+    fresh.
     """
     released = False
     for record in records:
-        if record.get(_WORK_ITEM_KEY) != work_item_id:
+        if _record_work_item_id(record=record) != work_item_id:
             continue
         stage = record.get(_STAGE_KEY)
         if stage == _DISPATCH_ID_STAGE:
             released = False
-        elif stage in RELEASE_STAGES:
+        elif (isinstance(stage, str) and stage in RELEASE_STAGES) or (
+            stage == _OUTCOME_STAGE and _is_recovery_terminal(record=record)
+        ):
             released = True
     return released
+
+
+def _record_work_item_id(*, record: Mapping[str, object]) -> object:
+    """Read a journal row's item id across ordinary and terminal record shapes."""
+    if record.get(_STAGE_KEY) != _OUTCOME_STAGE:
+        return record.get(_WORK_ITEM_KEY)
+    outcome = record.get(_OUTCOME_KEY)
+    if not isinstance(outcome, Mapping):
+        return None
+    terminal = cast("Mapping[str, object]", outcome)
+    return terminal.get(_WORK_ITEM_KEY)
+
+
+def _is_recovery_terminal(*, record: Mapping[str, object]) -> bool:
+    """Whether an attributed terminal row ended at needs-human or non-convergence."""
+    terminal = cast("Mapping[str, object]", record[_OUTCOME_KEY])
+    detail = terminal.get(_DETAIL_KEY)
+    if isinstance(detail, str) and RECAPTURE_EXHAUSTED_MARKER in detail:
+        return False
+    if isinstance(terminal.get(_NEEDS_HUMAN_KIND_KEY), str):
+        return True
+    return (
+        terminal.get(_STATUS_KEY) == "failed"
+        and isinstance(detail, str)
+        and NON_CONVERGED_MARKER in detail
+    )

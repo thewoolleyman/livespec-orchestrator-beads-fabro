@@ -40,12 +40,18 @@ _CITED = "## Scenario 141 — The referenced scenario governs the proof"
 
 _VERDICT_REPLY = (
     '{"kind": "stated", "stated_by": ["' + _GOVERNING + '"],'
-    ' "generalization_target": null, "rationale": "The scenario states it."}'
+    ' "generalization_target": null, "rationale": "The scenario states it.",'
+    ' "evidence": [{"heading": "'
+    + _GOVERNING
+    + '", "quote": "The checks consult the judgement."}]}'
 )
 
 _PARTIAL_VERDICT_REPLY = (
     '{"kind": "partial", "stated_by": ["' + _GOVERNING + '"],'
-    ' "generalization_target": null, "rationale": "The scenario states part of it."}'
+    ' "generalization_target": null, "rationale": "The scenario states part of it.",'
+    ' "evidence": [{"heading": "'
+    + _GOVERNING
+    + '", "quote": "The checks consult the judgement."}]}'
 )
 
 
@@ -82,7 +88,7 @@ def _repo(*, tmp_path: Path, fallback: bool = False) -> Path:
     spec = repo / "SPECIFICATION"
     spec.mkdir(parents=True, exist_ok=True)
     _ = (spec / "scenarios.md").write_text(
-        f"# Scenarios\n\n{_GOVERNING}\n\nIt states the behaviour.\n\n{_CITED}\n\nOther text.\n",
+        f"# Scenarios\n\n{_GOVERNING}\n\nThe checks consult the judgement.\n\n{_CITED}\n\nOther text.\n",
         encoding="utf-8",
     )
     fallbacks = (
@@ -236,6 +242,21 @@ def test_a_response_the_shared_parser_refuses_answers_no_verdict(tmp_path: Path)
     """A judge that answered, unreadably, is a failure to measure like any other."""
     verdict = governing_heading_verdict(
         item=_item(), repo=_repo(tmp_path=tmp_path), run_model=lambda _prompt: "not a verdict"
+    )
+
+    assert verdict is None
+
+
+def test_a_heading_without_a_quote_from_its_clause_answers_no_verdict(tmp_path: Path) -> None:
+    """A finding cannot ask for a heading the response did not evidence from its clause."""
+    reply = (
+        '{"kind": "stated", "stated_by": ["' + _GOVERNING + '"], "generalization_target": null, '
+        '"rationale": "The scenario states it.", "evidence": ['
+        '{"heading": "' + _GOVERNING + '", "quote": "Text from a different clause."}]}'
+    )
+
+    verdict = governing_heading_verdict(
+        item=_item(), repo=_repo(tmp_path=tmp_path), run_model=lambda _prompt: reply
     )
 
     assert verdict is None

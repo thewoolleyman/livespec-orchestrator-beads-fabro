@@ -43,17 +43,24 @@ one. An empty value reads as a field the writer forgot, which collapses the two.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
+    clause_line,
+    clauses_from,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import SPEC_CHANGE_TIER
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import clauses_named
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
         SpecChangeTierDecision,
     )
+    from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
 __all__: list[str] = [
     "SPEC_CHANGE_TIER_MARKER",
@@ -62,7 +69,9 @@ __all__: list[str] = [
     "STAGE_FILING",
     "STAGE_GROOM",
     "STAGE_RELEASE",
+    "STAGE_RELINK",
     "RecordedSpecChangeTier",
+    "TierClauseProvenance",
     "classification_did_not_run_comment",
     "recorded_did_not_run_causes",
     "recorded_spec_change_tier",
@@ -80,6 +89,9 @@ SPEC_CHANGE_TIER_UNAVAILABLE_MARKER = "livespec-spec-change-tier-unavailable"
 STAGE_FILING = "filing"
 STAGE_GROOM = "groom"
 STAGE_DISPATCH = "dispatch"
+# Relinking does not re-judge or release a hold, but it does append a new tier
+# record so every later reader sees the replacement topic as the standing one.
+STAGE_RELINK = "relink-spec-tier"
 # The human `release-spec-tier` valve is a fourth point that records a tier: it
 # clears the hold, and the record it leaves says it was a human act.
 STAGE_RELEASE = "release-spec-tier"
@@ -94,6 +106,9 @@ _LINKED_TOPIC_FIELD = "linked-proposal-topic"
 _SPEC_VERSION_FIELD = "spec-version"
 _DIGEST_FIELD = "behaviour-digest"
 _RATIONALE_FIELD = "rationale"
+_PROVENANCE_FIELD = "spec-change-tier-clause-provenance"
+_SELECTED_CLAUSE_FIELD = "spec-change-tier-selected-clause"
+_NAMED_CLAUSE_FIELD = "spec-change-tier-named-clause"
 # Deliberately NOT the bare `cause`. The did-not-run scan below walks back over
 # whatever comments sit between the newest record and the last taken
 # classification — operator riders among them — and a field name a rider could
@@ -127,11 +142,23 @@ class RecordedSpecChangeTier:
     linked_proposal_topic: str | None
     spec_version: str
     digest: str
+    rationale: str = ""
+    selected_clauses: tuple[CondensedClause, ...] = ()
+    named_clauses: tuple[CondensedClause, ...] = ()
+    provenance_complete: bool = False
 
     @property
     def is_spec_change(self) -> bool:
         """Whether the recorded tier puts the item in the spec-change tier."""
         return self.tier == SPEC_CHANGE_TIER
+
+
+@dataclass(frozen=True, kw_only=True)
+class TierClauseProvenance:
+    """The full clauses a tier verdict saw and named."""
+
+    selected: tuple[CondensedClause, ...] = ()
+    named: tuple[CondensedClause, ...] = ()
 
 
 def spec_change_tier_comment(
@@ -141,6 +168,7 @@ def spec_change_tier_comment(
     decision: SpecChangeTierDecision,
     spec_version: str,
     digest: str,
+    provenance: TierClauseProvenance | None = None,
 ) -> str:
     """The ledger comment recording one tier decision, verdict and all.
 
@@ -155,6 +183,7 @@ def spec_change_tier_comment(
     reader can tell "nobody asked the specification about this item" from "the
     judgement was taken and named no clause".
     """
+    actual_provenance = provenance or TierClauseProvenance()
     verdict = decision.verdict
     kind = _NOT_TAKEN if verdict is None else verdict.kind
     rationale = _NOT_TAKEN if verdict is None else verdict.rationale
@@ -174,6 +203,15 @@ def spec_change_tier_comment(
             f"{_SPEC_VERSION_FIELD}{_FIELD_SEPARATOR}{spec_version}",
             f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
             f"{_RATIONALE_FIELD}{_FIELD_SEPARATOR}{rationale}",
+            f"{_PROVENANCE_FIELD}{_FIELD_SEPARATOR}complete",
+            *(
+                clause_line(key=_SELECTED_CLAUSE_FIELD, clause=clause)
+                for clause in actual_provenance.selected
+            ),
+            *(
+                clause_line(key=_NAMED_CLAUSE_FIELD, clause=clause)
+                for clause in actual_provenance.named
+            ),
         )
     )
 
@@ -224,21 +262,36 @@ def classification_did_not_run_comment(
 
 
 def reusable_spec_change_tier(
-    *, comments: Sequence[str], spec_version: str, digest: str
+    *,
+    comments: Sequence[str],
+    digest: str,
+    selected_clauses: tuple[CondensedClause, ...],
+    spec_tree: Mapping[str, str],
 ) -> RecordedSpecChangeTier | None:
     """The newest recorded classification, when it was taken against THIS pair.
 
-    `None` whenever the newest record names a different specification version or
-    a different behaviour digest, which is the reuse rule the module docstring
-    quotes: such a record is evidence about an item or a specification that no
-    longer exists, so the caller must take the classification again.
+    `None` whenever the asked-for behaviour or the recorded clause provenance
+    differs. A version is audit evidence, not the reuse identity: a revision
+    outside the clauses the model saw or named must not spend another judgement.
     """
     recorded = recorded_spec_change_tier(comments=comments)
     if recorded is None:
         return None
-    if (recorded.spec_version, recorded.digest) != (spec_version, digest):
+    if not recorded.provenance_complete or recorded.digest != digest:
         return None
-    return recorded
+    named_clauses = clauses_named(
+        spec_tree=spec_tree,
+        headings=tuple(clause.heading for clause in recorded.named_clauses),
+    )
+    if Counter(recorded.selected_clauses) != Counter(selected_clauses):
+        return None
+    if Counter(recorded.named_clauses) != Counter(named_clauses):
+        return None
+    return replace(
+        recorded,
+        selected_clauses=selected_clauses,
+        named_clauses=named_clauses,
+    )
 
 
 def recorded_did_not_run_causes(*, comments: Sequence[str]) -> frozenset[str]:
@@ -265,6 +318,10 @@ def _recorded_from(*, body: str) -> RecordedSpecChangeTier | None:
     digest = fields.get(_DIGEST_FIELD)
     if tier is None or spec_version is None or digest is None:
         return None
+    selected_clauses = clauses_from(values=_repeated(body=body, key=_SELECTED_CLAUSE_FIELD))
+    named_clauses = clauses_from(values=_repeated(body=body, key=_NAMED_CLAUSE_FIELD))
+    if selected_clauses is None or named_clauses is None:
+        return None
     return RecordedSpecChangeTier(
         tier=tier,
         classification=fields.get(_CLASSIFICATION_FIELD, ""),
@@ -273,6 +330,10 @@ def _recorded_from(*, body: str) -> RecordedSpecChangeTier | None:
         linked_proposal_topic=_parsed(value=fields.get(_LINKED_TOPIC_FIELD)),
         spec_version=spec_version,
         digest=digest,
+        rationale=fields.get(_RATIONALE_FIELD, ""),
+        selected_clauses=selected_clauses,
+        named_clauses=named_clauses,
+        provenance_complete=fields.get(_PROVENANCE_FIELD) == "complete",
     )
 
 
@@ -290,6 +351,16 @@ def _fields_of(*, body: str) -> dict[str, str]:
         if separator:
             fields[key] = value
     return fields
+
+
+def _repeated(*, body: str, key: str) -> tuple[str, ...]:
+    """Every repeated field value, preserving the record's clause order."""
+    return tuple(
+        value
+        for raw in body.splitlines()
+        for found, separator, value in (raw.strip().partition(_FIELD_SEPARATOR),)
+        if separator and found == key
+    )
 
 
 def _rendered(*, value: str | None) -> str:

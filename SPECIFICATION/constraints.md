@@ -44,7 +44,7 @@ This section refines the pre-push step ordering inherited from livespec; it adds
 
 **A deletion-only push skips the pre-push aggregate.** The repository's pre-push gate (`01-check-pre-push`, run through `just check-pre-push`) MUST read the ref updates git supplies on the hook's standard input, one per line as `<local ref> <local object id> <remote ref> <remote object id>`. When there is at least one line and every line's local object id consists only of zeros, the push only deletes refs: the gate MUST then exit zero without running the green-token check or the `just check` aggregate, and MUST print one line saying the gate was skipped because the push only deletes refs. Any other input, including no input at all and any push that creates or updates even one ref beside its deletions, MUST run the full gate exactly as before. The lefthook pre-push entry MUST pass the hook's standard input through to the gate. This skip MUST NOT be reachable by `--no-verify`, by an environment variable, or by any flag; the ref updates themselves are its only input. The repository's always-run ledger-conformance pre-push step (`02-ledger-conformance`) is a separate step this skip does not reach: it MUST still run on a deletion-only push, so the skip MUST live inside `just check-pre-push` and never at the lefthook level. Scenario 188 in `scenarios.md` exercises this section.
 
-**A green aggregate on the exact tree carries to its push.** When the `just check` aggregate passes, it MUST record a green verdict for the tree it checked, keyed on that commit's tree object id, even when it skipped declared targets. A verdict whose aggregate skipped targets MUST name them. A verdict vouches only for the targets that ran and passed and whose result the committed tree alone decides, the tree-pure members; a member that reads state outside the tree is never covered by a verdict. The pre-push gate MUST honour a recorded green verdict whose tree is byte-identical to the tree being pushed, with a clean worktree, in place of running again the members that verdict covers, MUST still run every member of the pre-push check set that reads state outside the tree and refuse the push when one fails, and MUST print one line naming the honoured verdict and every target the verdict skipped. A push whose tree differs from the recorded verdict's tree, such as a `publish_draft` push after its own refresh rebase onto a moved default branch, MUST run the full pre-push gate exactly as before. Like the deletion-only skip, honouring a verdict MUST NOT be reachable by `--no-verify`, by an environment variable or by any flag; the recorded verdict and the tree are its only inputs. Measured 2026-10-26: the factory janitor skips targets that cannot run in the sandbox, so it recorded no verdict, and each `publish_draft` pre-push re-ran the whole aggregate, about 24 minutes at two test workers, on the tree the janitor had just passed. Scenario 253 in `scenarios.md` exercises this paragraph.
+**A green aggregate on the exact tree carries to its push.** When the `just check` aggregate passes, it MUST record a green verdict for the tree it checked, keyed on that commit's tree object id, even when it skipped declared targets. A verdict whose aggregate skipped targets MUST name them. A verdict vouches only for the targets that ran and passed and whose result the committed tree alone decides, the tree-pure members; a member that reads state outside the tree is never covered by a verdict. The pre-push gate MUST honour a recorded green verdict whose tree is byte-identical to the tree being pushed, with a clean worktree, in place of running again the members that verdict covers, MUST still run every member of the pre-push check set that reads state outside the tree and refuse the push when one fails, and MUST print one line naming the honoured verdict and every target the verdict skipped. A push whose tree differs from the recorded verdict's tree, such as a `pr_refresh` push after its own refresh rebase onto a moved default branch, MUST run the full pre-push gate exactly as before. Like the deletion-only skip, honouring a verdict MUST NOT be reachable by `--no-verify`, by an environment variable or by any flag; the recorded verdict and the tree are its only inputs. Measured 2026-10-26: the factory janitor skips targets that cannot run in the sandbox, so it recorded no verdict, and each `publish_draft` pre-push re-ran the whole aggregate, about 24 minutes at two test workers, on the tree the janitor had just passed. Scenario 253 in `scenarios.md` exercises this paragraph.
 
 ## Pre-commit staged pre-check
 
@@ -186,6 +186,21 @@ allowed to pin.
   `origin/factory-integration`. `fabro --version` is the command that
   identifies the serving build for the rules above; the release and
   disposition evidence below decides its currency.
+- **Fork gate and build venue.** A push to, or a pull request against, a
+  carrier branch of the fork (any branch a pinned factory build is cut
+  from) MUST run the fork's Rust format, clippy and test gates on the
+  fleet's self-hosted ARC k3s runner capacity, so the pull request's
+  status rollup carries their verdicts; a carrier-branch pull request
+  with no such checks MUST NOT be read as green. The release binary a
+  factory build pins MUST be built on that capacity, by a GitHub
+  workflow or a k3s Job, from a named carrier ref, and published with a
+  `BUILD_INFO` naming the source ref and commit; producing it MUST NOT
+  require a build on the dev host. A fork gate or build on the dev host
+  is permitted only as an explicit fallback while the cluster venue is
+  unavailable, at `nice -n 19` with `CARGO_BUILD_JOBS=4`, and the work
+  item that used it MUST record the fallback. The hand-build guidance
+  (`.ai/fabro-fork-hand-build.md`) names the cluster venue, under the
+  runbook-lockstep rule below.
 - **Currency evidence.** Each currency evaluation MUST record the
   upstream release-tag survey and its observation time, the ancestry from
   the serving integration commit to the exact selected base tag, that
@@ -766,6 +781,19 @@ deficient record to be cured rather than a decision to be taken.
   dangerous value, MUST NOT auto-dispose a truly-unresolvable decision, MUST
   NOT create net-new work-items, and MUST bound every rework loop by its
   configured cap; every auto-disposition MUST be journaled.
+- No real-time sleeps or wall-clock verdicts in tests. A test under
+  `tests/` MUST NOT wait for a condition by sleeping in real time
+  (`time.sleep`), and MUST NOT decide pass or fail on a real wall-clock
+  elapsed reading (a difference of `time.monotonic`, `time.perf_counter`
+  or `time.time` values, or thread-start timing). It MUST instead advance
+  an injected clock or wait on a deterministic event (a joined thread, a
+  set `threading.Event`, a written file, a child's exit). A wall-clock
+  wait that remains MAY exist only as a liveness guard against a hang,
+  never as the condition that decides the verdict. A check in the
+  `just check` aggregate MUST refuse a test file that violates this rule,
+  naming each offending file and line, and MUST honour an explicit
+  per-line exemption marker that carries a written reason, for a test
+  whose subject is real time itself.
 
 ## Governed-repository integration constraints
 

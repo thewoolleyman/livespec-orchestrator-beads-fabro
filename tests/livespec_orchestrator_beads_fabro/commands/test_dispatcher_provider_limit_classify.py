@@ -66,6 +66,10 @@ _SOURCE = (
 # this way in one day and every one rested at `blocked / needs-human`
 # (ledger rider on `bd-ib-6itdjz`).
 _SESSION_LIMIT = "You have hit your session limit, resets 7:20pm (UTC)"
+_CODEX_MODEL_NOT_FOUND = (
+    "HTTP 400 invalid_request_error model_not_found: The 'gpt-6.1-terra' model is not "
+    "supported when using Codex with a ChatGPT account"
+)
 # MEASURED 2026-10-17 on hp, run 01M54W4YM2SWANMK515YNPFY7J of `bd-ib-6itdjz`:
 # the implement attempt's recorded `causes[-1]` after four hours of genuine
 # progress -- 360 completed tool calls, 14 git commits, and no 429, overloaded,
@@ -116,6 +120,11 @@ _IDENTITY = AcpCandidateIdentity(
     candidate_key="claude-primary",
     availability_key="anthropic-team",
 )
+_CODEX_IDENTITY = AcpCandidateIdentity(
+    display_name="Codex ACP primary",
+    candidate_key="codex-primary",
+    availability_key="codex",
+)
 
 
 def _failure(*, cause: str | None, usage_limit: bool = False) -> FabroFailureDetail:
@@ -125,6 +134,18 @@ def _failure(*, cause: str | None, usage_limit: bool = False) -> FabroFailureDet
         signature=_SIGNATURE,
         provider_usage_limit=usage_limit,
         provider_usage_limit_provider="anthropic" if usage_limit else None,
+    )
+
+
+def _builtin_codex_rendered() -> RenderedCandidate:
+    """The built-in Codex candidate that recorded the measured refusal."""
+    return RenderedCandidate(
+        candidate=AcpCandidate(
+            adapter=AcpAdapter(command="codex-acp", args=(), env={}),
+            identity=_CODEX_IDENTITY,
+            signatures=(),
+        ),
+        builtin=True,
     )
 
 
@@ -181,6 +202,18 @@ def test_a_declared_quota_signature_releases_on_its_own_scope_and_key() -> None:
     # the triple the clause keys replay on.
     assert release.release_key == "hp:01M52R2WND7Y:implement"
     assert release.recovery_source == "refs/heads/needs-human/01M52R2WND7Y"
+
+
+def test_measured_codex_model_not_found_releases_the_recorded_candidate() -> None:
+    """The Codex account refusal holds its candidate and returns the item to ready."""
+    release = _release(
+        failure=_failure(cause=_CODEX_MODEL_NOT_FOUND), rendered=_builtin_codex_rendered()
+    )
+
+    assert release is not None
+    assert release.matched is not None
+    assert (release.matched.cause, release.matched.scope) == ("model_unsupported", "candidate")
+    assert release.matched.candidate_key == _CODEX_IDENTITY.candidate_key
 
 
 def test_the_same_sentence_without_a_declared_signature_is_not_eligible() -> None:

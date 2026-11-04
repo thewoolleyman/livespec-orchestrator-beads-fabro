@@ -444,6 +444,35 @@ def test_a_record_verdicting_every_assertion_in_prose_advances(tmp_path: Path) -
     assert _failures(tmp_path=tmp_path) == ("", "")
 
 
+def test_a_verified_record_without_a_full_publish_branch_head_is_refused(
+    tmp_path: Path,
+) -> None:
+    """A replay that does not name one full head returns to proof verification.
+
+    The graph's failed edge already leads to `proof_grade_route`, and that route
+    directly re-enters `proof_verify`; this test supplies records that used to
+    reach the graph's unconditional `pr_refresh` edge instead.  Both values are
+    otherwise conforming replay records, so their refusal identifies the head
+    declaration rather than their per-assertion evidence.
+    """
+    full_head = "a" * 40
+    for declared_head in ("", "abc123"):
+        body = _record(
+            run_id=_SANDBOX_RUN_ID,
+            sections="## Assertion 1 — alpha holds.\n\nReproduced: yes.\n",
+        ).replace(f"Publish-branch head: {full_head}", f"Publish-branch head: {declared_head}")
+        result = _graded(
+            tmp_path=tmp_path / (declared_head or "empty"),
+            comments=[{"body": body, "url": "https://forge/comment/1"}],
+            assertions=["alpha holds."],
+        )
+
+        assert result.returncode != 0, result.stderr
+        assert "LIVESPEC_PROOF_GRADE_PUBLISH_HEAD_UNESTABLISHED" in result.stderr
+        assert "full publish-branch head" in result.stderr
+        assert _failures(tmp_path=tmp_path / (declared_head or "empty"))[0] == "1"
+
+
 def test_a_record_wide_verdict_line_names_every_assertion_and_records_the_failure(
     tmp_path: Path,
 ) -> None:

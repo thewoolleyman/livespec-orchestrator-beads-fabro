@@ -72,6 +72,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     hook_limit_graph_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_graph import (
+    absolute_graph_path,
+    workflow_graph_path,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_input_tokens import (
     substitute_input_tokens,
 )
@@ -110,8 +114,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_tmux_socket_root imp
     tmux_tmpdir_env_lines,
     tmux_tmpdir_prepare_steps_block,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
-    toml_section_string,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import toml_section_string
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+    FactoryGithubApp,
+    github_app_table,
 )
 
 __all__: list[str] = [
@@ -127,24 +134,6 @@ __all__: list[str] = [
 # credential.
 CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
 CURRENCY_GATE_ENV_VALUE = "fail"
-
-
-def workflow_graph_path(*, committed_text: str, workflow_dir: Path) -> Path | None:
-    """The absolute graph path a committed run config declares; None when absent.
-
-    Shared with the payload materializer, which renders that graph's
-    timeouts into the per-dispatch payload — so both readers resolve the
-    same declared file rather than each assuming the conventional name.
-    """
-    graph_value = toml_section_string(text=committed_text, section="workflow", key="graph")
-    if graph_value is None:
-        return None
-    return _absolute_graph(graph_value=graph_value, workflow_dir=workflow_dir)
-
-
-def _absolute_graph(*, graph_value: str, workflow_dir: Path) -> Path:
-    graph_path = Path(graph_value)
-    return graph_path if graph_path.is_absolute() else workflow_dir / graph_path
 
 
 def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input.
@@ -168,6 +157,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # posture every dispatch in this fleet carried before the key existed — so
     # a caller that wires nothing keys its env table exactly where it did.
     factory_environment: str | None = None,
+    github_app: FactoryGithubApp = NO_FACTORY_GITHUB_APP,
     dispatch_id: str | None = None,
     proof_store_env: str = "",
     proof_credentials_env: str = "",
@@ -280,7 +270,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     if graph_value is None or environment_id is None:
         return None
     resolved_graph = (
-        _absolute_graph(graph_value=graph_value, workflow_dir=workflow_dir)
+        absolute_graph_path(graph_value=graph_value, workflow_dir=workflow_dir)
         if graph_override is None
         else graph_override
     )
@@ -380,8 +370,8 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # The resume checkout is appended LAST among the prepare steps, after the
     # committed provisioning: every committed step acts on `.git` or on untracked
     # state a checkout does not disturb, while a checkout performed BEFORE the
-    # unshallow would be unshallowed out from under. For an ordinary dispatch it
-    # renders the empty string, so no other dispatch sees a byte of it.
+    # unshallow would be unshallowed out from under. The returned block always
+    # includes serial pyright cache provisioning; only a resume adds checkout.
     resume_checkout_steps = resume_checkout_prepare_steps_block(checkout=resume_checkout)
     credential_use_steps = credential_use_guard_prepare_steps_block(projection=credential_use)
     credential_use_env = credential_use_env_lines(projection=credential_use)
@@ -392,6 +382,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # uses for the needs_human node's emergency commit (S5 / bd-ib-b4u6b7).
     return (
         rewritten
+        + github_app_table(github_app=github_app)
         + dispatch_base_steps
         + git_identity_steps
         + worktree_pack_steps

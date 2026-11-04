@@ -161,19 +161,34 @@ def _sandbox_helpers(*, tmp_path: Path, limit_seconds: int | None) -> Path:
     return root
 
 
-def _forge_double(*, tmp_path: Path) -> Path:
+def _forge_double(*, tmp_path: Path, merged_query_delay_seconds: int = 0) -> Path:
+    """The forge boundary; its merged-pull-request query is the stage's pre-push work.
+
+    `livespec_landed_check` asks the forge that query once, before the push and
+    after the refresh, so a delay on exactly that call is stage time spent
+    ahead of the push -- the shape a slow refresh rebase gives the real stage.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     gh = bin_dir / "gh"
-    _ = gh.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    _ = gh.write_text(
+        "#!/bin/sh\n"
+        f'case "$*" in *"--state merged"*) sleep {merged_query_delay_seconds} ;; esac\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
     gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
     return bin_dir
 
 
 def _publish(
-    *, tmp_path: Path, run: Path, limit_seconds: int | None
+    *,
+    tmp_path: Path,
+    run: Path,
+    limit_seconds: int | None,
+    pre_push_work_seconds: int = 0,
 ) -> subprocess.CompletedProcess[str]:
-    bin_dir = _forge_double(tmp_path=tmp_path)
+    bin_dir = _forge_double(tmp_path=tmp_path, merged_query_delay_seconds=pre_push_work_seconds)
     root = _sandbox_helpers(tmp_path=tmp_path, limit_seconds=limit_seconds)
     env = {
         key: value
@@ -253,3 +268,69 @@ def test_withheld_figures_leave_the_push_exactly_as_it_was(tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr
     assert HOOK_OVER_LIMIT_SENTINEL not in result.stderr
     assert _remote_branch(run=run) != ""
+
+
+# A limit whose push bound is 35 seconds, with 20 of them spent before the push
+# starts. The bound that fires on the clock the STAGE keeps is therefore 15
+# seconds after the push begins; a bound counted from the push start would be
+# 35. The hook below outlives both, so the only difference between a correct
+# script and the measured defect is WHEN the observer is asked.
+_LATE_PUSH_LIMIT_SECONDS = 155
+_LATE_PUSH_PRE_PUSH_WORK_SECONDS = 20
+_LATE_PUSH_HOOK_ELAPSED_CEILING_MS = 25_000
+
+
+def test_a_push_starting_late_in_the_stage_is_ended_by_the_bound_the_stage_leaves(
+    tmp_path: Path,
+) -> None:
+    """Scenario 177: stage time spent before the push comes off the push's bound.
+
+    Measured 2026-11-04 on run 01M6HWJFSTQXB1YRN4QQSTJZB7: a refresh rebase used
+    part of publish_draft's hour, the push's bound was counted from the push
+    start, and the engine's stage timeout killed the script before the bound
+    could name the ending. Here the same shape is run at small scale: the hook
+    has been running for the bound's remainder, not for the full bound, when the
+    observer is asked.
+    """
+    _, run = _run_clone(tmp_path=tmp_path)
+    _install_pre_push(run=run, seconds=90)
+
+    result = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        limit_seconds=_LATE_PUSH_LIMIT_SECONDS,
+        pre_push_work_seconds=_LATE_PUSH_PRE_PUSH_WORK_SECONDS,
+    )
+
+    assert result.returncode != 0, result.stderr
+    event = hook_over_limit_from_text(text=result.stderr)
+    assert event is not None, result.stderr
+    assert event.node == "publish_draft"
+    assert event.operation == "push"
+    assert event.limit_seconds == _LATE_PUSH_LIMIT_SECONDS
+    assert event.hook_elapsed_ms < _LATE_PUSH_HOOK_ELAPSED_CEILING_MS, event.hook_elapsed_ms
+    assert _remote_branch(run=run) == ""
+
+
+def test_an_over_limit_push_records_a_cause_naming_the_event_and_not_a_repair_miss(
+    tmp_path: Path,
+) -> None:
+    """Scenario 177: the needs-human cause names hook-over-limit, the node and the operation."""
+    _, run = _run_clone(tmp_path=tmp_path)
+    _install_pre_push(run=run, seconds=90)
+
+    result = _publish(tmp_path=tmp_path, run=run, limit_seconds=_TEST_LIMIT_SECONDS)
+
+    assert result.returncode != 0, result.stderr
+    reason_path = Path(
+        _git(
+            run, "rev-parse", "--path-format=absolute", "--git-path", "livespec-needs-human-reason"
+        ).stdout.strip()
+    )
+    assert reason_path.is_file(), result.stderr
+    reason = reason_path.read_text(encoding="utf-8")
+    assert "hook-over-limit" in reason
+    assert "publish_draft" in reason
+    assert "push" in reason
+    assert f"{_TEST_LIMIT_SECONDS}s" in reason
+    assert "LIVESPEC_REFRESH_REPAIR_ABSENT" not in reason
