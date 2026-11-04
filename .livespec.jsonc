@@ -281,6 +281,12 @@
       // orchestrator's own active items filled it and further tickets were
       // capacity-deferred. Read on each admission pass; no restart needed.
       "wip_cap": 16,
+      // redispatch_no_progress_limit: three consecutive item-attributable
+      // attempts that fail to advance the item's progress high-water mark refuse
+      // the next claim until a fresh typed causal recovery attempt is recorded
+      // (contracts.md, "Across-dispatch required-result progress"). Committed-only;
+      // there is no implicit default and no per-item override.
+      "redispatch_no_progress_limit": 3,
       "acceptance_mode": "ai-only",
       // Committed maintainer delegations of the human valves (contracts.md,
       // journal invoker attribution, "Delegated valve authority"). A press
