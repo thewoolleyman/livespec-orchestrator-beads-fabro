@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.284.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.283.0...v0.284.0) (2026-11-04)
+
+
+### Features
+
+* **incident:** expose conditional authority transitions to installed consumers (bd-ib-dzbwaq) ([6d88e7a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6d88e7ac3f901f8f8acbf4f516f67a75987c5c31))
+* persist fenced partial hook receipts before PR creation (bd-ib-dzbwaq) ([85a8ffc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/85a8ffcd8ebb0a6de20730a23444149685d76640))
+* read and fence canonical incident attempt authority (bd-ib-dzbwaq) ([5f6e971](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5f6e971bcc55737564835f649afd90729b7836cb))
+* reconcile-merged --pr selects one of several merged pull requests ([3ddafa5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3ddafa58f5eeb1ce9efc15fcadb8bb4aac89c460))
+* split Claude cache-write lifetimes ([b896569](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b896569536846c4964ad76f6fc22defa7954b18b))
+
+
+### Bug Fixes
+
+* **fleet-launch:** read each factory board through one shared snapshot (bd-ib-busjvz) ([f9cf7b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f9cf7b72ee6e5d1d1a25198dfe92f1352b162807))
+* recover immutable hook receipts through canonical lookup (bd-ib-dzbwaq) ([75c45b2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/75c45b2ee2f6661c93d451383af05cda1014c7f9))
+
 ## [0.283.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.282.0...v0.283.0) (2026-11-04)
 
 
