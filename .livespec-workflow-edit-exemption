@@ -1,4 +1,4 @@
-work_item=bd-ib-oy643z
-reason=Export MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml in check-metadata-batch's batched step so the mise node shim resolves a version from the check's temp dir on a GitHub-hosted runner (HOME=/github/home); reproduced locally in python-v1.168.0. Four added lines; nothing deleted or modified. approval:workflow-edit-additive set under legacy-coordinator-agent's delegation.
+work_item=bd-ib-jcrdzk
+reason=Add a 'Point mise at the baked global config (root)' step before each of the four root steps of ci-root-uid.yml, writing MISE_GLOBAL_CONFIG_FILE to GITHUB_ENV and the mise shims dir to GITHUB_PATH, so pyright resolves the image's node on a GitHub-hosted runner (HOME=/github/home). 40 added lines; nothing deleted or modified. approval:workflow-edit-additive set; approver legacy-coordinator-agent (R301, coordinator-duties §12).
 change=additive
 ci_runtime=no-significant-increase
