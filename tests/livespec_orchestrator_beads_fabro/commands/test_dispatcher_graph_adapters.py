@@ -180,6 +180,21 @@ def test_a_prefixed_adapter_keeps_its_leading_key_value_assignments() -> None:
     assert f'acp.command="{_PREFIXED}"' in rendered.text
 
 
+def test_a_stage_is_projected_by_the_graph_node_not_the_adapter_input() -> None:
+    """The wrapper receives the workflow-owned stage before it runs an agent."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    rendered = module.render_acp_commands(  # pyright: ignore[reportAttributeAccessIssue]
+        graph_text=_synthetic(command=_TOKEN),
+        adapters={"probe_adapter": _CLAUDE},
+        stages={"agent": "proof_verify"},
+    )
+    assert not isinstance(rendered, str), rendered
+    expected = f"LIVESPEC_AGENT_STAGE=proof_verify {_CLAUDE}"
+    assert rendered.node_commands == {"agent": expected}
+    assert f'acp.command="{expected}"' in rendered.text
+
+
 def test_an_already_literal_command_is_left_exactly_as_declared() -> None:
     """A graph carrying no indirection renders to itself, not to a refusal."""
     assert _MODULE_PATH.is_file()

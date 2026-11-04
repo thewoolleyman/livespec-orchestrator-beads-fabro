@@ -294,10 +294,18 @@ def test_an_advisory_finding_is_recorded_as_a_comment_and_does_not_withhold_read
 
     assert verdict == "ready"
     assert _status(item_id="bd-advisory") == "ready"
-    comments = _comments(item_id="bd-advisory")
-    assert len(comments) == 1
-    assert comments[0].startswith("definition-of-done finding (advisory):")
-    assert "tests prove" in comments[0]
+    # Only the host-side WALL's findings are graded here. The pre-admission
+    # Definition-of-Done judgement records its own separate verdict on the same
+    # sidecar — in this tier it cannot run, so it records that — and binding
+    # that record is `test_dod_judgement_pre_admission_scenario174`'s job.
+    findings = [
+        body
+        for body in _comments(item_id="bd-advisory")
+        if body.startswith("definition-of-done finding")
+    ]
+    assert len(findings) == 1
+    assert findings[0].startswith("definition-of-done finding (advisory):")
+    assert "tests prove" in findings[0]
 
 
 # --------------------------------------------------------------------------

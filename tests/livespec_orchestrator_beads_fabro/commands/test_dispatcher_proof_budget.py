@@ -11,7 +11,7 @@ was raised against a reported "65536-character publication limit", and that figu
 was an ASSUMPTION — the forge accepted a 66,680-character record. It is also what
 the forge's own 422 message says when it refuses, which is where the assumption
 came from and why it is so durable. Measured against live GitHub on 2026-10-07
-(`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`):
+(`plan/archive/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`):
 the enforced issue-comment ceiling is **262144 UTF-8 bytes**, four times the
 advertised figure, and it is denominated in BYTES rather than characters.
 

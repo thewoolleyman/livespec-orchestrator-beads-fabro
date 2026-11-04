@@ -18,6 +18,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_second_reads i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     NON_CONVERGED_MARKER,
+    RECAPTURE_EXHAUSTED_MARKER,
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
@@ -54,7 +55,12 @@ _LIVE_STATUS_KINDS = frozenset({"running", "runnable", "pending", "queued", "sta
 # Each sentinel a TERMINAL node prints on the client's own channel before the
 # client exits non-green. `DEAD_IMPLEMENTER_SENTINEL` covers its check-failed
 # variant too, which carries it as a prefix.
-_CLIENT_TERMINAL_SENTINELS = (NEEDS_HUMAN_MARKER, NON_CONVERGED_MARKER, DEAD_IMPLEMENTER_SENTINEL)
+_CLIENT_TERMINAL_SENTINELS = (
+    NEEDS_HUMAN_MARKER,
+    NON_CONVERGED_MARKER,
+    RECAPTURE_EXHAUSTED_MARKER,
+    DEAD_IMPLEMENTER_SENTINEL,
+)
 
 
 @dataclass(frozen=True, kw_only=True)

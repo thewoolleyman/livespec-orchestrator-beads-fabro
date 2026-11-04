@@ -40,6 +40,14 @@ import stat
 import subprocess
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+)
+
 _WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 _SCRIPT_ATTR = re.compile(r'script="(?P<value>(?:[^"\\]|\\.)*)"')
 _GIT_INVOCATION = re.compile(r"\bgit (?P<options>(?:-c \S+ )*)(?P<verb>[a-z][a-z-]*)")
@@ -275,6 +283,20 @@ def _run_needs_human(*, work: Path, run_id: str) -> subprocess.CompletedProcess[
 def _run_publish_draft(*, work: Path) -> subprocess.CompletedProcess[str]:
     env = _env()
     env["LIVESPEC_PUBLISH_BRANCH"] = _PUBLISH_BRANCH
+    # The generated-record-file resolution rides the SAME prepare block as this
+    # stage's other materialized helpers (bd-ib-ze7xxj), and the stage fails
+    # closed before the repository-declared gate when it cannot resolve one --
+    # so a fixture omitting it would exercise that refusal rather than the
+    # pre-push hook route under test. The root is named EXPLICITLY rather than
+    # inherited: the enclosing factory sandbox's own root carries whatever the
+    # RELEASED build materialized, which is a different population from the one
+    # this case is about.
+    plugins = work.parent / "plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
+    env[SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR] = str(plugins)
     return subprocess.run(
         ["sh", "-c", _node_script(node="publish_draft")],
         cwd=str(work),

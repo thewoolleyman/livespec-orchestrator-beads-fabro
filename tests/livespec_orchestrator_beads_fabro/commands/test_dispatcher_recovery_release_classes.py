@@ -33,6 +33,18 @@ these rows: each terminal's own record set is its own module's subject, and
 reproducing them here would reintroduce the very difference these cases hold
 constant.
 
+WHAT THE HOLD-RECORD COMPARISON IS DELIBERATELY BLIND TO. The two passes run one
+after the other in one process, and `JournalFile.append` stamps every row it writes
+with `at` off the wall clock at SECONDS precision — so whenever the pair straddles a
+second boundary that field is the ONE thing that differs between their hold records,
+and a whole-row equality then fails for a reason the release class had no part in.
+Measured 2026-10-20: master CI run 39478669876 failed exactly there on commit
+078a69b0 while the very next commit carrying the same change went green, and the
+file passed five times running in isolation. The comparison therefore drops that one
+field and nothing else — `_comparable_held_rows` below, whose own control asserts
+that every OTHER field of a real hold record still separates two rows, so the
+exclusion cannot widen into the record's substance and quietly stop comparing it.
+
 WHY FOUR WORLDS. One world cannot distinguish "the release class is not read" from
 "this world's route is reached whatever the history says" — the `fresh` route in
 particular is also what an UNRELEASED item gets, so a build blind to the
@@ -57,6 +69,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission as _admission,
 )
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_journal_file as journal_file
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_recovery_routing as routing,
 )
@@ -64,6 +77,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    NON_CONVERGED_MARKER,
+    RECAPTURE_EXHAUSTED_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
@@ -143,6 +160,9 @@ class _World:
     name: str
     answers: dict[str, CommandResult]
     route: str
+
+
+_PINNED_AT = "2026-10-24T23:48:20Z"
 
 
 def _open_pull_request() -> CommandResult:
@@ -235,6 +255,26 @@ def _history(*, release_stage: str) -> Sequence[dict[str, object]]:
     )
 
 
+def _terminal_history(*, outcome: dict[str, object]) -> Sequence[dict[str, object]]:
+    """One dispatch whose terminal, rather than a release row, returns it to ready.
+
+    A human valve or a groom writes the ready state in the ledger, not in this
+    append-only journal.  The routing input is already a ready candidate, so the
+    history needs only establish the terminal that made its preserved work a
+    recovery subject.
+    """
+    return (
+        {
+            "stage": "dispatch-id",
+            "work_item_id": _ITEM_ID,
+            "dispatch_id": _DISPATCH,
+            "workflow_name": "implement-work-item",
+        },
+        {"stage": "fabro-run", "work_item_id": _ITEM_ID, "run_id": _RUN},
+        {"stage": "outcome", "outcome": outcome},
+    )
+
+
 def _args(*, repo: Path, journal: JournalFile) -> argparse.Namespace:
     return argparse.Namespace(
         repo=str(repo),
@@ -259,16 +299,26 @@ def _route_once(
     monkeypatch: pytest.MonkeyPatch,
     world: _World,
     release_stage: str,
+    records: Sequence[dict[str, object]] | None = None,
 ) -> _Pass:
     """Route the one candidate in `world`, from a history ending in `release_stage`."""
     journal = JournalFile(path=tmp_path / f"journal-{world.name}-{release_stage}.jsonl")
     _ = journal.path.write_text(
-        "".join(f"{json.dumps(record)}\n" for record in _history(release_stage=release_stage)),
+        "".join(
+            f"{json.dumps(record)}\n"
+            for record in (
+                records if records is not None else _history(release_stage=release_stage)
+            )
+        ),
         encoding="utf-8",
     )
     _Shell.answers = dict(world.answers)
     _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
+    # The two passes run one after the other, so an unpinned journal clock lets
+    # their `recovery-held` rows straddle a second boundary on a loaded host and
+    # differ only in `at` -- measured 2026-10-24 23:48Z, 23:48:21Z against :20Z.
+    monkeypatch.setattr(journal_file, "utc_now_iso", lambda: _PINNED_AT)
 
     routed = routing.route_recovery(
         args=_args(repo=tmp_path, journal=journal),
@@ -283,6 +333,25 @@ def _route_once(
         route=routed.route_for(work_item_id=_ITEM_ID),
         calls=tuple(_Shell.calls),
         held_rows=tuple(one for one in written if one.get("stage") == "recovery-held"),
+    )
+
+
+# The one envelope field `JournalFile.append` stamps off the wall clock, and the only
+# field the comparison below drops. Named once so the exclusion and the control that
+# bounds it cannot drift apart.
+_JOURNAL_CLOCK_FIELD = "at"
+
+
+def _comparable_held_rows(*, rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
+    """Each hold record with ONLY the journal's wall-clock stamp dropped.
+
+    The projection is written as an exclusion rather than as a list of the fields
+    worth comparing, which is the whole of its safety: a row gains a field when the
+    production record gains one, and a comparison keyed on an enumeration here would
+    silently stop reading that field while every case in this module still passed.
+    """
+    return tuple(
+        {name: value for name, value in row.items() if name != _JOURNAL_CLOCK_FIELD} for row in rows
     )
 
 
@@ -307,7 +376,154 @@ def test_both_release_classes_route_identically_on_identical_measurements(
     assert stall.route.route == world.route
     assert provider_limit.route == stall.route
     assert provider_limit.calls == stall.calls
-    assert provider_limit.held_rows == stall.held_rows
+    assert _comparable_held_rows(rows=provider_limit.held_rows) == _comparable_held_rows(
+        rows=stall.held_rows
+    )
+
+
+@pytest.mark.parametrize("world", _worlds(), ids=lambda one: one.name)
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        {
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+            "needs_human_kind": "agent-request",
+        },
+        {
+            "work_item_id": _ITEM_ID,
+            "status": "failed",
+            "stage": "fabro-run",
+            "detail": NON_CONVERGED_MARKER,
+        },
+    ],
+    ids=("needs_human", "non_converged"),
+)
+def test_a_returned_terminal_routes_like_an_explicit_recovery_release(
+    world: _World,
+    outcome: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Returned needs-human and non-converged work takes the full route ladder.
+
+    The four worlds include a proof anchor (`resume`) and a verified terminal
+    tree with no anchor (`seeded`).  They therefore prove that the terminal
+    release unlocks the existing preserved-work preference rather than merely
+    changing a Boolean that later code ignores.
+    """
+    terminal = _route_once(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        world=world,
+        release_stage="terminal",
+        records=_terminal_history(outcome=outcome),
+    )
+
+    assert terminal.route is not None
+    assert terminal.route.route == world.route
+
+
+def test_a_newer_dispatch_or_an_unrelated_terminal_does_not_release_recovery() -> None:
+    """The terminal must be this item's latest dispatch and a named terminal kind."""
+    needs_human = _terminal_history(
+        outcome={
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+            "needs_human_kind": "agent-request",
+        }
+    )
+    unrelated = _terminal_history(
+        outcome={
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+        }
+    )
+
+    assert routing.released_for_recovery(records=needs_human, work_item_id=_ITEM_ID) is True
+    assert (
+        routing.released_for_recovery(
+            records=(*needs_human, {"stage": "dispatch-id", "work_item_id": _ITEM_ID}),
+            work_item_id=_ITEM_ID,
+        )
+        is False
+    )
+    assert routing.released_for_recovery(records=unrelated, work_item_id=_ITEM_ID) is False
+
+
+def test_a_recapture_cap_ending_is_not_a_recovery_release() -> None:
+    """The recapture-cap terminal carries a needs-human kind yet is never released.
+
+    Its blocked outcome is a stage failure whose detail and reason name the
+    recapture-cap marker, so a human returning it to ready must not route it as
+    recovery.
+    """
+    reason = f"{RECAPTURE_EXHAUSTED_MARKER}: recapture cap reached"
+    records = _terminal_history(
+        outcome={
+            "work_item_id": _ITEM_ID,
+            "status": "blocked",
+            "stage": "fabro-run",
+            "detail": f"run r ended at the non_converged terminal; {reason}",
+            "needs_human_kind": "stage-failure",
+            "needs_human_stages": ["recapture_route"],
+            "needs_human_reason": reason,
+        }
+    )
+
+    assert routing.released_for_recovery(records=records, work_item_id=_ITEM_ID) is False
+
+
+def test_an_unreadable_terminal_payload_is_not_a_recovery_release() -> None:
+    """An outcome row that cannot name its item is not evidence of a terminal."""
+    records = (
+        {
+            "stage": "dispatch-id",
+            "work_item_id": _ITEM_ID,
+            "dispatch_id": _DISPATCH,
+        },
+        {"stage": "outcome", "outcome": "not an outcome record"},
+    )
+
+    assert routing.released_for_recovery(records=records, work_item_id=_ITEM_ID) is False
+
+
+def test_the_hold_record_comparison_drops_the_clock_stamp_and_nothing_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The instrument's own control: exactly how much the comparison above forgives.
+
+    The row is the one a REAL pass wrote, not an invented shape, because the claim is
+    about the field set the production writer produces — envelope stamps included. A
+    hand-built row would leave a field this module never compares looking compared.
+
+    Both directions are asserted, and neither means anything alone: a projection that
+    dropped everything satisfies the clock case, and one that dropped nothing
+    satisfies the rest while leaving the flake in place.
+    """
+    held = next(one for one in _worlds() if one.name == "held")
+    rows = _route_once(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, world=held, release_stage=STALL_RELEASE_STAGE
+    ).held_rows
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert _JOURNAL_CLOCK_FIELD in row
+
+    later = {**row, _JOURNAL_CLOCK_FIELD: "2026-10-20T18:53:17Z"}
+    assert later != row
+    assert _comparable_held_rows(rows=(later,)) == _comparable_held_rows(rows=(row,))
+
+    sentinel = "a value no hold record carries"
+    for name in row:
+        if name == _JOURNAL_CLOCK_FIELD:
+            continue
+        assert row[name] != sentinel
+        mutated = {**row, name: sentinel}
+        assert _comparable_held_rows(rows=(mutated,)) != _comparable_held_rows(rows=(row,))
 
 
 def test_the_two_release_stages_under_comparison_are_not_the_same_string() -> None:

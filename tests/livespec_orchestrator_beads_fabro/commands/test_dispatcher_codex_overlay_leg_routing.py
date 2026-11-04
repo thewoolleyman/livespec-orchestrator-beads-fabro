@@ -120,7 +120,11 @@ def _stub_leg_collaborators(
     def _requirement(**_kwargs: Any) -> Any:
         calls.append("requirement")
         return requirement_module.CredentialLifetimeRequirement(
-            allowance_seconds=_ALLOWANCE,
+            execution_allowance_seconds=_ALLOWANCE,
+            # Wider than the allowance, so the allowance governs and this case
+            # keeps grading the routing it was written against.
+            credential_use_window_seconds=_ALLOWANCE * 10,
+            credential_queue_allowance_seconds=86_400,
             margin_seconds=_MARGIN,
             detail="test-resolved requirement",
         )

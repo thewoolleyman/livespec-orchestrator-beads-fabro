@@ -29,34 +29,113 @@ measured on that walk.
 
 ## The worktree
 
-- Base every branch on `origin/factory-integration`, never on `main` and never
-  on an upstream tag. Worktrees live under `~/.worktrees/fabro/<branch>`; the
-  fork's primary clone is `~/.worktrees/fabro/factory-integration`.
+- Base every branch on the carrier branch the SERVING factory build was cut
+  from, never on `main` and never on an upstream tag. Do not assume it is
+  `factory-integration`. Read the serving build's commit from the
+  `binary_source` that `livespec-dev-tooling`
+  `ansible/inventory/host_vars/gmktec-xubuntu.yml` pins, then from the
+  `BUILD_INFO` file staged beside that binary, which names the source ref.
+  CORRECTION (2026-11-02, work-item `bd-ib-voozdp`): this bullet named
+  `origin/factory-integration` until then, but gmktec's `petri` and
+  `mi-homelab` instances serve `carrier-candidate-registered-20261023` at
+  `9f6c38fab`. That branch patches Petri to
+  `thewoolleyman/petri` `fabro-integration-registered-20261023` (see
+  `orchestrator-image/README.md`), so `factory-integration` no longer
+  describes what serves. A fix based on it would not rebuild the serving
+  lineage. Merge the fix into that same carrier branch. Worktrees live under
+  `~/.worktrees/fabro/<branch>`.
 - Share the build cache: `CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target`.
   A cold workspace build of the fork is a from-scratch Rust dependency compile
   on a box that runs many concurrent sessions; the shared target directory is
-  what makes the gates incremental.
+  what makes the gates incremental. The directory can be EMPTY: on
+  2026-11-02 no fork target directory existed on vps, so the first gate was
+  a cold build anyway. Do not plan an ETA around a warm cache without
+  `ls`-ing it first.
 - Run `uptime` BEFORE any build or test run, every time, and bound the
   compile (`CARGO_BUILD_JOBS`, `nice`, `--test-threads`) when the load is
   already high. The load on 2026-09-12 was 25 to 30 on 18 cores from other
-  sessions' cargo and pytest runs.
+  sessions' cargo and pytest runs. The coordinator's standing throttle for a
+  fork gate on vps (ruling 2026-11-02): `nice -n 19`, `CARGO_BUILD_JOBS=4`,
+  nextest limited to `-p` the touched crates with a low `--test-threads`. At
+  nice 19 the gate takes only the cycles the other sessions leave idle, so it
+  pauses only when `mpstat 5 1` reports idle below 8%. There is no cluster
+  venue for a fork build: `rust.yml` runs only for `main`, and an ad hoc
+  host build on gmktec is not sanctioned. The throttle protects the shared
+  box. It is never a reason to read a test verdict differently: see "A test
+  verdict never depends on load" below.
+
+## Nightly tags are release tags
+
+- Upstream `fabro-sh/fabro` has published only nightly prerelease tags
+  since stable `v0.254.0` (2026-06-04); the newest on 2026-11-02 was
+  `v0.403.0-nightly.0` (2026-10-31). `SPECIFICATION/constraints.md`
+  §"Fabro runtime constraints" makes an official nightly or prerelease tag
+  eligible on the same terms as a stable tag, and
+  `_dispatcher_fabro_currency.py` reads no release class. Never treat
+  stable-versus-nightly as an open question or a blocker.
+- A base fails the currency rule in only two ways: (a) it is not EXACTLY a
+  published tag, or (b) its tag was published more than 30 days before the
+  newest release. The serving carrier `carrier-candidate-registered-20261023`
+  fails (a): it sits on upstream `main` at `9d9cbe9f4`, four commits (two
+  merged PRs, #1062 and #1065) past `v0.393.0-nightly.1` (`e28675a1d`).
+- "Candidate" in this repository's ops vocabulary names the
+  `fabro-server-candidate` canary instance on gmktec `:32278`, not a
+  release tag.
 
 ## The merge gate is local
 
 The fork's GitHub workflows run only on `main` (`rust.yml`,
 `typescript.yml`: `branches: [main]`), so a pull request against
-`factory-integration` shows NO checks and `gh pr view` reports an empty
+any carrier branch shows NO checks and `gh pr view` reports an empty
 status rollup. That is not a green signal; it is the absence of an
-instrument. The merge gate is therefore the same set the fork CI would run,
-executed locally against the branch tip:
+instrument. The merge gate is therefore run locally against the branch tip,
+and it is TARGETED (maintainer ruling 2026-11-03):
 
 ```bash
 cd ~/.worktrees/fabro/<branch>
 export CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
 cargo +nightly-2026-04-14 fmt --check --all
 cargo +nightly-2026-04-14 clippy --workspace --all-targets -- -D warnings
-cargo nextest run -p <every crate the diff touches>
+# RED: the change's own tests, with the fix reverted, must fail.
+# GREEN: the same tests, with the fix, must pass.
+cargo nextest run --profile ci -p <crate> -E '<the tests the diff adds or changes>'
 ```
+
+Do NOT run the whole crate or workspace test suite for a narrow diff. The
+RED/GREEN run of the change's own tests is the evidence. On 2026-11-03,
+full `fabro-petri` runs on two one-function diffs (`bd-ib-6r3yax`,
+`bd-ib-bpucez`) cost about an hour each on a loaded host and surfaced only
+pre-existing test defects. Widen the selection only when the diff reaches
+across modules or changes a shared interface, and then select the dependent
+tests, not the crate.
+
+### A test verdict never depends on load
+
+Maintainer ruling 2026-11-03: a test's verdict must never depend on host
+load or wall-clock time. The only time bound is the overall run timeout
+(locally, in the factory and in CI). A test that genuinely hangs is a
+separate bug. Consequences for a gate:
+
+- A test that fails or times out on load or timing is a TEST DEFECT. File
+  it once as a root-fix item, or add the instance to the existing item, and
+  move on. Retries, skips, `#[ignore]` and longer deadlines are not fixes.
+- Never clear a failure by rerunning it solo or at lower load; a rerun pass
+  is not evidence. Never spend runs comparing a flaky test across commits:
+  on 2026-11-03 that cost about two hours on the blob test and decided
+  nothing the root-fix item did not already say.
+- A failing test that the change's own diff cannot reach does not block the
+  merge once it is tracked; one the diff can reach does.
+
+Tracked fork test defects at 2026-11-03: `bd-ib-aqcgxz` (blob round-trip
+race), `bd-ib-4uge7u` (test-local wall-clock deadlines in two tests),
+`bd-ib-adrhkf` (the per-test nextest hard kill in `.config/nextest.toml`,
+about 120 s in `profile.ci` and 20 s for `fabro-petri` in
+`profile.default`, which kills healthy tests under load), and
+`bd-ib-gmuxd4` (the stall test's real-clock budget).
+
+Work independent fork items in PARALLEL, each in its own worktree on the
+carrier branch, and fold their merges into one engine build. Do not queue
+them one at a time.
 
 `nightly-2026-04-14` is the toolchain the fork's own CI pins for fmt and
 clippy; a different nightly reports different lints and is not evidence.
@@ -90,7 +169,7 @@ script's own done marker, and keep `CARGO_BUILD_JOBS` at 4 to 6 with
 - Merge with `gh pr merge <n> --rebase -R thewoolleyman/fabro`. The fork
   rebase-merges, so the merge SHA is the LAST commit of the rebased series,
   and the branch SHA does not survive; verify the landing with a content
-  check on `origin/factory-integration`, not by branch containment.
+  check on the carrier branch it merged into, not by branch containment.
 - `SPECIFICATION/constraints.md` §"Fabro runtime constraints" requires
   `orchestrator-image/README.md` §"`factory-integration` — the carrier branch
   for unreleased fixes" to be updated IN THE SAME CHANGE whenever the

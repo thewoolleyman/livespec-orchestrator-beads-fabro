@@ -19,6 +19,9 @@ from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
     factory_declaration_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
+    explicit_factory_selection_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_validation import (
     schema_validation_refusal,
 )
@@ -35,24 +38,24 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import
     LedgerFinding,
     run_ledger_checks,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
-    apply_native_status_remaps,
-    load_items,
-    plan_native_status_remaps,
-    project_native_status_remaps,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_gate import run_ledger_gate
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_orphaned_run_check import (
     orphaned_factory_run_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import parse_janitor
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overflow_factories import (
+    overflow_factories_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
     not_ready_requested_items_error,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_pass import (
     reconcile_runs_pass,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_files import (
+    record_file_generators_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     rework_redispatch_eligible_ids,
@@ -73,7 +76,6 @@ __all__: list[str] = [
     "requested_items_preflight_error",
     "run_janitor_check",
     "run_ledger_check",
-    "run_ledger_normalize",
     "run_spec_check",
 ]
 
@@ -107,63 +109,6 @@ def run_ledger_check(*, args: argparse.Namespace) -> int:
     return _emit_check_findings(findings=findings, as_json=args.as_json, label="ledger")
 
 
-def run_ledger_normalize(*, args: argparse.Namespace) -> int:
-    """Self-heal a tenant's beads-native statuses to their livespec lifecycle.
-
-    Reuses the dispatch-path primitive `plan_native_status_remaps`: `open` →
-    `backlog` and `in_progress` → `active` (every other status is left
-    untouched). With `--dry-run` the remaps are planned and projected in
-    memory but NOT written; otherwise each remap is applied via the store's
-    `update_work_item_status` seam and the tenant is reloaded. Residual
-    non-conformant findings (statuses no remap can map) are then computed
-    over the resulting rows and reported alongside the remaps. Exit 1 when a
-    non-skipped residual finding remains after normalization, else 0 — the
-    same signal `run_ledger_check` uses. `--gate` short-circuits to the
-    always-run pre-push gate (`run_ledger_gate`): a fail-soft, auto-heal-loud
-    conformance gate that heals the two safe transient remaps IN PLACE, prints
-    each, and blocks only on residual drift (exit 0 clean/healed, 1 residual,
-    2 could-not-check).
-    """
-    project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
-    if args.gate:
-        return run_ledger_gate(project_root=project_root)
-    items = load_items(repo=project_root)
-    remaps = plan_native_status_remaps(items=items)
-    if args.dry_run:
-        resulting = project_native_status_remaps(items=items, remaps=remaps)
-    else:
-        apply_native_status_remaps(remaps=remaps, config=store_config(repo=project_root))
-        resulting = load_items(repo=project_root)
-    residual = run_ledger_checks(items=resulting)
-    return _emit_normalize_summary(
-        remaps=remaps,
-        residual=residual,
-        dry_run=args.dry_run,
-        as_json=args.as_json,
-    )
-
-
-def _emit_normalize_summary(
-    *,
-    remaps: list[dict[str, str]],
-    residual: list[LedgerFinding],
-    dry_run: bool,
-    as_json: bool,
-) -> int:
-    """Emit the normalize summary (JSON object or human lines); exit 1 on residual."""
-    if as_json:
-        payload = {
-            "dry_run": dry_run,
-            "remapped": remaps,
-            "residual": [asdict(finding) for finding in residual],
-        }
-        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    else:
-        _emit_normalize_text(remaps=remaps, residual=residual, dry_run=dry_run)
-    actionable = any(finding.severity != "skipped" for finding in residual)
-    return _EXIT_FAILURE if actionable else 0
-
-
 def _load_comments_by_item(
     *,
     config: StoreConfig,
@@ -176,28 +121,6 @@ def _load_comments_by_item(
     }
 
 
-def _emit_normalize_text(
-    *,
-    remaps: list[dict[str, str]],
-    residual: list[LedgerFinding],
-    dry_run: bool,
-) -> None:
-    verb = "would remap" if dry_run else "remapped"
-    if remaps:
-        for remap in remaps:
-            transition = f"{remap['from']} -> {remap['to']}"
-            line = f"{verb}  {remap['item_id']}  {transition}  ({remap['reason']})\n"
-            _ = write_stdout(text=line)
-    else:
-        _ = write_stdout(text="(nothing to normalize)\n")
-    for finding in residual:
-        severity = finding.severity.upper()
-        line = f"RESIDUAL  {severity}  {finding.check}  {finding.item_id}  {finding.message}\n"
-        _ = write_stdout(text=line)
-    if not residual:
-        _ = write_stdout(text="(no residual findings)\n")
-
-
 def run_spec_check(*, args: argparse.Namespace) -> int:
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
     spec_root = (
@@ -206,6 +129,7 @@ def run_spec_check(*, args: argparse.Namespace) -> int:
     findings = run_spec_checks(
         items=load_items(repo=project_root),
         spec_root=spec_root,
+        project_root=project_root,
         manifest=load_manifest(project_root=project_root),
     )
     return _emit_check_findings(findings=findings, as_json=args.as_json, label="spec")
@@ -335,11 +259,21 @@ def dispatch_preamble(
     # declarations can join it, and ahead of the binary resolution below because
     # which client a dispatch drives is a property of the factory it is routed
     # to.
+    #
+    # The record-file generator grade is LAST and refuses nothing a repository
+    # left unwritten: the key is optional, and the one thing it decides is
+    # whether a refresh has an argv to run in place of merging a generated
+    # record file's text. An operator sent to fix it is editing a key that only
+    # a conflicted refresh would otherwise have read, which is several stages
+    # into a run.
     args.fabro_factory_target = _resolve_fabro_factory_for(args=args, repo=repo)
     config_refusal = (
         schema_validation_refusal(args=args, repo=repo)
         or sandbox_capabilities_refusal(repo=repo)
+        or explicit_factory_selection_refusal(args=args, repo=repo)
         or factory_declaration_refusal(factory=args.fabro_factory_target)
+        or overflow_factories_refusal(repo=repo)
+        or record_file_generators_refusal(repo=repo)
     )
     if config_refusal is not None:
         _ = write_stderr(text=config_refusal)

@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_terminal_routing
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
@@ -36,6 +37,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition im
     consecutive_stall_cancel_rows,
     dispose_stall_cancel,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
+    dispose_terminal_routing,
+)
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -101,7 +106,7 @@ def _item(**overrides: object) -> WorkItem:
     return replace(base, **overrides)
 
 
-def _outcome(*, status: str) -> DispatchOutcome:
+def _outcome(*, status: str, factory_name: str | None = None) -> DispatchOutcome:
     return DispatchOutcome(
         work_item_id=_ITEM_ID,
         status=status,
@@ -110,6 +115,7 @@ def _outcome(*, status: str) -> DispatchOutcome:
         merge_sha=None,
         detail="",
         fabro_run_id="01STALLRUN",
+        fabro_factory_name=factory_name,
     )
 
 
@@ -149,18 +155,21 @@ def test_an_unreadable_journal_yields_no_rows_rather_than_raising(tmp_path: Path
     assert consecutive_stall_cancel_rows(journal=JournalFile(path=tmp_path), item_id=_ITEM_ID) == ()
 
 
-def test_a_line_that_is_not_json_yields_no_rows(tmp_path: Path) -> None:
-    """A truncated or half-written journal reads as carrying no cancel row.
+def test_a_line_that_is_not_json_is_skipped_and_the_rows_around_it_are_kept(
+    tmp_path: Path,
+) -> None:
+    """A truncated or half-written line costs the journal that line and nothing else.
 
-    Asserted alongside a well-formed row in the SAME file so the case cannot
-    pass on a build that returns the empty tuple unconditionally: the
-    malformed line is what decides the answer, not the absence of any row.
+    The tail reader every journal reader now shares skips a line it cannot parse,
+    so one torn append no longer hides the cancel rows written either side of it.
+    Asserted with the malformed line BETWEEN two rows, so the case cannot pass on
+    a build that stops reading at the first bad line or drops the whole file.
     """
-    journal = _journal(tmp_path=tmp_path, lines=("{not json", _cancel_line(run_id="01A")))
-    assert consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID) == ()
-
-    well_formed = _journal(tmp_path=tmp_path / "ok", lines=(_cancel_line(run_id="01A"),))
-    assert len(consecutive_stall_cancel_rows(journal=well_formed, item_id=_ITEM_ID)) == 1
+    journal = _journal(
+        tmp_path=tmp_path,
+        lines=(_cancel_line(run_id="01A"), "{not json", _cancel_line(run_id="01B")),
+    )
+    assert len(consecutive_stall_cancel_rows(journal=journal, item_id=_ITEM_ID)) == 2
 
 
 def test_only_this_items_cancel_rows_are_returned(tmp_path: Path) -> None:
@@ -276,6 +285,93 @@ def test_a_terminal_that_is_not_a_cancellation_is_left_alone(tmp_path: Path) -> 
     )
     assert _stages(journal=journal) == []
     assert read_work_item_comments(path=_config(), work_item_id=_ITEM_ID) == ()
+
+
+def test_an_external_fabro_cancel_blocks_the_item_and_names_its_run_and_factory(
+    tmp_path: Path,
+) -> None:
+    """An operator cancellation rests for a human, unlike the watchdog status."""
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+
+    dispose_terminal_routing(
+        repo=repo,
+        item=_item(),
+        outcome=_outcome(status="cancelled", factory_name="hp"),
+        journal=journal,
+        now_iso="2026-10-19T03:22:00Z",
+    )
+
+    blocked = materialize_work_items(records=read_work_items(path=_config()))[_ITEM_ID]
+    assert blocked.status == "blocked"
+    assert blocked.blocked_reason == "needs-human"
+    comment = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)[0].text
+    assert "01STALLRUN" in comment
+    assert "hp" in comment
+
+
+def test_external_cancel_comment_failure_still_blocks_and_is_journaled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lost account must not strand an operator-cancelled item as active."""
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+
+    def _refuse_comment(**_kwargs: object) -> None:
+        raise BeadsCommandError(command="bd comment add", exit_code=1, stderr="refused")
+
+    monkeypatch.setattr(_dispatcher_terminal_routing, "append_work_item_comment", _refuse_comment)
+
+    dispose_terminal_routing(
+        repo=repo,
+        item=_item(),
+        outcome=_outcome(status="cancelled", factory_name="hp"),
+        journal=journal,
+        now_iso="2026-10-19T03:22:00Z",
+    )
+
+    blocked = materialize_work_items(records=read_work_items(path=_config()))[_ITEM_ID]
+    assert blocked.status == "blocked"
+    assert blocked.blocked_reason == "needs-human"
+    records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
+    error = next(
+        record for record in records if record.get("stage") == "external-fabro-cancel-comment-error"
+    )
+    assert error["work_item_id"] == _ITEM_ID
+    assert error["reason"] == "BeadsCommandError"
+
+
+def test_external_cancel_blocked_write_failure_is_journaled_and_never_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed transition records the ledger fault instead of aborting routing."""
+    repo = _repo(tmp_path=tmp_path)
+    journal = _journal(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+
+    def _refuse_block(**_kwargs: object) -> None:
+        raise WorkItemNotFoundError(item_id=_ITEM_ID)
+
+    monkeypatch.setattr(
+        _dispatcher_terminal_routing, "update_work_item_blocked_state", _refuse_block
+    )
+
+    dispose_terminal_routing(
+        repo=repo,
+        item=_item(),
+        outcome=_outcome(status="cancelled", factory_name="hp"),
+        journal=journal,
+        now_iso="2026-10-19T03:22:00Z",
+    )
+
+    records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
+    error = next(
+        record for record in records if record.get("stage") == "external-fabro-cancel-blocked-error"
+    )
+    assert error["work_item_id"] == _ITEM_ID
+    assert error["reason"] == "WorkItemNotFoundError"
 
 
 def test_fields_the_cancel_row_does_not_carry_are_stated_as_unread(tmp_path: Path) -> None:

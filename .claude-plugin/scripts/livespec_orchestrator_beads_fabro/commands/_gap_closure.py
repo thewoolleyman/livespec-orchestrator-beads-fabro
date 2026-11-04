@@ -25,13 +25,12 @@ from __future__ import annotations
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -141,8 +140,10 @@ def evaluate_gap_closure(
             drift_propose_change_recorded=False,
         )
     abs_path = project_root / check_path
-    check_passed = _run_check(abs_path=abs_path, negative_control=False) == 0
-    negative_control_failed = _run_check(abs_path=abs_path, negative_control=True) != 0
+    check_returncode = _run_check(abs_path=abs_path, negative_control=False)
+    negative_control_returncode = _run_check(abs_path=abs_path, negative_control=True)
+    check_passed = check_returncode == 0
+    negative_control_failed = negative_control_returncode not in {None, 0, 126, 127}
     baseline_blob = metadata.get(GAP_CHECK_BASELINE_BLOB_KEY)
     current_blob = _git_blob_hash(repo_root=project_root, rel_path=check_path)
     check_modified = (
@@ -197,11 +198,17 @@ def record_drift_propose_change(
     client.update_issue(issue_id=item_id, metadata=metadata)
 
 
-def _run_check(*, abs_path: Path, negative_control: bool) -> int:
-    argv = [sys.executable, str(abs_path)]
-    if negative_control:
-        argv.append(_NEGATIVE_CONTROL_FLAG)
-    completed = subprocess.run(argv, capture_output=True, check=False)  # noqa: S603
+def _run_check(*, abs_path: Path, negative_control: bool) -> int | None:
+    """Run an executable through its shebang, retaining legacy Python checks."""
+    try:
+        argv = (
+            [str(abs_path)] if abs_path.stat().st_mode & 0o111 else [sys.executable, str(abs_path)]
+        )
+        if negative_control:
+            argv.append(_NEGATIVE_CONTROL_FLAG)
+        completed = subprocess.run(argv, capture_output=True, check=False)  # noqa: S603
+    except OSError:
+        return None
     return completed.returncode
 
 

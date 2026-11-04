@@ -269,6 +269,27 @@ def test_run_action_approve_authorizes_manual_pending_item(
     }
 
 
+def test_run_action_approve_admits_a_pending_item_whose_policy_was_flipped_to_auto(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(
+        monkeypatch,
+        items=[_item(status="pending-approval", admission_policy="auto")],
+    )
+
+    result = run_action(repo=repo, action_id="approve:bd-ib-123", runner=_Runner(results=[]))
+
+    assert result["status"] == "green"
+    assert updates == [{"item_id": "bd-ib-123", "status": "ready", "assignee": None}]
+    assert result["journal"] == {
+        "actor": "operator",
+        "stage": "human-valve-approve",
+        "work_item_id": "bd-ib-123",
+    }
+
+
 def test_run_action_approve_is_not_blocked_by_full_wip_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

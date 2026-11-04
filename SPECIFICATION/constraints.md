@@ -22,8 +22,10 @@ Inherited (verbatim, NOT re-stated here):
   point.
 - Ruff rule set; Pyright strict mode plus the seven strict-plus
   diagnostics.
-- 100% line + branch coverage; pytest discipline; hypothesis
-  property-based test coverage on pure modules.
+- 100% line + branch coverage of first-party source; the coverage
+  `omit` list MUST exclude the test modules under `tests/`, as
+  livespec's omit-only blocklist excludes test scaffolding; pytest
+  discipline; hypothesis property-based test coverage on pure modules.
 - Conventional Commits subjects; rebase-merge-only master.
 - Lefthook pre-commit / commit-msg / pre-push step ordering.
 - Comment discipline (Ruff ERA; no historical references inline).
@@ -41,6 +43,16 @@ Inherited (verbatim, NOT re-stated here):
 This section refines the pre-push step ordering inherited from livespec; it adds no step and reorders none.
 
 **A deletion-only push skips the pre-push aggregate.** The repository's pre-push gate (`01-check-pre-push`, run through `just check-pre-push`) MUST read the ref updates git supplies on the hook's standard input, one per line as `<local ref> <local object id> <remote ref> <remote object id>`. When there is at least one line and every line's local object id consists only of zeros, the push only deletes refs: the gate MUST then exit zero without running the green-token check or the `just check` aggregate, and MUST print one line saying the gate was skipped because the push only deletes refs. Any other input, including no input at all and any push that creates or updates even one ref beside its deletions, MUST run the full gate exactly as before. The lefthook pre-push entry MUST pass the hook's standard input through to the gate. This skip MUST NOT be reachable by `--no-verify`, by an environment variable, or by any flag; the ref updates themselves are its only input. The repository's always-run ledger-conformance pre-push step (`02-ledger-conformance`) is a separate step this skip does not reach: it MUST still run on a deletion-only push, so the skip MUST live inside `just check-pre-push` and never at the lefthook level. Scenario 188 in `scenarios.md` exercises this section.
+
+**A green aggregate on the exact tree carries to its push.** When the `just check` aggregate passes, it MUST record a green verdict for the tree it checked, keyed on that commit's tree object id, even when it skipped declared targets. A verdict whose aggregate skipped targets MUST name them. A verdict vouches only for the targets that ran and passed and whose result the committed tree alone decides, the tree-pure members; a member that reads state outside the tree is never covered by a verdict. The pre-push gate MUST honour a recorded green verdict whose tree is byte-identical to the tree being pushed, with a clean worktree, in place of running again the members that verdict covers, MUST still run every member of the pre-push check set that reads state outside the tree and refuse the push when one fails, and MUST print one line naming the honoured verdict and every target the verdict skipped. A push whose tree differs from the recorded verdict's tree, such as a `publish_draft` push after its own refresh rebase onto a moved default branch, MUST run the full pre-push gate exactly as before. Like the deletion-only skip, honouring a verdict MUST NOT be reachable by `--no-verify`, by an environment variable or by any flag; the recorded verdict and the tree are its only inputs. Measured 2026-10-26: the factory janitor skips targets that cannot run in the sandbox, so it recorded no verdict, and each `publish_draft` pre-push re-ran the whole aggregate, about 24 minutes at two test workers, on the tree the janitor had just passed. Scenario 253 in `scenarios.md` exercises this paragraph.
+
+## Pre-commit staged pre-check
+
+This section refines the pre-commit step ordering inherited from livespec; it adds one leading step, runs a Green amend's staged tests ahead of the other tests its gate runs, and reorders nothing else.
+
+**Staged Python files are linted and type-checked before the pre-commit aggregate.** The repository's pre-commit hook MUST run `python -m livespec_dev_tooling.workflow_checks.staged_precheck` after any early exit for a commit that stages no Python file, and before any member of its pre-commit aggregate starts. That pre-check lints the staged added or modified Python files and type-checks those the repository's pyright configuration covers. When it reports a type-checker error, or a lint error the lint autofix step does not fix, the hook MUST refuse the commit, naming each file, line and rule, before the pre-commit aggregate starts. When the staged Python files pass, the commit MUST proceed to the pre-commit aggregate, which runs exactly as before. Like the pre-push refinements above, the pre-check MUST NOT be skippable by an environment variable or a flag. The full aggregate still runs at pre-push and in CI, so the pre-check moves a refusal earlier without narrowing what gates a merge.
+
+**A Green amend runs its staged tests before the rest of its gate's tests.** A commit is a Green amend when it stages at least one implementation file and `HEAD` carries Red-only red-green-replay trailers, whoever makes it: the implement stage's `commit_green` node or a commit made by hand on a host. For a Green amend the pre-commit hook MUST, after the staged pre-check passes, run the test files the amend stages together with the test files `HEAD`'s commit adds or modifies, and these staged tests MUST finish before any other test-running member of the gate the commit runs starts: the whole-suite members of the pre-commit aggregate, or the scoped tests of the affected-tests gate where "An implement or review_fix turn's commits run the affected-tests gate" in `contracts.md` selects that gate. The staged tests run as the first step of the gate's pytest lane, so where the aggregate runs its independent targets concurrently, per "The check aggregate runs its independent targets concurrently" in `contracts.md`, those targets still run beside them and only the remaining test-running members wait for them. When any staged test fails, the hook MUST refuse the commit naming each failing test, MUST NOT start any further test-running member, and MUST still report the verdict of every independent target that ran beside the staged tests. When they pass, the hook MUST run the rest of that gate exactly as before, once, so a Green amend whose gate is the pre-commit aggregate still runs its whole-suite coverage members once. The hook's output MUST state which phase refused a commit: the staged pre-check, the staged tests, or the gate. Like the pre-check, this phase MUST NOT be skippable by an environment variable or a flag, and it narrows nothing: every test-running member the commit's gate ran before still runs once the staged tests pass. Scenario 289 in `scenarios.md` exercises this paragraph.
 
 ## Beads substrate constraints
 
@@ -65,6 +77,16 @@ This section refines the pre-push step ordering inherited from livespec; it adds
   guard's private delegate executable. A repository's mise configuration
   MUST NOT declare or install `bd`, because an activated mise tool or
   regenerated shim can shadow the guard.
+- The lifecycle guard's test harness starts a throwaway loopback capture
+  server for its telemetry cases. When starting it, the harness MUST wait
+  until the server has written its port file, the server process has exited,
+  or 30 seconds have elapsed, whichever comes first; it MUST NOT fail a
+  telemetry case only because the server took longer than two seconds to
+  write its port file. When the server has not written its port file by the
+  end of that wait, the harness MUST fail the case with a line naming the
+  capture server's exit status (or that it was still running at the bound)
+  and its captured standard error, and MUST stop any capture server process
+  it started.
 - Server-mode auto-commit stays OFF and `bd config dolt.auto-start` is
   `false`. The plugin MUST NOT re-enable per-write commits and MUST NOT
   start, stop, or otherwise own the externally-managed server lifecycle
@@ -164,6 +186,21 @@ allowed to pin.
   `origin/factory-integration`. `fabro --version` is the command that
   identifies the serving build for the rules above; the release and
   disposition evidence below decides its currency.
+- **Fork gate and build venue.** A push to, or a pull request against, a
+  carrier branch of the fork (any branch a pinned factory build is cut
+  from) MUST run the fork's Rust format, clippy and test gates on the
+  fleet's self-hosted ARC k3s runner capacity, so the pull request's
+  status rollup carries their verdicts; a carrier-branch pull request
+  with no such checks MUST NOT be read as green. The release binary a
+  factory build pins MUST be built on that capacity, by a GitHub
+  workflow or a k3s Job, from a named carrier ref, and published with a
+  `BUILD_INFO` naming the source ref and commit; producing it MUST NOT
+  require a build on the dev host. A fork gate or build on the dev host
+  is permitted only as an explicit fallback while the cluster venue is
+  unavailable, at `nice -n 19` with `CARGO_BUILD_JOBS=4`, and the work
+  item that used it MUST record the fallback. The hand-build guidance
+  (`.ai/fabro-fork-hand-build.md`) names the cluster venue, under the
+  runbook-lockstep rule below.
 - **Currency evidence.** Each currency evaluation MUST record the
   upstream release-tag survey and its observation time, the ancestry from
   the serving integration commit to the exact selected base tag, that
@@ -385,6 +422,29 @@ on the same host as a queue drain, so both are bound identically.
   verdict.** An item whose scope only PARTLY requires a withheld capability
   SHOULD be considered for decomposition, so the portion the sandbox can
   publish is not refused along with the portion it cannot.
+- **A command's program, arguments and environment reach the sandbox
+  through the exec stream, never through the exec request URL.** A
+  "sandbox driver" here means any execution backend the factory uses to
+  start a command inside a factory sandbox on the engine's behalf (a
+  Docker driver, a Kubernetes driver, or any later one). Every sandbox
+  driver the factory uses MUST deliver each command's program, its
+  arguments and its environment entries, including every projected
+  credential, through the exec session's input stream, or through a file
+  the driver writes over that stream before the command starts. A driver
+  MUST NOT carry any of them in the URL, query string or other request
+  line of the call that opens the exec session. Two properties follow
+  and both are REQUIRED: the length of that request MUST NOT grow with
+  the size of the command's program, arguments or environment values, so
+  a large prepare step is not bounded by any proxy or API-server URL
+  limit; and no credential value appears in a request URI, which is what
+  API-server audit logs and proxy access logs record. A command that
+  reads its own standard input MUST still receive that input unchanged
+  after the driver's framing. When a driver fails to open an exec session
+  without an HTTP status, its error MUST carry the underlying transport
+  error text rather than only a generic "could not reach the API"
+  message. A driver observed placing a credential value in an exec
+  request URL is a violation of this section regardless of whether the
+  run subsequently succeeded.
 
 **Verification.** For each capability withheld under this section, the
 governing check is that the factory sandbox's credential does not hold it and
@@ -480,8 +540,12 @@ capability is a violation regardless of run outcome.
   §"Store-write consent discipline"). Waivers are explicit,
   class-named, and invocation-scoped — never a default.
 - The Dispatcher's machine-path dispositions of already-filed items
-  (the lifecycle verbs admit / complete / accept / reject, the `backlog` bounce, and — when the effective `admission_policy` is `auto` (via `dispatcher.auto_approve_ready` or a per-item label) — the auto-approve disposition, with `complete` carrying PR + merge-sha audit evidence) are the SOLE exemption from the store-write consent
-  discipline; `--no-close-on-merge` disables the post-merge disposition
+  (the lifecycle verbs admit / complete / accept / reject, the `backlog` bounce, and — when the effective `admission_policy` is `auto` (via `dispatcher.auto_approve_ready` or a per-item label) — the auto-approve disposition, with `complete` carrying PR + merge-sha audit evidence) and the detection-coverage self-bookkeeping on the designated anchor
+  — the attempt, completed-coverage and held-finding records that
+  `capture-impl-gaps`, `capture-spec-drift` and the Dispatcher's drift run
+  append (`contracts.md` §"Detection coverage records and staleness
+  facts" → "The self-bookkeeping exception, scoped") — are the SOLE
+  exemptions from the store-write consent discipline; `--no-close-on-merge` disables the post-merge disposition
   writes entirely. The Dispatcher MUST
   NOT create net-new work-items.
 
@@ -597,8 +661,9 @@ that signal SHOULD be recorded — but the escalation stands regardless.
 - **Priority edits** — changing a work-item's priority or rank.
 - **Plan-child disposition** — closing a plan child, or moving one to a
   different parent. This admits ONLY a child whose autonomy tier is not
-  spec-change. A child whose autonomy tier IS spec-change is a
-  design-human-gated slice routed through `/livespec:propose-change`
+  spec-change. A child whose autonomy tier IS spec-change, and which is still held for
+  its linked proposal's ratification, is a design-human-gated slice routed
+  through `/livespec:propose-change`
   (`contracts.md` §"Dispatcher policy settings", `spec.md`
   §"Terminology"); its disposition — closure or re-parenting alike —
   MUST stay escalated and MUST NOT be taken by the session. That refusal
@@ -609,19 +674,20 @@ that signal SHOULD be recorded — but the escalation stands regardless.
   read off `spec_commitment_hint`. Those two are near-opposites: a
   non-null `spec_commitment_hint` marks an impl FOLLOW-UP to an
   ALREADY-RATIFIED change (`contracts.md` §"Work-item beads-issue
-  mapping"), which is ordinary dispatchable work whose disposition this
-  bullet admits; a spec-change slice precedes ratification and therefore
-  carries NO such hint. An implementation that gates disposition on the
+  mapping"), which is ordinary dispatchable work whose disposition this bullet admits
+  when the spec-stated judgement reports its asked-for behaviour `stated`;
+  a spec-change slice is decided by that judgement and is held until its
+  OWN linked proposal ratifies, whether or not it also carries a hint from
+  an earlier ratified change. An implementation that gates disposition on the
   hint being non-null gates the wrong set in both directions, and does
   not satisfy this clause.
 
-  The autonomy tier has NO ratified ledger representation today:
-  `contracts.md` §"Work-item beads-issue mapping" maps no tier field or
-  label, so the tier is assigned at intake and not stored. Until a
-  queryable representation is chosen and ratified — tracked as work-item
-  `bd-ib-yykjko`, which owns that decision — an implementation MUST
-  fail CLOSED: where it cannot determine a child's autonomy tier from a
-  ratified datum, it MUST refuse the disposition and surface it, and it
+  The autonomy tier is DECIDED by the spec-stated judgement and recorded
+  on the item at classification (`contracts.md` §"Grooming and slice-size
+  calibration", touchpoint 1), in the persisted shape livespec-runtime's
+  `livespec_runtime.spec_stated` declares. An implementation MUST fail
+  CLOSED: where it cannot determine a child's autonomy tier from that recorded
+  classification, it MUST refuse the disposition and surface it, and it
   MUST NOT substitute `spec_commitment_hint` for the missing datum.
   Refusing an admissible disposition costs an escalation; admitting an
   inadmissible one silently disposes of a spec-change slice.
@@ -715,6 +781,19 @@ deficient record to be cured rather than a decision to be taken.
   dangerous value, MUST NOT auto-dispose a truly-unresolvable decision, MUST
   NOT create net-new work-items, and MUST bound every rework loop by its
   configured cap; every auto-disposition MUST be journaled.
+- No real-time sleeps or wall-clock verdicts in tests. A test under
+  `tests/` MUST NOT wait for a condition by sleeping in real time
+  (`time.sleep`), and MUST NOT decide pass or fail on a real wall-clock
+  elapsed reading (a difference of `time.monotonic`, `time.perf_counter`
+  or `time.time` values, or thread-start timing). It MUST instead advance
+  an injected clock or wait on a deterministic event (a joined thread, a
+  set `threading.Event`, a written file, a child's exit). A wall-clock
+  wait that remains MAY exist only as a liveness guard against a hang,
+  never as the condition that decides the verdict. A check in the
+  `just check` aggregate MUST refuse a test file that violates this rule,
+  naming each offending file and line, and MUST honour an explicit
+  per-line exemption marker that carries a written reason, for a test
+  whose subject is real time itself.
 
 ## Governed-repository integration constraints
 

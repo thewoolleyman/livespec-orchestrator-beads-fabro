@@ -2,13 +2,22 @@
 
 TWO FIGURES, ONE DERIVATION, AND THE RELATION BETWEEN THEM IS THE WHOLE POINT.
 
-`CredentialLifetimeRequirement` carries the resolved workflow's execution
-ALLOWANCE and the documented safety MARGIN. The dispatch freshness gate demands
-their sum; the worker's credential-use DEADLINE is the allowance alone, measured
-from the instant the credential was projected. A credential admitted by the gate
-therefore outlives the deadline by at least the margin, which is what makes the
-deadline a bound the credential can always reach rather than one it might expire
-before.
+`CredentialLifetimeRequirement` carries the two candidate run budgets and the
+documented safety MARGIN. The worker's maximum run budget is the SMALLER of
+them — see `_dispatcher_credential_window` for why, and for what the alternative
+cost. The dispatch freshness gate demands that figure plus the margin; the
+worker's credential-use DEADLINE is that figure alone, measured from the instant
+the credential was projected. A credential admitted by the gate therefore
+outlives the deadline by at least the margin, which is what makes the deadline a
+bound the credential can always reach rather than one it might expire before.
+
+WHY THE GOVERNING FIGURE IS A PROPERTY AND NOT A FIELD. Every consumer — the
+host gate, the overlay at projection, the in-sandbox guard's inputs, both
+operator surfaces — needs ONE number, and the clause requires them all to use
+the same one. A field a caller filled would be a field a caller could fill with
+the allowance alone, which is exactly the pre-v177 behaviour, and nothing in the
+resulting figure would say so. Deriving it here means a caller that holds a
+requirement cannot hold the wrong budget.
 
 WHY AN ALLOWANCE IS NOT ENOUGH ON ITS OWN, and why this module exists rather
 than a bare integer. A sum of separately-bounded sub-operations is not a
@@ -50,6 +59,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_window import (
+    GoverningRunBudget,
+    governing_run_budget,
+)
+
 __all__: list[str] = [
     "CredentialLifetimeRequirement",
     "credential_use_deadline_epoch",
@@ -59,27 +73,69 @@ __all__: list[str] = [
 
 @dataclass(frozen=True, kw_only=True)
 class CredentialLifetimeRequirement:
-    """One workflow's resolved credential requirement, with the evidence for it.
+    """One dispatch's resolved credential requirement, with the evidence for it.
+
+    - `execution_allowance_seconds` -- the sum the selected graph asks for.
+    - `credential_use_window_seconds` -- the queue allowance plus the whole-run
+      wall budget resolved for the same dispatch.
+    - `credential_queue_allowance_seconds` -- the queue half of that window,
+      carried SEPARATELY because the status surfaces report queue time consumed
+      against it and a reader cannot recover an addend from a sum.
+    - `margin_seconds` -- the documented safety margin.
 
     `detail` is carried rather than rebuilt by each consumer because it names
     the CONFIGURATION behind the figure -- which workflow, which allowance,
-    which per-attempt overhead -- and an operator told only a number has no
-    route back to the keys that produced it.
+    which per-attempt overhead, which of the two figures governed -- and an
+    operator told only a number has no route back to the keys that produced it.
     """
 
-    allowance_seconds: int
+    execution_allowance_seconds: int
+    credential_use_window_seconds: int
+    credential_queue_allowance_seconds: int
     margin_seconds: int
     detail: str
+
+    @property
+    def governing(self) -> GoverningRunBudget:
+        """The worker's maximum run budget, and the name of the figure that set it."""
+        return governing_run_budget(
+            execution_allowance_seconds=self.execution_allowance_seconds,
+            credential_use_window_seconds=self.credential_use_window_seconds,
+        )
+
+    @property
+    def allowance_seconds(self) -> int:
+        """The governing figure, which every enforcing surface uses.
+
+        KEPT UNDER THE OLD NAME deliberately. Six surfaces read it -- the host
+        gate, the overlay, the projection, the guard's inputs and both operator
+        commands -- and all six wanted the governing figure both before and
+        after v177. Renaming it would have made each of those a site where the
+        wrong figure could be reached; leaving it means the smaller-of-two rule
+        arrives at every one of them without any of them asking.
+        """
+        return self.governing.seconds
+
+    @property
+    def governing_figure(self) -> str:
+        """Which of the two figures bounded this dispatch, by name.
+
+        Reported rather than merely measured because the two have OPPOSITE
+        remedies: an allowance-bounded dispatch is shortened by reducing a node
+        timeout or a visit cap, a window-bounded one is widened by raising
+        `dispatcher.credential_queue_allowance_seconds` or the wall budget.
+        """
+        return self.governing.figure
 
     @property
     def required_seconds(self) -> int:
         """The usable lifetime the freshness gate demands of a credential.
 
-        The margin sits ON TOP of the allowance rather than inside it: the
-        allowance bounds credential USE, and the margin is the separation
+        The margin sits ON TOP of the governing figure rather than inside it:
+        that figure bounds credential USE, and the margin is the separation
         between a rotation and the work depending on it. Folding the margin
-        into the allowance would move the enforced deadline too, spending the
-        separation on execution instead of keeping it as headroom.
+        into it would move the enforced deadline too, spending the separation on
+        execution instead of keeping it as headroom.
         """
         return self.allowance_seconds + self.margin_seconds
 

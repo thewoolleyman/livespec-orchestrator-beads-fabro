@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_records import (
     parse_hold_instant,
     parse_hold_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -128,6 +129,9 @@ class AcpHoldLedger:
     holds: tuple[AcpAvailabilityHold, ...]
     unobservable: tuple[Mapping[str, object], ...]
     observation_ids: frozenset[str]
+    # Expiry ends the live hold but does not establish recovery. These records
+    # remain available to the post-expiry confirmation filter.
+    expired_holds: tuple[AcpAvailabilityHold, ...] = ()
     unconfirmed_keys: frozenset[str] = frozenset()
     # Every id a retirement or clearance line NAMES, carried because the fold
     # above can only apply them to the records this journal also carries. A
@@ -159,15 +163,14 @@ def read_acp_hold_ledger(*, journal_path: Path | None, now_iso: str) -> AcpHoldL
         # FIRST WRITE WINS: a re-ingested observation must not refresh
         # the stored expiry, which is what makes projection idempotent.
         _ = observations.setdefault(parsed.observation_id, parsed)
-    live = tuple(
-        hold
-        for key, hold in observations.items()
-        if key not in retired and not hold_expired(hold=hold, now_iso=now_iso)
-    )
+    standing = tuple(hold for key, hold in observations.items() if key not in retired)
+    live = tuple(hold for hold in standing if not hold_expired(hold=hold, now_iso=now_iso))
+    expired = tuple(hold for hold in standing if hold_expired(hold=hold, now_iso=now_iso))
     return AcpHoldLedger(
         holds=live,
         unobservable=tuple(unobservable),
         observation_ids=frozenset(seen),
+        expired_holds=expired,
         retired_observation_ids=frozenset(retired),
     )
 
@@ -294,6 +297,9 @@ def _records(*, journal_path: Path | None) -> tuple[Mapping[str, Any], ...]:
     truncated line -- a crash mid-append -- must not make the whole hold
     ledger unreadable and send work at a live outage.
     """
+    snapshot = snapshot_records(journal_path=journal_path)
+    if snapshot is not None:
+        return snapshot
     if journal_path is None or not journal_path.is_file():
         return ()
     records: list[Mapping[str, Any]] = []

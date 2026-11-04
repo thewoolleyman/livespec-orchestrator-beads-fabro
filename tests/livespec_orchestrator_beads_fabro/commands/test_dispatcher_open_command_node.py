@@ -23,12 +23,14 @@ reason that conflation is safe is recorded on `LivenessSample`.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_open_command_node import (
     COMMAND_NODES,
     open_command_node,
+    updated_open_command_node,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_NODE_TIMEOUT_SECONDS,
@@ -57,6 +59,29 @@ def _stream(*records: str) -> str:
     return f"[{', '.join(records)}]"
 
 
+def _petri_command_event(*, event: str, node: str) -> str:
+    """One Petri-era envelope for a COMMAND-node lifecycle event."""
+    return json.dumps(
+        {
+            "item": {
+                "record": {"body": {"event": event}},
+                "subject": {"node": {"name": node, "kind": "attractor/command"}},
+            }
+        }
+    )
+
+
+def test_a_petri_started_command_node_is_open_with_its_resolved_timeout() -> None:
+    """Petri's nested `step.started` names the command whose bound protects it."""
+    reading = open_command_node(
+        events_json=_stream(_petri_command_event(event="step.started", node="janitor")),
+        timeouts=DEFAULT_NODE_TIMEOUTS,
+    )
+    assert reading is not None
+    assert reading.node == "janitor"
+    assert reading.timeout_seconds == float(DEFAULT_NODE_TIMEOUT_SECONDS)
+
+
 def test_command_nodes_are_exactly_the_graphs_script_nodes() -> None:
     # The set is a claim ABOUT the committed graph, so it is checked against
     # it: a name this tuple misses is a node whose open stretch is graded
@@ -68,6 +93,8 @@ def test_command_nodes_are_exactly_the_graphs_script_nodes() -> None:
     declared = {
         match.group("node") for match in _NODE_BLOCK.finditer(text) if "script=" in match.group(0)
     }
+    assert "review_fix_admission" in declared
+    assert "review_fix_admission" in COMMAND_NODES
     assert declared == set(COMMAND_NODES)
     # And the ACP nodes are absent, which is the other half of the claim: a
     # run inside one emits agent events throughout, so widening its bound
@@ -274,3 +301,52 @@ def test_an_unreadable_stream_is_no_open_node() -> None:
 
 def test_an_empty_stream_is_no_open_node() -> None:
     assert open_command_node(events_json="[]", timeouts=DEFAULT_NODE_TIMEOUTS) is None
+
+
+def test_an_incremental_stream_updates_an_established_command_node() -> None:
+    """A delta is not a complete stream, so only its own lifecycle facts change state."""
+    established = open_command_node(
+        events_json=_stream(_event(name="stage.started", node="janitor")),
+        timeouts=DEFAULT_NODE_TIMEOUTS,
+    )
+    assert established is not None
+
+    assert (
+        updated_open_command_node(
+            established=established,
+            events_json="not-json",
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        == established
+    )
+    current = updated_open_command_node(
+        established=None,
+        events_json=_stream(_event(name="stage.started", node="publish_draft")),
+        timeouts=DEFAULT_NODE_TIMEOUTS,
+    )
+    assert current is not None
+    assert current.node == "publish_draft"
+    assert (
+        updated_open_command_node(
+            established=established,
+            events_json=_stream(_event(name="stage.completed", node="janitor")),
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        is None
+    )
+    assert (
+        updated_open_command_node(
+            established=established,
+            events_json="[]",
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        == established
+    )
+    assert (
+        updated_open_command_node(
+            established=None,
+            events_json="[]",
+            timeouts=DEFAULT_NODE_TIMEOUTS,
+        )
+        is None
+    )

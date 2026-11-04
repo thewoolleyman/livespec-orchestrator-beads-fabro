@@ -24,6 +24,9 @@ from livespec_orchestrator_beads_fabro.commands import (
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop as loop_module
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_overlay as overlay_module
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_watch_poll as poll_module,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
@@ -38,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declarat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    DEFAULT_RUN_WALL_BUDGET,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     COMMITTED_RUN_CONFIG_IMAGE,
@@ -56,7 +62,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import 
     DEFAULT_STALL_WINDOW,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation import (
+    ObservedRun,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroRunSummary
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+)
 
 _REVIEW_VAULT_KEY = "LIVESPEC_DISPATCH_REVIEW_GITHUB_TOKEN"
 
@@ -194,6 +206,12 @@ def test_factory_authentication_precedes_vault_materialization(
     plan = SimpleNamespace(
         review_fix_visit_cap=4,
         branch="feat/review-fix",
+        # The whole-run wall budget this dispatch resolved. A REAL budget rather
+        # than an omission for the reason the resolved contract below is real:
+        # the watch loop grades every running poll against it, so a double that
+        # carries none fails on its own shape rather than on the ORDER this case
+        # is about.
+        run_wall_budget=DEFAULT_RUN_WALL_BUDGET,
         # A REAL resolved contract rather than a bare `object()`. The overlay leg
         # now reads one more answer off it — whether the gitignored
         # worktree-discipline pack is a premise of this sandbox — and a double that
@@ -204,6 +222,14 @@ def test_factory_authentication_precedes_vault_materialization(
         ),
         acp_nodes=None,
         fabro_factory_name="candidate",
+        # That factory's declared catalog environment, which keys the overlay's
+        # env table. None is a factory declaring none and is the neutral answer
+        # here for the same reason the image source below is: this case is about
+        # the ORDER of the factory login against the first vault store, and a
+        # double missing the field fails on its absence rather than on that
+        # order (bd-ib-kyeor4).
+        fabro_factory_environment=None,
+        fabro_factory_github_app=NO_FACTORY_GITHUB_APP,
         # The resolved client build the dispatch hands the materializer, which
         # decides how the written config names its graph. None is the pinned
         # posture and the neutral one for this case: it is about the ORDER of
@@ -273,7 +299,7 @@ def test_factory_authentication_precedes_vault_materialization(
             acceptance_criteria=None,
         ),
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
-        janitor=None,
+        launch=loop_module.DispatchLaunchContext(),
     )
     assert outcome.status == "failed"
     assert events == ["factory-auth", "vault-materialization"]
@@ -326,7 +352,9 @@ def test_same_factory_vault_writes_wait_for_the_prior_worker_snapshot() -> None:
     # proves the thread was genuinely attempting the store rather than never run.
     second_was_blocked = not second_entered.wait(timeout=0.1)
     getattr(first, "release_launch_guard", lambda: None)()
-    thread.join(timeout=2.0)
+    # A hang guard: the release above is what ends the second store, so the
+    # join waits on that event and the timeout never decides the verdict.
+    thread.join(timeout=30.0)
     getattr(second, "release_launch_guard", lambda: None)()
 
     assert second_was_blocked
@@ -359,19 +387,23 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
         )
     )
 
-    def discover(**_: object) -> FabroRunSummary:
+    def discover(**_: object) -> ObservedRun:
         run = next(discovered)
         events.append(run.status_kind)
-        return run
+        # The poll's observation, which carries the run AND the record the
+        # read returned; this double names no record, which is what the
+        # listing route reports and what a per-run read carrying no running
+        # instant reports.
+        return ObservedRun(run=run, record=None)
 
     launcher = WatchedFabroLauncher(
         sleep=lambda _seconds: None,
         clock=lambda: 0.0,
         on_worker_running=lambda: events.append("released"),
     )
-    monkeypatch.setattr(launcher_module, "observed_run", discover)
+    monkeypatch.setattr(poll_module, "observed_run", discover)
     monkeypatch.setattr(
-        launcher_module,
+        poll_module,
         "stamped_attribution",
         lambda **kwargs: kwargs["attribution"],
     )
@@ -385,6 +417,11 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
             repo=Path("/workspace/repo"),
             work_item_id="bd-ib-review",
             stall_window=DEFAULT_STALL_WINDOW,
+            # The whole-run wall budget every running poll is graded against.
+            # A REAL budget rather than an omission: the loop grades it before
+            # the stall arm, so a double carrying none fails on its own shape
+            # rather than on the release boundary this case is about.
+            run_wall_budget=DEFAULT_RUN_WALL_BUDGET,
         ),
         runner=cast("CommandRunner", object()),
         journal=cast("JournalWriter", object()),

@@ -58,3 +58,13 @@ as the self-wake follow-up in the reload waiter above. A helper or new plan sess
 start gets its whole job as the agent's launch argument instead (the brief-file command line
 in rule 2, or a trailing prompt after the agent's own flags), so nothing is typed into its
 pane afterwards; reach a Claude helper later by `SendMessage`.
+
+A Codex TUI pane is a sharper case of the busy-pane rule above:
+`herdr pane send-text <pane> "..."` followed by `herdr pane send-keys <pane>
+enter` did NOT submit, because Codex takes the text as a paste and the Enter
+does not send it. Measured 2026-10-12: three messages stacked unsent in another
+session's Codex composer, which the maintainer found as debris. If a pane must
+be typed into at all, read it back with `herdr pane read <pane> | tail`
+straight afterwards and confirm the composer is empty; `herdr pane send-keys
+<pane> ctrl+c` clears a stuck Codex composer. Never leave text in another
+session's pane. Migrated from an auto-memory note on 2026-10-18.

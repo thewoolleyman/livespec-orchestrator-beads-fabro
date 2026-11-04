@@ -11,6 +11,17 @@ declared one ceiling in the environment and another in a settings file would
 have no way to say which the harness obeyed, and splitting them across modules
 is how two of them come to name different values.
 
+IT ALSO INSTALLS THE PLUGIN-CACHE GATE'S IN-SESSION RE-ENTRY, which is a second
+concern in one file and is deliberate: this module is the ONE WRITER of
+`settings.local.json`, and the harness rewrites that same file while the run is
+driving (the live sandbox measured on 2026-10-16 held 29 `permissions.allow`
+entries it had written itself). A second prepare step merging into it would be a
+second authority on a document both have to preserve. The hook DECLARATION
+therefore stays where its program and its markers are, in
+`_dispatcher_plugin_cache_gate`, and only the install lives here -- so what this
+module owns is still one thing, the sandbox-local settings source, rather than
+two policies.
+
 WHY A FILE, when the env table already projects the same keys into the sandbox
 PROCESS environment and they demonstrably arrive. The sandbox agent is
 `@agentclientprotocol/claude-agent-acp`, which starts the Claude harness with
@@ -74,6 +85,18 @@ from __future__ import annotations
 
 import json
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
+    plugin_gate_session_hook_declaration,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_guard_command,
+    render_prepare_step,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
+    review_guard_hook_declaration,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
     worktree_exclude_script,
 )
@@ -112,6 +135,7 @@ _HARNESS_SHELL_ENV: tuple[tuple[str, str], ...] = (
     ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
     ("BASH_DEFAULT_TIMEOUT_MS", "600000"),
     ("BASH_MAX_TIMEOUT_MS", "3600000"),
+    ("LIVESPEC_TEST_PARALLELISM", "4"),
 )
 
 # The `local` settings source, spelled RELATIVE to the clone root, because the
@@ -145,6 +169,7 @@ SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION = (
 HARNESS_SETTINGS_MARKER = "livespec-sandbox-harness-settings"
 
 _ENV_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_ENV_DECLARATION"
+_HOOKS_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_HOOKS_DECLARATION"
 _MARKER_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_MARKER_DECLARATION"
 
 # The stdlib-only merge program, substituted host-side and run by the prepare
@@ -157,7 +182,51 @@ import pathlib
 import sys
 
 ENV = LIVESPEC_HARNESS_SETTINGS_ENV_DECLARATION
+HOOKS = LIVESPEC_HARNESS_SETTINGS_HOOKS_DECLARATION
 MARKER = LIVESPEC_HARNESS_SETTINGS_MARKER_DECLARATION
+
+# Which matcher groups of an event's list are THIS projection's own, derived
+# from the declaration above rather than named a second time: a dropped record
+# would make the install append beside its own previous entry, and a record
+# naming more than it installed would discard a governed repository's hook.
+OWN_COMMANDS = {
+    str(one.get("command"))
+    for groups in HOOKS.values()
+    for group in groups
+    for one in group.get("hooks", [])
+    if isinstance(one, dict)
+}
+
+
+# Whether one matcher group carries a command this projection installs.
+def is_own_group(group):
+    if not isinstance(group, dict):
+        return False
+    entries = group.get("hooks")
+    if not isinstance(entries, list):
+        return False
+    return any(isinstance(one, dict) and str(one.get("command")) in OWN_COMMANDS
+               for one in entries)
+
+
+# The hook table with this projection's groups REPLACED, never appended to.
+#
+# Additive and idempotent are two different failures of one write, and the
+# obvious implementation of either defeats the other. The harness rewrites this
+# file while the run is driving and a governed repository may declare hooks of
+# its own, so replacing an event's whole group list would discard them; a bare
+# append would instead stack a duplicate of this projection's own group every
+# time the prepare pass runs. So every FOREIGN group of the event is kept, every
+# group this projection recognises as its own is dropped, and the current
+# declaration is appended once.
+def merged_hooks(inherited):
+    merged = dict(inherited) if isinstance(inherited, dict) else {}
+    for event in HOOKS:
+        existing = merged.get(event)
+        kept = [one for one in existing if not is_own_group(one)]\\
+            if isinstance(existing, list) else []
+        merged[event] = kept + list(HOOKS[event])
+    return merged
 
 path = pathlib.Path(sys.argv[1])
 document = {}
@@ -178,6 +247,7 @@ inherited = document.get("env")
 merged = dict(inherited) if isinstance(inherited, dict) else {}
 merged.update(ENV)
 document["env"] = merged
+document["hooks"] = merged_hooks(document.get("hooks"))
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(document, indent=2) + "\\n", encoding="utf-8")
 sys.stdout.write(MARKER + ": " + str(path) + "\\n")
@@ -196,6 +266,20 @@ def harness_shell_env_lines() -> str:
     return "".join(f"{name} = {json.dumps(value)}\n" for name, value in _HARNESS_SHELL_ENV)
 
 
+def _session_hook_declaration() -> dict[str, list[dict[str, object]]]:
+    """Every in-session hook this projection installs, grouped by event.
+
+    The plugin-cache gate's REPAIR and the review turn's GUARD are two hooks on
+    one event; the merge program's own-group recognition keys on each command,
+    so both are replaced in place on a re-run rather than stacked.
+    """
+    merged: dict[str, list[dict[str, object]]] = {}
+    for declaration in (plugin_gate_session_hook_declaration(), review_guard_hook_declaration()):
+        for event, groups in declaration.items():
+            merged.setdefault(event, []).extend(groups)
+    return merged
+
+
 def harness_settings_merge_program() -> str:
     """The merge program, carrying the policy keys as the members it will write.
 
@@ -208,12 +292,14 @@ def harness_settings_merge_program() -> str:
 
     `json.dumps` with an indent keeps the declaration a readable Python literal
     (a JSON object of strings IS one), and it is also what guarantees the
-    substituted text cannot close the heredoc or the TOML string that carry it.
+    substituted text cannot close the TOML string that carries it.
     """
     declared = json.dumps(dict(_HARNESS_SHELL_ENV), indent=4)
-    return _MERGE_PROGRAM.replace(_ENV_PLACEHOLDER, declared).replace(
-        _MARKER_PLACEHOLDER,
-        json.dumps(HARNESS_SETTINGS_MARKER),
+    hooks = json.dumps(_session_hook_declaration(), indent=4)
+    return (
+        _MERGE_PROGRAM.replace(_ENV_PLACEHOLDER, declared)
+        .replace(_HOOKS_PLACEHOLDER, hooks)
+        .replace(_MARKER_PLACEHOLDER, json.dumps(HARNESS_SETTINGS_MARKER))
     )
 
 
@@ -263,10 +349,10 @@ def harness_settings_prepare_steps_block() -> str:
         "fi\n"
         f'settings="$toplevel/{SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH}"\n'
         'mkdir -p "$(dirname "$settings")"\n'
-        "python3 - \"$settings\" <<'PY'\n"
-        f"{harness_settings_merge_program()}"
-        "PY"
+        f"{payload_guard_command()}\n"
+        f'printf %s "${PAYLOAD_ENV_VAR}" | python3 - "$settings"'
     )
+    step = PrepareStep(script=script, env={PAYLOAD_ENV_VAR: harness_settings_merge_program()})
     lines = [
         "",
         "# --- Dispatcher-materialized harness settings: the sandbox agent loads",
@@ -276,7 +362,6 @@ def harness_settings_prepare_steps_block() -> str:
         "[[run.prepare.steps]]",
         f"script = {json.dumps(exclude)}",
         "",
-        "[[run.prepare.steps]]",
-        f"script = {json.dumps(script)}",
+        render_prepare_step(step=step).rstrip("\n"),
     ]
     return "\n".join(lines) + "\n"

@@ -16,7 +16,7 @@ fi
 # ⛔ THE OLD LINE DISCARDED THE DISTINCTION EVEN WHEN PYTHON HAD IT: `2>/dev/null`
 # plus a bare empty-array fallback mapped every failure onto "no wrapper". That is
 # why fixing the Python alone would have changed nothing observable.
-mapfile -t probe < <(uv run python -c 'import sys; sys.path.insert(0, ".claude-plugin/scripts"); from pathlib import Path; from returns.io import IOFailure; from returns.unsafe import unsafe_perform_io; from livespec_orchestrator_beads_fabro.commands._config import resolve_credential_wrapper; o = resolve_credential_wrapper(cwd=Path(".")); print("UNREADABLE") if isinstance(o, IOFailure) else print("\n".join(["OK", *unsafe_perform_io(o.unwrap())]))' 2>/dev/null)
+mapfile -t probe < <(uv run python -c 'import sys; sys.path.insert(0, ".claude-plugin/scripts"); from pathlib import Path; from returns.io import IOFailure; from returns.unsafe import unsafe_perform_io; from livespec_orchestrator_beads_fabro.commands._config_credential_wrapper import resolve_credential_wrapper; o = resolve_credential_wrapper(cwd=Path(".")); print("UNREADABLE") if isinstance(o, IOFailure) else print("\n".join(["OK", *unsafe_perform_io(o.unwrap())]))' 2>/dev/null)
 status="${probe[0]-PROBE_FAILED}"
 wrapper=("${probe[@]:1}")
 if [[ $status == "UNREADABLE" ]]; then

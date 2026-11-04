@@ -17,11 +17,11 @@ carries the rest:
   `no-orphan-dependency`), and any `open` dependency — local or
   cross-repo via `resolve_ref` — is a legitimate stall reason.
 - `no-stale-gap-tied` (severity `warn`) — an open gap-tied work-item
-  whose `gap_id` no longer surfaces in a fresh `detect_impl_gaps`
+  whose `gap_id` no longer surfaces in a fresh heading-coverage
   detection run over the live spec tree should be closed via a
   non-fix disposition. The gap-id set comes from this plugin's own
-  `detect_rules`, so derivation stays in lockstep with the canonical
-  gap-detection surface.
+  `live_headings`, so derivation stays in lockstep with the canonical
+  gap-detection surface rather than drifting into a second recipe.
 - `unresolved-spec-commitment` (severity `fail`) — every accepted
   propose-change's declared `spec_commitments.impl_followups[]`
   id_hint must resolve to a Ledger work-item carrying the matching
@@ -46,8 +46,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments import (
     collect_obligations_and_supersedes,
 )
+from livespec_orchestrator_beads_fabro.commands._heading_gaps import live_headings
 from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
-from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_rules
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = ["run_spec_checks"]
@@ -59,16 +59,24 @@ def run_spec_checks(
     *,
     items: list[WorkItem],
     spec_root: Path,
+    project_root: Path,
     manifest: CrossRepoManifest,
 ) -> list[LedgerFinding]:
     """Run the three spec-context checks over the tenant rows + spec tree.
+
+    `project_root` is carried alongside `spec_root` because a heading's
+    gap-id is keyed on the coverage registry's own spelling of its spec
+    root, which is a project-relative path — deriving it from `spec_root`
+    alone would guess at where the project begins.
 
     Returns findings sorted by (check, item_id) so output is stable for
     journaling and tests. An empty list means every invariant holds.
     """
     findings = _check_stalled_epics(items=items, manifest=manifest)
     if spec_root.is_dir():
-        findings.extend(_check_stale_gap_tied(items=items, spec_root=spec_root))
+        findings.extend(
+            _check_stale_gap_tied(items=items, spec_root=spec_root, project_root=project_root)
+        )
         findings.extend(_check_unresolved_commitments(items=items, spec_root=spec_root))
     else:
         findings.extend(
@@ -114,7 +122,9 @@ def _check_stalled_epics(
     return findings
 
 
-def _check_stale_gap_tied(*, items: list[WorkItem], spec_root: Path) -> list[LedgerFinding]:
+def _check_stale_gap_tied(
+    *, items: list[WorkItem], spec_root: Path, project_root: Path
+) -> list[LedgerFinding]:
     open_gap_tied = [
         item
         for item in items
@@ -122,7 +132,9 @@ def _check_stale_gap_tied(*, items: list[WorkItem], spec_root: Path) -> list[Led
     ]
     if not open_gap_tied:
         return []
-    current_gap_ids = {rule.gap_id for rule in detect_rules(spec_root=spec_root)}
+    current_gap_ids = {
+        heading.gap_id for heading in live_headings(spec_root=spec_root, project_root=project_root)
+    }
     return [
         LedgerFinding(
             check="no-stale-gap-tied",

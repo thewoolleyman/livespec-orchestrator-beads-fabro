@@ -18,6 +18,11 @@ names in argv form:
                                 [--spec-reader-cli <json-argv>]
                                 [--project-root <path>] [--spec-target <path>]
                                 [--dry-run] [--json]
+  orchestrator.py ledger-intent-scan --judge-cli <json-argv>
+                                [--since-version <vN>]
+                                [--coverage-point <value>]
+                                [--project-root <path>] [--spec-target <path>]
+                                [--json]
 
 `<json-argv>` flags carry an injected reference CLI as a JSON array of
 strings (the argv-form convention of the config naming), e.g.
@@ -35,8 +40,12 @@ expected-error → exit-code mapping.
 import argparse
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._ledger_intent_cut import parse_spec_version
 from livespec_orchestrator_beads_fabro.commands._orchestrator_drift_capture import run_drift_capture
 from livespec_orchestrator_beads_fabro.commands._orchestrator_gap_capture import run_gap_capture
+from livespec_orchestrator_beads_fabro.commands._orchestrator_ledger_intent import (
+    run_ledger_intent_scan,
+)
 from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import (
     CliContext,
     InjectedCliError,
@@ -82,6 +91,8 @@ def _dispatch(*, args: argparse.Namespace, context: CliContext) -> int:
             category=args.category,
             as_json=args.as_json,
         )
+    if args.subcommand == "ledger-intent-scan":
+        return _dispatch_ledger_intent(args=args, context=context)
     spec_reader_cli, ok = _optional_cli(raw=args.spec_reader_cli, flag="--spec-reader-cli")
     if not ok:
         return _EXIT_USAGE_ERROR
@@ -106,6 +117,36 @@ def _dispatch(*, args: argparse.Namespace, context: CliContext) -> int:
     )
 
 
+def _dispatch_ledger_intent(*, args: argparse.Namespace, context: CliContext) -> int:
+    """The ledger-intent-scan arm, in its own function.
+
+    Extracted so `_dispatch` stays within the return-count ceiling rather than
+    by raising it: the arm's own injected-CLI parse is a second refusal, and the
+    subcommand surface grows one arm per ratified CLI.
+    """
+    judge_cli = parse_cli_argv(raw=args.judge_cli, flag="--judge-cli")
+    if judge_cli is None:
+        return _EXIT_USAGE_ERROR
+    since_version: int | None = None
+    if args.since_version is not None:
+        since_version = parse_spec_version(raw=args.since_version)
+        if since_version is None:
+            _ = write_stderr(
+                text=(
+                    "ERROR: --since-version requires a positive integer (got "
+                    f"{args.since_version!r}); accepted forms are 'v<N>' and '<N>'.\n"
+                ),
+            )
+            return _EXIT_USAGE_ERROR
+    return run_ledger_intent_scan(
+        context=context,
+        judge_cli=judge_cli,
+        since_version=since_version,
+        coverage_point=args.coverage_point,
+        as_json=args.as_json,
+    )
+
+
 def _optional_cli(*, raw: str | None, flag: str) -> tuple[list[str] | None, bool]:
     """Parse an OPTIONAL injected-CLI flag; (argv-or-None, parse-ok)."""
     if raw is None:
@@ -126,6 +167,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_common(parser=gap_capture)
     _add_capture_common(parser=gap_capture)
     _ = gap_capture.add_argument("--gaps-json", dest="gaps_json", required=True)
+    ledger_intent = subparsers.add_parser("ledger-intent-scan")
+    _add_common(parser=ledger_intent)
+    _ = ledger_intent.add_argument("--judge-cli", dest="judge_cli", required=True)
+    _ = ledger_intent.add_argument("--since-version", dest="since_version", default=None)
+    _ = ledger_intent.add_argument("--coverage-point", dest="coverage_point", default=None)
     drift_capture = subparsers.add_parser("drift-capture")
     _add_common(parser=drift_capture)
     _add_capture_common(parser=drift_capture)

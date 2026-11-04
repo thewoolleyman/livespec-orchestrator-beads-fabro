@@ -15,6 +15,18 @@ disposition, and the ledger writes are the production code paths.
 - An item whose effective criteria parse to zero gradeable assertions is
   neither auto-accepted nor reworked: nothing is disposed from absent evidence,
   and `acceptance_rework_cap` is not consumed.
+- A change-implying item whose merge changed ZERO files parks on the empty-diff
+  evidence leg rather than grading as delivered — `SPECIFICATION/scenarios.md`
+  "## Scenario 99 — Empty-diff acceptance integrity: a zero-change merge is
+  ungradeable, not delivered", whose heading-coverage entry owed an
+  integration-tier test. Its control is the SAME item, the same green merged
+  outcome and the same criteria with only the diff non-empty, because "the
+  empty-diff leg was named" is otherwise equally consistent with a pass that
+  names it on every merge. The unit-tier file
+  `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_acceptance_ai.py`
+  grades the verdict function's three empty-diff arms against inputs handed to
+  it; what this tier adds is that the park reaches the LEDGER and the dispatch
+  journal an operator reads, through the real CLI.
 """
 
 from __future__ import annotations
@@ -385,3 +397,104 @@ def test_zero_gradeable_assertions_is_neither_auto_accepted_nor_reworked(
     # reads against is the ledger write the FAIL route makes, and it is absent.
     ledger_record = make_beads_client(config=_config()).show_issue(issue_id=item.id)
     assert "acceptance_failed_ai_passes" not in ledger_record["metadata"]
+
+
+def _merged_with_diff(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    item_id: str,
+    stdout: str,
+) -> tuple[int, Path, WorkItem]:
+    """Dispatch one change-implying item to a green MERGED run reading `stdout`.
+
+    The two cases below differ in `stdout` and in nothing else, which is what
+    makes the empty-diff leg's appearance attributable to the diff rather than
+    to anything about the item, the policy or the outcome.
+    """
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(
+        id=item_id,
+        acceptance_criteria="The parking record names the absent evidence leg.",
+    )
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(pr_number=99))
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        _acceptance_pass_over(stdout=stdout),
+        raising=False,
+    )
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+    return exit_code, repo, item
+
+
+def test_scenario99_a_zero_change_merge_parks_needs_attention_on_the_empty_diff_leg(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A merge that changed no files is UNGRADEABLE, and the record says which leg."""
+    exit_code, repo, item = _merged_with_diff(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        item_id="bd-ib-emptydiff",
+        stdout="",
+    )
+
+    assert exit_code == 1
+    stored = _stored()[item.id]
+    # Parked, not disposed: `ai-only` delegates authority to act ON evidence,
+    # and a zero-change merge is the absence of the evidence the criteria need.
+    assert (stored.status, stored.resolution, stored.blocked_reason) == ("acceptance", None, None)
+    records = _journal_records(repo=repo)
+    ai_pass = _record(records=records, stage="acceptance-ai-pass")
+    assert ai_pass["verdict"] == "NEEDS_ATTENTION"
+    # The two verdicts an empty diff must never reach, named rather than
+    # implied: PASS would be manufactured from absent evidence, and
+    # NO_CHANGE_NEEDED needs the OBSERVED already-present-or-superseded route
+    # that "nothing changed in this merge" is not.
+    assert ai_pass["verdict"] not in {"PASS", "NO_CHANGE_NEEDED"}
+    # Named as the EMPTY-DIFF leg, not as a plain unreadable diff: those are two
+    # different incidents with two different remedies, and only the leg name
+    # tells the operator which one happened.
+    assert "empty merged diff" in ai_pass["absent_evidence"]
+    assert ai_pass["diff"]["reason"] == "merged diff is empty"
+    # EXACTLY ONE attention item: one parking record, whose own absent-evidence
+    # list names the leg, so the surface an operator reads is not a second place
+    # the leg can be lost.
+    parks = [record for record in records if record.get("stage") == "acceptance-parked"]
+    assert len(parks) == 1
+    assert "empty merged diff" in parks[0]["absent_evidence"]
+
+
+def test_scenario99_a_real_change_merge_names_no_empty_diff_leg(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE CONTROL: the same item and outcome with a non-empty diff grades normally.
+
+    The refusal is scoped to the EMPTY diff, so a merge that changed files must
+    leave the leg unnamed and the diff observed — which is what shows the
+    assertions above measure the diff rather than the fixture.
+    """
+    exit_code, repo, _item_ = _merged_with_diff(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        item_id="bd-ib-realdiff",
+        stdout=_READABLE_DIFF,
+    )
+
+    assert exit_code == 1
+    ai_pass = _record(records=_journal_records(repo=repo), stage="acceptance-ai-pass")
+    assert "empty merged diff" not in ai_pass["absent_evidence"]
+    assert ai_pass["diff"] == {
+        "observed": True,
+        "bytes": len(_READABLE_DIFF.encode()),
+        # Read off the pull request rather than the merge sha, because this
+        # dispatch HAS a merged pull request number — the same route the
+        # empty-diff case above takes, so the two differ only in the bytes it
+        # returned.
+        "reason": "pull request diff read",
+    }

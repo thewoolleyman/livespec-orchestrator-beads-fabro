@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import base64
 import os
-import re
 import subprocess
 import threading
 from collections.abc import Callable, Iterator
@@ -26,6 +25,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     publication_push_program_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
+
+from tests.prepare_step_support import env_of, steps_in
 
 WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 BRANCH = "feat/push-time-test"
@@ -216,6 +221,13 @@ def provision_auth(
     executable(path=bin_dir / "gh", source="#!/bin/sh\nprintf 'null\\n'\nexit 0\n")
     executable(path=plugins / "livespec-push-exact-head", source=publication_push_program_source())
     (plugins / "livespec-run-plugin-gate.py").write_text("# fixture gate\n")
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and a refreshing stage that cannot resolve it
+    # fails closed before the repository-declared gate -- so a fixture omitting
+    # it would exercise that refusal rather than the push route under test.
+    (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env.update(
         PATH=f"{bin_dir}:{env['PATH']}",
         LIVESPEC_SANDBOX_GH_REFRESH_ROOT=str(bundle),
@@ -230,9 +242,14 @@ def provision_auth(
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "fixture-key")
     monkeypatch.setenv("LIVESPEC_SANDBOX_GH_REFRESH_ROOT", str(bundle))
     prepare = refreshing_gh_prepare_steps_block()
-    for script in re.findall(r"script = '''\n(.*?)\n'''", prepare, re.DOTALL):
+    for step in steps_in(block=prepare):
         subprocess.run(
-            ["bash", "-c", script], cwd=clone, env=env, check=True, capture_output=True, text=True
+            ["bash", "-c", step.script],
+            cwd=clone,
+            env=env_of(step=step, base=env),
+            check=True,
+            capture_output=True,
+            text=True,
         )
     minted = root / "minted"
     executable(

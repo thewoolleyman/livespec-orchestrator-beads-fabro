@@ -708,7 +708,21 @@ def test_scenario61_the_dispatched_workflow_truncates_an_unchanged_tree(
     node = re.search(r"\bimplementation_diff\s*\[(?P<body>[^\]]*)\]", graph)
     assert node is not None
     assert "git diff --quiet origin/{{ inputs.default_branch }}...HEAD" in node.group("body")
-    assert re.search(r"\bimplement\s*->\s*implementation_diff\b(?![^\n]*condition=)", graph)
+    # The route from the turn to the breaker is TWO unconditional edges since
+    # v165: Scenario 204's completion gate consumed `implement`'s fallthrough and
+    # supplies the breaker's. Both legs are asserted, because a graph that
+    # dropped either would reach janitor with the diff question unasked — and the
+    # gate itself spends no provider, so the containment this case guards is
+    # unmoved.
+    assert re.search(r"\bimplement\s*->\s*implement_commit_settle\b(?![^\n]*condition=)", graph)
+    assert re.search(
+        r"\bimplement_commit_settle\s*->\s*implement_completion\b(?![^\n]*condition=)",
+        graph,
+    )
+    assert re.search(
+        r"\bimplement_completion\s*->\s*implementation_diff\b(?![^\n]*condition=)",
+        graph,
+    )
     assert re.search(
         r"\bimplementation_diff\s*->\s*dead_implementer\b(?![^\n]*condition=)",
         graph,
@@ -739,14 +753,16 @@ def test_scenario61_a_changed_tree_still_reaches_review_normally(
     assert exit_code == 0
     [graph] = graphs
     assert re.search(
-        r'\bimplementation_diff\s*->\s*janitor\b[^\n]*condition="outcome=succeeded"',
+        r'\bimplementation_diff\s*->\s*janitor_admission\b[^\n]*condition="outcome=succeeded"',
         graph,
     )
+    assert re.search(r"\bjanitor_admission\s*->\s*janitor\b", graph)
     # The green janitor reaches `review` THROUGH `publish_draft` and
     # `proof_capture` since S5 (bd-ib-b4u6b7), so the route is asserted rather
     # than the single edge that used to carry it.
     assert re.search(r'\bjanitor\s*->\s*publish_draft\b[^\n]*condition="outcome=succeeded"', graph)
-    assert re.search(r"\bpublish_draft\s*->\s*proof_capture\b", graph)
+    assert re.search(r"\bpublish_draft\s*->\s*publish_merged_reconcile_route\b", graph)
+    assert re.search(r"\bpublish_merged_reconcile_route\s*->\s*proof_capture\b", graph)
     assert re.search(r"\bproof_capture\s*->\s*review\b", graph)
 
 

@@ -91,11 +91,35 @@ remain the authority for -- so holding the ledger transition hostage to it
 would strand the item over a record nobody reads first. The refusal is
 journaled rather than swallowed, because a hold that was never minted is
 exactly what explains the next dispatch spending the same exhausted allowance.
+
+THE COST OBSERVATION RIDES THE RELEASE RECORD'S OWN ONCE-ONLY READING, which is
+the same section's "Cost follows every attempt": "For every run released under
+'Provider-limit release and re-dispatch' ... the Dispatcher MUST journal one
+attempt-cost record ... Each run or probe cost observation MUST have a stable
+identity and MUST be counted at most once across reconciliation and resume." A
+plain append is the one release step that is not idempotent, so the observation
+is appended exactly where the release record is -- under `owed.release_record`
+-- rather than on every pass. It is an OBSERVATION and gates nothing: it is
+appended after the release row and before the ledger transition, and no arm
+below reads it back or lets it refuse anything.
+
+THE RECORD BUILDER IS A SEAM WITH A REAL DEFAULT, not a defaulted absence. A
+default that reported "cost-unobservable" without asking would make a
+misconfigured wiring indistinguishable from an engine that reports no figure,
+which is exactly the distinction the record exists to state; so the default
+reads the released run's own record on its own factory and the parameter exists
+for the test that drives the APPEND rather than the reading. The append is
+UNGUARDED, which is the mirror of the hold's guard one function down and rests
+on the same reasoning: that guard exists because the shared ledger read it
+wraps raises, a MEASURED gap, while every read `released_run_attempt_cost_record`
+performs is already fail-soft inside that module -- so a guard here would be a
+defensive habit, and the next editor would read it as evidence the builder is
+not fail-soft and weaken it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -115,8 +139,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outco
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
+    HoldEvidence,
     provider_limit_hold_record,
     provider_limit_release_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_released_run_cost import (
+    released_run_attempt_cost_record,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -132,7 +160,9 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 __all__: list[str] = [
     "PROVIDER_LIMIT_RELEASE_HELD_STAGE",
     "PROVIDER_LIMIT_RELEASE_REFUSED_HOLD_STAGE",
+    "AttemptCostBuilder",
     "dispose_provider_limit_release",
+    "dispose_reclassified_turn_holds",
 ]
 
 # The journal stage a replay appends when it declines to perform the release.
@@ -164,6 +194,11 @@ _LEDGER_WRITE_ERRORS = (
     BeadsTenantMissingError,
 )
 
+# How this release's one cost observation is built. A callable rather than the
+# reading itself, so the append is exercisable with no factory; see the module
+# docstring for why its default is a real reading and not an absence.
+AttemptCostBuilder = Callable[..., dict[str, object]]
+
 
 @dataclass(frozen=True, kw_only=True)
 class _ReleaseOwed:
@@ -188,6 +223,7 @@ def dispose_provider_limit_release(
     outcome: DispatchOutcome,
     journal: JournalFile,
     now_iso: str,
+    attempt_cost_of: AttemptCostBuilder | None = None,
 ) -> None:
     """Perform, or replay, the release this terminal owes.
 
@@ -215,12 +251,38 @@ def dispose_provider_limit_release(
         return
     _record_hold(release=release, item_id=item.id, journal=journal, now_iso=now_iso)
     if owed.release_record:
+        build = released_run_attempt_cost_record if attempt_cost_of is None else attempt_cost_of
         journal.append(record=provider_limit_release_record(release=release, work_item_id=item.id))
+        journal.append(
+            record=build(repo=repo, work_item_id=item.id, release=release, occurred_at=now_iso)
+        )
     _release_claim(repo=repo, item=item, journal=journal, release=release)
 
 
+def dispose_reclassified_turn_holds(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+    now_iso: str,
+) -> None:
+    """Record the candidate hold of every succeeded turn booked as a refusal.
+
+    A refusal booked as a successful turn "mints the candidate hold that the
+    signature declares" whether or not it ended the run, so this runs for any
+    non-green terminal and not only for a release. It is keyed on the same
+    `factory:run:node attempt` triple a release uses, so a turn that is also the
+    release's failing attempt derives the identical observation id and the
+    ingest here is declined as a replay rather than doubling the hold.
+    """
+    _ = repo
+    for turn in outcome.reclassified_turns or ():
+        _record_hold(release=turn, item_id=item.id, journal=journal, now_iso=now_iso)
+
+
 def _record_hold(
-    *, release: ProviderLimitRelease, item_id: str, journal: JournalFile, now_iso: str
+    *, release: HoldEvidence, item_id: str, journal: JournalFile, now_iso: str
 ) -> None:
     """Append the hold this release observed, or journal why it could not be.
 

@@ -43,6 +43,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     previewed_workflow_variant,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_pin_snapshot import (
+    PREVIEW_UNRESOLVABLE_FAULTS,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
     WORKFLOW_KIND_GROOM,
     WORKFLOW_KIND_IMPLEMENT,
@@ -50,34 +53,11 @@ from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
 )
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import RESERVED_WORKFLOW_NAME
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsCredentialMissingError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    ConnectionPrefixMissingError,
-    LivespecConfigUnreadableError,
-)
 
 __all__: list[str] = [
     "CriteriaWallVariant",
     "criteria_wall_variant",
 ]
-
-# Every EXPECTED way the preview can fail to reach an answer, enumerated rather
-# than caught broadly: each of these is an environment or configuration fault,
-# and none of them is evidence about the variant. A bug still raises.
-_UNRESOLVABLE = (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsCredentialMissingError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    ConnectionPrefixMissingError,
-    LivespecConfigUnreadableError,
-    OSError,
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -86,6 +66,18 @@ class CriteriaWallVariant:
 
     name: str
     kind: str
+    # The registry-declared directory the resolved variant lives in, or None for
+    # the reserved workflow, which is never read from the registry.
+    #
+    # CARRIED SO A WALL CAN RESOLVE THE VARIANT'S OWN MANIFEST. `workflow_toml`
+    # takes exactly this value as its second precedence step, and a wall that
+    # reached for it would otherwise have to resolve the variant a SECOND time
+    # through `previewed_workflow_variant` -- which is the duplication this
+    # module exists to prevent, and which brings back the whole `_UNRESOLVABLE`
+    # escape with it. The armed-side answer carries None, which resolves the
+    # reserved workflow: that is a real graph to grade rather than a refusal,
+    # so a wall degraded onto it still grades something.
+    directory: str | None = None
 
     @property
     def exempt(self) -> bool:
@@ -125,8 +117,12 @@ def criteria_wall_variant(
         action=lambda: previewed_workflow_variant(
             repo=repo, work_item_id=work_item_id, name=workflow_name
         ),
-        exceptions=_UNRESOLVABLE,
+        exceptions=PREVIEW_UNRESOLVABLE_FAULTS,
     )
     if isinstance(resolved, AttemptFailure):
         return CriteriaWallVariant(name=RESERVED_WORKFLOW_NAME, kind=WORKFLOW_KIND_IMPLEMENT)
-    return CriteriaWallVariant(name=resolved.name, kind=variant_kind(repo=repo, variant=resolved))
+    return CriteriaWallVariant(
+        name=resolved.name,
+        kind=variant_kind(repo=repo, variant=resolved),
+        directory=resolved.directory,
+    )

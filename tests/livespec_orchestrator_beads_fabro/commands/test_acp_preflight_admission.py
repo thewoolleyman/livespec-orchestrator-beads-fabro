@@ -38,7 +38,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,8 @@ _NEW_MODULES = (
     "_acp_workflow_graph",
     "_acp_success_critical",
     "_acp_candidate_preflight",
+    "_acp_hold_ledger",
+    "_acp_hold_records",
     "_acp_preflight_verdict",
     "_acp_reached_termination",
     "_dispatcher_acp_chain_sources",
@@ -215,12 +217,10 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
     strand every run at its first node, which is exactly the condition
     the preflight exists to refuse before claim.
 
-    `proof_capture` joins it on the same ground (S5 / bd-ib-b4u6b7): it is the
-    only route from a green janitor to `review`, so no green path avoids it
-    either. Its `script` sibling `publish_draft` dominates every green path just
-    as hard and is deliberately ABSENT, because this set is the ACP nodes --
-    what it gates is per-node adapter fallback, and a script node has no adapter
-    to fall back along.
+    A merged publication may reach final verification without a fresh proof
+    cycle, so `proof_capture`, `proof_verify`, and `review` no longer dominate
+    every green path. Their script sibling `publish_draft` is likewise absent:
+    this set is ACP nodes only, and a script node has no adapter fallback.
     """
     modules = _modules()
     graph = modules["_acp_workflow_graph"].parse_workflow_graph(
@@ -231,9 +231,6 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
     assert set(critical.nodes) == {
         "dod_gate",
         "implement",
-        "proof_capture",
-        "review",
-        "proof_verify",
     }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
@@ -380,6 +377,76 @@ def test_a_domain_hold_reaches_a_declared_override_hold_key() -> None:
     )
 
     assert _keys(preflight=result) == ["two"]
+
+
+def test_an_expired_observation_blocks_its_covered_candidate_pending_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Expiry ends the live hold but leaves a candidate-specific confirmation due."""
+    modules = _modules()
+    journal = tmp_path / "dispatch.jsonl"
+    journal.write_text(
+        json.dumps(
+            {
+                "stage": modules["_acp_hold_records"].HOLD_STAGE,
+                "schema_version": 1,
+                "observation_id": "expired-observation",
+                "scope": "availability-domain",
+                "hold_key": "codex",
+                "candidate_key": None,
+                "cause": "quota",
+                "occurred_at": "2026-09-12T11:00:00Z",
+                "expires_at": "2026-09-12T11:15:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    ledger = modules["_acp_hold_ledger"].read_acp_hold_ledger(journal_path=journal, now_iso=_NOW)
+    expired_holds = getattr(ledger, "expired_holds", ())
+
+    assert [hold.observation_id for hold in expired_holds] == ["expired-observation"]
+
+    result = _filter(
+        chain=_chain(node="implement", candidates=(_candidate(candidate_key="held"),)),
+        inputs=_inputs(expired_holds=expired_holds),
+    )
+
+    assert result.candidates == ()
+    assert result.skipped[0].reason == "outstanding-availability-confirmation"
+    assert result.skipped[0].confirmation_observation_ids == ("expired-observation",)
+
+
+def test_a_successful_confirmation_clears_only_its_named_expired_observations() -> None:
+    """A newer expired observation stays due after an older one is confirmed."""
+    module_path = _COMMANDS / "_acp_availability_confirmation.py"
+
+    assert module_path.is_file()
+
+    confirmations = importlib.import_module(f"{_PACKAGE}._acp_availability_confirmation")
+    candidate = _candidate(availability_key="codex", candidate_key="held")
+    older = replace(
+        _hold(scope="availability-domain", hold_key="codex"), observation_id="older-observation"
+    )
+    newer = replace(
+        _hold(scope="availability-domain", hold_key="codex"), observation_id="newer-observation"
+    )
+    result = _filter(
+        chain=_chain(node="implement", candidates=(candidate,)),
+        inputs=_inputs(
+            expired_holds=(older, newer),
+            confirmations=(
+                confirmations.AcpAvailabilityConfirmation(
+                    availability_key="codex",
+                    candidate_key="held",
+                    observation_ids=frozenset({"older-observation"}),
+                ),
+            ),
+        ),
+    )
+
+    assert result.candidates == ()
+    assert result.skipped[0].confirmation_observation_ids == ("newer-observation",)
 
 
 def test_a_live_legacy_provider_record_covers_a_matching_builtin_candidate() -> None:
@@ -1079,6 +1146,27 @@ def test_an_enabled_repository_resolves_a_viable_two_candidate_chain(tmp_path: P
     assert _keys(preflight=verdict.node_preflight(node="implement")) == ["primary", "fallback"]
 
 
+@pytest.mark.parametrize("timeout", [0, "not-an-integer"])
+def test_an_invalid_availability_probe_timeout_refuses_before_claim(
+    tmp_path: Path, timeout: object
+) -> None:
+    """The committed confirmation timeout is validated in admission preflight."""
+    modules = _modules()
+    repo = _enabled_repo(tmp_path=tmp_path)
+    config = json.loads((repo / ".livespec.jsonc").read_text(encoding="utf-8"))
+    config["livespec-orchestrator-beads-fabro"]["dispatcher"][
+        "availability_probe_timeout_seconds"
+    ] = timeout
+    (repo / ".livespec.jsonc").write_text(json.dumps(config), encoding="utf-8")
+
+    verdict = modules["_dispatcher_acp_preflight"].resolve_acp_preflight(
+        repo=repo, journal_path=None, now_iso=_NOW
+    )
+
+    assert verdict.viable is False
+    assert "dispatcher.availability_probe_timeout_seconds" in verdict.detail
+
+
 def test_a_malformed_structured_workflow_default_refuses_the_preflight(
     tmp_path: Path,
 ) -> None:
@@ -1257,9 +1345,6 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
     assert set(verdict.success_critical) == {
         "dod_gate",
         "implement",
-        "proof_capture",
-        "review",
-        "proof_verify",
     }
     assert verdict.viable is True
 

@@ -55,7 +55,14 @@ _REPO_VIEW = (
 _IS_WORKTREE = ("git", "rev-parse", "--is-inside-work-tree")
 _ORIGIN_REFS = ("git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin")
 _SOURCE_HEAD = ("git", "rev-parse", "HEAD")
-_HEAD_ANCESTOR = ("git", "merge-base", "--is-ancestor", "abc1234", f"origin/{_DEFAULT_BRANCH}")
+_HEAD_ANCESTOR = (
+    "git",
+    "for-each-ref",
+    "--contains",
+    "abc1234",
+    "--format=%(refname:short)",
+    "refs/remotes/origin",
+)
 
 
 class _MasterCiRefusal(Protocol):
@@ -183,6 +190,44 @@ def _run_list_argv(*, branch: str = _DEFAULT_BRANCH, workflow: str = "CI") -> tu
     )
 
 
+def _recent_run_list_argv(
+    *, branch: str = _DEFAULT_BRANCH, workflow: str = "CI"
+) -> tuple[str, ...]:
+    return (
+        "gh",
+        "run",
+        "list",
+        "--branch",
+        branch,
+        "--limit",
+        "100",
+        "--workflow",
+        workflow,
+        "--json",
+        "databaseId,headSha,status,conclusion,createdAt",
+    )
+
+
+def _compare_argv(*, base: str, branch: str = _DEFAULT_BRANCH) -> tuple[str, ...]:
+    return (
+        "gh",
+        "api",
+        f"repos/{{owner}}/{{repo}}/compare/{base}...{branch}",
+        "--jq",
+        ".status",
+    )
+
+
+def _recent_run(*, database_id: int, head_sha: str, created_at: str) -> dict[str, str | int]:
+    return {
+        "databaseId": database_id,
+        "headSha": head_sha,
+        "status": "completed",
+        "conclusion": "success",
+        "createdAt": created_at,
+    }
+
+
 def _results(
     *,
     run_list: CommandResult | None = None,
@@ -197,7 +242,7 @@ def _results(
         _IS_WORKTREE: _result(stdout="true\n"),
         _ORIGIN_REFS: _result(stdout=f"origin/{_DEFAULT_BRANCH}\n"),
         _SOURCE_HEAD: _result(stdout="abc1234\n"),
-        _HEAD_ANCESTOR: _result(),
+        _HEAD_ANCESTOR: _result(stdout=f"origin/{_DEFAULT_BRANCH}\n"),
         _ORIGIN_HEAD: (
             origin_head
             if origin_head is not None
@@ -553,6 +598,119 @@ def test_a_pending_run_that_concludes_green_lets_the_dispatch_proceed(tmp_path: 
     assert outcome.record["reason"] == "master-ci-green"
     assert outcome.record["run_database_id"] == "303"
     assert pauses == [60.0]
+
+
+def test_a_pending_latest_run_passes_on_a_green_ancestor_without_waiting(tmp_path: Path) -> None:
+    """The latest run stays pending while an earlier green run proves the branch.
+
+    The two distinct run ids establish that the pass was earned by the concluded
+    ancestor rather than by treating the pending run as green. The recorded commit
+    and pending id are the journal evidence an operator needs to audit that decision.
+    """
+    runner = _Runner(
+        results={
+            **_results(run_list=_result(stdout=_run_list_payload(status="in_progress"))),
+            _recent_run_list_argv(): _result(
+                stdout=json.dumps(
+                    [
+                        _recent_run(
+                            database_id=303,
+                            head_sha="pending-head",
+                            created_at="2026-11-02T08:00:00Z",
+                        ),
+                        _recent_run(
+                            database_id=202,
+                            head_sha="green-ancestor",
+                            created_at="2026-11-02T07:00:00Z",
+                        ),
+                    ]
+                )
+            ),
+            _jobs_argv(run_id="202"): _result(stdout=_jobs_payload()),
+            _compare_argv(base="green-ancestor"): _result(stdout="ahead\n"),
+        }
+    )
+    wait = _wait_module().MasterCiWait(
+        now=lambda: 0.0,
+        sleep=lambda _seconds: None,
+        progress=io.StringIO(),
+        bound_seconds=0.0,
+    )
+
+    outcome = _module().master_ci_preflight(repo=tmp_path, runner=runner, wait=wait)
+
+    assert outcome.refusal is None
+    assert outcome.record["reason"] == "master-ci-green"
+    assert outcome.record["run_database_id"] == "202"
+    assert outcome.record["head_sha"] == "green-ancestor"
+    assert outcome.record["pending_run_database_id"] == "303"
+    assert "concluded green ancestor" in str(outcome.record["detail"])
+    assert "303" in str(outcome.record["detail"])
+
+
+def test_a_transient_empty_run_listing_during_a_wait_is_repolled(tmp_path: Path) -> None:
+    """A later empty listing is not the first-read no-runs-yet state.
+
+    The third answer is green, so returning the empty second answer as a
+    refusal would fail this assertion. The two pauses prove the preflight
+    repolls after the empty answer instead of treating it as a terminal read.
+    """
+    pauses: list[float] = []
+    runner = _Runner(
+        results=_results(),
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="in_progress")),
+                    _result(stdout="[]"),
+                    _result(stdout=_run_list_payload()),
+                ]
+            )
+        },
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 30.0, 60.0],
+        pauses=pauses,
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is None
+    assert outcome.record["reason"] == "master-ci-green"
+    assert pauses == [60.0, 60.0]
+
+
+def test_a_persistent_transient_empty_run_listing_refuses_with_its_own_cause(
+    tmp_path: Path,
+) -> None:
+    """An empty listing after a run was observed is never the no-runs-yet state."""
+    runner = _Runner(
+        results=_results(),
+        streams={
+            _run_list_argv(): _stream(
+                results=[
+                    _result(stdout=_run_list_payload(status="in_progress")),
+                    _result(stdout="[]"),
+                ]
+            )
+        },
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 60.0, 1800.0],
+        pauses=[],
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-unprovable"
+    assert outcome.record["status"] == "failed"
+    assert "transient empty run listing" in outcome.refusal.detail
+    assert "no runs yet" not in outcome.refusal.detail
 
 
 def test_a_pending_run_that_concludes_red_refuses_as_red(tmp_path: Path) -> None:

@@ -1,0 +1,869 @@
+"""Tests for taking the Definition-of-Done judgement on the operator host.
+
+"Judged before admission" requires the Dispatcher to run "the same
+Definition-of-Done judgement the `dod_gate` node applies (its prompt, against
+the item's effective criteria, the referenced specification headings and the
+resolved sandbox capabilities)". "The same prompt" is a claim about BYTES, so
+the test that matters reads the node's own prompt file off the payload and
+asserts its text reaches the judge — a host-side paraphrase would pass every
+behavioural assertion while judging by different rules, and nothing downstream
+would catch it.
+
+THE ONE-RUBRIC CLAUSE NARROWS WHAT THE HOST CALL MAY ADD. `contracts.md`'s
+one-rubric-one-subject rule says a taking other than the node "MAY append only
+an ending contract stating the verdict form it must return", and that "any other
+guidance about how to grade a check, including any statement about where the
+capability set comes from, MUST be written into the rubric itself, so that the
+node grades by it too". So the contract is asserted here for what it must NOT
+carry as well as for what it must: a host-side sentence about the capability
+source is one the node never reads, and the two takings then grade the same
+section by different rules while every surface reports a clean pass.
+
+THE FOUR UNAVAILABLE CAUSES ARE THE OTHER LOAD-BEARING SET. The clause names
+"no eligible model, a timeout, or an unparseable verdict" and requires each to
+route the item as it would be routed without the judgement. Each is MEASURED
+here rather than guessed: the runner maps an absent executable to 127 and a
+timeout to 124, so those two causes come from the measurement the runner
+already took, not from a probe of our own that could disagree with it.
+"""
+
+from __future__ import annotations
+
+import importlib
+import json
+import os
+import subprocess
+import tempfile
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+
+import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    CAUSE_UNPARSEABLE_VERDICT,
+    JUDGEMENT_ADMITTED,
+    JUDGEMENT_HELD,
+    JUDGEMENT_UNAVAILABLE,
+    DodJudgement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
+    CAUSE_JUDGE_COMMAND_FAILED,
+    CAUSE_JUDGEMENT_TIMED_OUT,
+    CAUSE_NO_ELIGIBLE_MODEL,
+    CAUSE_PROMPT_UNREADABLE,
+    dod_gate_prompt_path,
+    judgement_prompt,
+    resolve_judge_path,
+    resolve_judge_timeout_seconds,
+    run_dod_gate_prompt,
+    run_dod_judgement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.types import WorkItem
+
+_GATE_PROMPT = "# Definition-of-Done gate\n\nWork through all six checks.\n"
+_HEADING = "## Scenario 174 — The judgement runs before admission"
+_RUN_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run"
+# Words that can only be in the ending contract if the contract is grading, or
+# telling the judge how to grade. `capabilit` covers both `capability` and
+# `capabilities`; `unpublished` is the report the rubric's own capability
+# section asks for; the published file's path and the committed key's name are
+# the two capability SOURCES the clause names outright.
+_GRADING_WORDS = (
+    "capabilit",
+    "unpublished",
+    "/etc/livespec",
+    "sandbox_capabilities",
+    "check 5",
+    "surface",
+)
+
+
+def _ending_contract() -> str:
+    """The published host ending contract, resolved without a top-level import.
+
+    A top-level import of a name that does not exist yet makes the Red a
+    COLLECTION error, which proves only that the name is absent. The assertion
+    below is a genuine one about the module's own surface instead.
+    """
+    module = importlib.import_module(_RUN_MODULE)
+    contract = getattr(module, "HOST_ENDING_CONTRACT", None)
+    assert isinstance(contract, str)
+    return contract
+
+
+@dataclass
+class _Runner:
+    """A CommandRunner double recording the one invocation it is given."""
+
+    result: CommandResult
+    argv: list[str] | None = None
+    cwd: Path | None = None
+    timeout_seconds: float | None = None
+    environ: dict[str, str] | None = None
+    cwd_git_returncode: int | None = None
+    codex_auth: str | None = None
+    stdin_text: list[str] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+        start_new_session: bool = False,
+    ) -> CommandResult:
+        self.argv = argv
+        self.timeout_seconds = timeout_seconds
+        self.environ = env
+        self.cwd = cwd
+        self.cwd_git_returncode = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            check=False,
+            text=True,
+        ).returncode
+        if env is not None and "CODEX_HOME" in env:
+            auth = Path(env["CODEX_HOME"]) / "auth.json"
+            self.codex_auth = auth.read_text(encoding="utf-8") if auth.is_file() else None
+        _ = start_new_session
+        if stdin is not None:
+            _ = os.lseek(stdin, 0, os.SEEK_SET)
+            self.stdin_text.append(os.read(stdin, 1_000_000).decode("utf-8"))
+        return self.result
+
+
+@dataclass
+class _SequenceRunner:
+    """A candidate-chain double whose replies stay attributable to their argv."""
+
+    results: list[CommandResult]
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+        start_new_session: bool = False,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin, start_new_session)
+        self.calls.append(argv)
+        return self.results[len(self.calls) - 1]
+
+
+def _item(**overrides: object) -> WorkItem:
+    base = WorkItem(
+        id="bd-ib-7f66ar",
+        type="feature",
+        status="ready",
+        title="Judge before admission",
+        description=(
+            "## Definition of Done\n\n- The judgement runs before admission.\n\n"
+            f"References: {_HEADING}\n"
+        ),
+        origin="freeform",
+        gap_id=None,
+        rank="a0",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-10-15T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+        admission_policy="auto",
+        acceptance_policy="ai-only",
+    )
+    return replace(base, **overrides)
+
+
+def _payload(*, tmp_path: Path) -> Path:
+    root = tmp_path / "payload"
+    prompts = root / ".fabro" / "workflows" / "implement-work-item" / "prompts"
+    prompts.mkdir(parents=True, exist_ok=True)
+    _ = (prompts / "dod-gate.md").write_text(_GATE_PROMPT, encoding="utf-8")
+    _ = (prompts.parent / "workflow.toml").write_text(
+        "[run.inputs]\n" 'dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-5 claude-acp"\n',
+        encoding="utf-8",
+    )
+    return root
+
+
+def _repo(*, tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    spec = repo / "SPECIFICATION"
+    spec.mkdir(parents=True, exist_ok=True)
+    _ = (spec / "scenarios.md").write_text(
+        f"# Scenarios\n\n{_HEADING}\n\nThe judgement runs before admission.\n", encoding="utf-8"
+    )
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {
+          "agent": "claude-acp",
+          "model": "claude-opus-5",
+          "effort": "high"
+        }
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    return repo
+
+
+def _write_codex_first_dod_gate(*, repo: Path) -> None:
+    """Give this test's repository, not the committed config, a judge chain."""
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {
+          "agent": "codex-acp",
+          "model": "gpt-5.6-terra",
+          "effort": "high",
+          "fallbacks": [
+            {
+              "agent": "claude-acp",
+              "model": "claude-opus-5",
+              "effort": "high"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+
+def _take(
+    *, tmp_path: Path, result: CommandResult, payload: Path | None = None
+) -> tuple[DodJudgement, _Runner]:
+    runner = _Runner(result=result)
+    verdict = run_dod_judgement(
+        item=_item(),
+        cwd=_repo(tmp_path=tmp_path),
+        runner=runner,
+        payload_root=_payload(tmp_path=tmp_path) if payload is None else payload,
+    )
+    return verdict, runner
+
+
+def test_the_prompt_the_judge_receives_is_the_node_s_own_prompt_plus_the_subject() -> None:
+    prompt = judgement_prompt(gate_prompt=_GATE_PROMPT, subject="work-item: bd-ib-1")
+
+    assert _GATE_PROMPT in prompt
+    assert "work-item: bd-ib-1" in prompt
+    # The host ending contract replaces the node's graph fallthrough, and it has
+    # to name BOTH objects: without the passing one, a clean judgement and an
+    # unreadable reply are the same bytes.
+    assert '{"outcome": "passed"}' in prompt
+    assert '"outcome": "failed"' in prompt
+
+
+def test_the_prompt_is_the_rubric_bytes_then_the_ending_contract_then_the_subject() -> None:
+    subject = "work-item: bd-ib-gob6gl"
+
+    prompt = judgement_prompt(gate_prompt=_GATE_PROMPT, subject=subject)
+
+    # The host context is additional transport context; the rubric, the ending
+    # contract and the complete subject still all reach the candidate.
+    assert _ending_contract() in prompt
+    assert prompt.endswith(f"{subject}\n")
+
+
+def test_the_ending_contract_states_the_verdict_form_and_grades_nothing() -> None:
+    contract = _ending_contract()
+
+    # It has to name BOTH objects: without the passing one, a clean judgement
+    # and an unreadable reply are the same bytes.
+    assert '{"outcome": "passed"}' in contract
+    assert '"outcome": "failed"' in contract
+    lowered = contract.casefold()
+    assert [word for word in _GRADING_WORDS if word in lowered] == []
+
+
+def test_the_host_prompt_names_its_inline_capabilities_and_never_directs_a_tool_call() -> None:
+    prompt = judgement_prompt(
+        gate_prompt=(
+            "Read /etc/livespec/sandbox-capabilities, then search SPECIFICATION/ "
+            "before deciding.\n"
+        ),
+        subject="work-item: bd-ib-ff5ohb",
+    )
+
+    lowered = prompt.casefold()
+    assert "you have no tools" in lowered
+    assert "sandbox capabilities: terminal" in lowered
+    assert "/etc/livespec/sandbox-capabilities" not in lowered
+    assert "search specification/" not in lowered
+
+
+def test_the_judge_is_handed_the_executing_builds_rubric_followed_only_by_those_two(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(tmp_path=tmp_path)
+
+    _verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+        payload=payload,
+    )
+
+    assert runner.argv is not None
+    prompt = runner.stdin_text[0]
+    rubric = (
+        payload / ".fabro" / "workflows" / "implement-work-item" / "prompts" / "dod-gate.md"
+    ).read_text(encoding="utf-8")
+    assert rubric in prompt
+    assert _ending_contract() in prompt
+
+
+def test_the_shipped_node_prompt_resolves_under_the_executing_payload() -> None:
+    # The claim "the same prompt the node applies" is about the SHIPPED file, so
+    # the default path is asserted against the real payload rather than a
+    # fixture: a path that resolved only in a fixture would read as correct here
+    # and find nothing on every host.
+    assert dod_gate_prompt_path().is_file()
+
+
+def test_a_passing_reply_admits_the_item_and_the_judge_is_given_the_gate_prompt(
+    tmp_path: Path,
+) -> None:
+    verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='Clean.\n{"outcome": "passed"}\n', stderr=""),
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.argv is not None
+    assert "Work through all six checks." in runner.stdin_text[0]
+    # The referenced heading's own body travels with the subject, because a
+    # headless judge reaches no spec tree of its own by default.
+    assert "The judgement runs before admission." in runner.stdin_text[0]
+
+
+def test_the_pre_admission_judgement_labels_its_judge_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=livespec-family")
+
+    _verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+    )
+
+    assert runner.environ is not None
+    assert (
+        runner.environ.get("OTEL_RESOURCE_ATTRIBUTES")
+        == "service.namespace=livespec-family,livespec.caller=dod_judgement_pre_admission"
+    )
+
+
+def test_a_codex_primary_verdict_decides_the_host_judgement_without_running_claude(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(tmp_path=tmp_path)
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+
+    verdict = run_dod_judgement(item=_item(), cwd=repo, runner=runner, payload_root=payload)
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.argv is not None
+    assert runner.argv[:4] == ["codex", "exec", "-m", "gpt-5.6-terra"]
+
+
+def test_an_input_bound_candidate_loses_its_verdict_and_the_next_candidate_decides(
+    tmp_path: Path,
+) -> None:
+    """Repeated reports for one request count once before the fallback is chosen."""
+    payload = _payload(tmp_path=tmp_path)
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _SequenceRunner(
+        results=[
+            CommandResult(
+                exit_code=0,
+                stdout=(
+                    '{"request_id": "request-one", "usage": {'
+                    '"input_tokens": 50000, "cache_creation_input_tokens": 25000, '
+                    '"cache_read_input_tokens": 25000}}\n'
+                    '{"request_id": "request-one", "usage": {'
+                    '"input_tokens": 50000, "cache_creation_input_tokens": 25000, '
+                    '"cache_read_input_tokens": 25000}}\n'
+                    '{"outcome": "passed"}\n'
+                ),
+                stderr="",
+            ),
+            CommandResult(
+                exit_code=0,
+                stdout=(
+                    '{"request_id": "request-two", "usage": {"input_tokens": 99999}}\n'
+                    '{"outcome": "failed", "failure_reason": "the fallback decided"}\n'
+                ),
+                stderr="",
+            ),
+        ]
+    )
+
+    verdict = run_dod_judgement(item=_item(), cwd=repo, runner=runner, payload_root=payload)
+
+    assert verdict.outcome == JUDGEMENT_HELD
+    assert verdict.findings == ("the fallback decided",)
+    assert verdict.input_tokens == 99999
+    assert verdict.input_usage == "complete"
+    assert verdict.bound_ended_candidates == ("codex-acp:gpt-5.6-terra",)
+    assert runner.calls[0][0] == "codex"
+    assert runner.calls[1][1:3] == ["-p", "--model"]
+    assert runner.calls[1][runner.calls[1].index("--tools") + 1] == ""
+
+
+def test_the_claude_judge_reports_usage_and_its_reply_is_read_from_the_stream(
+    tmp_path: Path,
+) -> None:
+    stream = "\n".join(
+        (
+            json.dumps(
+                {"type": "assistant", "message": {"id": "msg-1", "usage": {"input_tokens": 40000}}}
+            ),
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "result": 'Clean.\n{"outcome": "passed"}',
+                    "usage": {"input_tokens": 40000},
+                }
+            ),
+        )
+    )
+
+    verdict, runner = _take(
+        tmp_path=tmp_path, result=CommandResult(exit_code=0, stdout=stream + "\n", stderr="")
+    )
+
+    assert runner.argv is not None
+    assert runner.argv[-3:] == ["--output-format", "stream-json", "--verbose"]
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert verdict.input_tokens == 40000
+    assert verdict.input_usage == "complete"
+
+
+def test_the_claude_host_judgement_journals_each_assistant_response_for_spend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-persisted Claude response remains visible to the host spend emitter."""
+    home = tmp_path / "operator-home"
+    monkeypatch.setenv("HOME", str(home))
+    stream = "\n".join(
+        (
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "msg-spend-1",
+                        "model": "claude-sonnet-5-5",
+                        "usage": {"input_tokens": 40000, "output_tokens": 200},
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "result": '{"outcome": "passed"}',
+                    "usage": {"input_tokens": 40000},
+                }
+            ),
+        )
+    )
+
+    _verdict, runner = _take(
+        tmp_path=tmp_path, result=CommandResult(exit_code=0, stdout=stream + "\n", stderr="")
+    )
+
+    journals = list((home / ".claude" / "spend-journal").glob("*.jsonl"))
+    assert len(journals) == 1
+    records = [json.loads(line) for line in journals[0].read_text(encoding="utf-8").splitlines()]
+    assert records[0]["name"] == "purpose:dod_judgement_pre_admission@bd-ib-7f66ar"
+    assert records[0]["cwd"] == str(tmp_path / "repo")
+    assert records[1] == {
+        "type": "assistant",
+        "message": {
+            "id": "msg-spend-1",
+            "model": "claude-sonnet-5-5",
+            "usage": {"input_tokens": 40000, "output_tokens": 200},
+        },
+        "ts": records[1]["ts"],
+    }
+    assert records[1]["ts"].endswith("Z")
+    assert runner.argv is not None
+    assert runner.argv[runner.argv.index("--name") + 1] == records[0]["name"]
+
+
+def test_a_chain_run_without_the_bound_asks_for_no_usage_and_ends_no_candidate_on_it(
+    tmp_path: Path,
+) -> None:
+    heavy = '{"request_id": "request-one", "usage": {"input_tokens": 500000}}\n{"outcome": "x"}\n'
+    runner = _Runner(result=CommandResult(exit_code=0, stdout=heavy, stderr=""))
+
+    result = run_dod_gate_prompt(
+        prompt="p", cwd=_repo(tmp_path=tmp_path), runner=runner, is_verdict=lambda _text: True
+    )
+
+    assert result.reply == heavy
+    assert result.usage is not None
+    assert result.usage.total_tokens is None
+    assert result.bound_ended_candidates == ()
+    assert runner.argv is not None
+    assert "--output-format" not in runner.argv
+
+
+def test_a_codex_candidate_is_asked_for_json_events_only_when_its_input_is_bounded(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    unbounded = _Runner(result=CommandResult(exit_code=0, stdout="x", stderr=""))
+    bounded = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}', stderr=""))
+
+    _ = run_dod_gate_prompt(prompt="p", cwd=repo, runner=unbounded, is_verdict=lambda _text: True)
+    _ = run_dod_judgement(
+        item=_item(), cwd=repo, runner=bounded, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert unbounded.argv is not None
+    assert "--json" not in unbounded.argv
+    assert bounded.argv is not None
+    assert "--json" in bounded.argv
+
+
+def test_a_host_codex_judge_resolves_before_isolation_and_reads_only_its_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A home-directory wrapper survives while the invocation itself is isolated."""
+    home = tmp_path / "operator-home"
+    wrapper = home / ".local" / "bin" / "codex"
+    wrapper.parent.mkdir(parents=True)
+    _ = wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    wrapper.chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", f"{wrapper.parent}:{os.environ.get('PATH', '')}")
+    repo = _repo(tmp_path=tmp_path)
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    # A caller can point TMPDIR into the governed repository.  Merely checking
+    # for a `.git` entry in the scratch directory misses Git's parent walk.
+    monkeypatch.setenv("TMPDIR", str(repo))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+
+    verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=runner, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.argv is not None
+    assert runner.argv[0] == str(wrapper)
+    assert "--skip-git-repo-check" in runner.argv
+    assert runner.argv.count("--add-dir") == 1
+    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
+    assert "project_doc_max_bytes=0" in runner.argv
+    assert "features.skills=false" in runner.argv
+    assert "features.multi_agent=false" in runner.argv
+    assert runner.cwd is not None
+    assert runner.cwd != repo
+    assert runner.cwd_git_returncode is not None
+    assert runner.cwd_git_returncode != 0
+    assert runner.environ is not None
+    assert runner.environ["HOME"] == str(runner.cwd / "home")
+
+
+def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex receives credentials, but none of the invoking profile's setup."""
+    codex_home = tmp_path / "interactive-codex"
+    codex_home.mkdir()
+    _ = (codex_home / "auth.json").write_text("host-auth", encoding="utf-8")
+    _ = (codex_home / "config.toml").write_text("interactive = true", encoding="utf-8")
+    operator_home = tmp_path / "operator-home"
+    operator_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("HOME", str(operator_home))
+    monkeypatch.setenv("ZDOTDIR", str(operator_home / ".config" / "zsh"))
+    monkeypatch.setenv("BASH_ENV", str(operator_home / ".bashenv"))
+    monkeypatch.setenv("ENV", str(operator_home / ".shenv"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(operator_home / ".config"))
+    repo = _repo(tmp_path=tmp_path)
+    _write_codex_first_dod_gate(repo=repo)
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+
+    verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=runner, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.environ is not None
+    assert runner.environ["CODEX_HOME"] != str(codex_home)
+    assert runner.codex_auth == "host-auth"
+    assert runner.cwd is not None
+    assert runner.environ["HOME"] == str(runner.cwd / "home")
+    assert runner.environ["ZDOTDIR"] == str(runner.cwd / "home")
+    assert {"BASH_ENV", "ENV", "XDG_CONFIG_HOME"}.isdisjoint(runner.environ)
+
+
+def test_host_judge_scratch_retries_after_a_git_worktree_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scratch candidate nested below a repository must be discarded."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+    worktree_parent = tmp_path / "worktree-parent"
+    safe_parent = tmp_path / "safe-parent"
+    worktree_parent.mkdir()
+    safe_parent.mkdir()
+
+    def is_inside_worktree(*, directory: Path) -> bool:
+        return directory.parent == worktree_parent
+
+    monkeypatch.setattr(
+        module, "_scratch_parent_candidates", lambda: (worktree_parent, safe_parent)
+    )
+    monkeypatch.setattr(module, "_inside_git_worktree", is_inside_worktree)
+    scratch_directory = vars(module)["_non_repository_scratch_directory"]
+
+    with scratch_directory() as scratch:
+        assert scratch.parent == safe_parent
+
+
+def test_host_judge_scratch_refuses_when_no_candidate_directory_can_be_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A launch must not fall back into an unverified temporary directory."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+
+    def unavailable(**_kwargs: object) -> None:
+        raise OSError("unavailable")
+
+    monkeypatch.setattr(module, "_scratch_parent_candidates", lambda: (tmp_path,))
+    monkeypatch.setattr(module.tempfile, "TemporaryDirectory", unavailable)
+    scratch_directory = vars(module)["_non_repository_scratch_directory"]
+
+    with pytest.raises(RuntimeError, match="non-repository scratch directory"):
+        scratch_directory().__enter__()
+
+
+def test_host_judge_treats_an_unavailable_git_command_as_not_a_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing Git executable does not prevent a non-Git candidate launch."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate"
+    )
+
+    def unavailable_git(*_args: object, **_kwargs: object) -> None:
+        raise OSError("git unavailable")
+
+    monkeypatch.setattr(module.subprocess, "run", unavailable_git)
+    inside_git_worktree = vars(module)["_inside_git_worktree"]
+
+    assert not inside_git_worktree(directory=tmp_path)
+
+
+def test_a_host_claude_judge_has_no_interactive_settings_or_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Claude's host invocation explicitly declines every interactive input."""
+    claude = tmp_path / "operator-home" / ".local" / "bin" / "claude"
+    operator_home = tmp_path / "operator-home"
+    monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(claude))
+    monkeypatch.setenv("HOME", str(operator_home))
+    monkeypatch.setenv("ZDOTDIR", str(operator_home / ".config" / "zsh"))
+    runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
+    repo = _repo(tmp_path=tmp_path)
+
+    verdict = run_dod_judgement(
+        item=_item(), cwd=repo, runner=runner, payload_root=_payload(tmp_path=tmp_path)
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.argv is not None
+    assert runner.argv[0] == str(claude)
+    assert runner.argv[runner.argv.index("--add-dir") + 1] == str(repo)
+    assert "--setting-sources" in runner.argv
+    assert runner.argv[runner.argv.index("--setting-sources") + 1] == ""
+    assert "--managed-settings" in runner.argv
+    assert runner.argv[runner.argv.index("--managed-settings") + 1] == "{}"
+    assert {
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+    } <= set(runner.argv)
+    assert runner.cwd is not None
+    assert runner.cwd != repo
+    assert not (runner.cwd / ".git").exists()
+    assert runner.environ is not None
+    assert runner.environ["HOME"] == str(runner.cwd / "home")
+    assert runner.environ["ZDOTDIR"] == str(runner.cwd / "home")
+
+
+def test_the_judge_uses_the_caam_selected_credential_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    selection = home / ".local/state/caam-usage-rotate/selected-account.json"
+    selection.parent.mkdir(parents=True)
+    _ = selection.write_text('{"profile": "anthropic-5"}', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "bare-token")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_5", "selected-token")
+
+    verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.environ is not None
+    assert runner.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "selected-token"
+
+
+def test_the_judge_names_the_unnumbered_credential_fallback_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home-without-selection"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "bare-token")
+
+    verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""),
+    )
+
+    assert verdict.outcome == JUDGEMENT_ADMITTED
+    assert runner.environ is not None
+    assert runner.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "bare-token"
+    assert capsys.readouterr().err.splitlines() == [
+        "factory credential slot fallback — using CLAUDE_CODE_OAUTH_TOKEN: "
+        "no caam-published account selection record"
+    ]
+
+
+def test_a_failing_reply_holds_the_item_with_its_findings(tmp_path: Path) -> None:
+    verdict, _ = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(
+            exit_code=0,
+            stdout='{"outcome": "failed", "failure_reason": "bd-ib-1: no scenario; add it."}',
+            stderr="",
+        ),
+    )
+
+    assert verdict.outcome == JUDGEMENT_HELD
+    assert verdict.findings == ("bd-ib-1: no scenario; add it.",)
+
+
+def test_each_measured_invocation_failure_maps_onto_its_own_stable_cause(
+    tmp_path: Path,
+) -> None:
+    for exit_code, cause in (
+        (127, CAUSE_NO_ELIGIBLE_MODEL),
+        (124, CAUSE_JUDGEMENT_TIMED_OUT),
+        (2, CAUSE_JUDGE_COMMAND_FAILED),
+    ):
+        verdict, _ = _take(
+            tmp_path=tmp_path,
+            result=CommandResult(exit_code=exit_code, stdout="", stderr="boom"),
+        )
+
+        assert verdict.outcome == JUDGEMENT_UNAVAILABLE, exit_code
+        assert verdict.cause == cause, exit_code
+
+
+def test_an_unreadable_reply_from_a_successful_judge_is_still_did_not_run(
+    tmp_path: Path,
+) -> None:
+    verdict, _ = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout="I could not decide.", stderr=""),
+    )
+
+    assert verdict.outcome == JUDGEMENT_UNAVAILABLE
+    assert verdict.cause == CAUSE_UNPARSEABLE_VERDICT
+
+
+def test_an_unreadable_gate_prompt_is_reported_rather_than_judged_around(
+    tmp_path: Path,
+) -> None:
+    verdict, runner = _take(
+        tmp_path=tmp_path,
+        result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}', stderr=""),
+        payload=tmp_path / "no-payload-here",
+    )
+
+    assert verdict.outcome == JUDGEMENT_UNAVAILABLE
+    assert verdict.cause == CAUSE_PROMPT_UNREADABLE
+    # Nothing was spent: a judgement with no prompt is not a judgement.
+    assert runner.argv is None
+
+
+def test_the_judge_executable_resolves_by_override_then_path_then_convention(
+    tmp_path: Path,
+) -> None:
+    override = tmp_path / "my-claude"
+    assert resolve_judge_path(
+        environ={"LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH": str(override)},
+        which=lambda _name: None,
+        conventional=tmp_path / "absent",
+    ) == str(override)
+    assert (
+        resolve_judge_path(
+            environ={}, which=lambda _name: "/usr/bin/claude", conventional=tmp_path / "absent"
+        )
+        == "/usr/bin/claude"
+    )
+    conventional = tmp_path / "conventional-claude"
+    _ = conventional.write_text("", encoding="utf-8")
+    assert resolve_judge_path(
+        environ={}, which=lambda _name: None, conventional=conventional
+    ) == str(conventional)
+    # Last resort: the bare name, so the runner surfaces the absence as exit 127
+    # rather than this resolver guessing that no model is eligible.
+    assert (
+        resolve_judge_path(environ={}, which=lambda _name: None, conventional=tmp_path / "absent")
+        == "claude"
+    )
+
+
+def test_the_time_box_takes_its_committed_default_unless_overridden() -> None:
+    default = resolve_judge_timeout_seconds(environ={})
+    assert default > 0
+    assert resolve_judge_timeout_seconds(environ={"LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS": "30"})
+    assert (
+        resolve_judge_timeout_seconds(environ={"LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS": "30"})
+        == 30.0
+    )
+    # A zero, negative or unparseable time box reads as the default rather than
+    # as a self-inflicted hang or a crash on the fail-soft path.
+    for raw in ("0", "-1", "not-a-number", ""):
+        assert (
+            resolve_judge_timeout_seconds(environ={"LIVESPEC_DOD_JUDGEMENT_TIMEOUT_SECONDS": raw})
+            == default
+        )

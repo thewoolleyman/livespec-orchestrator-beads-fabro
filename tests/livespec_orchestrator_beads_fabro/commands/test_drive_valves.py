@@ -91,7 +91,7 @@ def _item(**overrides: object) -> WorkItem:
     return replace(base, **overrides)
 
 
-def test_approve_refuses_unlabeled_pending_item_when_global_auto_enabled(
+def test_approve_admits_unlabeled_pending_item_when_global_auto_enabled(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -99,14 +99,22 @@ def test_approve_refuses_unlabeled_pending_item_when_global_auto_enabled(
     _write_fake_config(repo, auto_approve_ready=True)
     append_work_item(
         path=_config(),
-        item=_item(status="pending-approval", admission_policy=None),
+        item=_item(
+            status="pending-approval",
+            admission_policy=None,
+            description=(
+                "Do the thing.\n\n## Definition of Done\n\n"
+                "- The dispatched slice lands its change.\n\n"
+                "References: ## Effective acceptance criteria\n"
+            ),
+            acceptance_criteria="The dispatched slice is verified green by the check suite.",
+        ),
     )
 
     result = run_human_valve_action(repo=repo, action_id="approve:bd-ib-ready")
 
-    assert result["status"] == "failed"
-    assert result["domain_error"] == "invalid-source-state"
-    assert _fake().show_issue(issue_id="bd-ib-ready")["status"] == "pending-approval"
+    assert result["status"] == "green"
+    assert _fake().show_issue(issue_id="bd-ib-ready")["status"] == "ready"
 
 
 def test_run_human_valve_action_refuses_malformed_action(tmp_path: Path) -> None:

@@ -210,10 +210,12 @@ def test_the_checkout_step_fails_the_run_when_it_cannot_land() -> None:
     assert "set -e" in block
 
 
-def test_no_resume_renders_no_checkout_step_at_all() -> None:
-    """An ordinary dispatch's overlay is byte-for-byte what it always was."""
+def test_no_resume_renders_cache_provisioning_but_no_checkout_step() -> None:
+    """A fresh sandbox warms pyright, but does not fetch a published head."""
     module = _entry_module()
-    assert module.resume_checkout_prepare_steps_block(checkout=None) == ""
+    block = module.resume_checkout_prepare_steps_block(checkout=None)
+    assert "pyright cache provisioning" in block
+    assert "git checkout" not in block
 
 
 def _committed_graph() -> str:

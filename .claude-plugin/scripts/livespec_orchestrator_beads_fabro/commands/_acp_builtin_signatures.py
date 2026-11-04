@@ -17,10 +17,10 @@ THE 400 CASE IS THE WHOLE POINT OF THE SLICE. The v107 `pr`-node outage
 was `HTTP 400 'model is not supported when using Codex with a ChatGPT
 account'` after `gpt-5.4-mini` left the ChatGPT-account catalog
 (`SPECIFICATION/history/v107/proposed_changes/pr-node-default-claude-haiku.md`).
-The eligible discriminator is the SENTENCE, never the status: the
-signature conjoins "requested model" with the unsupported clause, so it
-names the model the account asked for. A 400 carrying neither literal
-stays generic and terminates with its own identity, which
+The eligible discriminator is the SENTENCE, never the status: both
+measured model-naming forms are carried on the ACP protocol-message
+channel. A 400 carrying neither discriminator stays generic and terminates
+with its own identity, which
 `_acp_failure_matching.generic_status_reason` is what enforces.
 
 SCOPE IS NOT DECORATION. A removed or unentitled model is CANDIDATE-
@@ -52,9 +52,9 @@ __all__: list[str] = [
     "effective_signatures",
 ]
 
-_TERMINAL_SOURCE = "process.terminal_diagnostic"
 _MESSAGE_SOURCE = "protocol.message"
 _MACHINE_CODE_SOURCE = "protocol.machine_code"
+_FINAL_OUTPUT_SOURCE = "turn.final_output"
 _CANDIDATE_SCOPE = "candidate"
 _DOMAIN_SCOPE = "availability-domain"
 
@@ -97,9 +97,10 @@ def _quota_machine_code(*, machine_code: str) -> AcpAvailabilitySignature:
 # MEASURED 2026-09-09, the `pr`-node outage that motivated this contract:
 # the pinned Codex adapter returned HTTP 400 naming the requested model as
 # unsupported for a ChatGPT account. Candidate-scoped: the account works,
-# this one slug does not.
-_CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
-    source=_TERMINAL_SOURCE,
+# this one slug does not. The Dispatcher reads failed ACP causes as protocol
+# messages, so the signature names that recorded channel.
+_CODEX_REQUESTED_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
+    source=_MESSAGE_SOURCE,
     cause="model_unsupported",
     scope=_CANDIDATE_SCOPE,
     all_literals=(
@@ -108,16 +109,42 @@ _CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
     ),
 )
 
+# MEASURED 2026-11-02 on gmktec, run 01M6DXH0CHT8: the pinned Codex adapter
+# returned HTTP 400 `model_not_found` with ``The '<model>' model is not
+# supported when using Codex with a ChatGPT account``. This wording omits the
+# earlier "requested model" phrase, so it needs its own exact discriminator.
+_CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
+    source=_MESSAGE_SOURCE,
+    cause="model_unsupported",
+    scope=_CANDIDATE_SCOPE,
+    all_literals=("model is not supported when using codex with a chatgpt account",),
+)
+
 # MEASURED 2026-08 on the Wave B fork validation (`plan/archive/
 # fabro-fork-control-plane-gaps/research/005-...`): `-m gpt-5.5` returned
 # `404 Not Found: The model 'gpt-5.5' does not exist or you do not have
 # access to it`. The model-naming clause is the discriminator; the bare
 # 404 around it is not.
 _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
-    source=_TERMINAL_SOURCE,
+    source=_MESSAGE_SOURCE,
     cause="model_not_found",
     scope=_CANDIDATE_SCOPE,
     all_literals=("the model", "does not exist or you do not have access to it"),
+)
+
+# MEASURED 2026-10-20 on gmktec, run 01M5C0FBAE8FVZK15XN9WHVM6H of
+# `bd-ib-davaxq`: the `review` node ran on the codex-acp fallback and the
+# engine recorded the turn as SUCCEEDED while its output ended with the
+# provider's refusal, delivered as turn text with no space after the preceding
+# sentence's period. There is no recorded failure for a `protocol.message`
+# form to match, so this is the one built-in form on the `turn.final_output`
+# source. Candidate-scoped: the capacity refusal names the selected model, not
+# the account behind it.
+_CODEX_CAPACITY = AcpAvailabilitySignature(
+    source=_FINAL_OUTPUT_SOURCE,
+    cause="provider_capacity",
+    scope=_CANDIDATE_SCOPE,
+    final_text="Selected model is at capacity. Please try a different model.",
 )
 
 # THE MEASURED PROVIDER-LIMIT SET, transcribed from the same contract
@@ -138,6 +165,12 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
 #   (`plan/fabro-currency/research/004-acp-spend-limit-evidence.json`,
 #   mode `usage-cap`). `resets` is the second literal rather than a nicety:
 #   "hit your limit" alone is the prefix of sentences that are not ceilings.
+# - the WEEKLY limit, "You've hit your weekly limit - resets Oct 23, 3pm
+#   (UTC)". Measured 2026-10-18 on gmktec, run 01M580PF02S0 of bd-ib-fubkcv:
+#   `proof_verify@3` failed after six hours with this sentence and a structured
+#   `errorKind` of `rate_limit`. `resets` is the second literal for the same
+#   reason as the generic form, and the sentence is the discriminator -- the
+#   `rate_limit` kind alone establishes nothing.
 # - the USAGE limit, which Claude emits with the same wording Codex does.
 #   It belongs in BOTH tables: the contract attributes a shared sentence to
 #   "the candidate that actually ran", and a candidate only ever consults
@@ -160,6 +193,7 @@ _CODEX_MODEL_NOT_FOUND = AcpAvailabilitySignature(
 # `usage_limit_exceeded` and the October one carries `usageLimitExceeded`.
 _ANTHROPIC_SESSION_LIMIT = _quota_message(literals=("hit your session limit",))
 _ANTHROPIC_GENERIC_LIMIT = _quota_message(literals=("hit your limit", "resets"))
+_ANTHROPIC_WEEKLY_LIMIT = _quota_message(literals=("hit your weekly limit", "resets"))
 _ANTHROPIC_USAGE_LIMIT = _quota_message(literals=("hit your usage limit",))
 _ANTHROPIC_ORG_SPEND_LIMIT = _quota_message(literals=("org", "spend limit"))
 _CODEX_USAGE_LIMIT = _quota_message(literals=("hit your usage limit",))
@@ -171,12 +205,15 @@ _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     ANTHROPIC_DOMAIN: (
         _ANTHROPIC_SESSION_LIMIT,
         _ANTHROPIC_GENERIC_LIMIT,
+        _ANTHROPIC_WEEKLY_LIMIT,
         _ANTHROPIC_USAGE_LIMIT,
         _ANTHROPIC_ORG_SPEND_LIMIT,
     ),
     CODEX_DOMAIN: (
+        _CODEX_REQUESTED_MODEL_UNSUPPORTED,
         _CODEX_MODEL_UNSUPPORTED,
         _CODEX_MODEL_NOT_FOUND,
+        _CODEX_CAPACITY,
         _CODEX_USAGE_LIMIT,
         _CODEX_USAGE_LIMIT_EXCEEDED,
         _CODEX_USAGE_LIMIT_CAMEL_TOKEN,

@@ -29,7 +29,7 @@ _MANUAL_ADMISSION = "manual"
 
 
 def can_approve_item(*, item: WorkItem, cwd: Path) -> bool:
-    """Return whether the human approve valve can fire for this item now."""
+    """Return whether the item rests at the approve valve awaiting a human (advertising)."""
     return item.status == _PENDING_APPROVAL and _admission_policy(item=item, cwd=cwd) == (
         _MANUAL_ADMISSION
     )

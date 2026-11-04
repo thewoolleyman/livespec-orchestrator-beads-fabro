@@ -52,6 +52,10 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
     Resolved through the reconcile valve's own authority rather than from a flag, so a
     record cannot be published onto an earlier pull request — where the acceptance pass
     would correctly refuse it, for a reason the successful post would not reveal.
+
+    Only a pull request identified by the item's dispatch head branch or its title
+    qualifies. A merge that merely MENTIONS the item in its body is a sibling or a
+    follow-up, never a pull request a dispatch of the item produced, so it yields `None`.
     """
     # Imported here rather than at module scope: the resolution pulls in the reconcile
     # supervisor, which imports the completion path, which imports the acceptance pass —
@@ -80,5 +84,6 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
         item=item,
         runner=runner,
         journal=JournalFile(path=repo / "tmp" / f"host-record-{item.id}.jsonl"),
+        produced_by_item_dispatch_only=True,
     )
     return merged.number if merged is not None and not isinstance(merged, str) else None

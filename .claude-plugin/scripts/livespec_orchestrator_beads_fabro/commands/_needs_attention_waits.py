@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import FactoryRunReader
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_tail import (
+    journal_tail_records,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     dispatch_provider_exhaustion,
 )
@@ -22,11 +26,11 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import
     dispatcher_loop_command,
     host_only_command,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "acceptance_wait_summary",
+    "acp_chain_preflight_verdict",
     "acp_chain_wait_active",
     "host_only_items",
     "provider_exhaustion_items",
@@ -104,25 +108,62 @@ def provider_exhaustion_wait_active(*, project_root: Path) -> bool:
     )
 
 
+def acp_chain_preflight_verdict(*, project_root: Path, now_iso: str) -> AcpPreflightVerdict:
+    """The ONE ACP preflight verdict every snapshot surface composes from.
+
+    `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+    priority" requires it of both consumers in one sentence: "Idle-factory and
+    wait attention consume this identical verdict." A surface resolving a
+    verdict of its own would be a second measurement of one evaluation, and the
+    two could disagree about a record that retired between them -- which is
+    exactly the disagreement a snapshot cannot report, because both halves
+    produce a well-formed row.
+
+    THE PRODUCTION FACTORY RUN READER IS SUPPLIED, which is the "read-only
+    observation of the factory-native availability evidence" the idle-factory
+    clause requires of the shared verdict. Without it the verdict is resolved
+    from this repository's own journal alone, so a hold another repository's
+    run observed on a shared factory is invisible here and -- worse -- a
+    factory whose listing REFUSES is never asked, leaving the composition to
+    report an evidence set it had no part of as complete. The clause forbids
+    exactly that: "Unavailable availability evidence MUST NOT be treated as an
+    empty hold set or as proof of eligibility."
+
+    The reader resolves each declared factory's own server from
+    `dispatcher.factories` and is unreadable rather than falling back to a
+    local default, which is what keeps a remote factory's runs from being
+    surveyed on whichever engine the composing host happens to run.
+
+    A repository declaring NO factory reads nothing at all: `declared_factory_names`
+    enumerates none, so no listing, no inspect, and no round trip is spent --
+    which is what keeps this composable on an offline host.
+
+    No probe is supplied, so the read performs no credential assessment at all:
+    `_acp_candidate_preflight._probe_skip` returns on an absent probe before it
+    reaches a credential, and no confirmation turn exists on this path either.
+    That is the snapshot-composition prohibition held structurally rather than
+    carefully -- there is no probe argument for a caller here to pass.
+
+    The EVALUATION TIME is the caller's, because a surface that reports the
+    instant it derived must render the row from the same evaluation the instant
+    was computed in; a clock read inside here would make the two readings
+    different moments.
+    """
+    return resolve_acp_preflight(
+        repo=project_root,
+        journal_path=project_root / _DISPATCHER_JOURNAL_PATH,
+        now_iso=now_iso,
+        factory_runs=FactoryRunReader(repo=project_root),
+    )
+
+
 def acp_chain_wait_active(*, project_root: Path) -> bool:
     """Whether an exhausted success-critical ACP candidate chain holds dispatch.
 
-    This is the WAIT-ATTENTION half of the one preflight verdict admission
-    consumes, and it consumes it the way `SPECIFICATION/contracts.md` section
-    "Factory-configurable ACP fallback priority" requires: "Idle-factory and
-    wait attention consume this identical verdict."
-
-    No probe is supplied, so the read performs no credential assessment and no
-    other external call -- it composes this repository's own committed
-    configuration, workflow graph and journal, and nothing else. That is what
-    lets the idle-factory row it gates stay byte-identical across two passes
-    over an unchanged store.
+    The WAIT-ATTENTION half of the shared verdict above, read as the one
+    boolean the idle-factory trigger needs.
     """
-    return not resolve_acp_preflight(
-        repo=project_root,
-        journal_path=project_root / _DISPATCHER_JOURNAL_PATH,
-        now_iso=utc_now_iso(),
-    ).viable
+    return not acp_chain_preflight_verdict(project_root=project_root, now_iso=utc_now_iso()).viable
 
 
 def _provider_exhaustion_item(
@@ -229,26 +270,7 @@ def _latest_record(*, project_root: Path, item_id: str, stage: str) -> dict[str,
 
 
 def _journal_records(*, project_root: Path) -> tuple[dict[str, Any], ...]:
-    journal = project_root / _DISPATCHER_JOURNAL_PATH
-    if not journal.is_file():
-        return ()
-    loaded = attempt(action=lambda: journal.read_text(encoding="utf-8"), exceptions=(OSError,))
-    if isinstance(loaded, AttemptFailure):
-        return ()
-    records: list[dict[str, Any]] = []
-    for line in loaded.splitlines():
-        record = _json_object(line=line)
-        if record is not None:
-            records.append(record)
-    return tuple(records)
-
-
-def _json_object(*, line: str) -> dict[str, Any] | None:
-    parsed = attempt(action=lambda: json.loads(line), exceptions=(json.JSONDecodeError,))
-    loaded = cast("object", parsed)
-    if isinstance(loaded, AttemptFailure) or not isinstance(loaded, dict):
-        return None
-    return cast("dict[str, Any]", loaded)
+    return journal_tail_records(journal_path=project_root / _DISPATCHER_JOURNAL_PATH)
 
 
 def _absent_evidence_legs(

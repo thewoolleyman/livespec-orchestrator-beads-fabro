@@ -54,6 +54,8 @@ SECRET_MARKERS: tuple[str, ...] = (
     "token",
 )
 
+_CODEX_COMPACTION_LIMIT_PREFIX = "model_auto_compact_token_limit="
+
 
 def secret_marker(*, text: str) -> str | None:
     """The first credential marker `text` carries, or `None` when it is clean."""
@@ -79,6 +81,13 @@ def adapter_secret_refusal(
     if command_marker is not None:
         return _refusal(key=key, location="command", marker=command_marker)
     for index, argument in enumerate(args):
+        if (
+            index > 0
+            and args[index - 1] == "-c"
+            and argument.startswith(_CODEX_COMPACTION_LIMIT_PREFIX)
+            and argument.removeprefix(_CODEX_COMPACTION_LIMIT_PREFIX).isdigit()
+        ):
+            continue
         marker = secret_marker(text=argument)
         if marker is not None:
             return _refusal(key=key, location=f"args[{index}]", marker=marker)

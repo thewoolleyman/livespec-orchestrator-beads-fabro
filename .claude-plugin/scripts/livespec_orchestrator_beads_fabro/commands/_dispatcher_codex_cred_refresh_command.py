@@ -28,9 +28,8 @@ import argparse
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
     CodexAppServerRunner,
@@ -45,10 +44,23 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import
     codex_refresh_guard_seconds,
     should_invoke_codex_refresh,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_status_payload import (
+    codex_cred_status_payload,
+    human_bool,
+    human_optional,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
     WorkflowFaultDeferral,
     operator_credential_requirement,
     requirement_refusal_text,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement_payload import (
+    CREDENTIAL_REQUIREMENT_PAYLOAD_KEY,
+    credential_requirement_human_lines,
+    credential_requirement_payload,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
@@ -61,6 +73,7 @@ __all__: list[str] = [
 class _RefreshPayloadInput:
     before: HostCodexCredentialStatus
     after: HostCodexCredentialStatus
+    requirement: CredentialLifetimeRequirement
     codex_exit_code: int | None
     codex_stderr: str
     dry_run: bool
@@ -128,6 +141,7 @@ def run_codex_cred_refresh_with(
         refresh=_RefreshPayloadInput(
             before=before,
             after=after,
+            requirement=requirement,
             codex_exit_code=codex_exit_code,
             codex_stderr=codex_stderr,
             dry_run=args.dry_run,
@@ -161,30 +175,13 @@ def _assess_host_codex_credential(
     )
 
 
-def _codex_cred_status_payload(*, status: HostCodexCredentialStatus) -> dict[str, Any]:
-    expires_at_iso = (
-        None
-        if status.expires_at_epoch is None
-        else datetime.fromtimestamp(status.expires_at_epoch, tz=timezone.utc).isoformat()
-    )
-    remaining_days = None if status.remaining_seconds is None else status.remaining_seconds / 86_400
-    return {
-        "alarm": status.alarm,
-        "expires_at_epoch": status.expires_at_epoch,
-        "expires_at_iso": expires_at_iso,
-        "malformed": status.malformed,
-        "message": status.message,
-        "present": status.present,
-        "refresh_due": status.refresh_due,
-        "remaining_days": remaining_days,
-        "remaining_seconds": status.remaining_seconds,
-    }
-
-
 def _codex_cred_refresh_payload(*, refresh: _RefreshPayloadInput) -> dict[str, Any]:
     return {
-        "after": _codex_cred_status_payload(status=refresh.after),
-        "before": _codex_cred_status_payload(status=refresh.before),
+        "after": codex_cred_status_payload(status=refresh.after),
+        "before": codex_cred_status_payload(status=refresh.before),
+        CREDENTIAL_REQUIREMENT_PAYLOAD_KEY: credential_requirement_payload(
+            requirement=refresh.requirement
+        ),
         "codex_exit_code": refresh.codex_exit_code,
         "dry_run": refresh.dry_run,
         "invoked_codex": refresh.invoked_codex,
@@ -231,22 +228,17 @@ def _codex_cred_refresh_human(*, payload: dict[str, Any]) -> str:
     return "\n".join(
         (
             f"outcome: {payload['outcome']}",
-            f"dry_run: {_human_bool(value=payload['dry_run'])}",
-            f"would_invoke_codex: {_human_bool(value=payload['would_invoke_codex'])}",
-            f"invoked_codex: {_human_bool(value=payload['invoked_codex'])}",
-            f"renewal_answered: {_human_bool(value=payload['renewal_answered'])}",
-            f"codex_exit_code: {_human_optional(value=payload['codex_exit_code'])}",
-            f"before_remaining_seconds: {_human_optional(value=before_remaining)}",
-            f"after_remaining_seconds: {_human_optional(value=after_remaining)}",
+            f"dry_run: {human_bool(value=payload['dry_run'])}",
+            f"would_invoke_codex: {human_bool(value=payload['would_invoke_codex'])}",
+            f"invoked_codex: {human_bool(value=payload['invoked_codex'])}",
+            f"renewal_answered: {human_bool(value=payload['renewal_answered'])}",
+            f"codex_exit_code: {human_optional(value=payload['codex_exit_code'])}",
+            f"before_remaining_seconds: {human_optional(value=before_remaining)}",
+            f"after_remaining_seconds: {human_optional(value=after_remaining)}",
+            *credential_requirement_human_lines(
+                payload=cast("dict[str, Any]", payload[CREDENTIAL_REQUIREMENT_PAYLOAD_KEY])
+            ),
             f"message: {payload['message']}",
             "",
         )
     )
-
-
-def _human_bool(*, value: object) -> str:
-    return "true" if value is True else "false"
-
-
-def _human_optional(*, value: object) -> str:
-    return "null" if value is None else str(value)

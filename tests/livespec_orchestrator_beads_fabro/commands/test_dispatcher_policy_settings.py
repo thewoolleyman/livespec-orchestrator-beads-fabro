@@ -6,8 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TypeVar
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_policy_settings
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
-    _is_spec_change_tier,
     effective_acceptance_rework_cap,
     effective_admission_policy,
     effective_merge_on_review_cap,
@@ -20,6 +20,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_REVIEW_FIX_CAP,
     resolve_auto_approve_ready,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_config_schema import config_key_by_name
 from livespec_orchestrator_beads_fabro.types import WorkItem
 from returns.io import IOResult
 from returns.unsafe import unsafe_perform_io
@@ -81,6 +82,41 @@ def test_boolean_setting_reads_explicit_false(tmp_path: Path) -> None:
     )
 
     assert _read(resolve_auto_approve_ready(cwd=cwd)) is False
+
+
+def test_a_committed_auto_approval_setting_wins_over_a_manual_item_label(
+    tmp_path: Path,
+) -> None:
+    """A committed setting governs every item's pending-approval admission."""
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": ' '{"dispatcher": {"auto_approve_ready": true}}}'
+        ),
+    )
+
+    assert (
+        _read(effective_admission_policy(item=_item(admission_policy="manual"), cwd=cwd)) == "auto"
+    )
+
+
+def test_availability_probe_timeout_is_committed_only_and_defaults_to_120(tmp_path: Path) -> None:
+    """The confirmation probe uses a committed positive-integer timeout dial."""
+    resolver_name = "resolve_availability_probe_timeout_seconds"
+
+    assert resolver_name in _dispatcher_policy_settings.__all__
+    resolve = _dispatcher_policy_settings.resolve_availability_probe_timeout_seconds
+    configured = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": '
+            '{"dispatcher": {"availability_probe_timeout_seconds": 45}}}'
+        ),
+    )
+
+    assert _read(resolve(cwd=_NO_CONFIG_CWD)) == 120
+    assert _read(resolve(cwd=configured)) == 45
+    assert config_key_by_name(key="availability_probe_timeout_seconds") is None
 
 
 def test_raw_boolean_false_label_beats_true_global(tmp_path: Path) -> None:
@@ -182,19 +218,33 @@ def test_invalid_raw_labels_with_config_fall_back_to_global_values(tmp_path: Pat
     )
 
 
-def test_spec_change_tier_is_the_commitment_not_the_plan_anchor() -> None:
-    """A plan anchor marker rides the same field; only a real commitment is that tier."""
-    assert _is_spec_change_tier(item=_item(spec_commitment_hint=_PLAN_ANCHOR_MARKER)) is False
-    assert _is_spec_change_tier(item=_item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT)) is True
+def test_neither_a_commitment_hint_nor_a_plan_anchor_pins_the_admission_policy() -> None:
+    """The repair of `bd-ib-yykjko`: the hint is not the tier, in either direction.
 
+    This pair used to assert the opposite of its second half — a
+    commitment-carrying item pinned to the `manual` floor — and that reading is
+    the inverted predicate the plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` names outright: the two fields "are
+    near-opposites", since a non-null `spec_commitment_hint` marks an
+    implementation FOLLOW-UP to an ALREADY-RATIFIED change and is therefore
+    ordinary dispatchable work. Pinning it held exactly the set that should be
+    admitted while admitting every unratified feature.
 
-def test_a_plan_anchored_item_keeps_its_own_admission_policy() -> None:
-    """The routing consequence: only a real commitment is pinned to the manual floor."""
+    BOTH values are asserted to keep their own policy, which is what makes the
+    case discriminating: a resolution that had merely swapped the two answers
+    would satisfy one half and fail the other. The hold a genuine
+    spec-change-tier item earns is applied where the RECORDED classification can
+    be read — the filing route and the pre-dispatch wall — and is bound by
+    `tests/integration/test_spec_change_tier_commitment_hint.py`.
+    """
     anchored = _item(spec_commitment_hint=_PLAN_ANCHOR_MARKER, admission_policy="auto")
     committed = _item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT, admission_policy="auto")
 
     assert _read(effective_admission_policy(item=anchored, cwd=_NO_CONFIG_CWD)) == "auto"
-    assert (
-        _read(effective_admission_policy(item=committed, cwd=_NO_CONFIG_CWD))
-        == DEFAULT_ADMISSION_POLICY
+    assert _read(effective_admission_policy(item=committed, cwd=_NO_CONFIG_CWD)) == "auto"
+    # A manual-admission item still rests for the approve valve, which is
+    # Scenario 10's own subject and is untouched by the repair.
+    manual = _item(spec_commitment_hint=_SPEC_CLAUSE_COMMITMENT, admission_policy="manual")
+    assert _read(effective_admission_policy(item=manual, cwd=_NO_CONFIG_CWD)) == (
+        DEFAULT_ADMISSION_POLICY
     )

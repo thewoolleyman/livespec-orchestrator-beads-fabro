@@ -1,12 +1,2 @@
-# Workflow-edit exemption - one exemption binds to one reviewed change.
-#
-# The change: add `just check-plan-continuation-ruling` to the
-# check-metadata-batch job's run block in .github/workflows/ci.yml, beside
-# check-plan-close-proof, so CI runs the repo-local plan_continuation_ruling
-# conformance verdict that SPECIFICATION/contracts.md v124 requires and this
-# pull request adds to the check aggregate (dev-tooling/checks script over the
-# package primitive bd-ib-63bgy7 landed). Human authorization: the maintainer
-# answered "Yes, land it under the label" in the definition-and-proof-of-done
-# session on 2026-10-13.
-work_item=bd-ib-7iyfo5
-reason=Add one line to the ci.yml metadata batch, just check-plan-continuation-ruling beside check-plan-close-proof, wiring the v124 plan_continuation_ruling conformance verdict; authorized per-case by the maintainer on 2026-10-13 in the definition-and-proof-of-done session.
+work_item=bd-ib-uxv5al
+reason=Route check-per-file-coverage and check-coverage (ci.yml and ci-root-uid.yml) through their own CI_COVERAGE_RUNNER_LABELS variable, falling back to CI_RUNNER_LABELS, so the coverage pair can stay on k3s while the other jobs move to hosted runners (hybrid ruled by legacy-coordinator-agent after the 2026-11-04 hosted cutover measured 55+ min coverage on hosted). Unset, nothing moves. approval:workflow-edit set by legacy-coordinator-agent under the maintainer's standing ruling.

@@ -16,15 +16,30 @@ is that a reader and a parser find the same section, and "the first heading I
 happen to match" would let a Context or Notes section quietly host a second
 definition that nothing grades.
 
+WHY THE BULLET IS THE UNIT, AND NOT THE SENTENCE. The clause fixes the body as
+"one or more `- ` bullets, each carrying exactly one gradeable assertion", so
+ONE bullet yields exactly ONE assertion however much punctuation it contains.
+This parse therefore does its own segmentation rather than handing the body to
+`criteria_lines`, the general segmenter the two LEGACY sources share: that
+segmenter splits a block into sentences, which is right for a free-form criteria
+field and wrong for a section whose grammar already names its units.
+
+The cost of borrowing it was measured on `livespec-overseer`'s
+`overseer-uzvcbn.5`. Every non-bullet line of the section reached the segmenter
+too, so a flush-left provenance paragraph was projected as a seventh
+`factory_captured` assertion; the host preflight and the in-run `dod_gate` both
+graded the section as the six assertions it states, and the deterministic
+projection the LAST node reads graded seven. The run spent three and three
+quarter hours and ended at `proof_grade` on an assertion no capture could ever
+satisfy. A sentence split is the same fault one level down: a bullet graded
+twice is graded once against evidence that answers the whole bullet and once
+against half of it.
+
 WHY HEADINGS AND THE REFERENCE LINE ARE NOT ASSERTIONS. The clause says the
 body consists of bullets plus exactly one `References:` line, and that the
 reference line "MUST NOT be counted as a gradeable assertion by any parse".
-Both exclusions happen HERE rather than in `criteria_lines`, because
-`criteria_lines` is the general segmenter shared with the two legacy sources and
-neither of them has a reference line to exclude. Leaving the exclusion to the
-segmenter is also how the sub-heading would have leaked: `### Human-attested`
-is neither short-and-shouting nor colon-terminated, so the segmenter's
-header heuristic reads it as prose and would grade it as an assertion.
+Neither is a bullet, so neither opens an assertion — and nothing that is not a
+bullet or one of its own continuation lines can contribute to one.
 
 WHY THE TWO OPT-OUT SUB-HEADINGS SHARE ONE TABLE. `### Host-captured` (v115) and
 `### Human-attested` differ in WHICH mode they declare and in nothing else this
@@ -58,10 +73,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
-    criteria_lines,
-)
-
 __all__: list[str] = [
     "DEFINITION_OF_DONE_TITLE",
     "HOST_CAPTURED_SUB_HEADING_TITLE",
@@ -77,6 +88,8 @@ __all__: list[str] = [
     "DefinitionOfDoneAssertion",
     "declared_proof_mode",
     "definition_of_done",
+    "definition_of_done_source",
+    "reference_line_headings",
 ]
 
 DEFINITION_OF_DONE_TITLE = "definition of done"
@@ -125,6 +138,11 @@ _REASON_OWING_SUB_HEADINGS = {
 }
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+# What OPENS an assertion: the `- ` bullet marker the clause names, and nothing
+# else. The lookahead is what keeps a bare `-` out — such a line carries no
+# assertion, so admitting it would mint an empty one whose text nothing can
+# grade.
+_BULLET = re.compile(r"^\s*-\s+(?=\S)")
 # Where ONE reference ends and the next begins. The clause writes the line as
 # `References: <heading>[, <heading>...]`, but a ratified H2 heading carries
 # commas OF ITS OWN — `## Scenario 133 — A mixed item is refused ai-only from
@@ -159,6 +177,13 @@ class DefinitionOfDone:
     present one whose body carries no bullet, so a caller cannot accidentally
     read an empty section as gradeable.
 
+    `criteria_layout` is the rendered section body with its `References:` line
+    removed. Unlike `criteria_text`, it deliberately keeps bullet markers,
+    proof-mode sub-headings and their `Reason:` lines so a judgement subject can
+    show a judge the same proof-mode boundaries the item author declared. The
+    referenced headings render separately in that subject, so retaining the
+    reference line here would make it look like an assertion beside its source.
+
     `assertions` carries the same segmentation in the section's own order, each
     one paired with the mode its POSITION declared. Document order is preserved
     rather than grouped by mode, because the proof record is published "per
@@ -181,13 +206,24 @@ class DefinitionOfDone:
     author wrote; the mode is recovered from it by `declared_proof_mode` — which
     takes the same `subject`, so a plan's title cannot be resolved under the
     work-item defaults.
+
+    `stray_lines` carries, verbatim and in order, every body line the grammar
+    does not admit: one that is neither a `- ` bullet nor one of its own
+    indented continuation lines, neither a sub-heading nor a `Reason:` line, and
+    not the `References:` line. Blank lines are not stray — they separate
+    bullets. REPORTING them is what makes the host-side wall able to refuse
+    before a dispatch spends anything; the alternative the measured defect took
+    was to grade them, which produced an assertion no capture could satisfy and
+    surfaced only at the run's last node.
     """
 
     present: bool
     criteria_text: str | None
+    criteria_layout: str | None
     assertions: tuple[DefinitionOfDoneAssertion, ...]
     references: tuple[str, ...]
     malformed_proof_modes: tuple[str, ...]
+    stray_lines: tuple[str, ...] = ()
 
     @property
     def host_captured_assertions(self) -> tuple[str, ...]:
@@ -221,15 +257,52 @@ def definition_of_done(*, description: str, subject: str = SUBJECT_WORK_ITEM) ->
     if title != DEFINITION_OF_DONE_TITLE:
         return _absent()
     body = _section_body(lines=lines, start=index + 1, level=level)
-    assertions = _assertions(body=body, subject=subject)
+    assertions, stray = _parse_body(body=body, subject=subject)
     text = "\n".join(one.text for one in assertions)
     return DefinitionOfDone(
         present=True,
         criteria_text=text or None,
+        criteria_layout=_criteria_layout(body=body),
         assertions=assertions,
         references=_references(body=body),
         malformed_proof_modes=_malformed_proof_modes(body=body, subject=subject),
+        stray_lines=stray,
     )
+
+
+def definition_of_done_source(*, description: str) -> str:
+    """The Definition of Done section's own text, or empty when there is none.
+
+    The heading line and every line under it, exactly as written, so a
+    consumer that must notice ANY change to the section — a `Reason:` line, a
+    sub-heading, the reference line, the heading's own level — reads one value
+    rather than a list of the parts it happened to think of. It is a verbatim
+    slice of the description, line endings included. Only trailing BLANK lines
+    are dropped: they separate the section from the next heading and state
+    nothing, while trailing blanks inside a line are kept.
+    """
+    lines = description.splitlines()
+    opening = _opening_heading(lines=lines)
+    if opening is None or opening[2] != DEFINITION_OF_DONE_TITLE:
+        return ""
+    index, level, _title = opening
+    extent = 1 + len(_section_body(lines=lines, start=index + 1, level=level))
+    # The same lines, each with its own line ending, so a changed separator is
+    # a changed section too: `splitlines` yields one entry per line either way.
+    section = description.splitlines(keepends=True)[index : index + extent]
+    while not section[-1].strip():
+        _ = section.pop()
+    return "".join(section)
+
+
+def reference_line_headings(*, text: str) -> tuple[str, ...]:
+    """The heading texts the first `References:` line of `text` names, in order.
+
+    For a statement that carries the reference line without the Definition of
+    Done heading that ordinarily encloses it, such as the governing-heading
+    statement. It reads the line exactly as the section parse does.
+    """
+    return _references(body=text.splitlines())
 
 
 def declared_proof_mode(*, sub_heading: str, subject: str = SUBJECT_WORK_ITEM) -> str:
@@ -252,49 +325,93 @@ def _absent() -> DefinitionOfDone:
     return DefinitionOfDone(
         present=False,
         criteria_text=None,
+        criteria_layout=None,
         assertions=(),
         references=(),
         malformed_proof_modes=(),
     )
 
 
-def _assertions(*, body: list[str], subject: str) -> tuple[DefinitionOfDoneAssertion, ...]:
-    """Segment the section body into assertions, each carrying its declared mode.
+def _criteria_layout(*, body: list[str]) -> str | None:
+    """The proof-mode-aware rendering, without the standalone reference line.
 
-    The body is walked in order and split into RUNS of consecutive lines sharing
-    one mode; each run is handed whole to the shared segmenter, so a bullet that
-    carries two sentences yields two assertions exactly as it does from a legacy
-    source. Segmenting run by run rather than line by line is what keeps an
-    indented continuation attached to the bullet it wraps.
+    Indentation is semantic in a Definition-of-Done body: an indented line is a
+    continuation of its open bullet.  In particular, a continuation may begin
+    with ``References:`` and must stay in the rendered assertion rather than
+    being mistaken for the section's own, flush-left reference line.
+    """
+    layout = "\n".join(line for line in body if not line.startswith(REFERENCES_PREFIX)).strip()
+    return layout or None
+
+
+def _parse_body(
+    *, body: list[str], subject: str
+) -> tuple[tuple[DefinitionOfDoneAssertion, ...], tuple[str, ...]]:
+    """Classify the section body ONCE, as its assertions and its stray lines.
+
+    One bullet, one assertion. The body is walked in order and exactly four
+    kinds of line matter: a HEADING, which closes the open bullet and sets the
+    mode the next ones carry; a BULLET, which closes the open one and opens a
+    fresh assertion; an INDENTED line while a bullet is open, which is that
+    bullet's own continuation and joins it; and the required PROSE the grammar
+    names — the `References:` line, a sub-heading's `Reason:` line, and the
+    blank line between two bullets — which closes the open bullet and
+    contributes nothing.
+
+    Anything ELSE is a STRAY line, and it is reported rather than graded. The
+    two answers come out of ONE walk deliberately: a separate classifier for the
+    findings surface is how the parse and the refusal come to disagree about
+    which lines the section asserts, which is the measured defect one level up.
     """
     assertions: list[DefinitionOfDoneAssertion] = []
+    stray: list[str] = []
     mode = _DEFAULT_MODES[subject]
-    run: list[str] = []
+    pending: list[str] = []
     for raw in body:
         heading = _HEADING.match(raw)
         if heading is not None:
-            assertions.extend(_segment(run=run, mode=mode))
-            run = []
+            _close_assertion(assertions=assertions, pending=pending, mode=mode)
             mode = declared_proof_mode(sub_heading=heading.group(2), subject=subject)
             continue
-        if _is_section_prose(text=raw):
+        if _BULLET.match(raw) is not None:
+            _close_assertion(assertions=assertions, pending=pending, mode=mode)
+            pending.append(_BULLET.sub("", raw, count=1).strip())
             continue
-        run.append(raw)
-    assertions.extend(_segment(run=run, mode=mode))
-    return tuple(assertions)
+        if pending and raw[:1].isspace():
+            pending.append(raw.strip())
+            continue
+        _close_assertion(assertions=assertions, pending=pending, mode=mode)
+        if not _is_required_prose(text=raw):
+            stray.append(raw.strip())
+    _close_assertion(assertions=assertions, pending=pending, mode=mode)
+    return tuple(assertions), tuple(stray)
 
 
-def _segment(*, run: list[str], mode: str) -> list[DefinitionOfDoneAssertion]:
-    text = "\n".join(run).strip()
-    return [
-        DefinitionOfDoneAssertion(text=one, proof_mode=mode)
-        for one in criteria_lines(criteria_text=text or None)
-    ]
+def _is_required_prose(*, text: str) -> bool:
+    """Whether a non-bullet body line is one the grammar requires or permits.
+
+    The blank line is in because it is the separator between two bullets, so
+    reporting it would report every conforming section. The two prefixed lines
+    are in because the grammar names them.
+    """
+    stripped = text.strip()
+    return not stripped or stripped.startswith((REFERENCES_PREFIX, REASON_PREFIX))
 
 
-def _is_section_prose(*, text: str) -> bool:
-    """Whether a body line is required prose rather than a gradeable assertion."""
-    return text.strip().startswith((REFERENCES_PREFIX, REASON_PREFIX))
+def _close_assertion(
+    *, assertions: list[DefinitionOfDoneAssertion], pending: list[str], mode: str
+) -> None:
+    """Finish the open bullet, if one is open, as ONE assertion carrying `mode`.
+
+    The continuation lines are joined with a SPACE rather than a newline, so a
+    hard-wrapped bullet renders as the single sentence its author wrote: every
+    consumer pairs one assertion with one proof mode on one display line, and a
+    multi-line assertion text breaks that pairing.
+    """
+    text = " ".join(pending).strip()
+    pending.clear()
+    if text:
+        assertions.append(DefinitionOfDoneAssertion(text=text, proof_mode=mode))
 
 
 def _malformed_proof_modes(*, body: list[str], subject: str) -> tuple[str, ...]:

@@ -35,6 +35,7 @@ __all__: list[str] = [
     "resolve_repo",
 ]
 
+_DISPATCHER_STDERR_TAIL_LINES = 20
 _EXIT_FAILURE = 1
 EXIT_PRECONDITION_ERROR = 3
 _EXIT_BLOCKED = 4
@@ -121,6 +122,20 @@ def build_parser() -> argparse.ArgumentParser:
             "Defaults to the resolved invoker."
         ),
     )
+    # The delegated valve authority input: WHICH committed maintainer
+    # delegation a `delegate:<name>` press acts under. An ARGUMENT, never an
+    # environment variable, so the cited grant is in the recorded argv; it is
+    # verified against `dispatcher.valve_delegations` before any action runs.
+    _ = parser.add_argument(
+        "--delegation",
+        dest="delegation",
+        default=None,
+        metavar="REF",
+        help=(
+            "the committed dispatcher.valve_delegations ref a "
+            "--invoker delegate:<name> press acts under; delegable valves only"
+        ),
+    )
     add_invoker_argument(parser=parser)
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
     return parser
@@ -143,8 +158,24 @@ def _run_markdown(*, payload: dict[str, Any]) -> str:
     status = str(payload.get("status", "unknown"))
     lines = [f"# drive — {action_id}", "", f"- status: **{status}**"]
     dispatcher = payload.get("dispatcher")
+    dispatcher_dict: dict[str, Any] = {}
     if isinstance(dispatcher, dict):
         dispatcher_dict = cast("dict[str, Any]", dispatcher)
         lines.append(f"- dispatcher exit code: {dispatcher_dict.get('exit_code')}")
     lines.append(f"- {payload.get('summary', '')}")
+    lines.extend(_dispatcher_stderr_block(dispatcher=dispatcher_dict))
     return "\n".join(lines)
+
+
+def _dispatcher_stderr_block(*, dispatcher: dict[str, Any]) -> list[str]:
+    """Render the tail of the Dispatcher's stderr, where a refusal reason lives.
+
+    A Dispatcher precondition refusal (exit 3) writes its reason to stderr only,
+    and the detached launcher captures just this Markdown summary, so omitting the
+    stderr here made the refusal unreadable without `--json`.
+    """
+    stderr = dispatcher.get("stderr")
+    if not isinstance(stderr, str) or stderr.strip() == "":
+        return []
+    tail = stderr.rstrip().splitlines()[-_DISPATCHER_STDERR_TAIL_LINES:]
+    return ["", "Dispatcher stderr (final lines):", "", "```text", *tail, "```"]

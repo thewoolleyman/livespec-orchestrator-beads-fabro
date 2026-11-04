@@ -326,6 +326,10 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # leave a consumer discriminating by its value instead of its presence.
     "base_advanced",
     "dead_implementer_condition",
+    # Factory identity is carried only by the terminal cancellation arm so
+    # its ledger disposition can name where the operator cancelled the run.
+    # A null here would falsely imply that every other outcome read a factory.
+    "fabro_factory_name",
     "fabro_failure_cause",
     "fabro_failure_category",
     "fabro_failure_signature",
@@ -356,6 +360,19 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # and is therefore absent from every other outcome for reasons that have
     # nothing to do with hooks.
     "hook_over_limit",
+    # The node-timeout cut, dropped on the same ATTRIBUTION terms: an explicit null
+    # would read as "no node timeout ended this run's turn", a positive finding
+    # about an observation only a needs-human ending takes.
+    "node_timeout_cut",
+    # The recorded hook verdict, dropped on the same ATTRIBUTION terms: an
+    # explicit null would read as "this run's latest commit passed its hook",
+    # a positive finding about an observation only a needs-human ending takes.
+    "hook_verdict",
+    # The merged-reconcile ending, dropped on the ATTRIBUTION terms again: an
+    # explicit null would read as "this run was examined for a publication that
+    # had already landed and none was found", a positive finding about an
+    # observation only a run that reached the ending carries.
+    "merged_reconcile",
     "needs_human_preservation",
     # The provider-limit release, dropped on the same terms and for the
     # ATTRIBUTION reason in its strongest form: an explicit null here would
@@ -365,6 +382,11 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # pre-dispatch refusal and every post-merge step would otherwise carry it.
     "provider_limit_release",
     "provider_usage_limit_provider",
+    # The reclassified turns, dropped on the same ATTRIBUTION terms: an explicit
+    # null would read as "this run's succeeded turns were examined for a booked
+    # refusal and none was found", a positive finding only a non-green terminal
+    # takes.
+    "reclassified_turns",
     "remedy",
     "step",
     # The acceptance verdict, which only an outcome that reached the post-merge

@@ -49,6 +49,16 @@ __all__: list[str] = ["main"]
 _PROJECT_DIR_ENV_VAR = "CLAUDE_PROJECT_DIR"
 _MANIFEST_NAME = "pyproject.toml"
 _CONFLICT_MARKER_PREFIXES = ("<<<<<<<", ">>>>>>>")
+_VIRTUALENV_PYTHON_PATH = (".venv", "bin", "python")
+_UV_PYTHON_COMMAND_PREFIX = (
+    "mise",
+    "exec",
+    "--",
+    "uv",
+    "run",
+    "--no-sync",
+    "python",
+)
 
 
 def main() -> int:
@@ -67,6 +77,9 @@ def _launch(*, wrapped: list[str], environ: dict[str, str]) -> int:
     if _carries_conflict_markers(path=manifest):
         _ = sys.stderr.write(_skip_notice(manifest=manifest, wrapped=wrapped) + "\n")
         return 0
+    virtualenv_python = _virtualenv_python(environ=environ)
+    if _is_uv_python_command(wrapped=wrapped) and _is_executable(path=virtualenv_python):
+        _exec_virtualenv_guard(executable=virtualenv_python, wrapped=wrapped)
     return subprocess.run(args=wrapped, check=False).returncode
 
 
@@ -77,9 +90,36 @@ def _manifest_path(*, environ: dict[str, str]) -> Path:
     directory is the fallback rather than a refusal, because a launcher that
     cannot locate the manifest must still let the guard decide.
     """
+    return _project_dir(environ=environ) / _MANIFEST_NAME
+
+
+def _project_dir(*, environ: dict[str, str]) -> Path:
+    """Resolve the project directory, with the working directory as fallback."""
     declared = environ.get(_PROJECT_DIR_ENV_VAR, "").strip()
-    root = Path(declared) if declared else Path.cwd()
-    return root / _MANIFEST_NAME
+    return Path(declared) if declared else Path.cwd()
+
+
+def _virtualenv_python(*, environ: dict[str, str]) -> Path:
+    """Resolve the project's virtualenv interpreter without importing its packages."""
+    return _project_dir(environ=environ).joinpath(*_VIRTUALENV_PYTHON_PATH)
+
+
+def _is_uv_python_command(*, wrapped: list[str]) -> bool:
+    """Whether the wrapper is the precise mise-and-uv Python launch shape."""
+    return len(wrapped) > len(_UV_PYTHON_COMMAND_PREFIX) and tuple(wrapped[:7]) == (
+        _UV_PYTHON_COMMAND_PREFIX
+    )
+
+
+def _is_executable(*, path: Path) -> bool:
+    """Whether a virtualenv interpreter is available for direct execution."""
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+def _exec_virtualenv_guard(*, executable: Path, wrapped: list[str]) -> None:
+    """Replace the launcher with the guard on the project virtualenv interpreter."""
+    executable_string = os.fspath(executable)
+    os.execv(executable_string, [executable_string, *wrapped[len(_UV_PYTHON_COMMAND_PREFIX) :]])
 
 
 def _skip_notice(*, manifest: Path, wrapped: list[str]) -> str:

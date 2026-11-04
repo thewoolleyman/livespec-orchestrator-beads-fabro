@@ -57,7 +57,7 @@ _CONTROL_EXERCISED = frozenset({"inspect", "ps", "run"})
 # so the over-approximation documented above is acknowledged and measured
 # rather than discovered later as a surprise.
 _OVER_APPROXIMATED_VERB = "dump"
-_OVER_APPROXIMATING_MODULE = "_reflector_runtime.py"
+_OVER_APPROXIMATING_MODULE = "_dispatcher_worker_exit_log_cause.py"
 
 
 def _port_method_universe() -> frozenset[str]:

@@ -53,6 +53,11 @@ For the same reason a pass that surveyed NO factory is a failure and not a
 clean sweep. An unresolvable factories table, an unreadable config, or a
 `--factory` naming nobody all reconcile nothing, and "nothing to reconcile"
 and "nothing was looked at" are the same empty output with opposite meanings.
+
+THIS COMMAND DOES CLEANUP ONLY. Drift detection runs on its own explicitly
+enabled schedule, so this timer neither advances the drift frontier nor invokes
+the model judgement. Keeping the paths separate prevents a frequent cleanup
+timer from spending model tokens or changing detection coverage state.
 """
 
 from __future__ import annotations

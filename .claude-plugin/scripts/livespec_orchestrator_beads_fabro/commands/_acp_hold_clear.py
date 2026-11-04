@@ -34,6 +34,26 @@ domain-scoped one MUST NOT. Accepting a half-specified target would let
 `--scope candidate --hold-key codex` clear something -- the nearest
 match, the whole domain -- and an operator who meant one entitlement
 would silently un-hold every candidate on the provider.
+
+THE AUTHORITATIVE CLEARANCE IS THE FACTORY-NATIVE RECORD, AND THIS
+JOURNAL LINE IS ITS AUDIT REFERENCE. The same section requires an
+operator clearance to be "recorded as a factory-native record on the
+participating factory whose evidence they create or retire ... so
+retirement is reconstructible from the same source as observation", and
+the provider-exhaustion clause spells out which way round the two
+stand: "For a current record the authoritative clearance is the
+factory-native record that ... is required, and the journal record is
+its audit reference." `_acp_clearance_factory_record` writes it, and
+this valve appends the journal line only once that write succeeded.
+
+SO A FOURTH REFUSAL EXISTS, AND IT FAILS CLOSED THE EXPENSIVE WAY. A
+repository that cannot record on a participating factory cannot clear
+at all: journalling alone would retire the hold for THIS checkout while
+every peer -- which has no access to this journal by construction --
+kept dispatching into a record their operator believes is gone. Every
+refusal above returns BEFORE that write, which is what keeps a record a
+peer reads as a clearance from ever describing a clearance this valve
+went on to reject.
 """
 
 from __future__ import annotations
@@ -41,6 +61,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._acp_clearance_factory_record import (
+    record_factory_clearance,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_clearance_records import AcpHoldClearance
+from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_records import (
+    AUDIT_REFERENCE_KEY,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     CANDIDATE_SCOPE,
     DOMAIN_SCOPE,
@@ -186,14 +213,38 @@ def _clear(
             )
         )
         return EXIT_PRECONDITION_ERROR
-    JournalFile(path=path, identity=identity).append(
-        record=acp_hold_clearance_record(
+    observation_ids = tuple(hold.observation_id for hold in held)
+    # THE AUTHORITATIVE RECORD FIRST, and the journal line only once it stands.
+    # The write is last among the valve's decisions for the reason the module
+    # docstring gives, and its refusal is surfaced verbatim rather than
+    # re-worded: the writer is the one party that measured which factory could
+    # not take it.
+    recorded = record_factory_clearance(
+        repo=repo,
+        clearance=AcpHoldClearance(
             scope=scope,
             hold_key=hold_key,
             candidate_key=candidate_key,
+            observation_ids=observation_ids,
+            actor=identity.invoker,
+            cleared_at=utc_now_iso(),
             reason=reason,
-            observation_ids=tuple(hold.observation_id for hold in held),
-        )
+        ),
+    )
+    if isinstance(recorded, str):
+        _ = write_stderr(text=f"ERROR: {_COMMAND} refused: {recorded}.\n")
+        return EXIT_PRECONDITION_ERROR
+    JournalFile(path=path, identity=identity).append(
+        record={
+            **acp_hold_clearance_record(
+                scope=scope,
+                hold_key=hold_key,
+                candidate_key=candidate_key,
+                reason=reason,
+                observation_ids=observation_ids,
+            ),
+            AUDIT_REFERENCE_KEY: recorded.reference,
+        }
     )
     _ = write_stdout(
         text=(

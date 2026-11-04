@@ -1,0 +1,349 @@
+"""The reconcile pass's drift lane: resolve the frontier, run the pass, record it.
+
+The ONE caller that joins the per-merge pass to the committed
+detection-coverage anchor. `_drift_run` enumerates and judges a range handed to
+it; this module is where that range COMES FROM — the newest completed drift
+coverage point on the anchor — and where the pass's own attempt and completed
+records go back.
+
+THE ALL-OR-NOTHING RULE IS NOT RE-IMPLEMENTED HERE, and that is the point of
+this module's shape. The Records rule says a completed record is appended "ONLY
+when the run reached a successful terminal outcome over its declared scope with
+EVERY surfaced candidate durably disposed", and
+`_detection_coverage.completed_coverage_is_claimable` is the single writer that
+enforces exactly that — for the gap capture and for this pass alike. So the
+lane's whole job on that question is to describe the pass HONESTLY in a
+`DetectionRun`: every finding as a surfaced candidate, every FILED finding as a
+disposed one, `partial_range` when any merge went unprocessed, and the
+contiguous frontier as the coverage point. A second guard here would be a
+second authority on one rule, and the two would drift in the direction nothing
+announces — both producing a well-formed record.
+
+That description is what makes a HELD finding stop the frontier without any
+code here saying so: a held finding is surfaced and NOT disposed, so the
+existing guard withholds the completed record and names it.
+
+THE COVERAGE POINT IS THE CONTIGUOUS FRONTIER AND NOT THE NEWEST MERGE, even
+though the guard only ever lets it through when the two are equal. Passing the
+newest merge would make this lane correct only for as long as that guard keeps
+its current shape; passing the prefix means the value is right on its own
+terms, which is the difference between a safe value and a value that is
+currently unreachable.
+
+THE OPERATION NAME IS THE DRIFT CAPTURE'S OWN, deliberately. The frontier is
+ONE value: the contract's drift-staleness fact names "the merges after the
+frontier", singular, and this pass and the attended `capture-spec-drift` survey
+both move it. A second operation key would give the repository two frontiers,
+and the fact would count merges since whichever one its reader happened to ask
+for.
+
+⛔ WITH NO FRONTIER ON RECORD THE LANE JUDGES NOTHING, and this is the one
+refusal worth reading twice. The contract's range is "every default-branch
+merge AFTER the recorded frontier"; with none recorded there is no "after", and
+the honest reading of the range expression would be the WHOLE BRANCH — which on
+this repository is thousands of commits, each costing one model call, on the
+first tick of a timer that fires every ten minutes. That is not a cap this
+module may quietly impose either: a truncated enumeration would report a
+frontier covering merges it never judged.
+
+Recording the BASELINE is separately owned work — plan
+`spec-implementation-lockstep`'s host-routed child R2, "Reconcile merged
+unspecified behaviour and record the baseline frontier", which depends on this
+one. So the lane writes an attempt record naming the missing baseline and
+judges nothing; the drift-staleness fact still fires, because an absent
+coverage point leaves every merge unaccounted for, so the state is VISIBLE
+rather than silent.
+
+AND THAT RECORD IS WRITTEN ONCE RATHER THAN ONCE PER TICK. The root
+`reconcile-runs` timer fires every ten minutes, so an un-baselined repository
+was accruing roughly 144 identical `failed` attempt records a day on an anchor
+whose comments `bd` can neither edit nor delete. The de-duplication is a
+CORRECTNESS fix rather than a volume one, for the reason this module's refusal
+turns on: the inert state is not a failed attempt, because nothing was
+attempted, so each repeat described a failure that never happened and an
+operator reading the anchor saw a lane failing every ten minutes rather than a
+repository awaiting its baseline.
+
+Three properties of that de-duplication an editor must not invert. It is scoped
+to THIS arm, because once a baseline is on record each pass IS a drift run over
+a real range and the Records rule owes each one its own attempt record. The
+state is nonetheless REPORTED on every pass through `withheld_reason`, which is
+what the reconcile pass renders — a tick that recorded nothing and said nothing
+would read as a lane that had advanced, which is the one reading a withheld
+frontier must never produce. And the question is asked of the ANCHOR rather
+than remembered in this process, since the timer starts a new process per tick
+and anything held in memory is gone by the next one.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from returns.result import Result
+
+from livespec_orchestrator_beads_fabro.commands._detection_coverage import (
+    DRIFT_CAPTURE_OPERATION,
+    SUCCEEDED_OUTCOME,
+    AnchorNotConfigured,
+    DetectionRun,
+    attempt_record_present,
+    completed_coverage_point,
+    detection_coverage_anchor,
+    record_detection_run,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._drift_run import run_drift_pass
+from livespec_orchestrator_beads_fabro.commands._drift_run_frontier import (
+    contiguous_frontier,
+    scope_is_closed,
+)
+from livespec_orchestrator_beads_fabro.commands._drift_run_merges import merge_range
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    ConnectionPrefixMissingError,
+    LivespecConfigUnreadableError,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from livespec_orchestrator_beads_fabro.commands._detection_coverage import DetectionRunRecords
+    from livespec_orchestrator_beads_fabro.commands._drift_run import (
+        DriftRunOutcome,
+        DriftRunSeams,
+    )
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+__all__: list[str] = [
+    "DriftLaneOutcome",
+    "run_drift_lane",
+]
+
+_FAILED_OUTCOME = "failed"
+_UNCONFIGURED = "no-tenant-connection"
+_NO_BASELINE = "no-recorded-drift-frontier"
+_BASELINE_SCOPE = (
+    "no completed drift coverage point is on record, so there is no range after a "
+    "frontier to enumerate; the baseline frontier is recorded by the reconciliation "
+    "of merged unspecified behaviour, not by this pass"
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class DriftLaneOutcome:
+    """What one reconcile pass's drift lane did, as the pass itself can report it.
+
+    `frontier` is the contiguous point this pass reached and `advanced` whether
+    the completed record carrying it was actually written — which is the only
+    thing that moves the repository's recorded frontier. The two differ on a
+    partial scope, and a caller reading only the first would report an advance
+    that did not happen.
+
+    `withheld_reason` is populated precisely when `advanced` is False, carrying
+    either the recorder's own reason or the measurement this lane could not
+    take.
+    """
+
+    scope: str
+    merges: tuple[str, ...]
+    frontier: str | None
+    filed: tuple[str, ...]
+    held: tuple[str, ...]
+    advanced: bool
+    withheld_reason: str | None
+    records: DetectionRunRecords | None
+
+
+def run_drift_lane(*, repo: Path, invoker: str, seams: DriftRunSeams) -> DriftLaneOutcome:
+    """Run the drift pass over the merges after the recorded frontier, and record it."""
+    config = attempt(
+        action=lambda: store_config(repo=repo),
+        exceptions=(ConnectionPrefixMissingError, LivespecConfigUnreadableError, OSError),
+    )
+    if isinstance(config, AttemptFailure):
+        return _inert(reason=_UNCONFIGURED, records=None)
+    anchor = detection_coverage_anchor(cwd=repo)
+    if anchor is None:
+        return _unrecordable(config=config, anchor=anchor, invoker=invoker, reason=None)
+    frontier = completed_coverage_point(
+        path=config, anchor=anchor, operation=DRIFT_CAPTURE_OPERATION
+    )
+    if frontier is None:
+        return _not_baselined(config=config, anchor=anchor, invoker=invoker)
+    outcome = run_drift_pass(project_root=repo, frontier=frontier, seams=seams)
+    scope = merge_range(since=frontier, ref="HEAD")
+    recorded = record_detection_run(
+        path=config,
+        anchor=anchor,
+        run=_detection_run(outcome=outcome, invoker=invoker, scope=scope),
+    )
+    return _lane_outcome(outcome=outcome, scope=scope, recorded=recorded)
+
+
+def _inert(*, reason: str | None, records: DetectionRunRecords | None) -> DriftLaneOutcome:
+    """The lane's report when it judged nothing: no scope, no merges, no advance.
+
+    Shared by every arm that refuses before the pass runs, so "judged nothing"
+    is ONE value rather than one per refusal. The arms differ only in what they
+    RECORDED and why the frontier did not move, which is exactly the two fields
+    a caller passes.
+    """
+    return DriftLaneOutcome(
+        scope="",
+        merges=(),
+        frontier=None,
+        filed=(),
+        held=(),
+        advanced=False,
+        withheld_reason=reason,
+        records=records,
+    )
+
+
+def _not_baselined(*, config: StoreConfig, anchor: str, invoker: str) -> DriftLaneOutcome:
+    """Report the missing baseline on EVERY pass, and record it only ONCE.
+
+    The de-duplication this module's docstring argues for, and the whole of it:
+    the record a previous pass left is recognised by the baseline scope it
+    carries, so a repeat tick records nothing and still reports the state. The
+    question is asked of the anchor rather than of this process, because the
+    host timer starts a fresh process per tick.
+
+    THE REPORT IS UNCONDITIONAL AND THE WRITE IS NOT, which is the asymmetry
+    that makes this safe. `withheld_reason` is what the reconcile pass renders,
+    so a skipped tick still tells an operator the lane is not yet baselined;
+    `records` is None on a skipped tick, which is honest — this pass appended
+    nothing — and no caller reads it as an advance, since `advanced` is False
+    on every arm of `_inert`.
+    """
+    if attempt_record_present(
+        path=config,
+        anchor=anchor,
+        operation=DRIFT_CAPTURE_OPERATION,
+        scope=_BASELINE_SCOPE,
+    ):
+        return _inert(reason=_NO_BASELINE, records=None)
+    return _unrecordable(config=config, anchor=anchor, invoker=invoker, reason=_NO_BASELINE)
+
+
+def _unrecordable(
+    *, config: StoreConfig, anchor: str | None, invoker: str, reason: str | None
+) -> DriftLaneOutcome:
+    """Judge nothing, record the attempt where it can be recorded, and say why.
+
+    TWO conditions reach here, and the ORDER their caller tests them in is what
+    keeps each remedy nameable. An absent ANCHOR subsumes an absent baseline —
+    a repository with nowhere to write a record can never have one on record —
+    so it is tested first and reported through the RECORDER's own refusal
+    detail, which names the config key an operator must commit. Only once an
+    anchor exists is "no baseline frontier is on record" a distinct state, with
+    a distinct owner, which is why the baseline arm reaches here through
+    `_not_baselined` rather than directly: that arm records at most once, and
+    the unconfigured-anchor arm records nothing at all whatever it does.
+    """
+    recorded = record_detection_run(
+        path=config,
+        anchor=anchor,
+        run=DetectionRun(
+            operation=DRIFT_CAPTURE_OPERATION,
+            scope=_BASELINE_SCOPE,
+            invoker=invoker,
+            outcome=_FAILED_OUTCOME,
+            exit_code=1,
+            partial_range=True,
+        ),
+    )
+    records = recorded.value_or(None)
+    return _inert(
+        reason=reason or _withheld_reason(records=records, recorded=recorded),
+        records=records,
+    )
+
+
+def _detection_run(*, outcome: DriftRunOutcome, invoker: str, scope: str) -> DetectionRun:
+    """This pass, described honestly for the one writer that grades it."""
+    surfaced = tuple(finding.identity for judged in outcome.judged for finding in judged.findings)
+    return DetectionRun(
+        operation=DRIFT_CAPTURE_OPERATION,
+        scope=_scope_detail(outcome=outcome, scope=scope),
+        invoker=invoker,
+        outcome=_FAILED_OUTCOME if _unprocessed(outcome=outcome) else SUCCEEDED_OUTCOME,
+        exit_code=1 if _unprocessed(outcome=outcome) else 0,
+        surfaced_candidates=surfaced,
+        disposed_candidates=outcome.filed,
+        partial_range=not scope_is_closed(judged=outcome.judged),
+        coverage_point=contiguous_frontier(judged=outcome.judged),
+    )
+
+
+def _unprocessed(*, outcome: DriftRunOutcome) -> bool:
+    """Whether any merge of the scope — or the enumeration itself — went unread."""
+    return outcome.unreadable is not None or any(
+        judged.failure is not None for judged in outcome.judged
+    )
+
+
+def _scope_detail(*, outcome: DriftRunOutcome, scope: str) -> str:
+    """The DECLARED scope, plus the merges whose pass failed inside it.
+
+    The declared range rather than the merges actually processed, because the
+    Records rule's "declared scope" is what a partial pass is partial AGAINST —
+    a scope rendered from the results would make every pass complete over its
+    own output.
+
+    The failed merges ride along because the attempt record is the only record
+    a partial pass writes, and Scenario 207 requires it to NAME the failed
+    merge: an attempt record carrying the range alone leaves an operator with
+    no way to tell which of ten merges is holding the frontier.
+    """
+    failed = [judged.merge for judged in outcome.judged if judged.failure is not None]
+    if outcome.unreadable is not None:
+        return f"{scope} (not enumerated: {outcome.unreadable})"
+    if not failed:
+        return scope
+    return f"{scope} (unprocessed merges: {', '.join(failed)})"
+
+
+def _lane_outcome(
+    *,
+    outcome: DriftRunOutcome,
+    scope: str,
+    recorded: Result[DetectionRunRecords, AnchorNotConfigured],
+) -> DriftLaneOutcome:
+    """The lane's report, with the recorder's own verdict on the advance.
+
+    `advanced` is read off the COMPLETED RECORD rather than off the frontier
+    this pass computed, because only that record moves the repository's
+    recorded frontier — and the recorder, not this lane, is what grades whether
+    it may be written.
+    """
+    records = recorded.value_or(None)
+    return DriftLaneOutcome(
+        scope=scope,
+        merges=outcome.merges,
+        frontier=contiguous_frontier(judged=outcome.judged),
+        filed=outcome.filed,
+        held=outcome.held,
+        advanced=records is not None and records.completed is not None,
+        withheld_reason=_withheld_reason(records=records, recorded=recorded),
+        records=records,
+    )
+
+
+def _withheld_reason(
+    *,
+    records: DetectionRunRecords | None,
+    recorded: Result[DetectionRunRecords, AnchorNotConfigured],
+) -> str | None:
+    """Why the frontier did not move, or None when it did.
+
+    An unconfigured anchor is reported as the recorder's own refusal DETAIL
+    rather than as a reason of this lane's own wording: the two would say the
+    same thing differently, and an operator comparing a lane report against a
+    journal row would have to work out that they are one condition.
+    """
+    if records is not None:
+        return records.withheld_reason
+    refusal = recorded.swap().value_or(None)
+    return None if refusal is None else refusal.detail

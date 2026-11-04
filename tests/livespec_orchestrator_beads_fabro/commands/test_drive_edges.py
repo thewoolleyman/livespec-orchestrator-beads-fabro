@@ -182,23 +182,6 @@ def test_run_human_valve_action_approve_refuses_non_ready(
     assert updates == []
 
 
-def test_run_human_valve_action_approve_refuses_auto_policy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    updates = _install_valve_store(
-        monkeypatch, items=[_item(status="pending-approval", admission_policy="auto")]
-    )
-
-    result = drive.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
-
-    assert result["status"] == "failed"
-    assert result["domain_error"] == "invalid-source-state"
-    assert "effective-manual" in result["summary"]
-    assert updates == []
-
-
 def test_run_human_valve_action_approve_refuses_ready_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

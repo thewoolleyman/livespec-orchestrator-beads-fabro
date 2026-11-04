@@ -125,7 +125,10 @@ def test_the_fractional_header_is_graded_as_a_percentage(
     assert reading.utilization_percent == percent
 
 
-@pytest.mark.parametrize("headers", [_headers(), _headers(**{_HEADER: "soon"})])
+# A 2xx carrying NO five-hour header at all is no longer here: since contracts
+# v263 (Scenario 288) that is the provider reporting no five-hour limit, not an
+# unreadable reading, and test_dispatcher_session_headroom_five_hour_absent binds it.
+@pytest.mark.parametrize("headers", [_headers(**{_HEADER: "soon"})])
 def test_a_response_without_a_parseable_header_is_unobservable(
     monkeypatch: pytest.MonkeyPatch, headers: Message
 ) -> None:

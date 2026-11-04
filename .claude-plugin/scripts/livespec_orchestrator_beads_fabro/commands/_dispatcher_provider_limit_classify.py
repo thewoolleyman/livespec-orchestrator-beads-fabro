@@ -38,13 +38,10 @@ facts put the cause on the message:
 SO THE TERMINAL-DIAGNOSTIC FIELD IS LEFT EMPTY, DELIBERATELY. Populating both
 from the one recorded text would widen every terminal-sourced signature onto a
 channel it was not measured on, which is the structural half of the contract's
-"never an arbitrary exec-output tail" rule turned off. The consequence is
-worth stating plainly rather than discovering later: a signature declared for
-`process.terminal_diagnostic` -- the built-in `model_unsupported` and
-`model_not_found` mappings among them -- cannot match through THIS reading,
-and keeps its existing route. That is the conservative direction, and a
-repository needing those causes released from a terminal declares them for
-`protocol.message`, which is the channel the record actually carries.
+"never an arbitrary exec-output tail" rule turned off. Built-in Codex
+model-removal mappings therefore declare `protocol.message`, the channel this
+record actually carries; a repository mapping a separately captured terminal
+diagnostic must declare that source itself.
 
 RELEASE IS A DISJUNCTION OF TWO ARMS, NOT ONE LADDER. An eligible
 classification releases AND mints a typed hold. A failure carrying the typed
@@ -62,6 +59,16 @@ provider ceiling the cause-text classification already recognised, so the item
 must not sit on a human for want of a signature somebody had not declared
 yet -- and taking the legacy arm there mints no hold, so nothing is asserted
 about an entitlement that was not measured.
+
+A SUCCEEDED TURN THAT ENDS WITH A MEASURED REFUSAL IS A THIRD ROUTE IN, not a
+third arm of the disjunction. `SPECIFICATION/contracts.md` "A provider refusal
+booked as a successful turn is a failed attempt" treats such an attempt as the
+failure of its candidate, so it is graded through the same classifier on a
+signal that carries the attempt's recorded output and the engine's succeeded
+verdict, and it releases only on a TYPED match: a succeeded attempt records no
+usage-limit flag, so the legacy arm has nothing to read. The caller decides
+WHETHER the attempt is the unrecovered failure responsible for the terminal;
+this module only grades the text it is handed.
 
 BUT A NON-ELIGIBLE GUARD CLASS OUTRANKS BOTH ARMS, THE LEGACY ONE INCLUDED.
 `SPECIFICATION/contracts.md` keeps those classes "non-eligible before
@@ -101,8 +108,11 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import Fabro
 __all__: list[str] = [
     "UNNAMED_FAILURE_IDENTITY",
     "ProviderLimitRelease",
+    "ReclassifiedTurn",
     "classified_release",
+    "classified_turn",
     "provider_limit_signal",
+    "turn_output_signal",
 ]
 
 # What a non-eligible verdict terminates WITH when the engine recorded no
@@ -148,6 +158,15 @@ class ProviderLimitRelease:
     recovery_source: str
 
     @property
+    def source(self) -> str | None:
+        """The signature source the release matched, or `None` on the legacy posture.
+
+        It is `turn.final_output` for a refusal booked as a successful turn,
+        which is how the release record names the reading that fired.
+        """
+        return None if self.matched is None else self.matched.source
+
+    @property
     def release_key(self) -> str:
         """The `factory:run:node attempt` triple replay is keyed on.
 
@@ -159,8 +178,74 @@ class ProviderLimitRelease:
         return f"{self.factory}:{self.run_id}:{self.node_attempt}"
 
 
+@dataclass(frozen=True, kw_only=True)
+class ReclassifiedTurn:
+    """One succeeded agent turn reclassified as its candidate's failed attempt.
+
+    It carries what a hold needs and nothing a release needs: a reclassified
+    turn that did not end the run mints its candidate hold and releases nothing.
+    The key is the SAME `factory:run:node attempt` triple a release uses, so a
+    turn that is also the release's failing attempt derives the identical
+    observation id and the second ingest is declined as a replay.
+    """
+
+    factory: str
+    run_id: str | None
+    node_attempt: str
+    matched: AcpAvailabilityFailure
+    executed: AcpCandidateIdentity | None
+
+    @property
+    def release_key(self) -> str:
+        """The `factory:run:node attempt` triple replay is keyed on."""
+        return f"{self.factory}:{self.run_id}:{self.node_attempt}"
+
+
+def turn_output_signal(*, output: str | None, identity: str) -> AcpFailureSignal:
+    """The classifier's reading of one SUCCEEDED agent turn's recorded output.
+
+    The identity is the attempt's own name and never its text, and `turn_started`
+    is true because a recorded succeeded turn is one that ran.
+    """
+    return AcpFailureSignal(
+        original_identity=identity,
+        final_output=output,
+        attempt_succeeded=True,
+        turn_started=True,
+    )
+
+
+def classified_turn(
+    *,
+    output: str | None,
+    rendered: RenderedCandidate | None,
+    node_attempt: str,
+    factory: str,
+    run_id: str | None,
+) -> ReclassifiedTurn | None:
+    """The reclassification a succeeded turn's recorded output owes, or `None`."""
+    matched = _eligible(
+        signal=turn_output_signal(output=output, identity=f"{node_attempt}|succeeded"),
+        rendered=rendered,
+    )
+    if matched is None or rendered is None:
+        return None
+    return ReclassifiedTurn(
+        factory=factory,
+        run_id=run_id,
+        node_attempt=node_attempt,
+        matched=matched,
+        executed=rendered.candidate.identity,
+    )
+
+
 def provider_limit_signal(*, failure: FabroFailureDetail) -> AcpFailureSignal:
     """The classifier's reading of one recorded failure.
+
+    A failure that carries `succeeded_turn_output` is a refusal booked as a
+    successful turn, and it is read on the one field that source names -- the
+    attempt's recorded output -- with the engine's succeeded verdict, and on no
+    failure field.
 
     THREE FIELDS ARE LEFT EMPTY BECAUSE THE RECORD CARRIES NO SUCH EVIDENCE,
     and each absence is honest rather than conservative padding.
@@ -177,6 +262,11 @@ def provider_limit_signal(*, failure: FabroFailureDetail) -> AcpFailureSignal:
     with a provider's sentence in place of its identity is what the contract's
     original-identity rule forbids.
     """
+    if failure.succeeded_turn_output is not None:
+        return turn_output_signal(
+            output=failure.succeeded_turn_output,
+            identity=failure.signature or UNNAMED_FAILURE_IDENTITY,
+        )
     return AcpFailureSignal(
         original_identity=failure.signature or UNNAMED_FAILURE_IDENTITY,
         protocol_message=failure.cause,
@@ -198,6 +288,12 @@ def classified_release(
     the signatures that classify it and the provenance flag `effective_
     signatures` reads. `None` means no entitlement was recorded for that node,
     which is the identity-less legacy posture rather than a failure to measure.
+
+    A SUCCEEDED turn the caller established is the unrecovered attempt
+    responsible for the terminal arrives as a `failure` carrying its recorded
+    output (`succeeded_turn_output`), because the contract treats such an attempt
+    as a failed attempt of its candidate. It is graded by the same classifier and
+    releases only on a typed match.
     """
     signal = provider_limit_signal(failure=failure)
     # BEFORE either arm, because the guard classes sit before configured

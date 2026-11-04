@@ -313,7 +313,23 @@ def _committed_structured_entries() -> dict[str, dict[str, str]]:
     return {
         node: entry
         for node, entry in dispatcher.get("acp_nodes", {}).items()
-        if isinstance(entry, dict)
+        if isinstance(entry, dict) and "agent" in entry
+    }
+
+
+def _committed_manual_entries() -> dict[str, dict[str, object]]:
+    """This repository's committed manual-form `acp_nodes` entries, by node.
+
+    A manual-form entry names its adapter `command` directly instead of an
+    agent from the catalog, so it has no catalog mechanism to grade its model
+    and effort against.
+    """
+    config = jsonc.loads(text=(_REPO_ROOT / _CONFIG_NAME).read_text(encoding="utf-8"))
+    dispatcher = config["livespec-orchestrator-beads-fabro"]["dispatcher"]
+    return {
+        node: entry
+        for node, entry in dispatcher.get("acp_nodes", {}).items()
+        if isinstance(entry, dict) and "command" in entry
     }
 
 
@@ -371,3 +387,11 @@ def test_this_repository_committed_entries_reach_their_rendered_adapters() -> No
         for other in catalogs.agents.values():
             if other.command != agent.command:
                 assert other.command not in rendered, (node, rendered)
+
+    manual = _committed_manual_entries()
+    unrendered = {
+        node: adapters.get(node)
+        for node, entry in manual.items()
+        if str(entry["command"]) not in adapters.get(node, "")
+    }
+    assert not unrendered, unrendered

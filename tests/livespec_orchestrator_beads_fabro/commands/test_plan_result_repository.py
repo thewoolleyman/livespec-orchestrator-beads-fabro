@@ -15,9 +15,11 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
     ResultRepository,
+    project_repository_identity,
     resolve_result_repository,
     result_store_config,
 )
+from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _CONNECTION = {"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}
 
@@ -144,6 +146,35 @@ def test_the_connection_is_resolved_from_the_target_repositorys_own_clone(
     assert config.tenant == "sib"
 
 
+def test_the_connection_carries_the_target_repositories_declared_credential_wrapper(
+    tmp_path: Path,
+) -> None:
+    """A cross-tenant result read must re-exec through the target's wrapper.
+
+    The invoking plan process may hold a family password, while this sibling's
+    tenant accepts only the password its committed wrapper injects. Carrying the
+    prefix on the connection descriptor lets every `bd` read from this result
+    reader use the target's credential seam without changing unwrapped callers.
+    """
+    sibling = tmp_path / "sibling"
+    sibling.mkdir()
+    wrapper = sibling / "with-sibling-env.sh"
+    _ = (sibling / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "credential_wrapper": [str(wrapper), "--"],
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"prefix": "sib", "tenant": "sib"}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = result_store_config(repository=ResultRepository(name="sibling", clone=sibling))
+    assert config is not None
+    assert getattr(config, "credential_wrapper", ()) == (str(wrapper), "--")
+
+
 def test_an_unreadable_target_configuration_yields_no_connection(tmp_path: Path) -> None:
     """A repository whose configuration declares no create-prefix is unreadable.
 
@@ -185,6 +216,40 @@ def test_a_worktree_named_after_its_branch_resolves_its_repository_by_primary_pa
     assert resolve_result_repository(
         project_root=checkout, name="livespec-orchestrator-beads-fabro"
     ) == ResultRepository(name="livespec-orchestrator-beads-fabro", clone=checkout)
+
+
+def test_legacy_self_repository_identities_resolve_to_the_invoking_checkout(
+    tmp_path: Path,
+) -> None:
+    """Stored absolute and owner-qualified self identities remain observable."""
+    primary = tmp_path / "livespec-orchestrator-beads-fabro"
+    primary.mkdir()
+    checkout = _checkout_with_primary_path(
+        tmp_path=tmp_path,
+        checkout_name="factory-sandbox",
+        primary=primary,
+    )
+    _ = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "config",
+            "remote.origin.url",
+            "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git",
+        ],
+        check=True,
+    )
+
+    for name in (
+        str(checkout),
+        str(primary),
+        "thewoolleyman/livespec-orchestrator-beads-fabro",
+    ):
+        assert resolve_result_repository(project_root=checkout, name=name) == ResultRepository(
+            name=name,
+            clone=checkout,
+        )
 
 
 def test_a_name_matching_neither_the_checkout_nor_the_primary_path_does_not_resolve(
@@ -244,3 +309,80 @@ def test_the_origin_remotes_repository_name_resolves_a_differently_named_checkou
     name = "livespec-orchestrator-beads-fabro"
     expected = ResultRepository(name=name, clone=checkout) if resolves else None
     assert resolve_result_repository(project_root=checkout, name=name) == expected
+
+
+def _store_config(*, repo: Path | None) -> StoreConfig:
+    return StoreConfig(
+        tenant="livespec-impl-beads",
+        prefix="bd-ib",
+        server_user="livespec-impl-beads",
+        database="livespec-impl-beads",
+        bd_path="bd",
+        repo_root=repo,
+        fake=True,
+    )
+
+
+def test_the_identity_this_project_writes_is_its_origin_remotes_repository_name(
+    tmp_path: Path,
+) -> None:
+    """A pointer outlives the checkout that wrote it, so the durable name wins.
+
+    A worktree is named after its BRANCH and a sandbox clone carries no recorded
+    primary path, so a pointer written under either of those identities becomes
+    unresolvable the moment another checkout of the same repository reads it. The
+    origin remote's own repository name is the one identity every checkout agrees
+    on, and the identity written must be one the resolver still resolves.
+    """
+    checkout = tmp_path / "janitor-bd-ib-woacnk"
+    checkout.mkdir()
+    _ = subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    _ = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "config",
+            "remote.origin.url",
+            "git@github.com:thewoolleyman/livespec-orchestrator-beads-fabro.git",
+        ],
+        check=True,
+    )
+
+    identity = project_repository_identity(config=_store_config(repo=checkout))
+
+    assert identity == "livespec-orchestrator-beads-fabro"
+    assert resolve_result_repository(project_root=checkout, name=identity) is not None
+
+
+def test_a_checkout_with_no_origin_remote_writes_its_primary_checkouts_basename(
+    tmp_path: Path,
+) -> None:
+    """The fallback still has to NAME something the resolver resolves.
+
+    `resolve_primary_repository` collapses to the invoking checkout where no
+    primary path is recorded, so this one arm answers both the worktree that
+    records one and the plain checkout that records nothing — and either answer
+    is an identity the resolver already matches.
+    """
+    primary = tmp_path / "livespec-orchestrator-beads-fabro"
+    primary.mkdir()
+    checkout = _checkout_with_primary_path(
+        tmp_path=tmp_path, checkout_name="feat-bd-ib-woacnk", primary=primary
+    )
+
+    identity = project_repository_identity(config=_store_config(repo=checkout))
+
+    assert identity == "livespec-orchestrator-beads-fabro"
+    assert resolve_result_repository(project_root=checkout, name=identity) is not None
+
+
+def test_a_config_naming_no_repository_root_falls_back_to_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every caller holds a config, and a connection descriptor may carry no root."""
+    checkout = tmp_path / "livespec-overseer"
+    checkout.mkdir()
+    monkeypatch.chdir(checkout)
+
+    assert project_repository_identity(config=_store_config(repo=None)) == "livespec-overseer"

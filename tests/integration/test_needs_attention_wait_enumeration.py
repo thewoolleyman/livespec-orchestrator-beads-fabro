@@ -214,8 +214,8 @@ def test_all_six_enumerated_waits_compose_and_the_admitted_item_does_not(
         "valve:accept:bd-parked",
         # 3. blocked on a needs-human reason
         "valve:resolve-blocked:bd-blocked",
-        # 4. pending-approval under an effective manual admission policy
-        "valve:approve:bd-approval",
+        # 4. pending-approval awaiting the automatic admission pass
+        "hygiene:awaiting-admission:bd-approval",
         # 5. factory-unsafe ready work awaiting host routing
         "host-only:needs-host-secrets:bd-host",
         # 6. ready work held by an unexpired provider-exhaustion record
@@ -252,7 +252,6 @@ def test_every_advertised_drive_handoff_is_accepted_by_drive(
     assert [item.handoff.action_id for item in advertised] == [
         "accept:bd-parked",
         "resolve-blocked:bd-blocked:ready",
-        "approve:bd-approval",
     ]
 
     results: dict[str, dict[str, Any]] = {
@@ -265,26 +264,22 @@ def test_every_advertised_drive_handoff_is_accepted_by_drive(
     assert {action: result["status"] for action, result in results.items()} == {
         "accept:bd-parked": "green",
         "resolve-blocked:bd-blocked:ready": "green",
-        "approve:bd-approval": "green",
     }
 
 
-def test_a_state_drive_refuses_by_construction_is_never_advertised(
+def test_a_dispatcher_owned_item_is_surfaced_as_awaiting_admission_not_as_an_approve_valve(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_project(root=tmp_path)
     # `auto_approve_ready` makes this item's effective admission policy `auto`,
-    # so the Dispatcher owns it and the human approve valve refuses it by
-    # construction.
+    # so the Dispatcher owns it and the attention surface does not offer a
+    # human approve for it (drive would still accept an explicit one).
     _seed(id_="bd-auto", status="pending-approval", rank="a1")
 
     attention = _snapshot(root=tmp_path, monkeypatch=monkeypatch)
-    refusal = run_action(repo=tmp_path, action_id="approve:bd-auto")
 
-    assert refusal["status"] == "failed"
-    assert refusal["summary"] == "approve requires an effective-manual pending-approval item."
     assert "approve:bd-auto" not in {item.handoff.action_id for item in attention}
-    # It is surfaced — just not as an action the enforcer would reject. The
+    # It is surfaced under the awaiting-admission lane instead. The
     # awaiting-admission lane is selected by id rather than by referent, because
     # an auto-admissible item on an idle factory is also the idle-factory fact's
     # first ranked dispatch, and that row names the same work-item.

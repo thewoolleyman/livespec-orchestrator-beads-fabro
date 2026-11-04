@@ -73,6 +73,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "IMPLEMENT_ADAPTER_KEY",
+    "IMPLEMENT_SELECTED_INDEX_KEY",
     "TDD_PROJECTED_KEYS",
     "UNOBSERVED_TDD_SIGNALS",
     "TddSignals",
@@ -94,6 +95,7 @@ _ASSERTION_COUNT_KEY = "tdd.assertion_count"
 # not a test-first measurement, and naming it `tdd.adapter` would misreport
 # what it describes.
 IMPLEMENT_ADAPTER_KEY = "livespec.implement.adapter"
+IMPLEMENT_SELECTED_INDEX_KEY = "livespec.implement.selected_index"
 
 # Declared ONCE, in projection order. Every consumer — the journal record, the
 # span attributes, the allowlist assertion, the Honeycomb definitions — reads
@@ -129,6 +131,7 @@ class TddSignals:
     order_refusals: int | None = None
     assertion_count: int | None = None
     adapter: str | None = None
+    selected_index: int | None = None
     size_justified: bool | None = None
 
 
@@ -143,6 +146,7 @@ def tdd_signals(
     commits: TddCommitSignals | None,
     order: TddOrderSignals,
     adapter: str | None,
+    selected_index: int | None = None,
     size_justified: bool | None = None,
 ) -> TddSignals:
     """Assemble one dispatch's TDD signals from the three derivations.
@@ -164,6 +168,7 @@ def tdd_signals(
         order_refusals=order.order_refusals,
         assertion_count=assertion_count(item=item),
         adapter=adapter,
+        selected_index=selected_index,
         size_justified=size_justified,
     )
 

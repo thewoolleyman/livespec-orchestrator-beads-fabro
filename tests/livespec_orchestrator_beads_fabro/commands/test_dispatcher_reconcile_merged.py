@@ -49,12 +49,31 @@ def _isolated_worktree_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
 
 
 @dataclass(frozen=True, kw_only=True)
+class _HostProofState:
+    """The part of a proof leg the parking record reads for a host replay."""
+
+    refused: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class _PendingHostProof:
+    """A passing proof leg whose host assertion still awaits independent replay."""
+
+    pending_host_captured: tuple[str, ...]
+    pending_human_attested: tuple[str, ...] = ()
+    record: None = None
+    captured: None = None
+    reason: str = "host evidence read"
+    host: _HostProofState = field(default_factory=_HostProofState)
+
+
+@dataclass(frozen=True, kw_only=True)
 class _AcceptancePass:
     # The proof leg the real pass carries. `None` is what a legacy-source item
     # resolves to, and it is the right stand-in here: these cases are about the
     # DISPOSITION the verdict routes to, and the pointer write skips an item
     # with no record rather than changing which branch runs.
-    proof: None = None
+    proof: _PendingHostProof | None = None
     verdict: str
     absent_evidence: tuple[str, ...] = ()
     # The three leg fields the PARKING RECORD reads off the pass. They carry
@@ -265,6 +284,184 @@ def test_reconcile_merged_resolves_a_hand_carried_pr_by_body_search(
     assert stored.audit is not None
     assert (stored.audit.pr_number, stored.audit.merge_sha) == (18, "body777")
     assert any("body" in argument for argument in runner.calls[2][0])
+
+
+def test_reconcile_merged_searches_by_item_id_when_the_branch_pr_is_not_merged(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A factory branch carrying an UNMERGED pull request is not an answer.
+
+    The branch read used to be terminal whenever `gh` exited 0, so a pull request
+    on the factory branch that was open or closed resolved to "no merged PR found"
+    and the item-id search that would have found the real merge never ran at all.
+    The live instance was `livespec-dev-tooling-vxkmab`, landed by a host route as
+    #2705 (`7253f79c`) while its factory pull request #2679 sat CLOSED: the search
+    reaches the merge, the branch read cannot, and the refusal named neither.
+
+    The fixture is the exact shape that produced it — a CLOSED branch pull request
+    whose own `mergeCommit` is absent, beside a DIFFERENT merged pull request whose
+    title names the item — so the resolved number and merge sha are evidence about
+    WHICH read answered rather than merely that one did.
+    """
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2679, state="CLOSED", sha=None)),
+            _ok(stdout=json.dumps([_list_pr(number=2705, title=f"fix {item.id}", sha="7253f79c")])),
+            _ok(),
+            *_venue_resolution(),
+            *[_ok() for _ in range(8)],
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 0
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.audit is not None
+    assert (stored.audit.pr_number, stored.audit.merge_sha) == (2705, "7253f79c")
+    stages = [record["stage"] for record in _journal_records(repo=repo)]
+    assert stages[:3] == [
+        "reconcile-merged-invocation",
+        "reconcile-pr-view-branch",
+        "reconcile-pr-list-merged",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("branch_view_stdout", "named_state"),
+    [
+        (json.dumps({"number": 2679, "state": "CLOSED", "mergeCommit": None}), "CLOSED"),
+        (json.dumps({"number": 2679, "state": "OPEN", "mergeCommit": None}), "OPEN"),
+        ("gh printed no JSON at all", "unreadable JSON"),
+        (
+            json.dumps({"number": 2679, "state": "MERGED", "mergeCommit": None}),
+            "MERGED with no merge commit",
+        ),
+    ],
+)
+def test_reconcile_merged_refusal_names_the_branch_state_and_the_item_id_search(
+    branch_view_stdout: str,
+    named_state: str,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal reports BOTH readings, because each one has its own remedy.
+
+    An operator reading "no merged PR found" cannot tell which of two situations
+    they are in: the item genuinely has no merge, or its factory branch carries a
+    pull request this valve could not use. Those differ in what to do next —
+    nothing versus land or locate the real merge — and the branch state is the
+    only thing that says which. Naming the search alongside it is what makes the
+    absence assertable: a refusal that states no scope searched is a claim no
+    reader can re-run, and this valve's whole job is to establish a merge from
+    the forge rather than to be told about one.
+
+    The four readings are the four ways the branch read fails to be a merge, and
+    each is NAMED rather than collapsed: `OPEN` and `CLOSED` are the live
+    operator situations, `gh` output nobody can parse is a diagnostic about the
+    forge call rather than about the pull request, and a `MERGED` pull request
+    carrying no merge commit is a reading this valve must not key an acceptance
+    on. Collapsing any of them into one word would report a condition whose
+    remedy is not the one the operator needs.
+    """
+    _assert_reconcile_command_registered(capsys=capsys)
+    module = _reconcile_module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=branch_view_stdout),
+            _ok(stdout="[]"),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 3
+    err = capsys.readouterr().err
+    assert named_state in err
+    assert f"feat/{item.id}" in err
+    # The SEARCH is named by the argv the valve actually ran, read off the shipped
+    # builder rather than restated here: a sentence claiming a search was run is
+    # not the search, and a restated one could drift from what was spent.
+    assert " ".join(module.merged_pr_list_argv(item=item, default_branch="master")) in err
+    # Both reads happened, in order, and nothing past them: the search is what the
+    # refusal claims to have run, and no janitor or acceptance work followed it.
+    assert [record["stage"] for record in _journal_records(repo=repo)] == [
+        "reconcile-merged-invocation",
+        "reconcile-pr-view-branch",
+        "reconcile-pr-list-merged",
+    ]
+
+
+def test_a_merged_branch_pr_resolves_without_running_the_item_id_search(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CONTROL for the two fall-through cases above, and it earns them both.
+
+    Each of those asserts that an UNMERGED branch read reaches the item-id
+    search. Neither can distinguish "falls through when the branch read is not a
+    merge" from "searches on every invocation", and the second would spend a
+    forge round trip per reconcile and — worse — could resolve a DIFFERENT pull
+    request than the branch read already named, with nothing in the journal
+    saying which answered. So this case pins the short-circuit: the branch read's
+    own number and merge sha are what the item closes against, no `gh pr list`
+    ran at all, and the search stage is absent from the journal.
+
+    It is a control rather than behaviour of its own: the short-circuit held
+    before `bd-ib-sz2eal` and holds after it, so this case could not fail against
+    the build the two cases above were written against, and it is committed on the
+    suite-green leg rather than through a Red it cannot produce.
+    """
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2705, state="MERGED", sha="7253f79c")),
+            _ok(),
+            *_venue_resolution(),
+            *[_ok() for _ in range(8)],
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 0
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.audit is not None
+    assert (stored.audit.pr_number, stored.audit.merge_sha) == (2705, "7253f79c")
+    assert not [argv for argv, _ in runner.calls if argv[:3] == ["gh", "pr", "list"]]
+    assert "reconcile-pr-list-merged" not in [
+        record["stage"] for record in _journal_records(repo=repo)
+    ]
 
 
 @pytest.mark.parametrize("status", ["backlog", "ready", "blocked"])
@@ -497,7 +694,7 @@ def test_reconcile_plan_uses_resolved_fabro_bin(
     assert plan.fabro_bin != "fabro"
 
 
-@pytest.mark.parametrize("status", ["done", "pending-approval"])
+@pytest.mark.parametrize("status", ["done"])
 def test_reconcile_merged_refuses_non_active_items(
     status: str,
     capsys: pytest.CaptureFixture[str],
@@ -509,8 +706,10 @@ def test_reconcile_merged_refuses_non_active_items(
     re-run only the acceptance pass and write a missing pointer — so refusing it
     would close the one route a merged, verified, pointerless item has. The arm is
     bound in `tests/integration/test_reconcile_merged_acceptance_pointer.py`; the
-    two statuses left here are the ones no arm serves: a closed item has nothing to
-    reconcile, and an unadmitted one never dispatched.
+    status left here is the one no arm serves: a closed item has nothing to
+    reconcile. `pending-approval` left this list at v216 (bd-ib-acxptq), whose
+    locally built entry is bound in
+    `tests/integration/test_reconcile_merged_locally_built_item_scenario245.py`.
     """
     _assert_reconcile_command_registered(capsys=capsys)
     repo = _repo(tmp_path=tmp_path)
@@ -725,7 +924,7 @@ def test_reconcile_merged_refuses_ambiguous_body_search_candidates(
     assert "#20 multi2" in err
 
 
-def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shapes(
+def test_parse_merged_pr_list_prefers_the_head_ref_tier_and_rejects_unusable_shapes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _assert_reconcile_command_registered(capsys=capsys)
@@ -761,7 +960,7 @@ def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shape
         default_branch="trunk",
     )
 
-    assert [(match.number, match.merge_sha) for match in matches] == [(4, "ddd"), (5, "eee")]
+    assert [(match.number, match.merge_sha) for match in matches] == [(4, "ddd")]
 
 
 def test_parse_merged_pr_list_tiers_body_mentions_below_branch_and_title_matches(
@@ -883,6 +1082,101 @@ def test_regrade_pass_closes_the_item_and_clears_rework_pending(
     ]
     # The containment probe asked about the resolved merge against the tip.
     assert runner.calls[2][0][-3:] == ["--is-ancestor", "51d99744", "origin/master"]
+
+
+def test_regrade_pass_with_an_unverified_host_assertion_parks_in_acceptance(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A host-captured PASS needs a replay before regrade may close the item."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    monkeypatch.setattr(
+        regrade,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(
+            verdict="PASS",
+            proof=_PendingHostProof(pending_host_captured=("The released command works.",)),
+        ),
+    )
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert (payload[0]["status"], payload[0]["stage"]) == ("green", "acceptance")
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.status == "acceptance"
+    assert stored.rework_pending is False
+    records = _journal_records(repo=repo)
+    stages = [record["stage"] for record in records]
+    assert "ledger-regrade-accept" not in stages
+    assert "acceptance-parking-record" in stages
+    parking = next(record for record in records if record["stage"] == "acceptance-parking-record")
+    assert parking["pending"] == ["host-captured record for 'The released command works.'"]
+
+
+def test_regrade_park_reaches_the_lifecycle_reconcile_chokepoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parking a regraded item reconciles the runs it disowns, like every lifecycle write."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    monkeypatch.setattr(
+        regrade,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(
+            verdict="PASS",
+            proof=_PendingHostProof(pending_host_captured=("The released command works.",)),
+        ),
+    )
+    lifecycle_writes = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes"
+    )
+    reconciled: list[tuple[str, str]] = []
+
+    def _record(*, path: object, item_id: str, status: str) -> None:
+        _ = path
+        reconciled.append((item_id, status))
+
+    monkeypatch.setattr(lifecycle_writes, "reconcile_after_lifecycle_write", _record)
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+    assert exit_code == 0
+    assert reconciled == [(item.id, "acceptance")]
 
 
 def test_regrade_fail_leaves_status_labels_and_failed_passes_untouched(

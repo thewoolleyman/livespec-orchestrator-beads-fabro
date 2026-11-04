@@ -8,9 +8,8 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_app_server_io import (
     ShellCodexAppServerRunner,
@@ -45,10 +44,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import
     assess_host_codex_credential,
     codex_refresh_guard_seconds,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_status_payload import (
+    codex_cred_status_payload,
+    human_bool,
+    human_optional,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
     WorkflowFaultDeferral,
     operator_credential_requirement,
     requirement_refusal_text,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement_payload import (
+    CREDENTIAL_REQUIREMENT_PAYLOAD_KEY,
+    credential_requirement_human_lines,
+    credential_requirement_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     project_codex_auth_snapshot,
@@ -312,7 +321,14 @@ def run_codex_cred_status(*, args: argparse.Namespace) -> int:
         now_epoch=now_epoch,
         run_budget_seconds=requirement.allowance_seconds,
     )
-    payload = _codex_cred_status_payload(status=status)
+    payload = codex_cred_status_payload(status=status)
+    # The requirement the status GRADES AGAINST, reported beside the credential it
+    # grades: a reading that states a credential's remaining lifetime and not the
+    # figure demanded of it cannot be acted on, and the clause requires this
+    # surface to name which of the two figures governed.
+    payload[CREDENTIAL_REQUIREMENT_PAYLOAD_KEY] = credential_requirement_payload(
+        requirement=requirement
+    )
     observation = identity_observation_for(
         source_auth_json=source_auth_json,
         source_auth_path=host_codex_auth_path(),
@@ -352,26 +368,6 @@ def _assess_host_codex_credential_now(
     )
 
 
-def _codex_cred_status_payload(*, status: HostCodexCredentialStatus) -> dict[str, Any]:
-    expires_at_iso = (
-        None
-        if status.expires_at_epoch is None
-        else datetime.fromtimestamp(status.expires_at_epoch, tz=timezone.utc).isoformat()
-    )
-    remaining_days = None if status.remaining_seconds is None else status.remaining_seconds / 86_400
-    return {
-        "alarm": status.alarm,
-        "expires_at_epoch": status.expires_at_epoch,
-        "expires_at_iso": expires_at_iso,
-        "malformed": status.malformed,
-        "message": status.message,
-        "present": status.present,
-        "refresh_due": status.refresh_due,
-        "remaining_days": remaining_days,
-        "remaining_seconds": status.remaining_seconds,
-    }
-
-
 def _codex_cred_status_human(
     *,
     payload: dict[str, Any],
@@ -379,24 +375,19 @@ def _codex_cred_status_human(
 ) -> str:
     return "\n".join(
         (
-            f"present: {_human_bool(value=payload['present'])}",
-            f"malformed: {_human_bool(value=payload['malformed'])}",
-            f"expires_at_epoch: {_human_optional(value=payload['expires_at_epoch'])}",
-            f"expires_at_iso: {_human_optional(value=payload['expires_at_iso'])}",
-            f"remaining_seconds: {_human_optional(value=payload['remaining_seconds'])}",
-            f"remaining_days: {_human_optional(value=payload['remaining_days'])}",
-            f"alarm: {_human_bool(value=payload['alarm'])}",
-            f"refresh_due: {_human_bool(value=payload['refresh_due'])}",
+            f"present: {human_bool(value=payload['present'])}",
+            f"malformed: {human_bool(value=payload['malformed'])}",
+            f"expires_at_epoch: {human_optional(value=payload['expires_at_epoch'])}",
+            f"expires_at_iso: {human_optional(value=payload['expires_at_iso'])}",
+            f"remaining_seconds: {human_optional(value=payload['remaining_seconds'])}",
+            f"remaining_days: {human_optional(value=payload['remaining_days'])}",
+            f"alarm: {human_bool(value=payload['alarm'])}",
+            f"refresh_due: {human_bool(value=payload['refresh_due'])}",
             f"message: {payload['message']}",
+            *credential_requirement_human_lines(
+                payload=cast("dict[str, Any]", payload[CREDENTIAL_REQUIREMENT_PAYLOAD_KEY])
+            ),
             *identity_observation_human_lines(observation=observation),
             "",
         )
     )
-
-
-def _human_bool(*, value: object) -> str:
-    return "true" if value is True else "false"
-
-
-def _human_optional(*, value: object) -> str:
-    return "null" if value is None else str(value)

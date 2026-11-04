@@ -53,6 +53,7 @@ SIGNATURE_SOURCES: tuple[str, ...] = (
     "process.terminal_diagnostic",
     "protocol.machine_code",
     "protocol.message",
+    "turn.final_output",
 )
 
 SIGNATURE_CAUSES: tuple[str, ...] = (
@@ -69,13 +70,16 @@ SIGNATURE_CAUSES: tuple[str, ...] = (
 SIGNATURE_SCOPES: tuple[str, ...] = ("availability-domain", "candidate")
 
 _MACHINE_CODE_SOURCE = "protocol.machine_code"
+_FINAL_OUTPUT_SOURCE = "turn.final_output"
 _DOMAIN_SCOPE = "availability-domain"
+_CANDIDATE_SCOPE = "candidate"
 
 _SIGNATURE_KEYS: frozenset[str] = frozenset(
     {
         "all_literals",
         "cause",
         "exit_code",
+        "final_text",
         "hold_key",
         "machine_code",
         "scope",
@@ -102,6 +106,7 @@ class AcpAvailabilitySignature:
     all_literals: tuple[str, ...] = ()
     exit_code: int | None = None
     hold_key: str | None = None
+    final_text: str | None = None
 
     @property
     def matcher(self) -> tuple[str, str, frozenset[str], int | None]:
@@ -110,9 +115,17 @@ class AcpAvailabilitySignature:
         `all_literals` collapses to a frozenset because the contract makes
         it a CONJUNCTION: two signatures listing the same literals in a
         different order match exactly the same diagnostics, so ordering
-        them would hide a conflict behind a cosmetic difference.
+        them would hide a conflict behind a cosmetic difference. A
+        `turn.final_output` signature is not a conjunction: its one
+        `final_text` rides the machine-code slot, which that source never
+        otherwise uses, so two of them differing only in text stay distinct.
         """
-        return (self.source, self.machine_code or "", frozenset(self.all_literals), self.exit_code)
+        return (
+            self.source,
+            self.machine_code or self.final_text or "",
+            frozenset(self.all_literals),
+            self.exit_code,
+        )
 
     @property
     def disposition(self) -> tuple[str, str, str]:
@@ -169,11 +182,15 @@ def _parse_one(*, entry: object, key: str) -> AcpAvailabilitySignature | str:
     if not isinstance(entry, dict):
         return f"{key} must be an availability-signature table; got {entry!r}"
     table = cast("dict[str, Any]", entry)
-    for check in (_shape_refusal, _exit_code_refusal, _hold_key_refusal):
+    for check in (_shape_refusal, _final_output_refusal, _exit_code_refusal, _hold_key_refusal):
         refusal = check(table=table, key=key)
         if refusal is not None:
             return refusal
-    discriminator = _discriminator(table=table, key=key)
+    discriminator = (
+        (None, ())
+        if table["source"] == _FINAL_OUTPUT_SOURCE
+        else _discriminator(table=table, key=key)
+    )
     if isinstance(discriminator, str):
         return discriminator
     machine_code, all_literals = discriminator
@@ -185,6 +202,7 @@ def _parse_one(*, entry: object, key: str) -> AcpAvailabilitySignature | str:
         all_literals=all_literals,
         exit_code=table.get("exit_code"),
         hold_key=table.get("hold_key"),
+        final_text=table.get("final_text"),
     )
 
 
@@ -206,6 +224,35 @@ def _shape_refusal(*, table: Mapping[str, Any], key: str) -> str | None:
                 f"{key}.{field_name} must be one of {', '.join(allowed)}; "
                 f"got {table[field_name]!r}"
             )
+    return None
+
+
+def _final_output_refusal(*, table: Mapping[str, Any], key: str) -> str | None:
+    """Refuse a malformed `turn.final_output` signature, or `final_text` anywhere else.
+
+    The source requires one non-empty `final_text` and forbids every other
+    discriminator, because the match is an END-OF-OUTPUT comparison and not a
+    conjunction. It is candidate-scoped by grammar: a refusal delivered as
+    turn text is evidence about the one candidate that ran, never about the
+    account behind it.
+    """
+    if table["source"] != _FINAL_OUTPUT_SOURCE:
+        if "final_text" in table:
+            return f"{key}.final_text is forbidden for source {table['source']!r}"
+        return None
+    for forbidden in ("all_literals", "machine_code", "exit_code"):
+        if forbidden in table:
+            return f"{key}.{forbidden} is forbidden for source {_FINAL_OUTPUT_SOURCE!r}"
+    if table["scope"] != _CANDIDATE_SCOPE:
+        return (
+            f"{key}.scope must be {_CANDIDATE_SCOPE!r} for source {_FINAL_OUTPUT_SOURCE!r}; "
+            f"got {table['scope']!r}"
+        )
+    if non_empty_text(value=table.get("final_text")) is None:
+        return (
+            f"{key}.final_text must be the complete non-empty refusal text for source "
+            f"{_FINAL_OUTPUT_SOURCE!r}; got {table.get('final_text')!r}"
+        )
     return None
 
 

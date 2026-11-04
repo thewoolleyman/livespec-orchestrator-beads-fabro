@@ -1,0 +1,384 @@
+{
+  "date": "2026-10-27",
+  "scope": "Live input transport only; six fresh processes without Herdr or tmux. Not a durability, deployment or Livespec integration proof.",
+  "versions": {
+    "claude_code": "2.1.311",
+    "claude_agent_sdk": "0.3.311",
+    "codex_cli": "0.164.0",
+    "pi": "0.84.4",
+    "pi_node": "24.20.0"
+  },
+  "headless": {
+    "claude": [
+      {
+        "at": "2026-10-27T18:59:17.078Z",
+        "event": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_0185GmA1HgKpkNSL2tic1Zyc",
+            "name": "AskUserQuestion",
+            "input": {
+              "questions": [
+                {
+                  "question": "Which probe color?",
+                  "header": "Color",
+                  "multiSelect": false,
+                  "options": [
+                    {
+                      "label": "Amber",
+                      "description": "Choose Amber"
+                    },
+                    {
+                      "label": "Violet",
+                      "description": "Choose Violet"
+                    }
+                  ]
+                }
+              ]
+            },
+            "caller": {
+              "type": "direct"
+            }
+          }
+        ]
+      },
+      {
+        "at": "2026-10-27T18:59:17.137Z",
+        "event": "question",
+        "tool": "AskUserQuestion",
+        "toolUseID": "toolu_0185GmA1HgKpkNSL2tic1Zyc",
+        "input": {
+          "questions": [
+            {
+              "question": "Which probe color?",
+              "header": "Color",
+              "options": [
+                {
+                  "label": "Amber",
+                  "description": "Choose Amber"
+                },
+                {
+                  "label": "Violet",
+                  "description": "Choose Violet"
+                }
+              ],
+              "multiSelect": false
+            }
+          ]
+        }
+      },
+      {
+        "at": "2026-10-27T18:59:20.148Z",
+        "event": "answer",
+        "toolUseID": "toolu_0185GmA1HgKpkNSL2tic1Zyc",
+        "answers": {
+          "Which probe color?": "Violet"
+        },
+        "heldMs": 3000
+      },
+      {
+        "at": "2026-10-27T18:59:21.010Z",
+        "event": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "RECEIVED_COLOR=Violet"
+          }
+        ]
+      },
+      {
+        "at": "2026-10-27T18:59:21.099Z",
+        "event": "result",
+        "subtype": "success",
+        "result": "RECEIVED_COLOR=Violet",
+        "is_error": false
+      },
+      {
+        "at": "2026-10-27T18:59:21.760Z",
+        "event": "PASS"
+      }
+    ],
+    "codex": [
+      {
+        "at": 1793127555.32193,
+        "event": "thread",
+        "threadId": "01a17ebb-1ca0-7f90-933c-ecd5d53c2d8c",
+        "model": "gpt-6-astra"
+      },
+      {
+        "at": 1793127558.5897746,
+        "event": "question",
+        "payload": {
+          "method": "item/tool/requestUserInput",
+          "id": 0,
+          "params": {
+            "threadId": "01a17ebb-1ca0-7f90-933c-ecd5d53c2d8c",
+            "turnId": "01a17ebb-2115-7de0-a408-61ea7ca16060",
+            "itemId": "call_982665d521474de58276e49bbf7239c2",
+            "questions": [
+              {
+                "id": "probe_color",
+                "header": "Probe color",
+                "question": "Which probe color?",
+                "isOther": true,
+                "isSecret": false,
+                "options": [
+                  {
+                    "label": "Amber",
+                    "description": "Choose Amber."
+                  },
+                  {
+                    "label": "Violet",
+                    "description": "Choose Violet."
+                  }
+                ]
+              }
+            ],
+            "isBlocking": true,
+            "autoResolutionMs": null
+          }
+        }
+      },
+      {
+        "at": 1793127561.7237146,
+        "event": "answer",
+        "requestId": 0,
+        "answers": {
+          "probe_color": {
+            "answers": [
+              "Violet"
+            ]
+          }
+        },
+        "heldMs": 3000
+      },
+      {
+        "at": 1793127563.1970289,
+        "event": "assistant",
+        "text": "RECEIVED_COLOR=Violet"
+      },
+      {
+        "at": 1793127563.410868,
+        "event": "turn_completed",
+        "payload": {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "01a17ebb-1ca0-7f90-933c-ecd5d53c2d8c",
+            "turn": {
+              "id": "01a17ebb-2115-7de0-a408-61ea7ca16060",
+              "rootTurnId": "01a17ebb-2115-7de0-a408-61ea7ca16060",
+              "items": [
+                {
+                  "type": "agentMessage",
+                  "id": "msg_00c1c103dd7178da016ae0f48b1d108198a965b47332926d05",
+                  "text": "RECEIVED_COLOR=Violet",
+                  "phase": "final_answer",
+                  "memoryCitation": null,
+                  "delivery": null,
+                  "questions": null
+                }
+              ],
+              "itemsView": "summary",
+              "status": "completed",
+              "error": null,
+              "startedAt": 1793127555,
+              "completedAt": 1793127563,
+              "durationMs": 8041
+            }
+          },
+          "emittedAtMs": 1793127563409
+        }
+      }
+    ],
+    "pi": [
+      {
+        "id": "commands",
+        "type": "response",
+        "command": "get_commands",
+        "success": true,
+        "data": {
+          "commands": [
+            {
+              "name": "research-input-probe",
+              "description": "Local protocol-only probe; never calls a model",
+              "source": "extension",
+              "sourceInfo": {
+                "path": "/tmp/plan-headless-research/probe.ts",
+                "source": "cli",
+                "scope": "temporary",
+                "origin": "top-level"
+              }
+            },
+            {
+              "name": "llama",
+              "description": "Manage llama.cpp router models",
+              "source": "extension",
+              "sourceInfo": {
+                "path": "<inline:llama.cpp>",
+                "source": "inline",
+                "scope": "temporary",
+                "origin": "top-level"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "extension_ui_request",
+        "id": "4784ead9-915c-471a-8f4b-6542c9db526f",
+        "method": "confirm",
+        "title": "Research probe",
+        "message": "Use the synthetic answer?",
+        "timeout": 10000
+      },
+      {
+        "type": "probe_answer_sent",
+        "id": "4784ead9-915c-471a-8f4b-6542c9db526f",
+        "confirmed": true,
+        "heldMs": 3000
+      },
+      {
+        "type": "extension_ui_request",
+        "id": "34b8e898-2927-47d3-a874-b12ad1998561",
+        "method": "notify",
+        "message": "probe-result:true",
+        "notifyType": "info"
+      }
+    ]
+  },
+  "interactive": {
+    "claude": {
+      "terminal": "fresh PTY; native CLI child of Python controller; no multiplexer",
+      "result": "PASS",
+      "actions": [
+        {
+          "at": 1793127595.6974921,
+          "wait": 1
+        },
+        {
+          "at": 1793127606.4879584,
+          "send": "\u001b[B\r",
+          "wait": 3
+        },
+        {
+          "at": 1793127616.9452007,
+          "wait": 1
+        },
+        {
+          "at": 1793127631.6336675,
+          "quit": true
+        }
+      ],
+      "final_screen_excerpt": [
+        "\u276f This is a synthetic input transport test. Call AskUserQuestion exactly once asking Which probe color? with options",
+        "Amber and Violet. Wait for the answer, then output only RECEIVED_COLOR=<chosen color>. Do not guess or call other",
+        "\u25cf\u00a0User answered Claude's questions:",
+        "\u23bf \u00a0\u00b7 Which probe color? \u2192 Violet",
+        "\u25cf RECEIVED_COLOR=Violet"
+      ],
+      "raw_local_capture_sha256": "006e4796638b21039f966e948bbbd8d6c75e1246cd5d0d347a25c88e5d76087d"
+    },
+    "codex": {
+      "terminal": "fresh PTY; native CLI child of Python controller; no multiplexer",
+      "result": "PASS",
+      "actions": [
+        {
+          "at": 1793127596.9463148,
+          "wait": 1
+        },
+        {
+          "at": 1793127607.6467795,
+          "send": "\u001b[B\u001b[B\r",
+          "wait": 1
+        },
+        {
+          "at": 1793127618.0566878,
+          "wait": 1
+        },
+        {
+          "at": 1793127630.6477902,
+          "send": "/plan\r",
+          "wait": 1
+        },
+        {
+          "at": 1793127652.1318758,
+          "wait": 1
+        },
+        {
+          "at": 1793127659.2977111,
+          "send": "\r",
+          "wait": 1
+        },
+        {
+          "at": 1793127671.3936336,
+          "wait": 1
+        },
+        {
+          "at": 1793127681.2575536,
+          "prompt": true,
+          "wait": 1
+        },
+        {
+          "at": 1793127703.6321812,
+          "send": "\r",
+          "wait": 3
+        },
+        {
+          "at": 1793127713.6595566,
+          "wait": 1
+        },
+        {
+          "at": 1793127722.7277415,
+          "send": "\u001b[B\r",
+          "wait": 4
+        },
+        {
+          "at": 1793127729.0319746,
+          "wait": 1
+        },
+        {
+          "at": 1793127825.5830965,
+          "quit": true
+        }
+      ],
+      "final_screen_excerpt": [
+        "\u203a This is a synthetic input transport test. Call request_user_input exactly once asking Which probe color? with options",
+        "Amber and Violet. Wait for the answer, then output only RECEIVED_COLOR=<chosen color>. Do not guess or call other",
+        "\u2022 Questions 1/1 answered",
+        "\u2022 Which probe color?",
+        "answer: Violet",
+        "\u2022 RECEIVED_COLOR=Violet"
+      ],
+      "raw_local_capture_sha256": "91f953042b210853329f0adc852675aeba8b319e75af783e5c969b9742c5e06a"
+    },
+    "pi": {
+      "terminal": "fresh PTY; native CLI child of Python controller; no multiplexer",
+      "result": "PASS",
+      "actions": [
+        {
+          "at": 1793127582.6265225,
+          "wait": 1
+        },
+        {
+          "at": 1793127594.5531666,
+          "send": "/research-input-probe\r",
+          "wait": 1
+        },
+        {
+          "at": 1793127598.1448092,
+          "send": "\r",
+          "wait": 1
+        },
+        {
+          "at": 1793127608.7722888,
+          "quit": true
+        }
+      ],
+      "final_screen_excerpt": [
+        "probe-result:true"
+      ],
+      "raw_local_capture_sha256": "14fbd16f5eb8031bcbf7bb7d97424bbb275bc6b8cd1381882edcaa80a2048dc8"
+    }
+  }
+}

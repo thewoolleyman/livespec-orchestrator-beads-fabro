@@ -1,30 +1,29 @@
-"""Scenario 148 — an unattended resume reports progress and withholds dispatch.
+"""Scenario 148 — an unattended resume reports progress and never stalls on an overdue budget.
 
-`contracts.md` section "Required result, budget and progress epoch":
-"resume_directive MUST report missing, expired and unobservable tracking
-findings. It MUST NOT automatically dispatch an exhausted or unobservable
-obligation. An unattended expired resume MUST retain the obligation and expose
-an authorized diagnosis/recovery action for the independent consumer. ... The
-progress check MUST precede the unattended dispatch decision."
+`contracts.md` section "Required result, budget and progress epoch" (v286):
+"resume_directive MUST report missing, overdue and unobservable tracking
+findings. A budget's deadline or handoff count MUST NOT change whether
+resume_directive takes or presents an executable action: it takes or presents
+each of the six executable kinds whenever the required result is unsatisfied,
+exactly as it does within budget, reports an overdue obligation as a finding,
+and never rewrites an overdue pointer to a diagnosis action. It MUST NOT
+automatically dispatch an unobservable obligation; an unattended unobservable
+resume MUST retain the obligation and expose an authorized diagnosis action for
+the independent consumer. ... The progress check MUST precede the unattended
+dispatch decision."
 
-WHY THE DURABLE AUTHORITY IS WHAT THE RESUME MUST READ. The budget used to be
-read off the `next_action` pointer, which every sanctioned writer rewrites
-wholesale — so the one thing a resume most needs to be unable to lie about was
-stored where a writer could hand it a new value. The fixtures here make that
-difference OBSERVABLE: the pointer is left carrying a 2099 deadline and a
-handoff count of zero while the chain's authority records the real, exhausted
-one. A resume reading the pointer reports a healthy obligation and dispatches
-it; a resume reading the authority reports expiry. Both produce a confident
-directive and nothing in the shape distinguishes them, which is why the pointer
-is deliberately well-formed rather than absent.
+The expiry rule these cases used to assert — an exhausted budget withholding the
+pointer's own action and exposing only `diagnose-plan-progress` — was DELETED on
+the maintainer's attended ruling of 2026-11-03 ("Whatever 'stall' rule is in
+effect here, completely delete it and make it not in effect"). The live instance
+was plan epic `bd-ib-6tcjfx`, whose unattended resume returned
+`diagnose-plan-progress` with `expired; limit=handoffs; ... handoffs=11/6`.
 
-WHAT "WITHHOLDS DISPATCH" MEANS HERE, PRECISELY. The exhausted obligation's own
-action must NOT be taken; an AUTHORIZED diagnosis action is exposed instead,
-because the clause requires the independent consumer to be given something
-executable rather than left with a dead end. So the assertions check that
-`next_action` is not the impl action AND that it is the diagnosis action — one
-without the other would pass for a resume that stalls, or for one that
-dispatches the thing it was told not to.
+WHY THE DURABLE AUTHORITY IS STILL WHAT THE RESUME READS. The pointer is left
+carrying a 2099 deadline and a handoff count of zero while the chain's authority
+records the real, exhausted one, so a resume reading the pointer would report a
+healthy obligation. The overdue FINDING must come from the chain; what changed
+is only that the finding no longer withholds the action.
 """
 
 from __future__ import annotations
@@ -221,14 +220,14 @@ def test_the_healthy_pointer_the_fixtures_leave_is_itself_dispatchable(
     assert directive.next_action == _IMPL_ACTION
 
 
-def test_an_expired_obligation_is_reported_even_though_the_pointer_looks_healthy(
+def test_an_overdue_obligation_is_reported_even_though_the_pointer_looks_healthy(
     tmp_path: Path,
 ) -> None:
-    """The durable authority governs, not the rewritable pointer.
+    """The durable authority governs the finding, not the rewritable pointer.
 
     The pointer on this epic carries a 2099 deadline and a zero handoff count;
-    the chain says the obligation is spent. Reading the pointer reports a
-    healthy obligation and dispatches it.
+    the chain says both limits are reached. The finding names the chain's
+    deadline, which the pointer does not carry anywhere.
     """
     config = _seed(tmp_path=tmp_path, authority=_exhausted_authority())
     pointer = plan_record_metadata(record=_fake(config=config).show_issue(issue_id=_EPIC_ID))[
@@ -243,46 +242,45 @@ def test_an_expired_obligation_is_reported_even_though_the_pointer_looks_healthy
 
     directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
 
-    assert "plan-progress-tracking: expired" in _findings_text(findings=directive.findings)
-    assert _ORIGINAL_DEADLINE in _findings_text(findings=directive.findings)
+    text = _findings_text(findings=directive.findings)
+    assert "plan-progress-tracking: overdue" in text
+    assert _ORIGINAL_DEADLINE in text
+    assert "handoffs=2/2" in text
 
 
-def test_an_expired_unattended_resume_withholds_the_exhausted_action(
+def test_an_overdue_unattended_resume_takes_the_pointers_own_action(
     tmp_path: Path,
 ) -> None:
-    """ "It MUST NOT automatically dispatch an exhausted ... obligation"."""
-    config = _seed(tmp_path=tmp_path, authority=_exhausted_authority())
+    """Scenario 148, "an overdue result is reported and its action is still taken".
 
-    directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
-
-    assert directive.next_action != _IMPL_ACTION
-
-
-def test_an_expired_unattended_resume_exposes_the_authorized_diagnosis(
-    tmp_path: Path,
-) -> None:
-    """ "expose an authorized diagnosis/recovery action for the independent
-    consumer".
-
-    Asserted separately from the withholding above because the two can fail
-    independently: a resume that stalls satisfies the withholding and leaves
-    the consumer a dead end.
+    Both limits are reached and the required result is unsatisfied. The resume
+    must take `impl:<ref>` exactly as it would within budget.
     """
     config = _seed(tmp_path=tmp_path, authority=_exhausted_authority())
 
     directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
 
-    assert directive.next_action == _DIAGNOSIS
-    assert _DIAGNOSIS in _findings_text(findings=directive.findings)
+    assert directive.ask is False
+    assert directive.next_action == _IMPL_ACTION
 
 
-def test_an_expired_resume_retains_the_obligation_it_reports(tmp_path: Path) -> None:
-    """ "MUST retain the obligation" — reading is not writing.
+def test_an_overdue_resume_is_never_rewritten_to_a_diagnosis(tmp_path: Path) -> None:
+    """ "never rewrites an overdue pointer to a diagnosis action".
 
-    The authority is read back after the resume and must be byte-identical: a
-    resume that cleared or advanced the obligation while reporting it would
-    make the next reader see a healthy plan.
+    Asserted on its own because the deleted rule's signature was precisely this
+    rewrite: the directive and every finding must be free of the diagnosis
+    operation for an obligation that is merely overdue.
     """
+    config = _seed(tmp_path=tmp_path, authority=_exhausted_authority())
+
+    directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
+
+    assert directive.next_action != _DIAGNOSIS
+    assert _DIAGNOSIS not in _findings_text(findings=directive.findings)
+
+
+def test_an_overdue_resume_retains_the_obligation_it_reports(tmp_path: Path) -> None:
+    """Reading is not writing: the authority is byte-identical after the resume."""
     config = _seed(tmp_path=tmp_path, authority=_exhausted_authority())
     before = read_chain_head(config=config, epic_id=_EPIC_ID)
     assert isinstance(before, ChainHead)
@@ -296,11 +294,12 @@ def test_an_expired_resume_retains_the_obligation_it_reports(tmp_path: Path) -> 
 
 
 def test_an_unobservable_obligation_is_reported_and_withheld(tmp_path: Path) -> None:
-    """ "It MUST NOT automatically dispatch an ... unobservable obligation".
+    """ "It MUST NOT automatically dispatch an unobservable obligation".
 
     The authority names a ledger item the tenant does not hold, so the ordinary
     reader cannot observe it — an unobservable reading rather than a confident
-    negative.
+    negative. This is the one tracking state that still withholds, and it still
+    exposes the diagnosis rather than a dead end.
     """
     config = _seed(
         tmp_path=tmp_path,
@@ -314,15 +313,10 @@ def test_an_unobservable_obligation_is_reported_and_withheld(tmp_path: Path) -> 
     assert directive.next_action == _DIAGNOSIS
 
 
-def test_a_satisfied_obligation_is_neither_expired_nor_unobservable(
+def test_a_satisfied_obligation_is_neither_overdue_nor_unobservable(
     tmp_path: Path,
 ) -> None:
-    """The control that separates the two findings from "reports everything".
-
-    The target really stands at `done`, so the obligation is met and neither
-    finding is owed. A reader emitting one here would be reporting a healthy
-    plan as broken.
-    """
+    """The control that separates the findings from "reports everything"."""
     config = _seed(
         tmp_path=tmp_path,
         authority=_live_authority(),
@@ -332,8 +326,31 @@ def test_a_satisfied_obligation_is_neither_expired_nor_unobservable(
     directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
 
     text = _findings_text(findings=directive.findings)
-    assert "plan-progress-tracking: expired" not in text
+    assert "plan-progress-tracking: overdue" not in text
     assert "plan-progress-tracking: unobservable" not in text
+
+
+def test_a_present_chain_with_no_obligation_names_the_pointer_write_as_the_remedy(
+    tmp_path: Path,
+) -> None:
+    """The state a genesis and the sanctioned migration both leave behind.
+
+    The chain is PRESENT — the walk reached an open token at epoch 1 — and no
+    transition has committed a required result or a budget yet. Only an
+    executable-kind pointer write carrying both tracking fields creates the
+    obligation, so that is the remedy the finding must name.
+    """
+    config = _seed(tmp_path=tmp_path, authority=AuthorityState())
+    head = read_chain_head(config=config, epic_id=_EPIC_ID)
+    assert isinstance(head, ChainHead), head
+
+    directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
+
+    text = _findings_text(findings=directive.findings)
+    assert "plan-progress-tracking: missing" in text
+    assert head.current_token_id in text
+    assert "executable-kind next_action write carrying required_result and budget" in text
+    assert "migrate-plan-records" not in text
 
 
 def test_the_progress_check_precedes_the_unattended_dispatch_decision(
@@ -342,9 +359,8 @@ def test_the_progress_check_precedes_the_unattended_dispatch_decision(
     """ "The progress check MUST precede the unattended dispatch decision."
 
     The epic carries NO Definition of Done section, which is the other
-    pre-emption in this path, AND an exhausted obligation. The progress finding
-    must still be reported — a resume that settled the dispatch question first
-    would answer with the gap pointer and never read the obligation.
+    pre-emption in this path, AND an overdue obligation. The overdue finding
+    must still be reported alongside whatever the gap pointer decides.
     """
     config = _seed(tmp_path=tmp_path, authority=_exhausted_authority())
     fake = _fake(config=config)
@@ -352,76 +368,35 @@ def test_the_progress_check_precedes_the_unattended_dispatch_decision(
 
     directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
 
-    assert "plan-progress-tracking: expired" in _findings_text(findings=directive.findings)
-    assert directive.next_action != _IMPL_ACTION
+    assert "plan-progress-tracking: overdue" in _findings_text(findings=directive.findings)
 
 
-def test_an_attended_resume_reports_the_same_finding_without_acting(
+def test_an_attended_resume_reports_the_overdue_finding_and_presents_the_pointer(
     tmp_path: Path,
 ) -> None:
-    """The findings are owed to every resume, not only the unattended one.
+    """The finding is owed to every resume, and an attended one presents the pointer.
 
-    "resume_directive MUST report missing, expired and unobservable tracking
-    findings" is unqualified, and an attended session needs the finding most:
-    it is the one that will decide what to do about it.
+    With no continuation ruling on this epic the attended resume raises the
+    picker with the pointer's own action as its default — exactly what it does
+    for an obligation within budget.
     """
     config = _seed(tmp_path=tmp_path, authority=_exhausted_authority())
 
     directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=False)
 
-    assert "plan-progress-tracking: expired" in _findings_text(findings=directive.findings)
-    assert directive.next_action != _IMPL_ACTION
+    assert "plan-progress-tracking: overdue" in _findings_text(findings=directive.findings)
+    assert directive.next_action != _DIAGNOSIS
+    assert directive.picker_default == _IMPL_ACTION
 
 
-def test_an_expired_obligation_with_a_bounded_attempt_exposes_that_operation(
+def test_an_overdue_obligation_with_a_recorded_attempt_still_takes_the_pointer(
     tmp_path: Path,
 ) -> None:
-    """ "A typed causal attempt MAY restore bounded execution without resetting
-    the original deadline".
+    """A recorded recovery attempt neither gates nor replaces the pointer's action.
 
-    A recorded, still-bounded attempt is what the consumer should run, so the
-    directive exposes the ATTEMPT's operation rather than a fresh diagnosis —
-    while the finding still reports the obligation as expired.
-    """
-    attempt: dict[str, Any] = {
-        "attempt": {
-            "attempt_id": "attempt-0001",
-            "previous_epoch": 1,
-            "cause": "host",
-            "failure_evidence": "the provider returned usageLimitExceeded",
-            "next_operation": _IMPL_ACTION,
-            "attempt_deadline": _FAR_FUTURE,
-            "recorded_at": "2026-10-15T09:00:00Z",
-            "claim_receipt": None,
-            "execution_receipt": None,
-            "outcome_receipt": None,
-        },
-        "item_attributable_attempts": 0,
-    }
-    config = _seed(
-        tmp_path=tmp_path,
-        authority=AuthorityState(
-            required_result=_required_result(),
-            original_deadline=_ORIGINAL_DEADLINE,
-            max_handoffs=2,
-            consumed_handoffs=2,
-            last_recovery_attempt=attempt,
-        ),
-    )
-
-    directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
-
-    text = _findings_text(findings=directive.findings)
-    assert "plan-progress-tracking: expired" in text
-    assert "attempt-0001" in text
-    assert directive.next_action == _IMPL_ACTION
-
-
-def test_an_expired_attempt_falls_back_to_a_fresh_diagnosis(tmp_path: Path) -> None:
-    """A bound that has elapsed authorizes nothing further.
-
-    Without this the first attempt would authorize its operation forever, which
-    is exactly the self-renewing budget the clause forbids.
+    The attempt's own bound has ELAPSED, which under the deleted rule fell back
+    to a fresh diagnosis. Now nothing about the attempt or the budget decides
+    the action: the unsatisfied pointer is taken.
     """
     attempt: dict[str, Any] = {
         "attempt": {
@@ -451,4 +426,4 @@ def test_an_expired_attempt_falls_back_to_a_fresh_diagnosis(tmp_path: Path) -> N
 
     directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
 
-    assert directive.next_action == _DIAGNOSIS
+    assert directive.next_action == _IMPL_ACTION

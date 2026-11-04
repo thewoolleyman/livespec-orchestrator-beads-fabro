@@ -53,15 +53,17 @@ def decide_plan_resume(*, config: StoreConfig, epic_id: str, unattended: bool) -
     stored there is one a writer can hand itself a new value for.
 
     Its position ahead of the missing-Definition-of-Done pre-emption is what
-    makes a plan that is BOTH expired and missing its Definition of Done report
-    the expiry: settling the dispatch question first answers with the gap
-    pointer and never reads the obligation at all.
+    makes a plan whose obligation is BOTH unreadable and missing its Definition
+    of Done report the unreadable obligation: settling the dispatch question
+    first answers with the gap pointer and never reads the obligation at all.
+    An OVERDUE obligation does not withhold anything; its finding rides along
+    with whatever the pointer decides.
     """
+    progress = evaluate_resume_progress(config=config, epic_id=epic_id, now=utc_now_iso())
     record = make_beads_client(config=config).show_issue(issue_id=epic_id)
     action = parse_next_action(
         value=plan_record_metadata(record=record).get(NEXT_ACTION_METADATA_KEY)
     )
-    progress = evaluate_resume_progress(config=config, epic_id=epic_id, now=utc_now_iso())
     findings = (
         *definition_of_done_findings(record=record, epic_id=epic_id),
         *progress.findings,

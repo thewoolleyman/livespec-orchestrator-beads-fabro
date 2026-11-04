@@ -17,10 +17,28 @@
 
 name: Release Please
 
+# Release window (bd-ib-43abuz; orchestrator half of livespec-dev-tooling-aplxhg,
+# plan ci-runtime-and-cost). Adopts livespec core v235's adoptable release
+# window: the release PR opens or updates only on the schedule below or on
+# workflow_dispatch, and a push to master runs release-please only when its head
+# commit is a merged release PR, and then only to tag it
+# (skip-github-pull-request), so the release and its sibling fan-out fire at once.
 on:
   push:
     branches: [master]
+  schedule:
+    - cron: "41 */4 * * *"
   workflow_dispatch:
+
+# Serialize release-please per ref (livespec-dev-tooling plan dfixhe). Two
+# concurrent master pushes once raced: one run cut a release while the other
+# opened a release PR against the stale previous base, which merged untagged
+# and regressed the manifest (livespec-orchestrator-beads-fabro, 2026-10-25,
+# PRs 3619/3620). A queued run, never a cancelled one: each push's commits
+# still need their release-please pass.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -28,6 +46,7 @@ permissions:
 
 jobs:
   release-please:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(master): release')"
     runs-on: ubuntu-latest
     steps:
       - name: Mint App installation token
@@ -43,3 +62,4 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: ${{ github.event_name == 'push' }}

@@ -505,6 +505,7 @@ def test_journal_record_keys_are_the_enumerated_calibration_fields() -> None:
         *_SIZE_PROXY_FIELDS,
         *_S4_REPAIR_FIELDS,
         *_TDD_ORDER_FIELDS,
+        "livespec.implement.selected_index",
     }
     assert set(journaled.keys()) == expected_keys
     assert journaled["stage"] == "calibration"

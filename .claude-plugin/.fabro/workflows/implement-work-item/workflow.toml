@@ -345,6 +345,7 @@ merge_hold = false
 # it with `set --` rather than quoting it.
 sandbox_check_suite = "sh -c 'echo LIVESPEC_INPUT_NOT_RENDERED: sandbox_check_suite was not supplied by the Dispatcher >&2; exit 1'"
 prepare_toolchain_mise = ""
+prepare_toolchain_python_sync = ""
 prepare_toolchain_lefthook = ""
 conformance_hook_install = ""
 conformance_verify_commit_refuse_hook = ""
@@ -402,7 +403,7 @@ provider = "docker"
 # only `provider = "docker"` + `[image] docker = "..."` — never an
 # `[env]` table (the Dispatcher's per-dispatch overlay owns that block;
 # TOML forbids duplicate table declarations).
-docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.118.3"
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.168.0"
 
 [environments.livespec-ci.resources]
 cpu = 4
@@ -510,7 +511,37 @@ enabled = false
 # Fabro's sandbox clone is hardcoded shallow (GIT_CLONE_DEPTH=10, no
 # config knob in v0.254.0); the RGR range checks and the check suite diff
 # the default branch..HEAD, which needs the default-branch merge-base present.
-script = "git fetch --unshallow --quiet"
+#
+# CONDITIONAL ON THE CLONE ACTUALLY BEING SHALLOW (work-item bd-ib-ukht2p).
+# `git fetch --unshallow` is an ERROR on a complete repository — `fatal:
+# --unshallow on a complete repository does not make sense`, exit 128 — and
+# the clone depth is a CEILING, not a guarantee: a depth-10 clone of a
+# governed repository with ten or fewer commits is already COMPLETE. The
+# unconditional form therefore killed PREPARATION for any such repository,
+# before a single model stage ran, with no PR and nothing to triage but the
+# fatal line. Measured twice on the private fixture
+# thewoolleyman/livespec-tdd-proof (7 genuine setup commits): hp run
+# 01M4VXN5BGZQJQTT57WSXFEEBD at 2026-10-14T01:48:26Z under released 0.196.1,
+# and hp run 01M5EM5NZYSM, which died in 2 seconds.
+#
+# `git rev-parse --is-shallow-repository` is the inspection, so the step asks
+# whether THIS clone is shallow and deepens it only then. Note what is NOT the
+# fix: the live acceptance fixture used to pad twelve commits onto its seed
+# history purely to keep the clone shallow, which evaded the assumption instead
+# of repairing it and left the complete-clone path unexercised.
+#
+# THE POSTURE STAYS FAIL-CLOSED. `set -e` plus an assignment — whose exit
+# status is its command substitution's — means a failed INSPECTION ends
+# preparation non-zero carrying git's own message, and a failed FETCH does the
+# same; neither is swallowed by a successful fallback. Only the one condition
+# that was never an error, a clone that is already complete, now proceeds.
+# Executed under `sh`, so the shape must stay POSIX: no `[[`, no `local`.
+#
+# Ordering is unchanged and the steps around it were re-checked at 86f4e9830b2f:
+# the Dispatcher's separate default-branch refspec fetch does not depend on this
+# fetch happening, and the overlay still places its own steps after this one with
+# the resume checkout last, so nothing is unshallowed out from under.
+script = "set -e; shallow=\"$(git rev-parse --is-shallow-repository)\"; if test \"$shallow\" = true; then git fetch --unshallow --quiet; fi"
 
 [[run.prepare.steps]]
 # Toolchain premise #1 — the version-manager install (the version-manager
@@ -521,12 +552,37 @@ script = "git fetch --unshallow --quiet"
 script = "set -- {{ inputs.prepare_toolchain_mise }}; test $# -eq 0 || \"$@\""
 
 [[run.prepare.steps]]
-script = "uv sync --all-groups"
+# Toolchain premise #2 — the PYTHON DEPENDENCY SYNC that populates the
+# sandbox's project environment (the `python_sync` arm of
+# `dispatcher.prepare_toolchain`); no-op for a repository that declares none.
+#
+# THIS WAS A BARE CONSTANT UNTIL bd-ib-xti6q, and the constant is what the
+# factory-sandbox-toolchain-disposition clause forbids: the two premises
+# bracketing it already ran nothing for a repository declaring nothing, while
+# this one assumed a `pyproject.toml` outright. Measured 2026-10-24 01:19Z on
+# run 01M5NQVKAENN, a dispatch of a JavaScript repository carrying
+# `package.json` and no `pyproject.toml`: the step exited 2 with `error: No
+# pyproject.toml found in current directory or any parent directory`, category
+# `deterministic`, BEFORE any agent turn — so every dispatch of every such
+# adopter without a target-local workflow failed identically and
+# re-dispatching could not help.
+#
+# POSITION IS LOAD-BEARING and is unchanged: it stays AFTER the
+# version-manager install, because this fleet's sync tool is one of the tools
+# that install resolves, and BEFORE the hook-manager install and the
+# conformance gate below, because both of those run through the project
+# environment this step populates.
+script = "set -- {{ inputs.prepare_toolchain_python_sync }}; test $# -eq 0 || \"$@\""
 
 [[run.prepare.steps]]
-# Toolchain premise #2 — the hook-manager install (the hook-manager arm of
+# Toolchain premise #3 — the hook-manager install (the hook-manager arm of
 # `dispatcher.prepare_toolchain`); no-op for an adopter without one.
 script = "set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\""
+
+[[run.prepare.steps]]
+# Scenario 204 records the implement turn's own failing declared-suite output.
+# The prompt invokes this runner; the incomplete-turn route only reads its file.
+script = "set -eu; root=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}\"; mkdir -p \"$root\"; runner=\"$root/livespec-implement-check-suite\"; printf '%s\\n' '#!/bin/sh' 'set -u' 'verdict=$(git rev-parse --git-path livespec-implement-check-suite-verdict)' 'temporary=${verdict}.tmp.$$' 'set +e' 'set -- {{ inputs.sandbox_check_suite }}' 'if test \"$#\" -eq 1; then eval \"set -- $1\"; fi' '\"$@\" > \"$temporary\" 2>&1' 'status=$?' 'set -e' 'cat \"$temporary\"' 'if test \"$status\" -ne 0; then mv \"$temporary\" \"$verdict\"; else rm -f \"$temporary\"; fi' 'exit \"$status\"' > \"$runner\"; chmod 755 \"$runner\""
 
 [[run.prepare.steps]]
 # Dispatch-time baseline conformance gate — the MECHANISM (Conformance
@@ -535,8 +591,10 @@ script = "set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\
 # `dispatcher.conformance.hook_install`: `internal_livespec_dev_tooling`
 # renders the shared dev-tooling installer module (whose FAMILY-UNIFORM
 # canonical body ships in that wheel, so every dispatched sandbox installs
-# the identical body the same way; the prior `uv sync --all-groups` step put
-# the package in the sandbox venv), `shell_argv` runs the adopter's own
+# the identical body the same way; the Python-dependency-sync premise above
+# put the package in the sandbox's project environment, which is why a
+# repository declaring the internal mode must declare that premise too),
+# `shell_argv` runs the adopter's own
 # installer, and `no_op` skips the step. The structural body's hook-manager
 # delegation fires the Red-Green-Replay gates on every in-sandbox commit (the
 # refuse branch is skipped by the exemption marker set in the next step).

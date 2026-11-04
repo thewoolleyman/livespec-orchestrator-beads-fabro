@@ -35,8 +35,10 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_tail import (
+    journal_tail_records,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_step_ids import STEP_IDS
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt, parse_json
 
 __all__: list[str] = [
     "ACCEPTANCE_STAGE",
@@ -140,21 +142,10 @@ def parse_paths(*, stdout: str) -> tuple[str, ...]:
 def journal_records(*, journal_path: Path) -> tuple[Mapping[str, object], ...]:
     """Every parseable JSONL record in the dispatch journal; absent means none.
 
-    `UnicodeDecodeError` rides alongside `OSError` because a journal whose bytes
-    are not text is unreadable in exactly the same operational sense as one the
-    filesystem refuses -- and it is the shape a truncated or interleaved append
-    actually produces.
+    A line whose bytes are not text is skipped like any other unparseable line,
+    which is the shape a truncated or interleaved append actually produces.
     """
-    if not journal_path.is_file():
-        return ()
-    loaded = attempt(
-        action=lambda: journal_path.read_text(encoding="utf-8"),
-        exceptions=(OSError, UnicodeDecodeError),
-    )
-    if isinstance(loaded, AttemptFailure):
-        return ()
-    parsed = (parse_json(text=line) for line in loaded.splitlines())
-    return tuple(cast("Mapping[str, object]", one) for one in parsed if isinstance(one, dict))
+    return journal_tail_records(journal_path=journal_path)
 
 
 def observed_step_outcomes(

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import AcpNodeResolution
 from livespec_orchestrator_beads_fabro.commands._dispatcher_check_suite_view import (
@@ -52,6 +53,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    DEFAULT_RUN_WALL_BUDGET,
+    RunWallBudget,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     COMMITTED_RUN_CONFIG_IMAGE,
     SandboxImageSource,
@@ -59,6 +64,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
     DEFAULT_STALL_WINDOW,
     StallWindow,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+    FactoryGithubApp,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
@@ -140,6 +149,7 @@ class DispatchPlan:
     # is a factory that names none, so the run intent carries no environment
     # and the server selects whatever it selects today.
     fabro_factory_environment: str | None = None
+    fabro_factory_github_app: FactoryGithubApp = NO_FACTORY_GITHUB_APP
     # WHERE this dispatch's sandbox image comes from, decided ONCE from the
     # factory's catalog environment and the repository's configured override.
     # It rides the plan because TWO seams consume it — the launch overlay
@@ -216,6 +226,14 @@ class DispatchPlan:
     # dispatch record, so a watchdog re-reading the file could bound a node
     # against one reading while the node ran under another.
     node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS
+    # The WHOLE-RUN WALL BUDGET this dispatch resolved, beside the two bounds
+    # above. It rides the plan for the reason they do, and for one more: the
+    # pre-dispatch admission REFUSED a budget smaller than any node timeout
+    # rendered into the graph, so the figure the watchdog cancels against has
+    # to be the figure that refusal graded -- a watchdog re-reading the file
+    # could bound a run by a budget the admission never saw, and both readings
+    # produce a well-formed number.
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET
     # WHERE this invocation retains a FAILED post-merge janitor command's
     # complete captured output, and under which identity. It rides the plan
     # because the venue is per-INVOCATION state resolved up front -- the
@@ -239,6 +257,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_factory_server: str | None = None,
     fabro_factory_dev_token: str | None = None,
     fabro_factory_environment: str | None = None,
+    fabro_factory_github_app: object = NO_FACTORY_GITHUB_APP,
     sandbox_image: SandboxImageSource = COMMITTED_RUN_CONFIG_IMAGE,
     janitor: tuple[str, ...] | None,
     janitor_checkout: Path,
@@ -261,6 +280,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_timeout_seconds: float = DEFAULT_FABRO_TIMEOUT_SECONDS,
     stall_window: StallWindow = DEFAULT_STALL_WINDOW,
     node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS,
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
     acp_nodes: AcpNodeResolution | None = None,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config, contract)."""
@@ -279,6 +299,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_factory_server=fabro_factory_server,
         fabro_factory_dev_token=fabro_factory_dev_token,
         fabro_factory_environment=fabro_factory_environment,
+        fabro_factory_github_app=cast("FactoryGithubApp", fabro_factory_github_app),
         sandbox_image=sandbox_image,
         janitor=janitor_argv(
             check_suite=janitor_check_suite_from_contract(resolved=integration, janitor=janitor)
@@ -300,6 +321,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_timeout_seconds=fabro_timeout_seconds,
         stall_window=stall_window,
         node_timeouts=node_timeouts,
+        run_wall_budget=run_wall_budget,
         acp_nodes=acp_nodes,
         integration=integration,
         integration_inputs=contract_run_inputs(

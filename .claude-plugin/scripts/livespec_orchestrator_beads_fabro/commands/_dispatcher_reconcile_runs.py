@@ -53,8 +53,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_projection import (
-    replay_acp_projection,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ended_run_collection import (
+    collect_closed_ended_runs,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_selection import (
+    pass_selection_replays,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_one_run import (
     reconcile_one_run,
@@ -183,6 +186,13 @@ def reconcile_runs(
     if not dry_run:
         for error in errors:
             journal_error(journal=inputs.journal, error=error)
+    # The SELECTION-TO-EXECUTION replay, as its own lane over the factories
+    # this pass actually surveyed, after the factory loop rather than inside
+    # it: its supersede pass is driven by the repository's CURRENT primaries
+    # rather than by any run, so a per-factory call would append one
+    # replacement per configured factory and make one replacement read as
+    # several.
+    pass_selection_replays(inputs=inputs, factories=tuple(surveyed), dry_run=dry_run)
     claims = _claim_lane(
         inputs=inputs, factories=tuple(factories), observed=observed, dry_run=dry_run
     )
@@ -267,13 +277,27 @@ def _reconcile_one_factory(
         grace_seconds=inputs.blocked_run_grace_seconds,
         now_epoch=inputs.now_epoch,
     )
-    # "Replay projection during reconciliation." The replay rides the survey
-    # the reconciler already performed rather than a second one: it reuses this
-    # factory's port, so the events read is server-qualified against the same
-    # target, and it is skipped on a dry run because a dry run is a projection
-    # of what WOULD happen and must write nothing.
-    if not dry_run:
-        _ = replay_acp_projection(inputs=inputs, factory=factory)
+    collect_closed_ended_runs(
+        inventory=inventory,
+        port=port,
+        journal=inputs.journal,
+        dry_run=dry_run,
+    )
+    # NO EVENT-PROJECTION REPLAY RIDES THIS SURVEY. The replay that stood here
+    # re-read each unresolved projection-failure fact's run through
+    # `fabro events`; v127 retired both the fact and the projection, so there
+    # is nothing left to replay and nothing a replay could learn. What v127
+    # SEPARATELY requires -- replaying selection-to-execution observation
+    # idempotently, keyed by factory, run, node attempt and selection identity
+    # -- is discharged by `pass_selection_replays`, which `reconcile_runs`
+    # calls as its own LANE once this factory loop has finished, never from
+    # inside the orphan disposal below: that join considers only NON-TERMINAL
+    # runs, while the evidence a selection replay reads belongs to runs that
+    # have already ENDED. The orphan disposal still names no selection,
+    # fallback or release at all, and the provider-limit release leg is reached
+    # only from `_dispatcher_terminal_routing`, on the DISPATCH terminal path
+    # this survey never enters. Do NOT read the selection replay as covering
+    # that release leg either.
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
             continue

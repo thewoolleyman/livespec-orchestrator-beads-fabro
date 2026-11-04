@@ -117,13 +117,13 @@ def _post_arming_nodes() -> frozenset[str]:
     ending.
 
     TWO EDGE FILTERS, because the tail's two refusals do not share a shape and
-    neither filter alone is enough. A `condition="outcome=failed"` edge is a
-    REFUSAL rather than a step along the chain, which drops both `pr`'s route
-    to the preservation terminal and `pr_route`'s route BACK to `pr_refresh` —
-    the second being why this walk does not swallow the whole refresh loop. And
-    an edge whose destination cannot reach the success terminal leads out of
-    the chain whatever its polarity, which is what drops `verify_pr`'s
-    unconditional fallback to that same terminal.
+    neither filter alone is enough. A refusal edge or
+    `condition="preferred_label=refresh"` is not a step along the chain: the
+    latter returns from `pr_route` to `pr_refresh`, so excluding it keeps this
+    walk from swallowing the whole refresh loop. An edge whose destination
+    cannot reach the success terminal also leads out of the chain whatever its
+    polarity, which drops `verify_pr`'s unconditional fallback to the
+    preservation terminal.
     """
     graph = _graph()
     onward = _reaches_success_terminal(graph=graph)
@@ -138,7 +138,8 @@ def _post_arming_nodes() -> frozenset[str]:
             edge.destination
             for edge in graph.edges
             if edge.source in chain
-            and edge.attributes.get("condition") != "outcome=failed"
+            and edge.attributes.get("condition")
+            not in {"outcome=failed", "preferred_label=refresh"}
             and edge.destination in onward
         }
         if grown == chain:

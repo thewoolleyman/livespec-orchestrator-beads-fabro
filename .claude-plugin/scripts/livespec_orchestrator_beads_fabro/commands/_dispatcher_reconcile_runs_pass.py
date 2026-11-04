@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     calibration_spans_path,
     journal_path,
@@ -170,10 +171,11 @@ def reconcile_runs_pass(*, args: argparse.Namespace, repo: Path) -> ReconcilePas
         path=journal_path(args=args, repo=repo),
         identity=invoker_from_args(args=args),
     )
-    outcome = attempt(
-        action=lambda: _survey(args=args, repo=repo, journal=journal),
-        exceptions=_RECOVERABLE,
-    )
+    with pass_snapshot():
+        outcome = attempt(
+            action=lambda: _survey(args=args, repo=repo, journal=journal),
+            exceptions=_RECOVERABLE,
+        )
     summary = _failed_pass(outcome=outcome) if isinstance(outcome, AttemptFailure) else outcome
     journal_reconcile_pass(journal=journal, summary=summary)
     _emit_pass_span(args=args, repo=repo, journal=journal, summary=summary)

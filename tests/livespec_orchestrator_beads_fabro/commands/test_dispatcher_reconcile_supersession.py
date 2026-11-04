@@ -104,12 +104,8 @@ class _Runner:
             self.docker_calls.append(argv)
             return CommandResult(exit_code=0, stdout="", stderr="")
         self.calls.append(argv[1])
-        if argv[1] == "ps":
-            return CommandResult(exit_code=0, stdout=self.ps_rows, stderr="")
-        if argv[1] == "dump" and self.stamp_on_dump is not None:
-            path, run_id = self.stamp_on_dump
-            _append_stamps(path=path, run_ids=[run_id])
-        return CommandResult(exit_code=0, stdout="", stderr="")
+        assert argv[1] == "ps", argv
+        return CommandResult(exit_code=0, stdout=self.ps_rows, stderr="")
 
 
 @dataclass(kw_only=True)
@@ -284,7 +280,7 @@ def test_a_run_stamped_during_export_is_rechecked_at_the_cancel_boundary(
 
     assert summary.reconciled == ()
     assert transport.calls == []
-    assert runner.calls == ["ps", "dump"]
+    assert runner.calls == ["ps"]
     assert len(ledger.comments[_ITEM_ID]) == 1
     assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
 
@@ -327,7 +323,7 @@ def test_a_run_stamped_during_question_discovery_is_held_before_answer(
     assert transport.calls == [f"GET {_HP_SERVER}{_QUESTIONS_PATH}"]
     assert f"POST {_HP_SERVER}{_ANSWER_PATH}" not in transport.calls
     assert f"POST {_HP_SERVER}{_CANCEL_PATH}" not in transport.calls
-    assert runner.calls == ["ps", "dump"]
+    assert runner.calls == ["ps"]
     assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
 
 
@@ -356,7 +352,7 @@ def test_a_run_stamped_during_failed_cancel_is_held_before_rm_force(
 
     assert summary.reconciled == ()
     assert transport.calls == [f"POST {_HP_SERVER}{_CANCEL_PATH}"]
-    assert runner.calls == ["ps", "dump"]
+    assert runner.calls == ["ps"]
     assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
 
 

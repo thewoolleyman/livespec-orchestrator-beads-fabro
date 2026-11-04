@@ -77,7 +77,7 @@ _REPO_CONFIG_REFUSAL = (
 # The one status that selects the re-accept arm rather than the janitor arm.
 ACCEPTANCE_STATUS = "acceptance"
 _RECONCILE_MERGED_ALLOWED_STATUSES = frozenset(
-    {ACCEPTANCE_STATUS, "active", "backlog", "ready", "blocked"}
+    {ACCEPTANCE_STATUS, "active", "backlog", "ready", "blocked", "pending-approval"}
 )
 # The refusal for a rework-pending item, which NAMES the route that replaces
 # this valve. It is deliberately unconditional on `--force`: forcing past it
@@ -199,8 +199,12 @@ def _item_precondition_refusal(*, item: WorkItem, repo: Path, regrade: bool) -> 
 
     `ACCEPTANCE_STATUS` is in the admitted set rather than refused: an item
     resting there has its own arm, which re-runs only the acceptance pass. The
-    statuses still refused are the ones no arm serves — a closed item has nothing
-    to reconcile, and an unadmitted one never dispatched.
+    statuses still refused are the ones no arm serves: a closed item has nothing
+    to reconcile. `pending-approval` was refused here until v216 (work-item
+    bd-ib-acxptq): an item built outside the factory and merged never passes
+    through dispatch, so it rests there, and the valve is its close path. Its
+    merged pull request must then identify it by head ref or title, which
+    `resolve_merged_pr` enforces.
     """
     if item.rework_pending and not regrade:
         return _REWORK_PENDING_REFUSAL.format(item_id=item.id, repo=repo)

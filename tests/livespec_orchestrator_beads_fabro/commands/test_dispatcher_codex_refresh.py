@@ -11,8 +11,18 @@ from pathlib import Path
 import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
+    CODEX_ALARM_THRESHOLD_SECONDS,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
     operator_credential_requirement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement_payload import (
+    CREDENTIAL_REQUIREMENT_PAYLOAD_KEY,
+    credential_requirement_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
@@ -40,9 +50,14 @@ def _operator_required_seconds() -> int:
     configuration can move. Read through the production resolver so these cases
     follow it.
     """
+    return _operator_requirement().required_seconds
+
+
+def _operator_requirement() -> CredentialLifetimeRequirement:
+    """The resolution itself, for the cases that report the whole projection."""
     requirement = operator_credential_requirement(repo=Path.cwd())
-    assert not isinstance(requirement, str), requirement
-    return requirement.required_seconds
+    assert isinstance(requirement, CredentialLifetimeRequirement), requirement
+    return requirement
 
 
 _MODULE_PATH = Path(
@@ -407,6 +422,13 @@ def test_run_codex_cred_status_json_payload(
         "refresh_due": True,
         "remaining_days": pytest.approx(900 / 86_400),
         "remaining_seconds": 900,
+        # The requirement this reading GRADES AGAINST, reported beside the
+        # credential it grades: the clause requires this surface to name which
+        # of the two figures governed, and a reading that states a remaining
+        # lifetime without the figure demanded of it cannot be acted on.
+        CREDENTIAL_REQUIREMENT_PAYLOAD_KEY: credential_requirement_payload(
+            requirement=_operator_requirement()
+        ),
     }
 
 
@@ -443,9 +465,13 @@ def test_run_codex_cred_status_human_output(
         "read_host_codex_auth",
         # Clear of BOTH thresholds this reading reports: above the alarm and
         # above the resolved freshness requirement, so `refresh_due` is false.
-        # Read off the requirement rather than written as a number, which is what
-        # keeps this case asserting "comfortably fresh" rather than one lifetime.
-        lambda: _auth_json_with_exp(exp=_NOW + _operator_required_seconds() + 1),
+        # The MAXIMUM of the two, read off each rather than written as a number:
+        # the requirement is now bounded by the credential-use window and so can
+        # sit BELOW the alarm threshold, and a fixture clearing only the smaller
+        # of the two asserts "comfortably fresh" while reporting an alarm.
+        lambda: _auth_json_with_exp(
+            exp=_NOW + max(_operator_required_seconds(), CODEX_ALARM_THRESHOLD_SECONDS) + 1
+        ),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
 

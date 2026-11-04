@@ -79,6 +79,7 @@ def stamp_dispatch_run(
     plan: DispatchPlan,
     journal: JournalWriter,
     run_id: str,
+    dispatch_id: str | None = None,
 ) -> RunAttribution:
     """Stamp this run onto its work-item and return the attribution it establishes.
 
@@ -93,17 +94,18 @@ def stamp_dispatch_run(
         _ = write_stderr(
             text=_stamp_failure_warning(plan=plan, run_id=run_id, detail=failure_detail)
         )
-    journal.append(
-        record={
-            "work_item_id": plan.work_item_id,
-            "stage": STAMP_JOURNAL_STAGE,
-            "run_id": run_id,
-            "dispatch_factory": plan.fabro_factory_name,
-            "dispatch_factory_server": plan.fabro_factory_server,
-            "stamped": failure_detail is None,
-            "stamp_failure_detail": failure_detail,
-        }
-    )
+    record: dict[str, object] = {
+        "work_item_id": plan.work_item_id,
+        "stage": STAMP_JOURNAL_STAGE,
+        "run_id": run_id,
+        "dispatch_factory": plan.fabro_factory_name,
+        "dispatch_factory_server": plan.fabro_factory_server,
+        "stamped": failure_detail is None,
+        "stamp_failure_detail": failure_detail,
+    }
+    if dispatch_id is not None:
+        record["dispatch_id"] = dispatch_id
+    journal.append(record=record)
     # The CLAIM stamp is a separate key with a separate consumer, written after
     # this record rather than folded into it. This one answers "which run is
     # this item's, and on which factory"; the claim answers "whose dispatch
@@ -129,6 +131,7 @@ def stamped_attribution(
     journal: JournalWriter,
     run: FabroRunSummary | None,
     attribution: RunAttribution,
+    dispatch_id: str | None = None,
 ) -> RunAttribution:
     """Stamp on the FIRST sight of a run id; otherwise pass the attribution through.
 
@@ -139,7 +142,9 @@ def stamped_attribution(
     """
     if run is None or run.run_id in attribution.metadata_run_ids:
         return attribution
-    return stamp_dispatch_run(plan=plan, journal=journal, run_id=run.run_id)
+    return stamp_dispatch_run(
+        plan=plan, journal=journal, run_id=run.run_id, dispatch_id=dispatch_id
+    )
 
 
 def repo_run_attribution(*, repo: Path) -> RunAttribution:

@@ -49,6 +49,8 @@ name the live run's own counters.
 from __future__ import annotations
 
 import os
+import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,6 +65,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
     REFRESH_COUNT_STATE_FILENAME,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
@@ -154,8 +160,8 @@ def _arms(*, source: str) -> list[tuple[str, dict[str, str]]]:
     ]
 
 
-def _routed(*, source: str, outcome: str) -> str:
-    """The successor the graph DETERMINES for one node's reported outcome.
+def _routed(*, source: str, condition: str) -> str:
+    """The successor the graph DETERMINES for one reported routing condition.
 
     A matching conditional arm outranks the unconditional fallthrough, and the
     match must be UNIQUE. Declaration order is not something the engine reads,
@@ -167,20 +173,17 @@ def _routed(*, source: str, outcome: str) -> str:
     fix exactly as readily as after it, which makes the refusal the
     load-bearing half of this function rather than a guard on it.
 
-    Nothing here models a term beyond `outcome=`, because the two nodes this
-    grades -- a command stage and the classifier -- report nothing else, and a
-    richer evaluator would be an evaluator this module never exercises.
+    The callers name the exact condition their node reports. This keeps the
+    helper focused on the routing rule rather than pretending to be an engine.
     """
     arms = _arms(source=source)
     conditional = [
-        destination
-        for destination, attributes in arms
-        if attributes.get("condition") == f"outcome={outcome}"
+        destination for destination, attributes in arms if attributes.get("condition") == condition
     ]
     fallthrough = [destination for destination, attributes in arms if "condition" not in attributes]
     assert fallthrough, f"{source} declares no unconditional fallthrough"
     assert len(conditional) <= 1, (
-        f"{source} declares {len(conditional)} arms carrying outcome={outcome}, "
+        f"{source} declares {len(conditional)} arms carrying {condition}, "
         f"so this graph determines no route for that outcome: {arms}"
     )
     return conditional[0] if conditional else fallthrough[0]
@@ -356,8 +359,32 @@ def _publish_draft_script(*, check_suite: str) -> str:
     )
 
 
+def _push_refusal_bin(*, world: _World, refusal: str) -> Path:
+    """Put a git wrapper on PATH that refuses only the publication push."""
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = world.clone.parent / "push-refusal-bin"
+    bin_dir.mkdir(exist_ok=True)
+    git = bin_dir / "git"
+    _ = git.write_text(
+        "#!/bin/sh\n"
+        'if test "$1" = push; then\n'
+        f"    printf '%s\\n' {shlex.quote(refusal)} >&2\n"
+        "    exit 1\n"
+        "fi\n"
+        f'exec {shlex.quote(real_git)} "$@"\n',
+        encoding="utf-8",
+    )
+    git.chmod(0o755)
+    return bin_dir
+
+
 def _run_publish_draft(
-    *, world: _World, check_suite: str = "true", extra_env: dict[str, str] | None = None
+    *,
+    world: _World,
+    check_suite: str = "true",
+    extra_env: dict[str, str] | None = None,
+    push_refusal: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute the shipped `publish_draft` bytes in this world's clone.
 
@@ -365,10 +392,23 @@ def _run_publish_draft(
     allowlist requires it, and an inherited `LIVESPEC_*` from the enclosing
     factory run could otherwise satisfy a guard the case meant to exercise.
     """
+    plugins = world.clone.parent / "publish-draft-plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and this stage fails closed before the
+    # repository-declared gate when it cannot resolve one -- so a world omitting
+    # it would report that refusal as this case's failed gate target.
+    _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
+    push_refusal_path = ""
+    if push_refusal is not None:
+        push_refusal_path = f"{_push_refusal_bin(world=world, refusal=push_refusal)}{os.pathsep}"
     env = {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "PATH": f"{push_refusal_path}/usr/local/bin:/usr/bin:/bin",
         "HOME": str(world.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+        SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
         # The push-time credential helper's root, pointed at a directory that
         # holds no helper. The sandbox this suite runs inside DOES carry the
         # production helper at the default path, and a case that reached it would
@@ -522,7 +562,7 @@ def test_pr_refresh_declares_exactly_one_failed_arm_and_it_is_the_classifier() -
     assert failed == [_REPAIR_NODE], arms
     assert "needs_human" not in {destination for destination, _ in arms}, arms
     assert [destination for destination, attributes in arms if "condition" not in attributes] == [
-        "pr_refresh_head"
+        "pr_refresh_merged_reconcile_route"
     ]
 
 
@@ -553,8 +593,29 @@ def test_both_refreshing_stages_declare_the_same_failed_outcome_arm() -> None:
     assert entries["pr_refresh"][0] == entries["publish_draft"][0]
     assert draft == [
         (_REPAIR_NODE, {"label": "Blocked", "condition": _FAILED}),
-        ("proof_capture", {}),
+        ("publish_merged_reconcile_route", {}),
     ]
+
+
+def test_an_exhausted_draft_refresh_reaches_needs_human_without_a_failed_publish_visit() -> None:
+    """The terminal repair outcome bypasses the engine failure-cycle breaker.
+
+    A conflicted refresh still fails and enters ``refresh_repair`` so the fix
+    loop can repair it.  Exhaustion is different: its restored head must reach
+    the preserving terminal through a successful ``publish_draft`` visit, then
+    a post-publication classifier outcome that ordinary repaired conflicts do
+    not emit.  Routing it as another failed publish visit repeats the rebase
+    transcript and lets the Petri circuit breaker end the run before the
+    terminal can push the recovery artifact.
+    """
+    assert _routed(source="publish_draft", condition=_FAILED) == _REPAIR_NODE
+    assert (
+        _routed(
+            source="publish_merged_reconcile_route",
+            condition="preferred_label=needs_human",
+        )
+        == "needs_human"
+    )
 
 
 def test_a_conflicted_draft_refresh_restores_the_head_janitor_passed(tmp_path: Path) -> None:
@@ -672,6 +733,50 @@ def test_a_refreshed_head_the_gate_rejects_is_restored_and_repaired(tmp_path: Pa
     assert fields.get("refresh-target") == advanced
     assert "check-coverage-refused" in (fields.get("failed-gate-targets") or "")
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+
+def test_a_recorded_pre_push_refusal_repairs_without_rerunning_the_declared_gate(
+    tmp_path: Path,
+) -> None:
+    """A hook's target summary is enough evidence for the refresh-repair route."""
+    world, janitor_head, advanced = _clean_refresh_world(root=tmp_path)
+    gate_trace = tmp_path / "declared-gate-ran"
+    refusal = "\n".join(
+        (
+            "lefthook pre-push refused the refreshed head",
+            "Failed targets (2):",
+            "  - check-per-file-coverage",
+            "  - check-coverage",
+        )
+    )
+    check_suite = f"sh -c 'printf declared-gate-ran > {shlex.quote(str(gate_trace))}; exit 1'"
+
+    result = _run_publish_draft(
+        world=world,
+        check_suite=check_suite,
+        push_refusal=refusal,
+    )
+    fields = _brief_fields(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert not gate_trace.exists(), "the hook summary must avoid a second declared-gate run"
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
+    assert not (world.clone / ".git" / "MERGE_HEAD").exists()
+    assert world.remote_head(ref=_BRANCH) == ""
+    assert fields.get("stage") == "publish_draft"
+    assert fields.get("pre-refresh-head") == janitor_head
+    assert fields.get("refresh-target") == advanced
+    targets = fields.get("failed-gate-targets") or ""
+    assert "check-per-file-coverage" in targets
+    assert "check-coverage" in targets
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+    classifier = _run_refresh_repair(world=world)
+    assert classifier.returncode == 0, classifier.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
+    assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
 
 
 def _refuse_commit_signing(*, world: _World) -> None:
@@ -1012,19 +1117,19 @@ def test_a_conflicted_pr_refresh_resolves_through_the_classifier_to_fix(tmp_path
     brief = world.state_dir() / _BRIEF_FILENAME
     assert brief.is_file()
 
-    assert _routed(source="pr_refresh", outcome="failed") == _REPAIR_NODE
+    assert _routed(source="pr_refresh", condition="outcome=failed") == _REPAIR_NODE
 
     classifier = _run_refresh_repair(world=world)
     assert classifier.returncode == 0, classifier.stderr
     assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
-    assert _routed(source=_REPAIR_NODE, outcome="succeeded") == "fix"
+    assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
 
     # The control: the brief gone, everything else identical.
     brief.unlink()
     absent = _run_refresh_repair(world=world)
     assert absent.returncode != 0
     assert "LIVESPEC_REFRESH_REPAIR_ABSENT" in absent.stderr
-    assert _routed(source=_REPAIR_NODE, outcome="failed") == "needs_human"
+    assert _routed(source=_REPAIR_NODE, condition="outcome=failed") == "needs_human"
 
 
 def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
@@ -1061,7 +1166,7 @@ def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
     )
 
 
-def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
+def test_a_third_refresh_needing_repair_restores_the_head_and_reports_exhaustion(
     tmp_path: Path,
 ) -> None:
     """The budget is two rounds, and the third says so by name with a pointer.
@@ -1092,13 +1197,79 @@ def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
     result = _run_publish_draft(world=world)
     reason = (world.clone / ".git" / "livespec-needs-human-reason").read_text(encoding="utf-8")
 
-    assert result.returncode != 0, result.stdout
+    assert result.returncode == 0, result.stdout
     assert "LIVESPEC_REFRESH_REPAIR_EXHAUSTED" in result.stderr
     assert world.state(name=_BRIEF_FILENAME) is None
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "2\n"
+    assert world.state(name="livespec-refresh-repair-exhausted") == ""
     assert reason.splitlines()[0].startswith("refresh-repair-exhausted:")
     assert janitor_head in reason.splitlines()[0]
     assert world.head() == janitor_head
+
+
+def test_needs_human_pushes_the_restored_exhausted_refresh_head_to_its_run_ref(
+    tmp_path: Path,
+) -> None:
+    """The terminal receives the recovered head without re-running publication.
+
+    The draft stage records the restored pre-refresh head in its recovery
+    reason, then its exhaustion marker makes the post-publication classifier
+    select ``needs_human``.  This fixture replaces the terminal's push helper
+    with an argv recorder: it proves the preserving node names its run-scoped
+    needs-human ref and carries the restored HEAD, without granting the test a
+    second publication path.
+    """
+    world = _world(root=tmp_path)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / _REPAIR_COUNT_FILENAME).write_text("2\n", encoding="utf-8")
+    restored = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _advance_default(world=world, path=_SHARED_FILE, text="a conflicting default edit\n")
+
+    exhausted = _run_publish_draft(world=world)
+    reason = (world.clone / ".git" / "livespec-needs-human-reason").read_text(encoding="utf-8")
+    recorder_root = tmp_path / "push-recorder"
+    recorder = recorder_root / "args"
+    helper = recorder_root / "bin" / "push_origin"
+    helper.parent.mkdir(parents=True)
+    _ = helper.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$LIVESPEC_PUSH_RECORD"\n',
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+    needs_human = _node_attribute(node="needs_human", attribute="script").replace(
+        "{{ inputs.default_branch }}", _DEFAULT_BRANCH
+    )
+    run_id = "01M6EXHAUSTEDREFRESH"
+    preserved = subprocess.run(
+        ["bash", "-c", needs_human],
+        cwd=world.clone,
+        capture_output=True,
+        input=f"{run_id}\n",
+        text=True,
+        check=False,
+        env={
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(tmp_path / "home"),
+            "LIVESPEC_GIT_AUTHOR_NAME": "Test",
+            "LIVESPEC_GIT_AUTHOR_EMAIL": "t@example.invalid",
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(recorder_root),
+            "LIVESPEC_PUSH_RECORD": str(recorder),
+        },
+    )
+
+    assert exhausted.returncode == 0, exhausted.stderr
+    assert restored in reason
+    assert world.head() == restored
+    assert preserved.returncode == 1
+    assert recorder.read_text(encoding="utf-8").splitlines()[-1] == (
+        f"HEAD:refs/heads/needs-human/{run_id}"
+    )
+    assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: refs/heads/needs-human/{run_id}" in preserved.stderr
 
 
 def _materialized_push_program(*, root: Path) -> Path:
@@ -1111,6 +1282,14 @@ def _materialized_push_program(*, root: Path) -> Path:
     """
     plugins_root = root / "plugins"
     plugins_root.mkdir(parents=True, exist_ok=True)
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and a refreshing stage that cannot resolve it
+    # fails closed before the repository-declared gate -- so a harness omitting
+    # it would exercise that refusal on every case rather than the route under
+    # test.
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = program.write_text(publication_push_program_source(), encoding="utf-8")
     program.chmod(0o700)
@@ -1218,7 +1397,9 @@ def _repaired_run(*, root: Path, push_program: bool) -> _Repaired:
         repaired_head=repaired,
         advanced_default=advanced,
         plugins_root=(
-            _materialized_push_program(root=root) if push_program else root / "absent-plugins"
+            _materialized_push_program(root=root)
+            if push_program
+            else _record_file_program_without_push_helper(root=root)
         ),
         forge_bin=_forge_double(root=root),
     )
@@ -1235,6 +1416,20 @@ def _run_repaired_publish_draft(
     return _run_publish_draft(
         world=repaired.world, extra_env=env if extra_env is None else {**env, **extra_env}
     )
+
+
+def _record_file_program_without_push_helper(*, root: Path) -> Path:
+    """Materialize the ordinary record helper while deliberately withholding push.
+
+    The plain-fast-forward case exercises the absence of the exact-head helper,
+    not an unrelated sandbox preparation failure.
+    """
+    plugins_root = root / "absent-plugins"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
+    return plugins_root
 
 
 def _foreign_publish_tip(*, world: _World) -> str:
@@ -1287,7 +1482,14 @@ def test_a_repaired_refresh_republishes_over_this_run_s_own_published_head(
     assert world.head() == repaired.repaired_head
     assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{repaired.repaired_head}\n"
     assert world.state(name=_BRIEF_FILENAME) is None
-    assert _routed(source="publish_draft", outcome="succeeded") == "proof_capture"
+    assert (
+        _routed(source="publish_draft", condition="outcome=succeeded")
+        == "publish_merged_reconcile_route"
+    )
+    assert (
+        _routed(source="publish_merged_reconcile_route", condition="preferred_label=continue")
+        == "proof_capture"
+    )
 
 
 def test_a_repair_round_may_establish_its_published_head_from_resume_provenance(

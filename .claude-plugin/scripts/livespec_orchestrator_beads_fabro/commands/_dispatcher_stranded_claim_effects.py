@@ -18,8 +18,8 @@ THE TRANSITIONS ARE THE SHARED SEAMS, NOT NEW ONES. The release goes through
 pre-run and the stall releases use — so a released stranded claim leaves the
 ledger in one shape rather than a third that merely looks like the other two.
 The repeat goes through `update_work_item_blocked_state`, which REPLACES the
-blocked-reason label rather than adding one beside it, and sets
-`admission:manual` so nothing automatic leaves that state.
+blocked-reason label rather than adding one beside it. The blocked status and
+recorded reason are the hold; recovery never writes an admission label.
 """
 
 from __future__ import annotations
@@ -55,8 +55,6 @@ _FABRO_ASSIGNEE = "fabro"
 _READY_STATUS = "ready"
 _BLOCKED_STATUS = "blocked"
 _NEEDS_HUMAN_REASON = "needs-human"
-_MANUAL_ADMISSION = "manual"
-
 _LEDGER_ERRORS: tuple[type[Exception], ...] = (
     WorkItemNotFoundError,
     BeadsCommandError,
@@ -116,14 +114,13 @@ def release_claim_to_ready(*, repo: Path, work_item_id: str) -> bool:
 
 
 def rest_claim_for_a_human(*, repo: Path, work_item_id: str) -> bool:
-    """Rest the item at `blocked` / `needs-human`, admission `manual`."""
+    """Rest the item at `blocked` / `needs-human` without changing admission."""
     rested = attempt(
         action=lambda: update_work_item_blocked_state(
             path=store_config(repo=repo),
             item_id=work_item_id,
             status=_BLOCKED_STATUS,
             blocked_reason=_NEEDS_HUMAN_REASON,
-            admission_policy=_MANUAL_ADMISSION,
         ),
         exceptions=_LEDGER_ERRORS,
     )

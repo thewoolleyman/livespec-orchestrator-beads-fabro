@@ -81,17 +81,27 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     ProviderLimitRelease,
+    ReclassifiedTurn,
     classified_release,
+    classified_turn,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
+    routing_stage_failure,
     terminal_event_output,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import graph_node_id
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
 from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
+from livespec_orchestrator_beads_fabro.commands._fabro_turn_output import (
+    SucceededAgentTurn,
+    routing_predecessor_turn,
+    succeeded_agent_turns,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -101,6 +111,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "PROVIDER_LIMIT_RELEASE_STATUS",
     "provider_limit_release_outcome",
+    "reclassified_turns",
 ]
 
 # The outcome STATUS a provider-limit release reports. Its own status rather
@@ -116,18 +127,78 @@ __all__: list[str] = [
 # are likewise one name.
 PROVIDER_LIMIT_RELEASE_STATUS = PROVIDER_LIMIT_RELEASE_STAGE
 
+# The signature source of a refusal the engine booked as a successful turn.
+_TURN_SOURCE = "turn.final_output"
+
+
+def _graded_failure(*, inspect: FabroInspectResult | None) -> FabroFailureDetail | None:
+    """The failing node's recorded failure, which is what the release clause grades.
+
+    On an engine-routed ending the run CONCLUSION describes the terminal's own
+    deliberate exit, so the failure is re-read from the stage that routed the
+    run there -- the same re-read the needs-human mapper takes. On the
+    Petri-era engine that stage output is the ONLY place a provider's refusal
+    is recorded: measured on livespec-dev-tooling-ebtm6t run 01M5RAS2EAWG, the
+    conclusion carried "script exited with status 1" and no provider sentence,
+    so grading it released nothing. A stage that recorded no CAUSE keeps the
+    observed failure: on the pinned engine the re-read of such a stage carries
+    only the provider flag forward, while the conclusion holds the sentence a
+    declared signature matches, so preferring it would demote a typed match
+    to the legacy arm.
+    """
+    if inspect is None:
+        return None
+    causal = causal_stage_failure(evidence=terminal_evidence(payload=inspect.payload))
+    if not causal.stages:
+        return inspect.failure
+    routed = routing_stage_failure(
+        observed=inspect.failure,
+        inspect_payload=inspect.payload,
+        events_payload=inspect.events_payload,
+        stage=causal.stages[-1],
+    )
+    return routed if routed is not None and routed.cause is not None else inspect.failure
+
 
 def _provider_limit_release(
     *,
     plan: DispatchPlan,
     inspect: FabroInspectResult | None,
+    failure: FabroFailureDetail | None,
     run_id: str | None,
     text: str,
+    turn: SucceededAgentTurn | None,
 ) -> ProviderLimitRelease | None:
-    """The release this terminated run owes, or `None` for an unchanged route."""
+    """The release this terminated run owes, or `None` for an unchanged route.
+
+    THE ROUTING PREDECESSOR IS GRADED FIRST, on the reading the contract's
+    "A provider refusal booked as a successful turn is a failed attempt" gives:
+    when the last stage before the terminal is a SUCCEEDED agent turn, no stage
+    failed after it and the recorded failure describes only the terminal's own
+    deliberate exit, so the turn is the unrecovered attempt responsible for the
+    ending. When it does not end in a refusal the reading falls through to the
+    recorded-failure grading below, unchanged.
+    """
     if inspect is None:
         return None
-    failure = inspect.failure
+    if turn is not None:
+        released = classified_release(
+            failure=FabroFailureDetail(
+                cause=None,
+                category=None,
+                signature=f"{turn.node}|succeeded",
+                succeeded_turn_output=turn.output,
+            ),
+            rendered=_rendered_for(
+                repo=plan.repo, identity=_selected_identity(plan=plan, node=turn.node)
+            ),
+            node_attempt=turn.node,
+            factory=plan.fabro_factory_name,
+            run_id=run_id,
+            recovery_source=needs_human_terminal_preservation(text=text),
+        )
+        if released is not None:
+            return released
     if failure is None:
         return None
     node = _failing_node(inspect=inspect)
@@ -142,6 +213,37 @@ def _provider_limit_release(
         run_id=run_id,
         recovery_source=needs_human_terminal_preservation(text=text),
     )
+
+
+def reclassified_turns(
+    *, plan: DispatchPlan, inspect: FabroInspectResult | None, run_id: str | None
+) -> tuple[ReclassifiedTurn, ...]:
+    """Every succeeded agent turn of this run that ended with a measured refusal.
+
+    Taken for the run's WHOLE record and not only its routing predecessor,
+    because the contract mints the candidate hold for a reclassified attempt
+    "for every purpose of this section" -- including one a later failure
+    outlived. The release decision above is the narrower question; this is the
+    evidence the hold is derived from.
+    """
+    if inspect is None:
+        return ()
+    found: list[ReclassifiedTurn] = []
+    for turn in succeeded_agent_turns(payload=inspect.payload):
+        if turn.output is None:
+            continue
+        reclassified = classified_turn(
+            output=turn.output,
+            rendered=_rendered_for(
+                repo=plan.repo, identity=_selected_identity(plan=plan, node=turn.node)
+            ),
+            node_attempt=turn.node,
+            factory=plan.fabro_factory_name,
+            run_id=run_id,
+        )
+        if reclassified is not None:
+            found.append(reclassified)
+    return tuple(found)
 
 
 def _provider_limit_release_detail(
@@ -166,6 +268,16 @@ def _provider_limit_release_detail(
     matched = release.matched
     cause = release.legacy_provider if matched is None else matched.cause
     scope = "legacy-provider" if matched is None else matched.scope
+    if release.source == _TURN_SOURCE:
+        return (
+            f"run {release.run_id} on factory {release.factory} reached the terminal "
+            f"through stage {release.node_attempt}, whose turn the engine recorded as "
+            f"succeeded but whose output ended with the provider's refusal "
+            f"(cause={cause} scope={scope}): {recorded_cause}; the item was released to "
+            "`ready` for the ordinary admission valve to re-dispatch, no rework-cap "
+            "budget was consumed, and NO human decision is owed. "
+            f"Preserved work: {release.recovery_source}"
+        )
     return (
         f"run {release.run_id} on factory {release.factory} failed at stage "
         f"{release.node_attempt} on a provider availability limit "
@@ -219,6 +331,18 @@ def _rendered_for(*, repo: Path, identity: AcpCandidateIdentity | None) -> Rende
     return None
 
 
+def _recorded_cause(
+    *,
+    release: ProviderLimitRelease,
+    failure: FabroFailureDetail | None,
+    turn: SucceededAgentTurn | None,
+) -> str | None:
+    """The text a released terminal quotes: the refusal tail or the failure's cause."""
+    if release.source == _TURN_SOURCE and turn is not None and turn.output is not None:
+        return tail(text=turn.output)
+    return None if failure is None else failure.cause
+
+
 def provider_limit_release_outcome(
     *,
     outcome_type: type[DispatchOutcome],
@@ -253,14 +377,22 @@ def provider_limit_release_outcome(
     tree the terminal demonstrably preserved -- measured here on the Petri-era
     fixture, where the sentinel lives only in the structured detail.
     """
-    failure = None if inspect is None else inspect.failure
-    failure_detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
+    failure = _graded_failure(inspect=inspect)
+    turn = None if inspect is None else routing_predecessor_turn(payload=inspect.payload)
+    # The recovery source is read off the OBSERVED conclusion, not the graded
+    # failure: the terminal's preservation sentinel lives in its own exit,
+    # which is exactly the record the graded re-read steps past.
+    failure_detail = fabro_failure_outcome_detail(
+        failure=None if inspect is None else inspect.failure, fallback=tail(text=stderr)
+    )
     emitted = terminal_event_output(payload=None if inspect is None else inspect.events_payload)
     release = _provider_limit_release(
         plan=plan,
         inspect=inspect,
+        failure=failure,
         run_id=run_id,
         text=f"{emitted}\n{stderr}\n{failure_detail}",
+        turn=turn,
     )
     if release is None:
         return None
@@ -271,7 +403,8 @@ def provider_limit_release_outcome(
         pr_number=None,
         merge_sha=None,
         detail=_provider_limit_release_detail(
-            release=release, recorded_cause=None if failure is None else failure.cause
+            release=release,
+            recorded_cause=_recorded_cause(release=release, failure=failure, turn=turn),
         ),
         fabro_run_id=run_id,
         fabro_failure_cause=None if failure is None else failure.cause,

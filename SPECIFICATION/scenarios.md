@@ -18,10 +18,11 @@ Feature: Gap-tied fix cycle
 Scenario: A new MUST clause is detected, filed, implemented, and closed in place
   Given a consumer project has a fresh `livespec` revision (vNNN+1)
   And that revision introduced a new MUST clause not yet honored in the impl
+  And the H2 heading that clause sits under has no exercising test in the heading-coverage map
   When the user invokes `/livespec-orchestrator-beads-fabro:capture-impl-gaps`
-  Then the skill loads the rule set via the Spec Reader
-  And enumerates every MUST/SHOULD rule from spec text alone (no read of the impl)
-  And surfaces every rule not yet tracked by a work-item, one at a time
+  Then the skill loads the spec tree's H2 headings via the Spec Reader and the heading-coverage map
+  And enumerates every H2 heading whose heading-coverage entry names no exercising test (no read of the impl)
+  And surfaces every such heading not yet tracked by a work-item, one at a time
   When the user consents to file a gap
   Then the skill creates a beads issue via the 2-step append carrying the `origin:gap-tied` label
   And the `gap-id:<stable-id>` label
@@ -57,26 +58,6 @@ Scenario: A freeform bug is filed, implemented, and closed
   And at closure the skill takes the freeform path
   And closes the issue IN PLACE with `resolution:completed` and the user-supplied `--reason` (`bd close --reason`, `bd update` for the resolution label)
   And no `gap_id` re-detection runs
-```
-
-## Scenario 5 — Doctor cross-boundary read
-
-```gherkin
-Feature: Doctor cross-boundary read
-  As a user running doctor in a consumer project
-  I want doctor's cross-boundary phase to read this plugin's query surfaces
-  So that the work-item structural invariants are evaluated deterministically
-
-Scenario: Doctor reads spec directly and invokes the thin-transport query skills
-  Given the user invokes `/livespec:doctor` in a consumer project
-  When doctor's static phase runs
-  Then it reads `<spec-root>/` directly
-  When doctor's cross-boundary phase runs
-  Then it invokes `/livespec-orchestrator-beads-fabro:list-work-items --json` for the work-item structural invariants
-  And the invocation reads the tenant DB through `bd`
-  And completes deterministically with the contract-mandated JSON schema
-  And a missing or malformed plugin surface fires a `fail` finding (no silent skips)
-  And in hermetic / CI contexts the in-memory fake backend stands in for a live tenant DB and satisfies the same schema
 ```
 
 ## Scenario 6 — Cross-repo dispatch via the Dispatcher
@@ -303,6 +284,15 @@ Scenario: A fully-proven closed gap-tied item emits no finding
   Given a gap-tied work-item is closed, carries the `resolution:completed` label, and its `gap-id` resolves through the `clauses[]` map to an acceptance scenario whose `tests/heading-coverage.json` entry binds to a real integration-tier test node id (not `TODO`)
   When the `closed_item_integrity` check runs
   Then it emits NO finding for that item
+
+Scenario: A closed item carrying a heading-derived gap-id resolves through its heading's own coverage entry
+  Given a gap-tied work-item is closed with the `resolution:completed` label and a heading-derived `gap-id` naming an H2 heading of `contracts.md`
+  And that heading's `tests/heading-coverage.json` entry is still bound to the `TODO` sentinel
+  When the `closed_item_integrity` check runs
+  Then it emits a `closed-item-integrity` finding naming that item without consulting the `clauses[]` map
+  When that heading's entry is bound to a real integration-tier test node id
+  And the check runs again
+  Then it emits NO finding for that item
 ```
 
 ## Scenario 17 — drive operator-surface defaults
@@ -341,6 +331,19 @@ Scenario: A dispatched worker receives non-rotatable snapshots for every project
   Then the Dispatcher projects each provider's credential as a non-rotatable snapshot into the same sandbox such that the worker cannot rotate any shared refresh credential
   And the worker authenticates its coding-agent runtimes from those projected snapshots
   And no refresh performed or attempted inside the sandbox invalidates the host's or any peer worker's credential for any provider
+
+Scenario: A sandbox driver delivers a large command and the projected credentials through the exec stream
+  Given a factory sandbox driver that opens exec sessions over a request URL
+  And a command whose single argument is 200000 bytes and whose environment holds 40 entries of 1000 bytes each, including the projected Claude and GitHub credentials
+  When the driver starts that command inside the sandbox
+  Then the request that opens the exec session is under 8192 bytes long
+  And no argument value and no environment value appears in that request URL
+  And the command runs inside the sandbox with exactly that argument and that environment
+
+Scenario: A command that reads standard input still receives it after the driver's framing
+  Given a factory sandbox driver that delivers program, arguments and environment through the exec stream
+  When the driver starts a command that forwards its own standard input
+  Then the command receives the caller's standard input byte for byte, with none of the driver's framing in it
 ```
 
 ## Scenario 19 — Dispatcher refuses dispatch when the credential freshness gate fails
@@ -395,6 +398,7 @@ Feature: A senior-engineer review gate reviews a green build before the PR stage
   Scenario: A capped-out review ships when merge_on_review_cap is set
     Given the review gate has reached its review fix-round cap (dispatcher.review_fix_cap)
     And the review gate still raises a blocking finding
+    And the verdict contains a blocking finding about the tree
     And the item's effective merge_on_review_cap is true
     Then the run ships to the PR stage anyway
     And the still-blocking finding does not gate the change
@@ -402,6 +406,7 @@ Feature: A senior-engineer review gate reviews a green build before the PR stage
   Scenario: A capped-out review blocks under the default merge_on_review_cap
     Given the review gate has reached its review fix-round cap (dispatcher.review_fix_cap)
     And the review gate still raises a blocking finding
+    And the verdict contains a blocking finding about the tree
     And the item's effective merge_on_review_cap is false (the default)
     Then the change does not ship
     And the item transitions to blocked with blocked_reason needs-human
@@ -414,6 +419,18 @@ Feature: A senior-engineer review gate reviews a green build before the PR stage
     Then it queries the structured Fabro event stream for that run
     And it emits a `livespec-dispatcher` span carrying `review.verdict`, `review.fix_rounds`, `review.hit_cap`, and `pr.shipped_on_cap`
     And a review-to-PR fallthrough at the review cap is queryable as `pr.shipped_on_cap=true`
+
+  Scenario: A review turn cannot move the run branch or run the whole check suite
+    Given a review turn in the implement-work-item workflow
+    When the turn runs git rebase, git commit or git push, or invokes the whole declared check suite
+    Then the sandbox refuses the command within seconds, before any repository hook starts
+    And the suite refusal tells the reviewer to run named test ids only
+    And the run branch's head after the turn equals its head before it
+
+  Scenario: A review turn that attempted a refused command still records its verdict
+    Given a review turn that attempted a refused command
+    When the turn continues after the refusal
+    Then it records its verdict label within its turn allowance rather than ending on the turn timeout
 ```
 
 ## Scenario 21 — Codex plugin discovery and full-access posture
@@ -679,11 +696,25 @@ Scenario: set-admission edits the policy without touching the status
   And the item's status is unchanged
   And the journal records the actor
 
-Scenario: a manual → auto flip on a pending-approval item does not approve it
-  Given a `pending-approval` item whose stored admission_policy is manual
+Scenario: a manual → auto flip on a pending-approval item does not approve it by itself
+  Given the repository configuration does not commit dispatcher.auto_approve_ready
+  And a `pending-approval` item whose stored admission_policy is manual
   When the operator invokes `drive --action set-admission:<work-item-id>:auto`
-  Then the item remains at `pending-approval`
-  And moving it to `ready` still requires an explicit `approve:<work-item-id>`
+  Then the valve does not move the item, which remains at `pending-approval` when the command returns
+  And it moves to `ready` only through an explicit `approve:<work-item-id>` or a later Dispatcher pass that finds its effective admission_policy auto
+
+Scenario: close-duplicate closes a held duplicate and records its successor
+  Given a `blocked` item held at the spec-change tier whose behaviour another work item already carries
+  When the operator invokes `drive --action close-duplicate:<work-item-id>:<successor-id>`
+  Then the item is closed with no factory run and no other item changes
+  And the item's superseded_by names the successor
+  And a ledger comment on the item and one journal record each name the successor and the invoker
+
+Scenario: close-duplicate refuses and writes nothing on a bad successor, a closed item or a live claim
+  Given an item and a close-duplicate action whose successor does not resolve, equals the item, or whose item is already closed or carries a live run or an unreleased dispatch claim
+  When the operator invokes `drive --action close-duplicate:<work-item-id>:<successor-id>`
+  Then the valve refuses naming the reason
+  And the item, its comments, its edges and the journal are unchanged
 ```
 
 ## Scenario 32 — Adopter-target dispatch compatibility
@@ -700,6 +731,33 @@ Scenario: Preflight verifies the serving App reaches the target repo
   Then it refuses before launching with a diagnostic naming the per-tenant server requirement (the target tenant's own App identity)
   And the diagnostic surfaces the App workflows read-write grant as deliberately withheld from the dispatch credential, naming the attended-host-session route
 
+Scenario: A shared server serves a run under the target's per-run selected App
+  Given a shared Fabro server whose global integration is an App not installed for the adopter target repo
+  And the target declares dispatcher.factories.<name>.github_app naming an App-id secret and a private-key secret provisioned in that server's vault for an App installed on the target repo
+  When the Dispatcher dispatches an item of the target to that factory
+  Then the rendered run configuration selects that credential source by secret name and carries no secret value
+  And the run's native checkout, each managed stage GITHUB_TOKEN renewal and its publication all authenticate as the selected App
+  And the server's global integration is unchanged
+
+Scenario: An unresolvable per-run App selection refuses before any forge operation
+  Given a run whose configuration selects a GitHub credential source
+  And a selected secret is absent, empty, unparseable, or names an App not installed for the target repo
+  When the run's worker starts
+  Then the run fails before any protected forge operation with a diagnostic naming the selected secret names and the failing condition
+  And it does not fall back to the server's global App or to anonymous access
+
+Scenario: A malformed github_app declaration refuses before claim naming the key
+  Given a dispatch target whose dispatcher.factories.<name>.github_app is not an object, omits the App-id or private-key secret name, carries an empty or non-string name, or carries any other key
+  When the Dispatcher selects an item of that target for that factory
+  Then it refuses before claim with a diagnostic naming dispatcher.factories.<name>.github_app and the malformation
+  And no run is launched and no item is claimed
+
+Scenario: Concurrent runs under different Apps keep distinct authority
+  Given two concurrent runs on one shared server, one selecting no source and one selecting an org App
+  When each run refreshes its credentials and snapshots its vault
+  Then the first run authenticates only as the server's global App and the second only as the selected org App
+  And neither run's inspect or dump output, workflow version or sandbox environment contains a private key or a minted token
+
 Scenario: A target-local workflow supplies the target's toolchain facts
   Given an adopter repo carrying its own .fabro/workflows/implement-work-item workflow
   And the dispatch names no --workflow override and no --workflow-name
@@ -713,31 +771,57 @@ Scenario: Pull-primary resolves the target's default branch
   And it never hardcodes master
 ```
 
-## Scenario 33 — auto_approve_ready governs admission and a per-item label wins
+## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label
 
 ```gherkin
-Feature: The auto_approve_ready global default and its per-item override
-  As an operator delegating routine approval
-  I want an unlabeled routine item auto-approved while a per-item manual label still holds it
-  So that admission delegation is granular and never reaches design-human-gated work
+Feature: The auto_approve_ready setting and its precedence over a per-item admission label
+  As an operator delegating routine approval through committed configuration
+  I want a committed auto_approve_ready to decide every item's admission, with a per-item label governing only where the setting is not committed
+  So that the committed configuration is respected, deliberate holds use the blocked status, and design-human-gated work is never auto-approved
 
-  Background:
-    Given dispatcher.auto_approve_ready is true
-
-  Scenario: An unlabeled routine item inherits the global and is auto-approved
-    Given a routine `pending-approval` item that carries no explicit admission_policy label
+  Scenario: An unlabeled routine item follows a committed permissive setting and is auto-approved
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    And a routine `pending-approval` item that carries no explicit admission_policy label
     When the Dispatcher reaches it
     Then its effective admission_policy is auto and it is approved into `ready` without a human
-    And the auto-approval is journaled with the item id and the setting that governed it
+    And the auto-approval is journaled with the item id and the committed setting that governed it
 
-  Scenario: A per-item manual label beats the permissive global
-    Given a `pending-approval` item carrying an explicit admission_policy label of manual
+  Scenario: A committed permissive setting beats a stored per-item manual label
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    And a routine `pending-approval` item carrying an explicit admission_policy label of manual
+    When the Dispatcher reaches it
+    Then its effective admission_policy is auto and it is approved into `ready` without a human
+    And the auto-approval is journaled with the item id and the committed setting that governed it
+
+  Scenario: A committed restrictive setting beats a stored per-item auto label
+    Given dispatcher.auto_approve_ready is committed as false in the repository configuration
+    And a `pending-approval` item carrying an explicit admission_policy label of auto
     When the Dispatcher reaches it
     Then it does not transition the item to `ready`
     And the item rests at `pending-approval` awaiting the human's explicit `approve`
 
+  Scenario: A per-item label governs where the setting is not committed
+    Given the repository configuration does not commit dispatcher.auto_approve_ready
+    And a routine `pending-approval` item carrying an explicit admission_policy label of auto
+    When the Dispatcher reaches it
+    Then its effective admission_policy is auto and it is approved into `ready` without a human
+
+  Scenario: An unlabeled item inherits the shipped default where the setting is not committed
+    Given the repository configuration does not commit dispatcher.auto_approve_ready
+    And a `pending-approval` item that carries no explicit admission_policy label
+    When the Dispatcher reaches it
+    Then its effective admission_policy is manual
+    And the item rests at `pending-approval` awaiting the human's explicit `approve`
+
+  Scenario: set-admission reports that a committed setting decides admission
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    When the operator invokes `drive --action set-admission:<work-item-id>:manual`
+    Then the label is written and the item's status is unchanged
+    And the result states that the committed setting, named with its value, decides the item's admission while it stands
+
   Scenario: A spec-change-tier item is never auto-approved
-    Given a design-human-gated (spec-change-tier) `pending-approval` item
+    Given dispatcher.auto_approve_ready is committed as true in the repository configuration
+    And a design-human-gated (spec-change-tier) `pending-approval` item
     When the Dispatcher reaches it
     Then it does not auto-approve the item, regardless of the setting or of any per-item label
     And the item stays escalated to a human
@@ -1177,11 +1261,30 @@ Feature: A ready work-item whose `factory_safety` is non-null is refused at
     Then the item's `factory_safety` is set to `mutates-host-machinery`
     And the item's lifecycle status remains `acceptance`
 
-  Scenario: set-factory-safety requires one of the three canonical factory_safety reasons
+  Scenario: set-factory-safety requires one of the four canonical factory_safety reasons
     Given a `ready` work-item whose `factory_safety` is null
     When the operator attempts `set-factory-safety:<work-item-id>:not-a-real-reason` with a reason outside the factory_safety enum
-    Then the action is refused because the reason is not one of `needs-host-secrets`, `mutates-host-machinery`, or `needs-privileged-host`
+    Then the action is refused because the reason is not one of `needs-host-secrets`, `mutates-host-machinery`, `needs-privileged-host`, or `needs-host-only-input`
     And the item's `factory_safety` remains null
+
+  Scenario: clear-factory-safety journals its rationale and returns the item to factory eligibility
+    Given a `ready` work-item whose `factory_safety` is `needs-host-secrets`
+    When the operator invokes `clear-factory-safety:<work-item-id>:host secrets no longer needed`
+    Then the rationale, the invoker and the removed reason `needs-host-secrets` are recorded in the item's ledger comments and in the journal before the field changes
+    And the item's `factory_safety` is null
+    And the item's lifecycle status and `admission_policy` are unchanged
+
+  Scenario: clear-factory-safety refuses an empty rationale
+    Given a `backlog` work-item whose `factory_safety` is `mutates-host-machinery`
+    When the operator attempts `clear-factory-safety:<work-item-id>:` with an empty rationale
+    Then the action is refused, naming the missing rationale
+    And the item's `factory_safety` remains `mutates-host-machinery`
+
+  Scenario: clear-factory-safety refuses an item that carries no hold
+    Given a `ready` work-item whose `factory_safety` is null
+    When the operator attempts `clear-factory-safety:<work-item-id>:no reason needed`
+    Then the action is refused, saying no hold is set
+    And nothing is written to the item's ledger comments or to the journal
 
   Scenario: A ready item editing .github/actions/ is NOT refused
     Given a `ready` work-item whose scope edits a composite action under
@@ -1511,6 +1614,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And every other admission-required node retains an eligible candidate
     And every other admission-valve condition is satisfied
     And the primary credential's remaining five-hour headroom reads below 20 percent
+    And the credential pool holds only that one slot
     When the Dispatcher evaluates admission
     Then the reading is journaled with the work-item id and the opaque credential identity
     And the fallback candidate is selected for the implement node
@@ -1561,6 +1665,7 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And dispatcher.session_headroom_floor_percent is 20
     And dispatcher.session_headroom_horizon_minutes is 180
     And the earliest assessment of the primary credential journaled between 15 and 90 minutes earlier, for any work-item, read 64.5 percent utilization 30 minutes earlier
+    And the credential pool holds only that one slot
     And its current reading is 75 percent utilization, so its remaining headroom of 25 percent passes the floor
     And that node lists an uncovered eligible fallback candidate
     And every other admission condition is satisfied
@@ -1580,11 +1685,56 @@ Feature: The Dispatcher skips observed-unavailable candidates and refuses only a
     And the reset instant is not used for the skip and, if journaled, only as an unverified provider claim
     And all other admission conditions are still applied
 
-  Scenario: A credential with no baseline in this checkout is governed by the floor alone
+  Scenario: A credential with no baseline and no carried rate in this checkout is governed by the floor alone
     Given a covered candidate whose remaining headroom passes the floor
     And this checkout's dispatch journal holds no assessment of its credential identity between 15 and 90 minutes earlier
+    And the host session-headroom history holds no assessment of its credential identity between 15 and 90 minutes earlier
+    And no assessment of that credential within the preceding 90 minutes carried a drain rate
     When admission is evaluated
     Then the projection is journaled as unavailable with its reason
+    And no projection skip applies to that candidate
+
+  Scenario: A baseline journaled from another checkout on the host supplies the projection
+    Given dispatcher.session_headroom_floor_percent is 20
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
+    And the host session-headroom history holds an assessment of that credential identity journaled 40 minutes earlier from another checkout at 45 percent utilization
+    And the current reading is 61 percent utilization, so its remaining headroom of 39 percent passes the floor
+    When the Dispatcher evaluates admission
+    Then the journal records a drain rate of 24 percentage points per hour with baseline source host-history naming the other checkout
+    And the projected exhaustion is about 98 minutes after the observation
+    And the primary is skipped by projection, not by the floor
+
+  Scenario: An unreadable host history fails open with its own reason
+    Given this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
+    And the host session-headroom history cannot be read
+    And no assessment of that credential within the preceding 90 minutes carried a drain rate
+    When admission is evaluated
+    Then the projection is journaled as unavailable with the unreadable-host-history reason, distinct from no-baseline
+    And no projection skip applies to that candidate
+
+  Scenario: Readings bunched inside 15 minutes carry the last measured drain rate forward
+    Given dispatcher.session_headroom_floor_percent is 20
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
+    And an assessment of that credential 5 minutes earlier read 59 percent utilization and journaled a drain rate of 23 percentage points per hour
+    And the current reading is 61 percent utilization, so its remaining headroom of 39 percent passes the floor
+    When the Dispatcher evaluates admission
+    Then the journal records the drain rate of 23 percentage points per hour with rate source carried and the earlier assessment's observation time
+    And the projected exhaustion is about 102 minutes after the observation
+    And the primary is skipped by projection, not by the floor
+
+  Scenario: A reset since the carried assessment withholds the carried rate
+    Given this checkout's dispatch journal holds no assessment of the primary credential between 15 and 90 minutes earlier
+    And the credential pool holds only that one slot
+    And an assessment of that credential 40 minutes earlier journaled a drain rate at 80 percent utilization
+    And a later assessment of that credential read 5 percent utilization
+    When admission is evaluated
+    Then no carried rate is used
+    And the projection is journaled as unavailable with its reason
     And no projection skip applies to that candidate
 
   Scenario: A reading no higher than its baseline has no projection
@@ -2215,11 +2365,11 @@ Scenario: A ratification without a completed gap capture surfaces the backstop f
   Then a gap-capture-staleness fact appears whose handoff names capture-impl-gaps and the stale range
   And no detector is invoked by the composition
 
-Scenario: Merges past the threshold surface the drift fact
-  Given default-branch merges since the last completed drift coverage point at or past the effective threshold
+Scenario: Merges past the threshold surface the drift fact while the run has not caught up
+  Given default-branch merges after the recorded drift frontier at or past the effective threshold
   When needs-attention composes the snapshot
-  Then a drift-staleness fact appears whose handoff names capture-spec-drift
-  And the consent-gated dialogue remains the only way the detector runs
+  Then a drift-staleness fact appears naming the merges after the frontier
+  And the fact invokes no detector; the drift job is what runs the drift pass
 ```
 
 ## Scenario 83 — Capacity truth is composed from the accounting, never re-derived
@@ -2928,6 +3078,7 @@ Feature: Run-inventory reconciliation
   Scenario: An item superseded by a newer dispatch
     Given two non-terminal runs attributed to one active work-item
     And the ledger's newest journaled run id names the second run
+    And the item's claim carries a run stamp naming the second run, not a pending stamp
     When reconciliation runs
     Then the first run is reconciled with orphan reason superseded-run
     And the second run is left alone
@@ -3111,7 +3262,7 @@ Feature: the next action is typed epic metadata
   So that a wrapped sentence in a comment can never delete a constraint or a route
 
   Background:
-    Given each impl or spec-op pointer below has an observable required_result and an unexpired budget
+    Given each impl or spec-op pointer below has an observable required_result and a budget
     And human and none pointers carry explicit null required_result and budget fields
     And the existing lifecycle and authorization checks still apply
 
@@ -3682,10 +3833,27 @@ Feature: The resolve-blocked valve item carries the terminated run's account, ab
     Then the summary carries the run id, the factory name and its server, that a needs_human termination routed the decision to this valve, why it terminated, what the run reported, the preserved reference, and the available actions
 
   Scenario: An unreachable factory costs the enrichment and never the valve
-    Given a blocked needs-human work-item whose factory is unreachable
+    Given a blocked needs-human work-item whose factory is unreachable and that carries no needs-human cause comment for its latest run
     When needs-attention renders the item's resolve-blocked valve item
     Then the run account enrichment is omitted
     And the valve item is still surfaced
+
+  Scenario: The valve summary renders from the needs-human cause comment without a factory read
+    Given a blocked needs-human work-item carrying the livespec-needs-human-cause comment its termination wrote for its latest run
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account from that comment and the preserved reference from the item's preserve-by-reference comment
+    And no fabro inspect or other factory read is run for the item
+
+  Scenario: An item without the cause comment falls back to the factory read
+    Given a blocked needs-human work-item whose run was terminated before the needs-human cause comment existed
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account read from the factory exactly as before
+
+  Scenario: A cause comment keeps the run account when the factory is unreachable
+    Given a blocked needs-human work-item carrying the needs-human cause comment for its latest run, whose factory is unreachable
+    When needs-attention renders the item's resolve-blocked valve item
+    Then the summary carries the run account from that comment
+    And no factory read is attempted for the item
 ```
 
 ## Scenario 126 — Ledger normalization adopts a beads-native `open` row and assigns it a real rank
@@ -3950,6 +4118,12 @@ Feature: Factory-configurable ACP fallback priority
     When the Dispatcher evaluates adapter launch release
     Then it surfaces unavailable evidence and schedules another observation
     And it neither journals adapter-launch-release nor creates a needs-human decision from the missing evidence
+
+  Scenario: Calibration attributes the implement node to the candidate the dispatch selected
+    Given a dispatch whose implement selection record selected candidate one, a codex-acp fallback, after the claude-acp primary was skipped for session headroom
+    When the Dispatcher writes the terminal calibration journal row and span
+    Then livespec.implement.adapter is codex-acp and livespec.implement.selected_index is 1
+    And a dispatch with no selection record for the implement node reports the resolved acp_nodes primary's agent id, with selected_index null in the journal and omitted on the span
 ```
 
 ## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch
@@ -4125,6 +4299,22 @@ Feature: Definition of Done is validated before any implementation spend
     Given a ready item with a well-formed Definition of Done referencing an existing scenario
     When the dod_gate node evaluates it
     Then the run proceeds to the implement node
+  Scenario: A dod_gate turn that edits or commits fails the gate
+    Given a dispatched work-item whose dod_gate turn edits a file in the sandbox working tree or creates a commit
+    When the dod_gate turn ends
+    Then the dod_gate node ends with a failed outcome whose failure reason names the mutation
+    And the run does not enter the implement node
+    And the Dispatcher rests the item at blocked / needs-human
+  Scenario: A dod_gate turn that grades a coherent Definition of Done leaves the tree unchanged
+    Given a dispatched work-item with a coherent Definition of Done whose dod_gate turn finds no Definition-of-Done finding and makes no change
+    When the dod_gate turn ends
+    Then the sandbox working tree is clean and HEAD equals the commit the node started on
+    And the run proceeds to implement exactly as before
+  Scenario: The dod_gate prompt states the no-mutation boundary
+    Given a dispatched work-item reaching the dod_gate node
+    When the node renders its prompt to the agent
+    Then the prompt states that the node grades the Definition of Done and changes nothing
+    And the prompt states that the agent must not modify the sandbox working tree, create a commit, or run the repository's declared check suite
 ```
 
 ## Scenario 132 — A factory-captured proof is captured on a draft pull request, reviewed, replayed and published
@@ -4149,7 +4339,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     Then it posts one new Proof of Done verified comment and routes to pr_refresh
     And the pr node marks the pull request ready and arms auto-merge
   Scenario: A non-reproducible proof routes to fix
-    Given the proof_verify replay fails to reproduce one assertion
+    Given the proof_verify replay fails to reproduce one assertion with a behaviour difference, as the run's first or second behaviour not_reproduced verdict
     When the node ends
     Then it posts a not_reproduced record naming that assertion and routes to fix
     And no edge routes the run to pr_refresh or pr
@@ -4163,7 +4353,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     Then the description carries a Proof of Done section holding only the pointer to that record after an unchanged Definition of Done section
     And the acceptance pass grades each factory-captured assertion from that record and not from diff vocabulary
   Scenario: A stale pointer is a hygiene fact
-    Given an item whose Proof of Done pointer names a run id that is not the latest verified record on its pull request
+    Given an item whose Proof of Done pointer names a run id that is not the latest verified record counting for the item on its pull request
     When needs-attention composes hygiene facts
     Then exactly one fact names the item and the pull request as carrying a stale proof pointer
   Scenario: Slow hooks after a post-draft rebase are command work
@@ -4190,7 +4380,7 @@ Feature: Proof of Done is captured and independently reproduced before publicati
     Given a refresh already pushed a new head with durable run provenance
     When the same refresh is retried against the matching remote
     Then it resumes from that head and requires proof naming it
-    And three completed refreshes followed by more base movement end with an explicit non-convergence cause
+    And three refreshes that conflicted or failed the repository-declared gate, each repaired, followed by a further conflicting or gate-failing refresh end with an explicit non-convergence cause
   Scenario: Publication renders metadata as data and verifies the exact pull request
     Given the title and body contain shell metacharacters
     When pr executes the deterministic publication recipe
@@ -4231,7 +4421,7 @@ Feature: Human-attested assertions require a human record before done
     When the accept valve is driven
     Then the item closes to done and its pointer carries both record links
   Scenario: An unevidenced assertion parks without consuming the rework cap
-    Given a merged item whose factory_captured assertion has no verified record for the merging run
+    Given a merged item whose factory_captured assertion has no applicable proof_verify record counting for the item
     When the acceptance pass runs
     Then the verdict is NEEDS_ATTENTION naming that assertion and the rework counter is unchanged
   Scenario: The deliverable policy refuses a lazy opt-out
@@ -4408,6 +4598,7 @@ Feature: Proof that needs the released build is captured by an agent on a host, 
     And under ai-only the item closes to done and its pointer carries the host_verified record link
   Scenario: reconcile-merged driven by hand is the same route
     Given an item resting in acceptance with a host_verified record the pass has not yet observed
+    And its latest dispatch journaled a green post-merge janitor
     When reconcile-merged is driven for the item by hand
     Then only the acceptance pass is re-run, without a post-merge janitor
   Scenario: A self-replayed host record is refused
@@ -4415,6 +4606,19 @@ Feature: Proof that needs the released build is captured by an agent on a host, 
     When the same session drives the posting primitive to publish host_verified
     Then the posting primitive refuses the post because the computed identity equals the recording identity
     And a host_verified record with that same identity posted by any other route leaves the assertion pending and is reported as not independent
+  Scenario: The posting primitive refuses an item that has no merged pull request of its own
+    Given a work item carrying a host-captured assertion whose only dispatch ended without a pull request and that no reconcile-merged reconciled
+    And the repository holds other merged pull requests that no dispatch of that item produced
+    When a session drives the posting primitive to publish host_recorded for the item
+    Then the posting primitive refuses before posting anything
+    And the refusal names the work item and states that it has no merged pull request of its own
+    And no host record is posted on any pull request in the repository
+  Scenario: The posting primitive posts on the pull request the item's own dispatch merged
+    Given a work item carrying a host-captured assertion whose latest dispatch merged a pull request
+    And the repository holds a more recently merged pull request that no dispatch of that item produced
+    When a session drives the posting primitive to publish host_recorded for the item
+    Then the host_recorded record is posted on the pull request that the item's own dispatch merged
+    And no record is posted on the more recently merged pull request
   Scenario: A host replay that does not reproduce is rework input
     Given a host_not_reproduced record from a different session identity naming the host-captured assertion
     When the acceptance pass runs under an AI-dispositive policy
@@ -4431,6 +4635,14 @@ Feature: Proof that needs the released build is captured by an agent on a host, 
     Given an item whose pointer names the latest verified record and whose pull request later gains a host_recorded record
     When needs-attention composes hygiene facts
     Then no stale proof pointer fact is reported for the item
+  Scenario: A host-routed item with no factory run posts on its reconciled pull request
+    Given a host-routed item with a host-captured assertion that no factory run merged
+    And the item has never had a factory dispatch
+    And reconcile-merged reconciled the item with --pr naming one of its merged pull requests, journaled a green janitor, and parked it in acceptance
+    When a session drives the posting primitive to publish host_recorded for the item
+    Then the record is posted on the selected pull request and the primitive does not refuse for the missing run
+    And when a different session publishes host_verified, the primitive drives reconcile-merged for the item with that same --pr selector
+    And reconcile-merged reads that reconciliation's green janitor record and re-runs only the acceptance pass, without refusing for the missing dispatch
   Scenario: A host-routed item keeps its declared modes
     Given an item carrying factory_safety needs-host-secrets whose assertions are declared with no sub-heading
     When the effective-criteria primitive parses it
@@ -4475,14 +4687,109 @@ Feature: Proof exercises the delivered behaviour through its real surface
     And no record claims the assertion from a test run, a fixture or a test double
   Scenario: Suite-only proof is a blocking review finding
     Given a captured record whose proof of a behavioural assertion is test-suite output alone
+    And that defect is the review verdict's only blocking finding
+    And the run has issued fewer than two recapture verdicts
     When the review node reviews the record alongside the code
     Then the suite-only proof is a blocking review finding
-    And the run re-enters proof_capture through the review-fix route before any replay
+    And the run re-enters proof_capture with that finding before any replay, through no disposition or review_fix visit
   Scenario: The replay backstop does not call suite-only proof not reproduced
     Given a captured record whose proof of a behavioural assertion is test-suite output alone reaches proof_verify
     When the proof_verify node evaluates the record
     Then the run ends through the structured needs-human ending naming that assertion
     And no not_reproduced record and no verified record is published for it
+  Scenario: A proof-record-only verdict re-captures without a fix round
+    Given a review verdict whose only blocking finding is that a captured step runs a program the record is required to contain but does not contain
+    And the run has issued fewer than two recapture verdicts
+    When the review node ends
+    Then the run routes to proof_capture with preferred_label recapture
+    And no disposition visit, no review_fix visit and no review-fix round is consumed
+    And proof_capture publishes a new captured record, current for the publish head, that addresses the finding
+  Scenario: The recapture findings arrive by both channels
+    Given a review verdict with at least one blocking finding and only proof-record blocking findings
+    And the run has issued fewer than two recapture verdicts
+    When the run enters proof_capture with preferred_label recapture
+    Then the engine preamble of preceding stage output carries the findings
+    And the review record on the pull request carries the same findings
+  Scenario: proof_capture reads the review record when the preamble is empty
+    Given a recapture entry from review whose engine preamble carries no review finding
+    And a review record on the pull request carrying a proof-record finding
+    When the proof_capture node runs
+    Then it reads that review record
+    And the new captured record addresses that finding
+  Scenario: An exhausted review-fix budget does not pre-empt recapture
+    Given a run whose review fix-round budget (dispatcher.review_fix_cap) is exhausted
+    And a review verdict with at least one blocking finding and only proof-record blocking findings
+    And the run has issued fewer than two recapture verdicts
+    When the review node ends
+    Then the run routes to proof_capture with preferred_label recapture
+    And the run does not rest at needs-human and does not ship on the review cap
+  Scenario: A captured record is self-contained and names its head
+    Given a factory-captured assertion whose reproduction step runs a helper program that the repository does not track
+    And another step that runs a script the repository tracks, by its path, and an installed tool, by its name
+    When the proof_capture node publishes the record
+    Then the helper program's text is in the record or in a proof asset the record names
+    And the tracked script and the installed tool are not required to be copied into the record
+    And the record states the commit sha its steps ran against, equal to the publish branch head at capture time
+  Scenario: A checkpoint commit does not make a record stale
+    Given a captured record naming the publish head at capture time
+    And an engine checkpoint commit that changes no tree lands on the publish branch after proof_capture publishes
+    When the review node reviews the record against the new head
+    Then the record is current, because the two commits carry the same tree
+    And no proof-record finding is raised for its head
+  Scenario: A mixed verdict still fixes the tree first
+    Given a review verdict with one blocking finding about the tree and one proof-record finding
+    And the review fix-round budget (dispatcher.review_fix_cap) is not yet exhausted
+    When the disposition stage accepts the finding about the tree
+    Then the run routes through review_fix as a fix verdict
+    And the proof_capture visit its fix round reaches receives the proof-record finding
+  Scenario: A different tree makes the captured record stale
+    Given a captured record whose named commit has a different tree from the head under review
+    When review evaluates the record
+    Then the stale record is a blocking proof-record finding
+  Scenario: A printed conclusion is not observed proof
+    Given a captured record whose proof merely prints the claimed conclusion instead of observing the asserted behaviour
+    When review evaluates the record
+    Then the printed conclusion is a blocking proof-record finding
+  Scenario: Both recapture laps remain available after the review-fix budget is exhausted
+    Given a run that has exhausted its review-fix budget and issued no recapture verdict
+    When review issues a first recapture verdict and then a second recapture verdict
+    Then each verdict enters proof_capture and returns to review
+    And neither returned review visit consumes a review-fix round
+    And the engine review visit limit admits both returned visits
+    When the returned review issues a third recapture verdict
+    Then the run routes to non_converged without entering proof_capture
+  Scenario: Re-capture is bounded
+    Given a run whose review has ended with preferred_label recapture twice
+    When review ends with a recapture verdict a third time
+    Then the run routes to non_converged without entering proof_capture
+  Scenario: A clean review keeps the approval route
+    Given a review verdict with no blocking finding
+    When the review node ends
+    Then the run takes the approval route and does not route to proof_capture
+  Scenario: A replay that differs only in record fidelity is re-captured, not fixed
+    Given a captured record whose replay differs from the capture only in the interleaving of stdout and stderr, with the same behavioural result
+    When proof_verify replays it
+    Then the record classifies the difference as fidelity
+    And the run routes to proof_capture with preferred_label recapture
+    And the run does not enter fix on that verdict
+  Scenario: A replay whose behavioural result differs routes to fix
+    Given a replay whose behavioural result differs from the capture
+    When proof_verify replays it
+    Then the record classifies the difference as behaviour
+    And the run routes to fix with that visit's not_reproduced record as its work order
+  Scenario: A fidelity verdict does not count toward the behaviour bound
+    Given a run whose proof_verify has already published two behaviour not_reproduced verdicts and whose recapture allowance is not exhausted
+    When the third proof_verify visit publishes a fidelity verdict
+    Then the run routes to proof_capture with preferred_label recapture and not to non_converged
+  Scenario: The fix-entry guard counts behaviour verdicts, not visits
+    Given a run whose first proof_verify verdict was fidelity and whose second was a behaviour not_reproduced
+    When the third proof_verify visit publishes a second behaviour not_reproduced
+    Then the run routes to fix and not to non_converged
+  Scenario: A fidelity recapture reads the proof_verify record when the preamble is empty
+    Given a recapture entry from a proof_verify fidelity verdict whose engine preamble carries no finding
+    When the proof_capture node runs
+    Then it reads that proof_verify visit's not_reproduced record
+    And the new captured record addresses each fidelity finding
 ```
 
 ## Scenario 138 — A proof finding reaches the fix stage, and a parked acceptance verdict is recorded with its reason and its pointer
@@ -4520,8 +4827,8 @@ Feature: The proof chain does not lose what it found
     And the dispatch result reports stage acceptance, verdict NEEDS_ATTENTION and status needs-attention
     And the dispatcher exits with code 1
   Scenario: An unchanged re-run appends nothing
-    Given an item parked in acceptance whose ledger carries the parking comment for its verdict and pending-leg set
-    When the acceptance pass is re-run and returns the same verdict and pending-leg set
+    Given an item parked in acceptance whose ledger carries the parking comment for its verdict, pending-leg set and proof-record inventory
+    When the acceptance pass is re-run and returns the same verdict, pending-leg set and proof-record inventory
     Then no further ledger comment is appended
   Scenario: A changed pending-leg set is recorded once
     Given an item parked on a PASS with a pending host leg and a pending human leg
@@ -4546,51 +4853,64 @@ Feature: The proof chain does not lose what it found
     When needs-attention runs and reconcile-merged is then driven for the item
     Then needs-attention reports the missing pointer as a hygiene fact naming the item and the pull request
     And reconcile-merged writes the pointer
-  Scenario: A record stamped with the dispatch id is attributed to the merging run
-    Given a merged item whose verified record's first line carries the dispatch id the Dispatcher declared to the sandbox
-    When the acceptance pass looks for the merging run's verified record
-    Then the record is attributed to the merging run and each factory-captured assertion is graded from it
+  Scenario: A legacy record stamped with the dispatch id is matched to the item's dispatch
+    Given a merged item whose verified record carries no binding and whose first line carries the dispatch id the Dispatcher declared to the sandbox
+    When the acceptance pass gives the record its bind verdict
+    Then the record is legacy-matched to that dispatch and each factory-captured assertion is graded from it
     And the pointer is written naming that record
+  Scenario: The fix stage receives the record proof_verify graded, not a superseded capture
+    Given a run in which proof_capture published a capture and a later proof_capture visit superseded it
+    And proof_verify then published not_reproduced with a behaviour difference
+    When the fix node starts
+    Then the finding fix receives names that proof_verify record and not the superseded capture
 ```
 
 ## Scenario 139 — The gate checks each proof mode against the capabilities the sandbox image publishes
 
 ```gherkin
-Feature: Sandbox capabilities are published, and proof modes are checked against them in both directions
-  Scenario: A factory-captured assertion needing an unpublished capability is a gate finding
-    Given a sandbox image publishing terminal, tmux and headless_browser
+Feature: Proof modes are graded against the committed capability set, and the published file is compared with it
+  Scenario: A factory-captured assertion needing an unlisted capability is a gate finding
+    Given a repository whose committed dispatcher.sandbox_capabilities lists terminal, tmux and headless_browser
+    And a sandbox image publishing the same three names
     And an item whose factory-captured assertion is about behaviour inside herdr
     When the dod_gate node evaluates the rendered goal
     Then the run ends through the structured needs-human ending naming the assertion and the capability herdr
-    And the finding lists the remedies in order: add the capability to the image, declare host_captured with a Reason, declare human_attested only when no agent session can exercise it
-  Scenario: Publishing the capability clears the finding
-    Given the same item and a sandbox image that now publishes herdr
+    And the finding lists the remedies in order: add the capability to the image and list it in the committed array, declare host_captured with a Reason, declare human_attested only when no agent session can exercise it
+  Scenario: Publishing the capability without listing it leaves the finding
+    Given the same item, a sandbox image that now publishes herdr, and a committed array that still omits it
+    When the dod_gate node evaluates the rendered goal
+    Then the run still ends through the structured needs-human ending naming herdr
+    And the gate's output reports herdr as a configuration mismatch
+  Scenario: Listing and publishing the capability clears the finding
+    Given the same item, a committed array that now lists herdr, and a sandbox image that publishes herdr
     When the dod_gate node evaluates the rendered goal
     Then the run proceeds to the implement node
-  Scenario: An image without the capability file falls back to the committed mirror
+  Scenario: An image without the capability file is graded by the committed array
     Given a sandbox image that publishes no capability file
     And a repository whose committed dispatcher.sandbox_capabilities lists terminal and tmux
     When the dod_gate node evaluates a factory-captured assertion needing a browser
     Then the finding names headless_browser as missing
-  Scenario: With neither source the capability set is unknown and raises no missing-capability finding
-    Given a sandbox image that publishes no capability file and a repository with no committed mirror
+  Scenario: With no committed array the capability set is unknown even when the image publishes one
+    Given a repository with no committed dispatcher.sandbox_capabilities
+    And a sandbox image publishing terminal
     When the dod_gate node evaluates a factory-captured assertion needing a browser
     Then no missing-capability finding is raised
     And the gate's output reports sandbox-capabilities unpublished
-  Scenario: A mirrored capability the image does not publish is reported without failing the gate
-    Given a sandbox image publishing terminal and a committed mirror that also lists herdr
+  Scenario: A difference between the array and the published file is reported without failing the gate
+    Given a committed array listing terminal and herdr
+    And a sandbox image publishing terminal and headless_browser
     And an item whose assertions need only the terminal
     When the dod_gate node evaluates the rendered goal
-    Then the gate's output reports the mirrored name herdr as a configuration mismatch
-    And the Dispatcher journals the mismatch
+    Then the gate's output reports herdr and headless_browser as configuration mismatches
+    And the Dispatcher journals the mismatches
     And the run proceeds to the implement node
   Scenario: The capability set is read, never inferred from the item
-    Given a sandbox image publishing only terminal
+    Given a committed array and a sandbox image both listing only terminal
     And an item whose description states that the sandbox carries herdr
     When the dod_gate node evaluates its factory-captured assertion about behaviour inside herdr
     Then the finding names herdr as missing
-  Scenario: A host-captured declaration is refused where a published capability can exercise the assertion
-    Given a sandbox image publishing headless_browser
+  Scenario: A host-captured declaration is refused where a listed capability can exercise the assertion
+    Given a committed array and a sandbox image both listing headless_browser
     And an item declaring a web-interface behaviour of its own application under a Host-captured sub-heading
     When the dod_gate node evaluates the rendered goal
     Then the run ends through the structured needs-human ending naming the assertion and the capability headless_browser
@@ -4636,13 +4956,37 @@ Feature: The Definition of Done rules are applied where the item is filed
 Feature: Proof steps are tied to the scenario that states the behaviour
   Scenario: A generic reference where a scenario exists is a gate finding
     Given an item whose assertion names a behaviour that a scenario heading of scenarios.md states
-    And whose reference line names only a non-scenario heading
+    And whose reference line names only a non-scenario heading that the spec-stated judgement returns as governing none of the item's assertions
     When the dod_gate node evaluates the rendered goal
     Then the run ends through the structured needs-human ending naming the scenario heading that governs the assertion
+  Scenario: A governing generic reference where a scenario also governs is an advisory finding
+    Given an item whose assertion names a behaviour that a scenario heading of scenarios.md states
+    And whose reference line names only a non-scenario heading that the spec-stated judgement returns as governing that assertion
+    When the dod_gate node evaluates the rendered goal
+    Then the node reports the scenario heading verbatim with the remedy of adding it to the reference line
+    And the run falls through to implement
   Scenario: A non-scenario reference is valid when no scenario states the behaviour
     Given an item whose assertion names a behaviour no scenario heading states and whose reference line names a contracts heading
     When the dod_gate node evaluates the rendered goal
     Then no scenario-reference finding is reported
+  Scenario: A scenario whose title names the behaviour but whose steps do not exercise it does not govern the assertion
+    Given an item whose assertion names a behaviour that the title of a scenario heading of scenarios.md names
+    And no Given, When, Then or And step under that heading exercises that behaviour
+    And whose reference line names only a non-scenario heading whose clauses govern the behaviour
+    When the dod_gate node evaluates the rendered goal
+    Then no scenario-reference finding is reported for that assertion
+  Scenario: A scenario whose steps exercise the behaviour governs the assertion whatever its title says
+    Given an item whose assertion names a behaviour that a Then step under a scenario heading of scenarios.md states
+    And that heading's title does not name the behaviour
+    And whose reference line names only a non-scenario heading
+    When the dod_gate node evaluates the rendered goal
+    Then the run ends through the structured needs-human ending naming that scenario heading
+    And the finding quotes the step line that states the behaviour
+  Scenario: One unchanged reference line receives the same ruling at the pre-dispatch judgement and at every dispatch
+    Given an item whose reference line names only non-scenario headings
+    And whose subject digest and rubric digest are the same at the pre-dispatch judgement and at two successive dod_gate runs
+    When each of those three takings grades the reference line
+    Then all three report the same scenario-reference findings for that reference line
   Scenario: The record names the governing scenario
     Given an assertion whose reference line names a scenario heading
     When the proof_capture node publishes its record
@@ -4772,7 +5116,7 @@ Feature: A resume never continues from a state the records do not describe
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists, naming the pull request state and a plain dispatch as the remedy
   Scenario: The pull request is merged
-    Given an item whose earlier run's pull request is merged
+    Given an item whose earlier run's pull request is merged, and that is not parked in acceptance on its proof evidence leg
     When the operator drives resume for the item
     Then the resume refuses with exit code 3 before any run exists, naming the pull request state and reconcile-merged as the remedy
     And reconcile-merged for the item still requires that real merge
@@ -4812,7 +5156,8 @@ Feature: A dead run's publish branch does not block the item's next dispatch, an
     When the reclaim runs again for that head
     Then the preservation ref is unchanged and the reclaim completes
   Scenario: A first dispatch asks origin nothing
-    Given an item for which this checkout's dispatch journal records no dispatch with a run id or a declared dispatch id
+    Given an item for which no dispatch journal of any worktree sharing the repository's git common directory records a dispatch with a run id or a declared dispatch id
+    And every such journal can be read
     When the item is dispatched
     Then no query to origin for a surviving publish branch is made
   Scenario: A live earlier run holds the reclaim
@@ -4907,24 +5252,30 @@ Feature: one authoritative result reader for deadline and relay callers
 Governing clause: `contracts.md` §"Required result, budget and progress epoch".
 
 ```gherkin
-Feature: the original obligation budget survives activity
+Feature: the original obligation budget survives activity and never blocks the plan
   Scenario: every writer retains the first budget
     Given an unsatisfied required result with an absolute UTC deadline and positive max_handoffs
     When ordinary handoffs, supervisor handoffs and direct next_action writes repeat or change wording
     Then accepted handoffs consume units and direct pointer writes consume none
     And the original deadline and existing consumed units are unchanged
     When either exact budget boundary is reached
-    Then continued work without fresh causal recovery is refused before a partial handoff or pointer mutation
-    And expiry is observable even if no subsequent handoff is written
+    Then the obligation is reported overdue
+    And further handoffs and pointer writes for the same obligation are accepted with no recovery attempt, ruling or human decision
+    And the overdue finding is observable even if no subsequent handoff is written
+    And a same-obligation handoff past max_handoffs appends its comment, updates the pointer and increases the accepted count by one
 
-  Scenario: a fresh causal attempt permits bounded recovery, not a new original deadline
-    Given an expired unmet result and measured item, host or unknown cause evidence
+  Scenario: an unmet result is re-aimed by an ordinary replacement write
+    Given an unmet required result, whether within budget or overdue
+    When a sanctioned write names a different typed required result
+    Then a plan-progress-event of kind replacement naming the replaced result identity and epoch is recorded before the pointer changes
+    And the new obligation begins under the write's own budget
+    And no supersession cause, typed causal recovery attempt or continuation ruling is required
+
+  Scenario: a typed causal recovery attempt is optional and never required
+    Given an unmet result and measured item, host or unknown cause evidence
     When an authorized typed attempt names the previous epoch, executable next operation, unique attempt id and bounded attempt deadline
-    Then it permits one cause-appropriate recovery attempt and retains the original obligation deadline
+    Then it is recorded and retains the original obligation deadline
     And attempt registration, claim, actual command execution and fulfillment remain separately observable
-    And unknown causes require diagnosis and known host causes do not alter the item repetition count
-    When a repair child merges, a target is renamed, a relay is acknowledged, or approach prose changes
-    Then none of those observations postpones the deadline or fulfills the original target
     And an old attempt, concurrent stale writer or duplicate operation cannot reset the budget
     And a partial write must be reconciled before dispatch
 ```
@@ -4934,13 +5285,20 @@ Feature: the original obligation budget survives activity
 Governing clause: `contracts.md` §"Required result, budget and progress epoch".
 
 ```gherkin
-Feature: tracking findings preserve obligations without invented decisions
-  Scenario: expired or unreadable results require authorized recovery
-    Given an expired or unobservable obligation on an unattended plan resume
+Feature: tracking findings never block an executable plan step
+  Scenario: an overdue result is reported and its action is still taken
+    Given an overdue obligation whose required result is unsatisfied on an unattended plan resume
+    When resume_directive evaluates the pointer
+    Then it reports the overdue finding with the original budget and target
+    And it takes the pointer's executable action exactly as it would within budget
+    And it does not rewrite the pointer to a diagnosis action
+
+  Scenario: an unreadable result requires authorized diagnosis
+    Given an unobservable obligation on an unattended plan resume
     When resume_directive evaluates the pointer
     Then it reports the precise finding and preserves the original budget and target
-    And it does not blindly auto-dispatch the exhausted or unobservable action
-    And it exposes an authorized causal diagnosis or recovery action to the independent consumer
+    And it does not auto-dispatch the unobservable action
+    And it exposes an authorized diagnosis action to the independent consumer
     And human escalation requires a genuine human decision or authorization deficit
     And existing admission, HOLD and Red-Green guards remain enforced
 
@@ -4985,8 +5343,8 @@ Governing clause: `contracts.md` §"Attention without confusing activity with re
 
 ```gherkin
 Feature: activity does not hide the required result
-  Scenario: unrelated progress does not clear original expiry
-    Given an expired unmet required result and a newly merged ancillary repair
+  Scenario: unrelated progress does not clear an overdue result
+    Given an overdue unmet required result and a newly merged ancillary repair
     When needs-attention composes the normal attention envelope
     Then it retains the overdue-result fact with target, original budget, observation and sanctioned recovery action
     And the independently readable obligation remains available without another handoff
@@ -4997,7 +5355,7 @@ Feature: activity does not hide the required result
     When the window has threshold handoffs but no new attributable merged PR, closed child or verified proof
     Then the report names UTC window bounds, entry count and last required result or legacy marker
     When a new attributable milestone is observed
-    Then only the historical-window condition clears while an unmet expired result remains overdue
+    Then only the historical-window condition clears while an unmet overdue result remains overdue
     And unreadable sources yield unobservable findings rather than a confident no-result claim
     And missing or invalid policy produces a configuration finding rather than an invented limit
 ```
@@ -5552,7 +5910,7 @@ Feature: a plan session drives to the archive under a recorded authorization
 
   Scenario: a continuation ruling lets an attended resume take the pointer
     Given an open plan epic carrying a current continuation ruling until archive
-    And next_action kind impl with a non-empty ref and an unexpired budget
+    And next_action kind impl with a non-empty ref and a budget
     When the plan operation resumes attended
     Then resume_directive returns ask false and the action impl:<ref>
     And the reason names the continuation ruling
@@ -5582,7 +5940,7 @@ Feature: a plan session drives to the archive under a recorded authorization
     Given a plan assertion carried by another plan's host record that does not exist yet
     When the session records the next action
     Then the pointer is kind await with ref epic:<other-epic-id>, a required result of kind verified_proof on that epic and a budget deadline
-    And a resume after the deadline reports the obligation expired rather than waiting again
+    And a resume after the deadline keeps waiting on that epic and reports the obligation overdue
 
   Scenario: a stale pointer is reconciled, not executed
     Given next_action kind impl whose required_result is item_status closed for the item its ref names
@@ -5727,26 +6085,55 @@ Feature: attribute a failed engine checkpoint commit and route its decision to t
 ```gherkin
 Feature: Master-CI preflight waits on a pending run instead of treating it as failed
   As an operator dispatching work while the default branch's CI is still running
-  I want the preflight to wait for that run's verdict
-  So that a run that has not failed is never reported as a failure
+  I want the preflight to pass on a concluded green ancestor run, or else wait for the pending run's verdict
+  So that a run that has not failed is never reported as a failure and overlapping runs never starve dispatch
+
+  Scenario: a concluded green ancestor passes while the latest run is pending
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded green on a commit that is an ancestor of the current default-branch head
+    When the preflight reads the runs
+    Then the dispatch proceeds without waiting
+      And the journaled pass names the green run, its head commit and the still-pending latest run
+
+  Scenario: a red newest concluded run does not pass, and the preflight waits on the latest run
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded red
+    When the preflight reads the runs
+    Then the dispatch is neither started nor refused on that red run
+      And the preflight waits on the latest run
+
+  Scenario: a concluded green run that is not an ancestor of the head does not pass
+    Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And the newest concluded default-branch run concluded green on a commit that is not an ancestor of the current default-branch head
+    When the preflight reads the runs
+    Then the dispatch does not proceed on that run
+      And the preflight waits on the latest run
 
   Scenario: a pending run that concludes green lets the dispatch proceed
     Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And no concluded green ancestor run satisfies the pass conditions
     When that job concludes green within the bounded wait
     Then the dispatch proceeds and the journaled pass names the run that concluded green
 
   Scenario: a pending run that concludes red refuses as red
     Given the latest default-branch run's aggregate job is in progress when the master-CI preflight starts
+      And no concluded green ancestor run satisfies the pass conditions
     When that job concludes red within the bounded wait
     Then the dispatch is refused naming the red run with the reason master-ci-red
 
   Scenario: a newer run replaces the one being waited on
-    Given the preflight is waiting on an in-progress run
-    When a newer run starts on the default branch and concludes green within the original bounded wait
+    Given the preflight is waiting on an in-progress run because the newest concluded run is red
+    When a newer run starts on the default branch and concludes green within the original bounded wait while it is still the latest run
     Then the preflight waits on the newer run and the journaled pass names the newer run
+
+  Scenario: a run concluding green during the wait passes as a green ancestor while a newer run is pending
+    Given the preflight is waiting on an in-progress run because the newest concluded run is red
+    When that run concludes green on an ancestor of the current head while a newer run is still in progress
+    Then the next poll passes on that green run and the journaled pass names it and the still-pending newer run
 
   Scenario: a run still pending at the bound is deferred, not failed
     Given the latest default-branch run stays in progress for the whole bounded wait
+      And no poll finds a concluded green ancestor run satisfying the pass conditions
     When the bound expires
     Then the dispatch does not start and the work item is not claimed
       And the journal records reason master-ci-pending with status deferred
@@ -5895,11 +6282,17 @@ Feature: The watchdog's poll cost does not grow with the factory's run history
 ```gherkin
 Feature: A judged Definition-of-Done defect is found before a dispatch is spent on it
   Scenario: An item the judgement would rest at needs-human is held out of ready
-    Given an implement-kind item whose References line omits the scenario that governs its assertion
+    Given an implement-kind item whose References line omits the scenario that governs its assertion and names no heading that governs any of its assertions
     When intake routes the item toward ready
     Then the pre-admission judgement runs against its effective criteria and referenced headings
     And the item is not routed to ready
     And its verdict, with each remedy, is appended to the item as a ledger comment
+  Scenario: An item whose References line omits only some governing headings moves to ready with an advisory finding
+    Given an implement-kind item whose References line names a heading that governs one of its assertions
+    And omits another heading the spec-stated judgement returns as governing one of its assertions
+    When intake routes the item toward ready
+    Then the item moves to ready
+    And the verdict appended to the item as a ledger comment names the omitted heading verbatim with the remedy of adding it
   Scenario: An item the judgement admits moves to ready as before
     Given an implement-kind item whose Definition of Done the judgement admits
     When intake routes the item toward ready
@@ -5914,7 +6307,7 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     When needs-attention composes hygiene facts
     Then a hygiene fact names the item and its verdict's first remedy
   Scenario: An item that reached ready without admission is judged before dispatch
-    Given an implement-kind item released to ready through resolve-blocked whose References line omits the scenario that governs its assertion
+    Given an implement-kind item released to ready through resolve-blocked whose References line omits the scenario that governs its assertion and names no heading that governs any of its assertions
     When the Dispatcher selects the item for a dispatch
     Then the Definition-of-Done judgement runs before any claim is taken
     And the dispatch is refused before any factory run is created, naming the judgement's finding text
@@ -5926,20 +6319,50 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     Then the dispatch proceeds as it would without the judgement
     And a ledger comment records that the pre-dispatch judgement did not run and why
   Scenario: A refused item is not judged or commented again while it is unchanged
-    Given an item whose pre-dispatch judgement refused it and whose effective criteria and referenced headings are unchanged since
+    Given an item whose pre-dispatch judgement refused it
+    And the subject digest and rubric digest it would now be graded by equal the refusing verdict's
     When the Dispatcher's drain enumerates dispatch candidates
     Then the item is excluded from the candidates
     And no further judgement runs and no further ledger comment is appended for it
     And needs-attention lists the item with its verdict's first remedy
-  Scenario: A refused item re-enters enumeration and is judged once after its criteria change
+  Scenario: A refused item re-enters enumeration and is judged once after its subject or rubric changes
     Given an item excluded from drain candidates by a pre-dispatch refusal
-    And its effective criteria or referenced headings have changed since that verdict was taken
-    And the judgement of the changed criteria would still rest the item at needs-human
+    And the subject digest or the rubric digest it would now be graded by differs from the refusing verdict's
+    And the judgement of its current criteria would still rest the item at needs-human
     When the Dispatcher's drain enumerates dispatch candidates
     Then the item is included among the candidates
-    And the pre-dispatch judgement runs exactly once against the changed criteria before any claim is taken
+    And the pre-dispatch judgement runs exactly once against the item's current criteria and the ratified specification before any claim is taken
     And the dispatch is refused before any factory run is created
     And exactly one new verdict comment is appended to the item
+  Scenario Outline: The judgement authenticates with the account a dispatch would use
+    Given the pool's admission choice is slot X while the account-selection process published a different account
+    When the <phase> judgement runs its Claude model on the host
+    Then the judge is started with slot X's credential
+
+    Examples:
+      | phase         |
+      | pre-admission |
+      | pre-dispatch  |
+
+  Scenario Outline: The judgement falls back to the unnumbered credential and says so
+    Given <selection state>
+    And the unnumbered Claude credential is present in the environment
+    When the <phase> judgement runs its Claude model on the host
+    Then the judge is started with the unnumbered Claude credential
+    And one stderr line names that fallback and its reason
+
+    Examples:
+      | phase         | selection state              |
+      | pre-admission | no numbered slot is injected |
+      | pre-dispatch  | no numbered slot is injected |
+      | pre-admission | no pool slot qualifies       |
+      | pre-dispatch  | no pool slot qualifies       |
+
+  Scenario: The held-items listing reads the ledger a bounded number of times per snapshot
+    Given a snapshot holding many heldable items, some held by a recorded pre-admission verdict and some with no recorded verdict
+    When needs-attention lists the items the pre-admission judgement held
+    Then the number of ledger reads it issues does not grow with the number of heldable items
+    And each held item is listed with its recorded verdict's first remedy, and no item without a recorded verdict is listed
 ```
 
 ## Scenario 175 — A run past the whole-run wall budget is exported, cancelled and rested for a human
@@ -6078,6 +6501,15 @@ Feature: A janitor-green run survives a default branch that moved under it
     And the run enters the fix node with a brief naming each failed gate target
     And the run does not end at needs_human
 
+  Scenario: A refresh commit refused by the commit hook is restored and repaired
+    Given a run whose janitor stage succeeded at head H
+    And the refresh onto the advanced default branch conflicts on no path
+    And the repository's commit hook refuses the commit the refresh makes
+    When publish_draft refreshes the run onto the default branch
+    Then the run's working branch is reset to H with no merge or rebase in progress
+    And a refresh-repair brief names H, the targeted default-branch commit and each target the hook named as failed
+    And the run enters the fix node rather than needs_human
+
   Scenario: A conflicted pr_refresh routes to a repair turn and counts as a refresh
     Given a run whose proof was verified on its published head P
     And origin's default branch has advanced with a commit that conflicts with the run's work
@@ -6110,11 +6542,17 @@ Feature: A janitor-green run survives a default branch that moved under it
     When a publish_draft refresh conflict routes the run to a refresh-repair round
     Then the run still has the same number of review-fix rounds remaining as before the repair
 
-  Scenario: Repaired and clean refreshes share the non-convergence bound
-    Given a run whose pr_refresh has refreshed cleanly twice
-    And whose third pr_refresh refresh conflicted and was repaired
-    When the default branch advances again before pr
+  Scenario: Only conflicting or gate-failing refreshes count toward the non-convergence bound
+    Given a run whose pr_refresh refreshes have conflicted or failed the gate three times, each repaired
+    When the default branch advances again before pr and that refresh conflicts
     Then the run ends with the explicit non-convergence cause and preserved work
+
+  Scenario: A run refreshes cleanly once and leaves later default-branch movement to the merge path
+    Given a run whose pr_refresh has refreshed cleanly onto an advanced default branch once
+    And the default branch advances again, without conflicting with the run's commits, before the pull request merges
+    When the run next reaches pr_refresh and then pr
+    Then pr_refresh does not refresh again and the clean refresh is not counted toward the non-convergence bound
+    And pr arms auto-merge for the head the latest verified or carried_forward record names, and the run does not end pr-refresh-non-converged
 
   Scenario: The repair budget is bounded
     Given a run that has already taken two refresh-repair rounds across publish_draft and pr_refresh
@@ -6168,7 +6606,7 @@ Feature: Repository hooks inside a sandbox stay within, and are named against, t
     And the dispatch journal still carries the earlier hook-over-limit row
 ```
 
-## Scenario 178 — A refresh that brings in only inert paths carries the verified proof forward, and anything else re-proves
+## Scenario 178 — A refresh carries verified proof forward only when the deterministic carry-forward conditions hold
 
 ```gherkin
 Feature: A pr_refresh re-proves only when the incoming commits could change what the proof observed
@@ -6187,6 +6625,7 @@ Feature: A pr_refresh re-proves only when the incoming commits could change what
 
   Scenario: An incoming change outside the inert classes re-proves
     Given a run whose verified record on head V reads only AGENTS.md
+    And the run has not yet re-proved after a changed-head refresh
     And the default branch advanced with a commit that changes a Python module the item does not touch
     When pr_refresh rebases the branch cleanly and pushes head N
     Then the pull request carries one reproof_required record naming that module as an incoming path outside every inert class
@@ -6379,7 +6818,7 @@ Feature: A factory agent's commit leg is not bounded by one tool call
   So that a loaded factory host does not turn a verified change into a lost run
 
   Scenario: A Green amend whose hook outlasts one tool call completes
-    Given an implement-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
+    Given a review_fix-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
     When the agent starts the amend through the sandbox commit runner and repeats bounded waits in later tool calls
     Then the amend completes with the hook's own verdict
     And the resulting commit carries every trailer the hook wrote
@@ -6390,6 +6829,14 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     When the agent waits on it until it is terminal
     Then the wait reports the failed state and the commit process's exit status
     And HEAD is unchanged
+
+  Scenario: A needs-human ending after a hook-refused commit names the hook's recorded verdict
+    Given a fix turn whose latest commit attempt was refused by the commit hook with a recorded non-zero exit status and named failed targets
+    And the turn's own failure text describes that hook as not completed
+    When the run ends at the needs_human terminal
+    Then the needs-human cause comment names the recorded exit status and the failed target names as read from the run's recorded tool output
+    And the dispatch journal's outcome row carries that exit status and those target names in a field separate from the agent's failure text
+    And the cause comment labels the agent's failure text as agent-reported and states the recorded refusal beside it
 
   Scenario: A commit that dies without a verdict is not a commit
     Given a commit started through the sandbox commit runner whose process is ended by a signal before it exits on its own
@@ -6517,6 +6964,18 @@ Feature: Factory addresses come from a host registry, not from committed configu
       | file maps "petri" to an object with a valid server and a docker_host of "   " |
       | file maps "petri" to an object with a valid server and a docker_host that is a number |
 
+  Scenario Outline: An explicit selection naming an undeclared factory refuses before any ledger write and never falls back
+    Given dispatcher.factories declares no factory named "hp"
+    When an item is dispatched with <selection>
+    Then the dispatch is refused naming "hp" and every factory name dispatcher.factories declares
+    And the item's status, metadata and comments are unchanged
+    And no Fabro run is created on any server
+
+    Examples:
+      | selection                          |
+      | --factory hp                       |
+      | LIVESPEC_FABRO_FACTORY set to "hp" |
+
   Scenario: Only the selected entry is validated
     Given the factory registry maps "petri" to a server address and maps "legacy" to null
     When an item is dispatched to "petri"
@@ -6595,7 +7054,8 @@ Feature: Factory addresses come from a host registry, not from committed configu
     When dispatcher.default_factory is changed from "petri" to "next"
     And both items are dispatched with no --factory flag
     Then the unpinned item is dispatched to "next"
-    And the item recorded to "petri" is dispatched to "petri"
+    And the item recorded to "petri" is dispatched to "next", because a fresh dispatch reads no recorded factory
+    And when the item recorded to "petri" is instead resumed with resume --item, the resume is dispatched to "petri"
 ```
 
 ## Scenario 183 — A checkpoint-failed run whose tree nothing else carries is published to a preservation ref
@@ -6653,12 +7113,25 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
   So that a proof-verified run is not ended for a human because master moved a few seconds too late
 
   Scenario: A refreshable advance before the arming re-enters pr_refresh and then arms
-    Given a run whose latest verified record names head H
+    Given a run that has not yet refreshed cleanly onto an advanced default branch and whose latest verified record names head H
     And the default branch advances to tip T, which is not an ancestor of H, with a commit that does not conflict with the run's commits
     When pr marks the draft ready and the forge rejects the head-bound arming as not rebaseable
-    Then pr records the refresh-route marker and pr_route routes the run to pr_refresh, which counts one refresh toward the three-refresh bound and takes no refresh-repair round
+    Then pr records the refresh-route marker and pr_route routes the run to pr_refresh, which refreshes cleanly, counts no refresh toward the three-refresh bound and takes no refresh-repair round
     And the refreshed head takes the carry-forward decision before pr is entered again
     And pr reports the pull request already ready and arms auto-merge for the head its latest verified or carried_forward record names
+
+  Scenario: After its one clean refresh a run retries a rejected arming instead of refreshing again
+    Given a run that has taken its one clean pr_refresh refresh and whose latest carried_forward record names head H
+    And the default branch advances again with a commit that does not conflict with the run's commits
+    When pr marks the draft ready and the forge rejects the head-bound arming without reporting a conflict
+    Then pr records no refresh-route marker and retries the arming of H, re-reading the mergeability report before each retry
+    And when an arming succeeds the run proceeds as after any armed pull request, and when the bounded attempts are exhausted pr fails closed naming the forge's last rejection cause
+
+  Scenario: A conflict re-entry after the clean refresh counts even when it applies cleanly
+    Given a run that has taken its one clean pr_refresh refresh
+    And pr recorded the refresh-route marker because the forge reported the pull request in conflict with the default branch
+    When pr_route routes the run to pr_refresh and that refresh applies cleanly
+    Then that visit counts once toward the three-refresh non-convergence bound
 
   Scenario: A conflicting advance before the arming re-enters pr_refresh and takes refresh repair
     Given a run whose latest verified record names head H
@@ -6675,10 +7148,33 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
   Scenario: An armed pull request overtaken by a conflicting commit rests at needs-human with a named cause
     Given a run that armed auto-merge for head H and terminated through exit
     And a later default-branch commit conflicts with the pull request
+    And at least one conflicted path is not a declared record file
     When two consecutive merge-wait polls report the pull request OPEN and conflicting with the default branch
     Then the dispatch ends blocked at stage merge-poll with the cause base-advanced-after-arming and exit code 4
     And the item rests at blocked with blocked_reason needs-human, with one livespec-base-advanced-after-arming comment and one needs-human-blocked journal row
     And the outcome detail names resolve-blocked for the item and then resume
+
+  Scenario: An armed pull request overtaken only in declared record files is resumed without a human step
+    Given a run that armed auto-merge for head H and terminated through exit
+    And a later default-branch commit conflicts with the pull request only in paths declared in dispatcher.record_files
+    When two consecutive merge-wait polls report the pull request OPEN and conflicting with the default branch
+    Then the Dispatcher journals one base-advanced-record-files-resume row naming every conflicted path
+    And the item is resolved to ready and resumed in the same invocation, whose outcome and exit code are those of the resumed dispatch
+    And the Dispatcher does not disarm, close or rewrite the pull request
+
+  Scenario: A refused automatic resume rests the overtaken pull request at needs-human naming the refusal
+    Given an armed pull request overtaken only in declared record files
+    And the item's pull request has already taken its two resumes
+    When the merge wait attempts the automatic resume
+    Then the item rests at blocked with blocked_reason needs-human and the cause base-advanced-after-arming
+    And the livespec-base-advanced-after-arming comment and the outcome detail name the resume's refusal
+
+  Scenario: An unmeasurable conflict set rests the overtaken pull request at needs-human
+    Given an armed pull request reported OPEN and conflicting on two consecutive merge-wait polls
+    And the Dispatcher cannot compute the conflicted paths
+    When the merge wait ends
+    Then the item rests at blocked with blocked_reason needs-human and the cause base-advanced-after-arming
+    And the livespec-base-advanced-after-arming comment names the measurement that failed, and no resume is attempted
 
   Scenario: Resuming an overtaken armed pull request disarms it before refreshing
     Given that item resolved to ready and resumed
@@ -6691,6 +7187,28 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
     And the latest verified or carried_forward record of the item's latest run names H1, not H2
     When the operator releases the hold
     Then the release refuses, naming the head comparison that failed, and the pull request stays unarmed
+  Scenario: A rejected refresh push that landed on origin is reported as a landed-but-errored write
+    Given a run whose pr_refresh rebased its series onto the default branch as pushed head P and pushed it with a lease against leased head L
+    And the forge rejects the push with the error text "fatal error in commit_refs"
+    And origin's publish branch afterwards points at P while the pull request ref's head is still L
+    When pr_refresh names the cause of the rejected push
+    Then it fails closed with LIVESPEC_PR_REFRESH_PUSH_LANDED_ERRORED, and its detail names the forge's error text, the pushed head P and the pull request ref's head L
+    And it does not report LIVESPEC_PR_REFRESH_LEASE_FAILED and does not state that the remote moved
+
+  Scenario: A rejected refresh push with origin at neither head is still a lease failure
+    Given a run whose pr_refresh pushed head P with a lease against leased head L
+    And the forge rejects the push
+    And origin's publish branch afterwards points at a head that is neither L nor P
+    When pr_refresh names the cause of the rejected push
+    Then it reports LIVESPEC_PR_REFRESH_LEASE_FAILED and the run routes to needs_human as it does today
+
+  Scenario: A rejected refresh push whose outcome cannot be read is reported as unobservable
+    Given a run whose pr_refresh pushed head P with a lease against leased head L
+    And the forge rejects the push
+    And origin's publish branch cannot be read afterwards
+    When pr_refresh names the cause of the rejected push
+    Then it fails closed with LIVESPEC_PR_REFRESH_PUSH_OUTCOME_UNOBSERVABLE, stating that whether the write landed cannot be established
+    And it does not report LIVESPEC_PR_REFRESH_LEASE_FAILED
 ```
 
 ## Scenario 185 — A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch
@@ -6743,6 +7261,37 @@ Feature: Recovery routing for an automatically released item
     Then the route is held, neither seeded nor fresh
     And the journal carries a recovery-held record naming the merged state and the remedy reconcile-merged --item
     And no publish-branch reclaim runs for it
+
+  Scenario: An item returned to ready after a needs_human ending with a published head and a proof record is resumed
+    Given an item whose latest dispatch ended at the needs_human terminal after proof_capture posted a captured proof record naming the published head
+    And a human valve returned the item to ready with its Definition of Done unchanged and no newer dispatch submitted
+    And the across-dispatch required-result progress refusal does not apply to it
+    When the Dispatcher's next pass grades the item
+    Then recovery routing routes it resume
+    And its run enters at review on the anchored head without visiting dod_gate or implement
+
+  Scenario: An item returned to ready after a non_converged ending with preserved work and no proof anchor is seeded
+    Given an item whose latest dispatch ended at a non_converged terminal with a preserved terminal tree and no proof record
+    And the item returned from backlog to ready with no newer dispatch submitted
+    And the across-dispatch required-result progress refusal does not apply to it
+    When the Dispatcher's next pass grades the item
+    Then recovery routing routes it seeded
+    And its seed record names the source run and the preserved tree's commit SHA and preservation reference
+    And its run checks out that recorded SHA
+
+  Scenario: A returned item whose Definition of Done a groom changed is seeded, not resumed
+    Given an item whose latest dispatch ended at the needs_human terminal with a published head and a verified proof record
+    And a groom changed the item's Definition of Done before it returned to ready
+    When the Dispatcher's next pass grades the item
+    Then recovery routing routes it seeded
+    And no proof record from the earlier Definition of Done is inherited
+
+  Scenario: The across-dispatch no-progress refusal is graded before recovery routing for a returned item
+    Given an item whose latest dispatch ended at the needs_human terminal and that returned to ready
+    And the across-dispatch required-result progress refusal applies to it
+    When the Dispatcher's next pass grades the item
+    Then the refusal is recorded before any claim and before recovery routing
+    And the item is neither routed nor offered to the admission valve in that pass
 ```
 
 ## Scenario 186 — A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor
@@ -7343,4 +7892,4064 @@ Feature: Concurrent additions to shared record files do not cost a run a repair 
     Given a refresh whose conflicts were all resolved by the record-file merge
     When the repository-declared gate rejects the refreshed head
     Then the stage restores the pre-refresh head and routes to fix with a refresh-repair brief naming each failed gate target
+```
+
+## Scenario 201 — A clock-fired work supply drains a tenant on its interval without an interactive session, resolves the plugin build at each firing, and does not wait on a long pass
+
+```gherkin
+Feature: Factory work supply does not depend on an interactive session
+  As a maintainer whose factory sat idle for hours with ready work because no session ran a drain
+  I want a timer to start an unattended drain pass for each tenant on an interval
+  So that ready work reaches the factory whether or not any session is running
+
+Scenario: A firing starts one unattended drain pass for its tenant
+  Given the work-supply timer is installed for tenant repository "T" with an operator-chosen interval
+  And no interactive session is running a drain
+  And "T"'s first-ranked admission-eligible ready item has a free counted-claim slot under wip_cap
+  When the timer fires with a budget of at least one
+  Then the service runs loop --repo T with that budget and no --item argument
+  And that first-ranked item is dispatched under the same ranked queue, wip_cap and unattended cost gate as any unattended drain
+  And when instead wip_cap or the budget leaves no room, the item is journaled with the exclusion reason the admission conditions assign it, and is not dispatched
+
+Scenario: The installer refuses an instance whose wrapper is not executable
+  Given an operator installing a work-supply instance for tenant "T" whose named credential wrapper is not an executable file on the host
+  When the installer runs
+  Then it refuses that instance, naming the instance and the wrapper path
+
+Scenario: The installer refuses an interval below the documented minimum
+  Given an operator installing a work-supply instance for tenant "T" with a firing interval shorter than the installer's documented minimum
+  When the installer runs
+  Then it refuses that instance, naming the instance, the interval given and the minimum
+
+Scenario: Each firing executes the tenant's registered plugin build
+  Given the work-supply timer is installed for tenant "T"
+  And the registered plugin install for "T" moves to a newly released build
+  When the timer next fires
+  Then the pass executes the newly registered build without the unit being reinstalled
+  And when instead no registered install exists for "T" the firing refuses, naming "T", and executes no build
+
+Scenario: A long pass does not stop the next firing
+  Given a work-supply pass for tenant "T" whose dispatched run is still in progress
+  When the next interval elapses
+  Then the timer starts a new pass
+  And the new pass is governed by wip_cap as any unattended drain
+```
+
+## Scenario 202 — An agent stage follows only its stage prompt, never publishes, and commits through the repository hooks
+
+```gherkin
+Feature: An agent stage does not act on instructions its stage prompt never gave
+  As the maintainer of a repository dispatched to the factory
+  I want implement, fix and review_fix turns to take instruction only from their stage prompt
+  So that a run is not lost to a step that a file on its own branch or its own deliverable described
+
+  Scenario: A prompt file the work item changes does not instruct the run carrying it
+    Given a work item whose branch changes the fix prompt to require a commit mechanism that is not yet released
+    When a fix turn of that work item's run makes its commit
+    Then the turn commits with an ordinary git commit that runs the repository hooks
+    And the turn does not wait for or report the absence of the unreleased mechanism
+
+  Scenario: An agent stage never pushes or publishes
+    Given an implement, fix or review_fix turn whose work is committed
+    When the turn ends
+    Then the turn has pushed no ref to origin and has opened or changed no pull request
+    And publication happens only in publish_draft, pr_refresh or pr
+
+  Scenario: A run that changed the spec tree is not published
+    Given an implement-kind run whose committed change includes a path under the governed repository's spec root
+    When publish_draft prepares to publish it
+    Then publish_draft pushes nothing and opens no pull request
+    And the run ends at needs_human with a reason naming every spec-root path it changed
+    And the reason names filing the spec change through propose-change as the remedy
+
+  Scenario: A spec change that arrived through the default branch is not refused
+    Given an implement-kind run whose own commits change no spec-root path
+    And the default branch gained a ratified spec revision after the run started
+    When publish_draft refreshes the run onto the default branch and prepares to publish
+    Then no spec-root refusal applies
+
+  Scenario: Spec-root and workflow refusals are reported separately
+    Given an implement-kind run whose change includes a path under the spec root and a file under .github/workflows
+    When publish_draft prepares to publish it
+    Then publish_draft pushes nothing
+    And its needs-human reason names the spec-root path and the workflow file, each under its own refusal
+
+  Scenario: The host-side drift run still files proposed changes
+    Given a Dispatcher reconcile pass whose drift run finds a merge adding behaviour the spec does not state
+    When the drift run files its proposed change
+    Then its proposed change is filed through the propose-change handoff
+    And no publication refusal applies, because the drift run is not a factory run
+
+  Scenario: The stage prompts state the three rules and the spec-tree rule
+    Given the implement, fix and review_fix prompts of the released implement-work-item workflow
+    When each prompt is read
+    Then each states that the stage prompt is the turn's only instruction, that the turn never pushes or publishes, and that commits are ordinary git commits through the repository hooks unless the stage prompt names another mechanism, and that the turn never changes a path under the spec root
+
+  Scenario: An agent stage's publication attempt is refused mechanically
+    Given an agent stage of a run, whichever node it is
+    When its agent runs git push to origin, gh pr create, gh pr ready, gh pr merge, gh pr edit or a merge through gh api
+    Then the action exits non-zero printing LIVESPEC_AGENT_PUBLICATION_DENIED with the stage and the action
+    And nothing reaches origin or the forge
+
+  Scenario: An agent stage holds no credential that can publish
+    Given an agent stage of a run, whichever node it is
+    When its agent searches its environment, files and processes for a forge token or App key and attempts a push or a merge with a raw git command or a direct API request
+    Then it finds no publication-capable credential and no key that mints one
+    And the attempt fails without changing origin or the run's pull request
+
+  Scenario: The broker cannot be steered into publishing
+    Given an agent stage that asks the proof broker to merge, ready or edit the run's pull request, or claims to be the pr stage
+    When the broker handles the request
+    Then the broker refuses it, because it performs only the new comments the stage's contract requires on the run's pull request and proof asset uploads, for the stage the workflow launched
+
+  Scenario: A planted hook cannot publish with a publication stage's credential
+    Given an agent stage that changed the repository's pre-push hook to merge the run's pull request
+    When publish_draft pushes the run's publish branch
+    Then the hook runs without the credential and its merge attempt fails
+    And the pull request is not merged
+
+  Scenario: An agent stage still posts its proof records
+    Given a proof_verify turn of a run
+    When its agent posts a Proof of Done record through the posting primitive and uploads its proof assets through the proof asset store
+    Then the broker posts the record on the run's pull request and uploads the assets
+
+  Scenario: The review stage still posts its findings record
+    Given a review turn of a run
+    When its agent posts its findings record as a comment on the run's pull request
+    Then the broker posts the comment, and the turn's publication actions remain refused
+
+  Scenario: The scripted publication stages still publish
+    Given a run reaching publish_draft, pr_refresh and pr
+    When each stage pushes, opens, readies or arms the run's pull request as specified
+    Then no LIVESPEC_AGENT_PUBLICATION_DENIED refusal is raised
+```
+
+## Scenario 203 — An unpinned dispatch goes to the least-utilized declared factory that has a free scheduler slot
+
+```gherkin
+Feature: Unpinned dispatches overflow to the least-utilized declared factory
+  As a maintainer whose default factory is saturated while a second declared factory sits idle
+  I want an unpinned dispatch to go to whichever declared factory's own scheduler is least utilized and has a free slot
+  So that every seat's ordinary dispatches use the second factory without any seat choosing it by hand
+
+Scenario: The less-utilized overflow factory receives the dispatch
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is ["B"]
+  And factory "A"'s server reports 6 non-terminal runs and a max_concurrent_runs of 10
+  And factory "B"'s server reports 0 non-terminal runs and a max_concurrent_runs of 2
+  And the item carries no recorded factory and no explicit factory is selected
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "B"
+  And the item's dispatch-factory record names factory "B"
+  And one overflow-selection journal record lists "A" with 6 of 10 and "B" with 0 of 2, chosen "B", reason least-utilized-free-slot
+
+Scenario: The less-utilized default factory keeps the dispatch
+  Given the same configuration but factory "A"'s server reports 4 of 10 and factory "B"'s server reports 1 of 2
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A"
+  And the overflow-selection journal record names chosen "A", reason least-utilized-free-slot
+
+Scenario: Equally utilized candidates go to the earlier candidate
+  Given the same configuration but factory "A"'s server reports 5 of 10 and factory "B"'s server reports 1 of 2
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A"
+  And the overflow-selection journal record names chosen "A", reason least-utilized-free-slot
+
+Scenario: With no free slot anywhere the dispatch goes to the default factory and is not refused
+  Given the same configuration but factory "A"'s server reports 10 of 10
+  And factory "B"'s server reports 2 of 2, or its read fails
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A" and queues in "A"'s scheduler
+  And the overflow-selection journal record names chosen "A", reason no-candidate-free-default
+  And when "B"'s read failed, the journal record names the reason "B"'s read failed in place of its counts
+  And the dispatch is neither refused nor deferred
+
+Scenario: A pinned dispatch reads no capacity and journals no selection
+  Given the dispatch is invoked with --factory "A", or LIVESPEC_FABRO_FACTORY names "A", or the item's route is resume and its recorded factory is "A"
+  When the Dispatcher dispatches the item
+  Then the run is submitted to factory "A" without reading either server's run count or max_concurrent_runs
+  And no overflow-selection journal record is written
+
+Scenario: A fresh dispatch ignores the item's recorded factory
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is empty
+  And dispatcher.factories declares factories "A" and "B"
+  And the item's recorded factory is "B" from an earlier run
+  And the item is not released for recovery, as for an item reopened for rework
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item, the drive action impl, or a loop drain
+  Then the admission claim stamp names factory "A"
+  And the run is submitted to factory "A"
+  And the item's dispatch-factory record names factory "A"
+
+Scenario: An explicit resume keeps the item's recorded factory
+  Given the same configuration and the item's recorded factory is "B"
+  And no explicit factory is selected
+  When the Dispatcher resumes the item with resume --item
+  Then the resumed run is submitted to factory "B"
+  And no overflow-selection journal record is written
+
+Scenario: A recovery-routed resume keeps the item's recorded factory
+  Given the same configuration and the item's recorded factory is "B"
+  And the item is released for recovery and recovery routing routes it resume
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item or a loop drain
+  Then the admission claim stamp names factory "B"
+  And the resumed run is submitted to factory "B"
+
+Scenario: A seeded recovery dispatch goes to the default factory
+  Given the same configuration and the item's recorded factory is "B"
+  And the item is released for recovery and recovery routing routes it seeded
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item
+  Then the admission claim stamp names factory "A"
+  And the seeded run is submitted to factory "A"
+
+Scenario: One loop wave carries a resume and a fresh dispatch
+  Given the same configuration
+  And item "R" records factory "B" and recovery routing routes it resume
+  And item "F" records factory "B" and is not released for recovery
+  When one loop wave dispatches both items with no explicit factory
+  Then item "R" is stamped with and submitted to factory "B"
+  And item "F" is stamped with and submitted to factory "A"
+
+Scenario: A fresh dispatch of a previously pinned item takes overflow selection
+  Given dispatcher.default_factory names factory "A" and dispatcher.overflow_factories is ["B"]
+  And the item's recorded factory is "A" from an earlier run
+  And the item is not released for recovery
+  And no explicit factory is selected
+  When the Dispatcher dispatches the item with dispatch --item
+  Then the Dispatcher reads both candidates' run counts and max_concurrent_runs
+  And one overflow-selection journal record is written for the dispatch
+```
+
+## Scenario 204 — An implement turn that reports its work incomplete fails the implement stage
+
+```gherkin
+Feature: An incomplete green turn is not recorded as a success
+  As the maintainer of a repository dispatched to the factory
+  I want a green turn that stops partway to end the implement stage as failed once its budget is spent
+  So that the run does not publish and prove an incomplete change as if it were finished
+
+  Scenario: A green turn that reports partial progress re-enters green while its budget remains
+    Given commit_red has made the Red commit
+    And a green turn whose final output's completion field reports the Definition of Done incomplete
+    And the green node's max_visits is not exhausted
+    When the green node ends
+    Then the run re-enters green instead of failing the implement stage
+    And the re-entered green turn starts a fresh session whose context carries the handoff file with the previous green turn's section
+
+  Scenario: A green turn with no completion field is treated as incomplete and re-enters green
+    Given commit_red has made the Red commit
+    And a green turn whose final output carries no completion field
+    And the green node's max_visits is not exhausted
+    When the green node ends
+    Then the run re-enters green instead of failing the implement stage
+
+  Scenario: An incomplete green turn with its budget exhausted fails as partial progress
+    Given commit_red has made the Red commit
+    And a green turn whose final output's completion field reports the Definition of Done incomplete, or carries no completion field
+    And the green node's max_visits is exhausted
+    When the green node ends
+    Then the stage outcome is failed with a cause naming partial progress
+    And the run takes the implement stage's failure edge, and the dispatch outcome detail carries that cause
+
+  Scenario: A green turn that reports the work complete hands the tree to commit_green
+    Given commit_red has made the Red commit
+    And a green turn whose final output's completion field reports the Definition of Done complete
+    When the green node ends
+    Then the run proceeds to commit_green
+    And no green turn made a commit
+```
+
+## Scenario 205 — Gap detection enumerates headings without an exercising test
+
+```gherkin
+Feature: The gap signal is heading coverage, not clause tracking
+  As a maintainer keeping the spec and its tests in lockstep
+  I want gap detection to name the spec headings no test exercises
+  So that every candidate it surfaces is a real, bounded piece of work
+
+  Scenario: An uncovered heading is a gap and a covered one is not
+    Given a governed spec tree whose heading-coverage map marks one H2 heading TODO and names an existing test for another
+    When detect-impl-gaps runs with --json
+    Then it emits exactly one gap, whose gap-id derives from the uncovered heading's spec file and heading path
+    And the covered heading produces no gap
+    And no MUST or SHOULD clause is enumerated
+
+  Scenario: A heading with no coverage entry at all is a gap with a stable id
+    Given a governed spec tree with one H2 heading that has no entry in the heading-coverage map
+    When detect-impl-gaps runs with --json twice
+    Then each run emits exactly one gap for that heading
+    And both runs emit the same gap-id
+
+  Scenario: An entry naming a test that does not exist is an uncovered heading and a finding
+    Given a heading-coverage entry whose test names a test node that does not exist
+    When detect-impl-gaps runs with --json
+    Then it emits one gap for that heading
+    And surfaces a finding naming the dangling entry, never a clean absence
+
+  Scenario: An incomplete entry is an uncovered heading and a finding, unlike an absent one
+    Given one H2 heading whose identifying coverage entry has no test value
+    And another H2 heading with no coverage entry at all
+    When detect-impl-gaps runs with --json
+    Then it emits one gap for each of the two headings
+    And surfaces a finding naming the incomplete entry and its missing field
+    And surfaces no finding for the heading with no entry
+
+  Scenario: An entry that identifies no heading is a finding and never a gap
+    Given a coverage entry with test TODO and no heading value
+    And a coverage entry naming a heading the live spec tree does not contain
+    When detect-impl-gaps runs with --json
+    Then it surfaces one finding for each of the two entries
+    And neither entry produces a gap or a gap-id
+    And every live H2 heading without an identifying entry is still emitted as a gap
+
+  Scenario: Coverage entries match on spec root, spec file and heading together
+    Given contracts.md and scenarios.md each carry an H2 heading with the same text
+    And the coverage map names an existing test for that heading under scenarios.md only
+    When detect-impl-gaps runs with --json
+    Then it emits one gap, for the contracts.md heading
+    And the scenarios.md heading produces no gap
+
+  Scenario: A filed gap names the heading and the coverage entry to fill
+    Given the uncovered heading above
+    When the user consents to file it through capture-impl-gaps
+    Then the filed item carries the origin:gap-tied label and the heading-derived gap-id label
+    And its title names the heading verbatim and its description names the coverage entry to fill
+
+  Scenario: Clause-derived gap ids are migrated to heading-derived ones
+    Given a live gap-tied item filed under the clause enumeration
+    When the change landing this clause runs its migration
+    Then the item carries the heading-derived gap-id of the heading its clause sits under
+    And no gap-id is carried by more than one live gap-tied work-item
+    And every live gap-tied work-item carries a gap-id that detect-impl-gaps --json emits
+    And a closed item keeps its historical clause-derived label
+```
+
+## Scenario 209 — A provider refusal booked as a successful turn is released, not left for a human
+
+```gherkin
+Feature: A provider refusal delivered as turn text is a failed attempt of its candidate
+  As the maintainer of a repository dispatched to the factory
+  I want a turn that ends with a measured provider refusal to count as that candidate's failure
+  So that a transient provider condition releases the item for re-dispatch instead of losing the run to a human gate
+
+  Scenario: A codex-acp capacity refusal on review releases the item
+    Given a review node attempt on the codex-acp candidate that the engine recorded as succeeded
+    And the attempt's recorded turn output is "I'm reviewing the branch and its latest captured proof against the six stated acceptance assertions. I'll make no changes.Selected model is at capacity. Please try a different model."
+    And the run ended at the needs_human terminal through that attempt's unmatched review outcome edge
+    And no later attempt of any node failed
+    When the Dispatcher reconciles the terminal run
+    Then it records a candidate hold with cause provider_capacity for that codex-acp candidate
+    And it journals one provider-limit-release record whose source is turn.final_output
+    And the item returns to ready with no blocked reason and no needs-human decision
+
+  Scenario: Refusal words that are not the output's tail do not match
+    Given a succeeded agent node attempt whose output contains "Selected model is at capacity. Please try a different model." and then continues with a review verdict
+    When the Dispatcher classifies the attempt
+    Then no turn.final_output signature matches and the attempt remains a success
+
+  Scenario: An output ending with an explicitly marked quotation of the refusal does not match
+    Given a succeeded codex-acp agent node attempt whose output ends with: The adapter reported "Selected model is at capacity. Please try a different model."
+    And another whose output ends with: The adapter reported: Selected model is at capacity. Please try a different model.
+    When the Dispatcher classifies each attempt
+    Then no turn.final_output signature matches either attempt and each remains a success
+
+  Scenario: An unmarked reproduction of the refusal at the end of the output matches
+    Given a succeeded codex-acp review attempt whose output is "Review passed. The adapter diagnostic is reproduced verbatim below. Selected model is at capacity. Please try a different model."
+    And the run reaches its successful exit
+    When the Dispatcher reconciles the run
+    Then the capacity form matches the attempt and it records the candidate hold for that codex-acp candidate
+    And the run keeps its successful outcome and the Dispatcher journals no provider-limit-release record
+
+  Scenario: A later failure keeps its own route
+    Given a codex-acp review attempt reclassified as a failed attempt by the capacity form
+    And a later command node attempt in the same run failed with a test failure that determined the run's terminal
+    When the Dispatcher reconciles the terminal run
+    Then it records the candidate hold for the codex-acp candidate
+    And it journals no provider-limit-release record for the run
+    And the item keeps the test failure's existing route
+
+  Scenario: A reclassified attempt does not retire a hold
+    Given a live candidate hold on the codex-acp candidate
+    And a later attempt on that candidate whose recorded turn output ends with the measured capacity refusal
+    When the Dispatcher evaluates hold retirement
+    Then the hold is not retired by that attempt
+
+  Scenario: The codex-acp form does not match a claude-acp attempt
+    Given a succeeded claude-acp attempt whose recorded turn output ends with "Selected model is at capacity. Please try a different model."
+    When the Dispatcher classifies the attempt
+    Then the built-in codex-acp capacity form does not match it
+```
+
+## Scenario 210 — Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear
+
+```gherkin
+Feature: A ready item still assigned fabro is a stale assignee, not a dispatch claim
+  As a maintainer whose ownership surveys read an item's status and assignee
+  I want reconciliation to clear the fabro assignee a finished claim left behind on a ready item, and its next dispatch to go through recovery routing
+  So that a ready item is not read as both available and owned, its published work is resumed when the resume preconditions pass and otherwise routed by recovery routing, and one that may still be owned is never touched
+
+  Background:
+    Given an item ready with assignee fabro, carrying neither rework:pending nor a merge-hold: label
+
+  Scenario: A stale assignee whose run failed is cleared without a terminal disposition
+    Given its ledger run stamp, which is not pending, names its run id, a declared factory, and this host as the dispatching host
+    And every ownership lock location for the item on this host was read and none is held by a live process
+    And the factory, queried by its declared server target, reports the run terminal and failed
+    When a reconcile-runs pass runs
+    Then the item is ready with no fabro assignee, and its labels and run stamp are unchanged
+    And one stale-assignee-clear journal record names the item, the run id, the factory and the run state failed
+    And one ledger comment on the item names the same facts
+    And no provider-limit-release record, no stranded-claim-release record and no needs-human rest is written
+
+  Scenario: A stale assignee whose run is absent is cleared
+    Given its run stamp names its run and this host, and no live owner is established
+    And the factory positively reports that the run does not exist
+    When a reconcile-runs pass runs
+    Then the item is ready with no fabro assignee
+    And one stale-assignee-clear journal record names the run state absent
+
+  Scenario: A cleared stale assignee whose run published an open pull request resumes it
+    Given its run stamp names its run and this host, and no live owner is established
+    And the factory reports the run terminal and succeeded, and the run's pull request is open
+    And every published-pull-request resume precondition passes for that pull request
+    When a reconcile-runs pass runs and the item is next dispatched
+    Then the pass clears the stale assignee with one stale-assignee-clear record naming the run state succeeded
+    And recovery routing grades the next dispatch and takes the resume route from that pull request rather than a fresh dispatch
+
+  Scenario Outline: A stale assignee that cannot be cleared is held with the reason of its first failing condition
+    Given every condition graded before <reason> in the stale assignee hold order passes
+    And <condition>
+    When a reconcile-runs pass runs
+    Then the item stays ready with assignee fabro and its labels unchanged
+    And the pass lists the item in held with the reason <reason>
+
+    Examples:
+      | condition                                                                       | reason                |
+      | the item carries no readable run stamp                                          | claim-unattributable  |
+      | the item carries a pending stamp with no run id                                 | attribution-pending   |
+      | the run stamp names another host as the dispatching host                        | owner-elsewhere       |
+      | the declared factory cannot be reached                                          | factory-unobservable  |
+      | the claim half observes the run running, blocked or queued                      | run-live              |
+      | the run is terminal and one ownership lock location for the item cannot be read | liveness-unobservable |
+      | the run is terminal and a live process holds the item's ownership lock          | dispatch-live         |
+      | the run failed and the presence of the journal record cannot be read            | effect-unobservable   |
+
+  Scenario: A human move before the assignee write is respected
+    Given its run stamp names its run and this host, and no live owner is established
+    And the factory reports the run terminal and failed
+    And the clearance has written its journal record and ledger comment
+    And a human valve moved the item to backlog before the clearance's final re-read
+    When the clearance reaches the assignee write
+    Then no assignee write is made and the item stays backlog with assignee fabro
+    And the pass lists the item in held with the reason claim-changed
+
+  Scenario: A held stale assignee is still graded by recovery routing
+    Given a stale assignee the pass has listed in held with the reason owner-elsewhere
+    And the run's pull request is open, and the factory cannot be reached when the item is next dispatched
+    When the item is next dispatched
+    Then recovery routing grades the dispatch and routes it held because a measurement cannot be taken
+    And no fresh dispatch is started for the item
+
+  Scenario: A merged pull request is recovered by reconcile-merged from ready
+    Given a ready item, cleared or held as a stale assignee, whose latest dispatch's pull request has merged
+    When the item is next dispatched
+    Then recovery routing holds the dispatch for the merged pull request, naming reconcile-merged as the remedy
+    And reconcile-merged for the item runs its post-merge janitor and, when the janitor is green, moves the item from ready to acceptance
+    And when a guarded precondition of reconcile-merged fails, the item stays ready
+
+  Scenario: A pending-stamp stale assignee is held and admitted as any ready item
+    Given its ledger stamp is a pending stamp with no run id
+    When a reconcile-runs pass runs
+    Then the item stays ready with assignee fabro and the pass lists it in held with the reason attribution-pending
+    And the item is not released for recovery, and its next admission replaces the pending stamp as any admission of a ready item does
+
+  Scenario: An interrupted clearance resumes from its first missing effect
+    Given its run stamp names its run and this host, no live owner is established, and the factory reports the run terminal and failed
+    And a clearance wrote the stale-assignee-clear journal record and stopped before the ledger comment
+    When the next reconcile-runs pass runs
+    Then it writes the ledger comment and then the assignee write
+    And no second stale-assignee-clear journal record is written
+
+  Scenario: A pull request that merges after clearance is recovered by reconcile-merged
+    Given a stale assignee cleared while its run's pull request was open
+    And that pull request merged before the item's next dispatch
+    When the item is next dispatched
+    Then recovery routing holds the dispatch for the merged pull request, naming reconcile-merged as the remedy
+    And reconcile-merged for the item, which is ready with no assignee, runs its post-merge janitor and, when the janitor is green, moves the item from ready to acceptance
+
+  Scenario: A second pass over a cleared stale assignee writes nothing
+    Given a stale assignee that one reconcile-runs pass has already cleared
+    When another reconciliation surface on the same host runs before any new dispatch
+    Then no second stale-assignee-clear record and no second ledger comment is written
+    And the item stays ready with no assignee
+```
+
+## Scenario 206 — The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification
+
+```gherkin
+Feature: New behaviour gets new spec before it is built
+  As the maintainer keeping the implementation and the specification in lockstep
+  I want every feature whose behaviour the spec does not state to wait for its proposal to ratify
+  So that implementation never runs ahead of the specification while bugs and chores keep their leeway
+
+  Scenario: An unstated feature is held and the wall refuses it
+    Given an implement-kind item typed feature whose asked-for behaviour the spec-stated judgement reports unstated
+    When the item is filed
+    Then the verdict, the generalization target and the proposed-change topic it must link are recorded on the item
+    And the item is spec-change tier and is not routed to ready
+    And a dispatch of the item is refused with exit code 5 naming the unratified topic
+
+  Scenario: A bug is routed as today
+    Given an implement-kind item the judgement classifies bug
+    When the item is filed
+    Then it is routed through intake exactly as an item not subject to the tier
+
+  Scenario: Ratification releases the hold without a human valve
+    Given a held spec-change-tier item whose linked topic now has a revision record with decision accept
+    And the judgement re-run against the ratified spec returns stated for its asked-for behaviour
+    And the item's effective admission_policy is auto
+    When the next intake or drain pass reaches the item
+    Then the item is no longer spec-change tier and is routed to ready with no human valve
+
+  Scenario: Ratification releases the hold but leaves a manual admission policy in force
+    Given a held spec-change-tier item whose linked topic now has a revision record with decision modify
+    And the judgement re-run against the ratified spec returns stated for its asked-for behaviour
+    And the item's effective admission_policy is manual
+    When the next intake or drain pass reaches the item
+    Then the spec hold is released and the item rests at pending-approval for the approve valve
+
+  Scenario: A human attests an existing clause and releases a misjudged hold
+    Given a feature held as spec-change tier because the judgement reported its asked-for behaviour unstated
+    And an existing H2 heading of the ratified specification states that behaviour
+    When a human drives release-spec-tier for the item naming that heading
+    Then the hold is released and the item routes as its effective admission policy decides
+    And a durable ledger comment and a dispatch-journal entry each record the actor, the heading, its spec file, the spec version and the clause digest
+    And a later classification of the item, the pre-dispatch wall and the dod_gate node treat the citation as stated while that clause is unchanged
+
+  Scenario: An attested release of a held pending-rework item keeps it active for rework
+    Given an active item carrying rework:pending that is held as spec-change tier by a misjudged verdict, with no live run
+    When a human drives release-spec-tier for the item naming the existing governing heading
+    Then the item stays active with rework:pending and becomes eligible for the rework route without fresh approval
+
+  Scenario: An attested release refuses a heading the specification does not carry
+    Given a held feature
+    When a human drives release-spec-tier naming a heading the ratified specification does not carry
+    Then the valve refuses naming the unresolved heading and the item stays held
+
+  Scenario: An attestation survives an unrelated revision and a rejected proposal, and voids on a changed clause or input
+    Given a feature released by a valid attestation whose linked proposal was rejected
+    When a later revision changes no cited clause and the item's attested input is unchanged
+    Then the item is not held again
+    And when a later revision changes the cited clause, or the item's asked-for behaviour changes, the attestation is void and the item is classified afresh
+
+  Scenario: A rejected or narrowed proposal does not release the hold
+    Given a held spec-change-tier item whose linked topic has a revision record with decision reject
+    When the next drain pass reaches the item
+    Then the item stays held and the refusal names the topic
+
+  Scenario: A follow-up to a ratified change is not held
+    Given an implement-kind item carrying a spec_commitment_hint from a ratified proposal
+    And the judgement reports its asked-for behaviour stated
+    When the item is filed
+    Then it is not spec-change tier
+
+  Scenario: A commitment hint does not exempt unstated behaviour
+    Given an implement-kind item typed feature carrying a spec_commitment_hint from a ratified proposal
+    And the judgement reports part of its asked-for behaviour unstated
+    When the item is filed
+    Then it is spec-change tier and is held for a linked proposal
+
+  Scenario: A classification that cannot run records itself and leaves the backstop
+    Given the classification cannot run for a filed feature
+    When intake routes the item
+    Then the item is routed as it would be without the classification and the did-not-run cause is recorded on it
+    And the dod_gate node refuses the item before implement when the judgement in-run reports the behaviour unstated
+
+  Scenario: A citation that does not govern is remedied with the judgement's heading
+    Given a ready item whose References line names a heading that does not govern its assertions
+    When the pre-admission judgement runs
+    Then the item is held with the governing heading the spec-stated judgement returned as the remedy
+
+  Scenario: A spec revision that leaves the selected clauses unchanged reuses the governing-heading verdict
+    Given an assertion whose governing-heading verdict is recorded with the selected clauses and every clause it names, each with its heading and body
+    And the item is not a held spec-change-tier item awaiting release
+    And neither the assertion, the item's Definition of Done nor the item's comments have changed since the verdict was taken
+    And a new spec revision changes only clauses that the verdict neither selected nor names, and the selection against the new revision returns the same clauses
+    When the governing-heading verdict is needed again
+    Then the recorded verdict is reused and no model is run
+
+  Scenario: A spec revision that changes a selected clause takes the governing-heading verdict again
+    Given an assertion whose governing-heading verdict was taken against a set of selected clauses
+    And a new spec revision changes the body of one of those clauses, or the selection against it returns a different set
+    When the governing-heading verdict is needed again
+    Then the verdict is taken again against the new revision
+
+  Scenario: A spec revision that leaves the judged clauses unchanged reuses the spec-change tier decision
+    Given a feature whose spec-change tier record reads verdict stated and carries the clauses its verdict was judged against and every clause it names, each with its heading and body
+    And the item's asked-for behaviour is unchanged since the record was taken
+    And a new spec revision changes only clauses that the verdict neither selected nor names, and the selection against the new revision returns the same clauses
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused, no model is run, and the item is not held
+
+  Scenario: A spec revision that changes a judged clause takes the spec-change tier decision again
+    Given a feature whose spec-change tier record carries the clauses its verdict was judged against
+    And a new spec revision changes the body of one of those clauses, or the selection against it returns a different set
+    When the item reaches a dispatch path
+    Then the tier decision is taken again against the new revision
+
+  Scenario: The release of a held spec-change-tier item never reuses a verdict across a revision
+    Given a held spec-change-tier item whose linked proposal is ratified in a new revision
+    And the selection against the new revision returns the same clauses as before
+    When the next drain pass decides whether to release the item
+    Then the governing-heading verdict is taken again against the new revision
+
+  Scenario: A held item is relinked to the proposal actually filed for it and released when that proposal ratifies
+    Given a held spec-change-tier item whose linked topic is the stem the Dispatcher derived for it
+    And its proposal was filed under a different topic stem
+    When relink-spec-tier is driven for the item naming the filed stem
+    Then the hold names the filed stem as the topic awaiting ratification
+    And a durable ledger comment on the item records the actor, the previous topic and the replacement topic
+    And once the filed topic's revision record carries decision accept and the re-run judgement returns stated, the next intake or drain pass releases the hold with no human valve
+
+  Scenario: Relinking to an already ratified topic changes only the linked topic
+    Given a held spec-change-tier item resting at pending-approval
+    And a proposal topic whose revision record already carries decision accept
+    When relink-spec-tier is driven for the item naming that topic
+    Then the item still rests at pending-approval and still carries its spec-change-tier hold
+    And no other item's linked topic, status or ledger comments change
+    And the hold is released only when the next intake or drain pass re-runs the judgement and it returns stated
+
+  Scenario: A relinked topic is carried forward by every later tier record
+    Given a held spec-change-tier item whose linked topic was replaced by relink-spec-tier
+    When the item is classified again at groom, on a dispatch path or on an intake or drain pass before its replacement topic ratifies
+    Then the new spec-change tier record carries the replacement topic as its linked topic
+    And the stem derived from the item's title is not recorded again
+    And a dispatch of the item is refused with exit code 5 naming the replacement topic
+
+  Scenario Outline: Relinking is refused and writes nothing
+    Given <item>
+    When relink-spec-tier is driven for the item naming <topic>
+    Then the route refuses naming <reason>
+    And the item's linked topic, status and ledger comments are unchanged
+    And no spec-change tier record and no dispatch-journal entry is appended
+
+    Examples:
+      | item                                          | topic                                                                  | reason                  |
+      | an item that carries no spec-change-tier hold | the stem of a pending proposed change                                  | the item is not held    |
+      | a held spec-change-tier item                  | a stem that propose-change's topic canonicalization would change       | the non-canonical topic |
+      | a held spec-change-tier item                  | a stem with no proposed change under proposed_changes or the history   | the unknown topic       |
+      | a held spec-change-tier item                  | a stem with no pending proposal whose latest revision record is reject | the rejected topic      |
+```
+
+## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
+
+```gherkin
+Feature: Implementation that outruns the specification is caught at every merge
+  As the maintainer keeping the specification honest against the implementation
+  I want every default-branch merge judged against the ratified spec and its unstated behaviour proposed
+  So that the feedback loop turns without a session and without a human accepting anything by machine
+
+  Scenario: A merge adding unstated behaviour files one proposal and advances the frontier
+    Given a recorded drift frontier and one later default-branch merge whose diff adds a behaviour the spec-stated judgement reports unstated
+    When the drift job runs
+    Then one proposed change with a drift origin is filed naming the generalization target
+    And a completed drift coverage record names that merge as the frontier
+
+  Scenario: A failed merge stops the frontier under a later success
+    Given two merges after the frontier where the pass over the first fails and the pass over the second succeeds
+    When the drift job runs
+    Then the frontier does not advance past the first merge
+    And an attempt record names the failed merge
+    And the drift-staleness fact still names both merges
+
+  Scenario: A retried pass files no duplicate
+    Given a merge whose finding was already filed under its finding identity
+    When the drift job processes the merge again
+    Then no second proposed change is filed for that finding
+
+  Scenario: Findings beyond the queue cap are held, not filed
+    Given dispatcher.drift_proposal_queue_cap open drift-origin proposals
+    When a merge adds another unstated behaviour
+    Then the finding is held on the detection-coverage anchor with its identity
+    And the frontier does not advance past that merge
+    And needs-attention lists the held finding with a handoff naming revise
+
+  Scenario: A merge no janitor saw is processed
+    Given a spec pull request merged by hand after the frontier
+    When the next drift job runs
+    Then that merge is processed exactly as a dispatched merge
+
+  Scenario: The pass never accepts a proposal
+    Given a drift-origin proposed change filed by the pass
+    When the pass completes
+    Then the proposal rests under proposed_changes on the run's pull request for revise and the pass takes no decision on it
+
+  Scenario: A reconcile pass runs no drift pass
+    Given default-branch merges after the recorded drift frontier
+    When a reconcile pass runs
+    Then no drift pass runs and no model judgement is invoked
+    And the drift frontier and the detection-coverage anchor are unchanged
+
+  Scenario: The drift-run subcommand is the drift job, and a dry run writes nothing
+    Given default-branch merges after the recorded drift frontier
+    When dispatcher.py drift-run --json runs
+    Then the drift pass runs over those merges and stdout carries the drift lane outcome as one JSON object
+    When dispatcher.py drift-run --dry-run runs instead
+    Then no drift pass runs and no model judgement is invoked
+    And the drift frontier and the detection-coverage anchor are unchanged
+
+  Scenario: A filed proposal reaches the default branch only through a pull request
+    Given one default-branch merge after the frontier whose diff adds a behaviour the spec-stated judgement reports unstated
+    When dispatcher.py drift-run runs against the repository's primary checkout
+    Then one pull request on a spec branch carries the drift-origin proposal
+    And git status --short in the primary checkout reports no file under SPECIFICATION/proposed_changes/
+
+  Scenario: A retried run files no second pull request for an open or merged finding
+    Given a drift-origin proposal whose pull request is open or merged under its finding identity
+    When the drift job processes the merge again
+    Then no second pull request is opened for that finding
+    And the open drift-run pull request's proposals count toward dispatcher.drift_proposal_queue_cap
+
+  Scenario: A merge already judged against the same spec revision is not judged again
+    Given a merge after the frontier that a drift-job run judged against ratified spec revision vN
+    And the frontier is stopped behind an earlier merge
+    When the drift job runs again while vN is still the newest ratified revision
+    Then that merge's recorded verdict is reused and no model judgement is invoked for it
+    When a newer ratified revision exists and the drift job runs
+    Then that merge is judged again against the newer revision
+
+  Scenario: Several merges share one rendering of the spec tree
+    Given three merges after the frontier whose combined content fits the judgement's input limit
+    When the drift job runs
+    Then the ratified spec tree is rendered into one judge prompt for all three merges
+    And one proposed change is filed per unstated behaviour per merge under its usual finding identity
+    And the outcome reports one prompt sent
+
+  Scenario: Merges whose content exceeds the input limit are split across the fewest prompts that fit
+    Given merges after the frontier whose combined content with the ratified spec tree exceeds the judgement's input limit
+    And those merges fit within two prompts but not within one
+    When the drift job runs
+    Then the merges are judged across exactly two judge prompts
+    And the outcome reports two prompts sent
+    And one proposed change is filed per unstated behaviour per merge under its usual finding identity
+```
+
+## Scenario 212 — The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing
+
+```gherkin
+Feature: Read-only sandbox image enumeration
+  As the operator of a docker factory host's image-warm timer
+  I want the sandbox image sources of every dispatch without an explicit workflow path, across the defined repositories and builds
+  So that the host holds each tag before the first run that needs it
+  Scenario: A factory with a catalog environment reports the environment, not an image
+    Given a repository whose dispatcher.factories entry for factory F declares a catalog environment E
+    When dispatcher.py sandbox-images --factory F --repo <that repository> --json runs
+    Then it prints one entry for that repository with source catalog_environment and environment E
+    And that entry carries no image of its own
+  Scenario: The configured-image resolver wins over every workflow pin, environment first
+    Given a repository R with no catalog environment for factory F that sets dispatcher.fabro_sandbox_image to I and commits its own implement-work-item workflow.toml
+    And LIVESPEC_FABRO_SANDBOX_IMAGE is J in the command's environment
+    When the command runs for factory F and R
+    Then it calls the same configured-image resolver a dispatch calls
+    And it prints one entry for R with image J and source dispatcher.fabro_sandbox_image
+  Scenario: Each declared named variant and the reserved workflow are reported
+    Given a repository R with neither a catalog environment nor a configured image that declares named variants V1 and V2 under dispatcher.workflows
+    And R commits its own implement-work-item workflow.toml pinning image J
+    When the command runs for factory F and R
+    Then it calls the same workflow resolver a dispatch calls
+    And it prints one named_variant entry for V1 and one for V2, each with that variant's docker pin and the path of its workflow.toml
+    And it prints one committed_run_config entry with image J and the path of that workflow.toml
+  Scenario: Executing builds form a host-wide deduplicated union
+    Given a repository R with neither a configured image, its own workflow nor named variants, whose registered build is B1
+    And B1 has only a stale lease
+    And a live session for another repository holds a lease on B2
+    And a running Dispatcher executes B3 without a live lease
+    And another running Dispatcher executes B2
+    And B4 has only a stale lease and no other inclusion route
+    When the command runs for factory F and R
+    Then it reports exactly one bundled_run_config entry each for B1, B2 and B3, each with that build's bundled docker pin
+    And it reports none for B4
+    And each entry names R, its build identity and its workflow path
+  Scenario: Default discovery uses this plugin's project registrations
+    Given this plugin has install records with projectPath roots R1 and R2
+    And another plugin alone is registered for R3
+    When the command runs without --repo
+    Then it enumerates exactly R1 and R2
+  Scenario: Explicit repositories replace registry discovery
+    Given this plugin is registered for R1 and R2
+    When the command runs with --repo R3 --repo R4
+    Then it enumerates exactly R3 and R4
+  Scenario: An undeclared factory is a successful report
+    Given repository R does not declare factory F, F is not R's resolved fleet default, and F has no recorded-target standing for R
+    When the command runs for F and R
+    Then it reports source factory_undeclared naming R with no image
+    And it exits zero
+  Scenario: JSON output contains every repository-labelled entry
+    Given multiple repositories produce multiple entries including an unreadable entry
+    When the command runs with --json
+    Then stdout is one JSON array containing every entry as an object
+    And every object names its repository
+  Scenario Outline: Unreadable dependencies do not truncate enumeration
+    Given an entry depends on a <source> that <failure>
+    And other entries have readable dependencies
+    When the command runs
+    Then it reports source unreadable naming the failed path and repository
+    And it reports every other entry
+    And it exits non-zero
+
+    Examples:
+      | source                  | failure          |
+      | .livespec.jsonc         | cannot be read   |
+      | .livespec.jsonc         | cannot be parsed |
+      | named variant workflow  | cannot be read   |
+      | committed workflow      | cannot be parsed |
+      | bundled workflow        | cannot be read   |
+      | bundled workflow        | cannot be parsed |
+  Scenario: The command changes nothing
+    Given any repositories and factory F
+    When the command runs
+    Then no ledger record, dispatch-journal row or Fabro run is created
+    And no image is pulled, built or tagged
+    And no file is created, modified or deleted, including any lease file
+```
+
+## Scenario 227 — Fabro event reads are bounded in size, retries and concurrency
+
+```gherkin
+Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
+  As an operator of a shared factory
+  I want every events read bounded
+  So that a long run's slow event log does not draw continuous re-reads
+
+  Scenario Outline: Later reads are bounded for every caller
+    Given <caller> has already read a run's events
+    When that Dispatcher process reads the run again
+    Then the read is bounded to events after the newest observed instant or to a bounded tail
+
+    Examples:
+      | caller                |
+      | progress watchdog     |
+      | review-gate reader    |
+      | cost reader           |
+
+  Scenario: Bounded samples preserve established liveness state
+    Given the watchdog has established a run's progress instant
+    And a command node started before the read boundary and has not completed
+    When a successful bounded read contains no newer progress or command-node transition
+    Then the sample retains the established progress instant
+    And it still reports that command node as open
+    And an older event instant does not mask a newer heartbeat instant
+
+  Scenario: A completion updates carried command-node state
+    Given an earlier sample established an open command node
+    When a successful bounded read contains that node's completion and no new command-node start
+    Then the sample no longer reports that command node as open
+
+  Scenario: Watchdog sample cost is independent of total event count
+    Given two runs with the same bounded observation data and established liveness state
+    And one run has a larger historical event log
+    When the watchdog samples each run
+    Then the sample cost does not grow with the larger total event count
+
+  Scenario Outline: Failed reads are journaled and remain unobservable
+    Given a fabro events read <failure>
+    When the Dispatcher handles the result
+    Then it journals exactly one fabro-events-read-failed record
+    And the record names the work-item, run id, factory, reading caller, elapsed seconds, consecutive attempt number and next-read backoff
+    And that caller does not read that run again before the backoff expires
+    And the failure is an unobservable sample
+    And the failure is not evidence of disappearance or lack of progress
+
+    Examples:
+      | failure             |
+      | times out           |
+      | exits non-zero      |
+      | returns zero bytes  |
+
+  Scenario: Consecutive failures increase backoff and success resets it
+    Given a caller's first failed read of a run
+    When further consecutive reads by that caller fail
+    Then the first backoff is at least 60 seconds
+    And each subsequent backoff is at least twice the preceding backoff
+    And the consecutive attempt number increases on each failure
+    When a read succeeds and the following read fails
+    Then the new failure has consecutive attempt number 1
+    And its backoff is at least 60 seconds
+
+  Scenario: No reconciliation surface replays the retired ACP projection
+    Given a dispatch journal holding acp-projection-failure records for a run
+    When the loop tick, the dispatch preamble or the standalone reconcile-runs sweep reconciles that run's factory
+    Then it issues no fabro events read of that run to project agent.acp.failover events
+    And the existing acp-projection-failure records still parse
+
+  Scenario: A reconcile pass deduplicates reads of one run
+    Given multiple reconciliation paths require events from the same run
+    When one reconcile-runs pass executes
+    Then it issues at most one fabro events read for that run
+
+  Scenario Outline: A dispatch pass parses the dispatch journal once however long the run history is
+    Given a dispatch journal holding records for <earlier> earlier runs on the target factory
+    And the pre-launch readers for hold evidence, availability confirmation, selection replay, cost sequence and session-headroom baseline each consult the journal
+    When one dispatch pass runs from the start of the item's dispatch to its fabro run submission
+    Then the dispatch journal is read and parsed exactly once in that pass
+    And every one of those readers receives the same parsed snapshot
+
+    Examples:
+      | earlier |
+      | 1       |
+      | 50      |
+
+  Scenario: A dispatch pass inspects each factory run at most once
+    Given the target factory holds three earlier runs that the hold-evidence, availability-confirmation and selection-replay readers each need
+    When one dispatch pass evaluates those readers before submitting fabro run
+    Then exactly one fabro inspect is issued for each of the three runs
+    And each reader receives that run's single inspect result
+
+  Scenario: Records the pass appends are visible without re-reading the journal
+    Given a dispatch pass that journals a session-headroom assessment before a later reader consults the journal
+    When the later reader consults the journal in the same pass
+    Then it sees the appended assessment
+    And the dispatch journal file is still read only once in that pass
+
+  Scenario: A failed inspect is not reissued within the pass
+    Given a fabro inspect of an earlier run fails during a dispatch pass
+    When two further readers in the same pass need that run's state
+    Then no second fabro inspect of that run is issued in the pass
+    And each of those readers treats the run as unobservable under its own existing rule
+
+  Scenario: Each loop pass reads afresh
+    Given dispatcher.py loop dispatches two work-items in succession
+    When the second item's dispatch pass starts
+    Then it reads the dispatch journal once for itself rather than reusing the first pass's snapshot
+    And it issues its own fabro inspect for each run it needs rather than reusing the first pass's results
+
+  Scenario: Concurrent reads are capped across processes on one host
+    Given two fabro events reads against one factory are already in flight from different Dispatcher processes on this host
+    When another Dispatcher process needs to read a run on that factory
+    Then it does not start a third concurrent read
+    And if it cannot start within its caller's timeout it is handled as a failed events read
+    And that failure is journaled and backed off under the failed-read rules
+```
+
+## Scenario 228 — The credential freshness requirement is the smaller of the execution allowance and the bounded credential-use window
+
+```gherkin
+Feature: A proof-loop edge cannot price a fresh credential out of dispatch
+  As an operator of a factory that routes nodes to Codex
+  I want the freshness requirement bounded by limits the factory enforces
+  So that a ratified graph change does not refuse every Codex dispatch
+
+  Scenario: The bounded window governs when it is smaller
+    Given the resolved workflow's execution allowance is 902955 seconds
+    And dispatcher.credential_queue_allowance_seconds resolves to 86400 and the whole-run wall budget to 21600
+    And the documented margin is 3600 seconds
+    When codex-cred-status reports the requirement
+    Then the required lifetime is 111600 seconds, naming the bounded credential-use window as the governing figure
+    And a credential with 864000 seconds of remaining life passes the freshness gate and the dispatch creates a run
+
+  Scenario: The worker deadline uses the same figure
+    Given a dispatch whose governing figure is 108000 seconds
+    When the credential is projected at instant P
+    Then the worker's credential-use deadline is P plus 108000 seconds
+    And a coding agent still running at that deadline is stopped
+
+  Scenario: A long queue is refused at agent launch and rests for resume
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds
+    And the run is first launched more than 108000 seconds after projection
+    When the first coding-agent node launches
+    Then the launch is refused naming the credential-use deadline
+    And the dispatch journal carries one credential-use-deadline-reached record with cause queue-exceeded
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+
+  Scenario: A queue between the allowance and the deadline is refused before any turn starts
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds, projected at instant P
+    And the run's first coding-agent launch is at P plus 90000 seconds, so 18000 seconds remain before the deadline
+    When the start check runs
+    Then it refuses the launch because 18000 seconds is less than the 21600-second budget, naming the deadline, the remaining time and the budget
+    And no coding-agent turn starts, so no agent is stopped in the middle of a turn
+    And the dispatch journal carries one credential-use-deadline-reached record with cause queue-exceeded
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+
+  Scenario: A run whose wall budget is held past it ends at the guard deadline with its work preserved
+    Given a dispatch whose governing figure is 108000 seconds, projected at instant P
+    And the run has published a draft pull request with head H
+    And the run's whole-run wall budget is unmeasured, so the watchdog does not cancel it
+    And the run is executing proof_capture immediately after its completed publish_draft
+    And no proof record on the pull request carries this dispatch's identifier
+    And the pull request's current head is H
+    When a coding agent is still running at P plus 108000 seconds
+    Then the guard stops the agent at that deadline
+    And the pointer names the pull request and head H
+    And the dispatch journal carries one credential-use-deadline-reached record with cause killed-mid-node
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+    And resume --item is anchored on that record
+
+  Scenario: The status surface shows queue time consumed
+    Given a dispatch in flight whose credential queue allowance is 86400 seconds
+    And its first agent launched 3600 seconds after projection
+    When codex-cred-status is read
+    Then it reports 3600 seconds of queue time consumed against the 86400-second allowance
+
+  Scenario Outline: Invalid queue allowances are rejected before submission
+    Given dispatcher.credential_queue_allowance_seconds is <value>
+    When dispatch admission resolves its configuration
+    Then admission rejects the value naming dispatcher.credential_queue_allowance_seconds
+    And no run exists
+
+    Examples:
+      | value |
+      | 0     |
+      | -1    |
+      | 1.5   |
+      | "bad" |
+
+  Scenario Outline: Reporting uses the execution allowance when it is smaller
+    Given the execution allowance is 60000 seconds
+    And the credential queue allowance is 86400 seconds and the wall budget is 21600 seconds
+    And the documented margin is 3600 seconds
+    And the first agent launched 3600 seconds after projection
+    When <surface> reports this dispatch in flight
+    Then it reports a governing budget of 60000 seconds and required lifetime of 63600 seconds
+    And it names the execution allowance as governing
+    And it reports 3600 seconds consumed against the 86400-second queue allowance
+
+    Examples:
+      | surface           |
+      | codex-cred-status |
+      | manual-renewal    |
+
+  Scenario: Credential lifetime is checked independently of queue capacity
+    Given the first launch has at least the whole-run wall budget remaining before the deadline
+    And the projected credential's remaining lifetime fails the freshness requirement
+    When the start check runs
+    Then it refuses the launch for insufficient credential lifetime
+    And no coding-agent turn starts
+
+  Scenario: A later launch at the deadline receives the deadline disposition
+    Given the run has already launched a coding agent successfully
+    When a later coding-agent launch is attempted at the credential-use deadline
+    Then the launch is refused
+    And the dispatch journal carries one credential-use-deadline-reached record with cause launch-refused
+    And before termination the Dispatcher exports the run record and writes and reads back the preserve-by-reference pointer
+    And exactly one credential-use-deadline-reached record names the run id, factory, node, projection instant, deadline, queue time consumed, governing figure, pointer and cause
+    And the item rests at blocked with blocked_reason needs-human
+    And its ledger comment names the run, node, deadline, cause and pointer
+    And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
+```
+
+## Scenario 229 — A non-overlapping refresh after one re-proof carries the proof forward
+
+```gherkin
+Feature: A run stops chasing an advancing default branch once it has re-proved
+  As the maintainer of a repository dispatched to the factory
+  I want a re-proved run to keep its proof across a clean refresh that cannot touch what it proved
+  So that a run is not sent round capture, review and replay for every base advance
+
+  Scenario: A second clean refresh with non-inert, non-overlapping paths carries forward
+    Given a run that re-proved after one changed-head pr_refresh, with verified record R on head V
+    And the default branch advanced again with a commit that changes a Python module that is neither an item path nor in R's observation scope
+    And every reproduction step in R is inside the direct-read grammar
+    And every observation-scope path and item path has the same blob identity at V and N, or is absent at both
+    And every working-tree read operand has a read identity in R matching its bytes at N
+    And mechanical replay at N reproduces every step's single captured proof block byte for byte
+    When pr_refresh rebases the branch cleanly, the gate passes and the leased push yields head N with an unchanged patch identity
+    Then the pull request carries one carried_forward record naming V and N that says the incoming paths were not all inert and that the run's one re-proof covered them
+    And the run proceeds from pr_refresh to pr without visiting proof_capture
+
+  Scenario: An overlapping refresh still re-proves
+    Given a run that re-proved after one changed-head pr_refresh
+    And the default branch advanced with a commit that changes a path in the verified record's observation scope
+    When pr_refresh rebases the branch cleanly and pushes head N
+    Then the pull request carries one reproof_required record naming that path
+    And the run enters proof_capture for head N
+```
+
+## Scenario 232 — needs-attention surfaces an item labelled approval:workflow-edit
+
+```gherkin
+Feature: The workflow-edit approval label is the maintainer's notice
+  As the maintainer authorizing an edit to .github/workflows/
+  I want every open item carrying approval:workflow-edit to appear in needs-attention
+  So that the advisory workflow-edit control has a surface where it is noticed
+
+  Scenario: An open labelled item is surfaced
+    Given an open work-item carrying the approval:workflow-edit label
+    When the needs-attention snapshot is composed
+    Then it carries hygiene:workflow-edit-approval:<work-item-id> naming the item, its status and its title
+    And its handoff opens the item for review
+
+  Scenario: A closed or unlabelled item is not surfaced
+    Given a closed work-item carrying the label and an open work-item without it
+    When the needs-attention snapshot is composed
+    Then neither item yields a workflow-edit-approval fact
+```
+
+## Scenario 230 — An item whose input exists only on the host is host-routed
+
+```gherkin
+Feature: Host-only input is an honest factory_safety reason
+  As an operator filing work whose authoritative input lives only on the host
+  I want a factory_safety reason that says so
+  So that the item is host-routed instead of dispatched into a sandbox that cannot read its input
+
+  Scenario: needs-host-only-input host-routes the item
+    Given a ready work-item whose authoritative input is a non-secret review verdict held only in a gitignored host file
+    And that input cannot be committed to the repository or fetched into the sandbox
+    When the operator invokes set-factory-safety:<work-item-id>:needs-host-only-input
+    Then the item's factory_safety is needs-host-only-input and its lifecycle status is unchanged
+    And the Dispatcher refuses to dispatch it to a factory and names the reason
+```
+
+## Scenario 233 — A node routed to a different adapter does not inherit the replaced adapter's env
+
+```gherkin
+Feature: A cross-adapter override renders one model
+  As an operator reading which model a factory node ran
+  I want a node routed to a different adapter to carry only that adapter's env
+  So that the rendered adapter names exactly one model
+
+  Scenario: A changed command discards the inherited env
+    Given a node whose workflow default renders the claude-acp command with ANTHROPIC_MODEL in its env
+    And dispatcher.acp_nodes sets that node to the codex-acp command with its own env
+    When the Dispatcher resolves the node's adapter
+    Then the rendered adapter carries no ANTHROPIC_MODEL and names only the Codex model
+
+  Scenario: An override that keeps the command still merges env
+    Given a node whose workflow default renders the claude-acp command with ANTHROPIC_MODEL and CLAUDE_CODE_EFFORT_LEVEL in its env
+    And dispatcher.acp_nodes sets only ANTHROPIC_MODEL for that node and no command
+    When the Dispatcher resolves the node's adapter
+    Then the rendered adapter carries the override's ANTHROPIC_MODEL and the inherited CLAUDE_CODE_EFFORT_LEVEL
+
+  Scenario: A changed command for the same adapter restates its env
+    Given a node whose workflow default renders the claude-acp command with CLAUDE_CODE_EFFORT_LEVEL in its env
+    And dispatcher.acp_nodes sets that node to a differently pinned claude-acp command with only ANTHROPIC_MODEL in its env
+    When the Dispatcher resolves the node's adapter
+    Then the rendered adapter carries ANTHROPIC_MODEL and no inherited CLAUDE_CODE_EFFORT_LEVEL
+```
+
+## Scenario 234 — A stalled run whose sandbox was OOM-killed names the kill and the memory limit
+
+```gherkin
+Feature: Memory exhaustion is named, not hidden behind a stall
+  As an operator triaging a stalled factory run
+  I want the dispatch to say when the factory reported the sandbox OOM-killed
+  So that I fix the memory limit instead of investigating the work
+
+  Scenario: A reported OOM kill is named on the stalled outcome
+    Given a dispatched run whose sandbox container the factory reports OOM-killed with a memory limit
+    When the progress watchdog cancels the run as stalled-no-progress
+    Then the watchdog-stall-cancel record, the dispatch result and the item's ledger comment name the OOM kill, the run id and the memory limit
+    And the item is not bounced to backlog and no non-convergence observation is recorded
+
+  Scenario: An unreported memory limit is recorded as unobservable
+    Given a dispatched run whose sandbox the factory reports OOM-killed without a memory limit
+    When the progress watchdog cancels the run as stalled-no-progress
+    Then the watchdog-stall-cancel record names the OOM kill and records the memory limit as unobservable
+
+  Scenario: No OOM kill is inferred when the factory reports none
+    Given a dispatched run that stalls and whose factory reports no OOM kill
+    When the progress watchdog cancels the run as stalled-no-progress
+    Then no record, result or comment names an OOM kill
+```
+
+## Scenario 231 — Admission skips a Claude candidate whose seven-day allowance is exhausted
+
+```gherkin
+Feature: A weekly-exhausted account is never dispatched into a refusal
+  As an operator running Claude-routed factory nodes
+  I want admission to read the seven-day allowance beside the five-hour one
+  So that a run is not launched on an account the provider will refuse
+
+  Scenario: A seven-day exhaustion skips the candidate
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered claude-acp candidate whose five-hour remaining headroom is above the floor
+    And the same provider response reports the seven-day status as rejected
+    When admission assesses the candidate
+    Then the candidate is skipped by a seven-day skip and per-node selection continues to the next eligible candidate
+    And the journal records the seven-day utilization and status beside the five-hour figures
+
+  Scenario: A warning or absent seven-day reading skips nothing
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered claude-acp candidate whose five-hour remaining headroom is above the floor
+    And the provider response reports the seven-day status as a warning, or carries no seven-day reading
+    When admission assesses the candidate
+    Then the candidate is not skipped by a seven-day skip
+    And the journal records the seven-day reading, or records it as unobservable when it is absent
+
+  Scenario: A floor of 0 disables the seven-day skip
+    Given dispatcher.session_headroom_floor_percent is 0
+    And the provider response reports the seven-day status as rejected for a covered candidate
+    When admission assesses the candidate
+    Then no seven-day skip applies and the reading is still journaled
+```
+
+## Scenario 243 — Admission skips a Codex candidate whose usage window is short of headroom
+
+```gherkin
+Feature: A Codex-primary chain falls back before a run meets the Codex limit
+  As an operator running Codex-routed factory nodes
+  I want admission to read the Codex usage window before it selects a candidate
+  So that a run is not launched on a Codex account the provider is about to refuse
+
+  Scenario: A Codex window below the floor selects the fallback
+    Given dispatcher.session_headroom_floor_percent is 20
+    And an admission-required node whose primary is a covered codex-acp candidate and whose fallback is an eligible claude-acp candidate
+    And the Codex usage read reports a primary window used_percent of 85
+    When admission assesses the node
+    Then the codex-acp candidate is skipped by a floor skip naming provider codex
+    And per-node selection selects the claude-acp fallback
+
+  Scenario: A limit-reached Codex account is skipped even with credits
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports rate_limit.limit_reached true and a positive credit balance
+    When admission assesses the candidate
+    Then the candidate is skipped by a Codex limit skip
+    And the journal carries a not-projected result with reason codex-limit
+
+  Scenario: A not-allowed Codex account is skipped
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports rate_limit.allowed false, rate_limit.limit_reached false, and a primary window used_percent of 10
+    When admission assesses the candidate
+    Then the candidate is skipped by a Codex limit skip
+    And the journal carries a not-projected result with reason codex-limit
+
+  Scenario: A malformed window makes the whole reading unobservable
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a valid primary window used_percent of 10 and a secondary window whose used_percent is not a number
+    When admission assesses the candidate
+    Then the candidate is skipped by a floor skip on an unobservable reading
+    And the valid primary window is not used to admit it
+
+  Scenario: A projected Codex exhaustion inside the horizon is skipped
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_horizon_minutes is 180
+    And a covered codex-acp candidate whose primary window passes the floor
+    And an in-window baseline assessment of the same credential and window length whose drain rate projects exhaustion within 180 minutes
+    When admission assesses the candidate
+    Then the candidate is skipped by a projection skip and the journal carries the projection for that window
+
+  Scenario: A secondary window's projection governs when the primary window is healthy
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_horizon_minutes is 180
+    And a covered codex-acp candidate whose usage read reports a primary window and a secondary window of different lengths, both above the floor
+    And in-window baselines of the same credential for each window length, where only the secondary window's drain rate projects exhaustion within 180 minutes
+    When admission assesses the candidate
+    Then the candidate is skipped by a projection skip naming the secondary window
+
+  Scenario: A baseline of one window length is never used for another
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_horizon_minutes is 180
+    And a covered codex-acp candidate whose current reading has only a primary window above the floor
+    And the only in-window baseline of the same credential was recorded for a window of a different length
+    When admission assesses the candidate
+    Then the projection for the primary window is unavailable with its reason and the candidate is not skipped by a projection skip
+
+  Scenario: An unobservable Codex reading is skipped and journaled
+    Given dispatcher.session_headroom_floor_percent is 20
+    And the Codex usage read for a covered codex-acp candidate times out
+    When admission assesses the candidate
+    Then the candidate is skipped by a floor skip on an unobservable reading
+    And the journal records the reading as unobservable rather than as a number
+
+  Scenario: A floor of 0 disables every Codex headroom skip
+    Given dispatcher.session_headroom_floor_percent is 0
+    And the Codex usage read reports rate_limit.limit_reached true for a covered candidate
+    When admission assesses the candidate
+    Then no Codex headroom skip applies and the reading is still journaled
+
+  Scenario: A Codex window within 12 hours of its reset is assessed against a floor of 5
+    Given dispatcher.session_headroom_floor_percent is 20
+    And an admission-required node whose primary is a covered codex-acp candidate and whose fallback is an eligible claude-acp candidate
+    And the Codex usage read reports a primary window used_percent of 90 whose reset_at is 11 hours after the observation time
+    When admission assesses the node
+    Then the primary window's effective floor is 5 and is journaled as relaxed by reset proximity
+    And the codex-acp candidate is not skipped by a floor skip
+
+  Scenario: A Codex window more than 12 hours from its reset keeps the committed floor
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 90 whose reset_at is 13 hours after the observation time
+    When admission assesses the candidate
+    Then the primary window's effective floor is 20 and is journaled as not relaxed
+    And the candidate is skipped by a floor skip naming provider codex
+
+  Scenario: A Codex window exactly 12 hours from its reset is relaxed
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 90 whose reset_at is exactly 43200 seconds after the observation time
+    When admission assesses the candidate
+    Then the primary window's effective floor is 5
+    And the candidate is not skipped by a floor skip
+
+  Scenario: A relaxed Codex window still refuses below 5 percent, and the Claude floor is unchanged
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a primary window used_percent of 96 whose reset_at is 2 hours after the observation time
+    And a covered claude-acp candidate whose Claude session headroom reading is 15 percent remaining
+    When admission assesses both candidates
+    Then the codex-acp candidate is skipped by a floor skip against an effective floor of 5
+    And the claude-acp candidate is skipped by a floor skip against the committed floor of 20
+
+  Scenario: A Codex window with no usable reset_at keeps the committed floor
+    Given dispatcher.session_headroom_floor_percent is 20
+    And a covered codex-acp candidate whose usage read reports a valid primary window used_percent of 90 with no reset_at
+    When admission assesses the candidate
+    Then the reading is valid and the primary window's reset_at is journaled as absent
+    And the candidate is skipped by a floor skip against the committed floor of 20
+```
+
+## Scenario 215 — A tracks edge links a record to its epic on every surface
+
+```gherkin
+Feature: Epic linkage reads the same on every surface
+  As an operator reading an epic's children
+  I want every surface to agree on which records belong to it
+  So that a linkage mechanism one surface models never vanishes from another
+
+  Scenario: A tracks-linked record is a child everywhere
+    Given a record linked to an epic only by a tracks dependency edge
+    When the epic is read through list-work-items --json, context and the plan child enumeration
+    Then list-work-items reports the epic as the record's parent
+    And context and the plan child enumeration both list the record among the epic's children
+
+  Scenario: A tracks-linked child closed inside the window is attributed to its plan
+    Given an open live plan epic and a record linked to it only by a tracks dependency edge
+    And the record was closed inside the plan-progress observation window
+    When the no-result-window fact is evaluated for that window
+    Then the record's closure counts as a new closed child of the plan in that window
+```
+
+## Scenario 216 — The read projections publish a plan epic's identity keys
+
+```gherkin
+Feature: A plan roster can be built from the read surfaces alone
+  As a consumer that never derives plan facts locally
+  I want the read projections to carry a plan epic's identity keys
+  So that a plan record renders without reading raw metadata
+
+  Scenario: An epic carries its plan keys and other records carry nulls
+    Given a plan epic carrying plan_slug, next_action and last_session, and one non-epic work-item
+    When list-work-items --json runs
+    Then the epic's record carries all three keys with their stored values
+    And the non-epic record carries null for all three
+
+  Scenario: The context envelope carries last_session
+    Given the same plan epic
+    When context runs for its plan_slug with --json
+    Then the envelope carries last_session beside next_action
+```
+
+## Scenario 213 — The plan timeline reports the record kinds it does not return
+
+```gherkin
+Feature: A narrow timeline reader never manufactures an absence
+  As a session verifying that a plan record was written
+  I want the timeline to say which record kinds it left out
+  So that an omitted kind is never mistaken for a lost write
+
+  Scenario: Skipped record kinds are counted
+    Given a plan epic holding handoff entries, scope events and two plan-child-disposition comments
+    When the timeline is read
+    Then the handoff entries and scope events are returned oldest first, each labelled with its kind
+    And the result reports plan-child-disposition with a count of 2
+
+  Scenario: An epic holding only returned kinds reports no omissions
+    Given a plan epic holding only handoff entries and scope events
+    When the timeline is read
+    Then the result reports no omitted record kinds
+```
+
+## Scenario 214 — A plan resume returns the epic's rulings beside the typed next action
+
+```gherkin
+Feature: A resuming session reads the binding rulings before it acts
+  As the maintainer whose rulings are recorded as scope events
+  I want every resume to return them with the next action
+  So that a session cannot act on the pointer while a ruling it never read binds it
+
+  Scenario: Rulings are returned oldest first
+    Given a plan epic carrying two maintainer-ruling scope events and one carrier-map event
+    When resume_directive runs
+    Then it returns the two ruling scope events oldest first beside the typed next_action
+    And it does not return the carrier-map event among them
+
+  Scenario: An epic without rulings resumes as before
+    Given a plan epic carrying no scope event other than carrier-map events
+    When resume_directive runs
+    Then it returns an empty rulings list
+    And its ask, next_action and reason are the same as they would be without the rulings list
+```
+
+## Scenario 217 — A host-routed item's factory_captured assertion is an advisory finding
+
+```gherkin
+Feature: A host-routed item never carries a proof mode it can never satisfy
+  As an operator filing work that only a host can run
+  I want the wall to flag a factory_captured assertion on it
+  So that the item does not park at acceptance waiting for a factory run that never comes
+
+  Scenario: A factory_captured assertion on a host-routed item is flagged
+    Given a work-item whose factory_safety is mutates-host-machinery
+    And its Definition of Done carries a factory_captured assertion
+    When its filing is displayed
+    Then an advisory Definition-of-Done finding names that assertion and the factory_safety reason
+    And the finding names the remedy of moving it under a Host-captured sub-heading with a Reason line
+    And the finding does not withhold ready
+
+  Scenario: A host-routed item may declare a sandbox-exercisable assertion host-captured
+    Given a work-item whose factory_safety is non-null
+    And its Host-captured assertion names behaviour a published sandbox capability could exercise
+    When its filing is displayed
+    Then no Definition-of-Done finding refuses the Host-captured declaration
+
+  Scenario: A factory-eligible item keeps the sandbox-capability refusal
+    Given a work-item whose factory_safety is null
+    And its Host-captured assertion names behaviour a published sandbox capability could exercise
+    When the gate grades it
+    Then the gate refuses the Host-captured declaration naming that sandbox capability
+```
+
+## Scenario 223 — A run attributed to an item under a pending stamp is not an orphan
+
+```gherkin
+Feature: A sibling sweep never cancels a run its own dispatch just created
+  As an operator running two dispatcher engines on one host
+  I want a just-launched run protected until its stamp lands
+  So that a sibling's reconcile pass does not cancel live work
+
+  Scenario: A pending stamp protects a fresh run
+    Given an item admitted with a pending stamp and a previous journaled run id from an earlier dispatch
+    And a non-terminal run attributed to that item whose run stamp has not been written yet
+    When another Dispatcher's reconcile-runs pass runs
+    Then the run is not classified an orphan and is not terminated
+
+  Scenario: A run superseded by a stamped run is still an orphan
+    Given an item that is active under a claim whose run stamp names run B
+    And a non-terminal run A attributed to the same item
+    When a reconcile-runs pass runs
+    Then run A is classified an orphan with reason superseded-run
+```
+
+## Scenario 224 — A refused publish_draft push names the cause that refused it
+
+```gherkin
+Feature: A publication refusal sends triage to the right remedy
+  As an operator triaging a run that could not publish
+  I want the refusal to say what refused the push
+  So that a hook failure is never mistaken for a stale publish branch
+
+  Scenario: A pre-push hook refusal names its failed targets
+    Given a publish_draft push the repository pre-push hook refuses with a Failed targets summary naming lint and format
+    When publish_draft reports the failure
+    Then its output names the pre-push hook as the cause and names lint and format
+    And the run fails closed before proof capture
+
+  Scenario: A non-fast-forward rejection points at the stale branch
+    Given a publish_draft push origin rejects as non-fast-forward
+    When publish_draft reports the failure
+    Then its output names the non-fast-forward rejection and directs reconciling the stale publish branch
+
+  Scenario: An unreachable origin is named
+    Given a publish_draft push that cannot reach origin
+    When publish_draft reports the failure
+    Then its output names the unreachable origin as the cause
+```
+
+## Scenario 225 — The publish-branch reclaim finds an earlier dispatch journaled in another worktree
+
+```gherkin
+Feature: A re-dispatch from a secondary worktree reclaims the surviving branch
+  As an operator re-dispatching from a canary worktree
+  I want the reclaim to see a dispatch journaled in the primary checkout
+  So that publish_draft does not refuse on a branch the reclaim exists to clear
+
+  Scenario: An earlier dispatch in the primary is found from a worktree
+    Given an item whose earlier dispatch is journaled only in the repository's primary checkout
+    And its publish branch survives on origin with no live run
+    When the item is re-dispatched from a secondary worktree of the same repository
+    Then the reclaim preserves the branch to its preserved-publish ref and deletes it from origin
+
+  Scenario: An unreadable worktree journal holds
+    Given a worktree of the repository whose dispatch journal cannot be read
+    When the reclaim looks for an earlier dispatch
+    Then it journals publish-branch-reclaim-held with reason journal-unobservable naming that path
+```
+
+## Scenario 226 — An unchanged refresh strips the run's empty commits and carries the proof forward
+
+```gherkin
+Feature: Engine checkpoint commits never reach the merged history
+  As a maintainer reading merged history
+  I want a run's empty checkpoint commits dropped before publication
+  So that only the work reaches the default branch
+
+  Scenario: Empty commits are stripped under lease and the proof carries forward
+    Given a published head that already contains the default branch and carries two of the run's empty commits
+    When pr_refresh runs
+    Then it republishes the head without the empty commits under an explicit lease on the run's publish branch
+    And the proof decision is carried_forward because the tree is unchanged
+
+  Scenario: A head with no empty commits is left alone
+    Given a published head that already contains the default branch and carries none of the run's empty commits
+    When pr_refresh runs
+    Then it republishes nothing and the head proceeds to pr
+
+  Scenario: The run's own empty checkpoint commits on origin are not a foreign head
+    Given pr_refresh republished the run's head and the run routed back for reproof
+    And origin's publish branch now descends from that published head, adding only empty engine checkpoint commits of this run
+    When pr_refresh runs again after the proof loop passes
+    Then it does not fail closed on a foreign publish head
+    And it republishes the head without those commits under an explicit lease naming the observed origin head
+
+  Scenario: Any other addition to origin's publish branch is still foreign
+    Given origin's publish branch adds to the run's published head a commit that is not an empty engine checkpoint commit of this run, or does not descend from that head
+    When pr_refresh runs
+    Then it fails closed on a foreign publish head
+```
+
+## Scenario 220 — An exhausted merge-poll budget on an open pull request rests the item for resume
+
+```gherkin
+Feature: A succeeded run never strands its claim while its pull request waits
+  As an operator whose armed pull request merges slowly
+  I want an exhausted merge wait to rest the item where resume can reach it
+  So that no claim sits active with no run behind it
+
+  Scenario: An open, non-conflicting pull request rests the item
+    Given a run that succeeded and armed auto-merge on its pull request
+    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN and not in conflict
+    When the Dispatcher records the outcome
+    Then the item rests at blocked with blocked_reason needs-human and the cause merge-poll-budget-exhausted
+    And the outcome detail names resolve-blocked then resume as the recovery chain
+
+  Scenario: A pull request merged at expiry is not rested
+    Given the poll budget is exhausted
+    And the forge reports the pull request MERGED on the final read
+    When the Dispatcher records the outcome
+    Then it proceeds exactly as for a merge observed within the budget
+```
+
+## Scenario 218 — A brief pointing at another work-item's evidence carries an advisory finding
+
+```gherkin
+Feature: The implementer is never sent to evidence it cannot read
+  As a filer writing a successor item
+  I want the wall to flag a pointer to another item's comments
+  So that the evidence travels with the item the factory runs
+
+  Scenario: A pointer to a predecessor's comments is flagged
+    Given a work-item whose description says its evidence is in the comments of work-item bd-ib-example
+    When its filing is displayed
+    Then an advisory Definition-of-Done finding names bd-ib-example
+    And the finding names the remedy of copying that evidence onto this item
+    And the finding does not withhold ready
+```
+
+## Scenario 219 — A rendered goal larger than the configured bound carries an advisory finding
+
+```gherkin
+Feature: An author sees what recorded evidence costs the brief
+  As an operator recording measurements on a work-item
+  I want an oversized rendered goal flagged
+  So that the item does not silently become too large to finish unattended
+
+  Scenario: A goal over the bound is flagged without refusing
+    Given dispatcher.goal_size_warning_bytes is committed as 8000
+    And a ready work-item whose rendered goal, comments included, is 10862 bytes
+    When the Dispatcher renders its goal
+    Then an advisory finding names the item and 10862 bytes on stderr and in the dispatch journal
+    And the dispatch proceeds
+
+  Scenario: No bound means no finding
+    Given dispatcher.goal_size_warning_bytes is not set
+    When the Dispatcher renders any goal
+    Then no goal-size finding is reported
+```
+
+## Scenario 221 — A resume refusal on an active item names a remedy that changes it
+
+```gherkin
+Feature: A refusal never sends the operator to a valve that does nothing
+  As an operator resuming an item
+  I want the refusal's remedy to act on the item as it stands
+  So that following the remedy releases the item
+
+  Scenario: An active item with a succeeded run and an unmerged pull request
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And no live process holds the item's ownership lock
+    And the forge reports its pull request open
+    When dispatcher resume is invoked for it
+    Then the refusal names move:<id>:ready and does not name reconcile-runs
+
+  Scenario: An active item with a succeeded run whose pull request merged
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And no live process holds the item's ownership lock
+    And the forge reports its pull request merged
+    When dispatcher resume is invoked for it
+    Then the refusal names reconcile-merged
+
+  Scenario: A live ownership lock withholds every status move
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And a live process holds the item's ownership lock
+    And the forge reports its pull request merged
+    When dispatcher resume is invoked for it
+    Then the refusal names the live ownership lock and no status move
+
+  Scenario: A merge-held item is not offered the recovery move
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And the item carries a merge-hold label
+    And no live process holds the item's ownership lock
+    And the forge reports its pull request open
+    When dispatcher resume is invoked for it
+    Then the refusal does not name move:<id>:ready
+
+  Scenario: An active item with a succeeded run and an unreadable forge
+    Given an item at active with assignee fabro whose run succeeded and is terminal
+    And no live process holds the item's ownership lock
+    And the forge read fails
+    When dispatcher resume is invoked for it
+    Then the refusal names the failed forge read and no status move
+```
+
+## Scenario 222 — A capacity handoff for a claim with no recorded pull request reads the forge first
+
+```gherkin
+Feature: An attention handoff never re-queues merged work
+  As an operator following a needs-attention handoff
+  I want a merged pull request found on the forge to route to reconcile-merged
+  So that a dispatch that died before recording its pull request is not rebuilt
+
+  Scenario: A merged pull request found only on the forge
+    Given a stranded claim whose dispatch evidence names no pull request
+    And the forge reports a merged pull request on the item's publish branch
+    And no live process holds the item's ownership lock
+    When needs-attention composes its capacity handoff
+    Then the handoff advertises reconcile-merged and no status move
+
+  Scenario: A live ownership lock blocks the reconcile handoff
+    Given a stranded claim whose dispatch evidence names no pull request
+    And the forge reports a merged pull request on the item's publish branch
+    And a live process holds the item's ownership lock
+    When needs-attention composes its capacity handoff
+    Then the handoff advertises no status move and names the live ownership lock
+
+  Scenario: An unreadable forge advertises no status move
+    Given a stranded claim whose dispatch evidence names no pull request
+    And the forge read fails
+    When needs-attention composes its capacity handoff
+    Then the handoff advertises no status move and names the failed forge read
+```
+
+## Scenario 235 — A captured comment that does not parse as a record is a proof-record finding
+
+```gherkin
+Feature: A capture that names no run is re-captured instead of stranding the run
+  As the maintainer of a repository dispatched to the factory
+  I want a captured comment that does not parse as a record to be re-captured within the bounded cycle
+  So that a run whose proof was replayed and verified does not end at needs_human on the capture's malformed header
+
+  Scenario: A non-record capture routes to proof_capture
+    Given a pull request whose newest captured Proof of Done comment has a header whose run id is empty
+    And that defect is the review verdict's only blocking finding
+    And the run has issued fewer than two recapture verdicts
+    When the review node ends
+    Then the review record names that comment and states that its header carries no run id
+    And the run routes to proof_capture with preferred_label recapture
+    And no disposition visit, no review_fix visit and no review-fix round is consumed
+    And proof_capture publishes a new captured record that parses as a record and is current for the publish head
+
+  Scenario: A non-record capture on the third recapture verdict does not re-enter proof_capture
+    Given a pull request whose newest captured Proof of Done comment does not parse as a record
+    And the run has already issued two recapture verdicts
+    When the review node ends with that defect as its only blocking finding
+    Then the run routes to non_converged without entering proof_capture
+```
+
+## Scenario 236 — A staged Fabro source checkout carries the ratified worktree and branch names
+
+```gherkin
+Feature: The staged source checkout's names are a stable interface
+  As the maintainer of a tool that must recognise a factory-owned worktree
+  I want the Dispatcher's staged source checkout to carry fixed, ratified names
+  So that a worktree reaper can recognise and skip a live factory checkout by its name
+
+  Scenario: Staging a run's source creates a fabro-source worktree on a livespec/source branch
+    Given a governed repository checked out in a directory named "governed-repo"
+    And a dispatch whose source the Dispatcher stages in a disposable worktree
+    When the Dispatcher creates the staged source checkout
+    Then the checkout's directory is "fabro-source-" followed by 32 lowercase hexadecimal characters
+    And that directory sits under the per-user worktree root, inside a directory named "governed-repo"
+    And the checkout is on a new local branch named "livespec/source/" followed by the same 32 characters
+    And the staged branch is not the run's publish branch
+```
+
+## Scenario 237 — reconcile-merged runs the post-merge janitor a merged acceptance item is still owed
+
+```gherkin
+Feature: A merged item parked before its janitor ran can still reach a verdict
+  As an operator recovering a merged work-item
+  I want reconcile-merged to run the janitor the item is owed
+  So that a bootstrap failure after merge does not strand the item in acceptance
+
+  Scenario: An owed janitor runs, then acceptance re-runs
+    Given a work-item resting in acceptance whose pull request is merged
+    And its latest dispatch journaled that the post-merge janitor did not run because the janitor checkout bootstrap failed
+    When reconcile-merged --item runs for that item and the janitor is green on the merged default-branch tip
+    Then the post-merge janitor runs against the merged default-branch tip under the ownership lock
+    And the janitor result is journaled against that dispatch
+    And the acceptance pass re-runs and applies its ordinary disposition
+    And nothing is merged again
+
+  Scenario: A red owed janitor keeps the item in acceptance
+    Given a work-item resting in acceptance whose latest dispatch journaled that the post-merge janitor did not run
+    When reconcile-merged --item runs and the owed janitor fails
+    Then the item stays in acceptance with a needs-attention verdict naming the janitor stage and its failing target
+    And the acceptance pass does not re-run
+    And the command exits non-zero
+
+  Scenario: A janitor that already ran is not re-run
+    Given a work-item resting in acceptance whose latest dispatch journaled a green post-merge janitor
+    When reconcile-merged --item runs for that item
+    Then the post-merge janitor does not run
+    And only the acceptance pass re-runs
+
+  Scenario: Missing janitor evidence refuses
+    Given a work-item resting in acceptance whose latest dispatch has no journaled janitor record
+    When reconcile-merged --item runs for that item
+    Then the command refuses, naming the missing janitor evidence
+    And no janitor runs and the acceptance pass does not re-run
+```
+
+## Scenario 238 — A refresh resolves a conflicted generated record file by running its generator
+
+```gherkin
+Feature: A generated register is regenerated, never hand-merged, when a refresh conflicts
+  As the maintainer of a repository with a generated coverage register
+  I want a refresh conflict in that register resolved by its generator
+  So that rows the default branch added while a run was in flight are not lost
+
+  Scenario: A conflict only in record files regenerates the generated one
+    Given a repository whose committed dispatcher.record_files declares tests/heading-coverage.json as json-array and tests/heading-coverage-debt.json as json-array with a generator
+    And the default branch added two registry rows and their register rows while the run removed a different row from both files
+    When pr_refresh rebases the run and the rebase conflicts only in those two files
+    Then the stage merges tests/heading-coverage.json entry by entry and then runs the generator to write tests/heading-coverage-debt.json
+    And the refreshed register carries the default branch's two added rows and omits the row the run removed
+    And the stage records the regenerated file with the generator it ran and no refresh-repair round is counted
+
+  Scenario: A repair brief tells fix to regenerate the generated file
+    Given a refresh that conflicts in a Python module and in a generated record file
+    When pr_refresh rebases the run
+    Then the stage restores the pre-refresh head and routes to fix with a brief carrying one regenerate line naming that file and its generator
+
+  Scenario: A refreshed head whose generated file was edited by hand fails before the gate
+    Given a refreshed head whose committed generated record file differs from its generator's output over that head
+    When the stage checks the head before the repository-declared gate
+    Then the stage fails with a failed gate target named generated-record-file followed by that file's path
+    And the refresh-repair brief carries that target and a regenerate line for the file
+```
+
+## Scenario 239 — Every taking of the Definition-of-Done judgement grades one subject by one rubric
+
+```gherkin
+Feature: A Definition of Done passed before dispatch is graded in-run by the same rubric on the same subject
+  As the operator of a factory
+  I want every Definition-of-Done judgement to grade the same text by the same rules
+  So that a pre-dispatch pass is not refused in-run on unchanged bytes
+
+  Scenario Outline: A host taking grades by the node's rubric and appends only its ending contract
+    Given the plugin build that will execute a dispatch carries the dod_gate node's prompt file
+    When the <taking> judgement is taken on the host
+    Then the judge's prompt carries that prompt file's bytes unchanged
+    And after it only the ending contract and the subject
+
+    Examples:
+      | taking                   |
+      | repository preflight     |
+      | pre-admission            |
+      | pre-dispatch             |
+
+  Scenario: The subject carries rider comments and omits judgement receipts
+    Given a ready item whose ledger comments include a rider appended after filing and an earlier pre-admission verdict comment
+    When the pre-dispatch judgement is taken
+    Then the subject carries the rider's text and omits the verdict comment
+    And the node's rendered goal for a dispatch of that item carries the rider and omits the verdict comment
+    And appending the new verdict comment leaves the item's subject digest unchanged
+
+  Scenario: A filing-time tier record and mechanical finding are omitted after a revision ratifies the referenced heading
+    Given an item whose ledger carries a livespec-spec-change-tier record and a definition-of-done finding (mechanical) comment, each written against an earlier spec version that lacked its referenced heading
+    And a rider appended after filing
+    And a later revision ratified that heading verbatim
+    When the pre-admission judgement is taken at approve
+    Then the subject and the node's rendered goal carry the rider and omit the tier record and the mechanical finding comment
+    And the judgement resolves the reference line against the ratified spec tree and reports no unresolved-reference finding for it
+    And the tier record and the mechanical finding comment remain on the item's ledger
+    And appending a further tier record or a further mechanical finding comment leaves the item's subject digest unchanged
+
+  Scenario Outline: A reference line missing one of several governing headings is reported as advisory by every host taking
+    Given an item whose reference line names one of the two scenario headings that state its first assertion's behaviour
+    And a non-scenario H2 of contracts.md whose clauses govern its second assertion is not on its reference line
+    When the <taking> judgement is taken
+    Then it reports the omitted scenario heading and that H2 verbatim, each with the remedy of adding it
+    And the item is not held on reference coverage
+
+    Examples:
+      | taking               |
+      | repository preflight |
+      | pre-admission        |
+      | pre-dispatch         |
+
+  Scenario Outline: A reference line naming no governing heading is refused by every host taking
+    Given an item whose reference line names only headings the spec-stated judgement returns as governing none of its assertions
+    When the <taking> judgement is taken
+    Then it refuses the item naming each governing heading the judgement returned verbatim, each with the remedy of adding it
+    And no factory run is created
+
+    Examples:
+      | taking               |
+      | repository preflight |
+      | pre-admission        |
+      | pre-dispatch         |
+
+  Scenario: A rider that changes the governing heading invalidates the reused governing-heading verdict
+    Given an item admitted with a governing-heading verdict naming one scenario heading for its assertion
+    And a rider is appended that narrows the assertion's behaviour to one another scenario heading states
+    And the item's effective criteria and referenced heading bodies are unchanged
+    When the pre-dispatch judgement is taken
+    Then the governing-heading verdict is taken again rather than reused
+    And a reference line that names none of the newly governing headings is refused naming them
+
+  Scenario: A change to an unreferenced governing scenario invalidates an admission verdict
+    Given an item admitted by its pre-admission verdict
+    And a scenario the item does not reference is added to the ratified spec tree before dispatch, and the selection for one of the item's assertions now returns it
+    When the Dispatcher selects the item for a dispatch
+    Then the subject digest differs from the admission verdict's
+    And the judgement is taken again against the resolved commit before any claim is taken
+
+  Scenario: The judgement and the sandbox seed share one resolved commit
+    Given the default branch advances while a dispatch is being prepared
+    When the Dispatcher takes the pre-dispatch judgement and creates the run
+    Then the sandbox is seeded from the commit the judgement's spec identity was computed at
+
+  Scenario: A changed rubric invalidates a stored verdict
+    Given an item whose pre-dispatch verdict admitted it under one rubric digest
+    And the plugin build that will execute the dispatch carries a dod_gate prompt file with different bytes
+    When the Dispatcher selects the item for a dispatch
+    Then the stored verdict is not reused
+    And the judgement is taken again by the new rubric
+
+  Scenario: The host taking and the node grade the same capability set
+    Given a committed array listing terminal and herdr and a sandbox image publishing only terminal
+    And an item whose factory-captured assertion is about behaviour inside herdr
+    When the pre-dispatch judgement is taken and the run's dod_gate node grades the item
+    Then neither raises a missing-capability finding for herdr
+    And the node reports herdr as a configuration mismatch that the Dispatcher journals
+
+  Scenario: An in-run refusal of an admitted subject is recorded as a disagreement
+    Given an item whose pre-dispatch verdict admitted a subject digest under a rubric digest
+    When the run's dod_gate node refuses that same subject under that same rubric
+    Then the dispatch journal carries one dod-judgement-disagreement row naming the run, both digests, the admitting verdict's timestamp and the node's findings
+    And the item carries one judgement-record comment with the same facts
+    And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
+
+  Scenario: A host judgement falls back along the resolved dod_gate chain
+    Given a governed repository whose resolved dod_gate chain is a codex-acp primary followed by a claude-acp fallback
+    When the pre-dispatch Definition-of-Done judgement is taken and the primary returns a verdict
+    Then the verdict comes from the codex-acp primary and the claude-acp fallback is not run
+    When the primary instead times out
+    Then the claude-acp fallback is run and its verdict decides the judgement
+    When every candidate fails to return a verdict
+    Then the pre-dispatch taking follows its did-not-run route
+
+  Scenario: A host judgement candidate that reaches its input bound falls back
+    Given a governed repository whose resolved dod_gate chain has two candidates
+    When the pre-dispatch Definition-of-Done judgement is taken and the first candidate's requests together report 100,000 input tokens or more, counting each request once
+    Then the first candidate's turn is cancelled, its processes end, and any verdict it returned is discarded
+    And the second candidate is run and its verdict decides the judgement
+    And the judgement record names the total input tokens the second candidate's requests reported, marked complete, partial or unreported
+
+  Scenario: A bound reached on the final usage report still discards the verdict
+    Given a candidate whose usage is reported only alongside its verdict
+    When the pre-admission Definition-of-Done judgement is taken and that final report brings its requests' input to 100,000 tokens or more
+    Then its verdict is discarded and the judgement passes to the next candidate
+
+  Scenario: An aggregate usage report is counted against the bound
+    Given a candidate whose output reports its input usage only as an aggregate for its turn
+    When the pre-dispatch Definition-of-Done judgement is taken and the aggregate reports 100,000 input tokens
+    Then its verdict is discarded and the judgement passes to the next candidate
+    When the aggregate instead reports 99,999 input tokens
+    Then its verdict decides the judgement and the record names 99,999 input tokens, marked complete
+
+  Scenario: A chain that exhausts records no deciding candidate
+    Given a resolved dod_gate chain whose every candidate is ended by the bound
+    When the pre-dispatch Definition-of-Done judgement is taken
+    Then the taking follows its did-not-run route
+    And its record names no deciding candidate and lists each candidate the bound ended
+
+  Scenario: The subject's effective criteria keep each assertion's proof-mode position
+    Given an item whose Definition of Done lists one assertion above every proof-mode sub-heading and one under a Host-captured sub-heading with its Reason line
+    When any taking renders the item's judgement subject
+    Then the effective criteria render each assertion as its own bullet in Definition-of-Done order
+    And the first assertion renders above every proof-mode sub-heading
+    And the second renders under the Host-captured sub-heading with its Reason line
+
+  Scenario: A judgement every candidate's bound ends records each candidate's input size
+    Given a governed repository whose resolved dod_gate chain has one candidate
+    When the pre-dispatch Definition-of-Done judgement is taken and that candidate's requests together report 140,000 input tokens
+    Then the judgement did not run
+    And the did-not-run record names that candidate, its total of 140,000 input tokens marked complete, and the 100,000-token bound that ended it
+
+  Scenario: Every host taking appends a journal row with its input size
+    Given any host taking of the Definition-of-Done judgement
+    When the taking ends, whether a candidate decided it or it did not run
+    Then the dispatch journal carries one row for it naming its stage, the deciding or bound-ended candidates, and each one's total input tokens with its marking
+```
+
+## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
+
+```gherkin
+Feature: A judge that flips on unchanged input cannot flip a recorded verdict
+  As the operator of a factory
+  I want the first verdict on a Definition of Done to stand until its text or rubric changes
+  So that relaunching an item never re-rolls the judgement of unchanged bytes
+
+  Scenario Outline: A host taking reuses a recorded host verdict without running any judge
+    Given an item carrying a host record written by the <earlier> taking for its current subject digest and rubric digest
+    When the <later> taking judges the item
+    Then it returns that record's outcome and names the record as reused
+    And no judge or candidate is started
+    And no record is appended
+
+    Examples:
+      | earlier              | later                |
+      | repository preflight | pre-dispatch         |
+      | pre-admission        | repository preflight |
+      | pre-dispatch         | pre-dispatch         |
+
+  Scenario: Recording a verdict does not change the subject it was taken on
+    Given an item with no record for its current digests
+    When the repository preflight judges the item and appends its record
+    Then the subject digest the pre-dispatch judgement computes next equals the digest the preflight record carries
+    And the goal the Dispatcher renders for the node omits the preflight record
+
+  Scenario: Reuse selects the earliest record among those matching the current digests
+    Given an item whose cache-eligible records, all under one rubric digest, carry subject digest A, then subject digest B, then subject digest A again
+    When the pre-dispatch judgement judges the item while its current subject digest is B
+    Then it reuses the record carrying digest B
+    When the item's subject is restored so its current subject digest is A and the pre-dispatch judgement judges it again
+    Then it reuses the first record carrying digest A, not the later one
+
+  Scenario: A candidate that cannot run leaves no binding verdict
+    Given an item with no cache-eligible record for its current digests
+    When the repository preflight runs two candidates and the second times out
+    Then the preflight exits with code 2 and returns no verdict
+    And the item carries one did-not-run record naming the second candidate and the timeout
+    When the repository preflight runs again on the same digests and both candidates return verdicts
+    Then the candidates are started rather than the did-not-run record being reused
+    And the record this run appends answers every later host taking on those digests
+
+  Scenario: A preflight chain is one taking whose mixed candidate outcomes are recorded and journaled
+    Given an item with no record for its current digests
+    When the repository preflight runs two candidates and the first passes while the second refuses
+    Then the item carries one record naming the preflight as refusing, with both candidates and their outcomes
+    And the dispatch journal carries one dod-judgement-disagreement row naming the two candidates
+    And a later host taking on the same digests returns the refusal without running any candidate
+
+  Scenario: A changed subject takes a fresh judgement
+    Given an item whose host record refused it
+    And the item's Definition of Done section has since been edited
+    When the pre-dispatch judgement judges the item
+    Then a judge is started against the new subject
+    And one new record carries the new subject digest
+
+  Scenario Outline: Opposite outcomes on identical digests are journaled once, whichever takings produced them
+    Given an item whose records include a <first> and a <second> on identical subject and rubric digests
+    When the Dispatcher next reads the item's records
+    Then the dispatch journal carries one dod-judgement-disagreement row naming both takings, both digests and each outcome's timestamp
+    And the item carries one disagreement record with the same facts
+    And a later read of the same two records appends nothing further
+
+    Examples:
+      | first                              | second                                  |
+      | pass recorded by the preflight     | refusal recorded by pre-admission       |
+      | node pass recorded for one run     | node refusal recorded for a later run   |
+      | node pass recorded for one run     | refusal recorded by the pre-dispatch    |
+
+  Scenario: The node still runs, records its outcome, and is never answered from a record
+    Given an item whose only record is a pass written by the repository preflight on the current digests
+    When a run of the item reaches the dod_gate node and the node refuses it
+    Then the node ran rather than being answered from the record
+    And the item carries one node record naming the run and the refusal
+    And the dispatch journal carries one dod-judgement-disagreement row naming the run and the repository preflight
+    And the item rests at blocked with blocked_reason needs-human exactly as any dod_gate refusal rests it
+
+  Scenario: A spec revision outside the governing clauses leaves the subject digest unchanged
+    Given an item carrying a host record for its current digests, whose assertions' governing-heading verdicts carry clause provenance
+    And the item is not a held spec-change-tier item awaiting release
+    And a new spec revision changes only clauses outside that provenance and outside the headings the item references, and each verdict's selection against it returns the same clauses
+    And the item's goal, the grading set and the rubric are unchanged
+    When the pre-dispatch judgement judges the item
+    Then the subject digest it computes equals the recorded one and the record is reused without running any judge
+
+  Scenario: A spec revision that changes a governing clause changes the subject digest
+    Given an item carrying a host record for its current digests, whose assertions' governing-heading verdicts carry clause provenance
+    And a new spec revision changes the body of a clause in that provenance
+    When the pre-dispatch judgement judges the item
+    Then its subject digest differs from the recorded one and the judgement runs
+
+  Scenario: Without clause provenance the subject keeps the whole-tree digest
+    Given an item one of whose assertions has a governing-heading verdict that did not run
+    When a host taking computes the item's subject digest
+    Then its SPEC IDENTITY is the whole-tree digest and any spec revision changes it
+
+  Scenario: The dod_gate node binds to the pre-dispatch taking's recorded spec identity
+    Given a pre-dispatch taking that passed an item, whether by reusing a record or by appending one, and recorded its SPEC IDENTITY, in either form, in the dispatch journal
+    When a run of the item reaches the dod_gate node
+    Then the node runs and computes its subject digest from the supplied SPEC IDENTITY
+    And when the node refuses the item, the dispatch journal carries a dod-judgement-disagreement row naming the run and the taking that wrote the matching record
+
+  Scenario: A digest comparison that is not a taking runs no model
+    Given a refused item one of whose assertions has no reusable governing-heading verdict after a new spec revision
+    When drain candidate enumeration compares the item's subject digest with the refusing verdict's
+    Then no governing-heading verdict is taken and the digest is treated as differing from the refusing verdict's
+```
+
+## Scenario 241 — A repository naming the fleet default dispatches to the factory the registry designates, and moving the fleet default re-routes it with no repository commit
+
+```gherkin
+Feature: The factory registry designates the fleet default factory and carries its client settings
+  As a maintainer moving the whole fleet from one Fabro instance to another
+  I want each repository to name the fleet default rather than a factory
+  So that moving the default is a change to the provisioning inventory alone
+
+Background:
+  Given the factory registry maps "petri" and "next" to server addresses
+  And the registry gives "petri" a bin, a secret_channel and an environment
+  And dispatcher.factories is declared, declares "legacy" as a factory with a committed server, and does not declare "petri" or "next" unless a case says so
+
+Scenario: An undeclared registry default receives a fresh dispatch
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the admission claim stamp names "petri"
+  And the Fabro run is created on petri's registry server with petri's registry bin, secret_channel and environment
+  And the item's dispatch-factory record names "petri"
+
+Scenario: Moving the fleet default re-routes the next fresh dispatch with no repository commit
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  When only the registry's default is changed to "next"
+  And the item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on "next" and the claim stamp and dispatch-factory record name "next"
+  And the repository's committed configuration is unchanged
+
+Scenario: A named default overrides the fleet default
+  Given dispatcher.default_factory is "legacy"
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on "legacy" whatever the registry's default names
+
+Scenario: An absent default keeps its existing treatment outside the fleet
+  Given dispatcher.default_factory is absent and no factory registry exists on the host
+  When an item is dispatched with no explicit factory
+  Then the dispatch resolves its target exactly as it did before this revision
+
+Scenario Outline: A committed client setting outranks the registry's, key by key
+  Given dispatcher.default_factory is <default>, which resolves to the registry-backed factory "petri"
+  And the committed "petri" entry declares only <key>
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run uses the committed <key> and the registry's value for each other client key
+  Examples:
+    | default                                                       | key            |
+    | "fleet", with the registry's default "petri"                  | bin            |
+    | "fleet", with the registry's default "petri"                  | secret_channel |
+    | "fleet", with the registry's default "petri"                  | environment    |
+    | "petri", declared in dispatcher.factories with registry true  | bin            |
+    | "petri", declared in dispatcher.factories with registry true  | secret_channel |
+    | "petri", declared in dispatcher.factories with registry true  | environment    |
+
+Scenario: A client key neither source declares keeps its absent-key treatment
+  Given dispatcher.default_factory is "fleet" and the registry's default is "next"
+  And neither the registry nor the repository gives "next" an environment
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the run is created with the absent-environment treatment a committed entry without that key receives
+
+Scenario: An invalid registry-supplied client setting is refused as a committed one would be, naming the registry
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the committed "petri" entry declares no secret_channel
+  And the registry gives "petri" a secret_channel value a committed entry would be refused for
+  When an item is dispatched
+  Then the dispatch receives the same refusal, at the same point and with the same effects, as a committed secret_channel of that value receives
+  And the refusal names the registry path as the source of the value
+
+Scenario Outline: A fleet default the registry cannot supply is refused before any claim
+  Given dispatcher.default_factory is "fleet"
+  And <registry state>
+  When an item is dispatched
+  Then the dispatch is refused before any claim, ledger write or Fabro run, naming the registry path and what it lacked
+  And the Dispatcher falls back to no committed factory, no other registry entry and no ambient local target
+  Examples:
+    | registry state                                         |
+    | the registry file is absent                            |
+    | the registry file is unreadable                        |
+    | the registry has no default key                        |
+    | the registry's default is not a string                 |
+    | the registry's default names no registry factory entry |
+
+Scenario: The reserved key cannot name a factory
+  Given the factory registry carries a factory entry named "default"
+  When an item is dispatched through the fleet default
+  Then the registry is refused as invalid, naming the reserved key
+
+Scenario Outline: A committed address for a fleet-selected factory is a conflict
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri"
+  And the committed "petri" entry carries <address key>
+  When an item is dispatched
+  Then the dispatch is refused before any ledger write, naming "petri"
+  Examples:
+    | address key |
+    | server      |
+    | docker_host |
+
+Scenario: A resume keeps a fleet-derived pin after the fleet default moves
+  Given dispatcher.default_factory is "fleet"
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  When the item's route is resume, through resume --item or recovery routing's resume route
+  Then the resume is submitted to "petri", resolved through the registry
+  And no overflow-selection journal record is written, even when dispatcher.overflow_factories is non-empty
+
+Scenario: A resume whose fleet-derived pin the registry no longer resolves is refused
+  Given the same item and the registry no longer has a "petri" entry
+  When the item's route is resume
+  Then the resume is refused before any claim, naming "petri" and the registry path
+  And it is not re-routed to the current fleet default
+
+Scenario: A fresh dispatch ignores an unresolvable fleet-derived pin for factory selection
+  Given the same item and the registry no longer has a "petri" entry
+  And the availability evidence for the selected candidates is independently complete
+  When the item is dispatched with no explicit factory and its route is fresh
+  Then the run is created on the registry's current default "next"
+  And factory selection refuses nothing on account of the recorded "petri"
+
+Scenario Outline: An explicit selection outranks a fleet-derived pin on a resume
+  Given dispatcher.default_factory is "fleet"
+  And an item whose dispatch was recorded on "petri" through the fleet default, whose route is resume
+  When the resume is made with <explicit selection> naming "legacy"
+  Then the resume is submitted to "legacy"
+  Examples:
+    | explicit selection           |
+    | --factory                    |
+    | a set LIVESPEC_FABRO_FACTORY |
+
+Scenario: A fresh fleet dispatch takes overflow selection and records its winner
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and dispatcher.overflow_factories is ["legacy"]
+  And "petri" reports no free slot and "legacy" has a free slot
+  And an item whose dispatch was recorded on "petri" through the fleet default
+  When the item is dispatched with no explicit factory and its route is fresh
+  Then one overflow-selection journal record lists "petri" and "legacy" and names chosen "legacy"
+  And the admission claim stamp, the submitted run and the dispatch-factory record all name "legacy"
+
+Scenario: An undeclared fleet default wins overflow selection
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and "petri" is not declared
+  And dispatcher.overflow_factories is ["legacy"]
+  And "petri" reports 1 of 4 non-terminal runs and "legacy" reports 3 of 4
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then one overflow-selection journal record lists "petri" and "legacy" and names chosen "petri", reason least-utilized-free-slot
+  And the admission claim stamp, the submitted run and the dispatch-factory record all name "petri"
+  And the capacity reads refuse, defer, hold and count nothing
+
+Scenario: Overflow may not name the resolved default factory
+  Given dispatcher.factories declares "petri" as a registry-backed factory
+  And dispatcher.default_factory is "fleet", the registry's default is "petri", and dispatcher.overflow_factories is ["petri"]
+  When an item is dispatched
+  Then the configuration is refused before any item is claimed, naming "petri"
+
+Scenario Outline: The committed-declaration exceptions still refuse an implicitly declared factory
+  Given dispatcher.default_factory is "fleet", the registry's default is "petri", and "petri" is not committed in dispatcher.factories
+  When <use> names "petri"
+  Then it is refused as an undeclared name, before any claim
+  Examples:
+    | use                                       |
+    | an explicit --factory                     |
+    | a set LIVESPEC_FABRO_FACTORY              |
+    | an entry of dispatcher.overflow_factories |
+
+Scenario: A stranded claim on a fleet-derived factory is recovered after the fleet default moves
+  Given dispatcher.default_factory is "fleet"
+  And an item active and assigned fabro whose run stamp names "petri", reached through the fleet default, and this host
+  And the registry's default has since moved to "next" while its "petri" entry remains
+  And the run on "petri" has terminated and no live process owns the item
+  When the reconcile pass surveys the claim
+  Then the run state is read from the server the registry resolves for "petri"
+  And the claim is not held as claim-unattributable
+
+Scenario: A stranded claim on a fleet-derived factory the registry no longer resolves is held unobservable
+  Given the same claim and the registry no longer has a "petri" entry
+  When the reconcile pass surveys the claim
+  Then the claim is held as factory-unobservable, naming "petri" and the registry path
+  And it is not treated as holding no run
+
+Scenario: The standalone sweep keeps surveying an old fleet default after its last item is hand-closed
+  Given dispatcher.default_factory is "fleet" and an item's dispatch reached "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  And the item is hand-closed while no Dispatcher is alive and its run on "petri" is still non-terminal
+  When the standalone reconcile-runs sweep runs
+  Then it surveys "petri" and finds the run
+  And it releases the run exactly as an item closed by any route releases its non-terminal run
+
+Scenario: An old fleet default the registry no longer resolves is reported, not dropped
+  Given the same closed item and the registry no longer has a "petri" entry
+  When the standalone reconcile-runs sweep runs
+  Then it reports "petri" unobservable, naming it and the registry path
+  And it does not treat "petri" as holding no runs
+
+Scenario: A superseded fleet-derived dispatch keeps the factory surveyed
+  Given an item whose first dispatch reached "petri" through the fleet default and whose later dispatch reached "next"
+  And only the dispatch journal still records the "petri" dispatch
+  When the standalone reconcile-runs sweep runs
+  Then it surveys "petri" as well as "next"
+
+Scenario: A first fresh dispatch to an undeclared fleet default honours another repository's hold there
+  Given dispatcher.default_factory is "fleet" and the registry's default is "petri", which this repository does not declare and has never dispatched to
+  And another repository's run on "petri" recorded a live domain hold covering this node's only eligible candidate's provider allowance
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the Dispatcher reads availability evidence from "petri"
+  And it does not select the held candidate
+
+Scenario: Moving the fleet default keeps the old factory's evidence
+  Given dispatcher.default_factory is "fleet" and an earlier dispatch of this repository reached "petri" through the fleet default
+  And the registry's default has since moved to "next"
+  And a live hold is recorded on "petri"
+  When any item is dispatched
+  Then the Dispatcher reads availability evidence from both "next" and "petri"
+
+Scenario: A hold on an old fleet default still binds after the registry stops resolving it
+  Given dispatcher.default_factory is "fleet" and an earlier dispatch of this repository reached "petri" through the fleet default
+  And a live domain hold covering credential "C" is recorded on "petri"
+  And the registry's default has since moved to "next", whose node candidate uses credential "C"
+  And the registry no longer has a "petri" entry
+  When an item is dispatched with no explicit factory and its route is fresh
+  Then the Dispatcher surfaces that availability evidence from "petri" could not be read
+  And it does not treat the candidate using "C" as unheld on evidence that excludes "petri"
+
+Scenario: Sandbox image enumeration reports an undeclared fleet default's registry environment
+  Given repository R's dispatcher.default_factory is "fleet", the registry's default is "petri", R does not declare "petri", and the registry gives "petri" the catalog environment "E"
+  When the sandbox-images command runs for "petri" and R
+  Then it reports source catalog_environment with environment "E" naming R, not factory_undeclared
+  And when R's committed "petri" entry declares the environment "E2", it reports "E2"
+```
+
+## Scenario 242 — The provisional fleet launch check fails the build on a broken launcher
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a broken provisional launcher cannot reach master
+  Scenario: the harness exercises every launch gate against stubs
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway directories
+    When just check runs check-fleet-launch
+    Then shellcheck runs over every shell script under fleet-launch/
+    And the harness reads a stub board, refuses a launch at the shared fleet cap, launches two queued tickets in FIFO order, holds a launch while the hold file exists, and counts a retired factory's board as zero
+
+  Scenario: a defect in a launcher turns the check red
+    Given a change that makes the launcher count a retired factory's board as unknown
+    When just check runs check-fleet-launch
+    Then check-fleet-launch exits non-zero
+    And just check exits non-zero
+
+  Scenario: every provisional script carries its banner
+    Given the shell and Python scripts under fleet-launch/
+    When each script's opening comment block is read with its comment markers removed
+    Then each one marks itself PROVISIONAL and EXPERIMENTAL
+    And each one names the livespec console application and the launch-loop tool bd-ib-jr6w7v as its first-class replacement
+
+  Scenario: host values are declared once and overridable
+    Given a host value a fleet-launch script reads, such as a factory server URL, the fleet-cap file, a queue, lock or in-flight directory, or the fabro binary path
+    When the scripts are searched for where that value is assigned
+    Then it is assigned only in fleet-launch/config.sh or in the single constants block at the head of a Python script
+    And setting the corresponding FLEET_LAUNCH_ environment variable before a script runs changes the value that script uses
+
+  Scenario: the directory is retired once nothing launches through it
+    Given every factory launch on the operator host is made by the livespec console application or by the committed launch-loop tool
+    And no seat runs a fleet-launch script
+    When the retirement condition is evaluated
+    Then fleet-launch/ is deleted from the repository
+```
+
+## Scenario 244 — reconcile-merged resolves a merged pull request by head ref, then title, then body mention
+
+```gherkin
+Feature: Merged pull request resolution ranks how a candidate names the item
+  As the operator recovering a merged item with reconcile-merged
+  I want a pull request that carries the item to outrank one that merely mentions it
+  So that a follow-up or sibling pull request naming the item cannot make a clear resolution ambiguous
+
+  Scenario: A head-ref match outranks title and body matches
+    Given an item whose merged pull requests on the default branch include one whose head ref is feat/<work-item-id>
+    And others that carry the work-item id in their title or body
+    When reconcile-merged resolves the item's merged pull request
+    Then it resolves the feat/<work-item-id> pull request
+
+  Scenario: A single title match outranks body mentions
+    Given an item with no merged pull request whose head ref is feat/<work-item-id>
+    And exactly one merged pull request whose title carries the work-item id
+    And other merged pull requests that mention the work-item id only in their bodies
+    When reconcile-merged resolves the item's merged pull request
+    Then it resolves the pull request whose title carries the work-item id
+
+  Scenario: A single body mention resolves when nothing identifies the item more strongly
+    Given an item with no merged pull request that identifies it by head ref or title
+    And exactly one merged pull request that mentions the work-item id in its body
+    When reconcile-merged resolves the item's merged pull request
+    Then it resolves that pull request
+
+  Scenario: A tie in the highest tier holding a candidate refuses
+    Given an item whose highest tier holding any merged pull request candidate holds more than one
+    When reconcile-merged resolves the item's merged pull request
+    Then it refuses with an ambiguous-PR error listing every candidate of that tier
+    And the item's status is unchanged
+  Scenario: An explicit pull-request selector reconciles one of several merged pull requests
+    Given an item that landed through two merged pull requests on the default branch, both carrying the work-item id in their titles
+    When reconcile-merged runs for the item with --pr naming one of them
+    Then it reconciles against that pull request's merge commit without an ambiguous-PR refusal
+    And its journal record names the selected pull request and its merge SHA
+
+  Scenario: A selector naming a pull request that is unmerged or does not identify the item refuses
+    Given an item and a pull request that is not merged onto the default branch, or that carries the work-item id in neither its head ref nor its title
+    When reconcile-merged runs for the item with --pr naming that pull request
+    Then it refuses with a message naming the pull request
+    And the item's status is unchanged
+
+  Scenario: A selector naming a different pull request than the journaled janitor ran against refuses
+    Given an item resting in acceptance whose journaled green janitor ran against one merged pull request of the item
+    When reconcile-merged runs for the item with --pr naming another of its merged pull requests
+    Then it refuses before running acceptance, naming the mismatched janitor evidence
+    And the item's status is unchanged
+    And the host-record posting target remains the pull request its journaled green janitor ran against
+```
+
+## Scenario 245 — reconcile-merged closes a merged, locally built item resting at pending-approval or ready
+
+```gherkin
+Feature: A merged item built outside the factory has a guarded close path
+  As the operator closing an item that was implemented locally and merged
+  I want reconcile-merged to accept it from the status it rests at
+  So that closing it does not need a hand-written move to active
+
+  Scenario: A pending-approval item with a merged pull request enters acceptance
+    Given an item resting at pending-approval
+    And a merged pull request on the default branch that identifies the item by head ref or title
+    When reconcile-merged runs for the item and its post-merge janitor is green
+    Then the item moves from pending-approval to acceptance
+    And the post-merge acceptance pass runs
+
+  Scenario: A ready item without recovery routing and with a merged pull request enters acceptance
+    Given an item resting at ready with no recovery routing
+    And a merged pull request on the default branch that identifies the item by head ref or title
+    When reconcile-merged runs for the item and its post-merge janitor is green
+    Then the item moves from ready to acceptance
+    And the post-merge acceptance pass runs
+
+  Scenario: A body mention alone does not close a locally built item
+    Given an item resting at pending-approval, or at ready with no recovery routing
+    And a merged pull request on the default branch that mentions the work-item id only in its body
+    And no merged pull request that identifies the item by head ref or title
+    When reconcile-merged runs for the item
+    Then it refuses naming the missing merged pull request
+    And the item stays at the status it rested at
+
+  Scenario: A red janitor leaves a locally built item where it rested
+    Given an item resting at pending-approval or ready with a merged pull request that identifies it
+    When reconcile-merged runs for the item and its post-merge janitor is red
+    Then the item stays at the status it rested at
+    And the refusal names the failing janitor stage
+```
+
+## Scenario 246 — A refresh that brings in only release bookkeeping carries the proof forward whatever its steps
+
+```gherkin
+Feature: A release does not send in-flight runs back to re-prove
+  As the maintainer of a repository that releases with release-please
+  I want a refresh that brings in only a release commit to keep the run's proof
+  So that every release does not re-prove every run whose proof steps are not direct reads
+
+  Scenario: A version bump, a changelog entry and a release manifest carry forward
+    Given a run with verified record R on head V whose one reproduction step is outside the direct-read grammar
+    And the default branch advanced with a commit that changes only .release-please-manifest.json, CHANGELOG.md and the version line of pyproject.toml
+    When pr_refresh rebases the branch cleanly, the gate passes and the leased push yields head N with an unchanged patch identity
+    Then the pull request carries one carried_forward record naming V and N that says every incoming path is release bookkeeping and no proof step was graded or replayed
+    And the run proceeds from pr_refresh to pr without visiting proof_capture
+
+  Scenario: A manifest change beyond its version line is not bookkeeping
+    Given a run with verified record R on head V whose one reproduction step is outside the direct-read grammar
+    And the default branch advanced with a release commit whose pyproject.toml change also adds a dependency
+    When pr_refresh rebases the branch cleanly and pushes head N
+    Then the pull request carries one reproof_required record naming pyproject.toml as an incoming path outside the inert classes
+    And the run enters proof_capture for head N
+```
+
+## Scenario 247 — Every Dispatcher fabro dump shares one bound sized from the slowest factory
+
+```gherkin
+Feature: The Dispatcher waits for a slow factory's dump before giving up on it
+  Scenario: An export slower than ten minutes still yields a digested pointer
+    Given a run whose export holds a diff artifact
+    And the factory takes 700 seconds to complete the run's fabro dump, which exits zero
+    When the Dispatcher writes the run's preserve-by-reference pointer
+    Then the export succeeds within the bound
+    And the pointer carries the run's diff digest
+  Scenario: A dump past the bound is a failed dump
+    Given a run whose fabro dump has not completed after 900 seconds
+    When the Dispatcher writes the run's preserve-by-reference pointer
+    Then the dump is stopped at the bound as a failed dump
+    And the pointer records the failed dump and its exit code
+    And the pointer claims no digest
+  Scenario: Every call site uses the same bound
+    Given the preserve-by-reference export, its read-back check and the worker-exit log read
+    When each runs a fabro dump
+    Then each dump is bounded by the same 900-second timeout
+```
+
+## Scenario 248 — A pull request merged before its refresh ends the run as a finished publication
+
+```gherkin
+Feature: pr_refresh tells a merged publication from a missing remote
+  Scenario: A pull request merged mid-run with its branch deleted takes the merged-reconcile ending
+    Given a run whose latest verified record names head V
+    And an earlier arming merged the run's pull request at head V with merge commit M
+    And the forge deleted the run's publish branch
+    When pr_refresh queries the publish branch on origin
+    Then pr_refresh reads the pull request as MERGED with merge commit M
+    And the run takes the merged-reconcile ending without entering pr
+    And the ending records the pull request, merge commit M, merged head V, the verified head V and that the two heads are equal
+    And the Dispatcher runs the post-merge janitor and enters acceptance
+  Scenario: A merged head the run never proved is recorded as unproven
+    Given a run whose latest verified record names head V
+    And an arming merged the run's pull request at head U before any record named U
+    And the forge deleted the run's publish branch
+    When pr_refresh queries the publish branch on origin
+    Then the run takes the merged-reconcile ending
+    And the ending records merged head U, the verified head V and that the two heads differ
+    And the ending writes no verified or carried_forward record for head U
+    And the acceptance pass judges every factory_captured assertion UNOBSERVED rather than passing it on V's verified record
+    And the acceptance verdict is NEEDS_ATTENTION
+  Scenario: A branch found absent after a rejected push is not a merged publication
+    Given a run whose pr_refresh found its publish branch present and pushed a refreshed head
+    And the forge rejected that push
+    And the run's pull request then merged and the forge deleted the branch before pr_refresh re-read it
+    When pr_refresh re-reads the publish branch on origin
+    Then the run does not take the merged-reconcile ending
+    And pr_refresh fails closed with the cause this section names for a rejected push
+  Scenario: A missing branch whose pull request is not merged still fails closed
+    Given a run whose publish branch is absent on origin
+    And the forge reports the run's pull request OPEN
+    When pr_refresh queries the publish branch on origin
+    Then pr_refresh fails closed as an unobservable remote with a named cause and recovery artifact pointer
+    And the run does not take the merged-reconcile ending
+```
+
+## Scenario 249 — Implement and review_fix turns run their touched tests green, stage one test per Red, and update pinning tests with prompt edits
+
+```gherkin
+Feature: An implement or review_fix turn does not hand the commit hook a test it never ran
+  As the maintainer of a repository dispatched to the factory
+  I want implement and review_fix turns to run their own touched tests before committing
+  So that a slow hook run is not spent discovering a failing test a targeted run would have shown
+
+  Scenario: The stage prompts state the three test-discipline rules
+    Given the implement and review_fix prompts of the released implement-work-item workflow
+    When each prompt is read
+    Then each states that every test file the change adds or modifies is run and passes before any commit other than a Red commit and before the Green amend
+    And each states that a Red commit stages exactly one test file and no product file
+    And each states that a change to a stage prompt file or to the code rendering the Dispatcher's launch overlay updates, in the same commit, the tests that pin it
+
+  Scenario: A Red commit's failing test is not run green first
+    Given a review_fix turn that has written one new failing test and no product change
+    When the turn makes its Red commit
+    Then the commit stages that one test file alone
+    And the turn is not required to see that test pass before the Red commit
+
+  Scenario: A prompt edit carries its pinning test
+    Given an implement turn whose change edits the review_fix stage prompt
+    And a test pins that prompt's text
+    When the turn makes the commit carrying the prompt edit
+    Then the same commit updates the pinning test
+    And the turn ran that test and saw it pass before committing
+```
+
+## Scenario 250 — A work item whose id contains a dot dispatches from a dot-free workflow directory distinct to its id
+
+```gherkin
+Feature: A work-item id never decides whether the engine can find its workflow
+  As the maintainer of a repository whose plan children carry dotted ids
+  I want every work item to dispatch whatever characters its id contains
+  So that a dotted plan child is not stranded at fabro-run before any run exists
+
+  Scenario: A dotted work-item id dispatches
+    Given a ready work item whose id is "bd-ib-abc123.2"
+    When the Dispatcher materializes the workflow for its dispatch
+    Then the materialized directory name contains no "." character
+    And the engine resolves that directory as a local workflow under fabro validate and fabro run
+    And the journal's workflow_toml names the resolved committed path
+
+  Scenario: Ids that differ only by a dot get distinct directories
+    Given two work items whose ids are "bd-ib-abc123.2" and "bd-ib-abc123-2"
+    When the Dispatcher materializes the workflow for each dispatch
+    Then the two materialized directory names differ
+```
+
+## Scenario 251 — The out-of-band reflector takes its judgement from the resolved dod_gate chain
+
+```gherkin
+Feature: The out-of-band reflector spends only what the repository's candidate chain names
+  As the operator of a factory
+  I want the reflector to judge with the same candidate chain as every other host judgement
+  So that no host judgement keeps a private model path the repository configuration cannot route
+
+  Scenario: The reflector tries the resolved chain in order
+    Given a governed repository whose dod_gate chain resolves to a Codex candidate first and a Claude candidate second
+    And LIVESPEC_REFLECTOR_MODEL is set in the host environment
+    When the reflector judges a merged item's telemetry and the Codex candidate returns a verdict
+    Then the verdict comes from the Codex candidate
+    And the Claude candidate is not run
+    And no claude -p process is launched outside the chain
+    And LIVESPEC_REFLECTOR_MODEL selected nothing
+
+  Scenario: An unparseable reply falls through and an empty findings reply decides
+    Given a governed repository whose dod_gate chain resolves to three candidates
+    When the reflector judges a merged item's telemetry
+    And the first candidate returns a reply that does not parse as findings
+    And the second candidate returns well-formed findings that list no finding
+    Then the judgement is the second candidate's verdict of no findings
+    And the third candidate is not run
+
+  Scenario: A reflector pass whose candidates all fail files nothing
+    Given a governed repository whose every dod_gate candidate times out or returns an unparseable reply
+    When the reflector judges a merged item's telemetry
+    Then the pass records that its judgement did not run and why
+    And the pass files no work item and proposes no lesson
+```
+
+## Scenario 252 — The acceptance pass selects each Proof of Done record by the binding the record carries
+
+```gherkin
+Feature: A Proof of Done record is mechanically linked to the item it proves
+  As the maintainer of a factory
+  I want the acceptance pass to select proof records by the binding each record carries
+  So that a verified record is never reported missing because a run resolution left out the run that produced it
+
+  Scenario: A bound verified record counts whichever run produced it
+    Given a merged pull request whose verified record lists a factory_captured assertion as reproduced
+    And the record's binding names that work item and that pull request
+    And no merging-run resolution would select the run that produced the record
+    When the acceptance pass grades the item
+    Then the assertion is judged passing on that record
+    And the pass's journal record lists that record with the bind verdict bound
+
+  Scenario: A legacy record is matched against every dispatch of the item
+    Given a verified record with no binding line whose run identifier is the Fabro run id of the item's first dispatch
+    And the item has been dispatched three more times since that dispatch
+    When the acceptance pass grades the item
+    Then the record's bind verdict is legacy-matched
+    And the assertion is judged on that record
+
+  Scenario: An unbindable record is a loud refusal and not an absence
+    Given a merged pull request carrying a verified record whose binding line names no head commit sha
+    When the acceptance pass grades the item
+    Then the pass grades none of the item's factory_captured assertions
+    And no assertion is reported UNOBSERVED
+    And the item parks with a refusal naming that record's comment link and its fault
+    And needs-attention surfaces the refusal naming the item, the pull request and the record
+
+  Scenario: An absent record stays distinct from an unbindable one
+    Given a merged pull request whose only Proof of Done record is bound to another work item
+    When the acceptance pass grades the item
+    Then each factory_captured assertion is UNOBSERVED and the item parks with NEEDS_ATTENTION
+    And the parking record lists that record with the bind verdict bound-elsewhere
+
+  Scenario: A correcting record clears an unbindable one
+    Given a merged pull request carrying an unbindable verified record
+    And a later record posted through the posting primitive whose binding names the item and the pull request and whose Supersedes line names the unbindable record
+    When the acceptance pass grades the item
+    Then the earlier record's bind verdict is superseded
+    And the item's factory_captured assertions are graded from the correcting record
+
+  Scenario: A verified record for an earlier head does not prove the merged head
+    Given a bound verified record proving head H1
+    And the pull request merged at head H2 with no counted carried_forward record naming H2
+    When the acceptance pass grades the item
+    Then the record is reported stale-head and is not evidence
+    And each factory_captured assertion is UNOBSERVED
+```
+
+## Scenario 253 — A green aggregate on a tree carries to a push of the same tree, and a push of any other tree runs the gate
+
+```gherkin
+Feature: A push of a tree the aggregate just passed does not run the aggregate again
+  As the operator of a factory
+  I want publish_draft to reuse the janitor's green verdict on the same tree
+  So that a run does not pay a second full check aggregate for bytes already checked
+
+  Scenario: A janitor pass that skipped targets carries to a push of the same tree
+    Given the just check aggregate passed on a tree while skipping a declared target
+    When publish_draft pushes a commit whose tree is byte-identical to that tree with a clean worktree
+    Then the pre-push gate honours the recorded green verdict and does not run the tree-pure members again
+    And it prints one line naming the honoured verdict and the skipped target
+
+  Scenario: A member that reads outside the tree still runs on a byte-identical push
+    Given the just check aggregate passed on a tree and recorded a green verdict
+    And state outside the tree that a pre-push member reads has since changed so that member now fails
+    When a commit whose tree is byte-identical to that tree is pushed with a clean worktree
+    Then the pre-push gate runs that member and refuses the push
+
+  Scenario: A push of a different tree runs the full gate
+    Given the just check aggregate passed on a tree
+    When publish_draft refreshes onto a moved default branch and pushes a commit whose tree differs
+    Then the pre-push gate runs the full pre-push gate
+
+  Scenario: No flag or variable reaches the verdict skip
+    Given no recorded green verdict for the tree being pushed
+    When a push sets an environment variable or passes a flag
+    Then the pre-push gate runs the full pre-push gate
+```
+
+## Scenario 254 — The check aggregate runs its independent targets beside the pytest lane and still reports and fails as the serial loop did
+
+```gherkin
+Feature: The check aggregate does not wait for the pytest lane to run its independent targets
+  As the operator of a factory
+  I want lint, types and static checks to run beside the pytest lane
+  So that a check pass costs about as long as its longest lane rather than the sum of every target
+
+  Scenario: Independent targets run beside a single pytest lane
+    Given LIVESPEC_TEST_PARALLELISM is 4
+    When the just check aggregate runs
+    Then the pytest lane runs once with four workers, with check-coverage after check-per-file-coverage and no overlapping test-suite runs
+    And the lint, type and static targets run while the pytest lane is running
+
+  Scenario: A failing target still fails the concurrent aggregate
+    Given one non-pytest target fails while the pytest lane passes
+    When the just check aggregate runs
+    Then it reports every target's verdict with each target's output kept together
+    And it exits non-zero naming the failed target, exactly as the serial loop does
+
+  Scenario: The concurrent aggregate stays within the sandbox memory limit
+    Given a factory sandbox with a 7630 MiB memory limit and LIVESPEC_TEST_PARALLELISM of 4
+    When the just check aggregate runs
+    Then the sandbox's peak memory stays under its memory limit
+
+  Scenario: Every whole-suite coverage run names its slowest test phases
+    Given a just check aggregate run, or a CI check-coverage job that finds no coverage data and runs the suite itself
+    When the target that runs the whole test suite with coverage finishes
+    Then its output lists the thirty slowest test phases of that run with their durations
+```
+
+## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
+
+```gherkin
+Feature: In-turn commits pay the scoped gate, and the full aggregate runs once per run
+  As the operator of a factory
+  I want implement and review_fix commits to run only the tests their change affects
+  So that a run does not repeat the full check aggregate at every commit before the janitor runs it
+
+  Scenario: A review_fix turn's commit runs the affected-tests gate
+    Given a review_fix turn committing a change to product modules and their tests
+    When its commit hook runs
+    Then it runs just check-changed on the change and not the full check aggregate
+
+  Scenario: A change the affected-tests gate cannot scope falls back to the full aggregate
+    Given a review_fix turn committing a change to a shared configuration file
+    When its commit hook runs
+    Then it runs the full check aggregate
+
+  Scenario: The janitor still runs the full aggregate once
+    Given a run whose commit_green node committed through the affected-tests gate
+    When the run reaches the janitor stage
+    Then the janitor runs the full check aggregate once on the run's tree before publication
+
+  Scenario: A Red commit and its Green amend go through the affected-tests gate
+    Given commit_red staging the one failing Red test alone for the Red commit
+    When its commit hook runs
+    Then the gate accepts the commit because the staged test fails, without demanding passing tests or coverage
+    When commit_green stages the implementation and amends to Green
+    Then the commit hook runs the affected-tests gate and requires the scoped tests and their coverage to pass
+```
+
+## Scenario 256 — A publication that already landed is finished at publish_draft, not a failure
+
+```gherkin
+Feature: publish_draft tells a landed publication from a failure
+  Scenario: publish_draft finds the item's change already merged
+    Given a run whose head adds no change to the default branch's tip
+    And an earlier dispatch of the item has a pull request that the forge reports MERGED into the default branch with merge commit M contained in the tip
+    When publish_draft finishes its refresh
+    Then publish_draft does not push or open a pull request
+    And the run takes the merged-reconcile ending and records the pull request, merge commit M and the merged head
+
+  Scenario: A refused pull-request creation is checked before it fails
+    Given a publish_draft that pushed the run's publish branch
+    And the forge refuses pull-request creation because the branch has no commits beyond the default branch
+    And an earlier dispatch of the item has a MERGED pull request whose merge commit is contained in the default branch's tip
+    When publish_draft handles the refusal
+    Then the run takes the merged-reconcile ending instead of failing
+
+  Scenario: A run that adds a change has not landed
+    Given a run whose head adds a change to the default branch's tip
+    And an earlier dispatch of the item has a MERGED pull request
+    When publish_draft finishes its refresh
+    Then publish_draft pushes and opens a pull request as before
+
+  Scenario: A reused branch name does not make a publication landed
+    Given a run whose head adds no change to the default branch's tip
+    And a MERGED pull request on the same branch name that no dispatch of this item produced
+    When publish_draft finishes its refresh
+    Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
+
+  Scenario: A merge into another base does not make a publication landed
+    Given a run whose head adds no change to the default branch's tip
+    And a pull request of an earlier dispatch of the item MERGED into a branch other than the default branch
+    When publish_draft finishes its refresh
+    Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
+```
+
+## Scenario 257 — A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request
+
+```gherkin
+Feature: A merged item whose proof is missing or record-wide is re-proven without republishing
+  Scenario: A merged item with no verified record is re-proven on its merged head
+    Given an item whose pull request merged with no Proof of Done record on its merged head
+    And the item rests in acceptance parked NEEDS_ATTENTION by the proof evidence leg
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm and runs only proof_capture, proof_verify and proof_grade against the merged head
+    And it pushes nothing and opens no branch or pull request
+    And its records are posted on the merged pull request bound to the item, that pull request and the merged head
+    And the acceptance pass then reads the new verified record and grades each factory_captured assertion from it
+
+  Scenario: The proof-only arm visits its three stages in order and nothing else
+    Given a proof-only arm whose capture succeeds and whose verification returns verified
+    When the run executes
+    Then it visits proof_capture, then proof_verify, then proof_grade, and then ends
+    And it visits no other stage
+
+  Scenario: A merged item parked on a record-wide verdict is re-proven per assertion
+    Given an item whose pull request is merged and whose only verified record carries no per-assertion Reproduced lines
+    And the item rests in acceptance parked NEEDS_ATTENTION by the proof evidence leg
+    When the operator drives resume for the item
+    Then the proof-only arm publishes a verified record with a Reproduced line in each factory_captured assertion's section
+
+  Scenario: A merged item not parked on its proof leg still refuses
+    Given an item whose pull request is merged and that is not parked in acceptance on its proof evidence leg
+    When the operator drives resume for the item
+    Then the resume refuses with exit code 3, naming the pull request state and reconcile-merged as the remedy
+
+  Scenario: An assertion the arm does not reproduce leaves the item parked under every policy
+    Given a proof-only arm whose proof_verify lists one factory_captured assertion as not reproduced
+    And the item's acceptance policy is ai-only, ai-then-human or human-only
+    When the acceptance pass re-runs
+    Then the item stays in acceptance with a parking record naming that assertion and the arm's record
+    And no rework is stamped, the rework cap is unchanged, and no fix stage runs
+
+  Scenario: The proof-only arm needs no proof record and no open pull request
+    Given a merged item parked on its proof leg whose publish branch was deleted and which has no Proof of Done record at all
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm, anchored on the merged pull request, its head commit at merge and the parking record
+    And the item stays in acceptance
+
+  Scenario: A third resume of the same pull request is refused
+    Given a merged pull request that has already anchored two resumes
+    When the operator drives resume for its item parked on its proof leg
+    Then the resume refuses naming the two earlier resumes
+```
+
+## Scenario 258 — A review or proof_verify turn that succeeds without a verdict label is retried once before it reaches needs_human
+
+```gherkin
+Feature: A verdict turn that forgets its verdict gets one more chance before a human is asked
+  Scenario: proof_verify without a verdict label is retried and then routes on its verdict
+    Given a proof_verify turn that ends succeeded and records no verdict label
+    When the run routes that turn
+    Then proof_verify runs once more on the same head with an instruction to emit only its verdict
+    And when the retry records preferred_label approve, the run routes to proof_grade
+
+  Scenario: review without a verdict label is retried once
+    Given a review turn that ends succeeded and records no verdict label
+    When the run routes that turn
+    Then review runs once more with an instruction to emit only its verdict
+    And the retry's verdict label routes it exactly as a first turn's would
+
+  Scenario: A second unlabeled turn reaches needs_human with a named cause
+    Given a proof_verify retry turn that also ends succeeded and records no verdict label
+    When the run routes that turn
+    Then the run routes to needs_human with a cause naming proof_verify and its missing verdict label
+
+  Scenario: A labeled or failed turn routes as before
+    Given a review turn that records preferred_label fix, and another that ends failed
+    When the run routes each turn
+    Then the first routes to disposition and the second to needs_human, with no retry
+```
+
+## Scenario 259 — A run export distinguishes a refused ACP turn from a completed one
+
+```gherkin
+Feature: An ACP turn's stop reason survives into the run's own record
+  As a triager reading a factory run export
+  I want each ACP turn's stop reason recorded where the step ends
+  So that a refusal or a ceiling is not read as a normal turn end
+
+  Scenario: Each ACP step records its turn's stop reason
+    Given a factory run with two ACP stages
+    And the first stage's agent ends its turn with stop reason end_turn
+    And the second stage's agent ends its turn with stop reason refusal
+    When the run is exported with fabro dump
+    Then the event closing the first stage's step records stop reason end_turn
+    And the event closing the second stage's step records stop reason refusal
+    And each stage's outcome record carries its last turn's stop reason
+
+  Scenario: A response with no stop reason is recorded as absent
+    Given a factory run whose ACP agent answers session/prompt without a stopReason field
+    When the run is exported with fabro dump
+    Then that step's closing event records the stop reason as absent
+    And the export does not record end_turn for that turn
+```
+
+## Scenario 260 — A committed configuration whose candidate chain cannot resolve fails just check
+
+```gherkin
+Feature: A candidate chain that cannot resolve is refused at commit time, not at the first dispatch
+  As a factory operator
+  I want just check to evaluate the committed ACP node configuration the way the Dispatcher will
+  So that a configuration every dispatch would refuse never passes the commit gates
+
+  Scenario: An undeclared fallback model fails the check
+    Given a committed .livespec.jsonc whose acp_nodes names claude-sonnet-5-5 as a node's first fallback model
+    And its model_catalog declares no anthropic/claude-sonnet-5-5 entry
+    When check-acp-preflight-config runs
+    Then it exits non-zero
+    And its output names that node's fallbacks[0].model field and claude-sonnet-5-5
+
+  Scenario: A resolvable configuration passes with no network
+    Given a committed .livespec.jsonc whose every node's candidate chain resolves through the catalogs
+    And the host has no network access and no provider credential
+    When check-acp-preflight-config runs
+    Then it exits zero
+
+  Scenario: An availability hold is not a configuration failure
+    Given a resolvable committed configuration
+    And a dispatch journal recording an unexpired availability hold on a node's primary candidate
+    When check-acp-preflight-config runs
+    Then it exits zero, because it reads no journal and judges configuration only
+```
+
+## Scenario 261 — A declared merge-gate suite runs inside the factory run
+
+```gherkin
+Feature: A declared merge-gate suite runs inside the factory run
+  Scenario: A changeset that fails a declared merge-gate check fails in the janitor stage
+    Given a repository that declares a merge_gate_suite running its mutation check against LIVESPEC_MERGE_GATE_BASE
+    And a work item whose change passes the declared check suite but leaves a surviving mutant
+    When the factory runs the item
+    Then the janitor stage fails with the mutation check's output in its stage log
+    And the run routes to fix as it does for a failing check suite
+    And no pull request is opened for a head that failed the merge-gate suite
+
+  Scenario: A repository that declares no merge-gate suite is unchanged
+    Given a repository that does not declare merge_gate_suite
+    When the factory runs a work item
+    Then the janitor stage runs only the declared check suite, exactly as before
+
+  Scenario: A refreshed head that fails the merge-gate suite takes the refresh-repair route
+    Given a repository that declares a merge_gate_suite and a run whose default branch moved before publication
+    When pr_refresh rebases and the refreshed head passes the check suite but fails the merge-gate command
+    Then pr_refresh pushes nothing and takes the refresh-repair route with the merge-gate output
+
+  Scenario: A missing base fails the gate with a named cause
+    Given a repository that declares a merge_gate_suite and a run whose clone cannot resolve origin of its default branch
+    When the janitor gate reaches the merge-gate command
+    Then the janitor gate fails naming the unresolved base and the command is not run
+
+  Scenario: The merge-gate suite is a command step, not an agent instruction
+    Given a repository that declares a merge_gate_suite
+    When the implement, fix and review_fix prompts of the run are read
+    Then none of them directs the turn to run the merge-gate suite
+```
+
+## Scenario 262 — A staged type error is refused before the pre-commit aggregate runs
+
+```gherkin
+Feature: Staged Python files are checked before the pre-commit aggregate
+  Scenario: A staged type error is refused before the pre-commit aggregate runs
+    Given a commit that stages a Python file carrying a type-checker error the repository's pyright configuration covers
+    When the pre-commit hook runs
+    Then the commit is refused, naming the file, line and rule, before any member of the pre-commit aggregate starts
+
+  Scenario: A staged lint error the autofix step does not fix is refused first
+    Given a commit that stages a Python file carrying a lint error the lint autofix step does not fix
+    When the pre-commit hook runs
+    Then the commit is refused, naming the file, line and rule, before the pre-commit aggregate starts
+
+  Scenario: A clean staged change runs the aggregate as before
+    Given a commit whose staged Python files pass the pre-check
+    When the pre-commit hook runs
+    Then the pre-commit aggregate runs exactly as before
+```
+
+## Scenario 263 — Exactly one writer changes a dispatch claim, and every other writer stands down
+
+```gherkin
+Feature: Exactly one writer changes a dispatch claim
+  Scenario: Two hosts race to change one active claim
+    Given claim tokens are enabled and an active item whose current token is T
+    And a recovery on host A and a resolve-blocked valve on host B both read the item
+    When both close T with their own reasons
+    Then exactly one close reason is recorded on T
+    And only the writer whose reason was recorded writes to the item, naming its successor token
+    And the other writes nothing, discards its own successor and reports claim-changed
+
+  Scenario: Intake and a valve race to move one backlog item to ready
+    Given claim tokens are enabled and a backlog item whose current token is T
+    When intake and a move valve both try to move it to ready
+    Then exactly one of them wins T and writes the item
+    And the other writes nothing to the item
+
+  Scenario: A writer that cannot read the close outcome writes nothing
+    Given a writer that closed the item's current token but cannot read its close reason back
+    When it decides whether to write
+    Then it writes nothing to the item and reports claim-unobservable
+
+  Scenario: A crashed winner does not leave the item unwritable
+    Given an item naming closed token T whose close reason names successor S, and the item does not name S
+    And another claim writer has observed that state for 200 seconds on its own clock
+    When that writer reads the item again and the state is unchanged
+    Then it treats S as the current token and applies the protocol to S
+
+  Scenario: A recent unapplied transition is waited out, not taken over
+    Given an item naming closed token T whose close reason names successor S, and the item does not name S
+    And another claim writer first observed that state 30 seconds ago on its own clock
+    When that writer reads the item again
+    Then it writes nothing and reports claim-transition-pending
+
+  Scenario: A winner past its lease does not write
+    Given a writer that won its token 130 seconds of its own elapsed clock time after starting its close
+    When it is about to write the item
+    Then it writes nothing and reports claim-lease-expired
+
+  Scenario: A takeover stands down when the original transition lands first
+    Given a takeover writer that has won successor token S of an item whose closed token T named S
+    And the original winner's item write naming S lands before the takeover's re-read
+    When the takeover writer re-reads the item immediately before its write
+    Then it writes nothing, discards its own successor and reports claim-changed
+
+  Scenario: After cutover, an item with no token is refused, not written blind
+    Given dispatcher.claim_tokens is committed true
+    And a non-closed item names no current token
+    When a claim writer tries to change it
+    Then it writes nothing, reports claim-token-missing, and needs-attention surfaces the item
+
+  Scenario: An interrupted migration can be run again
+    Given a migration pass that named tokens on half of the tenant's non-closed items and stopped
+    When the migration pass is run again with every claim writer stopped
+    Then the items already naming an open token are left unchanged
+    And every other non-closed item now names one
+```
+
+## Scenario 264 — A filing shows the non-closed items it may duplicate
+
+```gherkin
+Feature: A filing shows the non-closed items it may duplicate
+  Scenario: A same-parent item with overlapping vocabulary is displayed
+    Given a non-closed item under epic E whose description shares a quarter of a new filing's significant terms
+    And the new filing names E as its parent and shares no phrase with that item's title
+    When the capture front-end displays the filing before confirmation
+    Then the display lists that item among its duplicate candidates with its id, title, status and shared terms
+    And the filing is not refused
+
+  Scenario: No candidate is reported with its scope
+    Given a tenant with 40 non-closed items none of which overlaps a new filing by 0.1 or more
+    When the capture front-end displays the filing
+    Then the display reads duplicate-candidates none and names the 40 non-closed items compared
+
+  Scenario: A filing with no significant terms is not reported as clear
+    Given a filing whose title and description contain no word of four or more characters outside the stop-word list
+    When the capture front-end displays the filing
+    Then the display reads duplicate-candidates not computed with that reason
+    And it does not read duplicate-candidates none
+
+  Scenario: An unreadable ledger is not reported as no candidates
+    Given the tenant's non-closed items cannot be read
+    When the capture front-end displays the filing
+    Then the display reads duplicate-candidates unobservable with the cause
+    And it does not read duplicate-candidates none
+
+  Scenario: Confirming a filing with candidates records them
+    Given a filing whose display listed two duplicate candidates
+    When the filer confirms the filing
+    Then the filed item carries one ledger comment naming both candidate ids
+    And intake does not withhold ready on them
+```
+
+## Scenario 265 — approve releases an auto-admission item whose repaired Definition of Done now passes, and refuses one that still fails
+
+```gherkin
+Feature: approve re-checks an auto-admission item that intake held on a mechanical Definition-of-Done finding
+  As an operator whose auto-admission item was held at pending-approval by intake
+  I want approve to re-run the intake Definition-of-Done check against the repaired text
+  So that a repaired item is released through the single journaled door and an unrepaired one stays held with its findings recorded
+
+  Scenario: an auto-admission item whose repaired Definition of Done now passes is released
+    Given a work-item in `pending-approval` whose effective `admission_policy` is `auto`, held there by intake on a mechanical Definition-of-Done finding
+    And its description has since been repaired so the intake Definition-of-Done check reports no mechanical finding
+    When the operator drives `approve:<id>`
+    Then the item moves to `ready` and the transition is journaled with its actor
+
+  Scenario: an auto-admission item whose Definition of Done still fails stays held
+    Given a work-item in `pending-approval` whose effective `admission_policy` is `auto`, whose description still carries a mechanical Definition-of-Done finding
+    When the operator drives `approve:<id>`
+    Then the item stays in `pending-approval`
+    And the result names the mechanical finding
+    And the finding is recorded on the item as a ledger comment
+```
+
+## Scenario 266 — A complete implement turn with no diff ends as already satisfied, not as a dead implementer
+
+```gherkin
+Feature: A complete implement turn with no diff is already satisfied, not a dead implementer
+  As an operator dispatching an item whose assertions are already true on the default branch
+  I want the run to end as already satisfied and rest the item for its Proof of Done
+  So that a correct no-op turn is not read as a failed attempt and leaves no stranded claim
+
+  Scenario: a red turn that declares the work already satisfied with an unchanged tree ends as already satisfied
+    Given a work-item whose factory_captured assertions are already true on the default branch
+    When its dispatch's `red` turn declares the already-satisfied outcome and the run's tree is unchanged against the dispatch base
+    Then the run ends with an already-satisfied outcome naming the item, not at `dead_implementer`
+    And the item rests in `acceptance` with no stranded factory claim, and `needs-attention` names the route to its Proof of Done
+
+  Scenario: a red turn with no diff and no already-satisfied declaration is still a dead implementer
+    Given a dispatch whose `red` turn leaves the tree unchanged against the dispatch base without the already-satisfied declaration
+    And the `red` node's max_visits is exhausted
+    When the run evaluates the implementer's outcome
+    Then the run ends at `dead_implementer` with today's truncation record
+```
+
+## Scenario 267 — A parked plan child acquires its spec-change tier without being dispatched, so its disposition can proceed
+
+```gherkin
+Feature: A parked plan child can be classified without being dispatched
+  As an operator disposing a plan child that was parked before the tier guard existed
+  I want to record its spec-change tier without dispatching it
+  So that plan-child disposition can proceed while still refusing a held spec-change tier
+
+  Scenario: classify-tier records the tier once and dispatches nothing
+    Given a plan child that carries no `livespec-spec-change-tier` record and is parked so that it is never dispatched
+    And `reparent_plan_child` refuses it as undeterminable
+    When an operator runs `dispatcher.py classify-tier --repo <repo> --item <child>`
+    Then exactly one `livespec-spec-change-tier` record with `stage: classify` is appended
+    And no Fabro run is created and the child's assignee is unchanged
+
+  Scenario: a tier that is not spec-change leaves the child movable
+    Given the recorded tier is not spec-change
+    Then the child's status and labels are unchanged
+    And a following `reparent_plan_child` moves it and records the disposition
+
+  Scenario: a held spec-change tier keeps the disposition refused
+    Given the recorded tier is a held spec-change tier
+    Then the disposition stays refused, exactly as the constraint requires
+
+  Scenario: a second classify-tier run appends nothing
+    Given the child already carries a `livespec-spec-change-tier` record
+    When an operator runs `classify-tier` for it again
+    Then nothing is appended and the existing classification is reported
+```
+
+## Scenario 268 — A work-item rider reaches only the stages it names
+
+```gherkin
+Feature: Riders instruct only the stages they are written for
+  As an operator leaving an implement-directed rider on a work item
+  I want grading stages never to receive a rider that does not name them
+  So that a rider cannot make a review or proof turn narrate an implement turn
+
+  Scenario: a rider naming implement reaches only the implement brief
+    Given a work item carrying a rider whose first line is `FOR implement ONLY:`
+    When the Dispatcher renders the goal briefs for its run
+    Then the implement brief carries that rider
+    And the review, proof_capture and proof_verify briefs do not
+
+  Scenario: a rider that names no stage reaches only the tree-changing stages
+    Given a work item carrying a rider that names no stage
+    When the Dispatcher renders the goal briefs for its run
+    Then the implement and review_fix briefs carry that rider
+    And the review, proof_capture and proof_verify briefs do not
+```
+
+## Scenario 269 — The lifecycle guard harness waits for a slow capture server and names a failed one
+
+```gherkin
+Feature: The lifecycle guard's test harness starts its telemetry capture server on a bounded, diagnosable wait
+
+  Scenario: A capture server slower than two seconds does not fail a telemetry case
+    Given the guard harness starts its telemetry capture server
+    And the server writes its port file after more than two seconds and before 30 seconds
+    When the harness runs a telemetry case against that server
+    Then the harness MUST wait for the port file rather than failing the case
+    And the case's outcome MUST reflect the guard's telemetry behaviour, not the start delay
+
+  Scenario: A capture server that exits before writing its port file is named
+    Given the guard harness starts its telemetry capture server
+    And the server process exits before writing its port file
+    When the harness's start wait ends
+    Then the harness MUST end the wait when the process exits, without waiting for the 30-second bound
+    And the failure line MUST name the server's exit status and its captured standard error
+
+  Scenario: A capture server still silent at the bound is stopped and named
+    Given the guard harness starts its telemetry capture server
+    And the server has neither written its port file nor exited after 30 seconds
+    When the harness's start wait ends
+    Then the failure line MUST state that the server was still running at the bound and include its captured standard error
+    And the harness MUST stop the capture server process it started
+```
+
+## Scenario 270 — A successor retires a dead owner's terminal wait without rewriting it
+
+```gherkin
+Feature: A successor session disposes of a dead owner's terminal wait through the tool
+  Scenario: Retiring a terminal unacknowledged wait keeps the owner's record intact
+    Given a wait record in the session-wait store whose owning session has ended, whose targets have all ended, and which was never acknowledged
+    When a different session runs retire with its own session id and a reason
+    Then the record keeps its original owner, targets and observations
+    And the record gains a retirement disposition naming the retiring session, the reason and each target's terminal state
+    And inventory no longer reports the record as ended-but-unacknowledged
+
+  Scenario: A wait with a still-running target is refused
+    Given a wait record with a target that is still running
+    When a session runs retire on that wait
+    Then the operation refuses as target-not-terminal
+    And the record is unchanged
+```
+
+## Scenario 271 — A session finds its project's registered plugin build and is told when it is stale
+
+```gherkin
+Feature: A session resolves its project's registered plugin build and is told when it is stale
+  Scenario: The registered-root command prints the governed project's install root
+    Given a host whose installed-plugins record holds installs of this plugin for two projects at different builds
+    When the registered-root command runs for the second project
+    Then it prints the plugin root of the second project's install
+    And it does not print the first project's root or the invoking session's own bound root
+
+  Scenario: A project with no registered install is refused
+    Given a project path with no install of this plugin in the installed-plugins record
+    When the registered-root command runs for it
+    Then it exits non-zero naming the missing install
+
+  Scenario: Session start warns about a registered install older than the latest release
+    Given a governed project whose registered install is older than the latest released version
+    When the plugin's session-start hook runs
+    Then it prints a warning naming the registered install's version and the latest released version
+    And the session start succeeds
+
+  Scenario: An operation-prose snippet imports the package through the registered root
+    Given an operation-prose step that has an agent import this plugin's package from a snippet
+    When the agent follows that step for a governed project
+    Then the snippet puts on its import path the plugin root the registered-root command prints for that project
+    And the step names no literal plugin cache-build path
+```
+
+## Scenario 272 — A factory-captured assertion whose proof surface no sandbox capability provides is named in the gate's finding
+
+```gherkin
+Feature: A factory-captured assertion whose proof surface no sandbox capability provides is a gate finding that names the surface
+  Scenario Outline: The gate names the surface class an assertion's proof needs
+    Given an item whose factory-captured assertion's proof needs <surface>
+    When the dod_gate node evaluates the rendered goal
+    Then the run ends through the structured needs-human ending
+    And the finding names the assertion and names <surface> as its proof surface
+
+    Examples:
+      | surface                                                                          |
+      | an external cluster or service                                                   |
+      | a credential or kubeconfig not given to the sandbox                              |
+      | operator-host state                                                              |
+      | the released-build effects of a prompt or workflow file the item itself changes  |
+
+  Scenario: A prompt or workflow file under .claude-plugin/.fabro/ that the item changes names the released-build requirement
+    Given an item that changes a stage prompt file under .claude-plugin/.fabro/
+    And a factory-captured assertion naming behaviour of that stage prompt
+    When the dod_gate node evaluates the rendered goal
+    Then the run ends through the structured needs-human ending
+    And the finding names the released-build requirement
+```
+
+## Scenario 273 — The run goal omits a filing-time advisory finding comment and still lists a later operator comment
+
+```gherkin
+Feature: The rendered goal omits filing-time advisory findings and keeps later operator riders
+  Scenario: A filing-time advisory finding comment is left out of the goal and a later rider stays
+    Given an item whose ledger carries a comment whose first line begins with `definition-of-done finding (advisory):`
+    And an operator comment added after filing
+    When the Dispatcher renders the node's goal for the item
+    Then the operator-rider section lists the operator comment
+    And the operator-rider section does not carry the advisory finding comment
+    And the advisory finding comment remains on the item's ledger
+```
+
+## Scenario 274 — One query by run id says why each factory step ended
+
+```gherkin
+Feature: Factory step spans say why each step ended
+  As a triager of a factory run
+  I want each step's span to carry why the step ended
+  So that one telemetry query replaces a run dump
+
+  Scenario: An ACP step that stopped mid-tool-call and a failed gate step
+    Given a factory run of a work item
+    And its implement step's agent ends its turn with stop reason end_turn while a just check tool call is still running
+    And its janitor gate step fails on the targets check-types and check-lint
+    When the run's spans are queried in Honeycomb filtered by the run id
+    Then the implement step's span carries the work item id, the run id, the node name and visit, the model, the candidate index and the duration
+    And it carries stop reason end_turn, last tool call state in_flight, and context used tokens against context window tokens
+    And the janitor step's span carries gate verdict fail with failed targets check-types and check-lint
+
+  Scenario: An unobservable value is named rather than fabricated
+    Given a factory ACP step whose agent made no tool call
+    When the step's span is exported
+    Then the span carries no last tool call attributes
+    And the span names them in its unavailable fields
+```
+
+## Scenario 275 — A factory ACP node loads only the instruction files, skills, plugins and MCP tools its declaration names
+
+```gherkin
+Feature: Per-node context declaration
+
+  Scenario: A factory ACP node loads only the instruction files, skills, plugins and MCP tools its declaration names
+    Given the implement-work-item workflow's defaults set loads on the implement node to instruction_files ["AGENTS.md"] and on the review node to four empty arrays
+    And the governed repository carries an AGENTS.md instruction file, a CLAUDE.md symlink to it, and a project MCP server configuration
+    When an implementation run is dispatched
+    Then the first request of the implement node session carries the text of AGENTS.md
+    And the first request of the review node session carries no text of AGENTS.md
+    And neither session lists a tool of the project MCP server
+    And the dispatch record journals each node's resolved loads declaration and the layer that supplied it
+
+  Scenario: A repository layer that sets loads replaces the workflow default whole
+    Given the implement-work-item workflow's defaults set loads on the review node to four empty arrays
+    And the dispatch target's dispatcher.acp_nodes sets loads on the review node to instruction_files ["AGENTS.md"]
+    When an implementation run is dispatched
+    Then the first request of the review node session carries the text of AGENTS.md
+    And the dispatch record journals the review node's loads as supplied by the repository layer
+
+  Scenario: A declared item the node's agent cannot be given refuses the dispatch before claim
+    Given the dispatch target's dispatcher.acp_nodes sets loads on the review node to plugins ["no-such-plugin"]
+    When a dispatch of an implementation item is requested
+    Then the dispatch is refused before the item is claimed
+    And the refusal names the review node and no-such-plugin
+```
+
+## Scenario 276 — A mirror records the sandbox image it was measured on
+
+
+```gherkin
+Feature: The capability mirror records the sandbox image it was measured on
+  Scenario: A mirror measured on an older image is reported stale and the check fails
+    Given a repository whose committed dispatcher.sandbox_capabilities_measured_image names image A
+    And a committed configuration whose dispatcher.fabro_sandbox_image resolves to image B
+    When the filing display and the host-side Definition-of-Done judgement read the mirror
+    Then each reports a stale-mirror configuration mismatch naming image A and image B
+    And the Dispatcher journals the mismatch and neither refuses the admission nor fails the dod_gate node
+    And the repository check check-sandbox-capabilities-measured-image fails naming image A and image B
+  Scenario: A mirror that records no measured image is reported unverifiable
+    Given a repository with a committed dispatcher.sandbox_capabilities array and no measured-image key
+    When the approve display reads the mirror
+    Then it reports an unverifiable-mirror configuration mismatch with the cause no-measured-image
+    And the grading set is still the committed array alone
+  Scenario: A catalog launch is unverifiable and never stale
+    Given a factory declaring catalog environment livespec-ci and a committed measured image that differs from the catalog's image
+    When a dispatch to that factory is judged
+    Then the report is an unverifiable-mirror mismatch with the cause catalog_environment naming livespec-ci
+    And no stale-mirror mismatch is reported
+```
+
+## Scenario 277 — A merged pull request with no finished factory run, or whose run died after the merge, is re-proven by the proof-only arm
+
+```gherkin
+Feature: A merged pull request that no finished factory run proved is re-proven by the proof-only arm
+  Scenario: A hand-finished merge is re-proven on its merged head
+    Given an item whose pull request was merged by hand with no factory run, and whose latest reconcile-merged moved it into acceptance parked NEEDS_ATTENTION on its proof leg
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm anchored on that pull request and its head commit at merge, and the refusal for a live earlier run does not fire for the want of an earlier run
+    And the arm's verified record is posted on that pull request, after which reconcile-merged writes the item's Proof of Done pointer
+    And no host_verified record is read as proof of a factory_captured assertion
+
+  Scenario: A merged pull request whose run died after the merge is re-proven, not re-implemented
+    Given an item whose pull request merged and whose run ended in publish_draft or refresh_repair after the merge, so the pull request carries no Proof of Done comment
+    And the item rests in acceptance parked NEEDS_ATTENTION on its proof leg
+    When the operator drives resume for the item
+    Then the resume takes the proof-only arm against the pull request's head commit at merge
+    And it does not re-enter the implement path and does not end at a dead implementer
+```
+
+## Scenario 278 — A factory dispatch takes its credential from the whole slot pool, preferring the sooner window reset, and refuses only when no slot qualifies
+
+```gherkin
+Feature: Factory credential from the whole slot pool
+  As a factory operator whose interactive account is short of headroom
+  I want a dispatch to take the best-qualifying credential from the whole injected slot pool
+  So that the factory is not starved while other slots sit unused, and quota does not expire unused
+
+  Background:
+    Given the credential wrapper injects the pool slots "ANTHROPIC_2", "ANTHROPIC_3" and "ANTHROPIC_4"
+    And dispatcher.session_headroom_floor_percent is 20
+    And dispatcher.session_headroom_horizon_minutes is 180
+    And an item whose implement node's candidate is covered by the admission session-headroom clause
+    And every other admission-valve condition is satisfied
+
+  Scenario: The interactive account is short while another slot qualifies, so the other slot is used
+    Given the account-selection process published "anthropic-2" for interactive spend
+    And slot "ANTHROPIC_2" reads 90 percent utilization
+    And slot "ANTHROPIC_3" reads 0 percent utilization
+    When the Dispatcher evaluates admission
+    Then the item is admitted with slot "ANTHROPIC_3" projected
+    And the assessment record names the chosen slot's opaque credential identity
+    And the assessment record names the "ANTHROPIC_2" identity as not chosen with the reason floor skip
+
+  Scenario: Two slots qualify and the sooner window reset wins
+    Given slot "ANTHROPIC_3" reads 10 percent utilization with a five-hour window reset 4 hours away
+    And slot "ANTHROPIC_4" reads 30 percent utilization with a five-hour window reset 1 hour away
+    And slot "ANTHROPIC_2" reads 95 percent utilization
+    When the Dispatcher evaluates admission
+    Then slot "ANTHROPIC_4" is projected
+    And the record names "ANTHROPIC_3" as qualifying but ranked lower on its later reset
+
+  Scenario: A measured qualifying projection outranks an unavailable one
+    Given slot "ANTHROPIC_3" qualifies with a projection that is unavailable and a window reset 1 hour away
+    And slot "ANTHROPIC_4" qualifies with a measured projection and a window reset 3 hours away
+    When the Dispatcher evaluates admission
+    Then slot "ANTHROPIC_4" is projected
+
+  Scenario: No slot qualifies, so the existing refusal applies
+    Given slot "ANTHROPIC_2" reads 85 percent utilization
+    And slot "ANTHROPIC_3" reads an unobservable result
+    And slot "ANTHROPIC_4" reads 40 percent utilization projected to exhaust within the horizon
+    When the Dispatcher evaluates admission
+    Then the item stays ready with no dispatch claim and no blocked_reason
+    And its containment refusal record names every slot's opaque credential identity with its reading or unobservable result and its skip kind
+    And the refusal names the admission-required node and scheduled reevaluation instant
+
+  Scenario: The interactive selection is not changed by the factory's choice
+    Given the account-selection process published "anthropic-2" for interactive spend
+    And the Dispatcher chooses slot "ANTHROPIC_3" for a dispatch
+    When admission completes
+    Then the account-selection process's published selection is unchanged
+    And the Dispatcher read neither that selection nor that process's trigger to choose the slot
+```
+
+## Scenario 279 — A materialized workflow.toml over the engine's limit is caught at build time and refused before claim
+
+```gherkin
+Feature: The materialized workflow.toml never reaches the engine over its size limit
+  As the maintainer of a repository whose dispatches the factory runs
+  I want workflow.toml growth caught before release and any overrun refused before claim
+  So that no dispatch claims an item and then fails at fabro-run on the engine's file-size limit
+
+  Scenario: The build-time check fails above 90 percent of the limit
+    Given a build whose representative materialized workflow.toml is 471,860 bytes
+    When the just check aggregate runs check-materialized-workflow-toml-size
+    Then the check fails
+    And its output names the measured size 471,860, the 471,859-byte threshold and the 524,288-byte limit
+
+  Scenario: The build-time check passes at or below the threshold and prints the size
+    Given a build whose representative materialized workflow.toml is 463,547 bytes
+    When the just check aggregate runs check-materialized-workflow-toml-size
+    Then the check passes
+    And its output names the measured size 463,547
+
+  Scenario: A dispatch whose materialized workflow.toml exceeds the limit is refused before claim
+    Given a ready work item whose materialized workflow.toml for this dispatch is 526,975 bytes
+    When the Dispatcher dispatches it
+    Then the Dispatcher refuses the dispatch before any claim is written and before any Fabro run exists
+    And the journaled refusal names the measured size 526,975 and the 524,288-byte limit
+    And the work item keeps the status it held before the dispatch, with no dispatch claim
+```
+
+## Scenario 280 — Each host model-judgement spawn names its caller in OTEL_RESOURCE_ATTRIBUTES, appended to any inherited entries
+
+```gherkin
+Feature: Host model-judgement caller labelling
+
+  Scenario: Two judgements sharing one launch seam are told apart, appended to inherited entries
+    Given the launching environment carries `OTEL_RESOURCE_ATTRIBUTES=service.namespace=livespec-family`
+    When the drift run and the host governing-heading verdict each launch a judge subprocess through the shared spec-stated launch seam
+    Then the drift run's child receives `OTEL_RESOURCE_ATTRIBUTES=service.namespace=livespec-family,livespec.caller=drift_run`
+    And the governing-heading verdict's child receives `OTEL_RESOURCE_ATTRIBUTES=service.namespace=livespec-family,livespec.caller=dod_governing_heading`
+    And no other environment variable of either child differs from the launching environment
+
+  Scenario: A launch with no inherited resource attributes carries the caller entry alone
+    Given the launching environment carries no `OTEL_RESOURCE_ATTRIBUTES`
+    When the Definition-of-Done judgement launches its judge subprocess before dispatch
+    Then the child receives `OTEL_RESOURCE_ATTRIBUTES=livespec.caller=dod_judgement_pre_dispatch`
+```
+
+## Scenario 281 — An ended run's Kubernetes sandbox survives while its item awaits a human and is deleted through its provider once the item closes
+
+```gherkin
+Feature: Sandbox retention and collection
+
+  Scenario: Retained while awaiting a human, collected through the provider once closed
+    Given two ended factory runs on the Kubernetes provider, run A whose work-item rests at `needs-human` and run B whose work-item rests at `blocked`
+    When the Dispatcher's next pass runs
+    Then run A's and run B's driver records and node workspace directories still exist
+    When run A's work-item is closed and the Dispatcher's next pass runs while no run on that factory is running
+    Then run A's sandbox is deleted through the provider's delete operation, and its driver record and node workspace directory no longer exist
+    And run B's driver record and node workspace directory still exist
+    When a further pass runs
+    Then nothing further is recorded for run A and the pass does not fail
+
+  Scenario: Collection is deferred while the factory runs any run
+    Given the factory's committed defer_collection_while_active setting is absent
+    And an ended run C whose work-item is closed, on a factory that is running run D
+    When the Dispatcher's next pass runs
+    Then run C's sandbox still exists and the pass journals run C's collection as deferred
+    When run D ends and the Dispatcher's next pass sees no running run on the factory
+    Then run C's sandbox is deleted through the provider's delete operation
+
+  Scenario: Deletions against a busy factory are paced host-wide
+    Given the factory's committed rm_min_interval_seconds is 60 and the factory is running a run
+    And one Dispatcher process started a run deletion against that factory 10 seconds ago
+    When a second Dispatcher process on the same host decides to cancel a stalled run on that factory
+    Then the stalled run stops progressing at once
+    And the deletion of its record waits until 60 seconds after the first deletion started
+    And the pass journals the deferred deletion with the run id, the factory, the caller and the earliest start instant
+```
+
+## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node
+
+```gherkin
+Feature: The implement stage separates Red from Green and commits outside agent turns
+  Scenario: A Red test and its implementation commit as one Red-Green pair
+    Given a dispatched work item whose Definition of Done needs a new behaviour
+    When the red node writes a failing test and ends its turn
+    Then commit_red makes the Red commit with the repository's commit hooks running
+    And the green node starts a fresh session whose context is the work item and the handoff file
+    When the green node implements the behaviour and ends its turn
+    Then commit_green folds any engine checkpoint commits above the Red commit into the index
+    And commit_green amends the Red commit with the repository's commit hooks running
+    And the branch carries one commit with the Red test, the implementation and both trailer sets
+
+  Scenario: A refused Green amend re-enters green with the hook's recorded failure
+    Given commit_red has made the Red commit
+    When commit_green's hook refuses naming a failed target
+    Then the run re-enters green
+    And the handoff file's newest section carries that failed target and the hook's own output lines
+
+  Scenario: Green finds the Red test wrong
+    Given commit_red has made the Red commit
+    When the green turn ends with a test-wrong declaration and its reason
+    Then the run re-enters red with that reason in the handoff file
+    And the Red test file is unchanged by the green turn
+    And the re-entered red turn starts from the dispatch base with the test-wrong reason in the handoff file
+    And after the next commit_red the branch carries exactly one Red commit above the dispatch base
+
+  Scenario: A refused Red commit re-enters red
+    Given a red turn that has ended
+    When commit_red's hook refuses, naming a failed target
+    Then the run re-enters red
+    And the handoff file's newest section carries commit_red's exit status, that failed target and the hook's own output lines
+
+  Scenario: A red turn that changes a product file is refused at commit_red
+    Given a red turn that wrote a failing test and also changed a product file
+    When commit_red runs
+    Then commit_red makes no commit
+    And the handoff file's newest section names the changed product file
+    And the run re-enters red from the dispatch base
+
+  Scenario: An exhausted commit re-entry ends the stage failed with the recorded verdict
+    Given commit_green's hook has refused and the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the implement stage's outcome is failed
+    And the needs-human cause names commit_green's recorded exit status and failed target names
+
+  Scenario: An exhausted commit re-entry's cause carries the first failure line of the hook's output
+    Given commit_green's hook has refused naming the failed target check-types
+    And the hook's recorded output reports a first error line longer than 200 characters
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause names commit_green's recorded exit status and the failed target check-types
+    And the cause carries that first error line shortened to 200 characters and marked as truncated
+
+  Scenario: A refused commit whose hook output names no target says the target is unknown and why
+    Given commit_red's hook has refused and its recorded output cannot be read
+    And the red node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause states that the failing target is unknown because the hook's recorded output could not be read
+    And the cause is not the hook script's exit status alone
+
+  Scenario: A failure line that quotes a sandbox credential is withheld from the cause
+    Given the dispatch supplied CODEX_AUTH_JSON to the run's sandbox
+    And commit_green's hook refused with a first error line that quotes that variable's value
+    And the green node's max_visits is exhausted
+    When the run ends at the needs_human terminal
+    Then the needs-human cause does not contain the value of CODEX_AUTH_JSON
+    And the cause states that an excerpt line was withheld because it contained the value of CODEX_AUTH_JSON
+
+  Scenario: An exhausted test-wrong route ends the stage failed with both sides' sections
+    Given a green turn that ends with a test-wrong declaration
+    And the red node's max_visits is exhausted
+    When the run evaluates the implement stage's outcome
+    Then the implement stage's outcome is failed
+    And the cause carries the latest red and green sections of the handoff file
+
+  Scenario: A green turn repairs what its gate preview refuses before it ends
+    Given a green turn whose change fails the repository's check-keyword-only-args target
+    When the turn runs the gate preview before ending
+    Then the preview names check-keyword-only-args as failed and creates no commit
+    When the turn fixes the change and runs the preview again
+    Then the preview passes and the turn's handoff section records that last preview run
+    And no re-entry budget was spent on either preview run
+
+  Scenario: A purely mechanical Green refusal re-enters green without spending its ordinary re-entry
+    Given a repository that declares check-lint and check-per-file-coverage as mechanical targets
+    And commit_green's hook refuses naming only check-per-file-coverage
+    When the run routes the refusal
+    Then the run re-enters green with one fewer mechanical re-entry remaining
+    And the green node's ordinary re-entry is unspent
+    And commit_green's handoff section names the refusal as mechanical and names check-per-file-coverage
+
+  Scenario: A refusal naming a substantive target spends the ordinary re-entry
+    Given a repository that declares check-lint as a mechanical target
+    And commit_green's hook refuses naming check-lint and check-types
+    When the run routes the refusal
+    Then the run re-enters green spending its ordinary re-entry
+    And no mechanical re-entry is spent
+
+  Scenario: Spent mechanical and ordinary re-entries end the stage failed naming both budgets
+    Given a repository that declares check-lint as a mechanical target with one mechanical re-entry
+    And green has spent its mechanical re-entry and its ordinary re-entry
+    When commit_green's hook refuses naming only check-lint
+    Then the implement stage's outcome is failed
+    And the needs-human cause names both the mechanical and the ordinary re-entry budgets as exhausted
+```
+
+## Scenario 289 — A Green amend whose staged test fails is refused before the rest of its gate's tests run
+
+```gherkin
+Feature: A Green amend fails fast on its own tests and still runs its whole gate once
+  As the operator of a factory
+  I want a Green amend whose own test still fails to be refused before the whole suite runs
+  So that a failing Green amend does not pay for a whole-suite coverage run before it is refused
+
+  Scenario: A failing staged test refuses the amend before the whole suite runs
+    Given a Green amend made by hand on a host, staging an implementation file whose Red test still fails
+    When the pre-commit hook runs
+    Then the commit is refused naming that test
+    And no whole-suite coverage member of the pre-commit aggregate started
+    And the hook's output names the staged-test phase as the phase that refused
+
+  Scenario: Passing staged tests are followed by the whole gate once
+    Given a Green amend made by hand on a host whose staged tests pass
+    When the pre-commit hook runs
+    Then the pre-commit aggregate runs its whole-suite coverage members once, after the staged tests
+
+  Scenario: Independent targets still run beside the staged tests
+    Given the check aggregate runs its independent targets concurrently
+    And a Green amend whose staged tests fail
+    When the pre-commit hook runs
+    Then the lint, type and static targets run beside the staged tests and their verdicts are reported
+    And no further test-running member starts
+
+  Scenario: commit_green's amend runs its staged tests before the affected-tests gate
+    Given commit_red has made the Red commit and the green turn has ended
+    When commit_green amends and its staged tests pass
+    Then the commit hook runs the affected-tests gate's scoped tests once, after the staged tests
+```
+
+## Scenario 290 — With no projected parallelism the test worker count follows the CPUs the process may use
+
+```gherkin
+Feature: The worker-count resolver sizes test workers from the CPU allowance
+  As the operator of a CI runner or the dev host
+  I want the test worker count to follow the CPUs the process may use
+  So that a process on a large node does not start more coverage-traced workers than its CPU allowance
+
+  Scenario: A cgroup CPU quota bounds the worker count
+    Given LIVESPEC_TEST_PARALLELISM is unset and the CI lane is not hosted
+    And a container whose cgroup v2 CPU quota allows 4 CPUs on a 32-core host
+    When the worker-count resolver runs
+    Then it prints 1, the count the divisor gives for 4 CPUs
+
+  Scenario: An affinity mask bounds the worker count when no quota is set
+    Given LIVESPEC_TEST_PARALLELISM is unset and the CI lane is not hosted
+    And a process with no CPU quota whose affinity mask holds 8 of a 32-core host's CPUs
+    When the worker-count resolver runs
+    Then it prints 2
+
+  Scenario: A projected parallelism still wins
+    Given LIVESPEC_TEST_PARALLELISM is 3 on a 32-core host with no CPU quota
+    When the worker-count resolver runs
+    Then it prints 3
+```
+
+## Scenario 288 — An absent five-hour window is no five-hour limit, and the seven-day status still governs
+
+```gherkin
+Feature: A provider response with no five-hour window does not idle the factory
+  As an operator running Claude-routed factory nodes
+  I want admission to read an absent five-hour window as no five-hour limit
+  So that the factory is not refused on accounts the provider still serves
+
+  Background:
+    Given dispatcher.session_headroom_floor_percent is 20
+    And an item whose admission-required node's candidate is covered by the admission session-headroom clause
+    And every other admission-valve condition is satisfied
+
+  Scenario: An authenticated 2xx response with no five-hour window qualifies the slot
+    Given the usage request for the only pool slot is answered with a 2xx status
+    And the response carries no five-hour utilization and no five-hour reset instant
+    And the same response reports the seven-day status as allowed
+    When the Dispatcher evaluates admission
+    Then the slot qualifies and the item is admitted with that slot projected
+    And the assessment record names the five-hour window as five-hour-window-absent, not as an unobservable result
+    And the assessment record carries a not-projected projection result with the reason five-hour-window-absent
+
+  Scenario: The seven-day status still governs a slot whose five-hour window is absent
+    Given the usage request for the only pool slot is answered with a 2xx status
+    And the response carries no five-hour window
+    And the same response reports the seven-day status as rejected
+    When the Dispatcher evaluates admission
+    Then the slot is skipped by a seven-day skip
+    And the item stays ready without a claim
+
+  Scenario: A slot with a measured five-hour reading outranks a slot whose window is absent
+    Given slot "ANTHROPIC_0" is answered with a 2xx status carrying no five-hour window
+    And slot "ANTHROPIC_1" reads 10 percent five-hour utilization with a measured projection
+    When the Dispatcher evaluates admission
+    Then slot "ANTHROPIC_1" is projected
+    And the record names "ANTHROPIC_0" as qualifying but ranked lower
+
+  Scenario: A malformed figure or a failed request is still unobservable
+    Given the usage request for the only pool slot is answered with a five-hour figure that is not a number, or is refused with a non-2xx status carrying no five-hour figure, or times out
+    When the Dispatcher evaluates admission
+    Then the reading is journaled as unobservable and the slot is skipped by a floor skip
+```
+
+## Scenario 291 — A pod-sandboxed run's spans name the cluster node its pod ran on
+
+```gherkin
+Feature: Factory spans name the cluster node of a pod sandbox
+  As a triager of a factory run on the Kubernetes backend
+  I want each span of the run to name the node its sandbox pod ran on
+  So that one query shows where every step executed beside which factory dispatched it
+
+  Scenario: A dispatch whose pod is scheduled off the factory host
+    Given a factory whose environment selects the Kubernetes sandbox provider
+    And a dispatch to that factory whose sandbox pod is scheduled on a cluster node other than the factory host
+    When the run's spans are queried in Honeycomb filtered by the run id
+    Then every step span and every run_turn span of the run carries k8s.node.name naming the node the pod ran on
+    And each of those spans carries livespec.dispatch.factory naming the factory
+
+  Scenario: A Docker-sandboxed run names no cluster node
+    Given a factory whose environment selects the Docker sandbox provider
+    When a dispatch to that factory runs and its spans are queried by run id
+    Then no span of the run carries k8s.node.name
+    And no step span names k8s.node.name in its unavailable fields
+```
+
+## Scenario 292 — A factory Codex response span keeps its measured cache-token counts
+
+```gherkin
+Feature: Factory Codex response spans keep their measured cache-token counts
+  As the host pricing factory Codex spend
+  I want each factory Codex response span to carry the cached-input count Codex measured
+  So that cost is priced from the measurement rather than an assumed cached share
+
+  Scenario: A handle_responses span carrying both cache counts
+    Given a factory Codex run whose handle_responses span records gen_ai.usage.cache_read.input_tokens and gen_ai.usage.cache_write.input_tokens
+    When the receiver forwards the span to Honeycomb
+    Then the forwarded span carries both keys with the integer values Codex recorded
+
+  Scenario: A handle_responses span with no cache counts
+    Given a factory Codex handle_responses span that records neither cache key
+    When the receiver forwards the span
+    Then the forwarded span carries neither key
+```
+
+## Scenario 293 — A factory Claude API-request record carries its cache-write lifetimes and dispatch id
+
+```gherkin
+Feature: Factory Claude cache writes are split by lifetime
+  As the host pricing factory Claude spend
+  I want each factory Claude API-request record to carry its 5-minute and 1-hour cache-write counts and its dispatch id
+  So that each lifetime is priced at its own rate and the spend is attributed to its dispatch
+
+  Scenario: A response reporting both lifetimes
+    Given a factory Claude run whose API response reports 5-minute and 1-hour cache-write tokens
+    When the record is forwarded to Honeycomb
+    Then it carries cache_creation_5m_tokens and cache_creation_1h_tokens with the reported values
+    And their sum equals its cache_creation_tokens
+    And it carries livespec.dispatch.id and request_id
+
+  Scenario: A response reporting only the 5-minute lifetime
+    Given a factory Claude API response whose usage reports 5-minute cache-write tokens and no 1-hour count
+    When the record is forwarded
+    Then it carries cache_creation_5m_tokens with the reported value
+    And it carries no cache_creation_1h_tokens
+
+  Scenario: A response reporting no lifetime split
+    Given a factory Claude API response whose usage carries no lifetime split
+    When the record is forwarded
+    Then it carries neither lifetime key
+```
+
+## Scenario 294 — A terminated dispatch emits one terminal span with its outcome and one span per attempt
+
+```gherkin
+Feature: Terminal dispatch span
+  As the host reporting factory cost by run outcome
+  I want each terminated dispatch to emit its outcome and its attempts
+  So that spend can be grouped by how the run ended and by fallback
+
+  Scenario: A dispatch whose second attempt ran on a fallback model and merged
+    Given a dispatch whose first attempt failed on its primary model and whose second attempt ran on the next candidate and merged
+    When the dispatch terminates
+    Then dataset livespec-dispatcher holds exactly one livespec.dispatch.terminal span for its dispatch id, carrying livespec.dispatch.outcome succeeded and livespec.dispatch.attempt_count 2
+    And it holds two livespec.dispatch.attempt spans under it, with index 0 carrying fallback false and index 1 carrying fallback true, each naming its acp.model
+
+  Scenario Outline: Each terminal disposition is recorded as its outcome
+    Given a dispatch whose final disposition is <disposition>
+    When the dispatch terminates
+    Then its terminal span carries livespec.dispatch.outcome <outcome>
+
+    Examples:
+      | disposition                                                  | outcome   |
+      | its run is cancelled                                         | cancelled |
+      | its run fails and no acceptance verdict follows              | failed    |
+      | its work merges but acceptance returns the item for rework   | rework    |
+      | its run never starts and is reaped as an orphan              | abandoned |
+
+  Scenario: An attempt whose model cannot be observed
+    Given a dispatch with one attempt whose model the Dispatcher cannot observe
+    When the dispatch terminates
+    Then the attempt span carries no acp.model
+    And livespec.dispatch.unavailable_fields on that span names acp.model
+```
+
+## Scenario 295 — A run a server restart cancelled has its still-running Kubernetes sandbox stopped through its provider
+
+```gherkin
+Feature: Sandbox retention and collection
+
+  Scenario: A restart-cancelled run's pod is stopped, its workspace retained
+    Given a factory run on the Kubernetes provider whose sandbox pod is running
+    And the Fabro server restarts and records that run as ended without stopping its sandbox
+    When the Dispatcher's next pass runs
+    Then the run's sandbox is stopped through the provider's stop operation and its pod no longer exists in its namespace
+    And the namespace quota's used cpu equals the cpu of the live runs' pods
+    And the run's driver record and node workspace directory still exist
+    When a further pass runs
+    Then nothing further is recorded for that run and the pass does not fail
+```
+
+## Scenario 296 — The provisional launcher's shared-node gate holds on factory-class pressure, not whole-host idle
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a CI burst on a shared factory node does not hold factory launches
+  Scenario: CI pods drive whole-host idle down while factory-class pressure stays low
+    Given fleet-launch/config.sh values overridden to a stub node reading and throwaway directories
+    And the stub reading shows CI workflow pods in non-factory namespaces, burstable or best-effort, taking whole-host idle below the launcher's old idle floor
+    And the stub reading shows the factory namespaces plus system.slice using CPU at or below the factory-pressure threshold
+    When the launcher evaluates that factory for a ready item
+    Then it treats the factory as green and proceeds to that factory's mutex
+    And its log names the factory-class pressure value it used and the threshold
+
+  Scenario: factory-class pressure above the threshold holds the launch
+    Given a stub node reading whose factory namespaces plus system.slice use CPU above the factory-pressure threshold
+    When the launcher evaluates that factory for a ready item
+    Then it holds the launch
+    And its log names the factory-class pressure value and the threshold that held it
+
+  Scenario: an unreadable reading holds the launch
+    Given a stub node reading that cannot be taken or cannot be parsed
+    When the launcher evaluates that factory for a ready item
+    Then it holds the launch
+    And its log names the pressure reading as unknown and the threshold
+    And it does not treat the factory as green
+
+  Scenario: the threshold is a declared, overridable host value
+    Given the factory-pressure threshold the launcher reads
+    When the scripts are searched for where it is assigned
+    Then it is assigned only in fleet-launch/config.sh
+    And setting its FLEET_LAUNCH_ environment variable before the launcher runs changes the threshold the launcher uses
+```
+
+## Scenario 297 — A queued provisional launcher runs its preflight while it waits and still binds in FIFO order
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: a launcher queued on a factory's FIFO spends its wait on its own preflight
+  Scenario: two queued launchers preflight concurrently
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub preflight that records its start time, and throwaway queue, lock, in-flight and state directories
+    And two launchers hold FIFO tickets for the same factory, the older ahead of the younger
+    When both launchers poll while the older holds the head of the FIFO
+    Then the younger launcher's preflight starts before the older launcher binds
+    And the older launcher binds before the younger launcher
+
+  Scenario: a fresh pass is reused at the head of the FIFO
+    Given a queued launcher whose preflight passed less than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds ago
+    When it reaches the head of the FIFO and the factory is green
+    Then it takes the factory's mutex without running the preflight again
+
+  Scenario: a reused pass does not skip the hold check
+    Given a queued launcher holding a preflight pass younger than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds
+    And the hold file is created after that pass was taken
+    When the launcher reaches the head of the FIFO and makes its hold-file check
+    Then it holds the launch
+    And it does not start drive --action impl
+
+  Scenario: a stale pass is re-taken at the head of the FIFO
+    Given a queued launcher whose only preflight pass is older than FLEET_LAUNCH_PREFLIGHT_REUSE_S seconds
+    When it reaches the head of the FIFO
+    Then it runs the preflight again before it takes the factory's mutex
+
+  Scenario: a preflight that fails while queued drops the ticket
+    Given a queued launcher whose stub preflight fails
+    When the preflight returns
+    Then the launcher exits without a launch
+    And its FIFO ticket is gone from the queue directory
+    And it never created the factory's mutex
+```
+
+## Scenario 298 — A factory sandbox clone carries the remote's release tags after its prepare steps
+
+Governing clause: `contracts.md` §"Factory sandbox clone release tags".
+
+```gherkin
+Feature: A factory run reads the remote's release tags, not a stale tag set
+
+  Scenario: A clone whose tags lag the remote is refreshed during preparation
+    Given a governed repository whose remote holds release tags through v1.153.2 on its default branch
+    And a sandbox clone of that repository whose local release tags stop at v1.99.0
+    When the Dispatcher launches a run against that repository and the run's prepare steps complete
+    Then the newest release tag the clone lists by version order is v1.153.2
+    And every remote release tag whose target is reachable from the fetched default branch is present locally and points at the same object as on the remote
+    And git describe --tags on the fetched default branch's tip names the same tag as in a fresh full clone of the remote
+
+  Scenario: A local tag that disagrees with the remote is overwritten
+    Given a sandbox clone holding a release tag whose name the remote holds pointing at a different commit
+    When the run's prepare steps complete
+    Then that tag in the clone points at the remote's commit
+
+  Scenario: A tag-reading check in the run reads the refreshed tags
+    Given a governed repository whose check suite includes a check that reads its release tags
+    And a sandbox clone whose local release tags lag the remote's
+    When that check runs in a factory run after the prepare steps
+    Then it reads the remote's newest release tag and passes or fails on the change under test
+
+  Scenario: A failed tag refresh fails preparation
+    Given a run whose tag refresh fetch exits non-zero
+    When the run's prepare steps execute
+    Then the prepare chain fails
+    And no later prepare step or graph node runs on the clone's previous tag set
+```
+
+## Scenario 300 — Fabro-fork gates and carrier builds run on the cluster, not the dev host
+
+Governing clause: `constraints.md` §"Fabro runtime constraints".
+
+```gherkin
+Feature: fork Rust gates and pinned carrier builds run on ARC k3s runner capacity
+  Scenario: a fork pull request against a carrier branch carries cluster-run gate verdicts
+    Given a pull request in thewoolleyman/fabro targeting a carrier branch a pinned factory build is cut from
+    When its checks run
+    Then the format, clippy and test gates run on an ARC k3s runner pod
+    And the pull request's status rollup carries their verdicts
+    And no cargo or rustc process for that pull request runs on the dev host
+
+  Scenario: a pinned carrier build is produced off the dev host
+    Given a named carrier ref
+    When the carrier build runs
+    Then the release binary is built on the ARC k3s runner capacity or in a k3s Job
+    And it is published with a BUILD_INFO naming the source ref and commit
+
+  Scenario: a dev-host fallback is throttled and recorded
+    Given the cluster venue is unavailable
+    When a fork gate runs on the dev host
+    Then it runs at nice 19 with CARGO_BUILD_JOBS=4
+    And the work item that used it records the fallback
+```
+
+## Scenario 301 — A verified delegated press satisfies a human valve and is recorded as delegated
+
+```gherkin
+Feature: The maintainer's delegation of human valves is a verified, first-class invoker form
+  As a maintainer who has delegated human valves to a coordinator
+  I want a delegated press to be verified against a committed delegation and recorded as delegated
+  So that delegated decisions stop blocking without anyone forging my identity
+
+  Scenario: A verified delegated answer is admitted and recorded under the delegation
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent granted by human:thewoolleyman
+    And a work-item at blocked with blocked_reason needs-human and effective answer disposition human
+    When drive runs resolve-blocked:<work-item-id>:ready with --answer, --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then the press is admitted and the answer lands as a ledger comment naming delegation R493 and grantor human:thewoolleyman
+    And every journal record of the press carries invoker delegate:legacy-coordinator-agent and a delegation object citing R493
+    And the item gains a livespec-delegated-valve-press ledger comment, and no record carries a human: identity
+
+  Scenario: A delegation that cannot be verified is refused before any write
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs an allowlisted valve with --invoker delegate:legacy-coordinator-agent and a --delegation ref that no entry carries, or with no --delegation at all, or with --delegation and a non-delegate invoker
+    Then drive refuses the press naming the action, the invoker, the ref and the reason
+    And nothing is written to the store, the journal or the ledger
+
+  Scenario: A delegated press of a non-delegable valve is refused
+    Given dispatcher.valve_delegations carries ref R493 for delegate legacy-coordinator-agent
+    When drive runs set-merge-hold, set-factory-safety or an impl: dispatch with --invoker delegate:legacy-coordinator-agent and --delegation R493
+    Then drive refuses the press because the verb is not on the delegable valve allowlist
+```
+
+## Scenario 302 — A fleet-launch resume launcher waits for the fleet cap and the factory FIFO
+
+```gherkin
+Feature: A resume launched through fleet-launch honours the caller-side gates
+  Scenario: A resume waits at the shared fleet cap and binds in FIFO order
+    Given an impl launcher and then a resume launcher queued on the gmktec FIFO
+    And the shared fleet count is at the fleet cap
+    When the impl launcher's run ends and the fleet count drops below the cap
+    Then the impl launcher binds before the resume launcher
+    And the resume launcher starts the resume only once the fleet count it reads under the gmktec mutex is below the cap
+    And it writes a fleet in-flight marker before it releases the mutex
+```
+
+## Scenario 303 — The committed launch-time preflight runs under a PATH-resetting wrapper with a string-form adapter entry
+
+```gherkin
+Feature: The committed launch-time preflight needs no launcher-local copy
+  Scenario: A preflight under a PATH-resetting tenant wrapper with a string-form adapter entry completes Codex-first
+    Given a tenant whose credential wrapper resets PATH to exclude the operator's user tool directory
+    And whose committed adapter entry is a string of environment assignments followed by a claude-agent-acp command line
+    When a fleet-launch launcher runs the committed dev-tooling/dod-preflight.sh for one of its items without exporting any judge model
+    Then the preflight resolves claude and codex and completes its judgement
+    And its judges run through the configured Codex-first chain, so a Codex pass completes it without a Claude judge call
+    And each judge runs on the model the repository's committed judge configuration names
+```
+
+## Scenario 304 — The check aggregate refuses a test that sleeps in real time or judges a wall-clock bound, unless an exemption marker states why
+
+```gherkin
+Feature: Tests order by injected clocks and deterministic events, not real time
+  Scenario: A real-time sleep and a wall-clock verdict are refused, and a reasoned exemption marker is honoured
+    Given a test file under tests/ that calls time.sleep to wait for a condition
+    And another test file under tests/ that asserts on a difference of two time.monotonic readings
+    When the just check aggregate runs
+    Then the real-time-test check fails
+    And its refusal names each offending file and line
+    When the time.sleep line is given the per-line exemption marker with a written reason
+    And the just check aggregate runs again
+    Then the check does not refuse that line
+    And the same marker with an empty reason is still refused
+```
+
+## Scenario: an incident keeps one item with explicit current operation ownership
+
+```gherkin
+Feature: an incident keeps one item with explicit current operation ownership
+
+  Scenario: an incident keeps one item with explicit current operation ownership
+    Given an identified incident item with a queued or live factory attempt
+    When the authorized host claims an expedited repair
+    Then canonical identity and prior attempt evidence remain on the same item
+    And its repair phase is active under the host owner without a factory slot
+    And the sanctioned server-side conditional transition fences the old generation and duplicate dispatch
+    And a late old run cannot write proof or close the incident
+    And absent conditional capability produces a named refusal instead of an apparent fence
+```
+
+## Scenario: incident entry defers slow admission without creating another identity
+
+```gherkin
+Feature: incident entry defers slow admission without creating another identity
+
+  Scenario: incident entry defers slow admission without creating another identity
+    Given an authorized incident repair and a reachable tenant
+    When no existing incident item covers its identified scope
+    Then canonical intake records its impact owner scope and behavioral intent without slow model judgement
+    And ordinary admission and spec debt remain owed before normal factory repayment
+
+  Scenario: Recovery resumes a previously recorded incident during tenant failure
+    Given the tenant is unavailable and a trusted canonical incident receipt already exists
+    When recovery resumes
+    Then that same identity is used without a new item or a fresh dependency on the failed tenant
+```
+
+## Scenario: incident provenance exceptions remain exact and repayable
+
+```gherkin
+Feature: incident provenance exceptions remain exact and repayable
+
+  Scenario: incident provenance exceptions remain exact and repayable
+    Given a recorded incident repair or emergency revert carrier and exact PR head and landed identities
+    When provenance and retrospective bypass audit inspect it after its labels and environment disappear
+    Then its trusted incident receipt is recognized as deferred verification with normal repayment outstanding
+    And an arbitrary flag label trailer or marker does not admit another carrier
+    And normal factory repayment still requires normal factory provenance
+```
+
+## Scenario: a successful incident merge reenters normal factory on the same item
+
+```gherkin
+Feature: a successful incident merge reenters normal factory on the same item
+
+  Scenario: a successful incident merge reenters normal factory on the same item
+    Given a merged expedited repair whose complete normal master CI succeeded
+    And current ordinary admission is complete for its outstanding repayment
+    When the dispatcher resumes the incident
+    Then normal repayment admission passes through pending-approval and ready before one active factory claim
+    And one fresh normal factory run and carrier PR use the same work-item id with a new phase identity
+    And no incident execution flag is set before provider and sandbox execution
+    And the PR removes the marker while validating cumulative original incident scope and debt
+    And restart or duplicate delivery resumes that operation without another repayment run
+```
+
+## Scenario: a deferred-proof-only finding is repaired without reverting healthy master
+
+```gherkin
+Feature: a deferred-proof-only finding is repaired without reverting healthy master
+
+  Scenario: a deferred-proof-only finding is repaired without reverting healthy master
+    Given a successful incident master merge and its normal factory repayment in progress
+    When deferred factory verification alone reveals a defect while deployed master remains healthy
+    Then that defect is repaired in the repayment PR under normal validation
+    And the original successful merge is not reverted solely for that deferred finding
+```
+
+## Scenario: incident completion requires final normal proof rather than an old repair merge
+
+```gherkin
+Feature: incident completion requires final normal proof rather than an old repair merge
+
+  Scenario: incident completion requires final normal proof rather than an old repair merge
+    Given an incident with an earlier expedited merge and a marker-removal follow-up
+    When acceptance reconcile-merged close no-change or proof-only resume evaluates it
+    Then it grades cumulative original incident behavior and the current normal carrier
+    And it leaves the incident unfinished until the normal factory PR and its master CI succeed
+    And it requires marker removal manual outcome repaid debt and disposition of related failures
+    And missing cancelled or unreadable evidence remains an explicit obligation
+```
+
+## Scenario: an attributable regression fences repayment and reopens the same incident
+
+```gherkin
+Feature: an attributable regression fences repayment and reopens the same incident
+
+  Scenario: an attributable regression fences repayment and reopens the same incident
+    Given an incident whose normal repayment is live or whose item is already closed
+    When a related failure on master another PR or an adopted consumer is attributed with change evidence
+    Then the same incident item is reopened with a new fenced generation and recovery requested
+    And stale cleanup cannot merge or close the corrected attempt
+    And failed original CI evidence is retained while a corrected attempt requires new repair or resolution evidence
+    And final normal factory repayment remains owed on that item
 ```

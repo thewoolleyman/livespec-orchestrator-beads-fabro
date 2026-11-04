@@ -1,4 +1,19 @@
-"""Select the factory Claude credential env var from the caam-published selection.
+"""Select the factory Claude credential env var: the admission-chosen pool slot.
+
+THE FACTORY'S CREDENTIAL COMES FROM THE WHOLE INJECTED SLOT POOL
+(`SPECIFICATION/scenarios.md` Scenario 278). Session-headroom admission
+assesses every injected `CLAUDE_CODE_OAUTH_TOKEN__*` slot and picks the best
+qualifying one (`_dispatcher_session_headroom_pool`); the admission pass
+registers a chooser here, and `select_factory_credential` returns that one slot
+to every caller, so the usability probe, the credential projection and the
+Definition-of-Done judgement all use the slot admission assessed. A run keeps
+the token it was dispatched with, so only the injected slot's own headroom
+matters, never the account the caam loop picked for interactive spend.
+
+The caam record below is now only the FALLBACK for a caller running with no
+admission choice (a standalone credential-status command, or a pass that
+assessed no covered candidate). It is read, never written, and the interactive
+account it selects is never changed by a factory selection.
 
 The caam-anthropic-loop publishes, on the host it runs on, the account it
 selected for interactive spend to a fixed record (livespec-overseer
@@ -36,8 +51,10 @@ __all__: list[str] = [
     "SELECTED_ACCOUNT_RECORD_REL",
     "FactoryCredentialChoice",
     "factory_credential_env_name",
+    "injected_credential_slots",
     "parse_selected_profile",
     "read_selected_profile",
+    "register_admission_slot_chooser",
     "resolve_factory_credential_env_name",
     "select_factory_credential",
     "selected_account_record_path",
@@ -49,6 +66,11 @@ __all__: list[str] = [
 SELECTED_ACCOUNT_RECORD_REL: Final = Path(".local/state/caam-usage-rotate/selected-account.json")
 _PROFILE_KEY: Final = "profile"
 _SLOT_PREFIX: Final = "CLAUDE_CODE_OAUTH_TOKEN__"
+
+# The admission pass's chooser: a callable returning the env-var NAME of the slot
+# it chose, or None. Held at module scope because admission and every credential
+# consumer run in ONE dispatcher process and the consumers take no policy argument.
+_ADMISSION_CHOOSER: dict[str, Callable[[], str | None]] = {}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -62,6 +84,29 @@ class FactoryCredentialChoice:
 
     env_name: str
     fallback_reason: str | None
+
+
+def injected_credential_slots(*, environ: Mapping[str, str]) -> tuple[str, ...]:
+    """Every injected pool slot's env-var NAME, sorted; the unnumbered token only when sole.
+
+    A slot is injected when its variable is present and non-empty. The unnumbered
+    `CLAUDE_CODE_OAUTH_TOKEN` is the pool's sole slot only when no numbered slot is
+    injected, so a host keying its pool by profile never assesses the legacy token.
+    """
+    numbered = tuple(
+        sorted(name for name, value in environ.items() if name.startswith(_SLOT_PREFIX) and value)
+    )
+    if numbered:
+        return numbered
+    return (CLAUDE_OAUTH_TOKEN_ENV,) if environ.get(CLAUDE_OAUTH_TOKEN_ENV) else ()
+
+
+def register_admission_slot_chooser(*, chooser: Callable[[], str | None] | None) -> None:
+    """Install (or, with `None`, clear) the admission pass's slot chooser."""
+    if chooser is None:
+        _ADMISSION_CHOOSER.clear()
+    else:
+        _ADMISSION_CHOOSER["chooser"] = chooser
 
 
 def selected_account_record_path(*, home: Path) -> Path:
@@ -149,11 +194,18 @@ def select_factory_credential(
 ) -> FactoryCredentialChoice:
     """Resolve the credential env-var name and emit ONE loud line on fallback.
 
+    The slot admission chose out of the injected pool wins whenever it is still
+    injected; only without one does the caam-published selection decide.
+
     The caller then reads `environ[choice.env_name]`. `warn` is invoked exactly
     once, with a non-secret operator-facing message, precisely when the selector
     fell back to the unnumbered token — so a slot that silently fails to map is
     visible rather than a quiet reversion.
     """
+    chooser = _ADMISSION_CHOOSER.get("chooser")
+    admitted = None if chooser is None else chooser()
+    if admitted is not None and admitted in injected_credential_slots(environ=environ):
+        return FactoryCredentialChoice(env_name=admitted, fallback_reason=None)
     choice = factory_credential_env_name(home=home, available_env_names=frozenset(environ))
     if choice.fallback_reason is not None:
         _ = warn(

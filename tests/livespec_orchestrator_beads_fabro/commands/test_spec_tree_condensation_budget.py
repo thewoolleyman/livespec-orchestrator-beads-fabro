@@ -1,0 +1,281 @@
+"""How the condensation spends its budget, over the degenerate trees.
+
+The paired ceiling test measures ONE judgement against this repository's real
+spec tree, which is the assertion the work-item makes. It cannot reach the
+shapes a real tree never has — an EMPTY tree, a file that opens on a heading
+with no preamble before it, a budget so small that no clause body fits — and
+each of those is a place a condensation can be wrong in a way no real-tree
+measurement would show.
+
+THE IDENTITY CASE IS THE CONTROL FOR ALL OF THEM. A tree that already fits must
+come back UNCHANGED, byte for byte: a condensation that rewrote a tree it had
+no need to touch would quietly change every judgement in every repository whose
+spec tree is small, and the ceiling measurement — which only ever looks at a
+tree far over the ceiling — could not tell.
+
+THE ORDERING IS COUNTED IN CLAUSE BODIES WITHHELD, NOT IN CHARACTERS, and the
+distinction is the elision's own doing: the marker that stands in for a body is
+longer than a short body, so a tighter budget legitimately produces a LONGER
+tree. Counting characters would therefore report the design working as the
+design failing. What must be monotone is what the judge can read — the bodies —
+and that is the property a future retrieval change is most likely to break
+while still passing every fixed-size assertion.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
+    ELIDED_BODY_MARKER,
+    PROMPT_CHARACTER_CEILING,
+    CondensedClause,
+    condensed_spec_tree,
+)
+from livespec_runtime.spec_stated import judge
+
+_UNSTATED_REPLY = (
+    '{"kind": "unstated", "stated_by": [], '
+    '"generalization_target": null, "rationale": "not stated"}'
+)
+
+_PREAMBLE_FILE = "with-preamble.md"
+_HEADLESS_FILE = "no-preamble.md"
+_STATEMENT = "first clause"
+
+_FIRST_BODY = "The first clause is what the statement is about. " * 8
+_SECOND_BODY = "Unrelated prose about an entirely separate concern. " * 20
+_ONLY_BODY = "More unrelated prose about a third concern. " * 40
+
+_TREE = {
+    _PREAMBLE_FILE: (
+        "A preamble the file opens with, before any clause.\n\n"
+        f"## First clause\n\n{_FIRST_BODY}\n\n"
+        f"## Second clause\n\n{_SECOND_BODY}\n"
+    ),
+    _HEADLESS_FILE: f"## Only clause\n\n{_ONLY_BODY}\n",
+}
+
+# Measured against this fixture: the four budgets at which one more clause body
+# is read in full than at the one before it, plus a budget under which none is.
+_GRADED_CEILINGS = (0, 9900, 10250, 11850, 12650)
+
+
+@dataclass(kw_only=True)
+class _PromptRecorder:
+    """A model seam that preserves the actual rendered judgement prompt."""
+
+    prompts: list[str] = field(default_factory=list)
+
+    def __call__(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return _UNSTATED_REPLY
+
+
+def _withheld(*, ceiling: int) -> int:
+    """How many clause bodies the condensation did not carry in full at one budget."""
+    condensed = condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT, ceiling=ceiling)
+    return sum(
+        text.count(ELIDED_BODY_MARKER) + text.count("body partially withheld")
+        for text in condensed.values()
+    )
+
+
+def test_an_empty_tree_condenses_to_an_empty_tree() -> None:
+    """A tree with no files is answered with one, not with a negative length.
+
+    The rendered length of nothing is nothing, and the renderer joins blocks
+    with a separator between them — so a length computed as `sum + separator *
+    (blocks - 1)` is negative for an empty tree unless that case is answered
+    first.
+    """
+    assert condensed_spec_tree(spec_tree={}, statement="anything") == {}
+
+
+def test_a_tree_that_already_fits_comes_back_unchanged() -> None:
+    """Under the ceiling the condensation is the identity, byte for byte."""
+    assert condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT) == _TREE
+
+
+def test_the_condensation_records_each_selected_prompt_section() -> None:
+    """The governing-verdict cache records every prompt section it carried."""
+    condensed = condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT)
+
+    assert [(clause.heading, clause.body) for clause in condensed.clauses] == [
+        ("", "A preamble the file opens with, before any clause.\n\n"),
+        ("## First clause", "\n\n" + _FIRST_BODY + "\n\n"),
+        ("## Second clause", "\n\n" + _SECOND_BODY + "\n"),
+        ("## Only clause", "\n\n" + _ONLY_BODY + "\n"),
+    ]
+
+
+def test_selected_clause_provenance_preserves_boundary_newlines_from_the_prompt() -> None:
+    """A newline-only clause change must invalidate its recorded verdict."""
+    tree = {
+        "contracts.md": "## Selected clause\n\nThe selected clause keeps its boundary newlines.\n\n"
+    }
+    body = tree["contracts.md"].removeprefix("## Selected clause")
+
+    condensed = condensed_spec_tree(spec_tree=tree, statement="selected clause")
+
+    assert condensed["contracts.md"] == tree["contracts.md"]
+    assert condensed.clauses == (
+        CondensedClause(
+            heading="## Selected clause",
+            body=body,
+        ),
+    )
+
+
+def test_selected_preamble_is_recorded_as_prompt_provenance() -> None:
+    """A selected preamble must invalidate reuse when its prompt bytes change."""
+    preamble = "A selected file preamble without an H2 heading.\n"
+
+    condensed = condensed_spec_tree(
+        spec_tree={"preamble.md": preamble}, statement="selected preamble"
+    )
+
+    assert condensed.clauses == (CondensedClause(heading="", body=preamble),)
+
+
+def test_named_clause_provenance_uses_heading_and_body_not_its_source_position() -> None:
+    """A stated heading is recorded even when condensation omitted its body."""
+    from livespec_orchestrator_beads_fabro.commands import _spec_tree_condensation
+
+    clauses_named = getattr(_spec_tree_condensation, "clauses_named", None)
+    expected = [
+        ("## Second clause", "\n\n" + _SECOND_BODY + "\n"),
+        ("## Only clause", "\n\n" + _ONLY_BODY + "\n"),
+    ]
+    selected = (
+        [
+            (clause.heading, clause.body)
+            for clause in clauses_named(
+                spec_tree=_TREE,
+                headings={"## Second clause", "## Only clause"},
+            )
+        ]
+        if clauses_named is not None
+        else expected
+    )
+
+    assert selected == expected
+    assert clauses_named is not None
+
+
+def test_a_file_opening_on_a_heading_carries_no_invented_preamble() -> None:
+    """A file whose first byte is a heading gains nothing before it."""
+    condensed = condensed_spec_tree(spec_tree=_TREE, statement="only clause")
+
+    assert condensed[_HEADLESS_FILE] == _TREE[_HEADLESS_FILE]
+
+
+def test_a_budget_no_body_fits_under_still_answers_every_heading() -> None:
+    """Every path and every heading survives a budget no clause body fits in.
+
+    The paths are what the upstream renderer frames its blocks by and the
+    headings are what a verdict may cite, so a tree that dropped either would
+    hand the model a differently-shaped prompt rather than a smaller one.
+    """
+    condensed = condensed_spec_tree(spec_tree=_TREE, statement=_STATEMENT, ceiling=0)
+
+    assert sorted(condensed) == sorted(_TREE)
+    for heading in ("## First clause", "## Second clause"):
+        assert heading in condensed[_PREAMBLE_FILE]
+    assert "## Only clause" in condensed[_HEADLESS_FILE]
+    for body in (_FIRST_BODY, _SECOND_BODY, _ONLY_BODY):
+        assert body not in "".join(condensed.values())
+
+
+def test_a_larger_budget_never_withholds_more_clause_bodies() -> None:
+    """Raising the ceiling is monotone in the bodies the judge gets to read."""
+    withheld = [_withheld(ceiling=ceiling) for ceiling in _GRADED_CEILINGS]
+
+    assert withheld == sorted(withheld, reverse=True)
+    assert withheld[0] == 4, "the tightest budget withholds every body in the fixture"
+    assert withheld[-1] == 0, "the widest budget withholds none"
+    assert len(set(withheld)) == len(withheld), (
+        "the graded budgets no longer step one body at a time, so this fixture "
+        "can no longer tell a monotone selection from a constant one"
+    )
+    assert _withheld(ceiling=PROMPT_CHARACTER_CEILING) == 0
+
+
+def test_an_oversized_relevant_section_contributes_a_marked_leading_body_portion() -> None:
+    """A relevant section too large for the remainder is partly, not wholly, withheld."""
+    heading = "## Oversized governing section"
+    body = "The governing detail the statement needs to judge. " * 1000
+    tree = {"contracts.md": f"{heading}\n\n{body}"}
+    ceiling = 20_000
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="governing detail statement",
+        ceiling=ceiling,
+    )
+    rendered_section = condensed["contracts.md"]
+
+    assert heading in rendered_section
+    assert body[:100] in rendered_section
+    assert body not in rendered_section
+    assert "partially withheld" in rendered_section
+
+    recorder = _PromptRecorder()
+    _ = judge(
+        spec_tree=condensed,
+        statement="governing detail statement",
+        run_model=recorder,
+    )
+
+    assert len(recorder.prompts) == 1
+    assert len(recorder.prompts[0]) < ceiling
+
+
+def test_an_oversized_relevant_section_is_partly_carried_after_a_whole_selection() -> None:
+    """A prior whole selection cannot make a later oversized section disappear."""
+    first_heading = "## First governing section"
+    oversized_heading = "## Oversized governing section"
+    first_body = "The governing detail statement is immediately applicable. " * 10
+    oversized_body = "The governing detail statement requires the retained context. " * 3000
+    tree = {
+        "contracts.md": (
+            f"{first_heading}\n\n{first_body}\n{oversized_heading}\n\n{oversized_body}"
+        )
+    }
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="governing detail statement",
+        ceiling=20_000,
+    )
+    rendered_section = condensed["contracts.md"]
+
+    assert first_body in rendered_section
+    assert oversized_body[:100] in rendered_section
+    assert oversized_body not in rendered_section
+    assert "partially withheld" in rendered_section
+
+
+def test_a_later_oversized_section_matching_fewer_terms_is_still_partly_carried() -> None:
+    """Relevance, not equality with the first-ranked clause's terms, earns a partial body."""
+    first_heading = "## First governing section"
+    oversized_heading = "## Narrower oversized section"
+    first_body = "The alpha beta gamma delta behaviour is stated here in full. " * 10
+    oversized_body = "Only the alpha behaviour recurs through this long unrelated text. " * 3000
+    tree = {
+        "contracts.md": (
+            f"{first_heading}\n\n{first_body}\n{oversized_heading}\n\n{oversized_body}"
+        )
+    }
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="alpha beta gamma delta",
+        ceiling=20_000,
+    )
+    rendered_section = condensed["contracts.md"]
+
+    assert first_body in rendered_section
+    assert oversized_body[:100] in rendered_section
+    assert oversized_body not in rendered_section
+    assert "partially withheld" in rendered_section

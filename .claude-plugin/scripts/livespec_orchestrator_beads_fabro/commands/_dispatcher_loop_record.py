@@ -45,10 +45,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_conformance_premises import (
     emit_conformance_premise_notices,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    read_dispatch_comments,
-    read_dispatch_labels,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
     append_dispatch_id_record,
@@ -61,6 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import Gi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_comments,
+    read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize import (
     MaterializationRefusal,
@@ -131,7 +131,12 @@ def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is 
             journal=journal, work_item_id=item.id, stage="ledger-labels", detail=raw_labels
         )
     materialized = materialize_dispatch(
-        args=args, repo=repo, work_item_id=item.id, journal=journal, verdict=verdict
+        args=args,
+        repo=repo,
+        work_item_id=item.id,
+        journal=journal,
+        dispatch_id=identity.dispatch_id,
+        verdict=verdict,
     )
     if isinstance(materialized, MaterializationRefusal):
         return failed_dispatch_outcome(
@@ -149,6 +154,10 @@ def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is 
         janitor=janitor,
         raw_labels=raw_labels,
         timeouts=payload.timeouts,
+        # The budget the materialization already resolved and the admission
+        # already graded, projected rather than re-read for the same
+        # resolve-once reason the timeouts beside it are.
+        run_wall_budget=payload.run_wall_budget,
         # The default-branch probe rides a plain shell runner: it reads the
         # target's own git/forge state and predates the per-dispatch GitHub App
         # token, whose remint decorator exists for the engine's long merge poll.

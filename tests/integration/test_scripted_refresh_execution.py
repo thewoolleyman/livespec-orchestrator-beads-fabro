@@ -69,7 +69,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import par
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import render_run_config_overlay
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     PLUGIN_GATE_PROGRAM_FILENAME,
-    plugin_cache_gate_script,
+    plugin_cache_gate_prepare_step,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
+    PROOF_HEAD_PROGRAM_FILENAME,
+    proof_head_program_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
@@ -82,10 +86,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     REFRESH_COUNT_STATE_FILENAME,
     publication_state_filenames,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import resume_checkout_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
+
+from tests.prepare_step_support import runnable_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _IMPLEMENT_GRAPH = (
@@ -99,11 +113,37 @@ _IMPLEMENT_GRAPH = (
 
 _BRANCH = "feat/bd-ib-c3txja"
 _DEFAULT_BRANCH = "master"
+_FACTORY_RUN_ID = "01HXQXQ4JBSAME-RUN-CHECKPOINT"
 # The file the publish branch owns. A conflict is arranged by moving the DEFAULT
 # branch's copy of this same path, which is the real shape of the conflict the
 # stage must abort rather than resolve.
 _OWNED_FILE = "owned.txt"
 _SHARED_FILE = "shared.txt"
+_RECORD_JSON = "record.json"
+_RECORD_MARKDOWN = "notes.md"
+_DECLARATION_FILE = ".livespec.jsonc"
+_RECORD_JSON_WITH_REMOVABLE_ENTRIES = (
+    '[{"id": "seed"}, {"id": "removed-by-run"}, {"id": "removed-by-default"}]\n'
+)
+_DECLARATION = """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "record_files": [
+        {"path": "record.json", "format": "json-array", "key": ["id"]},
+        {"path": "notes.md", "format": "markdown-insertions"}
+      ]
+    }
+  }
+}
+"""
+
+# The two facts the clean-once rule adds to the publication state (v253), named
+# here as literals rather than imported: `test_dispatcher_publication_state`
+# binds these spellings to the declared constants, and importing them here
+# would turn a missing declaration into a collection error instead of the
+# assertion failure that proves the behaviour is unimplemented.
+_CLEAN_STATE_FILENAME = "livespec-pr-refresh-clean"
+_CONFLICT_ENTRY_STATE_FILENAME = "livespec-pr-refresh-conflict-entry"
 
 
 # The coverage hooks an allowlisted spawn must scrub, so no child of this file
@@ -294,7 +334,7 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
-def _origin_with_default(*, root: Path) -> Path:
+def _origin_with_default(*, root: Path, record_json: str = '[{"id": "seed"}]\n') -> Path:
     """A bare origin whose default branch carries the shared file."""
     origin = root / "origin.git"
     _ = origin.mkdir(parents=True)
@@ -302,25 +342,46 @@ def _origin_with_default(*, root: Path) -> Path:
     seed = root / "seed"
     _ = seed.mkdir()
     _ = _git("init", "--quiet", f"--initial-branch={_DEFAULT_BRANCH}", cwd=seed)
+    _ = (seed / _DECLARATION_FILE).write_text(_DECLARATION, encoding="utf-8")
+    _ = (seed / ".gitattributes").write_text(
+        "record.json merge=record-conflict\n", encoding="utf-8"
+    )
+    _ = (seed / _RECORD_JSON).write_text(record_json, encoding="utf-8")
+    _ = (seed / _RECORD_MARKDOWN).write_text("- seed entry\n", encoding="utf-8")
+    _ = _git("add", ".gitattributes", _DECLARATION_FILE, _RECORD_JSON, _RECORD_MARKDOWN, cwd=seed)
     _ = _commit(cwd=seed, path=_SHARED_FILE, text="base\n", subject="chore: seed")
     _ = _git("push", "--quiet", str(origin), f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=seed)
     return origin
 
 
 def _materialized_plugins_root(*, root: Path) -> Path:
-    """The sandbox plugins root, carrying the two PRODUCTION helpers.
+    """The sandbox plugins root, carrying the three PRODUCTION helpers.
 
-    The push program is written from its own source and the gate from its own
-    prepare-step body, so the lease the stage performs is the lease the
-    Dispatcher ships rather than one restated here.
+    Each is written from its OWN source, so the lease the stage performs and the
+    generated-record-file reading it takes are the ones the Dispatcher ships
+    rather than ones restated here. The record-file resolution rides the same
+    prepare block as the push program (bd-ib-ze7xxj), and a stage that cannot
+    resolve it fails closed before the gate -- so a harness omitting it would
+    exercise that refusal on every case rather than the route under test.
     """
     plugins_root = root / "plugins"
     _ = plugins_root.mkdir()
     push_program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = push_program.write_text(publication_push_program_source(), encoding="utf-8")
     push_program.chmod(0o700)
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
+    _ = (plugins_root / PROOF_HEAD_PROGRAM_FILENAME).write_text(
+        proof_head_program_source(), encoding="utf-8"
+    )
+    merge_program = plugins_root / RECORD_FILE_MERGE_PROGRAM_FILENAME
+    _ = merge_program.write_text(record_file_merge_program_source(), encoding="utf-8")
+    merge_program.chmod(0o700)
     gate_script = root / "install-plugin-gate.sh"
-    _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
+    _ = gate_script.write_text(
+        runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8"
+    )
     return plugins_root
 
 
@@ -330,6 +391,7 @@ def _build(
     armed: bool = False,
     arming_unreadable: bool = False,
     disarm_fails: bool = False,
+    record_json: str = '[{"id": "seed"}]\n',
 ) -> _Refresh:
     """An origin carrying `master` and the publish branch, and a clone on the branch.
 
@@ -341,13 +403,15 @@ def _build(
     which is what makes the stage's later re-entry the ENFORCEMENT arm rather
     than a first recording.
     """
-    origin = _origin_with_default(root=root)
+    origin = _origin_with_default(root=root, record_json=record_json)
     clone = root / "clone"
     _ = _git("clone", "--quiet", str(origin), str(clone), cwd=root)
+    _ = _git("config", "merge.record-conflict.driver", "false", cwd=clone)
     _ = _commit(
         cwd=clone, path=_OWNED_FILE, text="this run's work\n", subject="feat: this run's work"
     )
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=clone)
+    _ = _git("config", "livespec.factoryRunId", _FACTORY_RUN_ID, cwd=clone)
     gate_script = root / "install-plugin-gate.sh"
     bin_dir = root / "bin"
     _ = bin_dir.mkdir()
@@ -368,6 +432,7 @@ def _build(
                 "armed": armed,
                 "arming_unreadable": arming_unreadable,
                 "disarm_fails": disarm_fails,
+                "comments": [],
                 "calls": [],
             }
         ),
@@ -428,6 +493,14 @@ def _branch_clone(*, box: _Refresh, name: str) -> Path:
     return other
 
 
+def _checkpoint(*, cwd: Path, subject: str) -> str:
+    """Create one empty engine-shaped checkpoint commit and return its head."""
+    _ = _git("config", "user.email", "t@example.invalid", cwd=cwd)
+    _ = _git("config", "user.name", "Test", cwd=cwd)
+    _ = _git("commit", "--quiet", "--allow-empty", "-m", subject, cwd=cwd)
+    return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
+
+
 _PASSING_GATE = "true"
 _FAILING_GATE = "false"
 
@@ -480,6 +553,21 @@ with open(state_path, "w") as handle:
     json.dump(state, handle)
 
 if argv[:2] == ["pr", "view"]:
+    if argv[argv.index("--json") + 1] == "comments":
+        print(json.dumps({"comments": state.get("comments", [])}))
+        sys.exit(0)
+    if "number,state,mergeCommit,headRefOid" in argv:
+        operand = argv[argv.index("--jq") + 1]
+        if operand != '(.number|tostring)+"\\t"+(.state|tostring)+"\\t"+(.mergeCommit.oid|tostring)+"\\t"+(.headRefOid|tostring)':
+            sys.stderr.write("unmodelled merged-reconcile --jq operand: %%s\n" %% operand)
+            sys.exit(2)
+        if state.get("state") != "MERGED":
+            sys.stderr.write("the pull request is not merged\n")
+            sys.exit(1)
+        print("\t".join(
+            [str(state["number"]), state["state"], state["merge_commit"], state["head"]]
+        ))
+        sys.exit(0)
     if state["arming_unreadable"]:
         sys.stderr.write("the forge declined to report autoMergeRequest\n")
         sys.exit(1)
@@ -561,7 +649,10 @@ def test_an_advanced_default_is_rebased_gated_and_republished_under_a_lease(
     )
     assert contains.returncode == 0, "the republished head does not contain the advanced default"
     assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
-    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    # A refresh that applied cleanly, passed the gate and pushed is NOT counted
+    # (v253); it is recorded as the run's one clean refresh instead.
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+    assert box.state(name=_CLEAN_STATE_FILENAME) is not None
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) == ""
 
 
@@ -742,6 +833,38 @@ def test_an_unchanged_default_owes_no_rebase_and_pushes_nothing(tmp_path: Path) 
     assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
 
 
+@pytest.mark.parametrize("petri", _RENDERINGS)
+def test_an_empty_checkpoint_of_this_run_is_leased_away_from_the_publish_branch(
+    *,
+    petri: bool,
+    tmp_path: Path,
+) -> None:
+    """A checkpoint-only remote advance is this run's, but does not stay published.
+
+    This uses an unchanged default deliberately: that is the reproof-loop shape
+    in which the old identity check failed before the refresh could lease the
+    observed checkpoint head back to the run's last published tree.
+    """
+    box = _build(root=tmp_path)
+    published = box.remote_head(ref=_BRANCH)
+    checkpoint_clone = _branch_clone(box=box, name="same-run-checkpoint")
+    checkpoint = _checkpoint(
+        cwd=checkpoint_clone,
+        subject=f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=checkpoint_clone)
+
+    result = _run(box=box, petri=petri)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == published
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) != checkpoint
+    assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{published}\n"
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) == ""
+
+
 def test_a_foreign_remote_publish_head_is_refused_before_any_rewrite(tmp_path: Path) -> None:
     """A publish branch someone else moved is not this run's to lease over.
 
@@ -750,9 +873,12 @@ def test_a_foreign_remote_publish_head_is_refused_before_any_rewrite(tmp_path: P
     on the unchanged arm and look identical to one that refused.
     """
     box = _build(root=tmp_path)
-    foreign = _branch_clone(box=box, name="foreign")
+    foreign = _branch_clone(box=box, name="tree-changing-checkpoint")
     _ = _commit(
-        cwd=foreign, path="foreign.txt", text="not this run\n", subject="feat: a foreign change"
+        cwd=foreign,
+        path="foreign.txt",
+        text="not this run\n",
+        subject=f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)",
     )
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=foreign)
     _ = _advance_default(box=box)
@@ -764,6 +890,131 @@ def test_a_foreign_remote_publish_head_is_refused_before_any_rewrite(tmp_path: P
     assert "LIVESPEC_PR_REFRESH_FOREIGN_HEAD" in result.stderr
     assert box.remote_head(ref=_BRANCH) == foreign_head, "the foreign head was overwritten"
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["other-run", "non-descendant"],
+)
+def test_a_non_own_empty_checkpoint_still_fails_closed(
+    *,
+    shape: str,
+    tmp_path: Path,
+) -> None:
+    """An empty checkpoint is owned only when its run and ancestry both match."""
+    box = _build(root=tmp_path)
+    checkpoint_clone = _branch_clone(box=box, name=shape)
+    subject = "fabro(other-run): pr_refresh_head (failure)"
+    push_flags: tuple[str, ...] = ()
+    if shape == "non-descendant":
+        _ = _git(
+            "checkout", "--quiet", "-B", _BRANCH, f"origin/{_DEFAULT_BRANCH}", cwd=checkpoint_clone
+        )
+        subject = f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)"
+        push_flags = ("--force",)
+    checkpoint = _checkpoint(cwd=checkpoint_clone, subject=subject)
+    _ = _git(
+        "push",
+        "--quiet",
+        *push_flags,
+        "origin",
+        f"HEAD:refs/heads/{_BRANCH}",
+        cwd=checkpoint_clone,
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_FOREIGN_HEAD" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == checkpoint
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def test_a_merged_pull_request_with_a_deleted_publish_branch_finishes_refresh(
+    tmp_path: Path,
+) -> None:
+    """Scenario 248: a landed publication is not an unobservable origin.
+
+    The branch is removed exactly as GitHub does after merge.  The stage must
+    read the pull request before it performs any refresh mutation, persist the
+    merged-reconcile evidence, and leave the published work alone for the
+    normal terminal merge observation.
+    """
+    box = _build(root=tmp_path, armed=True)
+    published = box.local_head()
+    _ = _git("push", "--quiet", "origin", "--delete", f"refs/heads/{_BRANCH}", cwd=box.clone)
+    box.forge_state.write_text(
+        json.dumps(
+            {
+                "armed": True,
+                "arming_unreadable": False,
+                "disarm_fails": False,
+                "state": "MERGED",
+                "number": 73,
+                "merge_commit": published,
+                "head": published,
+                "comments": [
+                    {
+                        "body": "Proof of Done — verified — run refresh — now\n\n"
+                        f"Publish-branch head: {published}\n",
+                        "url": "https://example.invalid/proof",
+                    }
+                ],
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in result.stderr
+    assert box.disarm_heads() == []
+    assert box.local_head() == published
+    assert box.remote_head(ref=_BRANCH) == ""
+    assert box.state(name="livespec-merged-reconcile") == (
+        f"pull_request=73\nmerge_commit={published}\nmerged_head={published}\n"
+        f"proof_head={published}\nheads_equal=true\n"
+    )
+
+
+@pytest.mark.parametrize("rendered_merge_commit", ["null", ""])
+def test_a_merged_pull_request_with_no_merge_commit_is_not_a_landed_publication(
+    tmp_path: Path, rendered_merge_commit: str
+) -> None:
+    """Scenario 248: a MERGED pull request whose merge commit is null still fails closed.
+
+    `gh --jq '(.mergeCommit.oid|tostring)'` prints the literal `null` for an
+    absent merge commit, which a bare non-empty test accepts; only a full object
+    name is a merge commit.
+    """
+    box = _build(root=tmp_path, armed=True)
+    published = box.local_head()
+    _ = _git("push", "--quiet", "origin", "--delete", f"refs/heads/{_BRANCH}", cwd=box.clone)
+    box.forge_state.write_text(
+        json.dumps(
+            {
+                "armed": True,
+                "arming_unreadable": False,
+                "disarm_fails": False,
+                "state": "MERGED",
+                "number": 73,
+                "merge_commit": rendered_merge_commit,
+                "head": published,
+                "comments": [],
+                "calls": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE" in result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" not in result.stderr
+    assert box.state(name="livespec-merged-reconcile") is None
 
 
 def test_an_absent_remote_publish_ref_is_refused(tmp_path: Path) -> None:
@@ -864,6 +1115,118 @@ def test_a_validated_resume_head_supplies_the_provenance_the_record_lacks(
     assert box.remote_head(ref=_BRANCH) == box.local_head()
 
 
+def _published_record_conflict(
+    *,
+    box: _Refresh,
+    path: str,
+    run_text: str,
+    default_text: str,
+    extra: tuple[str, str] | None = None,
+) -> str:
+    """Publish one record edit, then advance the default branch into it."""
+    if extra is not None:
+        extra_path, extra_text = extra
+        _ = (box.clone / extra_path).write_text(extra_text, encoding="utf-8")
+        _ = _git("add", extra_path, cwd=box.clone)
+    published = _commit(cwd=box.clone, path=path, text=run_text, subject="feat: record edit")
+    _ = _git("push", "--quiet", "--force", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=box.clone)
+    _ = (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    if extra is not None:
+        _ = _advance_default(box=box, path=extra[0], text="default conflicting edit\n")
+    _ = _advance_default(box=box, path=path, text=default_text)
+    return published
+
+
+@pytest.mark.parametrize(
+    ("path", "run_text", "default_text", "expected"),
+    [
+        (
+            _RECORD_JSON,
+            '[{"id": "seed"}, {"id": "removed-by-default"}]\n',
+            '[{"id": "seed"}, {"id": "removed-by-run"}]\n',
+            '[\n  {\n    "id": "seed"\n  }\n]\n',
+        ),
+        (
+            _RECORD_MARKDOWN,
+            "- seed entry\n- run entry\n",
+            "- seed entry\n- default entry\n",
+            "- seed entry\n- default entry\n- run entry\n",
+        ),
+    ],
+)
+def test_declared_record_conflicts_complete_refresh_without_repair(
+    tmp_path: Path,
+    path: str,
+    run_text: str,
+    default_text: str,
+    expected: str,
+) -> None:
+    """Scenario 200 preserves independent JSON removals and Markdown insertions."""
+    box = _build(root=tmp_path, record_json=_RECORD_JSON_WITH_REMOVABLE_ENTRIES)
+    _ = _published_record_conflict(box=box, path=path, run_text=run_text, default_text=default_text)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    diagnostic = (
+        "LIVESPEC_RECORD_FILE_MERGED: "
+        f"path={path} "
+        f"format={'json-array' if path == _RECORD_JSON else 'markdown-insertions'} "
+        f"default-count={1} run-count={0 if path == _RECORD_JSON else 1}"
+    )
+    assert diagnostic in result.stderr
+    assert (box.clone / path).read_text(encoding="utf-8") == expected
+    assert box.remote_head(ref=_BRANCH) == box.local_head()
+    # A rebase whose only conflicts the record-file merge resolved counts as
+    # applied without conflict (v162), so it is recorded as the run's one clean
+    # refresh (v253) and is neither a counted refresh nor a repair round.
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+    assert box.state(name=_CLEAN_STATE_FILENAME) is not None
+
+
+def test_unsafe_record_conflicts_and_a_rejected_merged_head_take_repair(tmp_path: Path) -> None:
+    """Scenario 200 preserves repair for foreign paths, divergent keys, and gates."""
+    box = _build(root=tmp_path)
+    published = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+        extra=(_SHARED_FILE, "run conflicting edit\n"),
+    )
+    result = _run(box=box)
+    assert result.returncode == 1, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert _RECORD_JSON in result.stderr
+    assert _SHARED_FILE in result.stderr
+    assert "LIVESPEC_RECORD_FILE_MERGED" not in result.stderr
+    assert box.local_head() == published
+
+    box = _build(root=tmp_path / "divergent")
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed", "side": "run"}]\n',
+        default_text='[{"id": "seed", "side": "default"}]\n',
+    )
+    result = _run(box=box)
+    assert result.returncode == 1, result.stderr
+    assert "LIVESPEC_RECORD_FILE_MERGE_REFUSED" in result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+
+    box = _build(root=tmp_path / "gate")
+    _ = _published_record_conflict(
+        box=box,
+        path=_RECORD_JSON,
+        run_text='[{"id": "seed"}, {"id": "run"}]\n',
+        default_text='[{"id": "seed"}, {"id": "default"}]\n',
+    )
+    result = _run(box=box, check_suite=_FAILING_GATE)
+    assert result.returncode == 1, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+
+
 def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> None:
     """A conflict preserves the run tree; it does not pick a winner.
 
@@ -902,6 +1265,64 @@ def test_a_conflicting_rebase_is_aborted_with_no_side_chosen(tmp_path: Path) -> 
     assert not (box.clone / ".git" / "rebase-apply").exists()
     assert "<<<<<<<" not in (box.clone / _SHARED_FILE).read_text(encoding="utf-8")
     assert box.remote_head(ref=_BRANCH) == published
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def test_a_rebase_that_never_started_is_not_reported_as_a_refresh(tmp_path: Path) -> None:
+    """A rebase git REFUSED TO START is a failed refresh, not a completed one.
+
+    The regenerating-rebase wrapper has to notice when a rebase it resolved and
+    continued has FINISHED, and "no rebase in progress" is the only thing it can
+    observe -- but that is also what a rebase that never started looks like. An
+    unstaged change to a tracked file makes `git rebase` refuse outright
+    (`cannot rebase: You have unstaged changes`), exit non-zero, and create
+    neither `rebase-merge` nor `rebase-apply`, so the wrapper's FIRST loop pass
+    sees exactly that state with the head untouched.
+
+    THE FIXTURE IS A REAL REFUSAL rather than a stand-in for one, because the
+    condition under test is a property of git's own precondition checking: a
+    fixture that handed the wrapper a canned non-zero exit would assert only
+    that the wrapper can read a return code, and would say nothing about which
+    of the two states the absent rebase directory means.
+
+    EVERY ASSERTION IS SOMETHING A FALSE SUCCESS ALSO PRODUCES ONE OF, which is
+    why there are five. A wrapper reporting the refusal as a refresh ran the
+    plugin gate, the generated-record-file head check and the declared gate
+    against the UNREBASED head, performed a no-op leased push (HEAD still equals
+    the recorded remote, so origin's ref is unchanged either way), wrote the
+    changed marker and a new-base/new-head pair whose heads are identical, and
+    printed `LIVESPEC_PR_REFRESH_CHANGED` about a rebase that had not happened.
+    So the exit code, the sentinel, the ABSENCE of the changed sentinel, the
+    changed marker and -- the one the wrapper now actually asks about -- the
+    local head still not containing the advanced default are each asserted,
+    since origin's ref alone cannot tell the two worlds apart.
+
+    This is a REGRESSION control: before the regenerating wrapper existed the
+    same condition left `$conflicted` empty, fell through to `git rebase
+    --abort` and `LIVESPEC_PR_REFRESH_CONFLICT`, and exited 1.
+    """
+    box = _build(root=tmp_path)
+    before = box.remote_head(ref=_BRANCH)
+    published = box.local_head()
+    advanced = _advance_default(box=box)
+    _ = (box.clone / _OWNED_FILE).write_text("an unstaged edit\n", encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_CONFLICT" in result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" not in result.stderr
+    assert box.remote_head(ref=_BRANCH) == before, "a refusal to rebase still published"
+    assert box.local_head() == published, "the refused rebase moved HEAD"
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", advanced, "HEAD"],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode != 0, "the head contains the advanced default after a refused rebase"
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
 
 
@@ -1004,6 +1425,8 @@ def test_the_three_refresh_bound_stops_a_fourth_refresh(tmp_path: Path) -> None:
 
     below = _build(root=tmp_path / "below")
     _ = (below.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = (below.state_dir() / _CLEAN_STATE_FILENAME).write_text("", encoding="utf-8")
+    _ = (below.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
     _ = _advance_default(box=below)
 
     allowed = _run(box=below)
@@ -1011,6 +1434,183 @@ def test_the_three_refresh_bound_stops_a_fourth_refresh(tmp_path: Path) -> None:
     assert allowed.returncode == 0, allowed.stderr
     assert "LIVESPEC_PR_REFRESH_CHANGED" in allowed.stderr
     assert below.state(name=REFRESH_COUNT_STATE_FILENAME) == "3\n"
+
+
+def test_a_clean_refresh_is_not_counted_and_is_recorded_as_the_runs_one(
+    tmp_path: Path,
+) -> None:
+    """The headline of v253: a clean refresh spends none of the three-refresh bound.
+
+    The counter is seeded at the bound's last free value so that a build which
+    still counted this refresh would reach three and leave the file at "3\n"
+    instead of untouched.
+    """
+    box = _build(root=tmp_path)
+    _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "2"
+    assert box.state(name=_CLEAN_STATE_FILENAME) is not None
+
+
+def test_after_its_one_clean_refresh_a_run_leaves_later_movement_to_the_merge_path(
+    tmp_path: Path,
+) -> None:
+    """A second advance neither rewrites the publish branch nor ends the run.
+
+    Origin, the local head, the recorded provenance and the changed marker are
+    all asserted, because a build that refreshed again would move origin and set
+    the marker, while one that skipped the rebase but still published would
+    leave the marker behind and send `pr_refresh_head` into a carry-forward
+    decision for a head that did not change.
+    """
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box, path="first.txt", text="one\n")
+    first = _run(box=box)
+    assert first.returncode == 0, first.stderr
+    refreshed = box.remote_head(ref=_BRANCH)
+    second_tip = _advance_default(box=box, path="second.txt", text="two\n")
+
+    second = _run(box=box)
+
+    assert second.returncode == 0, second.stderr
+    assert "LIVESPEC_PR_REFRESH_CLEAN_ONCE" in second.stderr
+    assert "NON_CONVERGED" not in second.stderr
+    assert box.remote_head(ref=_BRANCH) == refreshed
+    assert box.local_head() == refreshed
+    assert box.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{refreshed}\n"
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", second_tip, refreshed],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode != 0, "the refreshed head absorbed the later advance"
+
+
+def test_a_default_branch_that_advances_on_every_window_never_ends_non_converged(
+    tmp_path: Path,
+) -> None:
+    """Churn alone cannot reach the bound when every refresh applies cleanly.
+
+    Six rounds is twice the bound: under the counting this requirement replaces,
+    the fourth round would have refused.
+    """
+    box = _build(root=tmp_path)
+    for round_number in range(6):
+        _ = _advance_default(box=box, path=f"churn-{round_number}.txt", text=f"{round_number}\n")
+
+        result = _run(box=box)
+
+        assert result.returncode == 0, (round_number, result.stderr)
+        assert "NON_CONVERGED" not in result.stderr, round_number
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+
+
+def test_a_conflict_entry_after_the_clean_refresh_refreshes_and_counts_once(
+    tmp_path: Path,
+) -> None:
+    """The one door back into a refresh: `pr_route` on a forge-reported conflict.
+
+    It refreshes onto the advanced default even though the run already refreshed
+    cleanly, counts exactly once at this visit though it applies cleanly, and
+    consumes the entry fact so the NEXT visit is not mistaken for one.
+    """
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box, path="first.txt", text="one\n")
+    assert _run(box=box).returncode == 0
+    refreshed = box.remote_head(ref=_BRANCH)
+    second_tip = _advance_default(box=box, path="second.txt", text="two\n")
+    _ = (box.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert box.remote_head(ref=_BRANCH) != refreshed
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", second_tip, box.remote_head(ref=_BRANCH)],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode == 0, "the conflict-entry refresh did not absorb the advance"
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    assert box.state(name=_CONFLICT_ENTRY_STATE_FILENAME) is None
+
+    third_tip = _advance_default(box=box, path="third.txt", text="three\n")
+    after = _run(box=box)
+
+    assert after.returncode == 0, after.stderr
+    assert "LIVESPEC_PR_REFRESH_CLEAN_ONCE" in after.stderr
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    assert third_tip != box.local_head()
+
+
+def test_a_conflict_entry_at_the_bound_still_ends_non_converged(tmp_path: Path) -> None:
+    """The bound still ends a run that keeps meeting forge-reported conflicts."""
+    box = _build(root=tmp_path)
+    _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("3", encoding="utf-8")
+    _ = (box.state_dir() / _CLEAN_STATE_FILENAME).write_text("", encoding="utf-8")
+    _ = (box.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
+    before = box.remote_head(ref=_BRANCH)
+    _ = _advance_default(box=box)
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_NON_CONVERGED" in result.stderr
+    assert box.remote_head(ref=_BRANCH) == before
+
+
+def test_an_own_checkpoint_is_still_dropped_after_the_clean_refresh_without_the_new_default(
+    tmp_path: Path,
+) -> None:
+    """The clean-once skip must not leave the engine's checkpoints on the pull request.
+
+    `pr` compares the pull request's head with the head this run published, so
+    a skipped visit that left an own empty checkpoint on origin would end the
+    run at `LIVESPEC_PR_UNEXPECTED_HEAD`. The republish drops the checkpoint at
+    the run's previous base, picks up none of the later movement, and counts
+    nothing.
+    """
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box, path="first.txt", text="one\n")
+    assert _run(box=box).returncode == 0
+    published = box.remote_head(ref=_BRANCH)
+    second_tip = _advance_default(box=box, path="second.txt", text="two\n")
+    checkpoint_clone = _branch_clone(box=box, name="late-checkpoint")
+    checkpoint = _checkpoint(
+        cwd=checkpoint_clone,
+        subject=f"fabro({_FACTORY_RUN_ID}): pr_refresh_head (failure)",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=checkpoint_clone)
+
+    result = _run(box=box)
+
+    assert result.returncode == 0, result.stderr
+    assert box.remote_head(ref=_BRANCH) == published
+    assert box.remote_head(ref=_BRANCH) != checkpoint
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", second_tip, published],
+        cwd=box.clone,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_fixture_git_env(),
+    )
+    assert contains.returncode != 0
+    assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
 
 
 def test_a_stale_changed_marker_is_cleared_at_every_entry(tmp_path: Path) -> None:
@@ -1028,6 +1628,27 @@ def test_a_stale_changed_marker_is_cleared_at_every_entry(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr
     assert "LIVESPEC_PR_REFRESH_UNCHANGED" in result.stderr
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
+def test_a_stale_needs_human_reason_is_cleared_at_refresh_entry(tmp_path: Path) -> None:
+    """A refresh failure without its own reason leaves the terminal's generic cause.
+
+    `needs_human` reads this file before its generic fallback.  It can therefore
+    never inherit a cause a prior stage wrote: this refresh entry deletes the
+    stale file before its first refusal, and the no-provenance refusal below
+    records only a stage cause rather than a terminal reason.
+    """
+    box = _build(root=tmp_path)
+    reason = box.clone / ".git" / _needs_human_reason_filename()
+    _ = reason.write_text("publish-draft-stale-cause\n", encoding="utf-8")
+    (box.state_dir() / PUBLISH_HEAD_STATE_FILENAME).unlink()
+
+    result = _run(box=box)
+
+    assert result.returncode == 1, result.stdout
+    assert "LIVESPEC_PR_REFRESH_NO_PROVENANCE" in result.stderr
+    assert not reason.exists()
+    assert _generic_terminal_reason() == "loop cannot auto-resolve this work-item"
 
 
 def test_an_absent_exact_head_push_program_fails_closed(tmp_path: Path) -> None:
@@ -1106,10 +1727,10 @@ def test_the_refresh_execution_boundary_leaves_enclosing_run_state_intact(
     assert shared_state() == before, "a refresh execution control touched a fixed shared path"
     # The POSITIVE half: each control's own state resolved inside its own
     # `$GIT_DIR`, which is the mechanism that makes the two legs above hold. The
-    # passing arm wrote a counter there and the failing arm did not, so the one
-    # directory carries both answers.
-    assert passing_box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
-    # Both boxes now record a refresh, because v134 counts the repaired visit
+    # passing arm wrote its clean-refresh fact there and the failing arm wrote a
+    # counter, so the one directory carries both answers.
+    assert passing_box.state(name=_CLEAN_STATE_FILENAME) is not None
+    # The failing arm now records a refresh, because v134 counts the repaired visit
     # too; what this case grades is that each recorded it in its OWN clone, which
     # is the boundary under test.
     assert failing_box.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
@@ -1256,22 +1877,29 @@ def test_the_refresh_route_visit_caps_admit_the_worst_case_the_bound_allows(
     So the longest run alternates one uncounted entry, one `pr` visit, one
     counted refresh, up to the bound, and ends on the entry that refuses:
 
-      * `pr_refresh`      — `bound` counted + `bound + 1` uncounted + 1 refusing
+      * `pr_refresh`      — `bound` counted + `bound + 1` uncounted + 1 refusing,
+        plus the run's one clean refresh and the uncounted visit that follows it
       * `pr_refresh_head` — every entry but the refusing one
-      * `pr` and `pr_route` — one per uncounted entry
+      * `pr` and `pr_route` — one per uncounted entry, plus the one that routes
+        the clean refresh
     """
     box = _build(root=tmp_path / "probe")
     _ = (box.state_dir() / REFRESH_COUNT_STATE_FILENAME).write_text("2", encoding="utf-8")
+    _ = (box.state_dir() / _CLEAN_STATE_FILENAME).write_text("", encoding="utf-8")
+    _ = (box.state_dir() / _CONFLICT_ENTRY_STATE_FILENAME).write_text("", encoding="utf-8")
     _ = _advance_default(box=box)
     assert _run(box=box).returncode == 0, "the probe's premise is a refresh that proceeds"
     bound = int(str(box.state(name=REFRESH_COUNT_STATE_FILENAME)).strip())
 
-    entries = 2 * bound + 2
+    # The run's one clean refresh is uncounted, and so is the visit that returns
+    # from the proof loop to find it done: two more entries than the counted
+    # refreshes alone admit, and one more `pr` visit to route the clean one.
+    entries = 2 * bound + 4
     required = {
         "pr_refresh": entries,
         "pr_refresh_head": entries - 1,
-        "pr": bound + 1,
-        "pr_route": bound + 1,
+        "pr": bound + 2,
+        "pr_route": bound + 2,
     }
 
     graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))

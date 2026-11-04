@@ -18,13 +18,7 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest, RefStatus
 from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
-from livespec_orchestrator_beads_fabro.commands._acp_projection_terminal import (
-    project_terminal_run_events,
-)
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
-    acceptance_eligible_candidates,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
     outcome_after_acceptance,
 )
@@ -85,7 +79,6 @@ from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
-    "candidates",
     "is_dispatch_candidate",
     "janitor_core_ref",
     "livespec_config_text",
@@ -130,34 +123,6 @@ def prepare(
     if staleness_exit is not None:
         return None
     return load_items(repo=repo), journal
-
-
-def candidates(
-    *,
-    args: argparse.Namespace,
-    items: list[WorkItem],
-    repo: Path,
-) -> list[WorkItem]:
-    """The drain's selection for one pass, in the canonical ranked order.
-
-    The AUTONOMOUS pass applies the shared acceptance-eligibility filter, which
-    is what the ranking algorithm means by the drain consuming the same filtered
-    set as `next`: a legacy row the wall would refuse is never selected, so it
-    can neither spend the budget nor stop the queue behind it with a wave-level
-    refusal.
-
-    A NAMED id is narrowed to and deliberately NOT filtered. The clause keeps the
-    hand-picked path protected by the wall "even when candidate enumerations
-    filtered the item earlier", and that only holds if the named row still
-    reaches it — dropping it here would report the drain as having nothing to do
-    for an id the operator typed, which is the absence-reads-as-resolution
-    failure the attention contract forbids.
-    """
-    ranked = ready_items(items=items, repo=repo)
-    requested = set(args.items or [])
-    if requested:
-        return [item for item in ranked if item.id in requested]
-    return acceptance_eligible_candidates(items=ranked, cwd=repo, workflow_name=args.workflow_name)
 
 
 def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
@@ -299,13 +264,15 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         journal_path=journal.path,
         now_iso=utc_now_iso(),
     )
-    # "After a run reaches any terminal outcome ... read the run's events
-    # through the existing events seam against the dispatch's resolved factory
-    # target." It runs on EVERY terminal, green or not, because a hold "may
-    # come from ... an idempotently projected `agent.acp.failover` event from a
-    # run of ANY eventual outcome" -- a run that failed in a later node still
-    # observed the outage that made its earlier node fall back.
-    _ = project_terminal_run_events(outcome=outcome, repo=repo, journal=journal)
+    # NO EVENT PROJECTION FOLLOWS THE TERMINAL. v127 made "the per-node
+    # selection record ... and the `provider-limit-release` record" the
+    # authoritative fallback history and forbade depending on any engine
+    # failover event, so this terminal's fallback evidence is already written:
+    # the selection record by the dispatch that rendered it, and the release
+    # record by `dispose_provider_limit_release` through the terminal routing
+    # below. A second read of the run's event stream could only re-derive what
+    # those two already carry, and on the current engine it re-derives nothing
+    # at all -- the event it looked for does not exist.
     record_dead_implementer_truncation_if_observed(outcome=outcome, journal=journal)
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     # BEFORE the escalation below, which is the blocked transition: the tree

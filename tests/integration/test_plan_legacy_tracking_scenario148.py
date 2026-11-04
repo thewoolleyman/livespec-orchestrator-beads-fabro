@@ -208,6 +208,30 @@ def test_the_missing_tracking_finding_names_the_sanctioned_migration(
     assert "migrate-plan-records" in _findings_text(findings=directive.findings)
 
 
+def test_an_absent_chain_keeps_the_migration_remedy_rather_than_the_pointer_write(
+    tmp_path: Path,
+) -> None:
+    """The half of the distinction that must NOT move (`bd-ib-paevjd`).
+
+    A chain that reads cleanly while tracking no obligation now names an
+    executable-kind pointer write as its remedy. This epic has no chain at all,
+    so the migration that creates its genesis token is still the write it
+    needs, and naming the pointer write here would point an unmigrated plan at
+    a writer that refuses it — `set_next_action` has nowhere to commit a
+    transition. Asserted here, with both halves in one place, because the
+    expensive failure is a repair that collapses the two arms onto whichever
+    remedy was written last.
+    """
+    config = _seed(tmp_path=tmp_path, pointer=_legacy_pointer())
+
+    directive = resume_directive(config=config, epic_id=_EPIC_ID, unattended=True)
+
+    text = _findings_text(findings=directive.findings)
+    assert _TRACKING_MISSING in text
+    assert "migrate-plan-records" in text
+    assert "next_action write carrying required_result and budget" not in text
+
+
 def test_the_next_sanctioned_write_requires_both_tracking_fields(
     tmp_path: Path,
 ) -> None:

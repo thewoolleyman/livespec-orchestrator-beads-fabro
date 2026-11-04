@@ -10,6 +10,7 @@ from uuid import uuid4
 from livespec_orchestrator_beads_fabro.commands._session_wait_records import (
     DIAGNOSTIC_RECORD_DISPOSED,
     read_wait_record,
+    recorded_associations,
     wait_store_lock,
     write_wait_record,
 )
@@ -37,6 +38,11 @@ class InventoryRecord:
     findings: frozenset[str]
     observations: tuple[GateObservation, ...]
     observation_sequence: int
+    repository: str | None = None
+    session_id: str | None = None
+    deadline_at: float | None = None
+    acknowledged: bool = False
+    associations: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -116,6 +122,11 @@ def _inventory_record(
         findings=frozenset(findings),
         observations=observations,
         observation_sequence=int(str(payload["observation_sequence"])) + 1,
+        repository=str(payload["repository"]),
+        session_id=str(payload["session_id"]),
+        deadline_at=float(str(payload["deadline_at"])),
+        acknowledged=bool(acknowledgement["acknowledged"]),
+        associations=tuple(sorted(recorded_associations(payload=payload).items())),
     )
 
 

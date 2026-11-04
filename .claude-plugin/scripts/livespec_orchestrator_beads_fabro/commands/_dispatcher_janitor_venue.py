@@ -67,6 +67,7 @@ the venue is about to run.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -122,6 +123,7 @@ __all__: list[str] = [
     "JanitorVenue",
     "fleet_toolchain_is_the_host_janitor_premise",
     "provision_janitor_checkout",
+    "remove_janitor_core_checkout",
     "resolve_janitor_venue",
 ]
 
@@ -208,6 +210,17 @@ def fleet_toolchain_is_the_host_janitor_premise(*, plan: DispatchPlan) -> bool:
     )
 
 
+def remove_janitor_core_checkout(*, plan: DispatchPlan) -> None:
+    """Delete the livespec core clone the janitor placed beside its checkout.
+
+    `git worktree remove` only reaches the checkout, and the core clone no longer
+    lives inside it, so the clone has to be cleared on its own: before a fresh
+    provisioning (a crashed earlier dispatch of the same item leaves one that
+    would make `git clone` refuse) and after a green run.
+    """
+    shutil.rmtree(plan.janitor_core_checkout, ignore_errors=True)
+
+
 def provision_janitor_checkout(
     *,
     outcome_type: type[DispatchOutcome],
@@ -272,6 +285,7 @@ def provision_janitor_checkout(
         stage="janitor-checkout-preclean",
         command=(janitor_worktree_remove_argv(plan=plan), plan.repo, _GIT_TIMEOUT_SECONDS, None),
     )
+    remove_janitor_core_checkout(plan=plan)
     core_step = (
         f"provisioning livespec core at {plan.janitor_core_checkout} (ref {plan.janitor_core_ref})"
     )
@@ -345,6 +359,11 @@ def provision_janitor_checkout(
             journal_options=StageJournalOptions(
                 streams=True,
                 retention=plan.janitor_retention,
+                extra_fields=(
+                    {"core_path": str(plan.janitor_core_checkout)}
+                    if stage == "janitor-core-provision"
+                    else None
+                ),
             ),
             # The venue's own provisioning commands are covered by the
             # retention clause alongside the check suite, because a bootstrap

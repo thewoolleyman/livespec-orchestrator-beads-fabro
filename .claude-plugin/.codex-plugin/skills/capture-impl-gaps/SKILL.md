@@ -1,6 +1,6 @@
 ---
 name: capture-impl-gaps
-description: File gap-tied work-items over the gap-id set emitted by the sibling detect-impl-gaps thin-transport skill, into the beads-backed store with per-gap user consent. That sibling is a spec-clause enumerator, not a spec→impl comparator — it never reads implementation state, so a captured gap-id means the clause is not yet tracked by a work-item, never that it is missing from the implementation. Invoked as livespec-orchestrator-beads-fabro:capture-impl-gaps.
+description: File gap-tied work-items over the gap-id set emitted by the sibling detect-impl-gaps thin-transport skill, into the beads-backed store with per-gap user consent. That sibling is a heading-coverage enumerator, not a spec→impl comparator — it never reads implementation state, so a captured gap-id means the heading has no exercising test, never that its behaviour is missing from the implementation. Invoked as livespec-orchestrator-beads-fabro:capture-impl-gaps.
 ---
 
 # capture-impl-gaps — Codex binding

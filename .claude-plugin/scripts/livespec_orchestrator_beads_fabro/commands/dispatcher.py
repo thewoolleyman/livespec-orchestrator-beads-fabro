@@ -23,6 +23,9 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py claude-cred-status [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
+  dispatcher.py idle-slot-audit [--repo <path>] [--json]
+  dispatcher.py sandbox-images --factory <name> [--repo <path>]... [--json]
+  dispatcher.py drift-run [--repo <path>] [--invoker <id>] [--dry-run] [--json]
   dispatcher.py reconcile-runs [--repo <path>] [--factory <name>]
                                 [--fabro-bin <path>] [--journal <path>]
                                 [--invoker <id>] [--dry-run] [--json]
@@ -34,9 +37,6 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                             [--candidate-key <key>]
                                             [--repo <path>] [--invoker <id>]
                                             [--journal <path>]
-  dispatcher.py clear-model-fallback-projection --fact-id <id> --reason <text>
-                                                [--repo <path>] [--invoker <id>]
-                                                [--journal <path>]
   dispatcher.py reconcile-merged --repo <path> --item <id> [--invoker <id>]
                                  [--regrade] [--json]
   dispatcher.py post-host-record --repo <path> --item <id>
@@ -62,6 +62,15 @@ tree at `--spec-root` (default `<project-root>/SPECIFICATION`).
 `janitor-check` runs the three re-homed stale-cleanup checks
 (no-stale-merged-branch / no-stale-merged-pr-branch / no-stale-worktree;
 see `_dispatcher_janitor_checks.py`) against the repo's git/gh state.
+`idle-slot-audit` is the read-only cross-tenant measurement of the priority
+queue against one factory's board. It reads the committed-only
+`dispatcher.idle_slot_audit` object, lists every non-closed child of each
+named priority epic through BOTH child-linkage arms, gives each child exactly
+one class, and ends with a finding line when the board is observable, its
+queued count is zero, and at least one child is `DISPATCHABLE-NOW` or
+`STALE-EDGE`. It writes to no ledger, journal or factory, reads no comment
+prose, derives no available capacity, and exits 2 only on a malformed
+configuration object.
 `reconcile-runs` is the single authority over every configured factory's
 non-terminal run inventory. It surveys each declared factory through that
 factory's own resolved target, considers every non-terminal status kind —
@@ -128,17 +137,13 @@ must name its `--candidate-key` and a domain-scoped one must not — and it
 refuses a target holding no live observation. It writes its own
 `acp-availability-cleared` stage, which the legacy provider scan never reads,
 so neither valve can retire the other's records (see `_acp_hold_clear`).
-`clear-model-fallback-projection` is the THIRD valve of that family and it
-retires no record at all: it retires one `hygiene:model-fallback-projection:
-<repo>:<run>:<node>` attention fact, the one raised when a run's ACP fallback
-event stream could not be read from its resolved factory. Such a fact stops
-unattended picking for the repository, and its only automatic resolution is a
-later successful projection of that run and node -- run absence never resolves
-it -- so an operator who knows the run is gone for good needs a way to say so.
-It carries the same two human-only refusals plus an exactness refusal: a
-`--fact-id` naming nothing currently unresolved is refused rather than
-appended. It writes its own `acp-projection-failure-cleared` stage and touches
-no availability hold (see `_acp_projection_clear`).
+THERE WAS A THIRD VALVE OF THAT FAMILY AND ITS ABSENCE IS DELIBERATE.
+`clear-model-fallback-projection` retired one
+`hygiene:model-fallback-projection:<repo>:<run>:<node>` attention fact, raised
+when a run's ACP fallback event stream could not be read. v127 deleted that
+fact with the projection that minted it, so the valve's only possible outcome
+became its own exactness refusal -- a documented command that cannot succeed.
+Its two surviving siblings above retire records that still exist.
 `ledger-normalize` is the standalone self-heal surface: it reuses the
 dispatch-path status normalizer (`open` → `backlog`, `in_progress` →
 `active`; every other status is left for the status-conformance check)
@@ -290,10 +295,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
     add_clear_acp_availability_hold_arguments,
     run_clear_acp_availability_hold_command,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_projection_clear import (
-    add_clear_model_fallback_projection_arguments,
-    run_clear_model_fallback_projection_command,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
@@ -303,6 +304,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_canary import (
     add_file_canary_arguments,
     run_file_canary_command,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_classify_tier import (
+    add_classify_tier_arguments,
+    run_classify_tier_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_command import (
     run_claude_cred_status,
@@ -324,21 +329,37 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import
     add_dispatch_common,
     add_probe_arguments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_drift_run_command import (
+    run_drift_run_command,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_inspect import (
+    add_factory_inspect_arguments,
+    run_factory_inspect_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
     add_post_host_record_arguments,
     run_post_host_record_cli,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_command import (
+    add_idle_slot_audit_arguments,
+    run_idle_slot_audit_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
     ledger_blocked_after_normalization,
     load_items,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_normalize import (
+    run_ledger_normalize,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import (
+    candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command import (
     run_loop_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
-    candidates,
     is_dispatch_candidate,
     janitor_core_ref,
     post_run_dispositions,
@@ -374,15 +395,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     requested_items_preflight_error,
     run_janitor_check,
     run_ledger_check,
-    run_ledger_normalize,
     run_spec_check,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
     run_dispatch_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images_command import (
+    add_sandbox_images_arguments,
+    run_sandbox_images_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args import (
     add_claude_cred_status_arguments,
     add_codex_cred_refresh_arguments,
+    add_drift_run_arguments,
     add_janitor_check_arguments,
     add_ledger_check_arguments,
     add_ledger_normalize_arguments,
@@ -404,6 +429,12 @@ _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
     reflect,
 )
 
+
+def _run_drift_run(*, args: argparse.Namespace) -> int:
+    """Resolve the drift-job handler at invocation time, like the other CLI seams."""
+    return run_drift_run_command(args=args)
+
+
 __all__: list[str] = [
     "bounce_non_convergence_to_backlog",
     "candidates",
@@ -422,20 +453,23 @@ __all__: list[str] = [
     "ready_items",
     "reflector_oob_after_verdict",
     "requested_items_preflight_error",
+    "run_classify_tier_command",
     "run_claude_cred_status",
     "run_clear_acp_availability_hold_command",
-    "run_clear_model_fallback_projection_command",
     "run_clear_provider_exhaustion_command",
     "run_codex_cred_refresh",
     "run_codex_cred_status",
+    "run_drift_run_command",
     "run_file_canary_command",
     "run_id",
+    "run_idle_slot_audit_command",
     "run_janitor_check",
     "run_ledger_check",
     "run_ledger_normalize",
     "run_probe_command",
     "run_reconcile_merged_command",
     "run_reconcile_runs_command",
+    "run_sandbox_images_command",
     "run_spec_check",
     "warn_item_sizing",
 ]
@@ -443,13 +477,16 @@ __all__: list[str] = [
 
 _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "claude-cred-status": run_claude_cred_status,
+    "classify-tier": run_classify_tier_command,
     "clear-acp-availability-hold": run_clear_acp_availability_hold_command,
-    "clear-model-fallback-projection": run_clear_model_fallback_projection_command,
     "clear-provider-exhaustion": run_clear_provider_exhaustion_command,
     "codex-cred-refresh": run_codex_cred_refresh,
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
+    "drift-run": _run_drift_run,
     "file-canary": run_file_canary_command,
+    "idle-slot-audit": run_idle_slot_audit_command,
+    "inspect": run_factory_inspect_command,
     "janitor-check": run_janitor_check,
     "ledger-check": run_ledger_check,
     "ledger-normalize": run_ledger_normalize,
@@ -459,6 +496,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "reconcile-merged": run_reconcile_merged_command,
     "reconcile-runs": run_reconcile_runs_command,
     "resume": run_resume_command,
+    "sandbox-images": run_sandbox_images_command,
     "spec-check": run_spec_check,
 }
 
@@ -473,6 +511,7 @@ def main(*, argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    add_classify_tier_arguments(parser=subparsers.add_parser("classify-tier"))
     add_ledger_check_arguments(parser=subparsers.add_parser("ledger-check"))
     add_ledger_normalize_arguments(parser=subparsers.add_parser("ledger-normalize"))
     add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
@@ -484,23 +523,22 @@ def _build_parser() -> argparse.ArgumentParser:
     add_clear_acp_availability_hold_arguments(
         parser=subparsers.add_parser("clear-acp-availability-hold")
     )
-    add_clear_model_fallback_projection_arguments(
-        parser=subparsers.add_parser("clear-model-fallback-projection")
-    )
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
+    add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
+    add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
+    add_drift_run_arguments(parser=subparsers.add_parser("drift-run"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
     add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
     add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
+    add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
-    dispatch = subparsers.add_parser("dispatch")
-    add_dispatch_common(parser=dispatch)
+    add_dispatch_common(parser=(dispatch := subparsers.add_parser("dispatch")))
     _ = dispatch.add_argument("--item", dest="item", required=True)
     add_resume_arguments(parser=subparsers.add_parser("resume"))
-    loop = subparsers.add_parser("loop")
-    add_dispatch_common(parser=loop)
+    add_dispatch_common(parser=(loop := subparsers.add_parser("loop")))
     _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
     _ = loop.add_argument("--parallel", dest="parallel", type=int, default=1)
     _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")

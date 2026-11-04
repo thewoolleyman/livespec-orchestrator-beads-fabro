@@ -51,7 +51,7 @@ _PRESERVED_MARKER = "LIVESPEC_NEEDS_HUMAN_PRESERVED"
 _NO_RUN_ID_MARKER = "LIVESPEC_NEEDS_HUMAN_NO_RUN_ID"
 _REF_PREFIX = "refs/heads/needs-human/"
 _RUN_ID = "01M1TESTRUNIDPRESERVE"
-_FORMER_GATE_SOURCES = ("implement", "review", "disposition", "pr")
+_DIRECT_NEEDS_HUMAN_SOURCES = ("review", "disposition", "pr")
 _OPERATOR_NAME = "Chad Woolley"
 _OPERATOR_EMAIL = "thewoolleyman@gmail.com"
 
@@ -137,10 +137,18 @@ def test_no_run_id_pushes_nothing_and_says_so_on_stderr(tmp_path: Path) -> None:
         assert _pushed_refs(origin=origin) == [], run_id
 
 
-def test_every_former_gate_edge_targets_needs_human() -> None:
+def test_every_other_former_gate_edge_targets_needs_human() -> None:
     lines = _code_lines(_dot())
-    for source in _FORMER_GATE_SOURCES:
+    for source in _DIRECT_NEEDS_HUMAN_SOURCES:
         assert any(re.match(rf"^{source}\s*->\s*needs_human\b", line) for line in lines), source
+    assert (
+        'implement -> implement_amendment_route [label="Blocked", condition="outcome=failed"]'
+        in lines
+    )
+    assert (
+        'implement_amendment_route -> needs_human [label="Definition-of-Done amendment", condition="outcome=failed"]'
+        in lines
+    )
     assert 'review -> needs_human [label="unmatched review outcome"]' in lines
     assert 'disposition -> needs_human [label="unmatched disposition outcome"]' in lines
 

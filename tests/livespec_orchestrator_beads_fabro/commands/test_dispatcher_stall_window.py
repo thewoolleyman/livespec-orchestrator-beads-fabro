@@ -22,7 +22,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_io_fabro_launcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_io_fabro_launcher,
+    _dispatcher_stale_item_reap,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
@@ -30,6 +33,8 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     REPOSITORY_LAYER,
     WORKFLOW_DEFAULT_LAYER,
 )
+
+pytestmark = pytest.mark.usefixtures("server_cancel")
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window"
 _WATCHDOG_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog"
@@ -102,21 +107,21 @@ class _RecordingJournal:
 
 @dataclass(kw_only=True)
 class _ScriptedFabroRunner:
-    """A CommandRunner scripting fabro's run/ps/inspect/events/rm subprocesses.
+    """A CommandRunner scripting fabro's run/ps/inspect/events subprocesses.
 
     `fabro run` BLOCKS on `run_done` so the background thread stays alive
-    while the foreground watch loop runs; `fabro rm` sets it, modelling fabro
-    killing the run. Never launches a real process.
+    while the foreground watch loop runs. Never launches a real process.
     """
 
     events_jsons: list[str]
     run_done: threading.Event = field(default_factory=threading.Event)
-    rm_calls: list[str] = field(default_factory=list)
+    verbs: list[str] = field(default_factory=list)
     _poll: int = 0
 
     def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
         _ = (cwd, timeout_seconds)
         verb = argv[1] if len(argv) > 1 else ""
+        self.verbs.append(verb)
         if verb == "run":
             _ = self.run_done.wait(timeout=10.0)
             return CommandResult(exit_code=0, stdout=f"    Run: {_RUN_ID}\n", stderr="")
@@ -128,10 +133,6 @@ class _ScriptedFabroRunner:
             index = min(self._poll, len(self.events_jsons) - 1)
             self._poll += 1
             return CommandResult(exit_code=0, stdout=self.events_jsons[index], stderr="")
-        if verb == "rm":
-            self.rm_calls.append(argv[-1])
-            self.run_done.set()
-            return CommandResult(exit_code=0, stdout="", stderr="")
         return CommandResult(exit_code=1, stdout="", stderr=f"unexpected argv {argv}")
 
 
@@ -172,7 +173,7 @@ def test_host_stall_watchdog_window_resolves_from_the_repository_stall_timeout_k
 
     assert (window.seconds, window.layer) == (3000.0, REPOSITORY_LAYER)
 
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", lambda **_: [])
     runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS])
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=_advancing_clock())
@@ -182,7 +183,7 @@ def test_host_stall_watchdog_window_resolves_from_the_repository_stall_timeout_k
     )
 
     assert result.stalled_run_id == _RUN_ID
-    assert runner.rm_calls == [_RUN_ID]
+    assert "rm" not in runner.verbs
     cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
     assert [record.get("stall_seconds") for record in cancels] == [3000.0]
 
@@ -213,7 +214,7 @@ def test_no_configured_value_leaves_the_host_stall_window_at_7200_seconds(
 
     assert (window.seconds, window.layer) == (7200.0, WORKFLOW_DEFAULT_LAYER)
 
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", lambda **_: [])
     runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS])
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=_advancing_clock())
@@ -239,7 +240,7 @@ def test_the_cancel_row_names_the_layer_that_supplied_the_stall_window(
     an override from the built-in default cannot tell whether raising the key
     would have saved the run.
     """
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", lambda **_: [])
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", lambda **_: [])
     stall_window = _stall_window_module()
     configured = tmp_path / "configured"
     defaulted = tmp_path / "defaulted"

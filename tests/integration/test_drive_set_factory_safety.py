@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands.drive import run_action
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
+    read_work_item_comments,
     read_work_items,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -108,6 +109,10 @@ def test_set_factory_safety_records_the_opt_out_reason_on_a_backlog_item(
     assert stored.factory_safety == "needs-host-secrets"
     assert stored.status == "backlog"
     assert stored.admission_policy == "auto"
+    record = fake_singleton().show_issue(issue_id="bd-ib-123")
+    metadata = record["metadata"]
+    assert isinstance(metadata, dict)
+    assert isinstance(metadata["factory_safety_recorded_at"], str)
     journal = (repo / _JOURNAL).read_text(encoding="utf-8")
     assert "needs-host-secrets" in journal
     assert '"invoker": "human:cw"' in journal
@@ -171,3 +176,52 @@ def test_set_factory_safety_is_registered_in_the_drive_action_id_grammar(
 
     assert unsupported["kind"] == "unknown"
     assert "set-factory-safety:<id>:" in str(unsupported["summary"])
+
+
+def test_clear_factory_safety_journals_the_rationale_invoker_and_removed_reason(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item(factory_safety="needs-host-secrets"))
+
+    result = run_action(
+        repo=repo,
+        action_id="clear-factory-safety:bd-ib-123:host secret rotation is complete: R392",
+        identity=InvokerIdentity(invoker="human:cw", invoker_source="flag"),
+    )
+
+    assert result["status"] == "green"
+    comments = read_work_item_comments(path=_config(), work_item_id="bd-ib-123")
+    assert len(comments) == 1
+    assert "host secret rotation is complete: R392" in comments[0].text
+    assert "human:cw" in comments[0].text
+    assert "needs-host-secrets" in comments[0].text
+    journal = (repo / _JOURNAL).read_text(encoding="utf-8")
+    assert "host secret rotation is complete: R392" in journal
+    assert '"invoker": "human:cw"' in journal
+    assert "needs-host-secrets" in journal
+
+
+def test_clear_factory_safety_preserves_lifecycle_status_and_admission_policy(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(
+        path=_config(),
+        item=_item(
+            factory_safety="mutates-host-machinery",
+            status="acceptance",
+            admission_policy="manual",
+        ),
+    )
+
+    result = run_action(
+        repo=repo,
+        action_id="clear-factory-safety:bd-ib-123:the host-only change was superseded",
+    )
+
+    assert result["status"] == "green"
+    stored = _stored()
+    assert stored.factory_safety is None
+    assert stored.status == "acceptance"
+    assert stored.admission_policy == "manual"

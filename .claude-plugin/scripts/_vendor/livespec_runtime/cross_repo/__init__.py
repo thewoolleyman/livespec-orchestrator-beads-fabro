@@ -3,7 +3,7 @@
 Implements the cross-repo dependency awareness contract from
 livespec/SPECIFICATION/contracts.md (landed by work-item li-e7h6ki
 under parent epic li-6d2wpj;
-impl landed by li-aclzfe at v0.2.0).
+impl landed by li-aclzfe).
 
 Public surface lives in the sub-modules; consumers import directly
 from them rather than the package namespace:

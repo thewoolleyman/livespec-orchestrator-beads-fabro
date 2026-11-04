@@ -1,7 +1,7 @@
-"""The coverage-before-Green instruction as the DISPATCHED implement prompt carries it.
+"""The hook-is-the-full-check instruction as the DISPATCHED implement prompt carries it.
 
 bd-ib-z6fmp. The prompt-tier test beside this one
-(`tests/prompts/test_implement_coverage_before_green.py`) reads the COMMITTED
+(`tests/prompts/test_implement_hook_is_the_full_check.py`) reads the COMMITTED
 prompt and owns the full phrase inventory. That is a different question from the
 one here, and neither answers the other: a committed prompt proves what the
 repository wrote, while a run is driven by the prompt the per-dispatch PAYLOAD
@@ -78,15 +78,14 @@ _OPEN = "{" + "{"
 _CLOSE = "}" + "}"
 _CHECK_SUITE_TOKEN = f"{_OPEN} inputs.{_CHECK_SUITE_INPUT} {_CLOSE}"
 
-_HEADING = "## Coverage before Green — run the per-file coverage check FIRST"
+_HEADING = "## The commit hook is the full check — run only targeted tests yourself"
 # Needles sit WITHIN one physical line of the hard-wrapped prose: one
 # straddling a line break fails while the prose says exactly the thing.
 _REQUIRED_PHRASES = (
-    "Before you attempt ANY Green commit or amend",
-    "per-file coverage check over the FULL test suite",
-    "Measure coverage over the WHOLE suite.",
-    "Do NOT narrow it to the files",
-    "this change touched: a logic change drops coverage in files it never",
+    "that suite contains the per-file coverage gate. That hook run IS this stage's",
+    "one full check. Before a commit, run only the targeted tests: every test file",
+    "of a file you edited. Never run the full suite, the per-file coverage check or",
+    "- Coverage is measured over the WHOLE suite, which is why it belongs to the",
     "This relaxes NOTHING.",
 )
 
@@ -130,7 +129,7 @@ def _dispatched_prompt(*, payload: WorkflowPayload) -> Path:
 
 
 def _section(*, text: str) -> str:
-    """The one coverage-before-Green section of `text`, up to the next H2."""
+    """The one hook-is-the-full-check section of `text`, up to the next H2."""
     assert text.count(_HEADING) == 1, (
         f"the dispatched prompt carries {text.count(_HEADING)} sections headed "
         f"{_HEADING!r}; expected exactly one"
@@ -167,7 +166,7 @@ def test_the_materialized_payload_is_a_copy_the_run_reads_its_prompt_from(
     assert 'prompt="@prompts/implement.md"' in payload.graph.read_text(encoding="utf-8")
 
 
-def test_the_dispatched_implement_prompt_carries_the_coverage_instruction(
+def test_the_dispatched_implement_prompt_carries_the_hook_is_the_full_check_instruction(
     tmp_path: Path,
 ) -> None:
     """The instruction survives materialization into the prompt the run reads."""
@@ -175,9 +174,9 @@ def test_the_dispatched_implement_prompt_carries_the_coverage_instruction(
     section = _section(text=_dispatched_prompt(payload=payload).read_text(encoding="utf-8"))
 
     for phrase in _REQUIRED_PHRASES:
-        assert phrase in section, f"the dispatched coverage section omits {phrase!r}"
+        assert phrase in section, f"the dispatched hook-is-the-full-check section omits {phrase!r}"
     assert _CHECK_SUITE_TOKEN in section, (
-        "the dispatched coverage section names no check-suite input, so it cannot "
+        "the dispatched hook-is-the-full-check section names no check-suite input, so it cannot "
         "resolve to the target repository's own declaration"
     )
 

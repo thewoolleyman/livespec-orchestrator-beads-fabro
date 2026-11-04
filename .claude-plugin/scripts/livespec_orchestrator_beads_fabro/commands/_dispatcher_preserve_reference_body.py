@@ -180,7 +180,8 @@ def error_pointer_body(
                 f"factory server url: {server_url}",
                 f"stage artifact path: {FABRO_DIFF_ARTIFACT_GLOB} (unverified)",
                 f"artifact: preserve reference failed with {type(error).__name__}",
-                f"error: {comment_safe_external_text(text=str(error))}",
+                f"error: {type(error).__name__} (detail recorded below)",
+                f"stderr: {comment_safe_external_text(text=str(error))}",
                 "byte size: (not recorded; preserve step failed)",
                 f"sha256: {digest}",
                 (

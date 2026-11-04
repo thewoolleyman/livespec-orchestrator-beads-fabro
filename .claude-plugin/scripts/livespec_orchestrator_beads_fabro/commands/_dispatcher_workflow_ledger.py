@@ -39,6 +39,9 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_workflow_variant,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_pin_snapshot import (
+    snapshot_pins,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
     RESERVED_WORKFLOW_NAME,
     WorkflowVariant,
@@ -70,8 +73,17 @@ def previewed_workflow_variant(
     beside it: the preview and the pinning resolution are the same precedence,
     and two copies of it is exactly how the wall and the launch would come to
     disagree about which variant one dispatch runs.
+
+    The recorded name comes from the enclosing `workflow_pin_snapshot_scope`'s
+    one list read when the item is in it, and from a per-item `bd show`
+    otherwise -- the same `dispatch_workflow_from_record` reading either way.
     """
-    recorded = dispatch_workflow_for(path=store_config(repo=repo), work_item_id=work_item_id)
+    pins = snapshot_pins(repo=repo)
+    recorded = (
+        pins[work_item_id]
+        if pins is not None and work_item_id in pins
+        else dispatch_workflow_for(path=store_config(repo=repo), work_item_id=work_item_id)
+    )
     selected = name or _usable_recorded_name(repo=repo, recorded=recorded)
     return resolve_workflow_variant(cwd=repo, name=selected)
 

@@ -247,6 +247,7 @@ cleanup() {
   rm -f "$HERE/fabro" 2>/dev/null || true
   rm -rf "$HERE/bd-guard" 2>/dev/null || true
   rm -rf "$HERE/plugin-scripts" 2>/dev/null || true
+  rm -rf "$HERE/plugin-meta" 2>/dev/null || true
   exit "$rc"
 }
 trap cleanup EXIT
@@ -272,6 +273,13 @@ stage_and_build_image() {
   rm -rf "$HERE/plugin-scripts"
   cp -R "$HERE/../.claude-plugin/scripts" "$HERE/plugin-scripts"
   find "$HERE/plugin-scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
+  # The plugin ROOT members the launcher's payload check requires beside
+  # scripts/ (plugin.json, .fabro/workflows); without them every baked
+  # wrapper refuses, including the entrypoint's mint_app_token.py.
+  rm -rf "$HERE/plugin-meta"
+  mkdir -p "$HERE/plugin-meta"
+  cp "$HERE/../.claude-plugin/plugin.json" "$HERE/plugin-meta/plugin.json"
+  cp -R "$HERE/../.claude-plugin/.fabro" "$HERE/plugin-meta/.fabro"
   rm -rf "$HERE/bd-guard"
   cp -R "$HERE/../bd-guard" "$HERE/bd-guard"
   find "$HERE/bd-guard" -type d -name __pycache__ -prune -exec rm -rf {} +
@@ -398,15 +406,34 @@ create_and_seed_repo() {
     # status.custom set must be replicated here. MUST match
     # livespec_orchestrator_beads_fabro/_beads_client.py::_STATUS_CUSTOM.
     bd config set status.custom "backlog,pending-approval,ready:active,active:wip,acceptance:wip" >/dev/null 2>&1
-    bd create "Implement greet per the SPECIFICATION" \
-      -d "Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly \"Hello, <name>!\". For the input Ada it must return \"Hello, Ada!\". Add a test under tests/ and make \`just check\` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly." \
-      >/dev/null 2>&1
-    # Promote the seeded item to the livespec `ready` status. `bd create` mints
-    # it as bd-native `open`, which the Dispatcher's intake normalization maps to
-    # `backlog` (the intake lane) — landing it OUT of the ready set the `--item`
+    # The dispatcher refuses an implement-kind item whose description does not
+    # OPEN with a `## Definition of Done` section: one gradeable bullet per
+    # assertion, and a `References:` line naming an existing H2 of this repo's
+    # SPECIFICATION/ (here, scenarios.md's Scenario 1). The brief sits under its
+    # own heading so it is not read as more assertions.
+    _seed_desc="$(cat <<'SEED_DESC'
+## Definition of Done
+
+References: Scenario 1 - Greeting one supplied name
+
+- `greet("Ada")` from `src/greeting/greet.py` returns exactly `Hello, Ada!`.
+- For any supplied name, `greet(name)` returns exactly `Hello, <name>!`.
+
+## Brief
+
+Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly "Hello, <name>!". For the input Ada it must return "Hello, Ada!". Add a test under tests/ and make `just check` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly.
+SEED_DESC
+)"
+    bd create "Implement greet per the SPECIFICATION" -d "$_seed_desc" >/dev/null 2>&1
+    # Promote the seeded item to the livespec `ready` status. A new item lands
+    # in the intake lane — read back as `backlog` through the host's bd guard,
+    # bd-native `open` without it — which is OUT of the ready set the `--item`
     # dispatch targets. Setting it `ready` (a registered custom status) survives
-    # normalization and makes it dispatchable.
-    _seed_id="$(bd list --status open --json 2>/dev/null | jq -r '.[0].id')"
+    # normalization and makes it dispatchable. Select it with `--status all`:
+    # the ledger holds exactly this one item, and a `--status open` filter
+    # matches nothing once intake reads `backlog`, so `bd update null` failed
+    # silently under `set -e`.
+    _seed_id="$(bd list --status all --json 2>/dev/null | jq -r '.[0].id')"
     bd update "$_seed_id" --status ready >/dev/null 2>&1
   )
   # Confirm exactly one ready item in the embedded ledger (redacted count only).
@@ -415,22 +442,27 @@ create_and_seed_repo() {
   printf 'embedded ledger ready items: %s\n' "$ready_count"
   [ "$ready_count" = "1" ] || fail "expected exactly 1 ready item in the embedded ledger (got $ready_count)"
 
-  log "padding git history (>10 commits so the depth-10 sandbox clone is shallow)"
+  log "pushing master and recording origin/master"
   (
     cd "$clone"
-    # Pad the history past Fabro's hardcoded GIT_CLONE_DEPTH=10 so the workflow's
-    # `git fetch --unshallow` prepare step succeeds in-sandbox (a depth-10 clone
-    # of a <=10-commit repo is COMPLETE, and --unshallow then errors).
-    local i
-    for i in $(seq 1 12); do
-      printf 'history line %s\n' "$i" >>HISTORY.txt
-      git add HISTORY.txt
-      git commit -q -m "chore: history padding ${i}/12 (depth-10 unshallow headroom)"
-    done
+    # NO HISTORY PADDING, deliberately (work-item bd-ib-ukht2p). This block used
+    # to append twelve throwaway commits for one reason only: to push the seed
+    # history past Fabro's hardcoded GIT_CLONE_DEPTH=10 so that the workflow's
+    # then-UNCONDITIONAL `git fetch --unshallow` prepare step would not refuse a
+    # COMPLETE depth-10 clone. That step now inspects
+    # `git rev-parse --is-shallow-repository` and deepens only a shallow clone, so
+    # the pad evaded an assumption that no longer exists. Removing it is not mere
+    # cleanup: this fixture's short seed history is the only live exercise of the
+    # complete-clone path, which the pad was hiding.
     printf 'commit count: %s\n' "$(git rev-list --count HEAD)"
     # Push master and SET it as the default branch (the PR stage targets master
     # and ranges origin/master..HEAD). Token only on this argv; nothing echoed.
     git push -q "https://x-access-token:${LIVESPEC_E2E_GITHUB_TOKEN}@github.com/${ORG}/${THROWAWAY_REPO}.git" HEAD:master 2>/dev/null
+    # A push to an explicit URL never creates the `origin` remote-tracking ref,
+    # and the dispatcher refuses a source HEAD that no `origin/*` ref contains
+    # (source-head-not-origin-reachable). The push above succeeded under
+    # `set -e`, so origin/master IS this HEAD; record it.
+    git update-ref refs/remotes/origin/master HEAD
   )
   GH_TOKEN="$LIVESPEC_E2E_GITHUB_TOKEN" gh api -X PATCH "/repos/${ORG}/${THROWAWAY_REPO}" -f default_branch=master >/dev/null 2>&1 || true
   printf 'seeded + pushed: %s/%s (default branch master)\n' "$ORG" "$THROWAWAY_REPO"
@@ -465,12 +497,17 @@ start_container() {
   # The GitHub App env is forwarded so the entrypoint's gh-auth + the
   # dispatcher's provider mint installation tokens (the App's installation
   # must cover the livespec-e2e org; no fleet-PAT path remains).
+  # PYTHONDONTWRITEBYTECODE: the host checkout is bind-mounted and the
+  # container runs as root, so a Python import inside it would leave
+  # root-owned __pycache__ in the host tree, which the runner user cannot
+  # delete at the next checkout.
   docker run -d --name "$CONTAINER" \
     --privileged \
     --cgroupns=host \
     "${network_args[@]}" \
     -v "$VARLIB_VOL:/var/lib/docker" \
     -v "$REPO_ROOT:$WORKSPACE_REPO" \
+    -e PYTHONDONTWRITEBYTECODE=1 \
     -v "$CLONE_DIR:$TARGET_MOUNT" \
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
@@ -654,7 +691,6 @@ run_dispatch() {
         loop \
         --repo "$2" \
         --budget 1 \
-        --mode shadow \
         --item "$3" \
         --janitor "[\"true\"]" \
         --journal "$4" \

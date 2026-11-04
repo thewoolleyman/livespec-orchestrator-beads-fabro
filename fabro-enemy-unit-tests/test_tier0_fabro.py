@@ -118,6 +118,14 @@ def test_ps_records_carry_reader_field_set(*, port: FabroPort) -> None:
         assert _status_kind(record=record) is not None
 
 
+def test_live_ps_records_carry_reader_field_set(*, port: FabroPort) -> None:
+    result = port.live_ps(timeout_seconds=TIMEOUT_SECONDS)
+
+    _assert_success(command=result.command)
+    for record in _run_records(payload=result.payload):
+        assert set(record) >= _EXPECTED_PS_FIELDS
+
+
 def test_server_flag_is_per_subcommand(*, port: FabroPort) -> None:
     suffixed = port.ps(timeout_seconds=TIMEOUT_SECONDS)
     top_level = port.top_level_server_parse_probe(
@@ -152,6 +160,18 @@ def test_inspect_and_events_completed_run_field_sets(
     event_records = _event_records(stdout=events.command.stdout, payload=events.payload)
     assert event_records
     assert any(_has_event_timestamp(event=event) for event in event_records)
+
+
+def test_run_state_completed_run_carries_a_bounded_stage_projection(
+    *, config: _FabroTier0Config, port: FabroPort
+) -> None:
+    run_id = config.completed_run_id or _completed_run_id(port=port)
+
+    state = port.server_api().run_state(run_id=run_id, timeout_seconds=TIMEOUT_SECONDS)
+
+    assert state.succeeded is True
+    assert isinstance(state.payload, dict)
+    assert isinstance(state.payload.get("stages"), dict)
 
 
 def _event_records(*, stdout: str, payload: object | None) -> list[dict[str, Any]]:

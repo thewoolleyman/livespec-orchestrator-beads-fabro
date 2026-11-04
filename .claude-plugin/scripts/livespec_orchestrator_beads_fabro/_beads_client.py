@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from contextlib import suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from livespec_orchestrator_beads_fabro._beads_client_argv import (
@@ -192,7 +194,7 @@ class BeadsClient(Protocol):
         ...
 
     def add_comment(self, *, issue_id: str, body: str) -> None:
-        """Append a comment to an issue (`bd comment <id> <body>`)."""
+        """Append a comment to an issue (`bd comments add <id> --file <path>`)."""
         ...
 
     def register_custom_statuses(self) -> None:
@@ -225,8 +227,8 @@ class ShellBeadsClient:
         self._config = config
 
     def _build_argv(self, *, verb_args: list[str]) -> list[str]:
-        """Compose `<bd_path> <verb_args...>` with no connection flags."""
-        return [self._config.bd_path, *verb_args]
+        """Compose the target wrapper and `<bd_path> <verb_args...>` command."""
+        return [*self._config.credential_wrapper, self._config.bd_path, *verb_args]
 
     def _run_json(self, *, verb_args: list[str]) -> Any:
         """Run a read verb and parse its `--json` stdout into a Python value."""
@@ -358,8 +360,22 @@ class ShellBeadsClient:
         self._run_void(verb_args=["dep", "remove", from_id, to_id])
 
     def add_comment(self, *, issue_id: str, body: str) -> None:
-        """Append a comment via `bd comment <id> <body>`."""
-        self._run_void(verb_args=["comment", issue_id, body])
+        """Append a comment via `bd comments add <id> --file <path>`.
+
+        The body ALWAYS travels through a file and never as a command-line
+        argument: Linux caps one argument at 131071 bytes, so an argv body past
+        that fails with `Argument list too long` before `bd` runs, which stopped
+        every dispatch whose verdict comment carried large clause bodies. The
+        file holds the exact UTF-8 bytes, is private to this user, and is
+        removed once `bd` has read it, whether or not the write succeeded.
+        """
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as handle:
+            _ = handle.write(body.encode())
+        path = Path(handle.name)
+        try:
+            self._run_void(verb_args=["comments", "add", issue_id, "--file", str(path)])
+        finally:
+            path.unlink(missing_ok=True)
 
     def register_custom_statuses(self) -> None:
         """Register the five custom statuses via `bd config set status.custom`.

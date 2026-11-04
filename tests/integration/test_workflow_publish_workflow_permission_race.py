@@ -29,6 +29,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
     fabro_run_terminal_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+)
 
 _WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 _PUBLISH_BRANCH = "feat/bd-ib-cvge"
@@ -48,7 +55,7 @@ def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _node_script(*, node: str) -> str:
+def _node_script(*, node: str, check_suite: str = "true") -> str:
     text = _WORKFLOW.read_text(encoding="utf-8")
     block = re.search(
         rf"^\s*{node}\s*\[(?P<body>.*?)^\s*\]",
@@ -58,8 +65,10 @@ def _node_script(*, node: str) -> str:
     assert block is not None
     attr = _SCRIPT.search(block.group("body"))
     assert attr is not None
-    return re.sub(r"\\(?P<escaped>.)", r"\g<escaped>", attr.group("value")).replace(
-        "{{ inputs.default_branch }}", "master"
+    return (
+        re.sub(r"\\(?P<escaped>.)", r"\g<escaped>", attr.group("value"))
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
     )
 
 
@@ -189,6 +198,11 @@ def _env(*, tmp_path: Path) -> dict[str, str]:
             "exit 0\n"
         ),
     )
+    plugins_root = tmp_path / "plugins"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env = {
         key: value
         for key, value in os.environ.items()
@@ -196,6 +210,7 @@ def _env(*, tmp_path: Path) -> dict[str, str]:
     }
     env.update(
         {
+            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
             "PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}",
             "GH_DRAFT_CREATED": str(tmp_path / "draft-created"),
             "LIVESPEC_GIT_AUTHOR_NAME": "Workflow Race Test",
@@ -207,10 +222,15 @@ def _env(*, tmp_path: Path) -> dict[str, str]:
 
 
 def _node(
-    *, node: str, run: Path, env: dict[str, str], stdin: str = ""
+    *,
+    node: str,
+    run: Path,
+    env: dict[str, str],
+    stdin: str = "",
+    check_suite: str = "true",
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["sh", "-c", _node_script(node=node)],
+        ["sh", "-c", _node_script(node=node, check_suite=check_suite)],
         cwd=str(run),
         env=env,
         text=True,
@@ -266,6 +286,32 @@ def test_publish_draft_refreshes_again_when_master_moves_a_workflow_mid_push(
     assert _git(run, "merge-base", "HEAD", "origin/master").stdout.strip() == master
     assert (run / _CI).read_text(encoding="utf-8") == "pin: race-1\n"
     assert (tmp_path / "draft-created").exists()
+
+
+def test_publish_draft_gates_the_head_refreshed_after_a_workflow_race(
+    tmp_path: Path,
+) -> None:
+    """A retry validates the head created by its second refresh before publication."""
+    run, _, default = _run_behind_master(tmp_path=tmp_path)
+    _bump_during_push(tmp_path=tmp_path, default=default, times=1)
+    trace = tmp_path / "gate-trace"
+    gate = tmp_path / "gate"
+    _executable(
+        path=gate,
+        body=("#!/bin/sh\n" f'printf "gate:%s\\n" "$(git rev-parse HEAD)" >> "{trace}"\n'),
+    )
+
+    published = _node(
+        node="publish_draft",
+        run=run,
+        env=_env(tmp_path=tmp_path),
+        check_suite=f"sh {gate}",
+    )
+
+    assert published.returncode == 0, published.stderr
+    refreshed_head = _git(run, "rev-parse", "HEAD").stdout.strip()
+    gate_heads = trace.read_text(encoding="utf-8").splitlines()
+    assert gate_heads == [f"gate:{refreshed_head}"]
 
 
 def test_publish_draft_names_the_workflow_race_when_master_never_settles(

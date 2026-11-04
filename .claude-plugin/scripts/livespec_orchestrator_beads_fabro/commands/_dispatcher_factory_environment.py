@@ -40,6 +40,19 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_bin_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
+    factory_registry_refusal,
+    registry_sourced_path,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_client_source import (
+    client_key_source,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_environment import (
+    FACTORY_ENVIRONMENT_KEY,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    factory_github_app_refusal,
+)
 
 __all__: list[str] = [
     "factory_declaration_refusal",
@@ -74,18 +87,28 @@ def factory_environment_refusal(*, factory: FactoryTarget | None) -> str | None:
     that never ran the dispatch preamble — the needs-attention and standalone
     reconcile surfaces build their own arguments — has no target to consult,
     and that is the pre-key behaviour rather than a fault.
+
+    The message NAMES THE SOURCE for the reason the `bin` refusal's does: a
+    registry-supplied `environment` lands on this same reading, so a refusal
+    naming only the committed key sends the operator to a line their
+    `.livespec.jsonc` does not carry.
     """
     if factory is None or not factory.environment.declared:
         return None
     if factory.environment.environment_id is not None:
         return None
+    source = client_key_source(
+        factory=factory.name,
+        key=FACTORY_ENVIRONMENT_KEY,
+        registry_path=registry_sourced_path(factory=factory, key=FACTORY_ENVIRONMENT_KEY),
+    )
     return (
         f"ERROR: factory {factory.name} declares"
-        f" dispatcher.factories.{factory.name}.environment, which must be a"
+        f" {source.name}{source.location}, which must be a"
         " non-empty string naming an environment in that factory's server"
         f" catalog; name one of factory {factory.name}'s catalog environments,"
-        " or remove the key so the run intent carries none and that factory's"
-        " server selects as it does today\n"
+        f" or remove {source.remedy} so the run intent carries none and that"
+        " factory's server selects as it does today\n"
     )
 
 
@@ -97,4 +120,13 @@ def factory_declaration_refusal(*, factory: FactoryTarget | None) -> str | None:
     key and its own remedy, so an entry carrying two faults is told about one
     of them and re-graded on the next invocation.
     """
-    return factory_bin_refusal(factory=factory) or factory_environment_refusal(factory=factory)
+    return (
+        factory_bin_refusal(factory=factory)
+        or factory_environment_refusal(factory=factory)
+        or (
+            None
+            if factory is None
+            else factory_github_app_refusal(factory=factory.name, github_app=factory.github_app)
+        )
+        or factory_registry_refusal(factory=factory)
+    )

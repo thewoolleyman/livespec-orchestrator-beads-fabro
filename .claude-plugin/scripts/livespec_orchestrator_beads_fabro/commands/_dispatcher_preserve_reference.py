@@ -27,19 +27,22 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     JournalWriter,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     FABRO_DIFF_ARTIFACT_GLOB,
     artifact_pointer_body,
-    dump_failed_body,
     error_pointer_body,
     missing_artifact_body,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
+from livespec_orchestrator_beads_fabro.commands._fabro_stage_diffs import (
+    stage_diffs_from_run_state,
+    write_stage_diffs,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -57,13 +60,13 @@ __all__: list[str] = [
     "preserve_checkpointed_work_reference",
 ]
 
-_DUMP_TIMEOUT_SECONDS = 300.0
 # Every terminal whose work is worth a durable pointer. The release status is
 # imported from the RECORDS leaf rather than from the outcome mapper that names
 # it a status, because the stage and the status are one literal and the leaf
 # carries no configuration, engine or preflight chain this module would
 # otherwise import to read one constant.
 _PRESERVED_STATUSES = frozenset({"blocked", "failed", PROVIDER_LIMIT_RELEASE_STAGE})
+_STAGE_DIFF_READ_TIMEOUT_SECONDS = 30.0
 _LEDGER_WRITE_ERRORS = (
     WorkItemNotFoundError,
     BeadsCommandError,
@@ -78,6 +81,8 @@ class PointerRecord:
     body: str
     digest: str
     artifact_present: bool
+    dump_exit_code: int | None
+    selective_read_succeeded: bool
     run_id: str
     server_url: str
 
@@ -135,6 +140,8 @@ def preserve_checkpointed_work_reference(
                 body=body,
                 digest=digest,
                 artifact_present=False,
+                dump_exit_code=None,
+                selective_read_succeeded=False,
                 run_id=run_id,
                 server_url=server_url,
             ),
@@ -157,7 +164,7 @@ def pointer_record_for_run(
     server_url: str,
     command_runner: CommandRunner,
 ) -> PointerRecord:
-    """Export one run and build the pointer body that references it.
+    """Read one run's stage projection and build the pointer that references it.
 
     PUBLIC because the run reconciler preserves work for runs no dispatch of
     this process ever launched, so it has no `DispatchOutcome` to hand the
@@ -165,9 +172,9 @@ def pointer_record_for_run(
     body, or a pointer written by one path would not be recognized by the
     other's read-back.
 
-    The export goes through a `FabroPort` built from the SAME `server_url` the
-    pointer body prints, so the record names the factory the bytes actually
-    came from and this module issues no engine invocation of its own.
+    The projection goes through a `FabroPort` built from the SAME `server_url`
+    the pointer body prints, so the record names the factory the bytes actually
+    came from while avoiding the run's event log entirely.
     """
     port = FabroPort(
         fabro_bin=fabro_bin,
@@ -177,38 +184,50 @@ def pointer_record_for_run(
     )
     with tempfile.TemporaryDirectory(prefix=f"fabro-preserve-{item_id}-") as raw_dir:
         output_dir = Path(raw_dir)
-        dumped = port.dump(
+        run_state = port.server_api().run_state(
             run_id=run_id,
-            output_dir=output_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
-        ).command
-        artifacts = tuple(
-            sorted(path for path in output_dir.glob(FABRO_DIFF_ARTIFACT_GLOB) if path.is_file())
+            timeout_seconds=_STAGE_DIFF_READ_TIMEOUT_SECONDS,
         )
-        artifact_present = dumped.exit_code == 0 and bool(artifacts)
-        if dumped.exit_code != 0:
-            body, digest = dump_failed_body(
+        if not run_state.succeeded:
+            response_detail = run_state.error or run_state.body
+            error_text = (
+                f"run-state read failed with HTTP status {run_state.status}: {response_detail}"
+            )
+            body, digest = error_pointer_body(
                 run_id=run_id,
                 server_url=server_url,
-                command=dumped,
-                fabro_bin=fabro_bin,
+                error=RuntimeError(error_text),
             )
-        elif artifacts:
-            body, digest = artifact_pointer_body(
-                run_id=run_id,
-                server_url=server_url,
-                artifacts=artifacts,
-                export_dir=output_dir,
-                fabro_bin=fabro_bin,
-            )
+            artifacts = ()
+            selective_read_succeeded = False
         else:
-            body, digest = missing_artifact_body(
-                run_id=run_id, server_url=server_url, fabro_bin=fabro_bin
+            artifacts = write_stage_diffs(
+                stage_diffs=stage_diffs_from_run_state(run_state=run_state.payload),
+                output_dir=output_dir,
             )
+            if artifacts:
+                body, digest = artifact_pointer_body(
+                    run_id=run_id,
+                    server_url=server_url,
+                    artifacts=artifacts,
+                    export_dir=output_dir,
+                    fabro_bin=fabro_bin,
+                )
+                selective_read_succeeded = True
+            else:
+                body, digest = missing_artifact_body(
+                    run_id=run_id,
+                    server_url=server_url,
+                    fabro_bin=fabro_bin,
+                )
+                selective_read_succeeded = False
+        artifact_present = bool(artifacts)
     return PointerRecord(
         body=body,
         digest=digest,
         artifact_present=artifact_present,
+        dump_exit_code=None,
+        selective_read_succeeded=selective_read_succeeded,
         run_id=run_id,
         server_url=server_url,
     )

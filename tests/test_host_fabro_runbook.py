@@ -1,7 +1,10 @@
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_AGENT_INSTRUCTIONS = (_REPO_ROOT / "AGENTS.md").read_text()
+# Since the 2026-10-30 AGENTS.md split (plan epic bd-ib-raqyki) the host Fabro
+# runbook lives word for word in this `.ai/` file, routed to from AGENTS.md.
+_FABRO_GUIDANCE_RELPATH = ".ai/host-fabro-server.md"
+_AGENT_INSTRUCTIONS = (_REPO_ROOT / _FABRO_GUIDANCE_RELPATH).read_text()
 _IMAGE_RUNBOOK = (_REPO_ROOT / "orchestrator-image" / "README.md").read_text()
 _CODEX_REFRESH_COMMAND = (
     _REPO_ROOT
@@ -14,6 +17,7 @@ _CODEX_REFRESH_COMMAND = (
 
 
 def test_host_fabro_runbooks_require_supervised_web_console() -> None:
+    assert _FABRO_GUIDANCE_RELPATH in (_REPO_ROOT / "AGENTS.md").read_text()
     runbooks = _AGENT_INSTRUCTIONS + _IMAGE_RUNBOOK
 
     assert "--no-web" not in runbooks

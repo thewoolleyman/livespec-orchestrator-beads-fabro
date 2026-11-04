@@ -63,8 +63,19 @@ if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; the
     exit 0
 fi
 
-if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
-    echo ":: pre-push: green token matched - tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
+mapfile -t skipped_targets < <(bash dev-tooling/green-token-scope.sh scope)
+
+if uv run bash dev-tooling/green-token-scope.sh check "${skipped_targets[@]}" 2>&1; then
+    echo ":: pre-push: green token matched - tree byte-identical to last green check with excluded targets: ${skipped_targets[*]:-none}; skipping full aggregate (CI is authoritative)"
+    # check-master-ci-green reads forge state outside the tree, which a tree
+    # verdict cannot vouch for; it runs here unless this host omits it by design.
+    master_ci_omitted=false
+    for skipped_target in "${skipped_targets[@]}"; do
+        [ "${skipped_target}" = check-master-ci-green ] && master_ci_omitted=true
+    done
+    if [ "${master_ci_omitted}" = false ]; then
+        exec just check-master-ci-green
+    fi
     exit 0
 fi
 
@@ -106,4 +117,13 @@ if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
 fi
 
 echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
-just check-skipping check-codex-skill-picker
+# Inside the delegated gate Job this fall-through IS the Job's gate, and the
+# shared client exports into `SKIP_TARGETS` the members that read authority
+# held outside the tree (the work-items ledger, the forge's settings), running
+# them on the pushing host instead. Dropping the variable here ran them in a pod
+# holding no credential, where `check-no-workflow-edits` fails closed on every
+# tree carrying an approved workflow edit (gate Job
+# gate-livespec-orchestrator-beads-fabro-44vss, 2026-10-31). Unset, nothing
+# extra is skipped.
+read -ra delegated_skip_targets <<< "${SKIP_TARGETS:-}"
+just check-skipping check-codex-skill-picker "${delegated_skip_targets[@]}"

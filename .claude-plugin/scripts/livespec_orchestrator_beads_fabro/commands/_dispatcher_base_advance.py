@@ -47,12 +47,19 @@ from dataclasses import dataclass
 __all__: list[str] = [
     "BASE_ADVANCED_AFTER_ARMING",
     "CONSECUTIVE_CONFLICTING_REPORTS",
+    "MERGE_POLL_BUDGET_EXHAUSTED",
     "BaseAdvancedAfterArming",
     "base_advanced_detail",
+    "merge_poll_budget_exhausted_detail",
     "reports_base_advanced_after_arming",
 ]
 
 BASE_ADVANCED_AFTER_ARMING = "base-advanced-after-arming"
+
+# The sibling ending the same paragraph names: the poll budget ran out while the
+# forge still reported the pull request OPEN and not in conflict. It rests the
+# item through the identical transition and record, differing only in this cause.
+MERGE_POLL_BUDGET_EXHAUSTED = "merge-poll-budget-exhausted"
 
 # "When two consecutive polls report the pull request OPEN and in conflict with
 # the default branch, the wait MUST stop before the poll budget."
@@ -97,11 +104,15 @@ class BaseAdvancedAfterArming:
     a comparison would accept. The record states such a reading as unreported
     rather than silently omitting it, because an omitted line and a line
     reporting an unpassable name are different facts with different remedies.
+
+    `cause` names which of the two endings carries these readings; the record
+    writer derives its marker line and journal stages from it.
     """
 
     factory: str
     pr_head: str | None
     default_branch_tip: str | None
+    cause: str = BASE_ADVANCED_AFTER_ARMING
 
 
 def base_advanced_detail(*, work_item_id: str) -> str:
@@ -125,4 +136,22 @@ def base_advanced_detail(*, work_item_id: str) -> str:
         "names; the pull request is left as it stands. Recover with "
         f"`resolve-blocked:{work_item_id}:ready`, then `resume --item {work_item_id}`, which "
         "re-enters pr_refresh and disarms the pull request before refreshing it."
+    )
+
+
+def merge_poll_budget_exhausted_detail(*, work_item_id: str) -> str:
+    """The outcome detail for a merge wait that ran out of budget on an open pull request.
+
+    Names the same recovery chain in the same order as `base_advanced_detail`,
+    and for the same reason: `resolve-blocked` releases the item and a `resume`
+    issued first meets an item that is still blocked. The pull request is left as
+    it stands, since the clause forbids the Dispatcher from disarming, closing or
+    rewriting it.
+    """
+    return (
+        f"{MERGE_POLL_BUDGET_EXHAUSTED}: the merge wait's poll budget ended while the forge "
+        "still reported the pull request OPEN and not in conflict, so the run succeeded but "
+        "its pull request has not merged; the pull request is left as it stands. Recover with "
+        f"`resolve-blocked:{work_item_id}:ready`, then `resume --item {work_item_id}`, which "
+        "resumes the run from the pull request's published head instead of re-implementing."
     )

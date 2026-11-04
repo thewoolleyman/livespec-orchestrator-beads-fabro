@@ -1,0 +1,37 @@
+# Fires `work-supply@%i.service` on the interval the OPERATOR chose for that
+# instance.
+#
+# THIS TEMPLATE CARRIES NO INTERVAL, AND THAT IS THE POINT. A systemd timer
+# template cannot vary a timer setting per instance, and the firing interval is
+# per-tenant by contract — a tenant with one long-running epic wants a very
+# different cadence from a tenant with fifty ready slices. `install.sh`
+# therefore writes each instance's interval as a drop-in at
+# `<unit-dir>/work-supply@<instance>.timer.d/interval.conf`, which is the
+# systemd-sanctioned way to say a per-instance thing about a template.
+#
+# Leaving the interval OUT of this file also makes a missing drop-in LOUD:
+# systemd refuses to load a `[Timer]` with no value setting ("Timer unit lacks
+# value setting"), so an instance whose drop-in never landed fails at
+# `daemon-reload` in front of the operator. Had this file carried a default
+# `OnBootSec`, that same instance would have loaded, fired once after boot, and
+# then never fired again — a silent single-shot that reads exactly like a
+# working timer.
+#
+# The drop-in uses `OnUnitActiveSec` rather than `OnCalendar`: the interval
+# that matters is the gap since the LAST pass started, not a wall-clock grid.
+# That measurement is only meaningful because the service is the launcher and
+# not the drain — the unit goes inactive seconds after each firing, so a pass
+# whose dispatched runs are still in progress does not push the next firing
+# out. A pass that overlaps an earlier one is an ordinary unattended drain and
+# is bounded by `wip_cap` exactly as any other is.
+
+[Unit]
+Description=livespec work-supply timer for tenant %i
+Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+
+[Timer]
+AccuracySec=1min
+Unit=work-supply@%i.service
+
+[Install]
+WantedBy=timers.target

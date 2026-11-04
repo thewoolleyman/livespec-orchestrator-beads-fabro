@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_signatures import
 from livespec_orchestrator_beads_fabro.commands._acp_failure_signals import AcpFailureSignal
 from livespec_orchestrator_beads_fabro.commands._acp_failure_text import (
     conjunction_matches,
+    ends_at_sentence_boundary,
     matches_any_conjunction,
     normalized,
 )
@@ -54,6 +55,7 @@ __all__: list[str] = [
 ]
 
 MACHINE_CODE_SOURCE = "protocol.machine_code"
+_FINAL_OUTPUT_SOURCE = "turn.final_output"
 _MESSAGE_SOURCE = "protocol.message"
 
 # The vocabulary a bare HTTP 400/404 already contains. A signature naming
@@ -107,6 +109,8 @@ def signature_matches(*, signature: AcpAvailabilitySignature, signal: AcpFailure
     to match when the observed status differs, and a signature declaring
     none is unaffected by the status entirely.
     """
+    if signature.source == _FINAL_OUTPUT_SOURCE:
+        return _final_output_matches(signature=signature, signal=signal)
     if signature.exit_code is not None and signature.exit_code != signal.exit_code:
         return False
     observed = _field(source=signature.source, signal=signal)
@@ -120,7 +124,7 @@ def signature_matches(*, signature: AcpAvailabilitySignature, signal: AcpFailure
 
 def signature_discriminates(*, signature: AcpAvailabilitySignature) -> bool:
     """Whether this signature names anything beyond bare HTTP status vocabulary."""
-    if signature.source == MACHINE_CODE_SOURCE:
+    if signature.source in (MACHINE_CODE_SOURCE, _FINAL_OUTPUT_SOURCE):
         return True
     return any(
         normalized(text=literal) not in GENERIC_STATUS_LITERALS
@@ -142,6 +146,20 @@ def generic_status_reason(*, signal: AcpFailureSignal) -> str | None:
             if matches_any_conjunction(conjunctions=conjunctions, text=field_text):
                 return reason
     return None
+
+
+def _final_output_matches(*, signature: AcpAvailabilitySignature, signal: AcpFailureSignal) -> bool:
+    """Whether a SUCCEEDED attempt's recorded output ends with this signature's text.
+
+    Both halves are required: the engine must have recorded the attempt as
+    succeeded, because a failed attempt's refusal travels on the failure
+    fields the other sources read, and the output must be present, because an
+    attempt that recorded none says nothing about a provider.
+    """
+    output = signal.final_output
+    if not signal.attempt_succeeded or output is None or signature.final_text is None:
+        return False
+    return ends_at_sentence_boundary(tail=signature.final_text, text=output)
 
 
 def _field(*, source: str, signal: AcpFailureSignal) -> str | None:

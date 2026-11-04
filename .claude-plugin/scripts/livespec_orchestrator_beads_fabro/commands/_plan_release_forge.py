@@ -16,6 +16,14 @@ names, and where it does, that clone's tags are whatever its last fetch left —
 answer about this host's fetch state reported as a fact about the repository. The
 forge's own tag listing removes the local checkout from the question entirely.
 
+WHY A RELEASE ENDPOINT RATHER THAN A GIT-TAG ENDPOINT. A Git tag alone does not
+mean that a release applies: the Dispatcher keeps proof assets on a standing
+`proof-assets` prerelease, and repositories can carry other prerelease tags.
+The plan rule's release-tag set therefore contains only tags published by
+non-prerelease releases. Reading the forge's releases endpoint and projecting
+only those tags means a repository that carries only the proof-assets carrier
+answers the empty set, while a stable release still makes the rule apply.
+
 WHY EVERY FAILED READ IS A VALUE AND NEVER AN EMPTY ANSWER. The retired read
 "returned an empty set on any failure", and an empty tag set MEANS "no release
 applies", so an unreachable forge or a rejected credential made every record that
@@ -121,7 +129,7 @@ def governed_repository_argv() -> list[str]:
 
 
 def repository_tags_argv(*, repository: str) -> list[str]:
-    """The forge read that enumerates one named repository's tags.
+    """The forge read that enumerates one repository's non-prerelease release tags.
 
     PAGINATED, because a repository's tag count is unbounded and one page cannot
     be assumed to carry the tag a record names.
@@ -133,22 +141,23 @@ def repository_tags_argv(*, repository: str) -> list[str]:
     tags — the same inversion `_dispatcher_fabro_currency_sources` records against
     the releases endpoint.
 
-    The `--jq` projection is what makes the paginated answer parseable: without it
-    `gh api --paginate` emits one JSON array per page, concatenated, so a single
-    document parse succeeds on a one-page answer and fails on every multi-page
-    one. With it, each tag name arrives on its own line.
+    The `--jq` projection both excludes prerelease tags and makes the paginated
+    answer parseable: without it `gh api --paginate` emits one JSON array per
+    page, concatenated, so a single document parse succeeds on a one-page answer
+    and fails on every multi-page one. With it, each applicable release tag
+    arrives on its own line.
     """
     return [
         "gh",
         "api",
         "--method",
         "GET",
-        f"repos/{repository}/tags",
+        f"repos/{repository}/releases",
         "--paginate",
         "-F",
         "per_page=100",
         "--jq",
-        ".[].name",
+        ".[] | select(.prerelease == false) | .tag_name",
     ]
 
 
@@ -202,11 +211,12 @@ def governed_repository_identity(
 def repository_release_tags(
     *, repository: str, project_root: Path, runner: CommandRunner
 ) -> frozenset[str] | ForgeReadFailure:
-    """Every release tag one named repository carries, or why it could not be read.
+    """Every non-prerelease release tag one repository carries, or a read failure.
 
-    The empty set is the forge SAYING the repository carries no tag, which is the
-    clause's "no release applies" condition. It is never the encoding of a failure
-    — that reversal is the whole point of this module.
+    The empty set is the forge SAYING the repository carries no applicable release
+    tag: a proof-assets prerelease by itself therefore means no release applies.
+    It is never the encoding of a failure — that reversal is the whole point of
+    this module.
     """
     result = runner.run(
         argv=repository_tags_argv(repository=repository),

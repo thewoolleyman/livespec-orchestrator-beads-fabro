@@ -37,6 +37,12 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_queue_allowance import (
+    CREDENTIAL_QUEUE_ALLOWANCE_KEY,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     CODEX_FRESHNESS_MARGIN_SECONDS,
 )
@@ -143,7 +149,7 @@ def per_attempt_overhead_seconds(*, commit_timeout_seconds: int) -> int:
 def requirement_detail(
     *,
     workflow_name: str,
-    allowance_seconds: int,
+    requirement: CredentialLifetimeRequirement,
     overhead_seconds: int,
     inputs: Mapping[str, int],
 ) -> str:
@@ -153,20 +159,31 @@ def requirement_detail(
     this figure a per-item label can move: an operator comparing a status reading
     against a dispatch refusal needs to see whether the two read the same cap,
     and a bare number cannot tell them.
+
+    THE WHOLE REQUIREMENT IS THE INPUT rather than a loose allowance, which is
+    what keeps the sentence honest after v177: the text has to name the figure
+    the gate will actually demand AND the figure it did not use, and a detail
+    rendered from the allowance alone described a bound no surface enforced.
     """
     rendered = ", ".join(f"{name}={value}" for name, value in sorted(inputs.items())) or "none"
     return (
         f"workflow {workflow_name!r} resolves an execution ALLOWANCE of "
-        f"{allowance_seconds} seconds — the sum over the visit caps, retry budgets "
-        f"and resolved node timeouts the engine enforces for this dispatch, with "
-        f"graph inputs {rendered}, plus {overhead_seconds} seconds per attempt of "
-        f"checkpoint, changed-file-scan, turn-entry-mint and retry-backoff time the "
-        f"engine spends outside a node timeout. That allowance is NOT the graph's "
-        f"maximum wall clock — retry_target jumps and inter-stage work sit outside "
-        f"every bound it sums — so it is made a maximum CREDENTIAL-USE duration by "
-        f"enforcement instead: the freshness gate requires "
-        f"{allowance_seconds + CODEX_FRESHNESS_MARGIN_SECONDS} seconds of usable "
-        f"lifetime (that allowance plus the {CODEX_FRESHNESS_MARGIN_SECONDS}-second "
-        f"documented margin), and the worker refuses to launch a coding agent past "
-        f"that allowance measured from the instant the credential was projected"
+        f"{requirement.execution_allowance_seconds} seconds — the sum over the visit "
+        f"caps, retry budgets and resolved node timeouts the engine enforces for this "
+        f"dispatch, with graph inputs {rendered}, plus {overhead_seconds} seconds per "
+        f"attempt of checkpoint, changed-file-scan, turn-entry-mint and retry-backoff "
+        f"time the engine spends outside a node timeout. That allowance is NOT the "
+        f"graph's maximum wall clock — retry_target jumps and inter-stage work sit "
+        f"outside every bound it sums — and it is not this dispatch's bound either: "
+        f"the worker's maximum run budget is the SMALLER of that allowance and the "
+        f"bounded credential-use window of "
+        f"{requirement.credential_use_window_seconds} seconds "
+        f"({CREDENTIAL_QUEUE_ALLOWANCE_KEY} of "
+        f"{requirement.credential_queue_allowance_seconds} plus the resolved whole-run "
+        f"wall budget). The {requirement.governing_figure} governs at "
+        f"{requirement.allowance_seconds} seconds, so the freshness gate requires "
+        f"{requirement.required_seconds} seconds of usable lifetime (that figure plus "
+        f"the {CODEX_FRESHNESS_MARGIN_SECONDS}-second documented margin), and the "
+        f"worker refuses to launch a coding agent past that same figure measured from "
+        f"the instant the credential was projected"
     )

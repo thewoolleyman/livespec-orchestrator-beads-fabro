@@ -399,7 +399,9 @@ def test_effective_acceptance_policy_defaults_with_empty_config() -> None:
     )
 
 
-def test_effective_admission_policy_honors_explicit_in_both_directions(tmp_path: Path) -> None:
+def test_effective_admission_policy_committed_setting_wins_over_explicit_labels(
+    tmp_path: Path,
+) -> None:
     auto_off = _write_config(
         tmp_path=tmp_path / "auto-off",
         text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"auto_approve_ready": false}}}',
@@ -410,24 +412,48 @@ def test_effective_admission_policy_honors_explicit_in_both_directions(tmp_path:
     )
     assert (
         _read(effective_admission_policy(item=_item(admission_policy="auto"), cwd=auto_off))
-        == "auto"
+        == "manual"
     )
     assert (
         _read(effective_admission_policy(item=_item(admission_policy="manual"), cwd=auto_on))
-        == "manual"
+        == "auto"
     )
 
 
-def test_effective_admission_policy_never_auto_approves_spec_change_tier(
+def test_a_commitment_hint_no_longer_overrides_an_explicit_auto_policy(
     tmp_path: Path,
 ) -> None:
+    """The repair of `bd-ib-yykjko`: the hint is not the spec-change tier.
+
+    This case used to assert `manual` for exactly this item, which is the
+    inverted predicate the plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` names: a non-null `spec_commitment_hint`
+    marks an implementation FOLLOW-UP to an ALREADY-RATIFIED change, so pinning
+    it to the manual floor held the one set that should be admitted.
+
+    The floor `spec.md` actually states — "a design-human-gated
+    (spec-change-tier) item is never auto-approved WHILE IT IS HELD for its
+    linked proposal's ratification" — is applied where the recorded
+    classification can be read, and is bound at the integration tier by
+    `tests/integration/test_spec_change_tier_scenario206.py`. A manual item
+    still rests for the approve valve, through the ordinary per-item
+    precedence only while the repository setting is uncommitted.
+    """
     cwd = _write_config(
         tmp_path=tmp_path,
         text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"auto_approve_ready": true}}}',
     )
     item = _item(admission_policy="auto", spec_commitment_hint="SC-1")
 
-    assert _read(effective_admission_policy(item=item, cwd=cwd)) == "manual"
+    assert _read(effective_admission_policy(item=item, cwd=cwd)) == "auto"
+    assert (
+        _read(
+            effective_admission_policy(
+                item=_item(admission_policy="manual", spec_commitment_hint="SC-1"), cwd=cwd
+            )
+        )
+        == "auto"
+    )
 
 
 def test_effective_acceptance_policy_inherits_global_mode_when_unlabeled(tmp_path: Path) -> None:

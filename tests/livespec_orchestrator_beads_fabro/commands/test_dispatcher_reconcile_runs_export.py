@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_runs_export as export
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     PRESERVE_POINTER_MARKER,
 )
@@ -45,19 +44,6 @@ class _FakeLedger:
 class _DumpRunner:
     exit_code: int = 0
     calls: list[list[str]] = field(default_factory=list)
-
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = (cwd, timeout_seconds, env, stdin)
-        self.calls.append(argv)
-        return CommandResult(exit_code=self.exit_code, stdout="", stderr="")
 
 
 def test_a_pointer_is_written_then_read_back_through_the_text_key(tmp_path: Path) -> None:
@@ -176,19 +162,21 @@ def test_an_item_missing_orphan_preserves_its_pointer_for_the_journal(tmp_path: 
     assert ledger.verbs == []
 
 
-def test_a_failed_dump_still_records_an_honest_pointer(tmp_path: Path) -> None:
+def test_a_failed_dump_refuses_the_export_before_writing_a_pointer(tmp_path: Path) -> None:
     ledger = _FakeLedger()
 
     outcome = export.export_orphan_reference(
         orphan=_orphan(work_item_status="closed"),
         repo=tmp_path,
         fabro_bin="fabro",
-        runner=_DumpRunner(exit_code=3),
+        runner=_DumpRunner(exit_code=124),
         ledger=ledger,
     )
 
-    assert outcome.exported is True
-    assert "fabro dump failed with exit code 3" in ledger.comments[0]["text"]
+    assert outcome.exported is False
+    assert outcome.comment_id is None
+    assert "selective stage-diff read failed" in outcome.detail
+    assert ledger.verbs == []
 
 
 def test_an_export_that_raises_an_os_error_refuses(

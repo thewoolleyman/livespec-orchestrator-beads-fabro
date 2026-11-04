@@ -53,23 +53,25 @@ primitive) are detailed in the subsections that follow.
 
 #### `capture-impl-gaps`
 
-Surface untracked spec clauses as candidate work-items by invoking the
-sibling `/livespec-orchestrator-beads-fabro:detect-impl-gaps --json`
-thin-transport skill (no in-skill duplication of the detection logic;
-both this skill and doctor consume the same canonical surface).
+Surface spec headings that no test exercises as candidate work-items by
+invoking the sibling `/livespec-orchestrator-beads-fabro:detect-impl-gaps
+--json` thin-transport skill (no in-skill duplication of the detection
+logic).
 
 **Naming note.** Despite the `-impl-gaps` name, this operation performs
-NO spec↔impl comparison. `detect-impl-gaps` (below) enumerates ratified
-MUST/SHOULD clauses from spec TEXT alone and never reads implementation
-state, so a clause it surfaces may already be fully implemented. A
-returned gap-id means "this clause is not yet tracked by a work-item",
-never "this clause is verified absent from the implementation" — that
-comparison, when one exists, is a per-clause human judgement or a cited
-executable check, not this operation's mechanism.
+NO spec↔impl comparison. `detect-impl-gaps` (below) enumerates the H2
+headings of the governed spec tree whose entry in the repository's
+heading-coverage map (`tests/heading-coverage.json`) is absent or names
+no exercising test, and never reads implementation state. A returned
+gap-id means "this heading has no exercising test", never "this
+heading's behaviour is verified absent from the implementation".
 
 The returned gap-ids are presented to the user one at a time; on
 consent, a new work-item is created in the tenant DB via `bd create`
-carrying the `origin:gap-tied` and `gap-id:<stable-id>` labels.
+carrying the `origin:gap-tied` and `gap-id:<stable-id>` labels, whose
+title names the uncovered heading verbatim and whose description names
+the coverage entry the implementing change MUST fill with the
+exercising test.
 Detection state is in-memory and discarded at skill exit — no
 persistent intermediate artifact. Re-running the skill is idempotent:
 an already-tracked gap-id is detected as "already filed" and not
@@ -90,7 +92,11 @@ for any "show me gaps for changes since this version" workflow.
 
 #### `capture-spec-drift`
 
-Detect impl → spec drift heuristically (LLM-driven). For each finding,
+Detect impl → spec drift through the spec-stated judgement of the
+`livespec_runtime.spec_stated` module (the one judgement every
+orchestrator shares, which answers whether a behaviour is stated by the
+ratified specification and names the heading whose generalization would
+state it). For each finding,
 present it to the user with a recommended action; on consent, hand off
 to `/livespec:propose-change` via the cross-boundary handoff (per
 `livespec/SPECIFICATION/contracts.md` §"Cross-boundary handoffs"
@@ -102,8 +108,11 @@ writes to spec-side state directly.
 heuristic above, and a **ledger-intent scan** — a read-only pass over
 recent work-items in the Ledger that surfaces work-item intent (its
 `title`, `description`, `acceptance_criteria`, and closure `reason`)
-encoding an observable behavior, decision, or invariant NOT reflected in
-the current spec. Each ledger-intent finding MUST be surfaced through the
+encoding an observable behavior, decision, or invariant NOT reflected in the current spec. Whether intent is reflected MUST be
+decided by the same spec-stated judgement, over every live work-item and
+every work-item captured on or after the latest version's cut, reading
+the four fields named above; an item's type is never a detection
+exclusion. Each ledger-intent finding MUST be surfaced through the
 same per-finding consent flow and, on consent, handed off to
 `/livespec:propose-change`; the scan reads the Ledger through the store's
 read API only, and MUST NOT emit a finding for intent already reflected
@@ -138,22 +147,32 @@ Detection runs are RECORDED, and their recency is COMPUTED, never
 remembered:
 
 - **Records.** Every invocation of `capture-impl-gaps` or
-  `capture-spec-drift` MUST append an attributed ATTEMPT record
+  `capture-spec-drift`, and every drift run of the drift job or a
+  post-merge janitor ("The drift run" below), MUST append an attributed ATTEMPT record
   (operation, declared scope, invoker, outcome) to the repository's
   designated detection-coverage anchor — a ledger item provisioned once
   by the operator through `capture-work-item`, its id committed in
   `.livespec.jsonc`. A COMPLETED-coverage record — carrying the coverage
-  point: the ratified spec revision the gap capture ran against, or the
-  default-branch merge SHA the drift pass ran through — MUST be appended
+  point: the ratified spec revision the gap capture ran against, or, for the drift pass, the FRONTIER: the newest default-branch
+  merge SHA such that it and every earlier merge after the previous
+  frontier has been processed with every finding durably disposed as
+  defined in this bullet, which for the Dispatcher's drift run means filed,
+  and which a held finding never is — MUST be appended
   ONLY when the run reached a successful terminal outcome over its
   declared scope with EVERY surfaced candidate durably disposed
-  (consented-and-filed, consented-and-handed-off, or explicitly declined
-  on the record). A non-zero exit, an interruption, an unresolved
+  (consented-and-filed, consented-and-handed-off, or explicitly declined on
+  the record; for the drift run, filed through the propose-change handoff). A held
+  finding is NOT disposed. The drift run is all-or-nothing over its
+  declared scope, the merges after the previous frontier: only when every
+  one of them is processed with every finding filed does it write a
+  completed record, whose frontier is the newest of them; otherwise it
+  writes the attempt record alone and the previous frontier stands. A non-zero exit, an interruption, an unresolved
   candidate, or a partial range MUST NOT write a completed record: the
   prior completed point stands, and a complete successful pass clears
   staleness while an aborted or partial pass does not.
-- **The self-bookkeeping exception, scoped.** Appending these two
-  record types to the designated anchor is the ONLY ledger write the
+- **The self-bookkeeping exception, scoped.** Appending these two record types, and the drift run's
+  held-finding records ("`dispatcher.drift_proposal_queue_cap`" below),
+  to the designated anchor is the ONLY ledger write the
   detection operations may perform outside their consent flows: no
   work-item create, no disposition, no edit of any other record.
   `capture-spec-drift`'s ledger-intent scan remains read-only; this
@@ -167,22 +186,96 @@ remembered:
   one binding — and exists for the runs Step 13 cannot guarantee: a
   skipped, interrupted, or bypassed post-step. It MUST NOT trigger any
   run itself.
-- **Drift staleness.** When the count of default-branch merges since the
-  last COMPLETED drift coverage point is at or past the effective
-  `dispatcher.drift_capture_merge_threshold`, the snapshot MUST carry a
-  drift-staleness fact whose handoff names `capture-spec-drift`. Merge
-  counting excludes nothing silently: if a class of commits is excluded,
-  the exclusion is stated on the fact.
+- **The drift run.** Each run of the Dispatcher's drift job MUST
+  enumerate every default-branch merge after the recorded frontier, in
+  merge order, and MUST run the drift pass over each merge's diff through
+  the spec-stated judgement; the post-merge janitor MAY call the same
+  primitive after its own merge, and a merge no janitor saw — a hand
+  merge, a spec pull request, an externally merged pull request — is
+  processed by the next drift-job run. For each `partial` or `unstated`
+  behaviour a merge adds, the pass MUST file one proposed change carrying
+  a drift origin and naming the generalization target, through the
+  cross-boundary propose-change handoff, with a finding identity derived
+  from the merge and the behaviour so that a retried pass files no
+  duplicate. The frontier MUST advance to a merge only when every finding of that
+  merge and of every earlier merge is filed; a merge whose pass fails, or
+  that carries a held finding, stops the frontier until it is processed
+  with every finding filed, and a later merge's
+  success MUST NOT advance past it. The pass MUST NOT accept, modify or
+  reject any proposal. A drift-job run MUST NOT write into the working
+  tree of its `--repo` path. It MUST write the proposals it files in a
+  fresh worktree of the
+  default branch as fetched from the forge at the start of the run, commit
+  them on one `spec/` branch, and publish them as ONE pull request per run,
+  so a machine-filed proposal reaches the default branch only through that
+  pull request's merge. A finding is filed only once that pull request
+  exists: a run whose commit or publication fails MUST treat every finding
+  it wrote as not filed, so the frontier MUST NOT advance past their
+  merges. The already-filed finding identity set MUST include the
+  proposals on every open drift-run pull request, beside the open and
+  archived proposals of the fetched default branch, so a retried run MUST
+  NOT file a second pull request for a finding whose pull request is open
+  or merged. The open count that `dispatcher.drift_proposal_queue_cap`
+  bounds MUST include the drift-origin proposals on open drift-run pull
+  requests. When the count of default-branch merges after the
+  frontier is at or past the effective
+  `dispatcher.drift_capture_merge_threshold`, the needs-attention snapshot
+  MUST still carry a drift-staleness fact naming the merges after the
+  frontier, so an unrun or failing pass is visible; merge counting
+  excludes nothing silently. The drift job is separate from the
+  reconcile pass: a reconcile pass MUST NOT run the drift pass and MUST
+  NOT invoke any model judgement. The drift job MUST run only on a
+  schedule an operator explicitly enables; nothing MAY enable it
+  implicitly. One drift-job run is the Dispatcher subcommand
+  `dispatcher.py drift-run --repo <path> --invoker <role:name>`, which
+  MUST run the drift pass over every default-branch merge after the
+  recorded frontier exactly as this bullet states, and which is the one
+  command an enabled schedule invokes. With `--json` it MUST print the
+  drift lane outcome as one JSON object on stdout, the outcome a reconcile
+  pass carried under its `drift` key before the drift pass left it. With
+  `--dry-run` it MUST NOT run the drift lane, MUST NOT invoke any model
+  judgement, and MUST NOT write the drift frontier or the
+  detection-coverage anchor. No repository installer MAY install or
+  enable a schedule that invokes `drift-run`. A drift-job run MUST NOT
+  invoke a model judgement for a merge it has already judged against the
+  same ratified spec revision: it MUST reuse that merge's recorded
+  verdict, and it MUST judge the merge again only once a newer ratified
+  spec revision exists. A held or failed finding that stops the frontier
+  MUST NOT cause any merge behind it to be judged again against an
+  unchanged ratified spec revision. A drift-job run MUST render the
+  ratified spec tree into one judge prompt for all the merges it judges,
+  and MUST NOT send it once per merge; only when that content exceeds the
+  judgement's input limit MUST it split the merges across the fewest
+  prompts that fit, and its `--json` outcome MUST report the count of
+  prompts it sent. Batching MUST NOT change what is filed: the run MUST
+  still file one proposed change per `partial` or `unstated` behaviour
+  per merge, under the same finding identity.
 - **`dispatcher.drift_capture_merge_threshold`** (sourced from this
   repo's `.livespec.jsonc`, positive integer, default **1**) — the
   merge-count trigger. Declared **API-configurable**: it appears in the console
   Settings surface per §"API-configurable completeness" (the
   consumer-side legs belong to the console's own specification). No
   per-item override — detection recency is a repository property.
-- **Consent is untouched.** Both skills remain consent-gated attended
-  dialogues. A staleness fact is a surfaced, owned TRIGGER carrying a
-  handoff; nothing in this section runs a detector headlessly, and no
-  policy setting MAY do so.
+- **`dispatcher.drift_proposal_queue_cap`** (sourced from this repo's
+  `.livespec.jsonc`, positive integer, default **5**) — the number of
+  drift-origin proposed changes that MAY be open at once. When the cap is
+  reached, further findings MUST be HELD on the detection-coverage anchor
+  with their identities rather than filed, the frontier MUST NOT advance
+  past a merge with a held finding, and `needs-attention` MUST list the
+  held findings with a handoff naming `revise`. Declared
+  **API-configurable**: it appears in the console Settings surface per
+  §"API-configurable completeness" (the consumer-side legs belong to the
+  console's own specification). No per-item override — the open-proposal
+  queue is a repository property.
+- **Filing is the machine path; acceptance is human.** `capture-impl-gaps`
+  remains a consent-gated attended dialogue, and a gap-capture staleness
+  fact is a surfaced, owned TRIGGER that runs nothing. The drift run above
+  files unattended, which livespec core's `spec.md` permits ("Orchestrators
+  MAY file drift (the machine path)"); what it MUST NEVER do is accept a proposal. Acceptance of a drift-origin
+  proposal rests at `revise` with its human gate, or with the unanimous
+  cross-vendor consensus tier where `spec_governance.drift_acceptance_mode`
+  opts into it (`spec.md` §"Terminology"); no `revise_decision_mode`
+  value accepts a drift-origin proposal.
 
 #### `capture-work-item`
 
@@ -197,11 +290,7 @@ The skill accepts an optional `--spec-commitment-hint <id_hint>` flag.
 When supplied, the resulting work-item's `spec_commitment_hint` MUST
 equal the verbatim `id_hint` (carried on the beads issue's native
 `spec_id` field per §"Work-item beads-issue mapping"); when omitted, the
-hint is absent (the freeform case). This is the surface livespec's
-`unresolved-spec-commitment` doctor invariant queries via
-`list-work-items --json` to verify each declared spec→impl commitment
-maps to a filed work-item (per
-`livespec/SPECIFICATION/contracts.md`).
+hint is absent (the freeform case).
 
 #### `implement`
 
@@ -222,9 +311,9 @@ the issue's `metadata` JSON column. No second record is appended.
 
 - **gap-tied completion** — closure is anchored to a CHECK PATH recorded
   on the work-item's own metadata (`gap_check_path`), never to `gap_id`
-  (a `gap_id` hashes a hard-wrapped source line and re-keys on reflow,
-  so it cannot anchor a closure that must survive the clause being
-  edited). The check path is recorded the first time it is cited for
+  (a `gap_id` identifies a heading, not the check that settles a
+  clause beneath it, so it cannot anchor a closure that must survive
+  the clause being edited). The check path is recorded the first time it is cited for
   this work-item — at latest, `implement` MUST ask the user which
   executable check settles the clause and record it (with its current
   blob hash as the closure-drift baseline) before evaluating closure at
@@ -289,9 +378,9 @@ repo. The skill is a thin binding over
 `.claude-plugin/scripts/bin/drive.py` and the shared
 `commands/drive.py` implementation. `drive` composes and ranks NOTHING:
 it is a pure executor of its own **action-id grammar** — an `impl:`
-dispatch action, one of the thirteen human valve/policy actions
+dispatch action, one of the fourteen human valve/policy actions
 (`approve:` / `accept:` / `reject:` / `resolve-blocked:` /
-`set-admission:` / `set-acceptance:` / `set-factory-safety:` / `set-workflow-scope-override:` / `set-merge-on-review-cap:` /
+`set-admission:` / `set-acceptance:` / `set-factory-safety:` / `clear-factory-safety:` / `set-workflow-scope-override:` / `set-merge-on-review-cap:` /
 `set-review-fix-cap:` / `set-acceptance-rework-cap:` / `set-merge-hold:` /
 `move:`), or a
 config action (`config` / `config-manifest` /
@@ -355,7 +444,7 @@ surface emits the action-id (the `needs-attention`/`drive` action-id
 coordination defined by the broader epic), not by `drive`; it is
 forward-referenced here rather than defined by this section.
 
-**Human valve actions.** `drive` additionally accepts the thirteen human
+**Human valve actions.** `drive` additionally accepts the fourteen human
 operator action ids (the two human-delegable gate commands, the
 corrective `reject:`, the blocked-resolution `resolve-blocked:`, the two
 admission/acceptance policy edits, the factory-safety opt-out assertion, the
@@ -376,8 +465,11 @@ source state), the two policy-edit actions
 `set-admission:<work-item-id>:auto|manual` and
 `set-acceptance:<work-item-id>:ai-only|human-only|ai-then-human`, the
 status-independent factory-safety opt-out assertion
-`set-factory-safety:<work-item-id>:needs-host-secrets|mutates-host-machinery|needs-privileged-host`
+`set-factory-safety:<work-item-id>:needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input`
 (sets the intrinsic `factory_safety` field with a journaled reason;
+§"Per-state operator verb vocabulary"), the status-independent
+factory-safety clearing assertion `clear-factory-safety:<work-item-id>:<rationale>`
+(clears the intrinsic `factory_safety` field with a journaled rationale;
 §"Per-state operator verb vocabulary"), the
 workflow-scope assertion
 `set-workflow-scope-override:<work-item-id>:citation-only`, the
@@ -400,10 +492,17 @@ policy label, the `merge-on-review-cap:` / `review-fix-cap:` /
 through the store seam) and MUST NOT
 change the item's status. A policy edit NEVER moves an item between
 states: flipping an item's `admission_policy` from `manual` to `auto`
-while it rests at `pending-approval` MUST NOT approve it into `ready` —
-the automatic GO fires only once, at capture/groom time; after a later
-policy flip, moving the item still requires an explicit
-`approve:<work-item-id>`. Symmetrically, flipping `auto` to `manual` on
+while it rests at `pending-approval` MUST NOT, by itself, approve it into
+`ready` — automatic approval happens only where the Dispatcher approves, at
+capture/groom time or on a later Dispatcher pass over an item resting at
+`pending-approval` whose effective `admission_policy` is `auto`
+(§"Admission valve (`ready → active`)"); short of such a pass, moving the
+item requires an explicit `approve:<work-item-id>`. When this repository
+commits `dispatcher.auto_approve_ready`, `set-admission` still writes the
+label, and its result MUST state that the committed setting decides the
+item's effective admission while it stands, naming that setting and its
+value; it MUST NOT report the write as changing the item's admission.
+Symmetrically, flipping `auto` to `manual` on
 an item already at `ready` MUST NOT demote it — it was already approved;
 a policy flip never demotes an item out of `ready` — that takes an
 explicit operator act (the `defer` un-approval, or a guarded `move`). A
@@ -486,14 +585,13 @@ CLI surface: `list-work-items [--filter <name>] [--with-gap-id=<id>] [--with-spe
 with `--filter` and with `--with-gap-id`.
 
 `--project-root <path>` — override the cross-repo manifest and
-connection-resolution base. Default: `Path.cwd()`. Used by doctor's
-cross-boundary handoffs to invoke this skill from outside the consumer
-project root.
+connection-resolution base. Default: `Path.cwd()`. It lets a caller
+invoke this skill from outside the consumer project root.
 
 `--work-items-path <path>` — repurposed connection-descriptor override.
 The default substrate location is the beads tenant DB resolved from the
 consumer's `.livespec.jsonc` `connection` block; this flag overrides the
-resolved store descriptor (used by tests and by doctor invocations that
+resolved store descriptor (used by tests and by invocations that
 want to scope to a non-default store — e.g. the in-memory fake backend).
 The keyword is retained for call-site parity with the plaintext sibling;
 its value is no longer a filesystem path to a JSONL file.
@@ -511,7 +609,14 @@ keys — **`lane`** (the rendered lane, one of `backlog` /
 directly and never re-derives a lane from the raw status). The new
 `WorkItem` fields (`rank`, `admission_policy`, `acceptance_policy`,
 `blocked_reason`, the 7-state `status`, `assignee`) emit via the existing
-flat serializer; only `lane`/`lane_reason` are computed additions.
+flat serializer; `lane`/`lane_reason` are the only computed additions, and
+the three plan-identity keys below are read from metadata, never computed.
+Each item whose type is `epic` MUST ALSO carry `plan_slug` (a string, or
+`null` when the epic has none), `next_action` (the typed object of
+§"Typed `next_action` and `last_session`" exactly as stored, or `null`) and
+`last_session` (a string, or `null`), read from the epic's metadata; every
+other item MUST carry `null` for all three. Scenario 216 in `scenarios.md`
+exercises this sentence.
 
 #### `list-plans`
 
@@ -588,13 +693,12 @@ candidates to skip from the front of the ranked list before returning.
 Negative values MUST cause the wrapper to exit `2` with a `UsageError`.
 
 `--project-root <path>` — override the cross-repo manifest and
-connection-resolution base. Default: `Path.cwd()`. Used by doctor's
-cross-boundary handoffs to invoke this skill from outside the consumer
-project root.
+connection-resolution base. Default: `Path.cwd()`. It lets a caller
+invoke this skill from outside the consumer project root.
 
 `--work-items-path <path>` — repurposed connection-descriptor override
 (same semantics as for `list-work-items`): overrides the resolved beads
-store descriptor; used by tests and by doctor invocations that want to
+store descriptor; used by tests and by invocations that want to
 scope to a non-default store.
 
 Ranking is a pure function of the materialized work-items read back from
@@ -734,33 +838,63 @@ CLI surface: `detect-impl-gaps [--spec-target <path>]
 [--project-root <path>] [--since-version <vN>] [--json]`. No `--filter`
 flag — the skill emits the complete current gap-id set.
 
-**Naming note.** This is a spec-clause enumerator, not a spec→impl
+**Naming note.** This is a heading-coverage enumerator, not a spec→impl
 comparator — despite the `-impl-gaps` name, it never reads
-implementation state (see the `capture-impl-gaps` naming note above,
-which this section's own mechanics substantiate).
+implementation state. It reads the spec tree and the heading-coverage
+map and nothing else.
 
-The skill reads the live Specification via the Spec Reader, enumerates
-every MUST/SHOULD rule per the gap-rule enumeration contract (per the
-upstream Spec Reader required-capability surface, capability 1), and
-computes a stable `gap_id` per detected rule. Gap-id derivation is a
-pure function of rule text + canonical heading path; the same rule text
-always yields the same gap-id across runs. This skill is
-substrate-agnostic — it reads the spec tree, never the work-items store.
+The skill MUST read the live Specification's H2 headings via the Spec
+Reader and the repository's heading-coverage map, and MUST emit exactly
+one gap per H2 heading whose map entry — matched on spec root, spec file
+and heading — is absent, carries the literal `TODO` as its `test` value,
+or names a test that does not exist. A dangling entry (its `test`
+names no existing test) or an incomplete entry (it identifies a live H2
+heading by `spec_root`, `spec_file` and `heading` but lacks a non-empty
+`test` value) MUST be reported as an uncovered heading AND as a surfaced
+finding naming the entry and its defect, never as a clean absence. An
+unidentifiable entry (it lacks a non-empty `spec_root`, `spec_file` or
+`heading` value, or names a heading the live spec tree does not contain)
+MUST be reported as a surfaced finding naming the entry, MUST NOT produce
+a gap or a gap-id, and MUST NOT count as covering any heading. A heading
+with no identifying entry is an uncovered heading and carries no finding
+of its own. A heading whose entry names an existing exercising test
+MUST NOT produce a gap. The skill MUST compute a stable `gap_id` per heading
+as a pure function of the spec file path and the canonical heading path,
+so the same heading always yields the same gap-id across runs. It MUST
+NOT enumerate MUST/SHOULD clauses, because a clause with no work-item is
+the ordinary state of every ratified clause and that signal surfaced 752
+to 1,233 candidates per run in this repository without one completed
+pass. This skill is substrate-agnostic — it reads the spec tree and the
+coverage map, never the work-items store.
 
 **`--since-version <vN>`** (optional, default `null`). When set to a
 historical version integer that exists under
 `<spec-root>/history/v<NNN>/`, the skill restricts its scan to files
 whose content differs between `<vN>` and the live spec (i.e., the file
-appears in `SpecDiff(version_a=<vN>, version_b=<live>).per_file`). For
-each such file, only MUST / SHOULD clauses present in the live version
-are considered (clauses removed by the diff are not gaps — they were
-spec content that no longer exists).
+appears in `SpecDiff(version_a=<vN>, version_b=<live>).per_file`). For each such file, only H2 headings present in the live version are
+considered (headings removed by the diff are not gaps — they were spec
+content that no longer exists).
 
-**Caller caution.** This is NOT "clauses added since `<vN>`" — a file
-that changed for any reason resurfaces EVERY live MUST/SHOULD clause it
-contains, including clauses that predate `<vN>` and were untouched by
+**Caller caution.** This is NOT "headings added since `<vN>`" — a file
+that changed for any reason resurfaces EVERY uncovered live H2 heading it
+contains, including headings that predate `<vN>` and were untouched by
 the edit. A caller (the `revise` operation's Step 13 post-step included)
-MUST NOT read this flag's output as a diff of newly-introduced clauses.
+MUST NOT read this flag's output as a diff of newly-introduced headings.
+
+**Migration of clause-derived gap ids.** A gap-tied work-item filed under
+the retired clause enumeration carries a clause-derived `gap-id:` label.
+Every live such item MUST be re-labelled with the heading-derived gap-id
+of the heading its clause sits under, and the implementation of this
+clause MUST NOT be reported complete until that re-labelling has run and
+both of the following hold on this repository against the new
+enumeration: no gap-id is carried by more than one live gap-tied
+work-item, and every live gap-tied work-item carries a gap-id that
+`detect-impl-gaps --json` emits. These are verified against this
+plugin's own `list-work-items --json` and `detect-impl-gaps --json`
+output; livespec core's doctor no longer carries a gap check. The
+detector change and the live re-labelling MAY land as separate changes,
+in that order. A closed item MUST keep its historical clause-derived
+label.
 
 Validation:
 
@@ -783,25 +917,23 @@ value is an array of strings:
 ```
 
 Default human output: one line per gap-id, prefixed with the spec-file
-path + heading the rule was sourced from.
+path + heading the gap-id derives from.
 
 The skill is the canonical gap-detection surface for the plugin.
 Consumers:
 
-- `livespec` doctor's `gap-tracking-one-to-one` and `no-stale-gap-tied`
-  invariants subprocess this skill via the
-  `<impl-plugin>:detect-impl-gaps --json` cross-boundary handoff (per
-  upstream §"Cross-boundary handoffs" entry 5).
 - The heavyweight sibling `capture-impl-gaps` invokes this skill as its
   detection step before walking the user through per-gap consent.
 - The heavyweight `implement` skill's gap-tied closure verification is
   check-path-anchored (§"`implement`" → "gap-tied completion") and does
   NOT invoke this skill at closure — a `gap_id` is unsound as a closure
-  anchor (it hashes a hard-wrapped source line and re-keys on reflow).
+  anchor (it identifies a heading, not the check that settles a clause
+  beneath it).
 
 The skill MUST NOT mutate any impl-side store; it MUST NOT write to the
 tenant DB; it MUST NOT prompt the user. It is a pure read-and-emit
-pass-through over the Spec Reader's output and the gap-rule enumeration.
+pass-through over the Spec Reader's heading enumeration and the
+heading-coverage map.
 
 #### `needs-attention`
 
@@ -828,9 +960,10 @@ and `needs-attention`: it MUST NOT mutate the work-items store. Given a
 it deterministically assembles one structured envelope for that item and, with
 `--json`, emits it as a single JSON object. The envelope MUST carry: the
 resolved epic or work-item record; its comments; its children — unioned across
-BOTH the dotted-id hierarchy AND the `parent-child` dependency edge, so that
-neither linkage is dropped (per §"Work-item beads-issue mapping" child
-enumeration); its dependency edges; its typed `next_action`; the linked
+the dotted-id hierarchy AND every epic-linkage edge of §"Work-item beads-issue
+mapping" (`parent-child` or `tracks`), so that no linkage is dropped (per §"Work-item beads-issue mapping" child
+enumeration); its dependency edges; its typed `next_action` and its
+`last_session`; the linked
 research directory path when an `associated_work_item_id` anchor resolves one;
 and the spec clauses the item cites. Resolution MUST be order-independent and
 side-effect-free: two `context --json` invocations against an unchanged store
@@ -961,9 +1094,18 @@ re-dispatch" → "Stranded-state discrimination" already composes under its
 own kind and stable id with its own owner; one work-item MUST NOT produce
 two ids of two kinds for the same underlying fact. No capacity handoff
 MAY advertise a status-move action against a claim whose dispatch
-evidence shows a merged pull request — the ratified reconciliation route
-is `reconcile-merged`, and a move-to-`ready` handoff would re-queue
-merged work.
+evidence, or the forge, shows a merged pull request — the ratified
+reconciliation route is `reconcile-merged`, and a move-to-`ready` handoff
+would re-queue merged work. When the dispatch evidence names no pull
+request, the handoff MUST read the forge for the item's publish branch
+before it advertises any status move. When the forge reports a merged pull
+request there, the handoff MUST advertise `reconcile-merged` only when that
+command's own preconditions hold for the item, including no live ownership
+lock, so that the handoff stays executable as advertised; otherwise it MUST
+advertise no status move and name the condition that blocks
+reconciliation. A forge read that fails MUST NOT be read as no pull
+request: the handoff MUST then advertise no status move and name the failed
+read. Scenario 222 in `scenarios.md` exercises this sentence.
 
 **The accounting's exposed classes, and the rework ordering
 dependency.** The accounting today exposes THREE hold-and-exclusion
@@ -1015,6 +1157,8 @@ instant cannot be determined for an admission-eligible `ready` item, the
 snapshot MUST report that item as age-unknown and MUST NOT omit it. IN
 FLIGHT means a live dispatch lock or a watchable run for this repository
 — not a journal record, and not an ad-hoc process query.
+
+**Workflow-edit approval (`hygiene:workflow-edit-approval:<work-item-id>`).** For every work-item of this repository that is not `closed` and carries the `approval:workflow-edit` label, the snapshot MUST carry one attention item naming the work-item id, its lifecycle status and its title, with a handoff that opens the item for the maintainer's review (the `discuss-work-item` operation). The label is the maintainer's notification mechanism for the advisory workflow-edit control, so the fact MUST NOT be suppressed by any other fact about the same item, and it clears only when the item closes or the label is removed. A store read that fails MUST surface as a visible failure rather than as an absence of these items. Scenario 232 in `scenarios.md` exercises this paragraph.
 
 **Idle-factory (`hygiene:idle-factory:<repo>`).** When, and only when, ALL THREE of the following hold for a repository, the snapshot MUST carry exactly one idle-factory fact: (a) the ready set is non-empty and at least one ready item is admission-eligible under the admission valve's non-capacity conditions -- the same eligibility the drain and `next` honor, capacity excepted; (b) the single-authority capacity verdict (this section's "Capacity single authority") reports ZERO counted claims for this repository, read through the SIDE-EFFECT-FREE capacity projection that clause requires and NEVER from a mutating accounting path; and (c) the per-node fallback preflight of §"Factory-configurable ACP fallback priority" leaves at least one eligible candidate for every admission-required ACP node (every ACP node potentially reachable in the submitted graph). The fact's `urgency` MUST be `high`. Its `summary` MUST be a deterministic one-line statement naming the count of admission-eligible ready items and the first ranked such id. Its single `handoff` MUST be a `drive`-kind handoff carrying `impl:<first-ranked-id>` for that first ranked item -- executable as advertised (§"The needs-attention machine envelope" → "Executable as advertised"): the `action_id` MUST be one `drive` would accept for that item's state. The fact rides the existing `hygiene` kind with the stable id `hygiene:idle-factory:<repo>`; it introduces NO new wire kind, grammar form, or field (§"The needs-attention machine envelope" → ownership cut). The fact MUST consume the shared admission-eligibility verdict, including a read-only observation of the factory-native availability evidence required by §"Factory-configurable ACP fallback priority". Capacity remains derived solely from this repository's own accounting. Snapshot composition MUST NOT execute credential probes, availability confirmation turns, or mutations. Unavailable availability evidence MUST NOT be treated as an empty hold set or as proof of eligibility. Identical ledger, capacity, configuration, availability evidence, and evaluation time MUST produce a byte-identical row. The fact CLEARS the instant any of (a), (b), or (c) fails: it does not appear when counted claims are non-zero (the factory is busy), when no admission-eligible ready item exists (there is nothing to dispatch), or when observed availability holds exhaust an admission-required chain (that wait composes under §"Provider spend containment"). Like every fact in this section it composes existing reads, executes nothing, and creates no work-items.
 
@@ -1335,8 +1479,9 @@ not under this exception.
 
 ### Machine-path exemption — the Dispatcher
 
-The Dispatcher (`dispatcher.py` `dispatch` / `loop`) writes to the work-items
-store ONLY as machine-path dispositions of already-filed items — the lifecycle
+The Dispatcher (`dispatcher.py` `dispatch` / `loop`) writes to the work-items store ONLY as machine-path dispositions of
+already-filed items, and as the drift run's detection-coverage
+self-bookkeeping named at the end of this paragraph, — the lifecycle
 verbs `admit` (`ready → active`), `complete` (`active → acceptance` on
 confirmed merge, carrying PR-number and merge-sha audit evidence in the
 `AuditRecord`), `accept` (`acceptance → done`, the AI leg of the item's
@@ -1350,11 +1495,14 @@ policy settings") — the auto-`approve` (`pending-approval → ready`)
 disposition. These writes are EXEMPT from the per-operation consent discipline
 by design — the Dispatcher acts on items a human or a consented front-end
 already filed, and `--no-close-on-merge` disables the post-merge disposition
-writes entirely. The exemption covers ONLY dispositions of already-filed
-items; the Dispatcher MUST NOT create net-new work-items on its own
-initiative. The Dispatcher's module docstring documents this boundary. The
+writes entirely. The exemption covers ONLY dispositions of already-filed items and the
+drift run's self-bookkeeping on the designated detection-coverage anchor
+(its attempt, completed-coverage and held-finding records, §"Detection
+coverage records and staleness facts"); the Dispatcher MUST NOT create
+net-new work-items on its own initiative, and the proposals the drift run
+files are spec-side proposed changes, not work-items. The Dispatcher's module docstring documents this boundary. The
 human-triggered operator commands (`drive`
-`approve:`/`accept:`/`reject:`/`resolve-blocked:`/`set-admission:`/`set-acceptance:`/`set-factory-safety:`/`set-workflow-scope-override:`/`set-merge-on-review-cap:`/`set-review-fix-cap:`/`set-acceptance-rework-cap:`/`set-merge-hold:`/`move:`
+`approve:`/`accept:`/`reject:`/`resolve-blocked:`/`set-admission:`/`set-acceptance:`/`set-factory-safety:`/`clear-factory-safety:`/`set-workflow-scope-override:`/`set-merge-on-review-cap:`/`set-review-fix-cap:`/`set-acceptance-rework-cap:`/`set-merge-hold:`/`move:`
 action ids, per §"`drive`") are NOT machine-path dispositions — their consent
 is the operator's explicit action selection.
 
@@ -1364,9 +1512,11 @@ The thin-transport skills (`list-work-items`, `next`,
 `detect-impl-gaps`, `list-plans`, `needs-attention`) are query-only by
 contract (per `constraints.md` §"Forbidden patterns") and never write to the
 store; the consent discipline does not apply to them.
-`capture-spec-drift` writes nothing to this plugin's store — its
-output is a `/livespec:propose-change` cross-boundary handoff,
-itself per-finding user-consented.
+`capture-spec-drift` writes nothing to this plugin's store beyond its
+detection-coverage records on the designated anchor (§"Detection coverage
+records and staleness facts" → "The self-bookkeeping exception, scoped") —
+its findings' output is a `/livespec:propose-change` cross-boundary
+handoff, itself per-finding user-consented.
 
 
 ## Grooming and slice-size calibration
@@ -1402,10 +1552,7 @@ functional cross-boundary contract.
      an epic and routes to `backlog` for decomposition.
    - **The acceptance is autonomously verifiable** with no human
      judgement call.
-   - **An autonomy tier is assigned** — spec-change is human-gated
-     (effective `admission_policy` `manual`) and
-     routes to `/livespec:propose-change` / `/livespec:revise`;
-     everything else is factory-dispatchable.
+   - **An autonomy tier is assigned** — the spec-change tier is DECIDED by the spec-stated judgement of §"Effective acceptance criteria", never declared by the filer and never read off `spec_commitment_hint` (which marks an implementation follow-up to an already ratified change). At filing, at groom and again on every dispatch path, every implement-kind item MUST be classified; an item classified `feature` whose asked-for behaviour the judgement reports `partial` or `unstated` is spec-change tier. A spec-change-tier item MUST carry a linked proposed-change topic, filed beside it through `/livespec:propose-change` as the parallel deposit, and the judgement MUST name an existing heading to generalize in preference to a new clause whenever one exists. The linked topic is first recorded as the stem the Dispatcher derives for the item. When the proposal is filed under a different stem — the filer canonicalized it differently, or one proposal generalizes a clause for more than one held item — the `relink-spec-tier:<work-item-id>:<topic>` route of §"Per-lane valid operator verb sets" → "Status-independent verbs" MUST replace the item's linked topic with that stem, and the hold MUST thereafter name the replacement topic as the one awaiting ratification. Every later spec-change tier record of the item, at groom, on a dispatch path or on an intake or drain pass, MUST carry the replacement topic forward rather than re-deriving the stem. The item MUST be held out of `ready` until BOTH hold: the linked topic's revision record under `<spec-root>/history/vNNN/proposed_changes/` carries decision `accept` or `modify`, and the judgement, re-run against the ratified specification, returns `stated` for the item's asked-for behaviour. That hold is a read of the spec history and needs no model, so it MUST fail closed; the pre-dispatch wall MUST refuse a held item with exit code `5` naming the unratified topic, and once both conditions hold the item is no longer spec-change tier but an implementation follow-up to an already ratified change: the next intake or drain pass MUST release the hold with no human valve and route the item exactly as its effective `admission_policy` decides, so `auto` admission routes it to `ready` and `manual` admission rests it at `pending-approval` for the `approve` valve, as it would any other item. Because the judgement can miss a clause the ratified specification already carries, a held item MUST also have a human way through that needs no ratification and no agreeing model run. The `release-spec-tier:<work-item-id>:<heading>` valve, driven only by a human, MUST release the hold when `<heading>` is the verbatim text of an existing H2 heading of the ratified specification, which the human attests states the item's asked-for behaviour. It MUST refuse, naming the reason, a heading that does not resolve and an item that is not held. It MUST record a durable ledger comment on the item, and a dispatch-journal entry, each carrying the actor, the heading, its spec file, the spec version and a digest of the clause's heading and body. It then clears the hold. For an `active` item carrying `rework:pending` it preserves that status and marker and leaves execution to the rework route of §"Rework-pending re-dispatch", without intake routing or fresh approval; otherwise it invokes intake Definition-of-Ready routing, preserving every other admission requirement. Each resulting status transition MUST use its existing journaled owner under the Door rules, and the valve MUST NOT write a status itself. The attestation is a human override of the governing-heading verdict for the item's asked-for behaviour, not a cached model verdict, and it records the asked-for behaviour and each assertion text the human attested. While that attested input and the cited clause's heading and body are unchanged, every taking, the pre-dispatch wall and the `dod_gate` node included, MUST use the attested `stated` verdict without requiring model agreement, and its clause provenance is the cited clause, as both the selected and the named clause of each attested assertion. A change elsewhere in the specification does not void it; a change to the attested input or to the cited clause voids it, and an item held again may be released again by a fresh attestation. The release is not a ratification: the linked proposed-change topic keeps its own revise decision. A held item that duplicates a work item which already carries its behaviour, in this tenant or another, is closed through the human-only `close-duplicate:<work-item-id>:<successor-id>` valve of §"Per-lane valid operator verb sets" → "Status-independent verbs", which needs no ratification and no `release-spec-tier` attestation. An item classified `bug`, `chore` or `non_functional` is never spec-change tier and routes as every other factory-dispatchable item. When the classification cannot run (no eligible model, a timeout, or an unparseable verdict), intake MUST record that on the item and route it as it would without the classification; the `dod_gate` node, which runs the same judgement in-run, remains the backstop that refuses an unstated feature before any implementation spend. Plan-child disposition refuses a held spec-change-tier child and admits an implementation follow-up.
    - **Dependencies are linked** as beads `blocked-by` edges (ready
      requires blockers closed AND an acceptance — never deps alone).
    - **The repo target is named** — one slice maps to one ledger.
@@ -1604,6 +1751,17 @@ bounce the item to `backlog` for it and MUST NOT journal a
 NOT count it as a non-convergence observation, while a fix-loop-cap
 non-convergence still counts.
 
+**An OOM kill is named.** When the factory reports that the run's sandbox
+container was killed for exceeding its memory limit, the `watchdog-stall-cancel`
+record, the dispatch result, and the ledger comment of whichever stall
+disposition below applies MUST name the OOM kill, the run id, and the container
+memory limit the factory reports. A limit the factory does not report MUST be
+recorded as unobservable, never omitted or guessed. The Dispatcher MUST NOT
+infer an OOM kill the factory does not report. The outcome otherwise remains
+`stalled-no-progress` for every rule of this section, including the release and
+rest dispositions below. Scenario 234 in `scenarios.md` exercises this
+paragraph.
+
 **A first stall cancel is released and recovered.** When the item's
 immediately preceding dispatch did not also end `stalled-no-progress`, the
 Dispatcher MUST, without a human:
@@ -1642,6 +1800,47 @@ rest. It MUST name a plain dispatch only for refusals whose specified
 remedy is a plain dispatch; it MUST NOT substitute dispatch for a human
 decision, reconciliation, or a required wait.
 Scenario 172 in `scenarios.md` exercises this subsection.
+
+### Bounded Fabro event reads
+
+Every `fabro events` read the Dispatcher issues — from the progress watchdog, the review-gate and cost readers, and any other caller — is a read of one run's event log on one factory. Each such read MUST be bounded in size, in retries and in concurrency, so that a run whose event log is large or slow to serve cannot turn the Dispatcher into an unbounded source of load on the factory. This subsection does not govern how the factory serves the log.
+
+**No projection reader.** The ACP fallback event projection and its reconcile replay are retired (§"Factory-configurable ACP fallback priority", since v127), and they are not a caller of this subsection. The Dispatcher MUST NOT issue a `fabro events` read whose purpose is to project `agent.acp.failover` events, and no reconciliation surface — the loop tick, the dispatch preamble, or the standalone `reconcile-runs` sweep — MAY re-read a run's events to replay such a projection. A journal reader MUST still parse an `acp-projection-failure` or `acp-projection-exhausted` record that an earlier build already wrote.
+
+**Read size.** Once a caller has read a run's events, every later read of that run by the same Dispatcher process MUST be bounded to the events after the newest event instant it has already observed, or to a bounded number of trailing events. A liveness sample taken from a bounded read MUST carry forward the progress instant and the open command node that earlier samples of the same run established, so bounding a read never hides a command node that started before the bound; §"Dispatcher progress watchdog" continues to govern what those values mean. The cost of one watchdog sample MUST NOT grow with the run's total event count.
+
+**Failed reads and backoff.** A `fabro events` read that times out, exits non-zero, or returns zero bytes is a FAILED events read. On each failed events read the Dispatcher MUST journal one `fabro-events-read-failed` record naming the work-item, the run id, the factory, the reading caller, the elapsed seconds, the consecutive attempt number for that run and caller, and the backoff before that caller's next read of the run. That caller MUST NOT start its next read of the run until the backoff has elapsed. The backoff MUST be at least 60 seconds after a first failure and MUST at least double after each further consecutive failure; a successful read resets the count. A failed events read MUST be treated as an unobservable sample, never as the run having disappeared or having made no progress.
+
+**Concurrency.** One `reconcile-runs` pass MUST issue at most one `fabro events` read per run. Across every Dispatcher process on one host, at most two `fabro events` reads against one factory MUST be in flight at the same time; a read that cannot start within its caller's timeout because the bound is full MUST be treated as a failed events read for backoff purposes.
+
+**Pre-launch reads.** The same bounded-read principle governs the reads the
+Dispatcher makes before it launches a run. A dispatch pass is the work one
+Dispatcher invocation does for one work-item from the start of that item's
+dispatch until it submits `fabro run` for it, or until it refuses, defers or
+abandons the dispatch without submitting; under `dispatcher.py loop` each
+item the loop dispatches is its own pass. Within one dispatch pass the
+Dispatcher MUST read and parse the dispatch journal at most once, and every
+reader that consults the journal during that pass — the ACP hold-evidence,
+availability-confirmation and selection-replay readers, the cost-sequence
+reader, the session-headroom baseline, and any other — MUST consume that one
+parsed snapshot rather than reading the file again. A record the pass itself
+appends to the journal MUST be visible to the pass's later readers without a
+second read of the file. Within one dispatch pass the Dispatcher MUST issue
+at most one `fabro inspect` for each distinct pair of factory and run id, and
+every reader that needs that run's state during the pass MUST consume that
+one result. A `fabro inspect` that fails, or whose answer cannot be
+interpreted, MUST NOT be reissued within the same pass; each reader MUST
+apply to it the rule it already applies to an unobservable read of that
+run. The number of dispatch-journal reads in one dispatch pass MUST NOT grow
+with the number of earlier runs, warnings, ACP candidates or attempts the
+pass evaluates. The number of `fabro inspect` calls in one dispatch pass
+MUST NOT exceed the number of distinct pairs of factory and run id the pass
+needs, and MUST NOT grow with the number of warnings, ACP candidates or
+attempts it evaluates for those runs. A parsed snapshot or an inspect
+result MUST NOT be carried from one dispatch pass into the next, so each
+pass makes its own first read of the journal and of each run it needs.
+
+Scenario 227 in `scenarios.md` exercises this subsection.
 
 ### Calibration telemetry and the single Fabro tweak
 
@@ -1735,6 +1934,23 @@ the bounce. Their projections MUST agree: absent numeric observations remain
 null in the journal and omitted numeric attributes on the span, with an
 accompanying reason. No new always-on service or Fabro platform modification is
 permitted by this contract.
+
+The terminal calibration journal row and span MUST attribute the implement node
+to the candidate the dispatch executed, not to the chain primary.
+`livespec.implement.adapter` MUST be the agent id of the implement candidate
+that the dispatch's per-node selection record (§"Factory-configurable ACP
+fallback priority" → "Per-node selection") selected, so a dispatch that
+selected a fallback candidate reports that fallback's agent id.
+`livespec.implement.selected_index` MUST be that record's selected candidate
+index for the implement node. The per-node selection record MUST additionally
+carry the selected candidate's resolved agent id, or null when unavailable.
+Both calibration fields MUST be read from that record for the same dispatch. An
+unavailable selected agent id MUST remain null in the calibration journal and
+be omitted on the span. When the dispatch has no selection record for
+the implement node, `livespec.implement.adapter` MUST be the agent id of the
+resolved `acp_nodes` primary for that node, and
+`livespec.implement.selected_index` MUST be null in the journal and omitted on
+the span. An agent id MUST NOT be inferred from a model name.
 
 ### Gate type determines hard versus advisory
 
@@ -1912,14 +2128,14 @@ escalation still reaches a human", and this subsection leaves it so.
 ### Gap-detectable behavior clauses
 
 This subsection restates the realization's NON-Dispatcher fundamental
-behaviors as explicit normative clauses so the mechanical gap-detector
-and the heading-coverage map can hold the impl accountable; the
+behaviors as explicit normative clauses so the heading-coverage map and its
+exercising tests can hold the impl accountable; the
 surrounding prose subsections remain as augmentation. Where behaviors
 1-3, 7, and 8 were previously stated only as prose in §"The four
 maintainer touchpoints" / §"Calibration telemetry and the single Fabro
 tweak", that prose stays in place as augmentation but the authoritative
 normative statement is now the clause line here. The DISPATCHER behaviors (surface manual-admission items resting at `pending-approval` for the human's `approve`; bounce on non-convergence; emit calibration telemetry) are NOT restated here to avoid a duplicate
-gap-detectable line — their authoritative normative clauses live in
+normative line — their authoritative normative clauses live in
 §"Dispatcher grooming behavior", and the periodic calibration analysis
 pass (a non-Dispatcher behavior) plus the single Fabro DOT tweak remain
 below.
@@ -1942,7 +2158,7 @@ rather than re-ranking inline; its existing normative clause line in
 statement) is already implemented per in-flight work-item
 `livespec-impl-beads-i3jiny`, and is therefore documented and
 scenario-covered (Scenario 15) but is NOT a fresh gap. It is deliberately
-left out of the clause list above so that no duplicate gap-detectable
+left out of the clause list above so that no duplicate normative
 line is introduced for an already-satisfied behavior.
 
 
@@ -2227,6 +2443,15 @@ handoff entry; it is the typed `next_action` metadata defined in
 names a next step in prose MUST ALSO be written with a matching
 `next_action` update by the same primitive call. Scope events (rulings,
 deferrals) remain comments, because they are the part a human reads back.
+The timeline read path MUST return every handoff entry and every scope
+event of the epic, oldest first, each labelled with its kind. For every
+other plan record kind present on the epic, meaning a comment whose first
+line is a `plan-` record prefix such as `plan-child-disposition`,
+`plan-decision-record`, `plan-completeness-review-evidence`,
+`plan-progress-event` or `plan-relay-event`, it MUST report that kind's
+prefix and the count of such comments beside the entries it returns, and
+MUST NOT report them as absent. Scenario 213 in `scenarios.md` exercises
+this rule.
 Checklist items in planning artifacts are
 session-local steps or pointers to real ledger ids, never a parallel
 work queue that shadows the ledger.
@@ -2320,7 +2545,13 @@ non-empty `ref` and the required-result checks permit continuation, the
 resume MUST take the pointer without presenting the picker and MUST report
 the ruling it acted under; `human` and `none` MUST raise the picker in every
 case, and `resume_directive` MUST return the ruling's identity in its
-`reason` whenever it acts under one. A prose marker line (`next action:`) MAY continue to appear in a
+`reason` whenever it acts under one. Every resume, attended or unattended
+and whether or not it asks, MUST ALSO return every scope event on the epic
+that is not a carrier-map event (its rulings and deferrals, continuation
+rulings included), oldest first, beside the typed `next_action`, and the
+`plan` operation MUST surface them to the resuming session before it acts
+on `next_action`. An epic with no such scope event MUST return an empty
+list. Scenario 214 in `scenarios.md` exercises this sentence. A prose marker line (`next action:`) MAY continue to appear in a
 handoff comment for a human reader, but it carries no authority: when the
 two disagree, the metadata wins, and the conformance checks in
 §"Plan-record conformance checks" report the disagreement. This retires
@@ -2367,11 +2598,11 @@ live run is driving MUST NOT be executed again; the resume MUST rewrite it
 as `await` with `run:<id>` as the observation handle, and that rewrite is a
 representation change of the SAME obligation — it MUST keep the canonical
 `required_result`, the epoch, the original deadline and the handoff count
-unchanged, MUST NOT extend the budget from the run's own deadline, and when
-the obligation expires while the run is still live the existing expiry
-rules apply. An `await` pointer whose required result is still unsatisfied
-within budget is NOT stale: an unsatisfied, in-budget wait is its expected
-state, and the resume waits or reports the observation without rewriting
+unchanged, MUST NOT extend the budget from the run's own deadline, and an
+obligation that becomes overdue while the run is still live keeps waiting
+on that run and reports the overdue finding. An `await` pointer whose
+required result is still unsatisfied is NOT stale: an unsatisfied wait is
+its expected state, and the resume waits or reports the observation without rewriting
 the pointer.
 
 ### Shared authoritative result reader
@@ -2382,15 +2613,15 @@ The shared reader MUST return `satisfied`, `unsatisfied`, or `unobservable`, tog
 
 ### Required result, budget and progress epoch
 
-A new write of an open live plan's `next_action` MUST carry exactly `kind`, `ref`, `text`, `required_result` and `budget`. Existing meanings of kind/ref/text remain. For `impl` and `spec-op`, required_result MUST be a valid typed reference and budget MUST contain an absolute UTC `deadline` and positive integer `max_handoffs`; the first limit reached expires the obligation. For `human` and `none`, both tracking fields MUST be explicit null, and changing to them MUST retain any unmet obligation in the progress history. A human pointer names a genuine needed decision or authorization; time passing or a diagnostic alone MUST NOT invent a human dependency. Legacy three-key pointers MUST remain readable, report `plan-progress-tracking: missing`, and acquire the new shape on their next sanctioned write; legacy reads alone MUST NOT invent budgets or mutate the ledger.
+A new write of an open live plan's `next_action` MUST carry exactly `kind`, `ref`, `text`, `required_result` and `budget`. Existing meanings of kind/ref/text remain. For `impl` and `spec-op`, required_result MUST be a valid typed reference and budget MUST contain an absolute UTC `deadline` and positive integer `max_handoffs`. The budget is a reporting datum only: an obligation whose deadline has passed, or whose accepted handoffs have reached max_handoffs, is OVERDUE, and being overdue MUST NOT cause any write to be refused, any continuation to require a recovery attempt, a continuation ruling or a human decision, or any executable action to be withheld. For `human` and `none`, both tracking fields MUST be explicit null, and changing to them MUST retain any unmet obligation in the progress history. A human pointer names a genuine needed decision or authorization; time passing or a diagnostic alone MUST NOT invent a human dependency. Legacy three-key pointers MUST remain readable, report `plan-progress-tracking: missing`, and acquire the new shape on their next sanctioned write; legacy reads alone MUST NOT invent budgets or mutate the ledger.
 
-A fixed-first-line `plan-progress-event` ledger comment MUST hold the epoch identity, canonical result, initial budget, UTC start, accepted handoff count/baseline and event kind. It is the durable obligation history, not a filesystem queue or new table. Canonical result identity, rather than session, wording, kind/ref or last_session, MUST govern continuity. Routine handoffs, supervisor handoffs and direct set_next_action calls MUST NOT reset the deadline or count. A replacement or renaming of an unmet result MUST preserve the original obligation and deadline until an evidenced causal supersession explicitly accounts for it; a new label, repair-child milestone, acknowledgment or changed-approach claim cannot evade expiry.
+A fixed-first-line `plan-progress-event` ledger comment MUST hold the epoch identity, canonical result, initial budget, UTC start, accepted handoff count/baseline and event kind. It is the durable obligation history, not a filesystem queue or new table. Canonical result identity, rather than session, wording, kind/ref or last_session, MUST govern continuity. Routine handoffs, supervisor handoffs and direct set_next_action calls MUST NOT reset the deadline or count. A sanctioned write MAY replace an unmet result with a different typed required result. The replacement MUST be recorded as a `plan-progress-event` of kind `replacement`, naming the replaced obligation's canonical result identity and epoch, before the pointer changes, so the replaced obligation stays in the progress history; the new obligation begins under the write's own budget.
 
-All sanctioned pointer writers MUST read the prior obligation and its target before accepting continuation. While a known-unsatisfied obligation has budget remaining, an accepted handoff consumes one handoff unit; direct pointer writes consume none but cannot reset either limit. Satisfied results permit advancing to a new result and budget. After expiry, same-obligation continuation MUST be refused before appending a handoff or updating the pointer unless a fresh typed causal recovery attempt is supplied or a genuine required human decision is recorded. Neither path resets or postpones the original obligation deadline. Unobservable results MUST preserve the original budget and refuse any transition claiming completion; the diagnostic and an explicit recovery/escalation remain recordable. At the exact deadline or when accepted handoffs reach max_handoffs, the next continuation is expired. An expired wall clock MUST be visible even when no new handoff is written.
+All sanctioned pointer writers MUST read the prior obligation and its target before accepting a write. While a known-unsatisfied obligation stands, an accepted handoff consumes one handoff unit; direct pointer writes consume none, and neither resets that same obligation's original deadline or count. Satisfied results permit advancing to a new result and budget. Unobservable results MUST refuse any transition claiming completion; the diagnostic and an explicit recovery or escalation remain recordable. At the exact deadline, or when accepted handoffs reach max_handoffs, the obligation is overdue. An overdue obligation MUST be visible even when no new handoff is written. Same-obligation continuation, a replacement and a handoff MUST each be accepted on an overdue obligation exactly as on one within budget: no write is refused, and none requires a typed causal recovery attempt, a continuation ruling or a recorded human decision, because an obligation is overdue.
 
-A changed approach MUST be a typed causal recovery event naming the unresolved obligation, previous epoch, measured failure evidence, cause classification, executable authorized next operation, stable unique attempt id and bounded attempt deadline. Its attempt budget MUST NOT replace or postpone the original obligation deadline. A prose `approach:` line, acknowledgment, repair-child milestone or cosmetic pointer rewrite MUST NOT qualify. A fresh event authorizes one recovery attempt; recording it is not evidence that the command executed or that the target was fulfilled. Claim, execution and outcome receipts MUST remain distinct. Unknown causes require diagnosis and known host causes require bounded host recovery; neither increments or resets the item-attributable repetition count. Writes MUST serialize per epic and detect a stale prior epoch before mutation; retried calls with the same operation identity MUST recover the original event rather than duplicate handoffs or extend a deadline. A partial write MUST be diagnosable and must not authorize a fresh dispatch until reconciled.
+A changed approach MAY be recorded as a typed causal recovery event naming the unresolved obligation, previous epoch, measured failure evidence, cause classification, executable authorized next operation, stable unique attempt id and bounded attempt deadline; no write requires one. Its attempt budget MUST NOT replace or postpone the original obligation deadline. A fresh event authorizes one recovery attempt; recording it is not evidence that the command executed or that the target was fulfilled. Claim, execution and outcome receipts MUST remain distinct. Unknown causes require diagnosis and known host causes require bounded host recovery; neither increments or resets the item-attributable repetition count. Writes MUST serialize per epic and detect a stale prior epoch before mutation; retried calls with the same operation identity MUST recover the original event rather than duplicate handoffs or extend a deadline. A partial write MUST be diagnosable and must not authorize a fresh dispatch until reconciled.
 
-resume_directive MUST report missing, expired and unobservable tracking findings. It MUST NOT automatically dispatch an exhausted or unobservable obligation. An unattended expired resume MUST retain the obligation and expose an authorized diagnosis/recovery action for the independent consumer. Human escalation MUST require an actual human decision or authorization deficit. A typed causal attempt MAY restore bounded execution without resetting the original deadline or bypassing existing admission and safety checks. The progress check MUST precede the unattended dispatch decision; existing human/none picker and missing-Definition-of-Done behavior remain.
+resume_directive MUST report missing, overdue and unobservable tracking findings. A budget's deadline or handoff count MUST NOT change whether resume_directive takes or presents an executable action: it takes or presents each of the six executable kinds whenever the required result is unsatisfied, exactly as it does within budget, reports an overdue obligation as a finding, and never rewrites an overdue pointer to a diagnosis action. It MUST NOT automatically dispatch an unobservable obligation; an unattended unobservable resume MUST retain the obligation and expose an authorized diagnosis action for the independent consumer. Human escalation MUST require an actual human decision or authorization deficit. The progress check MUST precede the unattended dispatch decision; existing human/none picker and missing-Definition-of-Done behavior remain.
 
 The Planning Lane restraint budget MUST explicitly include these two fixed-shape next_action fields, the four kinds `proof`, `review`, `archive` and `await`, the continuation ruling, and progress/relay comments on the existing epic. It MUST continue to forbid parallel plan status files, tables, queues or a second front end. Guidance MUST distinguish a recorded attempt from its required result and instruct readers to diagnose an exceeded record-rate warning instead of merely acknowledging it.
 
@@ -2402,7 +2633,7 @@ The plan primitive recording a relay MUST accept a stable relay id, typed expect
 
 needs-attention MUST include an overdue-result fact for every open live plan whose declared required result remains unsatisfied after either budget limit. The fact MUST identify the epic, target, deadline/count, last observation and recovery action. New ancillary PRs, handoffs or closed repair children MUST NOT clear this fact while its declared result remains absent.
 
-A report-only no-result-window fact MUST also identify open live plans with at least the configured `dispatcher.plan_progress_handoff_threshold` handoffs during `dispatcher.plan_progress_window_seconds` and no new attributable merged PR, closed child or verified proof record in that window. Both values MUST be positive committed dispatcher configuration; absence or invalid values MUST surface a configuration finding rather than an invented numerical policy. The fact MUST include UTC window bounds, entry count, last required result (or explicit legacy-missing marker), and last observed result time. A source that cannot be read MUST produce an unobservable-source finding, not a confident no-result fact. Attribution MUST use the union of explicit parent-child and implicit dotted-id children, the existing item-to-PR provenance, and typed proof records. Events before the window MUST NOT count as new progress. Window/count boundaries MUST be deterministic with an injected current time. Existing activity detectors and record-rate warnings remain independent; this fact is report-only and does not itself stop another agent.
+A report-only no-result-window fact MUST also identify open live plans with at least the configured `dispatcher.plan_progress_handoff_threshold` handoffs during `dispatcher.plan_progress_window_seconds` and no new attributable merged PR, closed child or verified proof record in that window. Both values MUST be positive committed dispatcher configuration; absence or invalid values MUST surface a configuration finding rather than an invented numerical policy. The fact MUST include UTC window bounds, entry count, last required result (or explicit legacy-missing marker), and last observed result time. A source that cannot be read MUST produce an unobservable-source finding, not a confident no-result fact. Attribution MUST use the union of every epic-linkage edge of §"Work-item beads-issue mapping" (`parent-child` or `tracks`) and implicit dotted-id children, the existing item-to-PR provenance, and typed proof records. Events before the window MUST NOT count as new progress. Window/count boundaries MUST be deterministic with an injected current time. Existing activity detectors and record-rate warnings remain independent; this fact is report-only and does not itself stop another agent.
 
 These facts MUST compose through the existing attention machine envelope and runtime-owned hygiene vocabulary, without plugin-local additions to its fields or grammar. Their summary/source/handoff MUST identify the observation and an executable sanctioned recovery or inspection action; a blocked dispatch MUST NOT be advertised as executable. The independent consumer reads canonical obligation records, not an alert as a substitute for result authority.
 
@@ -2865,6 +3096,25 @@ surfaced TRIGGER: it MUST NOT itself refuse or gate a dispatch, and it
 composes with the already-required passing-canary "restart is due"
 surfacing rather than replacing it.
 
+**A session resolves its project's registered build rather than a remembered
+one.** The plugin MUST ship a command that prints the plugin root of a
+governed project's registered install of this plugin, resolved by matching
+that project's path against the host's installed-plugins record, never by an
+entry's position in that record and never from the invoking session's own
+bound plugin root. When the project has no registered install of this
+plugin, the command MUST exit non-zero and say so, and MUST NOT fall back to
+another project's install. Every operation-prose step that has an agent
+import this plugin's package from a snippet MUST bootstrap that import
+through the plugin root this command prints for the governed project, and
+MUST NOT name a literal cache-build path. The plugin's session-start hook
+MUST print a staleness warning naming the registered install's version and
+the latest released version when the governed project's registered install
+is older than the latest release. When either version is unobservable, the
+hook MUST say that currency could not be determined rather than reporting
+the install current. The warning is surfacing only: the hook MUST NOT fail
+the session start, and it composes with the needs-attention
+dispatcher-currency-staleness fact rather than replacing it.
+
 **The sole blocking currency form is a deliberate operator floor.** The
 dispatch-admission check MAY refuse dispatch fail-closed if and only if the
 operator has committed a `dispatcher.minimum_release` floor in this repo's
@@ -2923,25 +3173,60 @@ corrective injection path. The full required set is surfaced up front
 architecture record: the openbrain adopter dogfood, github-app-auth
 `p3icf6`, 2026-07-03.)
 
-**Per-tenant engine identity.** The Fabro server serving a dispatch
-MUST hold the dispatch TARGET tenant's own GitHub App identity. A
-server instance holds exactly ONE App integration — a structural fact
-of the engine — so dispatching an adopter repo through the fleet's
-shared server fails (the fleet App is not installed for the target);
-adopter dispatch therefore runs against a per-tenant server instance
-(e.g. a dedicated `FABRO_HOME` carrying the adopter's `app_id`, its
-PEM in the server process environment, and its own port and
-authentication). A dispatch preflight SHOULD verify the serving App
-can reach the target repo BEFORE launching, refusing with an
-actionable diagnostic rather than failing inside the engine run.
-Workflow-file-touching pushes structurally require the App's
-`workflows` read-write permission grant, which the factory sandbox's
-credential MUST NOT hold (§"Factory sandbox credential constraints" in
-`constraints.md`). The preflight and the adopter docs MUST therefore
-surface that grant as one DELIBERATELY WITHHELD from the dispatch
-credential, and MUST name the attended-host-session route for work
-requiring it — never as an App-installation requirement to be granted.
-(Implementation tracked as `bd-ib-z2ctra` and `bd-ib-w4iaaf`.)
+**Per-tenant engine identity.** The Fabro server serving a dispatch MUST
+publish, check out and renew credentials for that dispatch under the
+dispatch TARGET tenant's own GitHub App identity. Two routes satisfy
+this. (1) A per-tenant server instance whose global integration IS the
+target's App (e.g. a dedicated `FABRO_HOME` carrying the adopter's
+`app_id`, its PEM in the server process environment, and its own port
+and authentication). (2) A SHARED server whose global integration is a
+different App, serving the run under a PER-RUN APP SELECTION (below).
+Without a per-run selection, a server serves every run under its one
+global integration, so dispatching an adopter repo through a shared
+server whose App is not installed for the target fails. A dispatch
+preflight SHOULD verify that the App the run will use can reach the
+target repo BEFORE launching. It refuses with an actionable diagnostic
+rather than failing inside the engine run. Workflow-file-touching pushes
+structurally require the App's `workflows` read-write permission grant,
+which the factory sandbox's credential MUST NOT hold (§"Factory sandbox
+credential constraints" in `constraints.md`). The preflight and the
+adopter docs MUST therefore surface that grant as one DELIBERATELY
+WITHHELD from the dispatch credential, and MUST name the
+attended-host-session route for work requiring it — never as an
+App-installation requirement to be granted. (Implementation tracked as
+`bd-ib-z2ctra` and `bd-ib-w4iaaf`.)
+
+**Per-run App selection on a shared server.** A dispatch target MAY
+declare, per factory, the GitHub App a run on that factory uses. Under
+`dispatcher.factories.<name>.github_app` it names an App-id secret and a
+private-key secret. Both are secret NAMES the operator provisioned in
+that factory's server-side vault, and neither is ever a value. The
+Dispatcher MUST render the declaration into the run configuration as the
+run's GitHub credential source, carrying the names only. It MUST refuse
+before claim, naming the key, when the declaration is malformed: not an
+object, missing either name, carrying an empty or non-string name, or
+carrying any other key. The engine MUST resolve the selected source from
+the server-held secrets in its worker. It MUST use that ONE selected
+authority, as renewable repository-scoped installation tokens, for every
+protected forge operation of the run: the native repository checkout,
+every managed stage credential renewal (the projected `GITHUB_TOKEN`),
+and the run's publication (branch push and pull-request creation). An
+explicitly selected source whose secrets are absent or empty, whose key
+does not parse, or whose App is not installed for or authorized on the
+target repository MUST fail the run BEFORE any protected forge
+operation, naming the selected secret names and the failing condition.
+It MUST NOT fall back to the server's global integration or to anonymous
+access. A run that selects no source keeps the server's global
+integration unchanged. Selection is per run: concurrent runs on one
+server under different Apps MUST each keep their own repository-scoped
+authority through every credential refresh and vault snapshot. A
+selection MUST NOT replace or mutate the server's global integration.
+The selected private key and every token minted from it MUST NOT appear
+in the run configuration, the immutable workflow version, `fabro
+inspect` or `fabro dump` output, or the sandbox environment, consistent
+with the ephemeral-token rule above. (Engine implementation tracked as
+`bd-ib-voozdp`, in the Fabro owner fork; the Dispatcher binding is
+tracked as its own child.)
 
 **Target-local workflow.** An adopter MAY carry its own
 `implement-work-item` workflow in the TARGET repo
@@ -2963,6 +3248,26 @@ workflow keeps its own prepare chain in it, subject to the same
 integration-input parity "Named workflow variants" below requires of a
 registered variant. The resolved committed path MUST be journaled on
 the dispatch record as `workflow_toml`.
+
+**The materialized workflow directory.** When the Dispatcher materializes a
+per-dispatch copy of the resolved workflow for the engine to run, the name of
+the directory it materializes MUST be one the engine resolves as a local
+workflow, under both `fabro validate` and `fabro run`, for every valid
+work-item id. The name MUST contain no `.` character,
+whatever characters the work-item id contains, and the mapping from work-item
+id to directory name MUST be injective, so two distinct work-item ids,
+including two that differ only where one has a `.` and the other another
+character, never share a materialized directory. This paragraph fixes those
+properties, not an encoding scheme. The `workflow_toml` journal field keeps
+naming the resolved committed path, never the materialized copy. Measured
+2026-10-26 with the petri Fabro client: two byte-identical copies of a working
+materialized workflow directory, named `wf-plain` and `wf-dotted.6`, returned
+`Validation: OK` and `workflow not found` respectively under `fabro validate`,
+and every work item whose id contains a dot, which includes every dotted plan
+child, failed at `fabro-run` before any run existed. Scenario 250 in
+`scenarios.md` exercises this paragraph.
+
+**The materialized workflow.toml stays inside the engine's size limit.** The engine refuses a workflow file larger than 524,288 bytes, and it refuses it at `fabro-run`, after the Dispatcher has claimed the item. This repository MUST therefore bound the size of the `workflow.toml` the Dispatcher materializes for the reserved `implement-work-item` workflow in two places. First, the `just check` aggregate MUST run the repository check `check-materialized-workflow-toml-size`. That check MUST materialize the bundled `implement-work-item` workflow for a representative dispatch through the same materialization code a real dispatch runs, with the launch overlay and prepare steps included and a goal of exactly 20,480 bytes (above the 16,684-byte goal of the largest measured dispatch, bd-ib-qbtf7s on v0.262.3). It MUST fail when the materialized `workflow.toml` exceeds 471,859 bytes, 90 percent of the engine's limit, printing the measured size, the 471,859-byte threshold and the 524,288-byte limit. It MUST pass otherwise, printing the measured size, so growth is visible before it fails. Second, before the Dispatcher claims the item, every dispatch MUST measure the `workflow.toml` it materialized. When that measurement exceeds 524,288 bytes, the Dispatcher MUST refuse the dispatch before any claim is written and before any Fabro run exists, as a journaled pre-run refusal whose stage names the measured size and the limit. The refusal MUST leave the item in the status it held before the dispatch, with no dispatch claim. The two bounds are independent: the build-time check MUST NOT be read as making the dispatch-time refusal unnecessary, because a dispatch's goal and overlay can exceed what the representative materialization measured. This paragraph governs the reserved workflow and every registered variant, per "A registered variant is the reserved workflow's peer, not its exception" below. Measured 2026-10-30 by petri-factory-on-gmktec: on v0.261.1 the materialized workflow.toml reached 524,287 bytes for livespec-dev-tooling-2zii7l, and bd-ib-dsprir, at 526,975 bytes, was refused at fabro-run after its claim. Scenario 279 in `scenarios.md` exercises this paragraph.
 
 **Named workflow variants.** A dispatch target MAY declare
 `dispatcher.workflows`, a table mapping a variant name to a directory path
@@ -3090,20 +3395,7 @@ sandbox image the Dispatcher selects MUST publish its capabilities as
 the file `/etc/livespec/sandbox-capabilities`, one lowercase snake_case
 name per line. A governed repository MAY mirror the list as the
 committed `dispatcher.sandbox_capabilities` array, so that the filing
-and approve displays can show it without a sandbox. The published file
-is the authority: where it exists the gate MUST read the capability set
-from it, and MUST report a mirrored name the image does not publish as a
-configuration mismatch in its own output, which the Dispatcher MUST
-journal; a configuration mismatch is not a finding against the item and
-MUST NOT fail the gate. Where the image publishes no capability file the
-gate MUST use the committed mirror when present. Where neither exists
-the capability set is UNKNOWN: the gate MUST NOT raise a
-missing-capability finding, and MUST report `sandbox-capabilities:
-unpublished` in its output. The gate MUST take the capability set from
-these two sources and MUST NOT infer capability from the item's own
-prose. The fleet sandbox image MUST publish the file before the gate's
-missing-capability duty takes effect for a repository; that image change
-is sequenced ahead of the gate change. Scenario 139 in `scenarios.md`
+and approve displays can show it without a sandbox. The committed `dispatcher.sandbox_capabilities` array is the GRADING SET. Every taking of the Definition-of-Done judgement (§"Effective acceptance criteria" → "One rubric, one subject"), the `dod_gate` node included, MUST grade proof-mode feasibility against that array and against nothing else, because it is the one source every taking can read. The published file is the authority for what the image provides. Where the file exists, the `dod_gate` node MUST compare it with the grading set and MUST report in its own output, as a configuration mismatch, each name the array lists that the image does not publish and each name the image publishes that the array omits. The Dispatcher MUST journal every mismatch. A configuration mismatch is not a finding against the item and MUST NOT fail the gate. An assertion graded feasible on a listed name the image does not publish meets the missing-capability ending of `proof_capture`, which names that capability. Where the repository commits no array, the capability set is UNKNOWN for every taking, whether or not the image publishes a file: no taking may raise a missing-capability finding, and each MUST report `sandbox-capabilities: unpublished` in its output. Every taking MUST take the grading set from the committed array alone and MUST NOT infer capability from the item's own prose. The fleet sandbox image MUST publish the file, because it is the authority the node compares the grading set against. A repository MUST NOT list a name in its array that the image it dispatches to does not publish, and the journaled mismatch is how a violation is found. The committed array MUST be accompanied by the committed key `dispatcher.sandbox_capabilities_measured_image`, a string naming the sandbox image whose published capability file the array was measured from, in the form the image source resolves it (an image reference, or its digest). The key is read only beside an array, and it is not API-configurable, for the reason the array is not. The mirror tracks the image the committed configuration resolves for a dispatch that names no catalog environment, by the resolution §"Sandbox image source" and §"Sandbox image enumeration" define: `dispatcher.fabro_sandbox_image` when set, else the repository's own committed `implement-work-item` workflow pin, else the pin of the executing build's bundled workflow. It never tracks a catalog environment. When the image a dispatch resolves differs from the recorded measured image, the filing, groom and approve displays and every host taking of the Definition-of-Done judgement MUST report a STALE-MIRROR configuration mismatch that names both images. When the repository records no measured image, or the recorded or resolved image cannot be established, they MUST report an UNVERIFIABLE-MIRROR configuration mismatch that names its cause, and MUST NOT treat the array as verified. A dispatch whose resolved factory declares a catalog environment launches an image no committed file can name, so its comparison is not made: it is reported as UNVERIFIABLE-MIRROR with the cause `catalog_environment` and the environment id, and is never reported as stale. A stale-mirror or unverifiable-mirror report is a configuration mismatch in the sense above: it is not a finding against the item, it MUST NOT fail the `dod_gate` node or refuse an admission or a dispatch, the Dispatcher MUST journal it, and the grading set remains the committed array alone. The repository check `check-sandbox-capabilities-measured-image` MUST fail, naming both images, when a committed array's recorded measured image differs from the image the committed configuration resolves by that same resolution; a repository that records no measured image, and a resolution that is a catalog environment, pass the check with the unverifiable cause reported. Scenario 276 in `scenarios.md` exercises these sentences. Scenario 139 in `scenarios.md`
 exercises this paragraph and the gate's capability duties below.
 
 **The stages.** The reserved `implement-work-item` workflow MUST carry three
@@ -3117,9 +3409,17 @@ entered only from a green janitor outcome and exiting to `proof_capture`, which
 MUST push the item's publish branch and, when no pull request for that branch
 exists, open one as a DRAFT; it MUST be idempotent across janitor re-entries
 and MUST fail closed to `needs_human` when origin cannot be reached; a refresh
-that conflicts, or a refreshed head that the repository's gate rejects, MUST
+that conflicts, a commit of the refresh that the repository's commit hook
+refuses, or a refreshed head that the repository's gate rejects, MUST
 instead take the refresh-repair route of "Refresh repair" below while that
-route's budget lasts. It MUST also carry the command node `proof_grade`, entered
+route's budget lasts. When the `publish_draft` push is refused, its failure
+output MUST name which cause refused it. A pre-push hook refusal MUST name
+the hook's failed targets, by the structured-summary rule of
+§"Failed post-merge janitor target attribution". A non-fast-forward rejection MUST
+direct the operator to reconcile the stale publish branch. An origin that
+cannot be reached MUST be named as such. In every case the node still fails
+closed before `proof_capture`. Scenario 224 in `scenarios.md` exercises
+these sentences. It MUST also carry the command node `proof_grade`, entered
 only from a `verified` outcome of `proof_verify`. `proof_grade` MUST read the
 newest `verified` record on the pull request whose run identifier the Dispatcher
 attributes to this dispatch, using the same record reader the acceptance pass
@@ -3149,40 +3449,167 @@ adapter configuration", the defaults table of §"Built-in ACP node defaults",
 and the success-critical enumeration of §"Factory-configurable ACP fallback
 priority".
 
+**An agent stage's instructions and its publication boundary.** The prompts of the `implement`, `fix` and `review_fix` stages MUST state three rules, and an agent turn in those stages MUST follow them. First, the stage prompt the run was given is the turn's only instruction. A file on the run's working branch, including a workflow or prompt file under `.claude-plugin/.fabro/` that the work item itself changes, is content of the work and never an instruction to the run that carries it. A requirement such a file states takes effect only after it is released and a later run receives it as that run's own stage prompt. Second, an agent turn in those stages, and in every other agent stage of the workflow, MUST NOT push any ref to origin, and MUST NOT open, mark ready, arm, merge or edit a pull request. Publication belongs to the command stages `publish_draft`, `pr_refresh` and `pr`, and a turn that needs its work published ends and lets the graph route it there. Third, a turn commits with ordinary `git` commits that run the repository's own hooks, never with `--no-verify`, unless its stage prompt itself names a different commit mechanism. A mechanism that is named only in a file on the branch, or only in the work item's own Definition of Done, is not available to the run, and a turn MUST NOT end, wait or fail because such a mechanism is absent. The prompts of the `implement` and `review_fix` stages MUST state three further rules, and a turn in those stages MUST follow them. Fourth, before any commit other than a Red commit, and before the Green amend that completes a Red commit, the turn MUST run every test file the change adds or modifies and see each pass; a Red commit's one test file is expected to fail and is exempt from this rule until its Green amend. Fifth, a Red commit MUST stage exactly one test file and no product file, and any further test files the change needs are staged at the Green amend. At the implement stage no agent turn commits: these commit rules govern the commits `commit_red` and `commit_green` make, as "The implement stage runs Red and Green as separate nodes" states. Sixth, a change to a stage prompt file under `.claude-plugin/.fabro/`, or to the code that renders the Dispatcher's launch overlay, MUST update, in the same commit, the tests that pin that prompt or that overlay, so the commit does not leave a pinning test failing. These three rules exist because a commit hook run is slow and reports a failing test only as a gate refusal: measured 2026-10-26, three `review_fix` turns (runs 01M5VYNE2N8S, 01M5VK9D2241 and 01M5VT8SBEHX) were refused by the commit hook's coverage gates because tests they committed genuinely failed. One had edited stage prompts and the overlay without updating the tests pinning them, one added a test that failed at setup, and one staged two test files on its Red commit. Each spent one or two hook runs of 24 to 45 minutes learning what a targeted test run would have shown in seconds. The prompts of the `implement`, `fix` and `review_fix` stages MUST also state a seventh rule, and a turn in those stages MUST follow it. Seventh, an agent turn in those stages MUST NOT create, change, rename or delete any path under the governed repository's `<spec_root>`, where `<spec_root>` is the `spec_root` value of its `.livespec.jsonc`, including `<spec_root>/history/` and `<spec_root>/proposed_changes/`. A change to the specification reaches the repository only through that repository's own propose-change and revise operations and the independent review they require, never as a by-product of an implementation run, and an implementation whose Definition of Done appears to need a spec change MUST end the turn through the needs-human protocol naming that need rather than editing the spec. The rule is enforced at publication: before it pushes, `publish_draft` MUST compute the paths the run's own commits change, relative to the merge base of its refreshed head with the default branch, so that a spec change that arrived through the default branch is never counted, and, when any of them is under `<spec_root>`, MUST refuse to publish, write a needs-human reason that names every such path and the remedy (drop those changes and file the spec change through propose-change), and fail closed before any push or pull request, exactly as it refuses run-owned files under `.github/workflows/`. The two refusals are independent, and a run that changed paths of both kinds MUST have both named. The rule governs the runs of an implement-kind workflow variant only. The spec-side operations that write `<spec_root>` on the host (propose-change, revise, critique, prune-history, the drift run of each Dispatcher reconcile pass, which files spec-side proposed changes, and the in-session `implement` skill's `capture-spec-drift` handoff) are not factory runs and are unaffected. The repository's heading-coverage map is not under `<spec_root>` and is unaffected. Scenario 202 in `scenarios.md` exercises the first three rules and the seventh rule of this paragraph, and Scenario 249 exercises the fourth, fifth and sixth.
+
+**Publication is mechanically confined to the scripted publication stages.** The second rule above MUST NOT rest on prompt prose alone; an agent stage MUST be unable to publish. The publication actions are: a push of any ref to origin; and opening a pull request, marking one ready, arming or disarming its auto-merge, merging it, or editing it, by any route, `gh`, the forge's REST or GraphQL API, or `git` included. In every agent stage of the implement-work-item workflow, which is every node whose turn an agent takes, the agent's environment, files and processes MUST hold no credential that can perform a publication action, and no credential or key from which one can be minted: neither the run's forge token nor the GitHub App credentials that mint it. Publication-capable credentials MUST be available only to the command stages `publish_draft`, `pr_refresh` and `pr`, which keep every publication action they are specified to take, and within those stages only to their own publication steps. Repository-controlled code that those stages run, their hooks and gates included, MUST run without the credential: it MUST reach a push only through a credential helper that the hooks and gates cannot read, never through an environment variable or a file they can read. The publication tooling that holds the credential MUST be the Dispatcher-materialized sandbox tooling outside the run's working tree, which no agent stage can modify, so that nothing an agent writes can act with the credential when a publication stage next runs. The forge writes an agent stage's own contract requires MUST go through a trusted broker that runs outside the agent's process tree and holds the credential itself. Those writes are a new comment on the run's own pull request that the stage's contract requires (a Proof of Done record posted through the posting primitive of "Proof of Done record", and the `review` stage's findings record, included) and an upload of proof assets through the proof asset store. The broker MUST perform only those writes, only for the run's own pull request and proof asset store, and MUST take the stage it serves from the workflow that launched the node, never from anything the agent can set. Reading the forge stays allowed. A command node is not an agent stage. A command node that preserves a run's work, such as the needs-human preservation step, therefore keeps the credentials its own contract requires. In addition, the sandbox `gh` wrapper and `push_origin` helper MUST refuse a publication action from an agent stage before it reaches the forge, exiting non-zero and printing `LIVESPEC_AGENT_PUBLICATION_DENIED` with the stage and the refused action, so that the attempt is named rather than surfacing as an authentication failure. Measured 2026-10-26: on run 01M5X2C5FJKSQW84SFG81E6885 (bd-ib-svm3fe) the `implement` agent ran `gh pr create` and then `gh pr merge --rebase` itself with the run-wide token, merging pull request 3731 partway through the run; on bd-ib-q156 a late agent stage ran `gh pr ready` and a merge of pull request 2633. Scenario 202 in `scenarios.md` exercises this paragraph.
+
+**The implement stage runs Red and Green as separate nodes.** The implement-work-item workflow MUST realize the implement stage as four nodes in this order: a `red` ACP node, a `commit_red` command node, a `green` ACP node and a `commit_green` command node. The `red` prompt MUST direct the agent to write the failing test the work item's Definition of Done needs, to run only that test, and to make no commit. The `red` prompt MUST also direct the agent to create, change or delete no product file, because the implementation belongs to the `green` turn. A product file is a path that the repository's product-path classification counts as product, the same classification that "a Red commit MUST stage exactly one test file and no product file" relies on. Before it stages anything, `commit_red` MUST compare the working tree and the index against the dispatch base, with engine checkpoint commits already folded. When any product file differs, `commit_red` MUST refuse without committing and append a handoff section that names each such path. That refusal re-enters `red` exactly as any other `commit_red` refusal does, and the re-entered turn starts from the dispatch base. The `green` prompt MUST direct the agent to make that test pass by changing implementation files, to run only the tests its change touches, to make no commit, and never to change the Red test file. Before it commits, `commit_red` MUST fold every commit above the dispatch base that the engine made at a node boundary back into the index; it MUST then stage the one Red test file that the `red` section of the handoff file names, and no product file, and run `git commit` with the repository's commit hooks running exactly as for a foreground commit, so that its Red commit sits directly on the dispatch base. Before it commits, `commit_green` MUST fold every commit above the Red commit that the engine made at a node boundary back into the index, so that its amend lands on the Red commit; it MUST then stage the implementation and run `git commit --amend` with the repository's commit hooks running exactly as for a foreground commit. Neither command node may pass `--no-verify`, set any variable that skips or relaxes a check, or change the severity of any hook. When `commit_red` refuses, the run MUST re-enter `red`; when `commit_green` refuses, the run MUST re-enter `green`; each re-entry is bounded by its ACP node's `max_visits`. A `green` turn that finds the Red test wrong MUST be able to end with a declared test-wrong outcome that routes the run back to `red`, bounded by the `red` node's `max_visits`. Before the re-entered `red` turn starts, the run MUST return the branch and the working tree to the dispatch base, leaving only the handoff file to carry what the earlier laps learned, so that the branch never carries more than one Red commit above the dispatch base and the Red commit `commit_green` amends is always the one the latest `commit_red` made. When a re-entry or a test-wrong route finds its bound exhausted, the stage MUST end with a failed outcome and the run takes the implement stage's failure edge; after an exhausted test-wrong route the cause MUST carry the latest `red` and `green` sections of the handoff file. A `red` turn that finds the Definition of Done already satisfied on the dispatch base, so that no failing test can be written, MUST be able to end with a declared already-satisfied outcome instead of a Red test, and that outcome is governed by "An implement turn that reports completion with no diff ends as already satisfied"; a `red` turn that ends with neither a Red test nor that declaration leaves `commit_red` nothing to commit, which is a refusal. No agent turn of the implement stage makes a commit, so no agent turn of the implement stage waits on a commit hook. The stage name `implement` continues to name the implement stage as a whole: wherever this specification addresses the `implement` node or stage by name — the ACP nodes a registered variant declares, the adapter resolution of §"ACP node adapter configuration" and its built-in defaults, the `dispatcher.node_timeouts.implement` key, the `loads` declaration, the success-critical node set, the stage prompt rules of "An agent stage's instructions and its publication boundary", the stages a resumed run never visits, and a rider's stage names — it addresses the `red` and `green` nodes alike, each resolving the value separately for its own turn. The rules of that paragraph on how a turn commits govern no `red` or `green` turn, because neither makes a commit, and `commit_red` staging exactly the one Red test file meets its rule on what a Red commit stages. `commit_red` and `commit_green` are command nodes and resolve no adapter; their timeouts are keyed by their own names under §"ACP node timeouts". Scenario 285 in `scenarios.md` exercises this paragraph and the next.
+
+**The implement nodes hand off through one append-only file.** The `red`, `commit_red`, `green` and `commit_green` nodes MUST pass context through a single handoff file at the git path `livespec-implement-handoff.md` (the path `git rev-parse --git-path livespec-implement-handoff.md` names), which no checkpoint commit can carry into the branch. Each node MUST append a section and MUST NOT rewrite an earlier one. The `red` section MUST name the Red test file, the Definition of Done assertion it proves, the command that ran it and that run's failure output, what the test verifies and does not verify, and the code locations the Red turn identified for the change. A command node's section MUST carry its exit status and, when it refused, the hook's failed target names and the last 80 lines of the hook's own output, taken from the recorded output and never from an agent's reply. A `green` section MUST state what changed and which tests ran, or the test-wrong declaration and its reason. Each ACP node of the implement stage MUST start a fresh agent session whose carried context is the work item, its Definition of Done and the handoff file, never the transcript of another node.
+
+**An implement turn that ends incomplete does not succeed.** The `green` node's outcome MUST be decided from a structured completion field in the turn's final output, not from the turn merely ending. The `green` prompt MUST direct the turn to end its final reply with that field, stating whether the work item's Definition of Done is complete in the tree the turn leaves for `commit_green` to commit. A `green` turn whose completion field reports the work incomplete re-enters `green` while its `max_visits` remains, with the handoff file carrying the previous turn's section. When that budget is exhausted, the stage MUST end with a failed outcome, so the run takes the same failure edge as any other `green` failure, and the dispatch outcome detail MUST carry its cause, naming partial progress. A turn whose final output carries no completion field MUST be treated as incomplete. A turn whose field reports the work complete keeps the succeeded outcome and routes to `commit_green`. The `fix` and `review_fix` stages keep the commit-run wait and refused-attempt rules of "A commit leg completes past one tool call" unchanged, as follows. A `fix` or `review_fix` turn's latest commit attempt that did not go through the detached commit runner counts as refused when the turn left changes staged and the repository's commit hook, run by the run itself over those staged changes, exits non-zero naming at least one failed target; otherwise that attempt is not refused. Except when the turn is ended by its node's resolved timeout, before a `fix` or `review_fix` stage's outcome is decided, the run MUST wait until every commit run the turn started through the detached commit runner of "A commit leg completes past one tool call" has reached its own terminal state. That wait MUST NOT consume the node's retry budget or count as a turn, and its mechanism is left to the implementation; it does not relax the agent's obligation to make every commit run terminal or stopped before its final message, and a node-timeout cut remains governed by "A commit run outlives a node-timeout cut". A latest commit attempt made through the runner counts as refused when its commit run reached `failed` and that run's recorded output shows the repository's commit hook ran and named at least one failed target; that run's failed target names and hook error lines MUST then be taken from the commit run's full recorded output, never only from the final lines its terminal report carries. Scenario 204 in `scenarios.md` exercises this paragraph.
+
+**An implement turn sees its commit gate's verdict before it ends.** The `red` and `green` prompts MUST direct the agent, before it ends its turn, to run the gate preview over the changes its turn leaves, to fix every failed target the preview names that the turn can fix within its own scope, and to run the preview again after each fix. The gate preview is a program the Dispatcher materializes into the sandbox beside the commit runner. It MUST run the same checks the repository's commit hooks would run when the turn's commit node commits, over exactly the paths that commit node would stage, and MUST NOT create a commit, move `HEAD` or change the index the commit node will read. It MUST report its exit status and the failed target names, read from the checks' own output. It MUST NOT pass `--no-verify`, set any variable that skips or relaxes a check, or change the severity of any check. A preview run MUST NOT count as a commit attempt and MUST NOT consume any re-entry budget. Each `red` and `green` handoff section MUST record the exit status and failed target names of the turn's last preview run, or state that the turn ran no preview and why. When the preview program is absent from the sandbox, the turn MUST state that in its handoff section and end its turn as it otherwise would; the commit node's own hook run stays the only verdict that decides a commit. Scenario 285 in `scenarios.md` exercises this paragraph.
+
+**A purely mechanical commit refusal has its own re-entry budget.** A repository MAY declare `dispatcher.implement.mechanical_targets`, a list of commit-hook target names whose failures an implement turn can repair mechanically, such as lint, formatting, keyword-only-argument, file-size and per-file-coverage targets, and `dispatcher.implement.mechanical_reentries`, a non-negative integer that defaults to 2 when the list is declared and to 0 when it is not. When `commit_red` or `commit_green` refuses and every failed target name its recorded hook output reports belongs to the declared list, the run MUST re-enter that node's ACP node without spending the re-entry that its `max_visits` bounds, while mechanical re-entries remain for that node in the run. A refusal that names any target outside the list, or whose recorded output names no failed target, MUST spend the ordinary re-entry exactly as before. The handoff section of a commit node whose refusal took a mechanical re-entry MUST say so and MUST name the failed targets and the mechanical re-entries remaining. When the mechanical re-entries are spent, a further purely mechanical refusal MUST spend the ordinary re-entry, and when that is also spent the stage MUST end with a failed outcome whose cause names both budgets as exhausted. The engine visit bound the workflow declares for each re-entered node MUST admit both budgets, so that neither budget is cut short by that bound. Scenario 285 in `scenarios.md` exercises this paragraph.
+
+**An implement turn that reports completion with no diff ends as already satisfied.** When the `red` turn declares the already-satisfied outcome and the run's tree is unchanged against the dispatch base, the run MUST NOT end at the generic dead-implementer truncation. It MUST end with an already-satisfied outcome that names the item and the dispatch base, and it MUST journal that outcome distinctly from a dead-implementer truncation. After that outcome the Dispatcher MUST release the run's factory claim and MUST rest the item in `acceptance`, where `needs-attention` surfaces it with the route by which its Proof of Done can still be obtained: `reconcile-merged` when a merged pull request for the item exists, and otherwise a proof-only run against the dispatch base. A `red` turn that leaves the tree unchanged against the dispatch base without that declaration still ends at `dead_implementer` with today's truncation record once the `red` node's `max_visits` is exhausted.
+
 **Scripted publication and proof-head integrity.** `pr_refresh` and `pr`
 MUST be command stages with their own resolved timeouts, not agent turns.
 `pr_refresh` MUST fetch the authoritative default branch and query the publish
 branch on origin. It MUST establish the run's previously published head from
 its recorded publication or validated resume provenance, never from a stale
-local tracking ref. A missing or unobservable remote, or a foreign or
+local tracking ref. Except as the next paragraph provides for a pull request
+that has already merged, a missing or unobservable remote, or a foreign or
 unexpectedly changed publish head, MUST fail closed with a named cause and
-recovery artifact pointer. A conflicted rebase or merge, and a refreshed head
+recovery artifact pointer. A conflicted rebase or merge, a commit of the
+refresh that the repository's commit hook refuses, and a refreshed head
 that the repository-declared gate rejects, MUST take the refresh-repair route of
 "Refresh repair" below while its budget lasts, and MUST fail closed with a named
 cause and recovery artifact pointer once that budget is spent. A previously completed refresh may be
 recognized idempotently from durable run provenance and matching remote state.
+A publish head on origin that differs from the run's previously published head
+is neither foreign nor unexpectedly changed when it descends from that head and
+every commit it adds is an engine checkpoint commit of this run that changes no
+tree, its message naming this run's id. `pr_refresh` MUST then take that
+observed head as the recorded remote head of the run's publish branch for every
+lease this section requires, and MUST treat the added commits as the run's own
+empty commits under the unchanged-head rule below. A head that adds any other
+commit, or that does not descend from the run's previously published head,
+remains foreign. Measured 2026-10-27 on run 01M5XFBSKGY0 (bd-ib-qksrl6): after
+`pr_refresh` republished at 7e89feeb and routed back for reproof, the engine
+pushed two empty checkpoint commits of the same run onto origin's publish
+branch, and the next `pr_refresh` failed closed on that head as foreign.
+Scenario 226 in `scenarios.md` exercises this sentence.
+
+**A pull request merged before its refresh.** When `pr_refresh`'s first query
+of the run's own publish branch on origin, made before it rebases, pushes or
+disarms anything, finds that branch absent, it MUST read the run's pull request
+before it decides the remote is missing. A branch found absent after this visit
+pushed, including the re-read after a rejected push, is outside this paragraph
+and keeps the cause the rest of this section names for it. When the forge reports that pull request
+MERGED with a non-null merge commit, the publication is finished, and
+`pr_refresh` MUST take the merged-reconcile ending instead of failing closed.
+On that ending `pr_refresh` MUST NOT fetch-and-rebase, push, disarm, re-prove or
+re-arm, and the run MUST end successfully without entering `pr`, so the
+Dispatcher observes the merge, runs the post-merge janitor and enters acceptance
+exactly as it does for a merge its merge wait observed. The ending MUST record,
+in the run's publication state and in the dispatch outcome detail, the pull
+request number, the merge commit, the pull request's merged head, the head named
+by the latest `verified` or `carried_forward` record of this run or that no such
+record exists, and whether those two heads are equal. The ending MUST NOT write
+a `verified` or `carried_forward` record for the merged head. When the merged
+head is not the head the latest `verified` or `carried_forward` record of this
+run names, or no such record exists, the acceptance pass's proof evidence leg
+MUST judge every `factory_captured` assertion UNOBSERVED, yielding
+NEEDS_ATTENTION, unless a `verified` record taken on the merged head, or a
+`carried_forward` record naming the merged head, lists the assertion as
+reproduced; a `verified` record taken on any other head MUST NOT pass a
+`factory_captured` assertion for the merged head. The human-attested and
+host-captured legs keep their existing rules. When the publish branch
+is absent and the pull request is not MERGED, the forge reports a null merge
+commit, or the pull request's state cannot be read, `pr_refresh` MUST fail closed
+as an unobservable remote with a named cause and recovery artifact pointer. A
+foreign or unexpectedly changed publish head MUST fail closed whatever the pull
+request's state. Measured on run 01M51D4RYHCB, and again on run 01M5W2YHVAMB on
+2026-10-26 after pull request 2633 auto-merged at 15:51:25Z and the forge
+deleted its branch, `pr_refresh` failed closed on the deleted branch, and both
+runs ended at `needs_human` for work that had landed. Scenario 248 in
+`scenarios.md` exercises this paragraph.
+
+**A publication that already landed is finished at publish_draft.** `publish_draft`, after its refresh and before it pushes or opens a pull request, MUST check whether the item's publication has already landed, and MUST make the same check before it fails when the forge refuses pull-request creation because the branch has no commits beyond the default branch. It has landed when all of these hold. First, the forge reports a pull request as MERGED with a non-null merge commit. Second, the Dispatcher attributes that pull request to a dispatch of this item, an earlier dispatch included, because the item's dispatch records name it; a matching branch name alone does not establish that. Third, its base is the default branch, and its merge commit is contained in the default branch's tip as read from origin at the check. Fourth, the run's head adds no change to that tip, that is, its diff against the tip is empty. When it has landed, the publication is finished: `publish_draft` MUST NOT push, open a pull request or route to repair, and the run MUST take the merged-reconcile ending of the preceding paragraph, with that paragraph's recording and its rule that the ending writes no `verified` or `carried_forward` record. The acceptance pass then judges the merged head by the proof evidence leg, so a record of an earlier dispatch of the item that is bound or matched to the item and applies to the merged head counts. In every other case `publish_draft` keeps its existing behaviour. These include a run whose head adds a change to that tip, a run with no attributed merged pull request, a merged pull request into another base, and a state the check cannot read. This paragraph changes no other stage. Measured 2026-10-26 on bd-ib-svm3fe run 01M5X2C5FJKSQW84SFG81E6885: the item's change had merged at 22:30:05Z as pull request 3731 from an earlier run's preserved work, and the forge had deleted its branch. The run's `publish_draft` passed the full pre-push gate in 835 seconds, pushed the branch anew, and then failed on pull-request creation with "No commits between master and feat/bd-ib-svm3fe". `refresh_repair` then found no repair brief, and the run ended at `needs_human` with no question asked, for work already on the default branch. Scenario 256 in `scenarios.md` exercises this paragraph.
 
 When the default branch has advanced beyond the current base, `pr_refresh` MUST
-rebase, run the existing repository-declared `sandbox_check_suite` as a
-foreground command with its own timeout, and push only after that gate passes. Before it rebases, `pr_refresh` MUST read whether the run's pull request carries an auto-merge request and, when it does, MUST disarm it. When the request cannot be read or cannot be disarmed, `pr_refresh` MUST fail closed naming that measurement or action, before any rebase or push. Within a run, only `pr` arms auto-merge, and only for a head named by the latest `verified` or `carried_forward` record of this run, so a disarmed pull request stays unarmed until `pr` re-arms it. The one arming outside a run is the host-side hold release of §"The per-item merge hold". That release MUST NOT arm while a run of the item is live, and it MUST arm only a pull request whose current head is named by the latest `verified` or `carried_forward` record of the item's latest run; otherwise it MUST refuse, naming the measurement that failed, and leave the pull request unarmed.
+rebase, run the existing repository-declared `sandbox_check_suite` and then,
+when the repository declares one, `sandbox_merge_gate_suite` (with
+`LIVESPEC_MERGE_GATE_BASE` naming the default-branch commit it just
+refreshed onto), each as a foreground command with its own timeout, and
+push only after both pass; a failure of either is a refreshed head the
+repository-declared gate rejects. Before it rebases, `pr_refresh` MUST read whether the run's pull request carries an auto-merge request and, when it does, MUST disarm it. When the request cannot be read or cannot be disarmed, `pr_refresh` MUST fail closed naming that measurement or action, before any rebase or push. Within a run, only `pr` arms auto-merge, and only for a head named by the latest `verified` or `carried_forward` record of this run, so a disarmed pull request stays unarmed until `pr` re-arms it. The one arming outside a run is the host-side hold release of §"The per-item merge hold". That release MUST NOT arm while a run of the item is live, and it MUST arm only a pull request whose current head is named by the latest `verified` or `carried_forward` record of the item's latest run; otherwise it MUST refuse, naming the measurement that failed, and leave the pull request unarmed.
 A rewrite MUST use an explicit lease against the recorded remote head of this
 run's own publish branch. Hooks MUST run normally. It MUST NOT use bare force,
-`--no-verify`, or rewrite another ref. A changed head MUST take the decision of
+`--no-verify`, or rewrite another ref.
+When the forge rejects that leased push, `pr_refresh` MUST read origin's
+publish branch once more before it names a cause, because a rejection is the
+forge's report about the write and not a measurement of where the ref now
+points. Here the leased head is the recorded remote head the lease was taken
+against, and the pushed head is the refreshed head the push carried. When
+origin's publish branch then points at the exact pushed head, the write
+landed although the forge reported an error, and `pr_refresh` MUST fail
+closed with the named cause `LIVESPEC_PR_REFRESH_PUSH_LANDED_ERRORED`, whose
+detail MUST name the forge's error text, the pushed head, and the head of the
+run's pull request ref (`refs/pull/<number>/head`) as origin reports it, and
+MUST state that the publish branch and the pull request may disagree. In that
+case `pr_refresh` MUST NOT report `LIVESPEC_PR_REFRESH_LEASE_FAILED` and MUST
+NOT state that the remote moved or that another writer pushed. When origin's
+publish branch then points at neither the leased head nor the pushed head,
+`pr_refresh` MUST report `LIVESPEC_PR_REFRESH_LEASE_FAILED` and route to
+`needs_human` exactly as it does for a lease failure today. When origin's
+publish branch points at the leased head, the write did not land, and
+`pr_refresh` MUST keep its existing lease-failure cause and routing; this
+paragraph does not change that case. When origin's publish branch cannot be
+read after the rejection, `pr_refresh` MUST fail closed with the named cause
+`LIVESPEC_PR_REFRESH_PUSH_OUTCOME_UNOBSERVABLE`, stating that whether the
+write landed cannot be established, and MUST NOT report
+`LIVESPEC_PR_REFRESH_LEASE_FAILED`. A head of the pull request ref that
+cannot be read MUST be named as unobservable in the landed-but-errored detail
+and MUST NOT change which of these causes is reported. Each of these causes
+MUST carry the recovery artifact pointer this paragraph already requires.
+Scenario 184 in `scenarios.md` exercises these sentences. A changed head MUST take the decision of
 "Proof carry-forward across a refresh" below: on `reproof_required` the run
 MUST return to `proof_capture`, then `review` and `proof_verify`, and on
 `carried_forward` it MUST proceed to `pr`; in either case only a proof record
 naming the new head — a `verified` record taken on it, or a `carried_forward`
 record carrying an earlier `verified` record to it — can reach final
-publication. Repeated default-branch movement is bounded to three refreshes per
+publication. Repeated default-branch movement is bounded to three counted refreshes per
 run, after which the run terminates with an explicit non-convergence cause and
-preserved work. An unchanged head proceeds to `pr`. All touched nodes MUST
+preserved work. A counted refresh is a `pr_refresh` refresh onto an advanced
+default branch that conflicts or whose refreshed head fails the
+repository-declared gate, or any refresh entered through `pr_route` on a
+forge-reported conflict after the run's first clean refresh, which counts once
+at that visit even when it applies cleanly. Any other clean refresh, one whose
+rebase applied without conflict or with only conflicts that "Declared record
+files merge without a repair round" resolved, whose refreshed head passed that
+gate and whose leased push succeeded, does not count toward that bound. A run refreshes cleanly onto an
+advanced default branch at most once: after its first clean `pr_refresh`
+refresh onto an advanced default branch, a later `pr_refresh` visit of the run
+MUST NOT refresh onto the default branch again, except a visit entered through
+`pr_route` on a refresh-route marker that `pr` recorded because the forge
+reported the pull request in conflict with the default branch, and MUST
+proceed to `pr` with the run's published head, which only a `verified` or
+`carried_forward` record naming it lets reach the arming. Default-branch
+movement after that clean refresh is left to the merge path, including
+"Armed pull request overtaken by the default branch". An unchanged head proceeds to `pr`, except that when the
+default branch is already contained in the published head and that head
+carries any of the run's own empty commits (commits the run itself created
+that change no tree, such as engine checkpoint commits), `pr_refresh` MUST
+republish the head without them, under the explicit lease against the
+recorded remote head of the run's publish branch that this paragraph
+requires. A rewrite whose only change is dropping empty commits, over a
+tree identical to the proof-verified tree, MUST take the `carried_forward`
+decision of "Proof carry-forward across a refresh" and MUST NOT re-prove. A
+head carrying none of the run's empty commits MUST NOT be republished.
+Scenario 226 in `scenarios.md` exercises this sentence. All touched nodes MUST
 retain an unconditional outgoing edge accepted by the supported engine, and
 command nonzero exits MUST take their failure edge.
 
 **Refresh repair.** When `publish_draft` or `pr_refresh` cannot refresh the run
-onto the advanced default branch — because the rebase or merge conflicts, or
-because the refreshed head fails the repository-declared gate that runs before
-or during the publishing push — the stage MUST restore its pre-refresh head,
+onto the advanced default branch — because the rebase or merge conflicts,
+because the repository's commit hook refuses a commit the refresh itself makes
+(the merge commit of a merge refresh, or a commit a rebase replays) while no
+path is conflicted, or because the refreshed head fails the
+repository-declared gate that runs before or during the publishing push — the stage MUST restore its pre-refresh head,
 MUST record a refresh-repair brief, and MUST route to the existing `fix` agent
 node. The pre-refresh head is the head the stage held when it began that
 refresh: for `publish_draft`, the head the most recent `janitor` passed; for
@@ -3194,10 +3621,20 @@ pre-refresh head, so it applies equally when the refresh itself completed and
 only the gate rejected the result. The brief MUST name the stage, the
 pre-refresh head, the default-branch commit the refresh targeted, and either
 each conflicted path together with the run commit that was being applied, or
-each failed gate target. The stage MUST distinguish a refreshed head that the
+each failed gate target, or, for a commit-hook refusal, each target the hook
+names as failed together with the last 80 lines of the hook's own output.
+When the conflicted paths include a generated record file, the brief MUST carry
+one line `regenerate: <path> via <generator argv>` per such file. The `fix` turn
+MUST resolve every other conflicted path first and MUST then resolve each named
+file by running its generator, never by editing its text. When a failed gate
+target's failure names a generated record file, the brief MUST carry the same
+`regenerate:` line for that file beside the failed target. The stage MUST distinguish a refreshed head that the
 gate rejected from a push that origin refused or could not reach, and from an
-authentication failure; only a conflict or a gate rejection takes this route,
-and every other cause keeps its existing fail-closed behaviour. The `fix` turn
+authentication failure; only a conflict, a commit-hook refusal of the refresh's own
+commit, or a gate rejection takes this route, and every other cause keeps its
+existing fail-closed behaviour. A commit-hook refusal of the refresh's own
+commit MUST NOT end the run at `needs_human` with
+`LIVESPEC_REFRESH_REPAIR_ABSENT`. The `fix` turn
 integrates the default branch into the run's work, resolving the conflict or
 the gate failure inside its own turn. Hooks MUST run normally there, and the
 turn MUST NOT use `--no-verify`, bare force, or a rewrite of any ref. After a
@@ -3206,6 +3643,8 @@ refresh-repair round the run re-enters `janitor`, then `publish_draft`, then
 repaired head can reach publication.
 
 **A fix turn runs the check suite once per tree.** This paragraph governs only a `fix` turn that completes successfully and routes to `janitor`, whether it was a fix round or a refresh-repair round. A `fix` turn that ends through the needs-human protocol, by its node's resolved timeout, or by any other failure keeps its existing handling, which this paragraph does not change. A successful `fix` turn MUST leave the run's working branch at a head on which the repository's sandbox check suite passed in full during that turn. A commit whose repository pre-commit hook ran the full check suite to a passing result on the exact tree it committed satisfies that obligation for that tree. The `fix` prompt MUST NOT direct a second run of the suite on that same tree in the same turn, because the `janitor` visit that follows a successful `fix` turn runs the suite again. A hook run that covered only part of the suite, such as a Red commit on the hook's fast path, does not satisfy the obligation. A change to the tree after the last passing full run means the suite MUST be run in full again before a successful turn ends. Scenario 199 in `scenarios.md` exercises this paragraph.
+
+**An implement or review_fix turn's commits run the affected-tests gate.** A commit made by the implement stage's `commit_red` or `commit_green` node, or inside a `review_fix` turn, MUST run, in the repository's commit hook, the affected-tests gate (`just check-changed`) on the change being committed, in place of the full check aggregate. When the change touches a file whose affected tests that gate cannot determine, such as a shared configuration file, the commit hook MUST run the full check aggregate instead. At a Red commit the gate is Red-aware: the staged test MUST fail exactly as the Red-Green commit protocol requires, and no passing test or coverage is demanded of that commit; at the Green amend and every later commit, the scoped tests and their coverage MUST pass. This is a scoped exception to the aggregate selection of the inherited pre-commit step ordering, under which any staged `.py` file routes through the full aggregate: the pre-commit steps and their order are unchanged, and outside these commits that selection is unchanged. The `janitor` stage MUST still run the full check aggregate once per visit on the run's tree before publication. This paragraph does not change the commit hook of a `fix` turn, which keeps the obligation of the preceding paragraph, nor the Red-Green commit protocol's own hook checks, nor the touched-test rules of "An agent stage's instructions and its publication boundary"; a commit made outside a factory turn keeps the repository's full commit hook. Measured 2026-10-26: every commit in these turns paid the full aggregate in its hook, about 24 minutes at two test workers and 12.5 at four, and repeated Green amends on bd-ib-od7v54 run 01M5V5KVG8J7 spent its whole six-hour wall budget in such passes. Scenario 255 in `scenarios.md` exercises this paragraph.
 
 The `publish_draft` visit that follows a refresh-repair round is the visit
 immediately after the `janitor` visit that follows a `fix` visit entered with a
@@ -3232,7 +3671,9 @@ with its existing divergent-prior-run cause and MUST NOT push. A
 `publish_draft` visit that follows no refresh-repair round MUST NOT rewrite the
 publish branch.
 
-**Declared record files merge without a repair round.** A repository MAY declare, in its committed `.livespec.jsonc` under `dispatcher.record_files`, the shared record files that many changes extend independently. Each entry names a repository-relative `path` and a `format`. The format is `json-array` for a file holding one JSON array of objects, and an entry of that format also names `key`, the list of fields whose values identify one object. The format is `markdown-insertions` for a Markdown file. An absent key declares no record files. When the rebase or merge of `publish_draft` or `pr_refresh` conflicts, and every conflicted path is a declared record file, the stage MUST first attempt an entry-wise three-way merge of each conflicted file. It compares the file at the merge base, at the default-branch side and at the run's side. For a `json-array` file, each object is identified by its `key` values. An object that one side added, changed or removed takes that side's result, and an object that both sides left alone stays as it is. The merge is resolvable only when no object was added, changed or removed differently by both sides, and when the merged array parses and holds no two objects with the same key. The merged array keeps the default-branch side's order, followed by the run's added objects in the run's order. For a `markdown-insertions` file, the merge is resolvable only when each conflicting region consists of lines that each side inserted at the same position, with no line of the merge base changed or removed by both sides. The merged region holds the default-branch side's inserted lines followed by the run's inserted lines. When every conflicted file is resolvable, the stage MUST write the merged files, MUST continue the rebase or merge to completion, and MUST then proceed exactly as after a refresh that did not conflict. The repository-declared gate runs on the refreshed head. In `pr_refresh`, a rebase whose only conflicts this paragraph resolved counts as applied without conflict for "Proof carry-forward across a refresh", and the deterministic decision of that paragraph then decides whether the verified proof covers the new head or the run re-proves. Such a merge is not a refresh-repair round and MUST NOT count toward "Refresh-repair accounting". The stage MUST record each file it merged this way, with its format and the number of objects or lines it took from each side, in the run's output for that stage. A conflict in any path that is not a declared record file, a declared file that is not resolvable, or a merged head that the gate rejects takes the refresh-repair route above unchanged, with the pre-refresh head restored. This paragraph changes no ratified behaviour of the Dispatcher's merge wait, including "Armed pull request overtaken by the default branch". Scenario 200 in `scenarios.md` exercises this paragraph.
+**Declared record files merge without a repair round.** A repository MAY declare, in its committed `.livespec.jsonc` under `dispatcher.record_files`, the shared record files that many changes extend independently. Each entry names a repository-relative `path` and a `format`. The format is `json-array` for a file holding one JSON array of objects, and an entry of that format also names `key`, the list of fields whose values identify one object. The format is `markdown-insertions` for a Markdown file. Any entry MAY also name `generator`, a non-empty argv array run from the repository root that rewrites the file at `path` from the repository's tree. A file whose entry names a generator is a GENERATED record file. Its correct content is its generator's output over the tree it sits in, so a conflict in it is never resolved by merging its text, on any route. An absent key declares no record files. When the rebase or merge of `publish_draft` or `pr_refresh` conflicts, and every conflicted path is a declared record file, the stage MUST first attempt an entry-wise three-way merge of each conflicted file. It compares the file at the merge base, at the default-branch side and at the run's side. For a `json-array` file, each object is identified by its `key` values. An object that one side added, changed or removed takes that side's result, and an object that both sides left alone stays as it is. The merge is resolvable only when no object was added, changed or removed differently by both sides, and when the merged array parses and holds no two objects with the same key. The merged array keeps the default-branch side's order, followed by the run's added objects in the run's order. For a `markdown-insertions` file, the merge is resolvable only when each conflicting region consists of lines that each side inserted at the same position, with no line of the merge base changed or removed by both sides. The merged region holds the default-branch side's inserted lines followed by the run's inserted lines. When every conflicted file is resolvable, the stage MUST write the merged files, MUST continue the rebase or merge to completion, and MUST then proceed exactly as after a refresh that did not conflict. A conflicted generated record file is not merged entry by entry. The stage MUST first resolve every other conflicted path by this paragraph, then MUST run the file's generator over that tree and write its output as the resolution. The file is resolvable exactly when the generator exits zero. The stage MUST record each file it resolved this way, with the generator it ran, in the run's output for that stage. The repository-declared gate runs on the refreshed head. In `pr_refresh`, a rebase whose only conflicts this paragraph resolved counts as applied without conflict for "Proof carry-forward across a refresh", and the deterministic decision of that paragraph then decides whether the verified proof covers the new head or the run re-proves. Such a merge is not a refresh-repair round and MUST NOT count toward "Refresh-repair accounting". The stage MUST record each file it merged this way, with its format and the number of objects or lines it took from each side, in the run's output for that stage. A conflict in any path that is not a declared record file, a declared file that is not resolvable, or a merged head that the gate rejects takes the refresh-repair route above unchanged, with the pre-refresh head restored. The Dispatcher's merge wait reads `dispatcher.record_files` only through the record-file arm of "Armed pull request overtaken by the default branch"; this paragraph changes no other behaviour of the merge wait. Scenario 200 in `scenarios.md` exercises this paragraph.
+
+**A refreshed head carries its generated record files as generated.** Before the repository-declared gate runs on a head that `publish_draft` or `pr_refresh` refreshed, by any route, the stage MUST run the generator of every declared generated record file over that head's tree and compare its output with the committed file. A file whose committed bytes differ from its generator's output MUST fail the stage as a failed gate target named `generated-record-file:<path>`, which takes the refresh-repair route with that target in the brief. A head that passes this check therefore carries every row its generator derives from the merged source, including rows the default branch added while the run was in flight.
 
 **Refresh-repair accounting.** A refresh-repair round is counted once, at the
 moment a stage routes to `fix` with a brief. A run MAY take at most two
@@ -3241,9 +3682,9 @@ third refresh would need repair, the stage MUST fail closed to `needs_human`
 with the named cause `refresh-repair-exhausted` and a recovery artifact pointer
 naming that stage's pre-refresh head. A refresh-repair round MUST NOT consume
 `dispatcher.review_fix_cap` or any review-fix round. `pr_refresh`'s
-three-refresh non-convergence bound counts each `pr_refresh` visit that
-refreshes onto an advanced default branch, whether that refresh succeeds or
-routes to repair, and counts it once at that visit; `publish_draft` refreshes,
+three-refresh non-convergence bound counts each counted refresh as
+"Scripted publication and proof-head integrity" defines it, once at that visit;
+any other clean refresh does not count; `publish_draft` refreshes,
 repaired or not, do not count toward that bound, and the re-entry of
 `publish_draft` after a repair does not count a second time for the refresh
 that was repaired. The `fix` node's visit limit MUST accommodate the two
@@ -3323,9 +3764,9 @@ decision `reproof_required` naming that path. Any step outside the grammar, and
 any path operand rejected or not naming such a file, makes the decision
 `reproof_required` naming that step.
 
-**The decision.** The decision MUST be `carried_forward` only when all of the
+**The decision.** Except as **Release bookkeeping** below provides, the decision MUST be `carried_forward` only when all of the
 following hold: every step of the verified record is inside the direct-read
-grammar; every incoming path is beneath an inert class; no incoming path is in
+grammar; every incoming path is beneath an inert class, or this run has already re-proved after one changed-head `pr_refresh` and the verified record is that re-proof's own record; no incoming path is in
 the observation scope or among the item paths; the patch identity of `<new
 base>..<new head>` equals the patch identity of `<verified base>..<verified
 head>`; and every path in the observation scope and every item path has the
@@ -3370,7 +3811,9 @@ name the failed post. The verified head of a later carry-forward in the same
 run is still the head of the verified record, so a chain of carry-forwards is
 always measured against the diff that was actually verified. A carry-forward
 consumes no review-fix round and leaves the three-refresh non-convergence bound
-unchanged. Scenario 178 in `scenarios.md` exercises these three paragraphs.
+unchanged. Scenario 178 in `scenarios.md` exercises these three paragraphs. A run re-proves after a changed-head `pr_refresh` at most once on the second condition's account. A refresh whose incoming paths overlap the item paths or the observation scope, or whose rebase conflicts in any path that is not a declared record file, MUST still take the re-proof or refresh-repair route this section already requires. A `carried_forward` record written under the second condition MUST say that the incoming paths were not all inert and that the run's one re-proof covered them. Scenario 229 in `scenarios.md` exercises these sentences.
+
+**Release bookkeeping.** When every incoming path is release bookkeeping, no incoming path is among the item paths, and the patch identity of `<new base>..<new head>` equals the patch identity of `<verified base>..<verified head>`, the decision MUST be `carried_forward` whatever the verified record's steps are; the direct-read grammar, observation-scope, blob-identity, read-identity and mechanical-replay conditions of "The decision" do not apply to it. An incoming path is *release bookkeeping* when it is `.release-please-manifest.json` or `CHANGELOG.md`, or when it is `pyproject.toml` or `uv.lock`, `git diff --no-color --no-ext-diff --text --unified=0 <previous base> <new base> -- <path>` prints at least one hunk for it, and every line that command prints as added or removed inside a hunk has the form `version = "<text>"`, so a dependency change made beside a version bump, or a change with no inspectable hunk, is not bookkeeping. A `carried_forward` record written under this rule MUST say that every incoming path is release bookkeeping and that no proof step was graded or replayed. Scenario 246 in `scenarios.md` exercises this paragraph.
 
 `pr` MUST query the exact pull request for the recorded branch, verify its
 current head against the head named by the latest record of this run that is
@@ -3381,14 +3824,14 @@ unless the item's merge hold is active. It MUST retain existing `PR_NUMBER` and
 merge-hold result markers. A pull request already merged is a recorded success;
 one closed without merging or carrying an unexpected head MUST fail closed.
 Publication metadata MUST be passed as data, not interpolated as shell syntax.
-A merge hold MUST preserve the ready pull request and leave auto-merge unarmed. When the forge rejects the head-bound auto-merge arming and a re-read reports the pull request OPEN rather than MERGED, `pr` MUST read the pull request's current head, the forge's mergeability report for it, and the authoritative default branch's current tip, read from a fetch of the authoritative branch on origin and never from a local tracking ref, before deciding what the rejection means. When the head is still the head that the latest `verified` or `carried_forward` record of this run names, and the default branch's current tip is not an ancestor of that head (the same test `pr_refresh` applies), `pr` MUST record a refresh-route marker naming this `pr` visit in the run's publication state and exit zero, and the run MUST return to `pr_refresh` through `pr_route`. That `pr_refresh` visit refreshes onto an advanced default branch, so it counts toward the three-refresh non-convergence bound; it MUST NOT consume a refresh-repair round unless the refresh itself takes the refresh-repair route. The refreshed head then takes the decision of "Proof carry-forward across a refresh" exactly as any other changed-head refresh, so only a head named by a `verified` or `carried_forward` record can reach the next arming. When `pr` is entered again on that route it finds the pull request already out of draft and reports that it readied nothing, which is expected and is not a failure. When the head differs from the recorded head, `pr` MUST fail closed as for any unexpected head. When the default branch's tip is an ancestor of the head, or when the forge cannot report the head, the mergeability or the default branch's tip, `pr` MUST fail closed naming the forge's rejection cause or the measurement it could not take, and MUST NOT route to `pr_refresh` on an unobservable answer. Every rejected arming that does not end in `MERGED` MUST write one stage-output line naming the forge's rejection message verbatim, the pull request's state, the forge's mergeability report, the pull request's current head, whether that head equals the head of the latest `verified` or `carried_forward` record of this run, the default branch's current tip, and whether that tip is an ancestor of the head. The line MUST NOT state that the head differs from the verified head unless that comparison was taken and differed.
+A merge hold MUST preserve the ready pull request and leave auto-merge unarmed. When the forge rejects the head-bound auto-merge arming and a re-read reports the pull request OPEN rather than MERGED, `pr` MUST read the pull request's current head, the forge's mergeability report for it, and the authoritative default branch's current tip, read from a fetch of the authoritative branch on origin and never from a local tracking ref, before deciding what the rejection means. When the head is still the head that the latest `verified` or `carried_forward` record of this run names, and the default branch's current tip is not an ancestor of that head (the same test `pr_refresh` applies), `pr` MUST record a refresh-route marker naming this `pr` visit in the run's publication state and exit zero, and the run MUST return to `pr_refresh` through `pr_route`. That `pr_refresh` visit refreshes onto the advanced default branch (the run's first clean refresh, or, after that, a refresh entered on a forge-reported conflict); it counts toward the three-refresh non-convergence bound exactly when it is a counted refresh as defined above, and it MUST NOT consume a refresh-repair round unless the refresh itself takes the refresh-repair route. After the run has taken its one clean `pr_refresh` refresh, `pr` MUST record the refresh-route marker only when the forge's mergeability report says the pull request conflicts with the default branch. Otherwise it MUST NOT record the marker, and MUST retry the head-bound arming of the same head, re-reading the mergeability report before each retry, within a bounded implementation-defined number of attempts; when an arming succeeds the run proceeds as after any armed pull request, and when the attempts are exhausted `pr` MUST fail closed naming the forge's last rejection cause. The refreshed head then takes the decision of "Proof carry-forward across a refresh" exactly as any other changed-head refresh, so only a head named by a `verified` or `carried_forward` record can reach the next arming. When `pr` is entered again on that route it finds the pull request already out of draft and reports that it readied nothing, which is expected and is not a failure. When the head differs from the recorded head, `pr` MUST fail closed as for any unexpected head. When the default branch's tip is an ancestor of the head, or when the forge cannot report the head, the mergeability or the default branch's tip, `pr` MUST fail closed naming the forge's rejection cause or the measurement it could not take, and MUST NOT route to `pr_refresh` on an unobservable answer. Every rejected arming that does not end in `MERGED` MUST write one stage-output line naming the forge's rejection message verbatim, the pull request's state, the forge's mergeability report, the pull request's current head, whether that head equals the head of the latest `verified` or `carried_forward` record of this run, the default branch's current tip, and whether that tip is an ancestor of the head. The line MUST NOT state that the head differs from the verified head unless that comparison was taken and differed.
 Resume from an earlier verified head MUST enter `pr_refresh` before `pr`,
 preserving the existing exact-head and run-attribution refusals. A later head
 change requires fresh proof or a `carried_forward` record for that head;
 publication MUST NOT reuse a verified record from before that change except
 through a `carried_forward` record that names the head being published.
 
-**Armed pull request overtaken by the default branch.** After a run arms auto-merge, the Dispatcher's merge wait MUST read the forge's mergeability report on each poll. When two consecutive polls report the pull request OPEN and in conflict with the default branch, the wait MUST stop before the poll budget, and the dispatch outcome MUST be `blocked` at stage `merge-poll` with the named cause `base-advanced-after-arming`. The Dispatcher MUST rest the item at `blocked` with `blocked_reason: needs-human`, through the same transition and `needs-human-blocked` journal row that a `needs_human` terminal produces, with the cause as the item's question. The item MUST NOT be left `active`, and the claim MUST NOT be released to `ready`. `blocked_reason` gains no member. The dispatch reports exit code 4 under §"Dispatcher exit codes"; no exit code is added or redefined. Before the blocked transition, the Dispatcher MUST add one ledger comment to the item that opens with the marker line `livespec-base-advanced-after-arming` and carries the run id, the factory name, the pull request number, its head and the default branch's tip. The comment MUST carry names and figures only. Every name in it MUST be identifier-shaped as §"Dispatch trace correlation" defines that term; a name that is not identifier-shaped MUST be left out, and the comment MUST state how many names were left out. The comment MUST pass the shared template-opener detector before it is written. A comment that fails the detector, or that cannot be written, MUST be journaled with its reason and MUST NOT prevent the blocked transition. The outcome detail MUST name the recovery chain: `resolve-blocked:<work-item-id>:ready`, then `resume --item <work-item-id>`. The Dispatcher MUST NOT disarm, close or rewrite the pull request itself; the resumed run's `pr_refresh` disarms it before refreshing, as "Scripted publication and proof-head integrity" requires. An exhausted poll budget on a pull request the forge does not report as conflicting keeps its existing outcome. Scenario 184 in `scenarios.md` exercises this paragraph, the `pr` routing above, and the disarm in "Scripted publication and proof-head integrity".
+**Armed pull request overtaken by the default branch.** After a run arms auto-merge, the Dispatcher's merge wait MUST read the forge's mergeability report on each poll. When two consecutive polls report the pull request OPEN and in conflict with the default branch, the wait MUST stop before the poll budget, and, unless the record-file arm below admits a resume, the dispatch outcome MUST be `blocked` at stage `merge-poll` with the named cause `base-advanced-after-arming`. Before it rests the item, the Dispatcher MUST compute the set of paths that conflict between the pull request's head and the default branch's tip, by a merge computation that changes no ref, no working tree of the primary checkout and nothing on the forge. When that set is non-empty and every path in it is a `path` declared in the committed `dispatcher.record_files` of the repository, the Dispatcher MUST resolve the item to `ready` through the same transition `resolve-blocked:<work-item-id>:ready` performs, and MUST then resume it in the same invocation through the same path `resume --item <work-item-id>` takes. The automatic resume MUST be subject to every refusal and bound of "Resume from a published pull request (`resume --item`)", including its two-resume limit, and the Dispatcher MUST attempt it at most once per invocation. The claim and the ownership lock that the invocation itself holds for the item MUST be released or carried into the resume, and MUST NOT count as a live ownership lock or a live earlier run for that resume's refusals. Before it resolves the item, the Dispatcher MUST journal one `base-advanced-record-files-resume` row naming the run id, the pull request number, its head, the default branch's tip and every conflicted path. When the resume is admitted, the invocation's outcome and exit code are those of the resumed dispatch. When the resume refuses, the item MUST rest at `blocked` with `blocked_reason: needs-human` exactly as below, with the cause `base-advanced-after-arming`, and the ledger comment and the outcome detail MUST name the refusal. When any conflicted path is not a declared record file, when the repository declares no record files, or when the conflict set cannot be computed, the item MUST rest exactly as below, and in the last case the ledger comment MUST name the measurement that failed. The automatic resume MUST NOT disarm, close or rewrite the pull request; the resumed run's `pr_refresh` disarms it before refreshing, as for a hand-driven resume. Whenever the item rests, the Dispatcher MUST rest it at `blocked` with `blocked_reason: needs-human`, through the same transition and `needs-human-blocked` journal row that a `needs_human` terminal produces, with the cause as the item's question. The item MUST NOT be left `active`, and the claim MUST NOT be released to `ready`. `blocked_reason` gains no member. The dispatch reports exit code 4 under §"Dispatcher exit codes"; no exit code is added or redefined. Before the blocked transition, the Dispatcher MUST add one ledger comment to the item that opens with the marker line `livespec-base-advanced-after-arming` and carries the run id, the factory name, the pull request number, its head and the default branch's tip. The comment MUST carry names and figures only. Every name in it MUST be identifier-shaped as §"Dispatch trace correlation" defines that term; a name that is not identifier-shaped MUST be left out, and the comment MUST state how many names were left out. The comment MUST pass the shared template-opener detector before it is written. A comment that fails the detector, or that cannot be written, MUST be journaled with its reason and MUST NOT prevent the blocked transition. The outcome detail MUST name the recovery chain: `resolve-blocked:<work-item-id>:ready`, then `resume --item <work-item-id>`. The Dispatcher MUST NOT disarm, close or rewrite the pull request itself; the resumed run's `pr_refresh` disarms it before refreshing, as "Scripted publication and proof-head integrity" requires. When the poll budget is exhausted, the Dispatcher MUST read the pull request's state once more before it records an outcome. A pull request the forge then reports MERGED MUST proceed exactly as a merge observed within the budget. A pull request the forge reports still OPEN and not in conflict MUST rest the item exactly as above, at `blocked` with `blocked_reason: needs-human`, through the same transition, journal row, ledger comment rules and recovery chain, with the named cause `merge-poll-budget-exhausted` in place of `base-advanced-after-arming` and the comment's marker line `livespec-merge-poll-budget-exhausted`. The item MUST NOT be left `active` under a claim whose run has ended. Scenario 220 in `scenarios.md` exercises this sentence. Scenario 184 in `scenarios.md` exercises this paragraph, including its record-file arm, the `pr` routing above, and the disarm in "Scripted publication and proof-head integrity".
 
 Groom-kind variants retain their existing filing-plan publication behavior:
 the ACP `pr` node validates and encodes the approved cut for host-side filing
@@ -3406,24 +3849,20 @@ declaration is valid under the deliverable policy, and that the
 assertions are coherent with the item's title, description and
 referenced headings — a Definition of Done that a competent engineer
 could not recognise as satisfied or unsatisfied from the referenced
-scenario is incoherent. Under the deliverable policy the node MUST
+scenario is incoherent. The node is an adjudication node: it grades the Definition of Done and changes nothing. It MUST NOT modify the sandbox working tree, create a commit, or run the repository's declared check suite, and its turn MUST leave the working tree clean and HEAD at the commit the node started on. A `dod_gate` turn that modifies the working tree or HEAD MUST end the node with a failed outcome whose failure reason names the mutation, routing through the node's existing Blocked edge to `needs_human` rather than proceeding to `implement`; no new edge, state transition or exit code is introduced. The prompt the node renders MUST state this boundary to the agent. Under the deliverable policy the node MUST
 identify, for every `factory_captured` assertion, the surface its proof
 needs, and MUST report as a Definition-of-Done finding an assertion
 whose surface no capability in a known capability set provides, naming
 the assertion, the missing capability, and the remedies in this order:
-add the capability to the sandbox image; declare the assertion
+add the capability to the sandbox image and list it in the committed `dispatcher.sandbox_capabilities` array; declare the assertion
 `host_captured` with a Reason when its proof needs the released build or
 a host surface; declare it `human_attested` only when no agent session
-can exercise it. Its refusal of a `host_captured` or `human_attested`
+can exercise it. The surface classes that no sandbox capability provides are: an external cluster or service; a credential or kubeconfig not given to the sandbox; operator-host state; and the released-build effects of a changed prompt or workflow file, including a stage prompt or workflow file under `.claude-plugin/.fabro/` that the item itself changes. The node MUST name the surface of each `factory_captured` assertion before judging it, and MUST report an assertion whose proof needs a surface of one of these classes as a Definition-of-Done finding that names that surface; for the released-build class the finding names the released-build requirement. Its refusal of a `host_captured` or `human_attested`
 assertion that a sandbox capability could exercise MUST name the
 capability it relies on, and its refusal of a `human_attested` assertion
 that an agent session could exercise on a host MUST name the host
 surface. The node MUST also report every test-existence assertion on an
-item whose deliverable is not a test, a check or a gate, and every
-reference line that names only a non-scenario H2 while a scenario
-heading states the behaviour the assertion names (§"Effective acceptance
-criteria" → "Behavioural assertions" and "The Definition of Done
-section"), naming the remedy in each case. On success it falls through to `implement`. On
+item whose deliverable is not a test, a check or a gate, and every reference line that omits, for any assertion, a heading that governs it — each `## Scenario NN — <title>` heading of `scenarios.md` that states behaviour the assertion names, and each non-scenario H2 whose clauses govern that behaviour — naming each omitted heading verbatim and the remedy of adding it to the reference line (§"Effective acceptance criteria" → "Behavioural assertions" and "The Definition of Done section"). This reference-coverage finding is a semantic judgement: it MUST NOT be added to the mechanical half the host-side wall runs, and a reference line the wall accepts MAY still carry it. A reference-coverage finding is ADVISORY whenever the reference line names at least one heading that the spec-stated judgement (§"Dispatcher admission, WIP cap, and post-merge acceptance" → "The spec-stated judgement is one shared component") returns as governing one of the item's assertions. It MUST still be reported, naming each omitted heading verbatim with the remedy of adding it to the reference line, and a host taking that records its verdict on the item MUST include it in that record. But it MUST NOT fail the node, hold the item, withhold `ready` or refuse a dispatch: the node falls through to `implement`, and the host takings admit the item as they would without that finding. Only a reference line that names NO heading the judgement returns as governing any of the item's assertions is refused on reference coverage. Every taking of the Definition-of-Done judgement — the `dod_gate` node, the pre-admission judgement, the pre-dispatch judgement and any host-side preflight — MUST apply this same rule, so the four cannot disagree about whether an omission holds. The judgement can name different governing headings for one unchanged subject, so a refusal on partial omission would hold an item that no single edit reliably clears. Scenario 239 in `scenarios.md` exercises this rule. On success it falls through to `implement`. On
 failure it MUST end through the structured needs-human ending whose
 failure reason is the list of Definition-of-Done findings, so the run
 terminates at the `needs_human` terminal and the Dispatcher rests the
@@ -3436,7 +3875,7 @@ malformed item never spends a sandbox. The semantic half MUST run in the
 node on every run, and MUST also run before admission and before
 dispatch per §"Effective acceptance criteria" → "Authoring at filing
 time" ("Judged before admission" and "Judged again before dispatch");
-neither earlier judgement removes or replaces the node.
+neither earlier judgement removes or replaces the node. Every taking of this judgement grades the rubric and subject defined in §"Effective acceptance criteria" → "One rubric, one subject".
 
 **`proof_capture`.** For every `factory_captured` assertion the node MUST
 author the reproduction steps, execute them verbatim inside the sandbox,
@@ -3457,7 +3896,21 @@ missing capability. Where an assertion is governed by a referenced
 scenario heading, the reproduction steps SHOULD follow one of that
 heading's scenarios step for step, and the record MUST name, per
 assertion, the referenced heading and the scenario title the steps
-exercise, or state that no scenario governs it. It MUST NOT modify the
+exercise, or state that no scenario governs it. Every program a
+reproduction step executes that is neither tracked in the repository at
+the commit the record names nor an installed tool invoked by its name
+MUST be written into the record itself, inline or as an asset the record
+names through the proof asset store, so that each step can be replayed
+from the record, that commit and the sandbox's installed tools alone; a
+step MAY invoke a program the repository tracks at that commit by its
+path, and an installed tool by its name, without copying it into the
+record. The record MUST state the commit sha its steps ran against, which
+MUST be the publish branch head at the moment of capture. A record is
+CURRENT for a head under review when the tree of the commit the record
+names equals the tree of that head. A commit that changes no tree, such
+as an engine checkpoint commit that lands after `proof_capture` publishes,
+MUST NOT make a record stale, and no rule MAY require a record to
+postdate a commit that changes no tree. It MUST NOT modify the
 tree; a capture that requires a code change is an implementation defect
 and the node MUST end succeeded with `preferred_label=fix`, which routes
 to `fix`, after publishing a record whose first-line verdict is
@@ -3469,11 +3922,52 @@ ACP node's does. It MUST state, in the record, which assertions are
 `host_captured` or `human_attested` and therefore not captured. `review` MUST review the
 latest captured record alongside the code; because `review_fix`
 re-enters `janitor`, every accepted fix round re-enters `publish_draft`
-and `proof_capture` before `review`, and a captured record older than the
-tree under review is a blocking review finding. A captured record whose
-proof of a behavioural assertion is test-suite output alone is likewise
-a blocking review finding, so the run re-enters `proof_capture` through
-that same route rather than replaying a proof that exercised nothing.
+and `proof_capture` before `review`, so the record `review` reads is
+normally current.
+`review` is read-only on the run branch. The sandbox, not the prompt alone, MUST refuse within seconds, before any repository hook starts, every command a `review` turn runs that moves or edits the run branch, such as `git rebase`, `git commit`, `git push` or `git reset`, so the run branch's head after the turn equals its head before it. It MUST likewise refuse a `review` turn's invocation of the whole declared check suite, whether `just check` or the sandbox check-suite runner, with a message telling the reviewer to run named test ids only. The `review` prompt MUST state that the reviewer grades the published diff and the latest captured record, makes no branch edits, runs no whole-suite check, and ends with its verdict label within its turn allowance, and each refusal MUST be returned to the turn as a refusal, so that a turn that attempted a refused command can still record its verdict label within that allowance.
+
+A blocking review finding whose subject is the latest captured record
+rather than the tree is a PROOF-RECORD finding. Each of these is one: a
+record that is not current for the head under review; a behavioural
+assertion whose proof is test-suite output alone; a step that runs a
+program the rule above requires the record to contain and that the record
+does not contain; an assertion whose proof is a printed conclusion
+rather than the observed output; and a newest captured Proof of Done
+comment on the pull request that does not parse as a record, such as one
+whose header carries an empty run id. `review` MUST treat that last case
+as a blocking proof-record finding naming the comment and the field that
+failed to parse, so a verdict whose only blocking finding is a non-record
+capture is a recapture verdict, routes to `proof_capture` under the same
+two-lap bound, and MUST NOT reach `publication-head` on a capture that
+names no run. A review verdict is a RECAPTURE verdict
+when it carries at least one blocking finding and every blocking finding
+it carries is a proof-record finding. A recapture verdict MUST end
+`review` with `preferred_label=recapture`, which MUST route to
+`proof_capture` and MUST NOT route to `disposition` or `review_fix`, so
+the verdict consumes no `disposition` visit, no `review_fix` visit and no
+review-fix round. That holds for the first and second recapture verdicts
+of a run; the third recapture verdict in one run MUST route to the
+existing `non_converged` terminal without entering `proof_capture`.
+Recapture verdicts are governed by that bound alone: an exhausted
+review-fix budget MUST NOT pre-empt a recapture verdict, and neither the
+review cap's needs-human rest nor its `merge_on_review_cap` ship edge
+applies to one. A `review` visit entered after a recapture consumes no
+review-fix round, and the engine visit limit of `review` MUST admit the
+review-fix budget's visits plus the two recapture laps. A verdict with no
+blocking finding keeps the approval route unchanged. `proof_capture`
+entered on a recapture verdict MUST receive the verdict's findings by two
+routes: the engine's preamble of preceding stage output, and the issuing
+visit's record on the pull request — the review record for a recapture
+verdict from `review`, and the `not_reproduced` record that
+`proof_verify` visit published for a fidelity verdict. It MUST read that
+record when the preamble carries no finding, and MUST publish a new captured record,
+current for the publish head, that addresses each finding. A verdict that
+carries at least one blocking finding about the tree is a fix verdict: it
+routes through `disposition` and `review_fix` and is bounded by the
+review-fix budget and the review cap exactly as before, and when its fix
+round reaches `proof_capture` through `janitor` and `publish_draft`, that
+`proof_capture` visit MUST also receive the verdict's proof-record
+findings by the same two routes.
 
 **`proof_verify`.** The node MUST run on an adapter distinct from the
 implementer's, MUST replay the published reproduction steps verbatim on
@@ -3481,12 +3975,34 @@ the tree it receives, and MUST NOT modify the tree, the steps, or the
 Definition of Done. It MUST publish its own record per §"Proof of Done
 record" with the verdict `verified` when every `factory_captured`
 assertion reproduced, or `not_reproduced` naming each assertion that did
-not; the record header renders the verdict verbatim. `verified` routes to
-`proof_grade`, which routes to `pr_refresh` as above; `not_reproduced` routes to `fix` while the node's own visit count is
-below three, and the third `not_reproduced` routes to the existing
-`non_converged` terminal. A `not_reproduced` proof loop re-enters `review`, and those
-review visits count toward the review-fix budget like any other; a
-`proof_grade` retry is bounded as stated above instead. The
+not; the record header renders the verdict verbatim. For each assertion
+it names as not reproduced, the record MUST classify the difference as
+either FIDELITY, where the replay's observable behavioural result equals
+the captured one and only the record's rendering differs (the
+interleaving or ordering of output streams, whitespace, or formatting),
+or BEHAVIOUR, where the behavioural result differs or cannot be compared.
+A difference the node cannot positively show to be fidelity MUST be
+classified behaviour. `verified` routes to `proof_grade`, which routes to
+`pr_refresh` as above. A `not_reproduced` verdict whose every classified
+difference is fidelity is a FIDELITY verdict: it MUST end `proof_verify`
+with `preferred_label=recapture`, which MUST route to `proof_capture`
+with the record's per-assertion findings as the recapture work order,
+and MUST NOT route to `fix`. It counts against the same two-lap
+recapture bound as a review recapture verdict, so the third recapture in
+one run, from either source, MUST route to the existing `non_converged`
+terminal. Any other `not_reproduced` is a BEHAVIOUR verdict. The first
+and second behaviour `not_reproduced` verdicts in one run MUST route to
+`fix`, and the third behaviour `not_reproduced` in one run routes to the
+existing `non_converged` terminal; a fidelity verdict MUST NOT advance
+that count. A behaviour `not_reproduced` proof loop re-enters `review`,
+and those review visits count toward the review-fix budget like any
+other. A fidelity verdict, and any `review` visit it leads back to, MUST
+consume only the shared two-lap recapture allowance and MUST NOT count
+toward the behaviour `not_reproduced` bound or the review-fix budget.
+Where a fidelity verdict and the recapture bound both apply, the
+recapture bound decides: a fidelity verdict that would be the run's
+third recapture routes to `non_converged`. A `proof_grade` retry is
+bounded as stated above instead. The
 `review` node's ship-on-review-cap edge MUST target `proof_verify`, never
 `pr`, so `merge_on_review_cap` (§"Dispatcher policy settings") skips only
 the reviewer's approval and never the replay. No edge MAY route from
@@ -3501,24 +4017,31 @@ defect is in the record and not in the tree, and it MUST NOT publish
 constraints these nodes MUST honour are in `constraints.md` §"Fabro
 runtime constraints".
 
+**A verdict turn that ends without its verdict label is retried once.** The `review` and `proof_verify` nodes route on the verdict label their turn records (`preferred_label`). When such a turn ends succeeded but records none of the verdict labels its node routes on, the run MUST NOT route it to `needs_human` on that turn. It MUST instead run the same stage once more, on the same head and inputs, with a stage-scoped instruction added to that turn's prompt to end by emitting only its verdict. A retry turn that records a verdict label routes exactly as a first turn with that label does. A second consecutive turn of the same stage visit that ends succeeded without a verdict label MUST route to `needs_human`, with a cause that names the stage and states that its turn recorded no verdict label. The retry counts once per stage visit, and a stage that the run re-enters later gets its own single retry. A turn that records a verdict label, a failed turn, and a node that does not route on a verdict label, such as the command node `proof_grade`, route exactly as before. A record a `proof_verify` turn published before ending without a label stays on the pull request and is read by the existing record rules. Measured 2026-10-26 on livespec-driver-claude-5jr2xu run 01M5XA3WX7H0ZFHE4KDJ3ZVJHZ: after `review` approved, `proof_verify` ended succeeded with an implement-style report and no verdict label, and the run went to `needs_human` through the unmatched-outcome edge with no question asked. Scenario 258 in `scenarios.md` exercises this paragraph.
+
 **Proof findings are the fix stage's work order.** When `proof_capture`
-ends with `preferred_label=fix`, or `proof_verify` publishes
-`not_reproduced`, the finding — the assertion, what was observed, and
+ends with `preferred_label=fix`, or `proof_verify` publishes a first or
+second behaviour `not_reproduced` and so routes to `fix`, the finding — the assertion, what was observed, and
 what the proof needs — MUST reach the `fix` node as its work order by
 two routes: the engine's preamble of preceding stage output (no
 templated node attribute and no `inputs.*` edge condition is introduced,
 per `constraints.md` §"Fabro runtime constraints"), AND the stage's own
 record on the pull request (`not_captured` or `not_reproduced`), so the
 finding survives the run. The `fix` prompt MUST treat a proof finding as
-a first-class reason for entry beside a red janitor, and MUST read the
-latest proof record on the pull request when the preamble carries no
-finding. A `fix` visit entered on a proof finding MUST end either with a
+a first-class reason for entry beside a red janitor, and MUST take as
+its work order the record the entering stage graded in that visit: on
+entry from `proof_verify`, the `not_reproduced` record that visit
+published; on entry from `proof_capture`, that visit's `not_captured`
+record. When the preamble carries no finding, it MUST read the latest
+proof record on the pull request. A finding from a capture that a later
+`proof_capture` visit superseded MUST NOT be presented to `fix` as its
+work order. A `fix` visit entered on a proof finding MUST end either with a
 tree change addressing the finding or through the structured needs-human
 ending stating why the finding is wrong; it MUST NOT end succeeded with
 an unchanged tree. A `fix` visit entered from a red janitor is unchanged
 and receives the janitor's failure output as before. The proof loops
-stay bounded by the two visit caps above — the third
-`preferred_label=fix` from `proof_capture` and the third
+stay bounded by the two finding-count bounds above — the third
+`preferred_label=fix` from `proof_capture` and the third behaviour
 `not_reproduced` from `proof_verify` each route to `non_converged`.
 Scenario 137, Scenario 138 and Scenario 141 in `scenarios.md` exercise
 the capture, replay and fix duties added to this section.
@@ -3545,7 +4068,7 @@ inputs that paragraph names in place of per-assertion reproduction steps, and a
 carries would, at the new head it names. A `reproof_required` record is not
 proof: it MUST NOT anchor a resume, and the acceptance pass and every reader of
 the latest proof record MUST skip it. The run identifier a factory record
-carries MUST be one the Dispatcher can attribute to the merging dispatch: the
+carries MUST be one the Dispatcher can attribute to the dispatch of the item that produced the record: the
 Fabro run id, or the dispatch id the Dispatcher declared to the sandbox, or,
 for a resumed dispatch, an identifier the journal's `resume` record links to
 it, transitively (§"Dispatcher loop invocation surface" → "Resume from a
@@ -3573,6 +4096,45 @@ human-attested record MUST be posted by the attesting human on the same pull
 request in the same structure; images MAY be attached through the forge's own
 upload.
 
+**The binding.** Every record the implementation posts, each factory record
+and each host record, MUST carry its own binding to the subject it proves. The
+binding is written by the implementation's posting primitive, the one §"The
+host leg" below names, which every stage and every host leg MUST use to
+publish a record, so that no stage or session hand-formats a binding. The
+binding is exactly one line, placed immediately after the record's first line
+and outside any fenced block, of the form `Binds: <work-item-id> — pull
+request #<number> — head <full commit sha>`. It names the work item the record
+proves, the pull request the record is posted on, and the full commit sha of
+the pull request head the record proves: for a factory record, the
+publish-branch head the record names; for a host record, the head commit of
+that pull request at its merge, which is not the default-branch commit the
+merge produced. The primitive's resolution of which pull request a record is
+posted on, and any refusal it makes for an item that has no merged pull
+request of its own, govern host records only: a factory record is posted,
+before merge, on the pull request of the run that produced it, and its binding
+names that pull request. A correcting record that supersedes a factory record
+MAY be posted through the primitive after merge, on the same pull request; it
+carries the superseded record's run identifier on its first line and binds the
+head the superseded record proves. A record that carries no binding line is a
+legacy record. A human-attested record is posted by a human and is outside
+this rule; the human-attested leg of the acceptance pass governs it. A
+correction is a new record: a record the primitive posts MAY carry, on the
+line after its binding, `Supersedes: <comment link>` naming one earlier record
+on the same pull request, and only a record that itself carries a well-formed
+binding to that pull request resolves the fault of the record it names. A
+proof-only resume of a merged pull request (§"Dispatcher loop invocation
+surface" → "A proof-only resume of a merged pull request") MAY also post new
+factory records after merge on that pull request, each carrying the resumed
+run's identifier and binding the pull request's head commit at merge. The
+acceptance pass selects records by binding (§"Dispatcher admission, WIP cap,
+and post-merge acceptance" → "The proof evidence leg"). Measured 2026-10-26:
+the acceptance pass on bd-ib-tixpma, pull request 3164, resolved four run ids
+as the merging runs, did not include run 0498841858ff4cb185b42d12ff26e8b4, and
+reported its proof of done record NOT OBSERVED, although that run's `verified`
+record had been on the pull request since 2026-10-17 and the pass of
+2026-10-18 had graded it. Scenario 252 in `scenarios.md` exercises this
+paragraph and the selection it governs.
+
 **The host leg.** For an item with `host_captured` assertions, an agent
 session on an operator host MUST publish a `host_recorded` record after
 the change is merged and, where a release applies, released and
@@ -3585,9 +4147,27 @@ session identity MUST then replay those steps verbatim and publish
 not reproduce. Host records MUST be published on the pull request of the
 latest merged run for the item; a host record on an earlier pull
 request, or one naming a build identity that does not contain the latest
-merge, is not evidence. The implementation MUST provide one posting
+merge, is not evidence.
+For an item that no factory run merged, the pull request of its latest merged
+run is, throughout this specification, the pull request of the latest
+`reconcile-merged` that journaled a green janitor against that pull request and
+merge SHA and moved the item into `acceptance`; a refused or failed
+reconciliation MUST NOT replace that pull request. The posting primitive MUST target that
+pull request for such an item and MUST NOT refuse for the missing run, and when
+it drives `reconcile-merged` for such an item it MUST pass that pull request as
+the `--pr` selector. When the item has neither a merged run nor such a
+reconciliation, the primitive MUST refuse before posting anything, naming the
+item.
+The implementation MUST provide one posting
 primitive that renders these records, so that no session hand-formats
-one. The primitive MUST compute the publishing identity itself — the
+one. The primitive MUST post only on the pull request of the latest merged run
+for the named work item, as defined above, and MUST NOT post a host record onto
+any other pull request or fall back to any other merged pull request in the
+repository, however that pull request was found. Its refusal when no such pull
+request exists MUST state that the item has no merged pull request of its own.
+A host record already posted on any other pull request is not evidence for the
+item, and it is not evidence for the pull request it was posted on. The
+primitive MUST compute the publishing identity itself — the
 invoking agent session's id, or the forge login for a human — and MUST
 NOT accept it as a caller-supplied string; it MUST refuse a
 `host_verified` or `host_not_reproduced` post whose computed identity
@@ -3601,7 +4181,7 @@ posted, is not evidence.
 **The pointer.** After merge, the Dispatcher MUST write a `## Proof of Done`
 section into the item's description, after the Definition of Done section and
 preserving it byte-for-byte, containing only: the pull request number, the
-comment link of the latest `verified` record, its run id and timestamp, its
+comment link of the latest `verified` record counting for the item, its run id and timestamp, its
 verdict, — when the merged head was reached through a carry-forward — the
 comment link of the `carried_forward` record naming that head, — when the item
 was resumed (§"Dispatcher loop invocation surface" → "Resume from a published
@@ -3609,15 +4189,19 @@ pull request") — the resumed run's identifier, — when the item has
 `host_captured` assertions — the comment link of the latest `host_verified`
 record once it exists, and — when the item has `human_attested` assertions —
 the comment link of the human-attested record once it exists. The section MUST
-NOT copy proof content. The pointer MUST be written whenever a `verified`
-record exists for the merging run, independently of the acceptance verdict: a
+NOT copy proof content. Every record the pointer names, and every record a
+staleness check compares it with, MUST be one that counts for the item under
+the proof evidence leg's bind verdicts (a factory, host or human-attested
+record, as that leg defines counting). The pointer MUST be written whenever a
+`verified` record counting for the item exists, independently of the
+acceptance verdict: a
 pass that parks the item still writes it. A pointer whose run id or comment id
 does not match the latest record OF THE SAME KIND (`verified`,
-`carried_forward`, `host_verified`, `human_attested`) on the pull request is
-stale and MUST be surfaced by `needs-attention` as a hygiene fact naming the
+`carried_forward`, `host_verified`, `human_attested`) on the pull request that
+counts for the item under the proof evidence leg's bind verdicts is stale and MUST be surfaced by `needs-attention` as a hygiene fact naming the
 item and the pull request; a later record of another kind does not make a
-pointer stale. An item in `acceptance` whose merging run has a `verified`
-record and whose description has no pointer MUST likewise be surfaced by
+pointer stale. An item in `acceptance` that has a `verified` record counting for
+it and whose description has no pointer MUST likewise be surfaced by
 `needs-attention` as a hygiene fact naming the item and the pull request, and
 `reconcile-merged` driven for that item MUST write the missing pointer.
 
@@ -3660,6 +4244,64 @@ Scenario 133 in `scenarios.md`; the host leg, the same-kind staleness
 rule, the pointer repair and the run-identifier attribution are
 exercised by Scenario 136 and Scenario 138, and the governing-scenario
 entry of the record by Scenario 141.
+
+## Factory sandbox clone release tags
+
+A factory run's sandbox clone MUST carry the release tags its repository's
+remote holds at dispatch time, so a check that reads tags inside the run
+reads the same tag set a fresh clone of the remote would read. This section
+governs every run the Dispatcher launches: the reserved `implement-work-item`
+workflow, every registered variant, a target-local workflow resolved under
+"Target-local workflow" in §"Self-contained plugin dispatch", and a run the
+Dispatcher resumes.
+
+**The prepare chain refreshes the remote's tags.** The prepare steps the
+Dispatcher renders into a run MUST include a fetch from `origin` that updates
+the clone's tag namespace from the remote's, with existing local tags
+overwritten where the remote's tag of the same name points at a different
+object. That fetch MUST run after the committed prepare chain's opening
+unshallow step and no later than the Dispatcher-materialized dispatch-base
+fetch of the default branch, so every later prepare step and every graph node
+observes the refreshed tags. It MAY be the dispatch-base fetch itself, for
+example `git fetch --quiet --tags --force origin
++refs/heads/<default_branch>:refs/remotes/origin/<default_branch>`, provided
+the remote-tracking ref that fetch exists to create is still written. Tag
+auto-following on the unshallow fetch, or on any fetch of a branch refspec
+alone, MUST NOT be relied on to satisfy this section: it brings in only tags
+that point into newly fetched history and leaves tags already present, or a
+tag set seeded from elsewhere, unrefreshed.
+
+**What the clone holds after preparation.** After the run's prepare steps
+complete, all of the following MUST hold in the sandbox clone:
+
+- every tag the remote holds whose target is reachable from the fetched
+  default branch is present locally and points at the same object as the
+  remote's tag of that name;
+- the newest release tag the clone reports, ordered by version, equals the
+  newest release tag the remote holds at dispatch time; and
+- `git describe --tags` on the fetched default branch's tip names the same tag
+  it names in a fresh full clone of the remote.
+
+The fetch MAY bring in every tag the remote holds, including tags that point
+outside the fetched default-branch history.
+
+**A failed refresh fails preparation.** When the tag refresh exits non-zero,
+the prepare chain MUST fail, as a failure of the dispatch-base fetch does. It
+MUST NOT continue on the tag set the clone already had, because a tag-reading
+check would then grade the change under test against a stale tag set and
+report its own staleness as the change's defect.
+
+**Tag-reading checks are not made to tolerate stale tags.** A repository's
+check that reads release tags MUST NOT be weakened to tolerate a clone whose
+tags lag the remote; the remedy for a stale tag set is this section's
+refresh. Measured 2026-11-02 on factory run 01M6E7FFPF99
+(livespec-dev-tooling-t4rx4t): the sandbox clone of livespec-dev-tooling
+carried release tags ending at v1.99.0 while the remote's default branch was
+at v1.153.2, and the repository's versioning lockstep test failed in the
+refresh merge's suite-green leg on that stale tag set. The Dispatcher's launch
+overlay unshallowed the single-branch clone and fetched only the
+default-branch refspec, so the clone's tag namespace was never refreshed.
+Scenario 298 in `scenarios.md` exercises this section.
 
 ## Work-item state semantics
 
@@ -3722,6 +4364,18 @@ the GO per item or blanket for low-risk work — that delegation IS
 `admission_policy` (`auto` = the GO is delegated; `manual` = the human
 gives it explicitly).
 
+**`approve` on an auto-admission item held by intake.** For an item in
+`pending-approval` whose EFFECTIVE `admission_policy` is `auto`, `approve` MUST
+re-run the intake Definition-of-Done check against the item's current text
+before deciding. When that check reports no mechanical finding, `approve` MUST
+move the item to `ready`, journaled with its actor like any other approval.
+When it still reports a mechanical finding, `approve` MUST leave the item in
+`pending-approval`, MUST refuse with a result naming each mechanical finding,
+and MUST record those findings on the item as a ledger comment. Advisory
+findings MUST NOT block the release. `approve` on an effective-manual item is
+unchanged. This keeps `approve` the single journaled door from
+`pending-approval` toward `ready`; no second verb is added.
+
 The maintainer's rationale, verbatim (source: repo
 `thewoolleyman/livespec`,
 `plan/archive/work-item-state-machine/conversation/transcript.md`):
@@ -3758,28 +4412,37 @@ and every transition is attributable in the journal.
 
 | Lane | Valid operator verbs |
 |---|---|
-| `backlog` | groom (every backlog item, uniformly); move→ready (admission); move→blocked; set-admission; set-acceptance; merge-on-review-cap; review-fix-cap; acceptance-rework-cap |
-| `pending-approval` | approve (the single door toward `ready`); reject (rework \| regroom); set-admission; move→backlog (withdraw); move→blocked (park); set-acceptance; review caps per the dial-window rule |
-| `ready` | move→backlog (withdraw); move→blocked (park); driver-dispatch (host-only-refused items only); set-acceptance; set-workflow-scope-override (declared-workflow-edit refusals only); acceptance-rework-cap; merge-on-review-cap; review-fix-cap |
-| `active` | observe only — no operator verbs beyond set-acceptance / acceptance-rework-cap per the dial-window rule; for an item carrying `rework:pending`, `dispatch --item` (the `drive` `impl:<work-item-id>` action) drives the pending rework |
+| `backlog` | groom (every backlog item, uniformly); release-spec-tier (human-only; spec-change-tier-held items only); move→ready (admission); move→blocked; set-admission; set-acceptance; merge-on-review-cap; review-fix-cap; acceptance-rework-cap |
+| `pending-approval` | approve (the single door toward `ready`; for an effective-auto item it re-runs the intake Definition-of-Done check first); release-spec-tier (human-only; spec-change-tier-held items only); reject (rework \| regroom); set-admission; move→backlog (withdraw); move→blocked (park); set-acceptance; review caps per the dial-window rule |
+| `ready` | release-spec-tier (human-only; spec-change-tier-held items only); move→backlog (withdraw); move→blocked (park); driver-dispatch (host-only-refused items only); set-acceptance; set-workflow-scope-override (declared-workflow-edit refusals only); acceptance-rework-cap; merge-on-review-cap; review-fix-cap |
+| `active` | observe only — no operator verbs beyond set-acceptance / acceptance-rework-cap per the dial-window rule and release-spec-tier (human-only; spec-change-tier-held items carrying `rework:pending` only); for an item carrying `rework:pending`, `dispatch --item` (the `drive` `impl:<work-item-id>` action) drives the pending rework; and the terminal-claim recovery `move→ready`, valid only for an `active` item whose run is terminal, that carries neither `rework:pending` nor a `merge-hold:` label, whose dispatch-scoped ownership lock no live process holds, which §"Stranded claim release" does not reconcile, and for which the forge was read and reports no merged pull request |
 | `acceptance` | accept (the single door into `done`); reject (rework \| regroom); move→backlog (de-scope); move→blocked (park) |
-| `blocked` | move→ready (unblock); move→backlog (an item needing decomposition routes here first — groom is `backlog`-only) |
+| `blocked` | release-spec-tier (human-only; spec-change-tier-held items only); move→ready (unblock); move→backlog (an item needing decomposition routes here first — groom is `backlog`-only) |
 | `done` | nothing (but see "Status-independent verbs" below) |
 
+`release-spec-tier` (§"The four maintainer touchpoints", touchpoint 1) is valid in `backlog`, `pending-approval`, `ready` and `blocked`, and in `active` for an item carrying `rework:pending`, only while the item carries a spec-change-tier hold. It MUST refuse while a run of the item is live or a live process holds the item's dispatch-scoped ownership lock.
+
 **Status-independent verbs.**
-`set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host>`
+`set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input>`
 is NOT lifecycle-gated and is therefore intentionally not enumerated per-row
 above (including the `done` row): it
 sets the intrinsic `factory_safety` runnability axis (orthogonal to both status
 and `admission_policy`), so it is valid on a work-item in ANY lane. It is a
 field-setter, not a transition or policy-window verb, so the per-lane narrowing
 that keeps every enumerated verb actionable does not apply to it. Its clause is
-below.
+below. `clear-factory-safety:<id>:<rationale>` is its inverse and is likewise
+status-independent and not enumerated per row.
+
+`close-duplicate:<work-item-id>:<successor-id>` is valid in every lane except `done`, and is likewise not enumerated per row. Driven only by a human, it closes an item that duplicates the work item `<successor-id>`, in any non-closed lifecycle status and whatever spec-change-tier hold the item carries, with no factory run and no change to any other item. It MUST record `<successor-id>` as the item's `superseded_by`, MUST write a durable ledger comment on the item naming the successor and the invoker, and MUST append one dispatch-journal record naming the item, the successor and the invoker, as the other human valves journal theirs. It MUST refuse, naming the reason and writing nothing, when `<successor-id>` does not resolve to a work item in a tenant the Dispatcher can read, when `<successor-id>` equals `<work-item-id>`, when the item is already closed, and while a run of the item is live or the item carries an unreleased dispatch claim. The close is a disposition, not a ratification: it states no behaviour, and a linked proposed-change topic the item carries keeps its own revise decision.
+
+`relink-spec-tier:<work-item-id>:<topic>` is valid in every lane except `done`, and is likewise not enumerated per row. It is a field-setter on the spec-change-tier hold, not a transition: it replaces the held item's linked proposed-change topic with `<topic>` and MUST NOT write a status, release the hold, or change any other item. Because the hold is still released only by the ratification of the replacement topic together with a `stated` re-run judgement, the route MAY be driven by a human or by an agent session. It MUST refuse, naming the reason and writing nothing, when the item carries no spec-change-tier hold; when `<topic>` is not a canonical topic stem, that is, when `/livespec:propose-change`'s topic canonicalization would change it; when `<topic>` names no proposed change, either a pending `<spec-root>/proposed_changes/<topic>.md` or a revision record under `<spec-root>/history/vNNN/proposed_changes/`; and when `<topic>` has no pending proposal and its latest revision record carries decision `reject`, because a hold waiting on a rejected topic could never release. On success it MUST record a durable ledger comment on the item carrying the actor, the previous linked topic and the replacement topic, and it MUST append the replacement as a spec-change tier record whose linked topic is `<topic>` and whose verdict, generalization target and clause provenance are the standing record's, so the hold read, the pre-dispatch wall's exit-`5` refusal and the next intake or drain pass all name the replacement topic. Relinking an item whose replacement topic is already ratified MUST NOT itself release the hold; the next intake or drain pass re-runs the judgement against the ratified specification and releases it exactly as the autonomy-tier bullet states.
 
 #### Door rules — every transition has exactly one journaled owner
 
-- `ready` is entered by `approve` (from `pending-approval`) or by an
-  operator move from `backlog`/`blocked`. The move from
+- `ready` is entered by `approve` (from `pending-approval`), by an
+  operator move from `backlog`/`blocked`, or by the terminal-claim recovery
+  move from `active` that the `active` row above admits; each is journaled
+  with its actor. The move from
   `pending-approval` to `ready` is REMOVED: it is an unjournaled
   duplicate of the `approve` valve, so the ledger cannot attribute the
   transition.
@@ -3795,7 +4458,7 @@ below.
   every rework return into `active` is journaled and the one-journaled-owner
   rule holds for both. Both are named here because a door rule that omits a
   shipped writer is false, not merely incomplete.
-- `done` is entered ONLY by `accept`. The move `acceptance → done` is
+- `done` is entered ONLY by `accept`, or by the `close-duplicate` valve for an item another work item supersedes. The move `acceptance → done` is
   REMOVED — it is an unjournaled duplicate of the accept valve.
 - `pending-approval` is never a move target; it is entered only by
   intake Definition-of-Ready routing.
@@ -3874,13 +4537,13 @@ required. That scope is load-bearing, not incidental: widening
 `driver-dispatch` to any `ready` item WOULD require a claim mechanism,
 and MUST NOT be done without one.
 
-#### `set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host>`
+#### `set-factory-safety:<id>:<needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input>`
 
 A status-independent operator verb that SETS the target work-item's
 `factory_safety` field to the supplied host-only reason. The reason MUST be one
-of the three canonical `factory_safety` values —
-`needs-host-secrets`, `mutates-host-machinery`, or `needs-privileged-host`
-(§"Work-item beads-issue mapping") — exactly as the field's own closed enum
+of the four canonical `factory_safety` values —
+`needs-host-secrets`, `mutates-host-machinery`, `needs-privileged-host`, or
+`needs-host-only-input` (§"Work-item beads-issue mapping") — exactly as the field's own closed enum
 defines them; an out-of-enum or empty reason is refused. A null `factory_safety`
 — the default — remains factory-eligible;
 opting an item out of factory eligibility MUST go through this verb, so the
@@ -3893,6 +4556,29 @@ human-approval axis. Once set, the admission predicate — which evaluates non-n
 `factory_safety` FIRST — host-routes the item, and `driver-dispatch:<id>` becomes
 the applicable door. A work-item introducing a first-class operator verb MUST
 include specification coverage for that verb in its acceptance criteria.
+
+#### `clear-factory-safety:<id>:<rationale>`
+
+A status-independent operator verb that CLEARS the target work-item's
+`factory_safety` field, returning it to null and therefore to factory
+eligibility. It is the inverse of `set-factory-safety`, and it MUST be the
+only sanctioned route back into factory eligibility: lifting a host-only
+hold through a raw `bd label remove` leaves no attributable record, which is
+exactly what `set-factory-safety` exists to prevent on the way out.
+
+The `<rationale>` is the remainder of the action id after the second colon
+and MAY itself contain colons. A rationale that is empty or only whitespace
+MUST be refused, with a message naming the missing rationale, and the item
+MUST keep its `factory_safety` value. A `clear-factory-safety` on an item
+whose `factory_safety` is already null MUST be refused, with a message saying
+no hold is set, and MUST write nothing to the ledger or the journal.
+
+On an accepted clear, the verb MUST append the rationale, the invoker and the
+removed reason to the item's ledger comments and to the dispatch journal
+BEFORE it removes the value, so that a failed mutation leaves an explained
+intent rather than a silent change. Like `set-factory-safety`, it is valid on
+a work-item in ANY lane, it does NOT change item status, and it MUST NOT
+alter `admission_policy`.
 
 `groom` needs no door — a groomed item remains `backlog` throughout the
 drafting conversation, and the groom exit is a close-regroomed-out into
@@ -3940,6 +4626,58 @@ assert. Where a ratified door already journals a door-specific actor
 field (the v051 valve records), that field remains; `invoker`/
 `invoker_source` is the uniform envelope-level attribution.
 
+**Delegated valve authority.** A maintainer MAY delegate the pressing of
+human valves to a named delegate (for this fleet, the coordinator seat under
+ruling R493). The delegation is first-class: the press asserts the reserved
+role `delegate`, as `--invoker delegate:<delegate-name>`, and MUST also name
+the delegation it acts under with `--delegation <ref>`. `drive` MUST verify
+the press against **`dispatcher.valve_delegations`** (committed
+`.livespec.jsonc`, a list; default empty), each entry an object with the
+non-empty strings `ref` (the delegation's identifier, e.g. `R493`),
+`delegate` (the `<delegate-name>` it authorizes), `grantor` (the delegating
+human, a `human:<name>` identity) and `record` (where the grant is recorded,
+e.g. the plan-scope-event's epic and timestamp). A press is a **verified
+delegated press** exactly when its invoker role is `delegate`, its
+`--delegation` ref equals one entry's `ref`, that entry's `delegate` equals
+the invoker's `<delegate-name>`, and the action's verb is on the **delegable
+valve allowlist**: `resolve-blocked`, `approve`, `accept`, `reject` and
+`release-spec-tier`. Like `dispatcher.require_invoker`,
+`dispatcher.valve_delegations` is deliberately NOT API-configurable: a
+delegation is granted only by a committed, reviewable change, so no press
+can invent the reference it cites. A list that does not parse, or an entry
+missing any of the four fields or whose `grantor` is not a named `human:`
+identity, makes the whole setting unreadable, and an unreadable setting
+verifies no press.
+
+The delegation NEVER covers a credential, irreversible or outward-facing
+act, and the allowlist is the mechanical form of that exclusion: the
+factory-safety opt-out and its clearance (host secrets and host machinery),
+the merge hold (a forge write), the policy, cap, queue and workflow-scope
+edits, `impl:` and `driver-dispatch:` dispatches, and every entry point
+outside `drive` (the provider-exhaustion and ACP-hold clearances among them)
+are not delegable. `drive` MUST refuse, before any store read that could
+lead to a write, any journal write or any ledger write: a `delegate:`
+invoker without `--delegation`; `--delegation` without a `delegate:`
+invoker; a delegated press of a verb off the allowlist; and a ref that
+matches no entry, or matches an entry for a different delegate, or cannot be
+verified because the setting is unreadable. Each refusal names the action,
+the asserted invoker and ref, and why. No environment variable or flag
+bypasses this verification.
+
+A verified delegated press satisfies every gate on the allowlisted valves
+that admits a human operator's press, the `human` answer disposition of
+§"Dispatcher policy settings" included. Its records MUST say plainly that
+the delegate acted under maintainer delegation and MUST NOT carry a
+`human:<name>` identity: `invoker` stays the asserted
+`delegate:<delegate-name>`, every journal record the press writes
+additionally carries a stamped `delegation` object (`ref`, `grantor`,
+`record`) applied by the same append layer that stamps `invoker`, an answer
+comment's header names the delegation ref and grantor after the invoker, and
+a green press appends one ledger comment to the item opening with the marker
+`livespec-delegated-valve-press` that names the action id, the delegate, the
+ref, the grantor and the record. A refused press writes none of these.
+Scenario 301 binds this behavior.
+
 **`dispatcher.require_invoker`** (boolean, committed `.livespec.jsonc`,
 default **`false`**) governs the fallback: when `true`, a published
 state-changing invocation whose identity would resolve by `fallback`
@@ -3970,6 +4708,25 @@ attribution grounds.
   statements, that absence is itself a finding that MUST be surfaced
   to the maintainer; it MUST NOT be self-resolved.
 
+
+## Dispatcher classify-tier invocation surface
+
+The Dispatcher's `classify-tier` subcommand is a classification-only path. It
+gives a work-item that never passes filing or dispatch again, such as a parked
+plan child that plan-child disposition refuses because its tier cannot be
+determined, a sanctioned way to acquire the spec-change tier record the
+refusal needs. The disposition refusal itself is unchanged. Its governed CLI
+surface is:
+
+`classify-tier --repo <path> --item <work-item-id> [--json]`
+
+- `classify-tier` MUST classify the named work-item's spec-change tier through the same spec-stated judgement the pre-dispatch wall uses.
+- When the item carries no `livespec-spec-change-tier` record, it MUST append exactly one such record, with `stage: classify`.
+- It MUST NOT dispatch: it creates no Fabro run, claims nothing, and leaves the item's assignee unchanged.
+- When the recorded tier is not a held spec-change tier, it MUST leave the item's status and labels unchanged.
+- When the recorded tier IS a held spec-change tier, the hold applies exactly as it does when filing or dispatch records that tier, and it is released only as those holds are.
+- When the item already carries a `livespec-spec-change-tier` record, it MUST append nothing and MUST report the existing classification.
+- It MUST exit non-zero, writing nothing, when the judgement cannot be obtained.
 
 ## Dispatcher loop invocation surface
 
@@ -4006,6 +4763,7 @@ governed CLI surface is:
   (which plans the identical selection but dispatches nothing). This
   unattended drain is the factory's steady-state path; it is what the
   console's factory-drain launcher invokes.
+- **Clock-fired work supply.** The repository MUST ship a host-installable work-supply service and timer whose every firing starts ONE unattended drain pass for one named tenant repository: `loop --repo <tenant> --budget <count>` with NO `--item`. A firing is not a host-session launch: it reports no protected launch and arms no session wait. The pass's own Dispatcher engine owns every dispatch it admits through terminal disposition, and a pass that dies leaves its claims to §"Stranded claim release". Each pass is one bounded process; the work supply is not a daemon (constraints.md §"Process boundaries"). Each pass is therefore an ordinary unattended drain, governed by the ranked queue, `wip_cap`, every admission condition and the fail-closed unattended cost gate below exactly as any other unattended drain, and the work supply MUST NOT add, relax or bypass any of them. The installer MUST install one timer instance per named tenant repository, MUST take each instance's firing interval from the operator, and MUST refuse an instance whose credential environment wrapper is not an executable file on the host, naming the instance and the wrapper path. At each firing the service MUST resolve the plugin build it executes from the plugin install registered for that tenant repository by its governing runtime at that moment, so the next firing after a release executes the released build without reinstalling anything. When no registered install exists for the tenant, the firing MUST refuse, naming the tenant, and MUST NOT fall back to a build pinned at install time or to a guessed path. A pass whose dispatched runs are still in progress MUST NOT prevent the next firing from starting a new pass, so capacity that frees during a long pass is offered to ready work within one interval; each new pass is governed by `wip_cap` as any unattended drain is. Concurrent passes are concurrent Dispatcher engines against one tenant: this clause adds no exclusion between them, licenses no host-scoped admission lock, and does not bar a ledger-level exclusive admission under §"Per-repo WIP cap". The installer MUST state the default interval and MUST refuse an interval shorter than a documented minimum, naming the instance, the interval given and the minimum. With the work supply installed for a tenant and no interactive session running a drain, the pass started by the first firing after an item becomes admission-eligible MUST consider that item: it MUST either admit it or journal it with the exclusion reason the admission conditions every unattended drain honours (including `wip_cap` and the pass's `--budget`) assign it. A tenant whose first-ranked admission-eligible item has a free counted-claim slot and budget MUST see it dispatched by that pass.
 - **`--budget <count>` (REQUIRED) bounds one invocation.** The Dispatcher
   MUST dispatch at most `budget` items in a single `loop` run. It is a
   per-run ceiling on how many items the run takes on, NOT a concurrency
@@ -4059,18 +4817,65 @@ governed CLI surface is:
   reported reason is sufficient to change the outcome.
 
 The Dispatcher's guarded recovery surface for an already-merged item is
-`reconcile-merged --repo <path> --item <work-item-id> [--json]` and, only after
-an operator has confirmed the original dispatcher process is dead,
-`reconcile-merged --repo <path> --item <work-item-id> --force [--json]`. It MUST
-refuse unless the named item is currently `active` or rests in `acceptance`.
-For an `active` item this valve exists for a dispatch whose merged PR did not
-complete post-run disposition. For an item resting in `acceptance` it MUST NOT
-re-run the post-merge janitor or re-merge anything: it MUST re-run only the
-acceptance pass of §"Post-merge acceptance (`acceptance → done`)" against the
-records now on the pull request, apply that pass's ordinary disposition, and
-write a missing Proof of Done pointer (§"Proof of Done record" → "The
-pointer"); this is the route by which a host-leg record posted after the
-original pass reaches a verdict.
+`reconcile-merged --repo <path> --item <work-item-id> [--pr <number>] [--json]`
+and, only after an operator has confirmed the original dispatcher process is
+dead, `reconcile-merged --repo <path> --item <work-item-id> [--pr <number>]
+--force [--json]`. It MUST
+refuse unless the named item is currently `active`, rests in `acceptance`, or
+rests at `ready` with recovery routing holding its next dispatch because the
+pull request of its latest dispatch is merged (§"Factory-configurable ACP
+fallback priority" → "Recovery from the failed run's preserved work"), or rests
+at `pending-approval` or at `ready` without such routing because it was built
+outside the factory and a merged pull request carries it. For such a locally
+built item, the merged pull request MUST resolve from the head-ref or title tier
+of the resolution below; a pull request that only mentions the item in its body
+MUST NOT resolve it, and the valve MUST refuse naming the missing merged pull
+request. The valve then applies every guard and the post-merge disposition below
+exactly as for an `active` item, with the item's resting status in place of
+`active` in each state effect: a green janitor writes `pending-approval ->
+acceptance` or `ready -> acceptance`, and every failed guarded precondition
+leaves the item at its resting status. Scenario 245 in `scenarios.md`
+exercises this entry.
+For an `active` item, and for such a `ready` item, this valve exists for a
+dispatch whose merged PR did not complete post-run disposition. For the `ready`
+item it applies every guard and the post-merge disposition below exactly as for
+an `active` one, with `ready` in place of `active` in each state effect: a green
+janitor writes `ready -> acceptance` where an `active` item's writes `active ->
+acceptance`, and every failed guarded precondition leaves the item `ready`. For an item resting in `acceptance` it MUST NOT re-merge anything. Whether it
+runs the post-merge janitor depends on what that item's latest dispatch
+journaled about the janitor:
+
+- When the item's latest dispatch journaled that its post-merge janitor did NOT
+  run, the item is still OWED that janitor. That is the case when the janitor
+  checkout's bootstrap failed after the merge and the dispatch parked the merged
+  item in `acceptance` with a needs-attention verdict saying the janitor did not
+  run. The valve MUST then run that owed post-merge janitor against the merged
+  default-branch tip, under every guard, the dispatch-scoped ownership lock and
+  the janitor rules that apply to an `active` item, and journal the janitor's
+  result against that dispatch. Only on a green janitor MUST it then re-run the
+  acceptance pass described in the next item. A red or unrunnable owed janitor
+  MUST leave the item in `acceptance` with a needs-attention verdict naming the
+  janitor stage and its failing target or bootstrap error. It MUST NOT close the
+  item, MUST NOT re-run acceptance on that attempt, and MUST exit non-zero.
+- Otherwise, the janitor already ran, and the valve MUST NOT re-run it. It MUST
+  re-run only the acceptance pass of
+  §"Post-merge acceptance (`acceptance → done`)" against the records now on the
+  pull request, apply that pass's ordinary disposition, and write a missing
+  Proof of Done pointer (§"Proof of Done record" → "The pointer"). This is the
+  route by which a host-leg record posted after the original pass reaches a
+  verdict.
+
+The valve MUST decide which case applies from journaled janitor evidence, never
+from the item's status alone. For an item that a factory run merged, that
+evidence is the latest dispatch's janitor record. For an item that no factory
+run merged, it is the janitor record of the reconciliation that established the
+item's current reconciled pull request and merge SHA, which that reconciliation
+MUST journal with the pull request and merge SHA it ran against. For an item
+resting in `acceptance`, that evidence MUST concern the pull request and merge
+SHA this invocation resolves or selects. When the journal cannot be read,
+carries no such janitor record, or carries one for a different pull request or
+merge SHA, the valve MUST refuse before running acceptance, name the missing or
+mismatched evidence, and leave the item's status unchanged.
 It MUST additionally refuse ANY item carrying the `rework:pending` label,
 whatever its status: such an item's dispatch COMPLETED its post-run
 disposition — the disposition's outcome was rework — and the remedy is the
@@ -4102,12 +4907,28 @@ checkout. The post-merge janitor MAY still hold a per-checkout lock before
 precleaning or provisioning, and that lock MUST continue to block concurrent
 callers that target the same checkout path.
 
-The valve MUST resolve the PR number and merge SHA from GitHub, by the expected
-`feat/<work-item-id>` branch first or a merged PR title/search match carrying the
-work-item id only when that fallback is unambiguous on the default branch. The
-fallback search MUST include a default-branch base filter. If multiple merged PR
-candidates survive filtering, the valve MUST refuse with a clear ambiguous-PR
-error listing the candidates rather than silently choosing the first result. The
+The valve MUST resolve the PR number and merge SHA from GitHub, among pull
+requests merged onto the default branch (the search MUST include a
+default-branch base filter), by ranking the candidates in three tiers: first a
+pull request whose head ref is the expected `feat/<work-item-id>` branch, then
+one whose title carries the work-item id, then one whose body mentions the
+work-item id. The valve MUST resolve from the highest tier that holds any
+candidate and MUST NOT let a candidate of a lower tier make a higher tier's
+resolution ambiguous. If that highest tier holds more than one candidate, the
+valve MUST refuse with a clear ambiguous-PR error listing that tier's candidates
+rather than silently choosing the first result. Scenario 244 in `scenarios.md`
+exercises this ranking.
+The valve MUST also accept an optional `--pr <number>` selector naming one
+merged pull request of the item, for an item that landed through more than one
+merged pull request. With the selector, the valve MUST resolve that pull request
+and its merge SHA from GitHub instead of ranking candidates, and MUST NOT refuse
+because other merged pull requests identify the item. It MUST refuse, naming the
+pull request, when that pull request is not merged onto the default branch or
+does not identify the item by head ref or title. A selected pull request then
+stands in every later step of the valve exactly as a resolved one does, and the
+valve MUST journal the selected pull request's number and merge SHA in the
+reconciliation's journal record. Without the selector the ranking above is
+unchanged. The
 valve MUST NOT require or trust ledger audit metadata for that resolution. After
 a merged PR resolves, the valve MUST NOT launch Fabro and MUST NOT rebuild the
 change; it reruns the same post-merge janitor used by the dispatch engine
@@ -4116,8 +4937,9 @@ existing post-merge acceptance path unchanged, including the `active ->
 acceptance` ledger-complete write, acceptance journal records, and
 policy-governed `acceptance -> done` auto-accept when applicable. A red janitor,
 missing merged PR, wrong source lane, ambiguous merged PR, or held janitor
-checkout lock MUST leave the item `active` and report the failed guarded
-precondition or janitor stage. This is a distinct guarded entry path and does
+checkout lock MUST leave the item `active` (or at its resting status, for an
+item that entered at `pending-approval` or `ready`) and report the failed
+guarded precondition or janitor stage. This is a distinct guarded entry path and does
 not widen the `drive move` target set; `acceptance`, `done`, `pending-approval`,
 and `active` remain forbidden `move` targets.
 
@@ -4141,12 +4963,16 @@ terminal when the reclaim asks; the live-run hold below covers the run
 reconciliation could not or did not terminate.
 
 - **Only a re-dispatch asks.** An *earlier dispatch* of an item is a
-  record in THIS checkout's dispatch journal that names a run id or a
-  declared dispatch id for the item; a dry-run plan and a pre-run refusal
-  are not earlier dispatches, and a dispatch journaled only in another
-  checkout's journal is invisible here, in which case the reclaim does not
-  run and `publish_draft` refuses exactly as it did before the reclaim
-  existed. For an item with no earlier dispatch the Dispatcher MUST NOT
+  record that names a run id or a declared dispatch id for the item in the
+  dispatch journal of ANY worktree of this repository, meaning every
+  checkout that shares its git common directory; a dry-run plan and a
+  pre-run refusal are not earlier dispatches. A dispatch journaled only on
+  another host is invisible here, in which case the reclaim does not run
+  and `publish_draft` refuses exactly as it did before the reclaim existed.
+  A worktree journal that cannot be read MUST be journaled as
+  `publish-branch-reclaim-held` with the reason `journal-unobservable`,
+  naming the path, rather than read as no earlier dispatch. Scenario 225 in
+  `scenarios.md` exercises this bullet. For an item with no earlier dispatch the Dispatcher MUST NOT
   query origin for a surviving publish branch: a first dispatch has no
   possible yes, and a remote probe on that path would put a forge outage
   on the critical path of every dispatch. For any other item it MUST ask
@@ -4186,8 +5012,9 @@ reconciliation could not or did not terminate.
   a live run for the item, or when the preserve or the delete fails, the
   Dispatcher MUST leave the branch exactly as it stands and MUST journal
   one `publish-branch-reclaim-held` record naming the reason (one of
-  `origin-unobservable`, `factory-unobservable`, `live-run`, or the failed
-  ref operation), the branch and head where established, and the live run
+  `journal-unobservable`, `origin-unobservable`, `factory-unobservable`,
+  `live-run`, or the failed ref operation), the branch and head where
+  established, and the live run
   ids on the live-run arm. A hold MUST NOT refuse the dispatch: the
   dispatch proceeds and `publish_draft` refuses the non-fast-forward push
   exactly as it did before the reclaim existed, so the worst outcome of
@@ -4227,24 +5054,27 @@ It is a published state-changing entry point and inherits `--invoker`
 the `impl:<id>` action remains a plain dispatch. The exceptions to both
 statements are an item released under §"Factory-configurable ACP fallback
 priority" → "Provider-limit release and re-dispatch", an item released by that
-section's adapter launch release, and an item released after a first stall
-cancel under §"Dispatcher progress watchdog": for each the Dispatcher
+section's adapter launch release, an item released after a first stall
+cancel under §"Dispatcher progress watchdog", and an item released for recovery
+under §"Stranded claim release" → "Stale assignee clearance": for each the Dispatcher
 itself invokes this resume, under its own invoker identity, when every
-precondition below passes, and otherwise dispatches a plain run seeded from
-the failed run's preserved work rather than from the default branch, as that
-section's "Recovery from the failed run's preserved work" specifies.
+precondition below passes, and otherwise follows the recovery routing of that
+section's "Recovery from the failed run's preserved work", which dispatches a
+plain run seeded from the failed run's preserved work, a fresh run, or holds the
+dispatch, as that routing specifies.
 
 **What it resumes.** The *earlier run* is the dispatch whose identifier
 the latest proof record on the item's open pull request carries, resolved
-through the dispatch journal exactly as the acceptance pass attributes a
-record (§"Post-merge acceptance (`acceptance → done`)" → "The proof
+through the dispatch journal by the run identifier on its first line, accepting
+for each journaled dispatch the identifiers the legacy match accepts (§"Post-merge acceptance (`acceptance → done`)" → "The proof
 evidence leg"); a record published before this clause was ratified names
 no head and cannot anchor a resume. The *published head* is the full
 commit sha that record names (§"Proof of Done record" → "The record").
 When no proof record on the pull request carries the identifier of the
 item's latest journaled dispatch, and that dispatch's journal carries a
 `watchdog-stall-cancel` record or a `run-wall-budget-exceeded` record
-(§"Dispatcher progress watchdog") naming a published head, that cancel
+(§"Dispatcher progress watchdog"), or a `credential-use-deadline-reached` record
+(§"Worker credential projection"), naming a published head, that cancel
 record anchors the resume instead, under every restriction below. A proof
 record that carries the dispatch's identifier always takes precedence over
 a cancel record. The cancel record anchors only when its stage is
@@ -4267,7 +5097,9 @@ from the earlier run's record on the factory the earlier dispatch names;
 when that factory answers that it no longer holds the run, the Dispatcher
 MUST derive the stage from the verdict of the latest record carrying the
 earlier run's identifier — `verified`: `pr_refresh`; `captured`: `review`;
-`not_captured` or `not_reproduced`: `fix`; no such record:
+`not_captured` or a behaviour `not_reproduced`: `fix`; a fidelity
+`not_reproduced`: `proof_capture`, read from the record's own
+classification of each difference; no such record:
 `proof_capture` — and the resume record MUST name which source decided
 it. When the earlier run terminated through `exit` after `pr` armed auto-merge, the resumed-at stage is `pr_refresh`, and the resume record MUST name the factory record as the source that decided it. An authoritative not-found answer from the factory observes the run
 as not live; only an unanswered or errored query is unobservable.
@@ -4278,9 +5110,10 @@ subject to every dispatch-eligibility rule of §"Dispatcher admission, WIP
 cap, and post-merge acceptance" and §"Dispatcher loop invocation surface"
 (dependencies, the WIP cap, `admission_policy`, `factory_safety`,
 `rework:pending`), hold the dispatch-scoped ownership lock, run the
-host-side mechanical wall of §"Effective acceptance criteria", resolve
-its factory as `dispatch --item` does (`--factory`, then the item's
-recorded factory, then `dispatcher.default_factory`), declare a dispatch
+host-side mechanical wall of §"Effective acceptance criteria", resolve its factory through the selection order of §"Factory
+addresses resolved from a host registry", taking that order's resume-only
+recorded-factory step, and including `LIVESPEC_FABRO_FACTORY` and factory
+overflow selection, declare a dispatch
 id to the sandbox, and journal exactly as a dispatch does — including the
 §"Fail-closed cost gate (keyed on `--item` presence)" record, under
 the hand-picked posture. It MUST
@@ -4339,8 +5172,23 @@ remedy, when:
 
 - the item is not `ready`, naming its status (remedy:
   `resolve-blocked:<id>:ready` for an item resting at `blocked /
-  needs-human`, or `reconcile-runs` for a stranded claim) — a resume never
-  steps around the ledger's human decision. For a resume the Dispatcher routes
+  needs-human`; `reconcile-runs` for a stranded claim that §"Stranded claim
+  release" reconciles; and, for an `active` item whose run is terminal,
+  which that release does not reconcile, and which carries neither
+  `rework:pending` nor a `merge-hold:` label (those keep their own routes,
+  §"Rework-pending re-dispatch" and §"Dispatcher policy settings" → "The
+  per-item merge hold"): no status move, naming the condition, when a live
+  process holds the item's dispatch-scoped ownership lock or that lock
+  cannot be read; otherwise, when the forge reports the item's pull request
+  merged, `reconcile-merged` if that command's own preconditions hold for
+  the item and, if one does not, no status move, naming the failing
+  precondition; `move:<id>:ready` when the forge was read and reports no
+  merged pull request; and no status move, naming the failed read, when the
+  forge cannot be read) — a resume never steps
+  around the ledger's human decision. The named remedy MUST be one that
+  changes that item's state; a refusal MUST NOT name a remedy that would
+  leave the item unchanged. Scenario 221 in `scenarios.md` exercises the
+  remedy rule. For a resume the Dispatcher routes
   itself, this bullet is graded at recovery routing, before admission, and not
   again after the claim;
 - the item's publish branch carries no open pull request, or no proof
@@ -4365,9 +5213,14 @@ remedy, when:
   bullet together;
 - the item's dispatch-scoped ownership lock exists and its process is
   alive, naming the lock age, as `reconcile-merged` refuses;
-- the pull request is closed or merged, naming the state. For a merged
+- the pull request is closed, or it is merged and the item is not in the
+  case of "A proof-only resume of a merged pull request" below, naming the
+  state. For a merged
   pull request the remedy is `reconcile-merged --item`, which requires a
-  real merge and stays the only valve for one;
+  real merge and stays the only valve for one, and the refusal names it
+  only when that command's own preconditions hold for the item; while one
+  does not hold (a live or unreadable ownership lock among them), the
+  refusal names that condition in place of the remedy;
 - the pull request has already anchored two resumes, naming them (remedy:
   a plain dispatch).
 
@@ -4378,6 +5231,8 @@ factory cannot report the earlier run's liveness, the resume MUST refuse
 with the same exit code naming the measurement it could not take; it
 MUST NOT proceed on an unobservable answer. A refusal leaves the item,
 the branch and the pull request exactly as they stood.
+
+**A proof-only resume of a merged pull request.** When the item's pull request is merged and the item rests in `acceptance` parked NEEDS_ATTENTION by the proof evidence leg of the acceptance pass because no applicable counted `proof_verify` record grades each of its `factory_captured` assertions on the merged head, whether no such record exists or the record it was graded on carries no per-assertion verdict, `resume --item` MUST take the proof-only arm instead of refusing on the merged pull request. The arm is not limited to an item that an earlier run published. For an item that no factory run merged, the merged pull request is the one "The host leg" of "Proof of Done record" defines as the pull request of its latest merged run, so a hand-finished merge qualifies, and the same holds for an item whose run ended in `publish_draft` or `refresh_repair` after the merge and never reached the proof stages. For any merged pull request in this case, `resume --item` MUST take the arm whatever ended the item's earlier run, if there was one, and MUST NOT re-enter the implement path. An item parked for an `unbindable` record is not in this case; its clearing action is a superseding record. The arm is exempt from the refusals that assume an unmerged item resting in `ready`: the item rests in `acceptance` and stays there throughout, it needs no open pull request, no anchoring proof record and no published-head match, and it makes no claim through admission. Its anchor is the confirmed merged pull request, that pull request's head commit at merge, and the parking record that names the proof leg, and the dispatch journal MUST record those three as the resume's provenance. The refusals for a live earlier run, a live ownership lock, a measurement the resume cannot take, and the two-resume limit still apply. The refusal for a live earlier run tests an earlier run only where one exists, so an item with no earlier run is not refused for the want of one. The arm MUST check out the pull request's head commit at merge, never the default-branch merge commit, read-only, and MUST run only `proof_capture`, `proof_verify` and `proof_grade` against it: a successful capture routes to `proof_verify`, a `verified` outcome routes to `proof_grade`, and every outcome of `proof_grade` and every other outcome of capture or verification ends the run. The arm's graph MUST carry no edge to any stage outside those three, apart from ending the run. It MUST run no implement, review, janitor, publication or merge stage, MUST push nothing and MUST open no branch or pull request. The run is associated with the existing pull request, so that the proof broker of "Publication is mechanically confined to the scripted publication stages" posts its records there. Every record the arm publishes MUST be posted as a new comment on the existing merged pull request through the posting primitive, bound by "Proof of Done record" → "The binding" to the item, that pull request and its head commit at merge, and carrying the resumed run's identifier. A `proof_verify` record the arm publishes MUST carry each `factory_captured` assertion's own `Reproduced:` line, graded by the same `proof_grade` node the implement workflow uses. When the arm ends, the Dispatcher MUST re-run the acceptance pass for the item, as `reconcile-merged` does, and that pass reads the new records by their binding through the same Proof of Done record reader that grades them. The acceptance pass that follows the arm is a re-run of a parked item. When it fails an assertion the arm did not reproduce, the item MUST stay in `acceptance` with a parking record naming each such assertion and the arm's record. That pass MUST NOT stamp rework, move the item to `blocked`, or count toward the rework cap, whatever the item's acceptance policy, and the arm never routes to `fix`. The arm counts toward the pull request's two-resume limit. Measured 2026-10-26: bd-ib-svm3fe's pull request 3731 merged with no Proof of Done record, reconcile-merged parked it NEEDS_ATTENTION on its proof leg, and it had to be accepted by hand; the merged-reconcile ending of "A pull request merged before its refresh" writes no proof record by design, so every item it ends leaves its merged head unproven unless this arm exists. Scenarios 257 and 277 in `scenarios.md` exercise this paragraph.
 
 **Unchanged.** `publish_draft` still pushes a plain fast-forward and MUST
 rewrite no ref except, on the visit that follows a refresh-repair round, the
@@ -4465,13 +5320,14 @@ mechanical — capacity, dependencies, a resolvable assignee, and factory-safety
 
 - **Permission** was settled upstream at the `pending-approval → ready`
   (`approve`) transition, governed by the item's effective
-  `admission_policy` (`item.admission_policy`, with `None` inheriting the
-  global `dispatcher.auto_approve_ready` default, §"Dispatcher policy
-  settings"): `auto` auto-approves into `ready` — at capture/groom time, or on
-  a subsequent Dispatcher pass for an item resting at `pending-approval`;
-  `manual` (whether stored on the item or inherited from a `false` global
-  `auto_approve_ready`) rests at `pending-approval` until a human's explicit
-  `approve`. The
+  `admission_policy` (resolved per §"The five policy settings" →
+  `dispatcher.auto_approve_ready`: a committed setting wins over a stored
+  label; otherwise the stored label governs and `None` inherits the shipped
+  default): `auto` auto-approves into `ready` — at capture/groom time, or on
+  a subsequent Dispatcher pass for an item resting at `pending-approval`; an
+  effective `manual` (from a committed `false` setting, from a stored label
+  where the setting is not committed, or from the shipped default) rests at
+  `pending-approval` until a human's explicit `approve`. The
   `admission_policy` field is the first-class realization that
   **replaces the prior `human-gated` text marker** — risky / irreversible
   work is held at the `approve` gate (resting at `pending-approval`), never
@@ -4954,8 +5810,10 @@ red on first read. Every other unprovable condition (no usable `gh`
 credential, an unresolvable pipeline, no runs yet, an unresolvable
 default branch, an aggregate conclusion that is neither green nor red)
 MUST still refuse immediately, without waiting. Only when the bound
-expires with the latest run still pending does the preflight end
-without a verdict, and it MUST then return a distinct PENDING outcome,
+expires with the latest run still pending, and no poll found a newest
+concluded run satisfying the three conditions of the green-ancestor
+rule below, does the preflight end without a verdict, and it MUST then
+return a distinct PENDING outcome,
 which MUST NOT start the dispatch or claim the work item, exactly like
 a refusal; MUST carry its own journal reason `master-ci-pending`,
 distinct from `master-ci-red` and `master-ci-unprovable`, with a journal
@@ -4971,10 +5829,18 @@ poll that observes a pending run SHOULD emit one progress line naming
 the run and its status, so an operator watching a dispatch can tell a
 wait from a hang.
 
+**A concluded green ancestor passes while newer runs are pending.** Rationale: CI on this repository's default branch takes longer than the interval between merges on a busy day, and the runs overlap rather than cancel one another, so the latest run is replaced before it concludes and a wait on the latest run alone defers every dispatch at the bound while the default branch is demonstrably green (design record: repository `thewoolleyman/livespec-orchestrator-beads-fabro`, plan epic `bd-ib-opbzv3` (`factory-idle-with-ready-work`), the scope event of 2026-11-02; measured that morning: four livespec-dev-tooling dispatches and one in this repository deferred at the 1800-second bound while a run on an earlier default-branch commit had concluded green and three newer runs were still in progress, leaving 7 of 10 fleet slots idle with ready work queued). Each time the preflight observes the latest run, or its aggregate job, still pending — on the first read and on every poll of the wait — it MUST also read the NEWEST CONCLUDED run of the resolved pipeline on the resolved default branch: the most recently created run whose aggregate job concluded green or red. Runs whose aggregate conclusion is neither green nor red (cancelled, skipped) are passed over by this read; they neither qualify nor disqualify. The preflight MUST then pass at once, without further waiting, when ALL of the following hold:
+
+1. the newest concluded run's aggregate job concluded green;
+2. its head commit is the resolved default branch's current head commit or an ancestor of it, as the forge reports the branch at the time of the read; and
+3. no run of the resolved pipeline on the resolved default branch created after it has concluded red (which holds by construction for the newest concluded run, and is stated so an implementation that selects the run another way MUST still honour it).
+
+Such a pass MUST be journaled as a pass naming the green run it passed on, that run's head commit, and the still-pending latest run, and its operator text MUST say that it passed on a concluded green ancestor while the named newer run is still running. When any of the three conditions does not hold — the newest concluded run is red, no concluded run exists, its commit is not an ancestor of the current head (the default branch was rewritten), or the branch head or the ancestry cannot be read — the preflight MUST NOT pass on that run and MUST NOT refuse on that observation; it MUST continue the bounded wait on the latest run exactly as above. A red newest concluded run therefore never passes and never refuses on its own while a newer run is pending: the wait continues, so a pending run that fixes a red default branch can still admit the dispatch when it concludes green. A latest run that has itself concluded red MUST still refuse as red, and a latest run that has itself concluded green MUST still pass, exactly as before.
+
 **A caller does not gate a dispatch on the default branch's CI.** Rationale: this repository's default branch moves with every merge and releases often, so its latest CI run is pending for much of any working day. A caller that reads that run itself sees an empty conclusion and holds a launch the master-CI preflight above would have admitted after waiting. On 2026-10-18, nine launching sessions each held launches behind a hand-rolled "master ci-green" pre-check while the preflight would have waited out the pending run. The 2026-10-13 measurement that produced the bounded wait recorded the same shape: a pending run read as a refusal pushed a retry loop onto every caller, and those loops raced the newer runs (design record: ledger epic `bd-ib-jnpvh4`; the 2026-10-18 instance is recorded on work-item `bd-ib-zygea5`). A caller of `drive` or of the Dispatcher, whether an operator, a launch loop, a supervising session or a coordinator, MUST NOT gate a dispatch on the default branch's CI state itself: it MUST NOT read the default branch's latest CI run to decide whether to invoke a dispatch, and it MUST NOT hold, defer or skip a dispatch because that run is pending. A caller MUST NOT duplicate any of the following three admission conditions, which the Dispatcher owns:
 
-1. The master-CI preflight of this section. It waits on a pending run for its bounded window, refuses on a run that concludes red or on an unprovable condition, and, when the window expires with the run still pending, returns the distinct PENDING outcome, journaled as `deferred` with reason `master-ci-pending`, without claiming the work item.
-2. The admission session-headroom assessment of §"Provider spend containment" → "Admission filters candidates by projected Claude session headroom". Under the enabling conditions and exceptions of that clause, its skips are candidate-local, and the dispatch proceeds while every admission-required node retains an eligible candidate. Otherwise a `ready` item stays `ready`, and a parked rework item stays parked, without a new claim, until the scheduled reevaluation.
+1. The master-CI preflight of this section. While the latest run is pending it passes on a concluded green ancestor run as specified above; otherwise it waits on the pending run for its bounded window, refuses on a run that concludes red or on an unprovable condition, and, when the window expires with the run still pending and no concluded green ancestor found, returns the distinct PENDING outcome, journaled as `deferred` with reason `master-ci-pending`, without claiming the work item.
+2. The admission session-headroom assessments of §"Provider spend containment" → "Admission filters candidates by projected Claude session headroom" and "Admission filters Codex candidates by projected usage-window headroom". Under the enabling conditions and exceptions of those clauses, their skips are candidate-local, and the dispatch proceeds while every admission-required node retains an eligible candidate. Otherwise a `ready` item stays `ready`, and a parked rework item stays parked, without a new claim, until the scheduled reevaluation.
 3. Plugin build currency per §"Self-contained plugin dispatch" → "The dispatch-admission path MUST NOT block on ambient release-staleness". A build that lags the latest release is surfaced as a non-blocking fact and never refused on that ground. The only blocking currency form is a committed `dispatcher.minimum_release` floor. Keeping a long-lived session bound to the registered build is the operator's duty, not an admission condition.
 
 A caller MAY add gates of its own for conditions the Dispatcher does not own: capacity on the factory host (for example its measured idle CPU), the availability of a launch slot the caller itself schedules, and the spacing between launches. Such a gate decides only WHEN a caller invokes a dispatch, and it MUST NOT re-implement, pre-empt or stand in for any of the three conditions above. A caller-scheduled launch slot is not a second repository-capacity authority: any repository-capacity observation a caller makes consumes the authoritative projection of §"Orchestrator-owned attention facts" → "Capacity single authority".
@@ -5008,6 +5874,43 @@ to a repository that has declared no check-suite. `dispatcher.janitor`
 describes the repository's
 check topology, has no per-item override, and joins the ratified
 committed-configuration-only class.
+
+A repository MAY also declare `dispatcher.janitor.merge_gate_suite`: the
+merge-blocking checks its own aggregate legitimately omits. Its value
+MUST be a JSON string holding one shell command line, the form in which
+the declared check suite reaches the in-sandbox gate, and it is invoked
+verbatim under the same no-wrapper rule. When the key is absent, or its
+value is the empty string, the factory workflow MUST behave exactly as it
+does without it. A value that is JSON `null` or is not a string is an
+unresolvable declaration and MUST refuse the dispatch exactly as an
+unresolvable check suite refuses, naming the key. The declared check suite reaches the factory workflow as its
+`sandbox_check_suite` input; the merge-gate command MUST reach it as a
+separate input, `sandbox_merge_gate_suite`, resolved from this key in
+the same way. When the key declares a command, the in-sandbox janitor
+gate MUST run it after `sandbox_check_suite` passes, on the same tree, as a separate command within the janitor
+stage and under that stage's resolved timeout; it MUST NOT be delegated
+to an agent turn, and an agent stage prompt MUST NOT direct a turn to run
+it. Before running it, the gate MUST resolve `origin/<default branch>` in
+the run's clone and supply it to the command as the environment variable
+`LIVESPEC_MERGE_GATE_BASE`; when that ref cannot be resolved, the janitor
+gate MUST fail with a named cause rather than run the command without a
+base. A non-zero exit of the merge-gate command MUST fail the janitor
+gate with the command's output in the stage log and MUST take exactly the
+route a failing check suite takes, so the run fails inside its own janitor
+stage rather than at merge-poll after a pull request exists. The
+obligation of "A fix turn runs the check suite once per tree" covers
+`sandbox_check_suite` only and does NOT extend to the merge-gate command,
+because the janitor visit that follows a successful `fix` turn runs both.
+When `pr_refresh` runs the repository-declared gate on a refreshed head,
+that gate MUST consist of `sandbox_check_suite` followed, when it
+passes, by `sandbox_merge_gate_suite`, with `LIVESPEC_MERGE_GATE_BASE`
+naming the default-branch commit that `pr_refresh` just fetched and
+refreshed the head onto, and a failure
+of either is a refreshed head the repository-declared gate rejects, which
+takes the existing refresh-repair route. The post-merge host janitor MUST
+NOT run the merge-gate command, because the merge it follows was already
+gated. `dispatcher.janitor.merge_gate_suite` joins the
+committed-configuration-only class with the rest of `dispatcher.janitor`.
 
 **Janitor-core provisioning resolution.** The livespec-core clone the
 janitor provisions into its checkout resolves its REF from the
@@ -5156,6 +6059,22 @@ grounds, while every Red-Green-Replay gate the hook delegates still fires. Honor
 is a governed-repository obligation the adopter fixture (§"Governed-repository
 integration constraints") exercises. The marker is local git config only and
 never leaves the ephemeral sandbox (a push carries refs, not config).
+
+**Staged source checkout names.** When the Dispatcher stages a Fabro run's
+source in a disposable worktree, so that the engine's pre-run push runs from a
+checkout that is not the primary, it MUST create that worktree at
+`<worktree-root>/<repository-directory-name>/fabro-source-<id>` on a new local
+branch named `livespec/source/<id>`. Here `<worktree-root>` is the per-user
+worktree root `~/.worktrees`, `<repository-directory-name>` is the final path
+component of the dispatching repository's checkout, and `<id>` is ONE value,
+freshly generated for each staging, written as 32 lowercase hexadecimal
+characters and shared by the directory name and the branch name. The staged
+branch is never the run's publish branch. These names are a stable interface
+that other repositories rely on: livespec-dev-tooling's worktree-pack `reap`
+verb identifies a factory-owned source checkout by the directory-name prefix
+`fabro-source-` and never removes one. The Dispatcher MUST NOT change either
+name, or the format of `<id>`, except by ratifying a change to this paragraph
+that names the consumers it affects.
 
 **Members-and-adopters-identical audit of the step and preflight set.**
 Every obligation in the named closed step set, and the dispatch-time
@@ -5539,6 +6458,18 @@ different objects and coincide in value only by accident. A surface that
 names host capacity at all MUST attribute it to the Fabro server and MUST
 NOT imply the Orchestrator enforces it.
 
+The ONE exception is factory overflow selection (§"Factory overflow
+selection"). It MAY read a candidate factory server's own
+`max_concurrent_runs` and that server's own non-terminal run count, solely to
+choose which candidate of §"Factory overflow selection" receives an unpinned
+dispatch; the candidates are the resolved default factory, including a registry
+fleet default the repository does not commit, and the declared entries of
+`dispatcher.overflow_factories`. That read MUST
+NOT refuse, defer, hold or count a dispatch. It MUST NOT be reported as an
+Orchestrator bound, and it MUST NOT feed any admission, gating or
+capacity-reporting surface. The tenant-scope clause below does not govern it.
+Every other prohibition in this section stays binding.
+
 The counted-claim bound (§"Per-repo WIP cap") is TENANT-scoped and MUST be
 computed from this repository's own state ONLY — its ledger rows, its
 dispatch locks, and its dispatch journal, across every checkout of the
@@ -5629,7 +6560,9 @@ a chain executed. No record, current or legacy, MAY refuse a dispatch whose
 resolved candidates all lie outside its coverage.
 
 **A record is falsifiable only by later matching execution.** A node attempt
-that starts after a domain observation and completes successfully against that
+that starts after a domain observation and completes successfully (an attempt
+reclassified as failed under "A provider refusal booked as a successful turn is
+a failed attempt" is not a successful completion) against that
 same hold key retires only the older domain record. A later successful attempt
 by the exact `(availability_key, candidate_key)` retires only the older
 candidate record. Overall run success is insufficient: it MUST NOT clear a
@@ -5652,7 +6585,13 @@ when they assert identity; unattributed invocation is refused unconditionally.
 
 **The admission-time credential-probe refusal re-probes rather than exiting.** A `loop` invocation (§"Dispatcher loop invocation surface") whose admission is refused by the admission-time credential-usability probe -- the projected worker credential returning a provider-limit or rate-limit condition BEFORE any sandbox is launched -- MUST NOT exit on that refusal while its `--budget` is unspent. It MUST re-run the probe on a bounded cadence and resume normal admission on the first usable probe result, subject to every other admission-valve condition (§"Admission valve (`ready → active`)"). The cadence is a committed-only `dispatcher.credential_reprobe_interval_seconds` (positive integer, default **300**); it is NOT declared API-configurable and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". Each refused probe MUST be journaled as one record under §"Control surface and audit" -- the re-probe wait is not silent. This clause governs ONLY the loop's response to a probe refusal; it creates NO new availability-record retirement route. A usable probe result MUST NOT retire an unexpired observed record: the three ratified retirement routes -- bounded expiry, matching execution (this section's "A record is falsifiable only by later matching execution"), and operator clearance -- stand unchanged, because a live credential probe is a non-dispatch-outcome host signal. Where observed holds exhaust an admission-required chain, admission remains refused until at least one candidate becomes eligible; a hold covering only the primary does not defeat an eligible fallback. The re-probe keeps the loop alive rather than substituting for record retirement.
 
-**Admission filters candidates by projected Claude session headroom.** For this clause, a covered candidate is a structured candidate whose resolved agent id is `claude-acp`, or a manual-form candidate recognized as a built-in Claude adapter under the existing built-in byte-equality rule, whose execution uses the Claude subscription credential supplied by Worker credential projection. Coverage MUST follow resolved agent provenance and actual credential projection, never display text, a model-name prefix, or a spelling inferred from an opaque availability or candidate key. Arbitrary manual adapters and other agents are outside this clause's coverage; extending coverage to them requires an explicit authentication binding. Before claim and final per-node selection, the Dispatcher MUST assess every otherwise-selectable covered candidate on an admission-required ACP node, including covered fallbacks and built-in single-candidate nodes without fallback metadata. It MUST read the provider's five-hour session utilization using the exact credential snapshot that the dispatch would project. One assessment per distinct projected credential per admission evaluation MUST be reused across nodes and candidates sharing that credential. If that snapshot changes before projection, the affected assessment MUST be repeated before claim. For each affected work-item and assessed credential, the Dispatcher MUST journal under §"Control surface and audit" the opaque non-secret credential identity, the utilization and remaining-headroom percentages or an explicit unobservable result, and the local observation time. The journal MUST NOT contain credential values or raw provider responses. The floor is a committed-only `dispatcher.session_headroom_floor_percent` (integer from 0 through 100 inclusive, default **20**), measured in percentage points of the five-hour usage allowance remaining, not elapsed wall-clock time. When an account-selection process outside the Dispatcher rotates away from an account when its five-hour remaining allowance falls below a trigger of its own, that trigger SHOULD NOT be below the committed floor, and the committed floor SHOULD NOT exceed it; an operator aligns the two by configuration, and the Dispatcher MUST NOT read that process's trigger or readings. A misaligned pair leaves a band in which the selection process holds an account the Dispatcher refuses, so the factory idles until the account drains past the trigger or resets. It is NOT declared API-configurable, and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". Remaining headroom equals 100 minus the provider's five-hour utilization percentage. A valid reading is a finite numeric utilization from 0 through 100 inclusive. Missing, malformed, out-of-range, transport-failed, authentication-failed, or timed-out readings are unobservable and MUST be journaled as such, never coerced to a numeric reading. The usage request MUST have a finite implementation-defined timeout. With a positive floor, a covered candidate is skipped for this admission evaluation when its remaining headroom is strictly below the floor or its reading is unobservable. Equality passes this filter. A floor of 0 disables every kind of headroom skip while retaining the bounded reading attempt and journal record; it disables no other admission condition. With a positive floor, a covered candidate whose valid reading passes the floor MUST additionally be assessed for projected exhaustion. The five-hour drain rate MUST be computed from this reading and a baseline. The baseline is the EARLIEST assessment carrying a valid reading journaled under this clause for the same opaque credential identity in the dispatching checkout's dispatch journal, read regardless of the work-item it was journaled for, whose observation time is no less than 15 minutes and no more than 90 minutes earlier. The rate is the increase in utilization percentage points divided by the elapsed hours between the baseline's observation time and this one. The projection is unavailable when no such baseline exists, or when this reading's utilization is not higher than the baseline's (a window reset or a provider correction occurred between them). An unavailable projection MUST be journaled with its reason and MUST NOT skip the candidate. The floor already governs an unprojected reading, and a projection with no history would otherwise refuse every first dispatch on a credential. The assessment history is per checkout, because it is the dispatching checkout's own dispatch journal. A projection is therefore unavailable in at least these cases: the credential was not assessed in that checkout during the preceding 90 minutes, the journal was removed, or the dispatch runs from another checkout or worktree whose journal holds no assessment of that credential. Each such case is a deliberate fail-open of the projection only, and the floor still applies. When the projection is available, the projected exhaustion instant is the observation time plus the remaining headroom divided by the rate, in hours. The admission horizon is a committed-only `dispatcher.session_headroom_horizon_minutes` (integer from 0 through 1440 inclusive, default **180**). It is NOT declared API-configurable, and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". The candidate MUST be skipped for this admission evaluation when its projected exhaustion instant is strictly earlier than the observation time plus the horizon. A horizon of 0 disables projection skips while retaining the computation and its journal record. A reset instant the response carries MAY be journaled as an unverified provider claim and MUST NOT change the projection skip. The projection MUST be computed only from journaled assessments and MUST NOT issue any usage request beyond the one bounded reading this clause already requires. For each assessed credential, the journal record MUST additionally carry exactly one projection result: the drain rate, the baseline's observation time, the projected exhaustion instant, the governing horizon, and whether a projection skip applied; or an explicit `unavailable` result with its reason; or an explicit `not-projected` result when no projection was attempted because the floor is 0, the reading was skipped by the floor, or the reading was unobservable. `not-projected` and `unavailable` MUST remain distinct values. A projection skip has exactly the semantics of a floor skip: it is ephemeral and candidate-local to this evaluation; per-node selection MUST continue to the next eligible candidate; a successful credential-usability probe MUST NOT override it; an emptied admission-required node leaves a ready item ready without a claim or blocked reason; and reevaluation follows the same scheduling rule. A headroom-governed refusal record and the per-node selection record MUST name a projection skip as a projection skip, distinct from a floor skip, and MUST reference the assessment carrying the projection. A projection creates NO observed availability record and retires none. With a positive floor, a successful credential-usability probe MUST NOT override a headroom skip. A headroom skip is ephemeral and candidate-local to this admission evaluation; candidates sharing the assessed projected credential use the same reading. Per-node selection MUST continue in configured order to the next candidate satisfying every eligibility condition, whether that candidate is uncovered or is covered and passes its own headroom assessment. Headroom MUST NOT refuse or delay a dispatch while every admission-required node retains an eligible candidate. If headroom skips leave an admission-required node with no eligible candidate, a ready item remains ready without a claim or blocked reason; a parked rework item retains its parked state without a new claim. Every other admission-valve condition remains in force. Reevaluation MUST use the existing Per-node selection scheduling rule of §"Factory-configurable ACP fallback priority": the earliest expiry among holds emptying a chain when applicable, otherwise after `dispatcher.credential_reprobe_interval_seconds`. The unattended loop MUST reevaluate automatically while its budget remains, without exiting solely because of a headroom wait or requiring a human. A headroom wait MUST be surfaced through the existing admission-wait attention surface, derived from the recorded admission evaluation and its scheduled reevaluation instant. Its handoff MUST inspect that recorded assessment and governing floor; it MUST NOT offer clearance of a nonexistent hold or require human action before retry. Snapshot composition MUST NOT issue a live usage request. The existing idle-factory projection MUST consume the recorded headroom outcome as part of the shared verdict and MUST NOT report an item as admission-eligible contrary to its outstanding recorded headroom wait. A due wait is reevaluated by the admission loop, not by a live probe during snapshot composition. A reading creates NO observed availability record and retires none: the provider's usage figure has been measured stale relative to its own refusals, so a reading above the floor is not evidence of availability, and a run that still meets its session limit mid-run is released under the provider-limit release of §"Factory-configurable ACP fallback priority". A passing or disabled headroom filter adds no restriction to admission, but MUST NOT override any live hold, outstanding availability confirmation, credential-usability refusal, or other admission condition.
+**Admission filters candidates by projected Claude session headroom.** For this clause, a covered candidate is a structured candidate whose resolved agent id is `claude-acp`, or a manual-form candidate recognized as a built-in Claude adapter under the existing built-in byte-equality rule, whose execution uses the Claude subscription credential supplied by Worker credential projection. Coverage MUST follow resolved agent provenance and actual credential projection, never display text, a model-name prefix, or a spelling inferred from an opaque availability or candidate key. Arbitrary manual adapters and other agents are outside this clause's coverage; extending coverage to them requires an explicit authentication binding. Before claim and final per-node selection, the Dispatcher MUST assess every otherwise-selectable covered candidate on an admission-required ACP node, including covered fallbacks and built-in single-candidate nodes without fallback metadata. The factory credential pool is every non-empty `CLAUDE_CODE_OAUTH_TOKEN__<SLOT>` credential the dispatch target's credential wrapper injects into the Dispatcher's environment, and the unnumbered `CLAUDE_CODE_OAUTH_TOKEN` is the sole pool slot only when no numbered slot is injected. The Dispatcher MUST choose the credential a dispatch projects from the WHOLE pool, once per admission evaluation, and MUST NOT restrict the choice to the account that an account-selection process outside the Dispatcher published for interactive use; a run keeps the credential it was dispatched with, so only the chosen slot's headroom bears on that run. For every pool slot it MUST read the provider's five-hour session utilization using the exact credential snapshot that the dispatch would project if that slot were chosen. With a positive floor, a slot QUALIFIES when either its reading is valid and its remaining headroom is not strictly below the floor, or its five-hour window is absent as defined below; and, in both cases, its seven-day status is not exhausted and its projection does not call for a projection skip. With a floor of 0 every pool slot qualifies, and the ranking below still applies. A slot whose projection is unavailable qualifies by the fail-open rule below, and a slot whose five-hour window is absent qualifies by the absent-window rule below; each ranks below every qualifying slot whose projection was measured or carried. Among qualifying slots the Dispatcher MUST choose the slot that has the soonest five-hour window reset instant in the provider's response, so that quota does not expire unused; a slot whose response carries no reset instant ranks after every slot that carries one, and any remaining tie resolves by the slot name in ascending order so that the choice is deterministic. The reset instant is used only for this ranking and still MUST NOT change any skip. A covered candidate is skipped by this clause only when NO pool slot qualifies; when one does, the chosen slot is the credential that every covered candidate of the dispatch projects, and the skip kinds below apply to a slot, not to a candidate. Every assessment's journal record MUST name the chosen slot's opaque non-secret credential identity and, for each other slot assessed in the same admission evaluation, its identity and the reason it was not chosen: a floor skip, a seven-day skip, a projection skip, an unobservable reading, or a qualifying slot ranked lower, so that a refusal and a choice are each explainable from the record. The record names slots only by that opaque identity. From the same provider response it MUST also take the seven-day utilization and the seven-day status where the provider reports them. A seven-day status counts as exhausted only when the provider explicitly reports that the seven-day allowance is refused (for Claude, a seven-day status of `rejected`); a warning status, a utilization below 100, or any other value is not exhaustion. With a positive floor, a covered candidate whose seven-day status is exhausted MUST be skipped for this admission evaluation. This seven-day skip is a headroom skip with exactly the semantics of a floor skip, a floor of 0 disables it, and a headroom-governed refusal record and the per-node selection record MUST name it as a seven-day skip, distinct from a floor skip and a projection skip. An absent, unparseable or unrecognised seven-day reading MUST NOT skip a candidate. The journal record of each assessment MUST carry the seven-day utilization percentage and status, or an explicit unobservable result, beside the five-hour figures. Scenario 231 in `scenarios.md` exercises these sentences, and Scenario 288 exercises them for a slot whose five-hour window is absent. One assessment per distinct pool slot per admission evaluation MUST be reused across nodes and candidates sharing that credential. If that snapshot changes before projection, the affected assessment MUST be repeated before claim. For each affected work-item and assessed credential, the Dispatcher MUST journal under §"Control surface and audit" the opaque non-secret credential identity, the utilization and remaining-headroom percentages, an explicit unobservable result, or the named `five-hour-window-absent` result, and the local observation time. The journal MUST NOT contain credential values or raw provider responses. Every assessment journaled under this clause MUST ALSO be appended to the host session-headroom history. That is one history per dispatching host, held at an implementation-defined per-user location outside every checkout and worktree, and shared by every checkout that dispatches on that host. Each entry MUST carry the opaque non-secret credential identity, the utilization percentage, the explicit unobservable result, or the named `five-hour-window-absent` result, the local observation time, and the repository and checkout that journaled it. It MUST NOT carry credential values or raw provider responses. A failure to append to the host history MUST NOT refuse or delay the dispatch, and the dispatching checkout's journal record MUST name it. Entries older than 90 minutes MAY be pruned. The floor is a committed-only `dispatcher.session_headroom_floor_percent` (integer from 0 through 100 inclusive, default **20**), measured in percentage points of the five-hour usage allowance remaining, not elapsed wall-clock time. It is NOT declared API-configurable, and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". An account-selection process outside the Dispatcher continues to own which account INTERACTIVE spend uses; that selection MUST NOT change which pool slot a factory dispatch projects, the Dispatcher MUST NOT read that process's selection, trigger or readings to choose a slot, and the factory takes its own allocation within the pool. An interactive account that is short of headroom therefore never idles the factory while another pool slot qualifies. Remaining headroom equals 100 minus the provider's five-hour utilization percentage. A valid reading is a finite numeric utilization from 0 through 100 inclusive. Except for an absent five-hour window as defined in the next sentences, missing, malformed, out-of-range, transport-failed, authentication-failed, or timed-out readings are unobservable and MUST be journaled as such, never coerced to a numeric reading. The five-hour window is ABSENT when the bounded usage request was answered successfully by the provider with the projected credential authenticated (for Claude, a 2xx response to the usage request) and that response reports no five-hour window at all (for Claude, it carries no `anthropic-ratelimit-unified-5h-utilization` header): the provider is then reporting no five-hour limit for that credential, which is not a failure to measure. An absent window MUST NOT be coerced to a numeric reading and MUST NOT be journaled or treated as unobservable. With a positive floor, a slot whose five-hour window is absent MUST pass the floor; no drain rate and no projection MUST be attempted for it, and its projection result MUST be `not-projected` with the reason `five-hour-window-absent`; its seven-day status MUST still govern it exactly as it governs any other slot, so a seven-day status of `rejected` MUST still yield a seven-day skip; and it MUST rank as a slot carrying no reset instant and no measured or carried projection. The journal record of the assessment MUST name the absent window distinctly, as `five-hour-window-absent`, never as an unobservable result and never as a numeric figure. A five-hour figure that is present but malformed or out of range, and every transport-failed, authentication-failed, timed-out or refused (non-2xx) response, MUST remain unobservable even when that response carries no five-hour figure. An assessment or host-history entry naming `five-hour-window-absent` carries no valid reading, so it MUST NOT serve as a drain-rate baseline or a carried rate. This mirrors the caam handling of an absent short window (livespec-overseer item overseer-yizu3e). The usage request MUST have a finite implementation-defined timeout. With a positive floor, a covered candidate is skipped for this admission evaluation when its remaining headroom is strictly below the floor or its reading is unobservable. Equality passes this filter. A floor of 0 disables every kind of headroom skip while retaining the bounded reading attempt and journal record; it disables no other admission condition. With a positive floor, a covered candidate whose valid reading passes the floor MUST additionally be assessed for projected exhaustion. The five-hour drain rate MUST be computed from this reading and a baseline. The baseline is the EARLIEST assessment carrying a valid reading journaled under this clause for the same opaque credential identity in the dispatching checkout's dispatch journal, read regardless of the work-item it was journaled for, whose observation time is no less than 15 minutes and no more than 90 minutes earlier. When the dispatching checkout's journal holds no such assessment, the baseline MUST be the EARLIEST entry of the host session-headroom history carrying a valid reading for the same opaque credential identity, journaled from any checkout, whose observation time falls in that same window. The rate is the increase in utilization percentage points divided by the elapsed hours between the baseline's observation time and this one. When no such baseline exists, the Dispatcher MUST use a carried rate: the drain rate journaled by the most recent assessment of the same opaque credential identity in the dispatching checkout's dispatch journal whose projection result carried a drain rate, whose observation time is no more than 90 minutes earlier, and whose utilization is not higher than this reading's. A carried rate MUST NOT be used when any assessment of that credential journaled after the carried assessment reads a lower utilization than the carried assessment (a window reset or a provider correction occurred since). The projection is unavailable when neither the dispatching checkout's journal nor the host session-headroom history holds such a baseline and no carried rate exists, when the host history cannot be read, the checkout's journal holds no baseline and no carried rate exists, or when this reading's utilization is not higher than the baseline's (a window reset or a provider correction occurred between them). An unreadable host history MUST be journaled as its own unavailable reason, distinct from an absent baseline. An unavailable projection MUST be journaled with its reason and MUST NOT skip the candidate. The floor already governs an unprojected reading, and a projection with no history would otherwise refuse every first dispatch on a credential. The assessment history is the dispatching checkout's own dispatch journal, widened by the host session-headroom history when that journal holds no baseline. A projection is therefore unavailable in at least these cases: the credential carried no valid reading and no drain rate on the dispatching host during the preceding 90 minutes, both the journal and the host history were removed, or the host history is unreadable, the checkout's journal holds no baseline and no carried rate exists. Each such case is a deliberate fail-open of the projection only, and the floor still applies. A dispatch from a checkout or worktree whose own journal holds no assessment of that credential MUST NOT, by that fact alone, journal the projection as unavailable while the host history holds a baseline. When the projection is available, the projected exhaustion instant is the observation time plus the remaining headroom divided by the rate, in hours. The admission horizon is a committed-only `dispatcher.session_headroom_horizon_minutes` (integer from 0 through 1440 inclusive, default **180**). It is NOT declared API-configurable, and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". The candidate MUST be skipped for this admission evaluation when its projected exhaustion instant is strictly earlier than the observation time plus the horizon. A horizon of 0 disables projection skips while retaining the computation and its journal record. A reset instant the response carries MAY be journaled as an unverified provider claim and MUST NOT change the projection skip. The projection MUST be computed only from journaled assessments and MUST NOT issue any usage request beyond the one bounded reading per pool slot this clause already requires. For each assessed credential, the journal record MUST additionally carry exactly one projection result: the drain rate, the baseline's observation time, the baseline's source (`checkout-journal` or `host-history`) and, for a `host-history` baseline, the repository and checkout that journaled it, the projected exhaustion instant, the governing horizon, and whether a projection skip applied; for a carried rate, the record MUST name the rate source as `carried` and MUST carry the carried assessment's observation time in place of the baseline's, and a projection skip taken on a carried rate MUST be named as a projection skip exactly as one taken on a measured rate; a carried projection skip MUST have exactly the semantics of every other projection skip, and the horizon, the floor and the skip scheduling rules MUST apply to it unchanged; or an explicit `unavailable` result with its reason; or an explicit `not-projected` result when no projection was attempted because the floor is 0, the reading was skipped by the floor, the reading was unobservable, or the five-hour window was absent. `not-projected` and `unavailable` MUST remain distinct values. A projection skip has exactly the semantics of a floor skip: it is ephemeral and candidate-local to this evaluation; per-node selection MUST continue to the next eligible candidate; a successful credential-usability probe MUST NOT override it; an emptied admission-required node leaves a ready item ready without a claim or blocked reason; and reevaluation follows the same scheduling rule. A headroom-governed refusal record and the per-node selection record MUST name a projection skip as a projection skip, distinct from a floor skip, and MUST reference the assessment carrying the projection. A projection creates NO observed availability record and retires none. With a positive floor, a successful credential-usability probe MUST NOT override a headroom skip. A headroom skip is ephemeral and candidate-local to this admission evaluation; candidates sharing the assessed projected credential use the same reading. Per-node selection MUST continue in configured order to the next candidate satisfying every eligibility condition, whether that candidate is uncovered or is covered and passes its own headroom assessment. Headroom MUST NOT refuse or delay a dispatch while every admission-required node retains an eligible candidate. If headroom skips leave an admission-required node with no eligible candidate, a ready item remains ready without a claim or blocked reason; a parked rework item retains its parked state without a new claim. Every other admission-valve condition remains in force. Reevaluation MUST use the existing Per-node selection scheduling rule of §"Factory-configurable ACP fallback priority": the earliest expiry among holds emptying a chain when applicable, otherwise after `dispatcher.credential_reprobe_interval_seconds`. The unattended loop MUST reevaluate automatically while its budget remains, without exiting solely because of a headroom wait or requiring a human. A headroom wait MUST be surfaced through the existing admission-wait attention surface, derived from the recorded admission evaluation and its scheduled reevaluation instant. Its handoff MUST inspect that recorded assessment and governing floor; it MUST NOT offer clearance of a nonexistent hold or require human action before retry. Snapshot composition MUST NOT issue a live usage request. The existing idle-factory projection MUST consume the recorded headroom outcome as part of the shared verdict and MUST NOT report an item as admission-eligible contrary to its outstanding recorded headroom wait. A due wait is reevaluated by the admission loop, not by a live probe during snapshot composition. A reading creates NO observed availability record and retires none: the provider's usage figure has been measured stale relative to its own refusals, so a reading above the floor is not evidence of availability, and a run that still meets its session limit mid-run is released under the provider-limit release of §"Factory-configurable ACP fallback priority". A passing or disabled headroom filter adds no restriction to admission, but MUST NOT override any live hold, outstanding availability confirmation, credential-usability refusal, or other admission condition.
+
+**Admission filters Codex candidates by projected usage-window headroom.** For this clause, a covered candidate is a structured candidate whose resolved agent id is `codex-acp` and whose execution uses the Codex worker credential supplied by Worker credential projection. That projected credential snapshot is this clause's authentication binding. Coverage MUST follow resolved agent provenance and actual credential projection, never display text, a model-name prefix, or a spelling inferred from an opaque availability or candidate key. Before claim and final per-node selection, the Dispatcher MUST assess every otherwise-selectable covered candidate on an admission-required ACP node, including covered fallbacks. For each distinct projected Codex credential per admission evaluation, the Dispatcher MUST issue exactly one bounded usage read to the provider's account usage endpoint, `https://chatgpt.com/backend-api/wham/usage`, authenticated by that snapshot's access token and account identifier, and MUST reuse that one reading across every node and candidate sharing the credential. The read MUST have a finite implementation-defined timeout and MUST NOT run a model turn or spend any model allowance. From the response the Dispatcher MUST take `rate_limit.allowed`, `rate_limit.limit_reached`, and, for each of `rate_limit.primary_window` and `rate_limit.secondary_window` that is present and non-null, its `used_percent`, `limit_window_seconds`, and `reset_at`. A window's `reset_at` is usable when it is a positive integer of epoch seconds; a missing or unusable `reset_at` MUST NOT make the window or the reading invalid or unobservable, and only withholds that window's reset-proximity relaxation. A window's remaining headroom equals 100 minus its `used_percent`; a valid window is one whose `used_percent` is a finite number from 0 through 100 inclusive and whose `limit_window_seconds` is a positive integer. Validity is decided for the WHOLE reading, never window by window: a reading is valid only when the response parses, `rate_limit.allowed` and `rate_limit.limit_reached` are both booleans, at least one of the two windows is present and non-null, and EVERY present non-null window is valid. Any other reading — including one carrying a valid window beside a malformed one, or a missing or non-boolean `allowed` or `limit_reached` — is unobservable, as are transport-failed, authentication-failed and timed-out reads, and MUST be journaled as unobservable, never coerced to a numeric reading or admitted on its valid part. The governing remaining headroom of a valid reading is the smallest remaining headroom among its windows. Each valid window has an effective floor: when the committed floor is positive and the window's usable `reset_at` is no more than 43,200 seconds (12 hours) after the reading's observation time, the effective floor is the smaller of the committed floor and 5; otherwise it is the committed floor. A window with no usable `reset_at`, or whose `reset_at` is at or before the observation time, takes the committed floor. The 12-hour reset proximity and the relaxed floor of 5 are fixed by this clause and introduce no configuration key.
+
+The committed `dispatcher.session_headroom_floor_percent` and `dispatcher.session_headroom_horizon_minutes` govern this clause; it introduces no configuration key of its own, and a floor of 0 disables every skip this clause defines while retaining the bounded read and its journal record. With a positive floor, a covered candidate MUST be skipped for this admission evaluation when: `rate_limit.allowed` is `false` or `rate_limit.limit_reached` is `true` (a Codex limit skip); or any valid window's remaining headroom is strictly below that window's effective floor (a floor skip); or the reading is unobservable (a floor skip on an unobservable reading). Equality passes the floor, per window against its effective floor. The floor of 0 that disables every skip is the COMMITTED floor, and a relaxed effective floor MUST NOT be read as 0. A reading passes the floor when every valid window passes its effective floor, and the `floor-skip` not-projected reason is read the same way. A credit balance, an overage allowance, or any other field outside `rate_limit` MUST NOT count as headroom and MUST NOT prevent a skip, because work served from credits beyond the usage window is spend the operator did not schedule. With a positive floor, a covered candidate whose valid reading passes the floor and reports `rate_limit.allowed` true and `rate_limit.limit_reached` false MUST additionally be assessed for projected exhaustion per window, using exactly the baseline, drain-rate, unavailable-projection, and horizon rules of the Claude clause, applied per opaque credential identity AND per window length, so a reading of one window is never a baseline for another. The candidate MUST be skipped by a projection skip when any valid window's projected exhaustion instant is strictly earlier than the observation time plus the horizon. An unavailable projection MUST be journaled with its reason and MUST NOT skip the candidate. A projection is attempted only for a valid reading that passes the floor and reports `rate_limit.allowed` true and `rate_limit.limit_reached` false; every other reading carries, for each of its windows (or once, when no window is valid), an explicit `not-projected` result whose reason is one of `floor-zero`, `floor-skip`, `unobservable`, or `codex-limit`, the last covering a reading with `rate_limit.allowed` false or `rate_limit.limit_reached` true, and `not-projected` MUST remain distinct from `unavailable`.
+
+Every skip this clause defines has exactly the semantics of a Claude floor skip: it is ephemeral and candidate-local to this evaluation; per-node selection MUST continue in configured order to the next eligible candidate; a successful credential-usability probe MUST NOT override it; it MUST NOT refuse or delay a dispatch while every admission-required node retains an eligible candidate; an emptied admission-required node leaves a ready item ready without a claim or blocked reason; and reevaluation follows the same scheduling rule. The per-node selection record and any headroom-governed refusal record MUST name each skip by its kind, distinguishing a Codex limit skip, a floor skip, and a projection skip, and MUST name the provider as `codex`. For each affected work-item and assessed Codex credential, the Dispatcher MUST journal under §"Control surface and audit" the opaque non-secret credential identity, `rate_limit.allowed` and `rate_limit.limit_reached`, each window's `used_percent`, `limit_window_seconds` and remaining headroom, or an explicit unobservable result, the local observation time, and exactly one projection result per window in the Claude clause's form. A window's `reset_at` changes a skip ONLY through that window's effective floor; it MUST NOT change the Codex limit skip, the unobservable floor skip, the projection skip, the horizon, or any Claude assessment. For each window the journal MUST additionally carry its `reset_at` (or an explicit absent or unusable result), its effective floor, and whether that floor was relaxed by reset proximity. The journal MUST NOT contain credential values, the account email, or raw provider responses. A reading creates NO observed availability record and retires none, and a passing reading MUST NOT override any live hold, outstanding availability confirmation, credential-usability refusal, or other admission condition. A run that still meets the Codex limit mid-turn is released under the provider-limit release of §"Factory-configurable ACP fallback priority", exactly as before this clause.
 
 For a new-grammar-enabled chain, a provider-limit/rate-limit probe refusal is an
 ephemeral candidate-local skip for that admission evaluation only. It creates no
@@ -5671,7 +6610,7 @@ are not governed by the same observation:
 - A containment refusal MUST carry at minimum the work-item id, governing
   condition, admission-required node lacking an eligible candidate, and
   scheduled reevaluation instant. It MUST name applicable hold observations and
-  their expiries when present. When no hold governs the refusal, it MUST name the outstanding confirmation, unavailable evidence source, admission-time credential-probe skip, or admission session-headroom skip instead; it MUST NOT invent a hold identity or expiry. A headroom-governed refusal MUST additionally name the assessed credential identity, reading or explicit unobservable result, observation time, governing floor and governing horizon, the projection result, and skipped candidates for the admission-required node lacking an eligible candidate.
+  their expiries when present. When no hold governs the refusal, it MUST name the outstanding confirmation, unavailable evidence source, admission-time credential-probe skip, or admission session-headroom skip instead; it MUST NOT invent a hold identity or expiry. A headroom-governed refusal MUST additionally name the assessed credential identity of every pool slot, each with its reading or explicit unobservable result and the skip kind that disqualified it, observation time, governing floor and governing horizon, the projection result, and skipped candidates for the admission-required node lacking an eligible candidate.
 - A dead-implementer truncation MUST carry at minimum the work-item id and the
   governing condition. It fires on ANY implementer termination that produced no
   change to the worktree, whatever the cause — a provider ceiling, a crash, a
@@ -5764,7 +6703,7 @@ heading: the referenced scenario governs the proof. A reference line
 naming only a non-scenario H2 while such a scenario exists MUST be
 reported as a Definition-of-Done finding by the gate, naming the
 scenario heading that governs the assertion; a non-scenario H2 remains a
-valid reference for an assertion no scenario states. Scenario 141 in
+valid reference for an assertion no scenario states. Whether a scenario heading states the behaviour an assertion names MUST be decided from the Given, When, Then and And step lines of the scenarios under that heading, and never from the heading's title or from the judge's own recollection of the specification. A heading whose title names the behaviour but none of whose steps exercise it does not govern the assertion, and a heading whose steps exercise the behaviour governs it whatever its title says. This decision input MUST be the same for every taking of the Definition-of-Done judgement — the `dod_gate` node, the pre-admission judgement, the pre-dispatch judgement and any host-side preflight — so that one unchanged reference line on one unchanged subject (the "One rubric, one subject" paragraph below) receives the same reference-line ruling at every dispatch and at every host taking. Per that paragraph's rule that grading guidance MUST be written into the rubric itself, the `dod_gate` node's prompt file MUST state this reference-line rule once, MUST name the governing scenario's step lines as its decision input, and MUST direct the judge, wherever it reads `scenarios.md` itself rather than taking a returned governing-heading verdict, to quote the step line that states the behaviour when it names a scenario heading as governing an assertion. A taking MUST NOT reverse the ruling on a reference line whose subject digest and rubric digest are unchanged without naming a step line it did not cite before. This sentence leaves unchanged the rule of the "The spec-stated judgement is one shared component" paragraph that every taking takes the governing-heading verdict from that component when one was taken. Scenario 141 in
 `scenarios.md` exercises this rule. No surface may parse the
 section by another path. The primitive takes one parameter, `subject`,
 whose value is `work-item` for every work item and `plan` for a plan
@@ -5824,13 +6763,72 @@ section it MUST display `definition-of-done: missing`, and the item
 filed without it follows the existing wall ("Advise at capture and
 groom" below is unchanged: criteria MAY still arrive at groom time).
 Filing stays consent-gated and a front-end MUST NOT refuse on a finding.
+Each such front-end MUST also display, before the filing is confirmed,
+the item's DUPLICATE CANDIDATES: the work-items of the same tenant whose
+status is not `closed` and whose vocabulary overlaps the item being
+filed. The *words* of a text are the maximal runs of the characters `a`-`z`
+and `0`-`9` in it after it is lowercased. The *significant terms* of an
+item are the distinct words of at least four characters in its title and
+description, excluding every word listed in the stop-word file
+`.claude-plugin/data/duplicate-candidate-stop-words.txt`, which this
+plugin commits as UTF-8 text holding one lowercase word per line; every
+filing front-end MUST read that one file, and the display MUST show the
+lowercase hexadecimal SHA-256 digest of its bytes; the *overlap* of a candidate is the number of the filing's
+significant terms the candidate also carries, divided by the number of
+significant terms the filing carries, so a candidate that carries no
+significant term has an overlap of 0. An item QUALIFIES as a candidate when
+its overlap is at least 0.2, or when it sits under the same parent epic
+as the filing and its overlap is at least 0.1. The qualifying items are
+ordered by these keys in turn: same-parent items before all others, then
+descending overlap, then ascending work-item id, so the order is fully
+determined. The display MUST list the first five qualifying items in
+that order and, when more than five qualify, MUST state how many more
+qualified; each entry
+shows its id, title, status and the filing's significant terms it shares,
+at most five of them, in descending order of how often they occur in the
+filing's title and description counted together, and then
+alphabetically. When the filing itself has no
+significant terms, the overlap is not computed and the display MUST read
+`duplicate-candidates: not computed` with that reason, and MUST NOT read
+`none`. The computation MUST be deterministic
+and MUST NOT call a language model. When no candidate qualifies, the
+display MUST read `duplicate-candidates: none` followed by the number of
+non-closed items it compared, so that the scope of the negative is visible;
+when the tenant's non-closed items cannot be read, it MUST read
+`duplicate-candidates: unobservable` with the cause, and MUST NOT read
+`none`. Candidates are ADVISORY: the front-end MUST NOT refuse or delay
+the filing on them, and they MUST NOT withhold `ready`. When the filer
+adopts a candidate instead of filing, the front-end MUST file nothing
+and MUST offer to add the new item's evidence to the adopted candidate
+as a ledger comment. When the filer confirms the filing with candidates
+displayed, the filed item MUST carry one ledger comment naming each
+displayed candidate's id, so a later grooming pass can find the pair.
 The findings divide in two. A MECHANICAL finding — the section absent,
 a reference unresolved, a proof-mode declaration or `Reason:` line
 malformed — withholds `ready`: an item filed with one outstanding MUST
 NOT be routed to `ready` by intake. A test-existence or
 scenario-reference finding the wall recognises is ADVISORY: it MUST be
 displayed and MUST NOT withhold `ready`, because only the gate can judge
-it. Either kind MUST be recorded on the filed item as a ledger comment,
+it. The rendered goal is assembled from the dispatched item's own fields
+and ledger comments, and the sandbox has no ledger access. So a
+description, Definition of Done or comment that names another work-item as
+holding this item's evidence directs the implementer to text it cannot
+read. The wall MUST report such a reference as an ADVISORY finding naming
+the referenced work-item, with the remedy of copying the evidence onto this
+item before dispatch. An item the wall does not flag MUST NOT be reported
+as clear of such references. Scenario 218 in `scenarios.md` exercises this
+sentence. When the committed Dispatcher policy setting
+`dispatcher.goal_size_warning_bytes`, a positive integer with no default, is
+set, an item whose rendered goal exceeds it MUST carry an ADVISORY finding
+naming the item and the rendered goal's size in bytes. The rendered goal
+here means title, description, criteria, notes, lessons and every ledger
+comment. The finding MUST be shown by the filing displays and by the
+Dispatcher's stderr and dispatch journal when it renders that goal, and
+MUST be among the `needs-attention` hygiene facts for a `ready` item. It
+MUST NOT refuse or delay a dispatch. When the key is unset, the finding
+MUST NOT be evaluated, and an invalid value MUST be reported as a
+configuration finding. Scenario 219 in `scenarios.md` exercises these
+sentences. Either kind MUST be recorded on the filed item as a ledger comment,
 so it is repaired where it was made. For a child of a plan, which plan
 assertions the child carries is recorded ONLY in the epic's carrier-map
 event (§"Plan Definition of Done and Proof of Done" → "The carrier
@@ -5843,17 +6841,35 @@ Definition-of-Done finding, so that it is repaired before a sandbox is
 spent on it. The implement prompt MUST state the kept-current rule
 below. Scenario 140 in `scenarios.md` exercises this clause.
 
+**The spec-stated judgement is one shared component.** The Dispatcher MUST obtain two verdicts from the `livespec_runtime.spec_stated` module of the livespec-runtime release this plugin vendors, and from nowhere else: for a behaviour statement, whether the ratified specification states it — `stated`, naming each governing H2 heading verbatim; `partial` or `unstated`, naming the existing heading whose generalization would state it, or none — and for a work-item, whether it is a `feature`, a `bug`, a `chore` or `non_functional`, the stored type being evidence rather than the answer. The module defines the prompt, the inputs and the verdict schema and invokes no model itself; the Dispatcher supplies the model runner through the module's injected callable, so the judgement is defined once for every orchestrator. The Definition-of-Done judgement named in the "Judged before admission" and "Judged again before dispatch" paragraphs below, the `dod_gate` node, and the filing-time reference advisory MUST take the governing-heading verdict for each assertion from this component and MUST name the heading it returns as the remedy for a reference that does not govern the assertion; coherence, proof-mode feasibility, rider coherence and every existing refusal remedy remain graded exactly as before, because this component answers only the two questions above. A verdict MUST be reused only while its input and the spec identity it was taken against (§"Effective acceptance criteria" → "One rubric, one subject") are both unchanged since it was taken. For a governing-heading verdict taken for an assertion, the input is the assertion's text together with every ledger comment the subject's goal carries, so a rider appended to the item invalidates the governing-heading verdicts of all its assertions. For a work-item classification, the input is the subject's goal. The spec-change tier decision of "An autonomy tier is assigned" — the item's classification taken together with the verdict on its asked-for behaviour — has as its input the asked-for behaviour statement, and its spec identity is the clause provenance defined below for a governing-heading verdict: the set of clauses the judgement placed before its model in full, together with every clause the verdict names, each with its heading and body. Every spec-change tier record appended at filing, at groom or on a dispatch path MUST carry that clause provenance. A tier decision MUST be reused across a new revision under `<spec-root>/history/` exactly when a governing-heading verdict would be: the asked-for behaviour statement is unchanged, the selection repeated against the new revision returns the same clauses, and every clause the verdict names is unchanged in heading and body. Classifying an item "again on every dispatch path" is satisfied by that reuse and does not require a new model judgement. A recorded tier decision that does not carry the clauses it was judged against is invalidated by every new revision. For a governing-heading verdict, the spec identity is narrower; this narrowing applies to the governing-heading component and to the spec-change tier decision above, and the enclosing Definition-of-Done judgement keeps the spec identity of "One rubric, one subject". The identity is the set of clauses the judgement placed before its model in full, together with every clause the verdict names, each with its heading and body. The selection of those clauses MUST be a deterministic function of the item's subject and the specification text, and before reusing a verdict after a new revision the Dispatcher MUST repeat that selection against the new revision. It MUST reuse the verdict only when the newly selected clauses, and every clause the verdict names, are exactly those the verdict was judged against, with unchanged headings and bodies. A revision that adds, removes or changes any of those clauses, or that changes which clauses are selected, therefore invalidates the verdict. A revision that leaves them all unchanged does not, even when it adds, removes or changes clauses elsewhere, including headings the prompt listed without their bodies. A change to the item's Definition of Done changes the verdict's input and invalidates it, as a rider does. A recorded verdict that does not carry the clauses it was judged against is invalidated by every new revision. The judgement that decides whether to release a held spec-change-tier item MUST NOT reuse a verdict taken before the latest revision; it always runs against the ratified specification. Scenario 206 in `scenarios.md` exercises this paragraph together with the autonomy-tier bullet below. A human attestation recorded by the `release-spec-tier` valve (§"The four maintainer touchpoints", touchpoint 1) is the one exception to this paragraph's verdict source, selection and reuse rules, on the terms that touchpoint states.
+
+**Host judgements take the resolved `dod_gate` chain.** The pre-admission and pre-dispatch takings of the Definition-of-Done judgement, every governing-heading verdict and work-item classification the Dispatcher takes from the spec-stated judgement on the host, the drift run's spec-stated judgement, and the out-of-band reflector's judgement of shipped work's telemetry MUST each take their model judgement from the `dod_gate` node's candidate chain as a dispatch of the governed repository resolves it under §"ACP node adapter configuration" (repository layer over workflow layer, with no per-dispatch override). They try the candidates in chain order as FALLBACKS: the first candidate that returns a verdict decides the judgement, and the remaining candidates are not run. A candidate the host cannot launch, because its resolved adapter carries no agent identity the host can run or its agent is not available, or one that returns no verdict (a timeout or an unparseable reply), passes the judgement to the next candidate. In the pre-admission and pre-dispatch takings of the Definition-of-Done judgement, which take their verdict from the first candidate that returns one, the Dispatcher MUST bound the total model input of each candidate it runs; a repository preflight's independently graded chain is outside this bound. A candidate's input is the input tokens its output reports for its model requests, uncached, cache-written and cache-read alike, whether reported per request or as an aggregate covering several requests; each request is counted once however many times its report is repeated, and never both in its own report and in an aggregate that covers it. The Dispatcher MUST check the running total at every usage report the candidate's output makes available while it runs, and again on its final usage before it accepts the candidate's verdict. When the total reaches or exceeds 100,000 tokens, the Dispatcher MUST end the candidate, that is, cancel its active turn, terminate its remaining processes, never resume its session, and discard any verdict it returned, and MUST treat it as having returned no verdict, so the judgement passes to the next candidate. The Dispatcher MUST enable and consume every usage reporting the candidate supports, per-request, aggregate and streaming alike. A candidate whose reporting so enabled supplies no input usage at all cannot be bounded and runs unbounded, and its usage is recorded as unreported; that exception never applies because the Dispatcher omitted to enable or consume reporting the candidate supports. The record of a pre-admission or pre-dispatch taking whose chain returned a verdict MUST name the total input tokens its deciding candidate's requests reported, marked complete when the reports cover every request, partial when they cover only some, and unreported when there are none. The record of a taking whose chain returned no verdict names no deciding candidate and lists each candidate the bound ended, and for each such candidate the total input tokens its requests reported, marked complete, partial or unreported as for a deciding candidate, and the bound that ended it. The same holds for the pre-admission taking's did-not-run record and for the pre-dispatch taking's. A taking that reuses a recorded verdict runs no candidate, so neither the bound nor the field applies to it. Measured 2026-10-26, one host taking launched as `claude -p` made three requests that each re-sent a context of about 128,000 tokens, so one grading consumed about 380,000 input tokens. When no candidate returns a verdict, the judgement did not run, and the taking follows its ratified did-not-run route. For the out-of-band reflector, a reply that parses as its structured findings is a verdict even when it carries no findings, and a reply that does not parse as findings is no verdict. Its did-not-run route is this: its pass MUST record that its judgement did not run and why, and MUST file no work item and propose no lesson from that pass. A host judgement MUST NOT carry a hard-coded model default and MUST NOT take its model from any other source. In particular, the out-of-band reflector MUST NOT launch an agent process of its own outside the candidate chain, such as a headless `claude -p`, and no variable of the host's environment, `LIVESPEC_REFLECTOR_MODEL` included, selects its model; a model the resolved candidate's committed adapter configuration carries is not such a selection. The Honeycomb telemetry access the reflector needs is named on the reflector's own invocation, as the next paragraph permits. Measured 2026-10-26, the reflector launched `claude -p` directly on the Anthropic model `LIVESPEC_REFLECTOR_MODEL` named, with `claude-opus-4-8` as its hard-coded default, and no work item then routed it through the chain. A repository preflight that runs its own chain of candidate judges is not governed by this paragraph; it keeps the independently graded chain the TAKING paragraph below defines. Scenario 239 in `scenarios.md` exercises this paragraph, and Scenario 251 exercises its sentences on the out-of-band reflector.
+
+**A host judgement launches outside the interactive agent configuration.** Each host judgement the preceding paragraph names MUST launch its candidate agent without the interactive agent configuration of the governed repository or of the host's operator. No hook, plugin, MCP server or instruction file from the project-level or user-level configuration of the candidate's agent loads into the judgement's agent session, beyond what the judgement itself names on its own invocation. This holds whichever agent the resolved candidate runs. The judgement's subject, rubric and governing text reach the agent only through the judgement's own prompt and the tool allowance the judgement grants. The reason is cost, measured on 2026-10-25 on the gmktec factory host. Two or three host judgements per dispatch each launched `claude -p` with the governed repository as its working directory, so each one ran that repository's session-start hooks: twelve plugin marketplace and install calls, a credential wrapper and an MCP server. A guard hook also ran on every tool call. Together they made up most of the 4.7 to 6.8 CPU-minutes that a dispatch spent before its Fabro run started.
+
+**One rubric, one subject.** The Definition-of-Done judgement is taken by the `dod_gate` node, before admission, before dispatch, and by any host-side preflight a repository runs before launching a dispatch. Every taking MUST grade by ONE rubric: the `dod_gate` node's prompt file, read from the plugin build that will execute the dispatch. A taking MUST NOT add, remove or restate a check. A taking other than the node MAY append only an ending contract stating the verdict form it must return. Any other guidance about how to grade a check, including any statement about where the capability set comes from, MUST be written into the rubric itself, so that the node grades by it too.
+
+Every taking MUST grade one SUBJECT, made of four components.
+
+- The GOAL: the item's rendered goal exactly as the Dispatcher renders it for the node — title, description, effective criteria, notes, lessons and every ledger comment except the Definition-of-Done JUDGEMENT RECORDS: each comment whose first line begins with `livespec-dod-judgement`, whichever taking or surface wrote it (verdict, did-not-run and disagreement records alike), and except the filing-time FINDING COMMENTS: each comment whose first line begins with `definition-of-done finding (advisory):` or `definition-of-done finding (mechanical):`, the prefixes filing writes before each advisory and each mechanical finding, and except the SPEC-CHANGE TIER RECORDS: each comment whose first line is `livespec-spec-change-tier`, whichever stage wrote it. Those records are receipts, not brief: each reports a judgement taken against one specification version, and a later revision can supersede it. The Dispatcher MUST omit them from the node's rendered goal as well, and recording any of them MUST NOT change any subject digest. A ledger comment added after filing that is none of these records remains in the rendered goal's operator-rider section. Omitting a record from the subject and the goal MUST NOT remove it from the item's ledger. Every taking MUST decide whether a References heading resolves by matching it against the H2 headings of the specification tree it grades against, and MUST NOT treat an earlier finding comment or spec-change tier record as evidence about the item's References headings or as operator brief. This omission concerns the judgement's subject and the rendered goal only: it leaves unchanged the reuse of a recorded tier decision, `classify-tier`'s report of an existing record, the carrying forward of a linked proposed-change topic, and the spec-change-tier hold, each of which reads the tier records as before. Within the GOAL, the effective criteria returned by the shared primitive MUST render as a block in which each assertion is its own `- ` bullet, in source order. When the source is `description-definition-of-done`, the block MUST preserve each `### Host-captured` and `### Human-attested` sub-heading and its `Reason:` line from that section in their original positions relative to the assertions, so that every assertion's proof mode is visible by position; an assertion above every proof-mode sub-heading MUST remain above all of them. For the legacy `criteria-field` and `description-exit-criteria` sources, the block MUST render the resolved assertions without importing proof-mode sub-headings or `Reason:` lines from other description sections.
+- The HEADINGS: the verbatim body of each heading the reference line names.
+- The SPEC IDENTITY: the CLAUSE PROVENANCE of the governing-heading verdicts the taking uses for the subject's assertions (§"Dispatcher admission, WIP cap, and post-merge acceptance" → "The spec-stated judgement is one shared component"), kept per assertion: for each assertion, the clauses its verdict was judged against and, separately, every clause that verdict names, each with its heading and body. A ratified revision that changes any of those clauses, or that changes which clauses any assertion's selection returns or its verdict names, therefore changes the SPEC IDENTITY, and a revision that leaves them all unchanged leaves the SPEC IDENTITY unchanged; the other subject components change the subject digest exactly as before. When any of the subject's assertions has a governing-heading verdict that did not run or carries no clause provenance, and for the judgement that decides whether to release a held spec-change-tier item, the SPEC IDENTITY is instead the WHOLE-TREE DIGEST: a digest of the bytes of every file under the governed spec root at the resolved commit, excluding `proposed_changes/` and `history/`. A host taking therefore establishes each assertion's governing-heading verdict before it computes the subject digest: it reuses each recorded verdict that verdict's own reuse rule allows, which runs no model, and takes the others. A surface that only compares a subject digest and is not a taking, such as drain candidate enumeration or a `needs-attention` hygiene fact, MUST NOT take a governing-heading verdict: it uses only recorded verdicts that their reuse rule allows, and when any assertion has none, the digest it compares is treated as differing from every record. The pre-dispatch taking MUST record the SPEC IDENTITY it used, with its form and its clause provenance, in the dispatch journal, and in its judgement record when it appends one, and MUST supply them to the run, whether it reused a record or appended one. The `dod_gate` node MUST compute its subject digest from that supplied identity rather than from verdicts of its own, so that the node's outcome and the matching host record compare on one digest, and the node still runs. When the run was supplied no SPEC IDENTITY, because the pre-dispatch judgement did not run, the node uses the WHOLE-TREE DIGEST at the resolved commit.
+- The GRADING SET: the committed `dispatcher.sandbox_capabilities` array at that commit, as sorted names, or the literal `unpublished`.
+
+The RESOLVED COMMIT is the default-branch commit the dispatch seeds the sandbox from. The Dispatcher MUST resolve it once per dispatch, MUST take the pre-dispatch judgement against it, and MUST seed the sandbox from that same commit. A host taking before dispatch resolves the default branch's current tip. Every recorded verdict MUST carry the SUBJECT DIGEST and the RUBRIC DIGEST. The rubric digest is a SHA-256 over the rubric file's bytes. The subject digest is a SHA-256 over the four components in the order above, each encoded as UTF-8 and preceded by its byte length in ASCII decimal and one newline. Within the components: the HEADINGS are the bodies in reference-line order, each preceded by its heading line; the SPEC IDENTITY is the ASCII prefix `clauses:` followed by the CLAUSE PROVENANCE digest, or `tree:` followed by the WHOLE-TREE DIGEST; the CLAUSE PROVENANCE digest is a SHA-256 over the subject's assertions in Definition of Done order, each contributing its assertion text, then its selected clauses and then its verdict-named clauses as two separately length-prefixed lists, each list sorted by spec file path and then heading line, and each clause contributing its file path relative to the spec root, a NUL byte, its heading line, a NUL byte, its body's byte length in ASCII decimal, a NUL byte and its body; the WHOLE-TREE DIGEST is a SHA-256 over the included files sorted by their path relative to the spec root, each contributing its path, a NUL byte, its byte length in ASCII decimal, a NUL byte and its bytes; the GRADING SET is the sorted names joined by newlines.
+
+A TAKING is one invocation of the judgement: one repository preflight run, one pre-admission judgement, one pre-dispatch judgement, or one run's `dod_gate` node. The first three are HOST TAKINGS. A repository preflight that runs a chain of candidate judges is ONE taking. When every candidate returns a verdict, its outcome is a pass only when every candidate passes, and otherwise a refusal carrying the refusing candidates' findings. When any candidate cannot return a verdict (no eligible model, a timeout or an unparseable reply), the taking did NOT run: it returns no verdict, the preflight exits with its cannot-run code `2`, and the record it appends is a did-not-run record naming that candidate and the cause. A did-not-run outcome is never a refusal. The pre-admission and pre-dispatch takings keep their ratified did-not-run routes unchanged. Every taking that runs a judge MUST cause one judgement record to be appended to the item. For a host taking, the taking appends it. For the node, the Dispatcher appends it when it reads the run's `dod_gate` outcome, whether that is a pass or a refusal. Each record names the taking (and the run, for the node), the subject digest, the rubric digest, the outcome with any findings, and, for a chain, each candidate with its outcome. Records are ordered by their ledger creation time, ties broken by comment id. A CACHE-ELIGIBLE record is a host taking's completed verdict record, a pass or a refusal. Did-not-run records, node records and disagreement records are never cache-eligible. Before running the Definition-of-Done judge, and after establishing the governing-heading verdicts its SPEC IDENTITY needs, a host taking MUST look for the earliest cache-eligible record whose subject digest and rubric digest both equal its own. When one exists, the taking MUST return that record's outcome as its verdict, MUST name the record as reused, MUST NOT run any judge or candidate, and MUST NOT append a record. Node records MUST NOT answer a host lookup, and no record ever answers the node, which runs on every run. Whenever two records on an item carry identical subject and rubric digests and opposite outcomes, whichever takings wrote them, or one record's candidates returned opposite outcomes, the Dispatcher MUST append one `dod-judgement-disagreement` row to the dispatch journal and one judgement record of that kind on the item. Each MUST name both digests, the two takings or candidates, each outcome's timestamp, the run where the node is one of them, and each refusal's findings. The Dispatcher MUST record each distinct disagreement exactly once. An item refused by the node MUST rest exactly as any `dod_gate` refusal rests it. Scenario 239 in `scenarios.md` exercises this paragraph.
+
 **Judged before admission.** Before intake routes an implement-kind
 item to `ready` — from `backlog` or `pending-approval`, whether through
 intake, the approve valve, or groom — the Dispatcher MUST run the same
 Definition-of-Done judgement the `dod_gate` node applies (its prompt,
 against the item's effective criteria, the referenced specification
-headings and the resolved sandbox capabilities). When that judgement
+headings and the resolved sandbox capabilities). When that judgement runs a Claude model on the host, it MUST authenticate with the Claude subscription credential the Dispatcher selects for a dispatch it would launch at that moment, which is the pool slot the Dispatcher's admission would choose for a dispatch at that moment under the "Admission filters candidates by projected Claude session headroom" paragraph, and, when no pool slot qualifies or no numbered slot is injected, the unnumbered credential. It MUST NOT read the account-selection process's selection to choose the credential. When it falls back to the unnumbered credential, it MUST say so on stderr, naming the reason. The same rule governs the pre-dispatch judgement of the paragraph that follows. When that judgement
 would end a run through the structured needs-human ending, the item
 MUST NOT be routed to `ready`: it rests where a mechanical finding
 would hold it, and the verdict, with each remedy, MUST be appended to
-the item as a ledger comment. When that judgement admits the item,
-intake MUST route it exactly as it would without the judgement. When
+the item as a ledger comment. When that judgement admits the item, intake MUST route it exactly as it would without the judgement. A cache-eligible record on identical digests answers this judgement without running any judge, as "One rubric, one subject" requires of every host taking, and the verdict comment this paragraph requires is then not appended again. When
 the judgement cannot be run (no eligible model, a timeout, or an
 unparseable verdict), intake MUST record on the item that the
 pre-admission judgement did not run and why, and MUST route the item as
@@ -5863,7 +6879,13 @@ not have seen. A wall finding the judgement did not grade stays
 ADVISORY as above. `needs-attention` MUST list, as hygiene facts, each
 item held by the pre-admission judgement with its verdict's first
 remedy; the ready-item advisory hygiene fact above still applies to
-items the judgement admitted or could not judge. Scenario 174 in
+items the judgement admitted or could not judge.
+To find each held item's recorded verdict, that listing MUST read the ledger a
+bounded number of times per snapshot, independent of how many items are
+heldable, for example from markers already on the loaded records or from one
+snapshot-wide read, and MUST NOT issue a ledger read per heldable item; the
+facts it lists, held items with their recorded remedy and no fact for an item
+with no recorded verdict, are unchanged by that read shape. Scenario 174 in
 `scenarios.md` exercises this paragraph.
 
 **Judged again before dispatch.** Admission is not the only route to
@@ -5885,14 +6907,9 @@ exactly as it would without the judgement. When the judgement cannot be
 run (no eligible model, a timeout, or an unparseable verdict), the
 Dispatcher MUST record on the item that the pre-dispatch judgement did
 not run and why, and MUST proceed as it would without the judgement; the
-in-run `dod_gate` node remains the backstop. The Dispatcher MUST reuse
-the most recent verdict recorded for the item, the pre-admission verdict
-or an earlier pre-dispatch verdict, while the item's effective criteria
-and referenced headings are byte-unchanged since that verdict was taken,
-and MUST NOT run the judgement again or append another comment for a
+in-run `dod_gate` node remains the backstop. The Dispatcher MUST reuse the earliest cache-eligible record among those whose subject digest and rubric digest both equal the digests of the subject and rubric this dispatch would grade ("One rubric, one subject"), and MUST NOT run the judgement again or append another comment for a
 reused verdict; a reused refusing verdict refuses the dispatch without a
-new comment. A refused item MUST be excluded from drain candidate
-enumeration until its effective criteria or referenced headings change,
+new comment. A refused item MUST be excluded from drain candidate enumeration until the subject digest or the rubric digest it would now be graded by differs from the refusing verdict's,
 and `needs-attention` MUST list it as a hygiene fact naming the
 verdict's first remedy, exactly as the pre-admission paragraph does for
 held items. The did-not-run record MUST likewise be written at most once
@@ -5900,6 +6917,8 @@ per distinct cause until the judgement next runs. A refusal on the
 hand-picked `dispatch --item` path MUST exit with the dedicated exit
 code `5` of "The pre-dispatch wall" paragraph. Scenario 174 in
 `scenarios.md` exercises this paragraph.
+
+**Every host taking is journaled with its input size.** Each host taking of the Definition-of-Done judgement (repository preflight, pre-admission and pre-dispatch) MUST append one dispatch-journal row naming its stage, the candidate that decided it or, when it did not run, each candidate the bound ended, and the total input tokens each named candidate's requests reported, with the same complete, partial or unreported marking. The row lets the share of takings that reach the bound be counted from the journal alone, without reading the item's ledger.
 
 **Kept current.** The Definition of Done is the statement the proof
 stages capture against and the acceptance pass grades against, read from
@@ -5930,8 +6949,9 @@ exercise without a human; an agent session captures it on an operator
 host and a different session replays it (§"Proof of Done record" → "The
 host leg"). `host_captured` is a property of the assertion, independent
 of `factory_safety`: a host-routed item's assertions keep their declared
-modes, and its `factory_captured` assertions are captured and verified
-by the host-routed run.
+modes, but no factory run executes a host-routed item, so a
+`factory_captured` assertion on one cannot be evidenced and is governed by
+"The deliverable policy" below.
 `human_attested` means no agent session — in a sandbox or on an operator
 host — can exercise the assertion's proof (for example a physical
 device, or a console that admits only an interactive human login), so a
@@ -5978,7 +6998,20 @@ paragraph still apply on the gate's judgement of the deliverable, and
 only the missing-capability finding is withheld. A proof that requires a write-scoped or production credential is
 NOT a reason to declare `human_attested`: such an item carries
 `factory_safety: needs-host-secrets` and is host-routed, where its proof
-is still captured mechanically.
+is still captured mechanically. More generally, an item whose
+`factory_safety` is non-null is host-routed
+(§"Admission valve (`ready → active`)") and no factory run executes it, so
+no sandbox capability can prove any of its assertions. For such an item the first mode that can prove
+an assertion is `host_captured`, or `human_attested` where no agent session
+on an operator host can exercise it, and the sandbox-capability refusal
+above MUST NOT be applied to it. A `factory_captured` assertion on such an
+item MUST be reported by the host-side wall as an ADVISORY
+Definition-of-Done finding naming the assertion, the item's
+`factory_safety` reason and the remedy of moving the assertion under a
+`### Host-captured` sub-heading with a `Reason:` line. The finding MUST NOT
+withhold `ready`. The binding of a `factory_captured` record to the merging
+dispatch's run identifier is unchanged. Scenario 217 in `scenarios.md`
+exercises these sentences.
 
 **Derived routing, never stored.** No field, label or metadata key MAY
 store an item-level proof mode. The item-level consequence is computed by
@@ -6107,7 +7140,10 @@ empty or ungradeable, or the Definition of Done section is absent or
 carries no valid reference line (§"Effective acceptance criteria"), or
 the pre-dispatch Definition-of-Done judgement refused a hand-picked
 dispatch (§"Effective acceptance criteria" → "Authoring at filing time"
-→ "Judged again before dispatch"). `skipped`-severity findings never flip the exit code.
+→ "Judged again before dispatch"), or the pre-dispatch wall refused a
+spec-change-tier item held for its linked proposal's ratification
+(§"Grooming and slice-size calibration" → "The four maintainer
+touchpoints", touchpoint 1). `skipped`-severity findings never flip the exit code.
 
 ### Post-merge acceptance (`acceptance → done`)
 
@@ -6200,25 +7236,79 @@ verifies *fit + real behavior* against the **shipped** artifact:
   criteria and the empty-diff refusal"), for which an empty merged diff
   routes to the item's normal grading path rather than to this refusal.
 
-  **The proof evidence leg.** For every effective assertion whose proof
-  mode is `factory_captured` (§"Effective acceptance criteria" →
-  "Per-assertion proof mode"), the acceptance pass MUST take as its
-  criteria-leg evidence the `proof_verify` record of the run whose pull
-  request merged, observed from the pull request (§"Proof of Done
-  record"): the assertion is judged passing when that record's verdict is
-  `verified` and the assertion is listed as reproduced, failing when the
-  record lists it as not reproduced, and UNOBSERVED — yielding
-  NEEDS_ATTENTION per the evidence rule — when no `verified` record exists
-  for the merging run. A record identifies the merging run by the run
-  identifier on its first line, and the pass MUST accept either
-  identifier the Dispatcher can attribute to the merging dispatch — the
-  Fabro run id, or the dispatch id the Dispatcher declared to the
-  sandbox — so a `verified` record stamped with the dispatch id is
-  attributed to the merging run exactly as one stamped with the Fabro
-  run id is; for a resumed dispatch the pass MUST also accept any
-  identifier the journal's `resume` records link to it, transitively
-  (§"Dispatcher loop invocation surface" → "Resume from a published
-  pull request"). The pass MUST NOT apply merged-diff vocabulary
+  **The proof evidence leg.** For every effective assertion whose proof mode
+  is `factory_captured` (§"Effective acceptance criteria" → "Per-assertion
+  proof mode"), the acceptance pass MUST take its criteria-leg evidence from
+  the Proof of Done records on the pull request whose merge it grades,
+  selected by each record's binding (§"Proof of Done record" → "The binding").
+  It MUST NOT select a record by inferring which runs merged that pull
+  request. The pass MUST read every Proof of Done record on that pull request
+  and give each one exactly one bind verdict, taking the first rule below that
+  applies:
+
+  - `human-attested`: it is a human-attested record, which the human-attested
+    leg below governs.
+  - `superseded`: a later record on the pull request carries a well-formed
+    binding to this pull request and a `Supersedes:` line naming it. It is not
+    evidence, and it is never a refusal.
+  - `bound`: its binding is well-formed and names this work item and this pull
+    request.
+  - `bound-elsewhere`: its binding is well-formed and names another work item
+    or another pull request. It is not evidence for this item.
+  - `legacy-host`: it is a host record that carries no binding. The
+    host-captured leg judges it by the host-leg rules of §"Proof of Done record"
+    → "The host leg", unchanged.
+  - `legacy-matched`: it is a factory record that carries no binding, and its
+    run identifier is one the Dispatcher attributes to a dispatch of this item.
+    The pass MUST match it against EVERY dispatch of the item that the item's
+    dispatch records name, never against a subset resolved as the merging run.
+    For each dispatch it MUST accept the Fabro run id, the dispatch id the
+    Dispatcher declared to that dispatch's sandbox, and every identifier the
+    journal's `resume` records link to that dispatch, transitively (§"Dispatcher
+    loop invocation surface" → "Resume from a published pull request").
+  - `unbindable`: any other record, that is, one whose binding line is
+    malformed or incomplete, one that carries more than one binding line, or a
+    factory record without a binding whose run identifier matches no dispatch of
+    this item.
+
+  A record COUNTS for this item when it is a factory record whose verdict is
+  `bound` or `legacy-matched`, a host record whose verdict is `bound` or
+  `legacy-host`, or a human-attested record; a `reproof_required` record that
+  counts is still never evidence, as §"Proof of Done record" → "The record"
+  requires. A counted record proves the head its binding names, or, for a
+  legacy record, the head the record names. A counted `proof_verify` record
+  (verdict `verified` or `not_reproduced`) APPLIES to the merge when the head
+  it proves is the pull request's head commit at merge, or when a counted
+  `carried_forward` record names that merged head and links that
+  `proof_verify` record. A legacy record that names no head applies as it did
+  before this paragraph was ratified. A counted `proof_verify` record that
+  does not apply is reported as stale-head and is not evidence. Each assertion
+  is judged on its own section of the newest applicable counted `proof_verify`
+  record, whatever that record's record-wide verdict: passing when the section
+  carries `Reproduced: yes`, and failing when it carries `Reproduced: no`.
+  When that record has no section for the assertion, or its section carries no
+  `Reproduced:` line, the assertion is NEEDS_ATTENTION naming that record and
+  the missing evidence, and the pass MUST NOT fall back to an older record.
+  When no applicable counted `proof_verify` record exists, the record is
+  ABSENT, and the assertion is UNOBSERVED, yielding NEEDS_ATTENTION per the
+  evidence rule. The host-captured leg MUST take as evidence only host records
+  whose verdict is `bound` or `legacy-host`, and keeps the host-leg rules on
+  which pull request, build identity and session identity count. When any
+  record on the pull request is `unbindable`, the pass MUST NOT grade any of
+  the item's `factory_captured` or `host_captured` assertions and MUST NOT
+  report any of them UNOBSERVED. Its verdict is NEEDS_ATTENTION for the reason
+  that a proof record is unbindable, which is a reported state distinct from
+  an ABSENT record; the rework counter is unchanged. The parking record MUST
+  name each `unbindable` record by its comment link, state its fault, and name
+  the action that clears it: posting, through the posting primitive, a
+  correcting record that supersedes it. `needs-attention` MUST surface the
+  refusal as an attention fact naming the item, the pull request and each such
+  record. The parking record of every pass that parks the item, and the pass's
+  journal record, MUST list every Proof of Done record found on the pull
+  request with its kind, its run or session identifier, its comment link, its
+  bind verdict, the fault of each `unbindable` record and each stale-head
+  report, so that a reader sees why each record did or did not count. The pass
+  MUST NOT apply merged-diff vocabulary
   matching to an assertion that carries a proof mode; vocabulary matching
   remains only for items resolved from a legacy criteria source, which
   after v114 are only items already in flight; the implementing slice
@@ -6273,8 +7363,11 @@ verifies *fit + real behavior* against the **shipped** artifact:
   MUST record on the item, as a ledger comment, the verdict, each
   evidence leg with what was observed or what could not be observed,
   each pending leg, and the action that would move the item. It MUST
-  record one comment per DISTINCT (verdict, pending-leg set): a re-run
-  whose verdict and pending-leg set are unchanged appends nothing. The
+  record one comment per DISTINCT (verdict, pending-leg set, proof-record
+  inventory), where the inventory is the list of Proof of Done records with
+  their bind verdicts, faults and stale-head reports that the proof evidence
+  leg requires: a re-run whose verdict, pending-leg set and inventory are
+  unchanged appends nothing. The
   dispatch result for such an item MUST report `stage: acceptance` and
   `verdict: <verdict>`, with `status: green` for a PASS that parked or
   has a pending leg and `status: needs-attention` for NEEDS_ATTENTION;
@@ -6380,6 +7473,18 @@ exercised by `scenarios.md` (the WIP-capped top-ranked admission, the manual res
 accept-per-policy scenarios).
 
 
+## Dispatch pre-launch step attribution and concurrency
+
+A dispatch's pre-launch chain is every step one Dispatcher process runs for a work-item from the moment the process starts until it submits `fabro run` for that item, or until it refuses, defers or abandons the dispatch without submitting. It includes admission, the Definition-of-Done judgement, the ACP checks, the dispatch-claim stamp, recovery routing and the source-checkout preflight. Time spent in this chain is time a launched dispatch holds a launch slot while no run exists on any factory, so the chain MUST be fully attributed, MUST NOT serialize work that does not need to be serialized, and MUST NOT recompute a fact that cannot change within one loop pass.
+
+**Attribution.** For every pre-launch step it runs, the Dispatcher MUST journal one record when the step starts and one when it ends. Each record names the step, the work-item (or, for a step that serves a whole loop pass, the pass), the instant, and on the end record the elapsed seconds and the step's outcome. Process start-up, configuration and ledger reads that precede the first item-scoped step are steps under this rule and are journaled the same way. Between the Dispatcher process's start and its `fabro run` submission for an item, no interval longer than five seconds MAY go uncovered by a journaled step.
+
+**Concurrency.** Pre-launch steps whose inputs do not depend on another pre-launch step's result MUST be started without waiting for one another, and the dispatch MUST NOT wait on a step whose result it does not need. Every ordering between two steps that another section of this contract requires is unchanged, and nothing is submitted to a factory before every step whose refusal would withhold the dispatch has completed. A step that fails or refuses MUST still journal its end record, and the dispatch MUST apply that step's existing refusal rule exactly as it would had the steps run one after another.
+
+**Once per loop pass.** A loop pass is one iteration of `dispatcher.py loop` over the items it selects; a single-item dispatch is a loop pass of one item. A fact whose answer is the same for every item one loop pass dispatches MUST be computed at most once in that loop pass and reused by every dispatch in it. Such facts include the default branch's master-CI state, the sandbox container sweep, the GitHub App reach probe and the ACP session-headroom baseline. A per-pass fact MUST NOT be carried into the next loop pass. This rule does not relax §"Bounded Fabro event reads" → "Pre-launch reads": the dispatch journal and each run's `fabro inspect` are still read at most once per dispatch pass, and a dispatch pass still makes its own first read of each.
+
+**Source-checkout ancestry.** When the source-checkout preflight looks for a remote-tracking ref that contains the dispatch's head, it MUST test the default branch's remote-tracking ref first, and it MUST NOT start one process per remote-tracking ref to answer the question.
+
 ## Dispatcher successful terminal evidence
 
 The Dispatcher MUST distinguish successful workflow completion from an engine's
@@ -6424,7 +7529,11 @@ The Dispatcher's routine dispositions are governed by orchestrator-wide
 keys). Each setting is a **global default**; a **per-item ledger label
 overrides the global default for that one work-item** — the per-item label
 WINS over the global, and an item that carries no such label inherits the
-global. The settings are **independent**: no setting implies another, and
+global. Admission is the one exception to that precedence: when the
+repository commits `dispatcher.auto_approve_ready`, the committed value
+decides every item's effective `admission_policy` and a stored per-item
+`admission_policy` label does not override it (§"The five policy settings").
+The settings are **independent**: no setting implies another, and
 there is no master switch. This section composes — never contradicts —
 §"Admission valve (`ready → active`)", §"Post-merge acceptance (`acceptance →
 done`)", §"Dispatcher grooming behavior", and §"Store-write consent
@@ -6438,7 +7547,14 @@ every setting independently. Design record: repo `thewoolleyman/livespec`,
 (THE RE-LOCKED DESIGN), together with its "CORRECTION / ADDENDUM" section, which
 records the maintainer's ruling that every setting is per-item overridable
 EXCEPT `wip_cap`, whose rationale is that a concurrency ceiling is not a
-per-item property. `dispatcher.require_invoker` (§"Journal invoker
+per-item property. Admission departs from that record deliberately: the
+maintainer's later ruling of 2026-08-21, "the config file setting should
+always be respected", makes a committed `dispatcher.auto_approve_ready` win
+over every per-item admission label, because a stale `admission:manual` label
+otherwise holds an item at `pending-approval` in a repository whose committed
+configuration says to auto-approve; a deliberate per-item hold is expressed as
+status `blocked` with its reason recorded on the item, never as an admission
+label. `dispatcher.require_invoker` (§"Journal invoker
 attribution") is a committed attribution-integrity dial, not a policy
 setting of this section: it has no per-item override and is deliberately
 not API-configurable.
@@ -6456,16 +7572,22 @@ across-dispatch progress clauses. Existing within-run caps remain intact.
 
 ### The five policy settings
 
-Each is a global default with a per-item label override, and each defaults to
-its SAFE value:
+Each is a global default with a per-item label override (for
+`dispatcher.auto_approve_ready`, only while the setting is not committed), and
+each defaults to its SAFE value:
 
 - **`dispatcher.auto_approve_ready`** (boolean, default **`false`**) — the
-  global default for an item's effective `admission_policy` when the item
-  carries no explicit `admission_policy` label: `true` ⇒ `auto` (auto-approve
-  `pending-approval → ready` without a human); `false` ⇒ `manual` (rest at
-  `pending-approval` for the human's explicit `approve`). Per-item override:
-  the existing `admission_policy` label — a stored `manual` label holds the
-  item at `pending-approval` even when the global is `true`. The Dispatcher
+  repository setting for an item's effective `admission_policy`: `true` ⇒
+  `auto` (auto-approve `pending-approval → ready` without a human); `false` ⇒
+  `manual` (rest at `pending-approval` for the human's explicit `approve`).
+  Precedence: when this repository's `.livespec.jsonc` commits
+  `dispatcher.auto_approve_ready`, the committed value decides the item's
+  effective `admission_policy` and a stored per-item `admission_policy` label
+  MUST NOT override it. When the key is not committed, the stored per-item
+  label governs, and an item carrying no label inherits the shipped default
+  (`false` ⇒ `manual`). An admission label is not a hold mechanism: a
+  deliberate per-item hold MUST be expressed as status `blocked` with its
+  reason recorded on the item. The Dispatcher
   MUST NOT auto-approve a **design-human-gated (spec-change-tier) item**
   regardless of this setting or of any label (§"Grooming and slice-size
   calibration"; `spec.md` §"Terminology"); such an item stays escalated.
@@ -6504,8 +7626,8 @@ its SAFE value:
   the `admission_policy` / `acceptance_policy` labels originate; it MAY only
   lower an item to `human` and MUST NOT raise one to `consensus`. Until
   livespec core ratifies the consensus tier, `consensus` behaves as `human`.
-  This setting adds NO new `drive` valve — the thirteen human valve actions of
-  §"`drive`" remain thirteen — because the per-item override is a label, not a
+  This setting adds NO new `drive` valve — the fourteen human valve actions of
+  §"`drive`" remain fourteen — because the per-item override is a label, not a
   runtime valve press.
 
 An item's **effective answer disposition** resolves as its
@@ -6513,7 +7635,9 @@ An item's **effective answer disposition** resolves as its
 `dispatcher.answer_disposition`. `drive` MUST refuse a
 `resolve-blocked:<work-item-id>:ready|backlog` press carrying `--answer` that
 the effective answer disposition does not admit — under `human`, an
-automated/non-human disposition's press is refused — and the refusal MUST name
+automated/non-human disposition's press is refused, and a verified delegated
+press (§"Journal invoker attribution" → "Delegated valve authority") is
+admitted as a human operator's — and the refusal MUST name
 the work-item and the effective disposition, mirroring the effective-manual
 `approve` refusal (§"`drive`"). The `needs-attention` `resolve-blocked` lane
 MUST NOT advertise an answer handoff the effective disposition would refuse (the
@@ -6677,8 +7801,31 @@ place a human decision waits. A factory run is never that place.
   read back the preserve-by-reference pointer), THEN terminate it, and
   journal one record per reconciliation naming the run id, the factory,
   the run's status kind, the item and its status, the orphan reason, and
-  the termination route. The export is the precondition, not a courtesy:
+  the termination route. An item whose claim carries a pending stamp
+  (§"Stranded claim release") is not `active` under a different journaled
+  run id: while the stamp is pending, a non-terminal run attributed to that
+  item MUST NOT be classified an orphan, so no reconciler or watchdog sweep
+  may terminate the run its own dispatch has just created. Scenario 223 in
+  `scenarios.md` exercises this sentence. The export is the precondition, not a courtesy:
   a termination whose export was not read back MUST NOT proceed.
+- Every `fabro dump` the Dispatcher runs to read a run's record — the
+  export behind a preserve-by-reference pointer, the read-back that checks
+  that pointer, and the read of a worker-exit log — MUST be bounded by one
+  shared timeout, the same value at every such call site, so that no call
+  site gives up on a dump another would have completed. The value MUST be
+  sized from measured dump durations on the slowest factory declared under
+  `dispatcher.factories`, as a timeout approximately twice the measured
+  maximum; it is 900 seconds. A dump stopped at the bound is a failed dump,
+  and each call site keeps its own handling of a failed dump. For the
+  preserve-by-reference export specifically: an export that succeeds within
+  the bound MUST yield the pointer a successful export yields, carrying the
+  run's diff digest when the export holds a diff artifact; an export that
+  fails, whether stopped at the bound or exiting non-zero within it, MUST
+  yield a pointer that records the failed dump and its exit code and claims
+  no digest. Measured 2026-10-26 on the petri factory, three Dispatcher
+  dumps timed out at a 300-second bound, while a dump of the same size
+  finished within 600 seconds and another took 465 seconds. Scenario 247 in
+  `scenarios.md` exercises this bullet.
 - Reconciliation runs on every Dispatcher loop tick and in the dispatch
   preamble, and MUST also be runnable standalone (a scheduled sweep) so
   that an item closed by any route while no Dispatcher process is alive —
@@ -6698,8 +7845,10 @@ place a human decision waits. A factory run is never that place.
   hold verbatim: the decision stays in the ledger and reaches a human.
 - Every reconciliation surface (loop, preamble, standalone sweep,
   `needs-attention`) MUST address each factory by its declared server
-  target; a read against an undeclared or default target is not a
-  reconciliation of that factory.
+  target, where an implicitly declared or recorded-target factory
+  (§"Factory addresses resolved from a host registry") counts as declared and is
+  addressed by the server the registry resolves for its name; a read against an
+  undeclared or default target is not a reconciliation of that factory.
 
 Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
 `plan/ledger-is-the-only-gate/research/001-design-and-slice-plan.md`.
@@ -6710,13 +7859,104 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
 
 - **The claim stamp names its owning host, and admission replaces it.** The run stamp the Dispatcher writes onto the item when it learns its run (the run id and the factory server target) MUST also name the *dispatching host*: the stable host identity of the machine whose Dispatcher process holds the claim. At admission, in the same ledger write that moves the item to `active` with assignee `fabro`, or in a write that precedes it, the Dispatcher MUST replace any earlier stamp with a *pending* stamp. The pending stamp names the new dispatch and its dispatching host and carries no run id. So a newly admitted dispatch that has not yet learned its run can never be read as the previous claim. The Dispatcher replaces the pending stamp with the run stamp when it learns the run.
 - **Only the owning host recovers a claim.** Ledger writers may run on any number of hosts and share nothing but the Beads server, so no reconciler can observe another host's processes. A reconciler MUST therefore act on a claim only when the claim's stamp names the reconciler's own host. A claim stamped by another host, or by none, MUST be held. This confines every writer of a given claim's recovery to the one host where the owning Dispatcher's liveness is observable.
-- **Survey.** Every reconciliation surface named in §"A factory run never awaits a human" (the loop tick, the dispatch preamble, and the standalone `reconcile-runs` sweep) MUST also survey the ledger's `active` items assigned `fabro`. An item carrying `rework:pending` or a `merge-hold:` label MUST NOT be surveyed, per §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Stranded-state discrimination". For each surveyed claim the Dispatcher MUST take these measurements, and an unobservable measurement MUST NOT be read as a negative answer:
+- **Survey.** Every reconciliation surface named in §"A factory run never awaits a human" (the loop tick, the dispatch preamble, and the standalone `reconcile-runs` sweep) MUST also survey the ledger's `active` items assigned `fabro`, and every stale assignee as "Stale assignee clearance" below defines one. An item carrying `rework:pending` or a `merge-hold:` label MUST NOT be surveyed, per §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Stranded-state discrimination". For each surveyed claim the Dispatcher MUST take these measurements, and an unobservable measurement MUST NOT be read as a negative answer:
   - *Attribution*: the run id, factory and dispatching host, read from the item's ledger run stamp.
-  - *Run state*: that factory's answer for that run, asked by the factory's declared server target.
+  - *Run state*: that factory's answer for that run, asked by the factory's declared server target, or, for a recorded-target factory (§"Factory addresses resolved from a host registry"), by the server the registry resolves for its recorded name.
   - *Owner liveness*: whether a dispatch-scoped ownership lock for the item (§"Dispatcher loop invocation surface") is held by a live process in any checkout of the tenant's repository on this host. "No live owner" is established only when every such lock location was read and each is either absent or names a process that is not alive. An unreadable lock is not an absent lock.
   - *Predecessor history*: for an absent run, whether the item's preceding dispatch, in the sense of §"Factory-configurable ACP fallback priority" → "Adapter launch release and re-dispatch", ended in an absent-run release. A confirmed first dispatch has no predecessor. Unavailable history is not proof of no predecessor.
 - **Recovery is exclusive on its host and convergent.** Before writing any recovery effect, the reconciler MUST acquire the item's dispatch-scoped ownership lock at ONE canonical location per host: the lock path inside the tenant's primary checkout (the checkout `livespec.primaryPath` names). Taking that lock in whatever checkout the reconciler happens to run from is not enough, because each checkout's lock path excludes only its own callers. The canonical lock serializes recoveries with one another. It does not serialize the human valves or admission, which do not take it. While holding the lock, the reconciler MUST re-read the item and write nothing unless the item is still `active`, assigned `fabro`, and stamped (not pending) with the same run. The effects MUST be written in this order: the journal record, then the ledger comment, then the status transition last, so that the item becomes dispatchable only after its audit trail exists. IMMEDIATELY before the status transition, after the journal record and the comment, the reconciler MUST re-read the item's ledger run stamp again and MUST write the transition only if the stamped run id still equals the run it recovered and the item is still `active` and assigned `fabro`; otherwise the claim is held as `claim-changed` and the transition is not written. Each effect is keyed by item and run. A recovery that finds an effect already present MUST NOT write it again and MUST continue from the first missing effect. An effect whose presence cannot be read is unavailable: the claim is held as `effect-unobservable` and observed again on the next pass, and the effect MUST NOT be written blind.
-- **Residual race.** No public Beads write is a conditional update: the only server-enforced compare-and-swap is closing a record. So the final stamp re-read and the status transition are not indivisible at the server, and the recovery lock binds only recoveries. The accepted window is this. Any other write that changes the item's status, assignee or stamp, made on ANY host, that lands between the recovery's final re-read and its transition write can be overwritten by that transition. Such writes include a human valve (`move`, `resolve-blocked`, or a move to `blocked` or `backlog`), an admission that follows such a valve, and a Dispatcher's own terminal write. A write that lands BEFORE the final re-read is detected and held as `claim-changed`, because it changes the status, the assignee or the stamped run. An admission is detectable even before its run is known, through the pending stamp, which is held as `attribution-pending`. Every Dispatcher terminal transition carries the same window today. The rules above shrink the window to the interval between one ledger read and the next ledger write: the owning-host rule, the canonical recovery lock, the pending stamp at admission, and the stamp re-read immediately before the transition. Closing it requires a server-enforced claim generation covering admission, the valves, the Dispatcher's terminal writes and this recovery together, which work-item `bd-ib-jjws2` tracks. Under coordinator ruling R144 this subsection ratifies parity with the Dispatcher's own terminal path, not exclusion.
+- **Claim tokens.** No public Beads write is a conditional update; the
+  only server-enforced compare-and-swap is closing a record. A *claim
+  token* is a ledger record created with a fresh, unique id (never a fixed
+  id, because a create with an explicit id is an upsert that reopens a
+  closed record), labelled `claim-token`, and never reopened. A token is
+  created open by one writer and ends in exactly one of two ways: it
+  becomes an item's current token when a won write names it, and is then
+  closed exactly once, by the writer that next wins it; or it is
+  *discarded*, closed by its own creator without ever being named by any
+  item. A discarded token carries no meaning, MUST be ignored by every
+  reader, and is not a current token of any item. A successor that a
+  winner created but has not yet named stays open until a takeover (step
+  5) wins it. While
+  `dispatcher.claim_tokens` is `true` (below), every non-closed work-item
+  MUST name exactly one token, its *current token*, which is open except
+  while a transition is unapplied as step 5 below describes, and every *claim-changing write*
+  — any write that changes an item's status, its `fabro` assignee or its
+  run stamp, made by intake, a human valve, admission, a Dispatcher
+  terminal write, or a recovery effect of this subsection, on any host —
+  MUST follow this protocol:
+  1. Read the item and its current token T, then create a fresh
+     *successor* token S.
+  2. Start a reading of its own monotonic clock, run `bd close T
+     --reason <r>`, where `<r>` names the writer, its intent, the id of S
+     and, for audit only, the UTC instant of the close, and then read
+     T's `close_reason` back. The writer WINS only when that reason is its
+     own, because the command's exit code does not name the winner.
+  3. A writer that does not win MUST write nothing to the item, MUST
+     discard S, and MUST report `claim-changed`. A writer that cannot read the
+     close reason back MUST write nothing to the item and MUST report
+     `claim-unobservable`.
+  4. A winner MUST make its item change and name S as the item's current
+     token in ONE ledger write, and MUST issue that write only while its
+     *lease* holds: 120 seconds of elapsed time on that monotonic clock
+     since the reading taken before its close, measured immediately
+     before the write. A winner whose lease has passed MUST write nothing and MUST
+     report `claim-lease-expired`, leaving S open.
+  5. A writer that finds the item naming a token T that is already closed,
+     whose close reason names a successor S that the item does not name,
+     MUST write nothing and MUST report `claim-transition-pending` until
+     it has itself observed that same state, T closed and S not named,
+     across at least 180 seconds of elapsed time on its own monotonic
+     clock, from its first such observation to a fresh read; only then
+     MUST it treat S as the item's current token and apply this protocol
+     to S, so a winner that crashed between its close and its
+     item write never leaves the item unwritable. A writer that wins S
+     this way MUST re-read the item immediately before its item write
+     and, when the item now names S, MUST write nothing, MUST discard
+     its own successor and MUST report `claim-changed`, because the original
+     winner's transition has landed.
+  Exactly one writer therefore wins each token, a loser never writes, and
+  a writer that reads an earlier, already-closed token loses that token's
+  close; the only way an earlier winner's item write can still land after
+  a later write is the first residual below. No step compares
+  one host's clock with another's: each bound is elapsed time on the
+  measuring writer's own clock, and a takeover's first observation
+  necessarily follows the close it observes. One residual class remains and is
+  accepted: a winner's item write that it issued inside its lease but
+  that the server applies only after a takeover of its successor token
+  has begun can overwrite the takeover's write, or be overwritten by it
+  when it lands between the takeover's re-read and its write; the same
+  can recur at each later takeover while such a write is still
+  outstanding. The 120-second lease and the
+  180-second takeover wait make that ordering require the server to
+  apply the write long after it was issued; no bound on that delay has
+  been measured, so none is claimed. Apart from that
+  residual class, no two claim-changing writes made under this protocol
+  can both apply to the item for one token, on any host, which the owning-host rule,
+  the canonical recovery lock and the stamp re-read cannot achieve alone.
+  Those rules remain, because they decide WHETHER a recovery may act,
+  while the token decides WHICH of several concurrent writers acts. A
+  write made outside this protocol (for example a hand `bd update`) is
+  not fenced by it and remains a second, separate residual: it can race
+  with a protocol write in either direction, so the protocol MUST NOT be
+  described as preventing one, and every writer named above MUST use the
+  protocol. Token records MUST be excluded from `list-work-items`, `next`,
+  `needs-attention`'s work-item facts and every child enumeration.
+  The cutover is the committed key `dispatcher.claim_tokens`, a boolean
+  defaulting to `false`, which joins the committed-configuration-only
+  class; while it is `false`, every claim writer keeps the rules of this
+  subsection without tokens. Before it is committed `true`, a sanctioned
+  migration pass MUST name a fresh current token on every non-closed item
+  that names no open token (an item naming a closed or discarded token, or
+  none, counts as naming no open token), MUST leave unchanged every item that already
+  names an open token, so that an interrupted pass can simply be run again, and
+  MUST be run while every claim writer of the tenant — every Dispatcher,
+  intake, the human valves and reconciliation — is stopped. Once the key
+  is `true`, a claim writer that finds no current token on a non-closed
+  item MUST write nothing and MUST report `claim-token-missing`, and
+  `needs-attention` MUST surface the item. Under coordinator ruling R144
+  this bullet states required behaviour; it does not by itself admit its
+  implementation.
 - **Absent-run release.** The Dispatcher MUST release the claim when all of the following hold:
   - the claim is attributed to this host;
   - the factory is reachable and its answer positively reports that the run does not exist;
@@ -6732,15 +7972,23 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   - the `blocked / needs-human` rest of §"A factory run never awaits a human", with its needs-human cause comment.
 
   Failure evidence that is missing or unreadable is unavailable: the claim is held as `terminal-evidence-unavailable` and observed again on the next pass, as that section requires. It MUST NOT be released and MUST NOT be converted into a needs-human decision.
+- **Stale assignee clearance.** A *stale assignee* is a work-item resting at `ready` whose assignee is still `fabro`. It is not a dispatch claim: its claim ended when the item left `active`, through the Dispatcher's own transition or a human valve, so no terminal disposition is owed, and reconciliation MUST NOT apply one to it. Whether or not it is cleared, a stale assignee whose run stamp names a run is released for recovery: its next dispatch is graded by the recovery routing of §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work", which resumes a published pull request when every resume precondition passes, holds the dispatch while the earlier run is live, a live process owns the item, the pull request is merged, or a measurement cannot be taken, and otherwise dispatches seeded or fresh as that routing specifies. A `ready` status alone does not establish that no dispatch owns the item, so clearance requires the conditions below. The survey exclusion of `rework:pending` and `merge-hold:` items applies to a stale assignee, and the reconciler MUST take the Attribution, Run state and Owner liveness measurements above for it. The Dispatcher MUST clear the stale assignee when all of the following hold:
+  - it is attributed to this host by a run stamp that is not pending;
+  - the factory reports its stamped run terminal, whether failed or succeeded, or positively reports that the run does not exist;
+  - no live owner is established.
+
+  Clearing removes the `fabro` assignee and leaves the item's status, labels and run stamp unchanged. It MUST journal one `stale-assignee-clear` record naming the item, the run id, the factory and the run state (`failed`, `succeeded` or `absent`), and MUST write one ledger comment on the item naming the same facts. That record keeps the item released for recovery after its assignee is gone. The clearance follows "Recovery is exclusive on its host and convergent" above, with the assignee write in place of the status transition: the journal record, then the ledger comment, then the assignee write last. Its effects are keyed by item, run and the `stale-assignee-clear` kind, so they are distinct from any recovery effect earlier written for the same item and run. Each re-read requires the item to be still `ready`, still assigned `fabro`, and stamped (not pending) with the same run, and the accepted residual class of "Claim tokens" above covers the assignee write exactly as it covers a status transition.
+
+  Every stale assignee that is not cleared MUST be left exactly as it is and listed in the pass's `held` output with the reason of the first condition that applies, graded in this order: `claim-unattributable`, `attribution-pending`, `owner-elsewhere`, `factory-unobservable`, `run-live`, `liveness-unobservable`, `dispatch-live`, `claim-changed`, `effect-unobservable`. Each reason has the meaning the hold list below gives it, except that `claim-changed` means that a re-read before writing found the item no longer `ready`, no longer assigned `fabro`, carrying a pending stamp, or stamped with a different run. A held stale assignee whose run stamp names a run remains released for recovery, so the safety of its next dispatch is decided by recovery routing's own measurements, not by this hold. A stale assignee whose run stamp is pending, or that carries no readable run stamp, names no run for recovery routing to measure: it is not released for recovery, it is held as `attribution-pending` or `claim-unattributable`, and its admission is unchanged by this clause, so its next admission replaces its stamp exactly as any admission of a `ready` item does.
 - **Holds.** Every surveyed claim that is neither released nor completed MUST be left exactly as it is. It MUST be listed in the pass's `held` output with the reason of the FIRST condition below that applies, graded in this order:
-  1. `claim-unattributable`: the item carries no readable run stamp, or the stamp names no declared factory.
+  1. `claim-unattributable`: the item carries no readable run stamp, or the stamp names a factory that is neither declared nor a recorded-target factory. A stamp naming a recorded-target factory whose name the registry no longer resolves is held `factory-unobservable`, naming the factory and the registry path.
   2. `attribution-pending`: the item carries a pending stamp, because its newest dispatch has not yet learned its run. This includes a dispatch that died before its run existed. This subsection never releases such a claim, because a dispatch between admission and taking its ownership lock is indistinguishable from a dead one. Its held entry MUST name the operator `move` valve as the remedy.
   3. `owner-elsewhere`: the stamp names another host, or names no dispatching host.
   4. `factory-unobservable`: the factory could not be reached, or its answer could not be read.
   5. `run-live`: the run is non-terminal.
   6. `liveness-unobservable`: an ownership lock location could not be read.
   7. `dispatch-live`: a live process holds the item's ownership lock.
-  8. `run-succeeded`: the run is terminal and succeeded. The recovery is `reconcile-merged`.
+  8. `run-succeeded`: the run is terminal and succeeded. The recovery, when the forge reports the item's pull request merged, is `reconcile-merged` if that command's own preconditions hold for the item, and otherwise no status move, the held entry naming the failing precondition; it is the terminal-claim recovery `move:<id>:ready` of §"Per-lane valid operator verb sets" when the forge was read and reports no merged pull request; and, when the forge cannot be read, no status move, the held entry naming the failed read.
   9. `forge-unobservable`: for an absent run, the forge could not be asked whether a merged pull request exists.
   10. `merged-pr`: for an absent run, the forge reports a merged pull request for the item. The recovery is `reconcile-merged`.
   11. `history-unavailable`: for an absent run, the preceding dispatch's outcome could not be established.
@@ -6749,9 +7997,9 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   14. `effect-unobservable`: as defined above.
 
   Stranded-claim holds join `held` beside the parked runs the blocked-run grace already lists there. A held claim is observed again on the next pass.
-- **Status changes.** The absent-run release, the `run-absent-repeated` rest, and the terminal-run completions are the only item status changes any reconciliation surface makes. The bullet of §"A factory run never awaits a human" that forbids reconciling or terminating a run from changing an item's status continues to govern runs, and does not govern these. The `already claimed by a dispatch` refusal, and the resume refusal of §"Resume from a published pull request (`resume --item`)", name `reconcile-runs` as the remedy for a stranded claim; this subsection is what makes that remedy work.
+- **Status changes.** The absent-run release, the `run-absent-repeated` rest, and the terminal-run completions are the only item status changes any reconciliation surface makes. A stale assignee clearance changes no status. The bullet of §"A factory run never awaits a human" that forbids reconciling or terminating a run from changing an item's status continues to govern runs, and does not govern these. The `already claimed by a dispatch` refusal, and the resume refusal of §"Resume from a published pull request (`resume --item`)", name `reconcile-runs` as the remedy for a stranded claim this subsection reconciles, and this subsection is what makes that remedy work; for an `active` item whose run is terminal and which this subsection does not reconcile, the resume refusal names the remedy of §"Resume from a published pull request (`resume --item`)" instead.
 
-Scenario 196 in `scenarios.md` exercises this section.
+Scenarios 196 and 210 in `scenarios.md` exercise this section.
 
 ### The human answer route: marker, poison preflight, run account, and write-before-transition ordering
 
@@ -6785,6 +8033,24 @@ and are ratified here.
   The enrichment MUST fail soft: an unreadable config or an unreachable factory
   costs the ENRICHMENT and never the valve — the valve item is surfaced regardless,
   and each factory is addressed by its declared server target.
+  When the item carries the needs-human cause comment its termination wrote
+  (§"Dispatcher policy settings" → "A factory run never awaits a human"), the
+  summary MUST render the run account from that comment, take the preserved
+  reference from the item's preserve-by-reference comment for the same run,
+  resolve the factory name and its server from the item's recorded factory and
+  the committed configuration as before, and list the available valve actions
+  as before, and the surface MUST run no `fabro inspect`, and no other factory
+  read, for that item.
+  When the item carries more than one such comment, the newest one written for
+  the item's latest run governs. When the item carries no such comment, or none
+  for its latest run, the summary MUST fall back to reading the run from its
+  factory exactly as before, so an item whose run was terminated before that
+  comment existed renders as it did. A run-reported detail that the governing
+  comment does not carry, such as what the run reported, is omitted from the
+  summary rather than read from the factory.
+  Measured 2026-10-26: `needs-attention` ran `fabro inspect` on every blocked
+  needs-human item's run on every pass, although each carried the comment that
+  already held that account.
 - **Write-before-transition ordering.** The answer comment MUST be written BEFORE
   the item's status transition. A comment write that is refused or fails MUST NOT
   transition the item, so a delivered answer always precedes the unblock and no
@@ -6897,6 +8163,60 @@ MUST record, for each launch, which source supplied the sandbox image:
 `dispatcher.fabro_sandbox_image`. Scenario 169 in `scenarios.md` exercises
 this subsection.
 
+### Sandbox image enumeration
+
+The Dispatcher MUST provide a read-only subcommand, `dispatcher.py sandbox-images --factory <name> [--repo <path>]... [--json]`, that enumerates the sandbox image sources of every dispatch to the named factory that does not pass an explicit `--workflow` path, across the repository and executing-build sets defined below, using the command process's own environment at invocation time. A dispatch that passes an explicit `--workflow` path, and another process's environment overrides, are outside this enumeration. The command MUST NOT create, modify or delete any file, including any lease file, and MUST NOT write a ledger record or a dispatch-journal row. It MUST NOT create a Fabro run, and it MUST NOT pull, build or tag an image.
+
+**Repositories.** Without `--repo`, the command MUST enumerate every repository whose root is the `projectPath` of an install record of this plugin in the host's Claude Code install registry (`~/.claude/plugins/installed_plugins.json`). When one or more `--repo` arguments are given, it MUST enumerate exactly those repositories instead. A repository that neither declares the named factory in its committed `dispatcher.factories` nor has it as an implicitly declared or recorded-target factory (§"Factory addresses resolved from a host registry") MUST be reported with source `factory_undeclared` and no image; for an implicitly declared or recorded-target factory the entries are decided by the same resolution functions dispatch calls, so a registry-supplied catalog environment, or a committed per-key override of it, is reported exactly as dispatch would use it, and that report alone MUST NOT make the command exit non-zero.
+
+**Executing builds.** The executing-build set is host-wide. It MUST consist of: the build named by each enumerated repository's registered install record; every plugin-cache build that holds an `.in_use` lease whose recorded process is alive; and the payload of every running Dispatcher process. A lease whose recorded process has exited MUST NOT contribute its build to the executing-build set; such a build MUST still be enumerated when it is reached through a registered install record, another live lease or a running Dispatcher process. A build reached by more than one route MUST be enumerated once.
+
+**Entries.** For each enumerated repository, the command MUST report entries in the order a dispatch within this scope resolves its sandbox image. It MUST decide each one by calling the same resolution functions a dispatch calls, never a parallel copy:
+
+1. When the factory's entry declares a catalog environment, one entry with source `catalog_environment`, that environment id, and no image of its own.
+2. Otherwise, when the dispatch's configured-image resolver returns an image, one entry with that image and source `dispatcher.fabro_sandbox_image`. That resolver applies a non-empty `LIVESPEC_FABRO_SANDBOX_IMAGE` value before the repository's `dispatcher.fabro_sandbox_image` setting.
+3. Otherwise, one entry per workflow such a dispatch can select:
+   - for each named variant the repository declares under `dispatcher.workflows`, that variant's `workflow.toml` `docker` pin, with source `named_variant`, the variant name and the path of that file;
+   - for the reserved `implement-work-item` workflow, when the repository commits its own `.fabro/workflows/implement-work-item/workflow.toml`, that file's `docker` pin, source `committed_run_config` and the path of that file;
+   - for the reserved workflow otherwise, one entry per executing build, each with the `docker` pin of that build's bundled implement-work-item `workflow.toml`, source `bundled_run_config`, the build's identity and the path of that file.
+
+Each entry MUST name its repository. With `--json`, the command MUST print one JSON array holding every entry as an object.
+
+**Unreadable sources.** When a repository's `.livespec.jsonc`, a named variant's or committed workflow file, or a bundled workflow file that an entry depends on cannot be read or parsed, that entry MUST be reported with source `unreadable`, naming the path that failed and its repository. The command MUST still report every other entry, and it MUST then exit non-zero.
+
+Scenario 212 in `scenarios.md` exercises this subsection.
+
+### Sandbox retention and collection
+
+This subsection governs the sandbox of a factory run that has ENDED and whose sandbox is provided by a registered sandbox provider, such as the Kubernetes provider. A run's sandbox is its provider-held driver record together with the node workspace directory that provider allocated for the run.
+
+While the run's work-item rests at `blocked` or `needs-human`, the Dispatcher MUST NOT delete, and MUST NOT cause the deletion of, that run's sandbox, because a human resolving the item may need the run's workspace. Retention MUST NOT depend on how long the item has rested there.
+
+Once the run's work-item is closed, the Dispatcher MUST delete that run's sandbox, subject to the deletion pacing below, through its provider's own delete operation, so that the driver record and the node workspace directory are both gone. The Dispatcher MUST NOT remove either one by any route other than that provider operation, because a workspace removed behind the provider leaves a driver record naming a directory that no longer exists. A deletion the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass; it MUST NOT reopen, block or otherwise transition the closed item.
+
+**Deletion pacing on a busy factory.** A factory's run deletions contend with its live runs for the factory's run store, so a deletion burst can fail the record writes of every run the factory is executing. Two committed per-factory settings in `dispatcher.factories.<name>` therefore govern every run deletion the Dispatcher issues against that factory. The Dispatcher MUST read both on every pass, so a changed value takes effect without a restart.
+
+- `defer_collection_while_active` (boolean, default `true` when absent). While it is `true` and the factory's run inventory taken by the pass shows at least one running run, the pass MUST NOT delete any closed item's ended-run sandbox on that factory; it MUST journal each sandbox it defers, naming the run id and the factory, and MUST leave it collectable. On the first pass at which the factory's run inventory shows no running run, the Dispatcher MUST delete every deferred sandbox that is still collectable under the rule above. While it is `false` and the minimum interval below is greater than 0, one pass that sees a running run on the factory MUST delete at most one ended-run sandbox there and leave the rest for later passes.
+- `rm_min_interval_seconds` (non-negative number, default `60` when absent). While the factory's run inventory shows at least one running run, the Dispatcher MUST NOT start a run deletion against that factory until at least this many seconds have passed since the start of the previous run deletion against it by any Dispatcher process on the same host. This holds whichever caller issues the deletion: ended-run collection, a stall cancel, a whole-run wall-budget cancel, a stale-item reap, or a reconcile-runs termination. A deletion the interval defers MUST be journaled naming the run id, the factory, the deleting caller and the earliest instant the next deletion may start. A cancel whose deletion is deferred MUST still stop the run from progressing at the moment of the cancel decision; only the deletion of its record MAY wait.
+
+With `defer_collection_while_active` set to `false` and `rm_min_interval_seconds` set to `0`, the Dispatcher MUST delete exactly as it does without these settings. A deferral under either setting MUST NOT reopen, block or otherwise transition the run's work-item, and a deferred deletion remains subject to the retry and idempotence rules of this subsection.
+
+An ended run whose sandbox is still running, for instance because a Fabro server restart cancelled the run before its own end-of-run stop, MUST have that sandbox stopped through its provider's own stop operation by the Dispatcher's next pass, whatever its work-item's status, so that the sandbox's compute is released and the namespace quota it held counts only live runs. Stopping MUST NOT remove the driver record or the node workspace directory; those remain subject to the retention and collection rules above. A stop the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass. A pass finding an ended run's sandbox already stopped MUST record nothing further for it.
+
+A run whose work-item is at any other status keeps today's behaviour; this subsection neither retains nor collects its sandbox, although the stop rule above still applies to it.
+
+Collection MUST be idempotent: a later pass finding a closed item's sandbox already gone MUST record nothing further for it and MUST NOT fail.
+
+Scenarios 281 and 295 in `scenarios.md` exercise this subsection.
+
+### Sandbox test-worker parallelism
+
+The Dispatcher MUST project `LIVESPEC_TEST_PARALLELISM` into every dispatched sandbox's environment, beside the harness shell policy it already projects there. The value MUST be a positive integer that does not exceed the CPU limit of the sandbox it is projected into. This repository projects 4, for its 4-CPU factory sandboxes. Four workers fit the sandbox's 7630 MiB memory limit: measured on 2026-10-26, a full per-file-coverage gate run at four workers peaked at 2748 MiB of cgroup memory, with no worker above 467 MiB resident. A gate run in the sandbox that sizes its test workers from this variable therefore follows the sandbox's CPU limit, not the node's visible CPUs. Where `LIVESPEC_TEST_PARALLELISM` is unset and the CI lane is not `hosted`, as on a CI runner or the dev host, the repository's worker-count resolver (`dev-tooling/just-test-nprocs.sh`) MUST derive the worker count from the number of CPUs the process may use: the cgroup v2 CPU quota divided by its period, rounded down to whole CPUs, when a quota is set, else the number of CPUs in the process's affinity mask. It MUST NOT take that number from the node's total CPU count where a quota or a narrower affinity mask applies. The divisor applied to that number and the minimum of one worker are unchanged. Scenario 290 in `scenarios.md` exercises these sentences.
+
+**The check aggregate runs its independent targets concurrently.** The repository's `just check` aggregate (`dev-tooling/just-check.sh`) MUST run its pytest lane as a single ordered lane: every target that runs the test suite, sized by `LIVESPEC_TEST_PARALLELISM` exactly as before, followed in the same lane by every target that reads what those targets produce, so that `check-coverage` runs after `check-per-file-coverage` and no two test-suite runs overlap. It MUST run the aggregate's independent targets, those that neither run the test suite nor read its output, such as lint, types and the static checks, concurrently with that lane rather than after it. The concurrent aggregate MUST still report every target's verdict, keeping each target's output together so that a failure stays readable, and MUST fail when any target fails, exactly as the serial loop does; the targets it skips and the green verdict it records are unchanged. In a factory sandbox the concurrent aggregate's peak memory MUST stay within the sandbox's memory limit, so the number of non-pytest targets that run at once MUST be bounded to keep their peak memory, together with the pytest lane's, under that limit. Measured 2026-10-26: the serial aggregate took about 737 to 832 seconds at four test workers, while the pytest lane alone at four workers peaked at 2748 MiB of the 7630 MiB limit. Every target that runs the whole test suite with coverage, which is `check-per-file-coverage`, and `check-coverage` when it finds no coverage data and runs the suite itself, MUST print the thirty slowest test phases of that run with their durations, so that the run's slow tail is named in every local, sandbox and CI log. Scenario 254 in `scenarios.md` exercises this paragraph.
+
+The reason is that a sandbox's CPU limit is a quota, not an affinity mask, so `nproc` inside the sandbox reports every CPU on its node. On 2026-10-25, a gate run in a 4-CPU, 7630 MiB factory pod on a 72-CPU node derived 18 coverage-traced test workers from `nproc`. Six such runs were killed by the pod's memory limit in one day. The projection does not bound a worker count that an agent names explicitly on a command line.
+
 ### Factory addresses resolved from a host registry
 
 A `dispatcher.factories` entry MAY declare `"registry": true` in place of a
@@ -6928,16 +8248,58 @@ value that is present but is not a string non-empty after trimming is refused
 like an invalid `server`. Other entries in the registry are not validated by
 that resolution and do not affect it.
 
+The factory registry MAY designate a FLEET DEFAULT: a top-level `default` key
+whose value is a string naming one of the registry's factory entries. The key is
+reserved, so no factory may be named `default`, and a registry carrying a
+factory entry named `default` MUST be refused as invalid, naming the reserved
+key. A repository whose committed `dispatcher.default_factory` is the reserved
+value `fleet` MUST resolve its default factory to the registry's fleet default.
+A `dispatcher.default_factory` that names a factory keeps its existing meaning
+and overrides the fleet default for that repository. An ABSENT
+`dispatcher.default_factory` keeps its existing treatment, so an adopter
+repository outside the fleet, which has no registry, is unaffected. A factory
+reached through the fleet default that the repository's `dispatcher.factories`
+does not declare MUST be treated as a registry-backed entry of that name, so
+moving the fleet default to a factory no repository has declared needs no
+repository commit. Every factory selected through `fleet` MUST resolve its
+server and container-daemon address through the registry, including a factory
+the repository also declares; a committed `dispatcher.factories` entry of that
+name that carries `server` or `docker_host` MUST be refused before any ledger
+write, naming the factory, because two addresses for one selected factory are a
+conflict, not a precedence question.
+
+A registry factory entry MAY carry `bin`, `secret_channel` and `environment`,
+each with exactly the meaning that key has on a committed `dispatcher.factories`
+entry. For a registry-backed factory, each of the three MUST be taken from the
+committed entry when the committed entry declares it, and otherwise from the
+registry entry; a key declared in neither keeps its existing absent-key
+treatment. Every validation and refusal a committed value of those keys
+receives MUST apply equally to a registry-supplied value, at the same point and
+with the same effects, naming the registry path as its source. A factory's dev
+token stays keyed by the factory name, unchanged.
+
 The Dispatcher MUST refuse, before any claim, ledger write of any kind (status,
 metadata or comment) or Fabro run creation, a dispatch whose resolved factory
 is registry-backed when the registry file is absent or unreadable, does not
 parse as JSON, has a top-level value that is not an object, has no entry for
-that factory name, or gives that entry no valid `server` string. The refusal
-MUST name the factory and the registry path it read. The Dispatcher MUST NOT
+that factory name, or gives that entry no valid `server` string. It MUST
+equally refuse a dispatch whose EXPLICIT factory selection — `--factory`, or a
+set and non-empty `LIVESPEC_FABRO_FACTORY` — names no entry of a declared
+`dispatcher.factories`. The refusal MUST name the factory and the registry path
+it read, or, for an undeclared explicit selection, the offending value and
+every factory name `dispatcher.factories` declares. The Dispatcher MUST NOT
 fall back to the ambient local Fabro target, to `dispatcher.default_factory`,
-or to any other factory in that case. An entry declaring `"registry": true`
+or to any other factory in either case. A repository that declares no
+`dispatcher.factories` keeps its implicit single-factory default target. An
+entry declaring `"registry": true`
 together with `server` or `docker_host` MUST be refused the same way, naming
-the factory.
+the factory. The Dispatcher MUST equally refuse, before any
+claim, ledger write or Fabro run creation, a dispatch that resolves its default
+through `fleet` when the registry file is absent or unreadable, has no `default`
+key, or has a `default` value that is not a string naming a registry factory
+entry. That refusal MUST name the registry path and what it lacked, and the
+Dispatcher MUST NOT fall back to the ambient local target, to any committed
+factory, or to any other registry entry.
 
 Every surface that turns a declared factory into an address MUST use this one
 resolution, and every surface whose behaviour depends on whether a factory is
@@ -6958,23 +8320,147 @@ address in the item's dispatch-factory record exactly as a `server` entry does.
 A factory's per-name settings — its dev token, its secret-channel declaration,
 its `bin` and its `environment` — stay keyed by the factory name, unchanged.
 
-The registry refusal applies only to resolving a DECLARED, registry-backed
-entry. It does not change the factory selection order: an explicit
+The registry refusal applies to resolving a DECLARED, registry-backed entry, a
+factory reached through the reserved default value `fleet`, and a preserved
+fleet-derived recorded factory selected by a resume; the fleet-default refusal
+above applies to every dispatch that resolves its default through `fleet`. The
+undeclared-name refusal applies only to an EXPLICIT selection: an explicit
+`--factory` or a set and non-empty `LIVESPEC_FABRO_FACTORY` MUST still name an
+entry of a committed `dispatcher.factories`, and a registry entry the repository
+does not commit is NOT selectable explicitly. For factory SELECTION, a fresh
+dispatch MUST NOT validate, resolve or refuse on the item's recorded factory;
+the readers this section preserves, and recovery routing's measurements of an
+earlier run, still read it.
+
+When a repository's `dispatcher.default_factory` is `fleet`, the factory the
+registry's fleet default names is an IMPLICITLY DECLARED factory of that
+repository: every rule of this specification that refers to a factory declared
+under `dispatcher.factories`, to a declared factory or its declared server
+target, or to a factory name `dispatcher.factories` declares MUST treat it as a
+declared, registry-backed entry of that name, whose client settings resolve as
+this section states. A factory that any dispatch of the repository reached
+through `fleet`, as named by any dispatch-factory record or dispatch journal
+record of that repository, including one on a closed item and one a later
+dispatch superseded, is a RECORDED-TARGET factory and is treated the same way.
+Its standing does not lapse when the items recording it close, because closing
+a ledger item is not evidence that its run terminated: every reconciliation
+surface, the standalone `reconcile-runs` sweep included, MUST keep surveying
+it. A recorded-target factory the registry no longer resolves stays in every
+survey and is reported unobservable on every surface, naming it and the
+registry path; it is never dropped silently and never treated as holding no
+runs. Exactly two rules are excepted and still require a committed
+`dispatcher.factories` entry: an explicit selection (`--factory`, or a set and
+non-empty `LIVESPEC_FABRO_FACTORY`), and an entry of
+`dispatcher.overflow_factories`.
+
+Neither changes the factory selection order: an explicit
 `--factory` is taken first, then `LIVESPEC_FABRO_FACTORY` when it is set and
-non-empty; then the
-item's recorded factory; then `dispatcher.default_factory`. A recorded factory
-name that `dispatcher.factories` no longer declares keeps its existing
-treatment: when no explicit selection is made it is ignored and the dispatch
-falls back to `dispatcher.default_factory`, so renaming a factory re-routes the
-later unpinned dispatches of every item that recorded the old name onto the
-default factory. A `dispatcher.default_factory` that names no declared entry
-keeps its existing treatment as well; this clause does not govern it.
+non-empty; then, for a resume only, the item's recorded factory; then factory
+overflow selection (§"Factory overflow selection") when
+`dispatcher.overflow_factories` is non-empty, and otherwise the resolved default factory: the named `dispatcher.default_factory`, or the
+registry's fleet default when it is `fleet`. A *resume* here is a dispatch whose route is
+`resume`: an invocation of §"Resume from a published pull request
+(`resume --item`)", or a `dispatch` or `loop` pass whose recovery routing
+(§"Factory-configurable ACP fallback priority" → "Recovery from the failed
+run's preserved work") routes the item `resume`. It is the one route that
+continues the run lineage the item's recorded factory belongs to. Every other
+dispatch is a FRESH dispatch, whatever entry point carries it: a
+`dispatch --item`, a `drive` action `impl:<id>` or a loop drain whose item
+recovery routing routes `seeded` or `fresh`, an item not released for
+recovery, and an item reopened for rework. The classification is per item and
+per pass, so one loop wave may carry a resume beside fresh dispatches. A fresh
+dispatch MUST NOT read the item's recorded factory as a pin. When no explicit
+selection is made it MUST proceed as an unpinned dispatch, so changing
+`dispatcher.default_factory` re-routes the next fresh dispatch of every item
+onto the new default factory, or through factory overflow selection when it is
+configured. The admission claim stamp MUST apply the same order, using the
+route recovery routing assigned before the admission valve, so a fresh
+dispatch is stamped with the factory it will reach and a resume with the
+factory selected by that same order. Every dispatch MUST still write the item's dispatch-factory
+record, and every surface that locates an item's live or earlier run through
+that record or through the run's own recorded target MUST keep reading it
+unchanged: the reconcile survey, a liveness read, the claim stamp's run
+target, adapter launch evidence, the acceptance pass, and a resume's read of
+its earlier run. A recorded factory name that `dispatcher.factories` no longer declares keeps
+its existing treatment for a resume: when no explicit selection is made it is
+ignored and the resume proceeds as an unpinned one, so renaming a factory
+re-routes the later resumes of every item that recorded the old name onto the
+default factory, or through factory overflow selection when it is configured.
+A recorded factory name the dispatch reached through `fleet` is the exception: on
+a resume it MUST continue to resolve, by that recorded name, as a registry-backed
+entry even when the repository does not declare it and even after the
+registry's fleet default moves to another factory. A resume carrying such a pin
+MUST go to the recorded factory, MUST NOT be silently re-routed to the current
+fleet default, and MUST be refused before any claim, naming the factory and the
+registry path, when the registry no longer resolves that name. An explicit
+selection still takes precedence over it exactly as over any recorded factory. A
+fresh dispatch of an item whose recorded factory was reached through `fleet`
+resolves the current resolved default factory, or factory overflow selection
+when it is configured, and its fleet-derived record pins nothing. A `dispatcher.default_factory`, other than the reserved value `fleet`, that names no
+declared entry keeps its existing treatment as well; this clause does not govern it.
 
 A factory name SHOULD name the Fabro server instance it addresses and SHOULD
-stay the same for that instance's whole life. Which instance serves a
-repository by default MUST be carried only by `dispatcher.default_factory`, so
-that moving the default from one instance to another changes that one key and
-renames nothing.
+stay the same for that instance's whole life. A fleet member repository SHOULD
+set `dispatcher.default_factory` to `fleet` and SHOULD NOT commit `bin`,
+`secret_channel` or `environment` for a registry-backed factory, so that moving
+the fleet's default from one instance to another, or changing how that instance
+is spoken to, is a change to the provisioning inventory alone. A repository that
+names a factory in `dispatcher.default_factory` opts out of that move by design.
+
+### Factory overflow selection
+
+`dispatcher.overflow_factories` is an OPTIONAL committed array of factory
+names. Each entry MUST name an entry of `dispatcher.factories`, MUST NOT
+repeat, and MUST NOT name the resolved default factory: `dispatcher.default_factory`, or the
+registry's fleet default when it is `fleet`. An entry that violates
+this MUST be refused before any item is claimed, with a configuration finding
+naming the offending value. The key is committed-only: it is NOT declared
+API-configurable. When it is absent or empty, selection is exactly the order
+of §"Factory addresses resolved from a host registry", and nothing in this
+section applies.
+
+Overflow selection applies ONLY to a dispatch that has no explicit `--factory`
+and no non-empty `LIVESPEC_FABRO_FACTORY`, and that is either a fresh dispatch
+or a resume carrying neither a recorded factory that `dispatcher.factories` still
+declares nor a preserved fleet-derived recorded factory, whether or not the
+repository declares that name (§"Factory addresses resolved from a host
+registry"). A resume carrying a preserved fleet-derived recorded factory is
+pinned, takes no overflow ranking, and goes to its recorded factory. For an overflow-eligible dispatch the
+candidates are the resolved default factory followed by each entry of
+`dispatcher.overflow_factories`, in that order. For each candidate the
+Dispatcher MUST read, from that candidate's own Fabro server at selection
+time, its non-terminal run count and its own `max_concurrent_runs`. A
+candidate has a FREE slot when its count is below its `max_concurrent_runs`.
+A candidate whose read fails, times out, is unparseable, or reports a
+`max_concurrent_runs` below 1 MUST count as having no free slot.
+
+The Dispatcher MUST place the dispatch on the candidate with a free slot whose
+count divided by its `max_concurrent_runs` is smallest; ties go to the earlier
+candidate. When no candidate has a free slot, the dispatch MUST be placed on
+the resolved default factory. Selection MUST NOT refuse, defer, hold, delay or
+count a dispatch on capacity grounds: a dispatch whose chosen factory has no
+free slot proceeds to submission on it, where that factory's scheduler queues
+it as §"Host concurrency belongs to the Fabro scheduler" sanctions. Selection
+does not relax any other requirement: the chosen factory, including a default
+factory reached by fallback, is resolved and admitted exactly as an explicitly
+selected one, except that the committed-declaration requirement binds only an
+actual explicit selection and not an overflow winner, so a registry-backed
+default the registry cannot resolve is refused under §"Factory addresses resolved from a host registry".
+
+The chosen factory MUST be recorded as the item's dispatch-factory record
+exactly as an explicit choice is, so that a later resume, reconcile or acceptance pass of the same dispatch follows it; a later
+fresh dispatch of the item does not. A registry-backed candidate
+MUST be resolved through the host registry before its server is read. A
+candidate the registry cannot resolve counts as having no free slot for
+selection; this does not relax the registry refusal for a dispatch that names
+that factory explicitly.
+
+The Dispatcher MUST journal each overflow selection as one record. The record
+carries every candidate considered, in order, with the non-terminal run count
+and `max_concurrent_runs` its server reported or the reason its read failed.
+It also carries the chosen factory and the reason for the choice, which is
+`least-utilized-free-slot` or `no-candidate-free-default`. A dispatch to which
+overflow selection did not apply journals no such record.
 
 ## Built-in ACP node defaults
 
@@ -7189,8 +8675,9 @@ agent id in the committed agent catalog of §"Agent and model catalogs"), `model
 or a `provider/model` reference when the agent is multi-provider), and optional
 `effort` (string; one of the effort levels the catalog declares for that agent).
 It MAY also carry `display_name`, `candidate_key`, `availability_key`,
-`availability_signatures` and `pricing` as OVERRIDES of the values the catalogs
-derive. The Dispatcher MUST render a structured entry into the manual form below
+`availability_signatures` as an OVERRIDE of the value the catalogs derive, and
+`pricing` as the fallback table applied only when the catalogs name no price for
+the candidate's identity. The Dispatcher MUST render a structured entry into the manual form below
 before any layer merge, journal, digest or run input, so every downstream rule
 of this section and of §"Factory-configurable ACP fallback priority" applies to
 the rendered candidate unchanged. Rendering MUST be deterministic: the same
@@ -7241,7 +8728,16 @@ value MAY be either form — a legacy adapter string (the manual form) or a JSON
 object in the structured form — under the same refusal rules before claim.
 Resolution is per node and per FIELD: a more specific layer that sets
 `command` or `args` REPLACES that field; `env` MERGES with the more specific
-layer's keys winning. A layer that names a node not present in the workflow
+layer's keys winning, EXCEPT that when a more specific layer sets a `command`
+that differs from the `command` the less specific layers resolve to, the less
+specific layers' `env` is DISCARDED and only that layer's `env` applies. The
+comparison is of the rendered `command` field alone, so it holds for both
+forms without inferring identity from command text: a structured entry for
+the same agent renders the same `command` and keeps merging, while routing a
+node to a different adapter drops every inherited model, effort and endpoint
+key of the adapter it replaced. A layer that changes `command` for the same
+adapter (a different install path or package pin, say) MUST therefore restate
+any `env` it needs. Scenario 233 in `scenarios.md` exercises this rule. A layer that names a node not present in the workflow
 MUST refuse the dispatch before any run exists, naming the node.
 
 **`dispatcher.codex_models` is retired.** No shorthand expands into this layer.
@@ -7271,6 +8767,10 @@ floor of §"Factory-configurable ACP fallback priority".
 committed-configuration-only class of §"Control surface and audit" (the class
 `dispatcher.codex_models` occupied before its retirement); they are outside the
 API-configurable key set and do not trigger the console Settings lockstep.
+
+**Commit-time resolution check.** The repository's `just check` aggregate MUST run a target named `check-acp-preflight-config`. That target MUST evaluate the repository's committed `.livespec.jsonc` through the same ACP node resolution the Dispatcher applies before claim: the three resolution layers, the structured and manual candidate forms, and §"Agent and model catalogs". It MUST NOT use a second, independently written validator. The target MUST exit non-zero and print the refusal text, including the offending node and field, whenever that resolution returns a configuration refusal. Configuration refusals are the refusals this section and §"Agent and model catalogs" define for an entry that mixes forms, names an agent absent from the agent catalog, names a model the model catalog does not declare for that agent, or otherwise cannot be rendered. The target MUST NOT fail on an availability condition: an unexpired availability hold, an outstanding availability confirmation or a session-headroom wait is not a configuration defect. To keep its verdict deterministic, the target MUST read no dispatch journal, MUST NOT probe a credential, MUST NOT apply a session-headroom policy and MUST NOT query a factory. It MUST therefore reach the same verdict on a host with no network access. Because the target is part of `just check`, it runs wherever `just check` runs, locally, in pre-push and in CI, so a committed configuration whose candidate chain cannot resolve is refused before it can reach a dispatch.
+
+**Per-node context declaration.** A node's value, in either form, MAY carry one optional field, `loads`: a table of four arrays of strings — `instruction_files` (paths relative to the governed repository root, for example `AGENTS.md`), `skills`, `plugins` and `mcp_servers` (names as the node's agent identifies them). `loads` resolves through the same three layers as every other field, and a more specific layer that sets it REPLACES it whole; its arrays never merge across layers. When some layer sets `loads` for a node, the Dispatcher MUST launch that node's agent so that its session loads EXACTLY the declared set: every declared item, and no instruction file, skill, plugin or MCP tool — from the governed repository or from the sandbox user's agent configuration — that the declaration omits. A declared instruction file MUST reach the session whichever file name the node's agent reads it under, so declaring `AGENTS.md` covers a `CLAUDE.md` symlink to it. A node whose `loads` arrays are all empty loads none of the four kinds. When no layer sets `loads` for a node, that node loads what its agent loads by default. Harness settings the Dispatcher itself writes into the sandbox are not context under this rule and MUST still apply. A declared item the Dispatcher cannot deliver to that node's agent MUST refuse the dispatch before claim, naming the node and the item. The Dispatcher MUST journal each node's resolved `loads`, and the layer that supplied it, on the dispatch record beside the adapter record above. The bundled `implement-work-item` workflow's defaults MUST set `loads` on every one of its ACP nodes: `implement`, `fix` and `review_fix` declare the governed repository's instruction file, and every other ACP node declares all four arrays empty. Scenario 275 in `scenarios.md` exercises this rule.
 
 **Verification.** A negative control per layer MUST exist: for each of the
 three layers, a test that sets a value at that layer and a conflicting value
@@ -7319,10 +8819,7 @@ availability signatures in that section's signature grammar, including a
 be seeded from upstream Fabro's model catalog where that catalog carries the
 model and extended for models it does not, including the ratified Codex
 ChatGPT-account diagnostic. A repository MAY add or override entries under
-`dispatcher.model_catalog`. A per-candidate `pricing` or
-`availability_signatures` override on a structured entry wins over the catalog
-value, and the all-or-none pricing rule applies to catalog entry and override
-alike.
+`dispatcher.model_catalog`. A structured entry MAY carry a per-candidate `pricing` table. The model catalog entry the candidate's identity names is consulted first; the per-candidate table applies only when that identity resolves to no catalog entry, which is the manual-form case and the case of a repository-added model the shipped catalog does not declare. A per-candidate table never overrides a catalog price for an identity the catalog declares. When a repository wants a different price for a catalogued model it changes the catalog through `dispatcher.model_catalog`, never through a per-candidate table. A per-candidate `availability_signatures` override on a structured entry wins over the catalog value, and the all-or-none pricing rule applies to catalog entry and override alike.
 
 **Resolution and derivation.** For a structured candidate the Dispatcher MUST
 resolve `agent` in the agent catalog, then `model` in the model catalog for that
@@ -7442,7 +8939,9 @@ keys of that form. The STRUCTURED form admits `agent`, `model`, `effort`, and th
 override keys `display_name`, `candidate_key`, `availability_key`,
 `availability_signatures` and `pricing`. The MANUAL form admits `command`, `args`,
 `env`, `display_name`, `candidate_key`, `availability_key`,
-`availability_signatures` and `pricing`. Any other key, and any object that
+`availability_signatures` and `pricing`. A node's value in either form also admits the
+optional `loads` field of the "Per-node context declaration" paragraph of
+§"ACP node adapter configuration". Any other key, and any object that
 carries `agent` together with `command`, `args` or `env`, MUST refuse before
 claim. `config_options` is NOT a configuration key: it is a field of the node
 adapter the Dispatcher renders for a selected candidate (see "In-protocol model
@@ -7493,13 +8992,18 @@ structured candidate with overrides, and a manual candidate, look like this:
 }
 ```
 
-`source` is exactly `protocol.machine_code`, `protocol.message`, or
-`process.terminal_diagnostic`. `cause` is exactly `quota`, `rate_limit`,
+`source` is exactly `protocol.machine_code`, `protocol.message`,
+`process.terminal_diagnostic`, or `turn.final_output`. `cause` is exactly `quota`, `rate_limit`,
 `provider_capacity`, `provider_server_unavailable`, `model_unavailable`,
 `model_not_found`, `model_unsupported`, or `model_not_entitled`. `scope` is
 exactly `availability-domain` or `candidate`. A machine-code source requires one
-non-empty exact `machine_code` and forbids `all_literals`; the other sources
-require a non-empty array of non-empty `all_literals` and forbid `machine_code`.
+non-empty exact `machine_code` and forbids `all_literals`; the
+`protocol.message` and `process.terminal_diagnostic` sources require a
+non-empty array of non-empty `all_literals` and forbid `machine_code`. A
+`turn.final_output` signature requires one non-empty `final_text`, the complete
+measured refusal text the provider delivers, and forbids `all_literals`,
+`machine_code` and `exit_code`; it MUST declare `scope: candidate`. No other
+source accepts `final_text`.
 An optional `exit_code` is an integer from 1 through 125 and only refines the
 required discriminator; it is never sufficient by itself. Domain scope MAY
 carry a non-empty opaque `hold_key`, defaulting to `availability_key`. Candidate
@@ -7513,8 +9017,8 @@ diagnostic with different cause/scope/key dispositions, the failure is
 non-eligible and surfaced as ambiguous, and it creates no hold; runtime first-
 match choice is forbidden.
 
-Text matching is a conjunction after Unicode case-folding and whitespace
-normalization, never a regular expression. The Dispatcher applies signatures to
+Literal-based text matching is a conjunction after Unicode case-folding and
+whitespace normalization, never a regular expression. The Dispatcher applies signatures to
 the failing node's recorded failure as read from the run's resolved factory:
 a `protocol.machine_code` signature matches only where the engine preserved the
 provider's structured payload; a `protocol.message` signature matches the
@@ -7527,7 +9031,31 @@ at the workflow's `needs_human` terminal and the terminal message no longer
 carries the provider's sentence, the Dispatcher MUST read the failing node's own
 recorded attempt outcome before classifying, and MUST NOT classify from the
 needs-human script's own output. Matching never reads an arbitrary exec-output
-tail, agent response, prompt, tool/test/review output, or run log. Structured
+tail, prompt, tool/test/review output, or run log, and it reads agent response
+text ONLY through a `turn.final_output` signature. A `turn.final_output`
+signature applies only to an agent node attempt that the engine recorded as
+succeeded, and it is not a conjunction of literals. Both the recorded turn
+output and the signature's `final_text` are normalized by Unicode case-folding,
+collapsing every maximal run of whitespace to one space, and removing leading
+and trailing whitespace. The signature matches only when the normalized output
+ENDS WITH the normalized `final_text` at a sentence boundary: the output either
+equals that text, or the character immediately before the text is `.`, `!` or
+`?`, or the text is preceded by exactly one space whose preceding character is
+`.`, `!` or `?`. Nothing else satisfies it. (The measured output that motivated
+this form reads `I'll make no changes.Selected model is at capacity. Please try
+a different model.`, with no space after the preceding terminator.) Refusal words that
+appear anywhere other than that tail do not match, so a turn that discusses a
+refusal and then continues is not a refusal; and an output that ends with the
+refusal text marked as a quotation, by a closing quotation mark after the text
+or by a lead-in such as a colon immediately before it, does not match. An output
+whose final sentences reproduce the refusal text unmarked is textually
+indistinguishable from the refusal itself and DOES match; that
+misclassification is accepted, because a match only mints a candidate hold and
+journals a warning, and it releases the item only under the unrecovered-cause
+condition of "A provider refusal booked as a successful turn is a failed
+attempt" below. The Dispatcher MUST read that
+recorded output from the run's resolved factory, exactly as it reads a failure
+for the other sources. Structured
 machine codes take precedence. Authentication,
 command-not-found, cancellation, node deadline or stall expiry, generic HTTP
 400/404, remote-compaction 404, malformed command/configuration, signal exit,
@@ -7550,7 +9078,10 @@ generic HTTP 400 remains non-eligible; the exact model-naming discriminator is
 candidate-scoped. Every provider-limit mapping MUST exist as a
 `protocol.message` signature, and additionally as a `protocol.machine_code`
 signature where the adapter emits a structured token, so that detection survives
-an engine that keeps only message text. The measured minimum set at this
+an engine that keeps only message text. A `turn.final_output` form is the one
+exception: it describes a refusal the adapter delivers as turn text on an attempt
+the engine recorded as succeeded, so there is no recorded failure for a
+`protocol.message` form to match, and none is required. The measured minimum set at this
 ratification, each `cause: quota` and `scope: availability-domain`, is: for
 `claude-acp`, the session-limit form (literals `hit your session limit`), the
 generic limit form (literals `hit your limit` and `resets`), the usage-limit form
@@ -7560,7 +9091,12 @@ field in BOTH its camelCase spelling (`codexErrorInfo` carrying
 `usageLimitExceeded`) and its snake_case spelling (`codex_error_info` carrying
 `usage_limit_exceeded`), and the message forms (literals `hit your usage limit`;
 literals `usage limit exceeded`). Both measured Codex spellings MUST be
-recognized. A Claude `rate_limit` kind alone does not establish quota
+recognized. The measured minimum set additionally carries one form that is
+neither `cause: quota` nor domain-scoped: for `codex-acp`, the capacity form,
+source `turn.final_output`, `cause: provider_capacity`, `scope: candidate`,
+`final_text` `Selected model is at capacity. Please try a different model.`
+The capacity form is candidate-scoped to `codex-acp`: a `claude-acp` attempt
+whose output ends with the same words MUST NOT match it. A Claude `rate_limit` kind alone does not establish quota
 exhaustion; its measured message discriminator is required. A non-dispositive
 structured kind MUST NOT suppress that discriminator. Every listed measured
 form MUST be exercised against its recorded executed candidate, including
@@ -7598,6 +9134,32 @@ admission-time credential-usability probe, predicted health, price, model
 strength, or provider reset claims. The Dispatcher MUST retain configured order
 after filtering.
 
+**A provider refusal booked as a successful turn is a failed attempt.** An
+agent node attempt that the engine recorded as succeeded, but whose turn
+matches a `turn.final_output` signature of its executed candidate, MUST be
+treated by the Dispatcher as a FAILED attempt of that candidate with the
+matched cause and scope, for every purpose of this section. It mints the
+candidate hold that the signature declares, with expiry computed from the
+attempt's completion instant. It journals the model-fallback warning exactly
+as a failed attempt does. It MUST NOT count as a successful completion under
+"A record is falsifiable only by later matching execution", under the
+warning-retirement rule, or as a successfully completed availability
+confirmation turn. Such an attempt is the failing node attempt for
+"Provider-limit release and re-dispatch" ONLY when it is the unrecovered failure
+responsible for the run's terminal disposition, as that paragraph requires: the
+run reached a terminal other than its successful exit through the reclassified
+attempt's own outcome, or through retries of the same node every one of which
+was also reclassified, and no later attempt of any node, agent or non-agent,
+failed on its own. In that case the Dispatcher MUST perform the release,
+including returning the item to `ready` with no `blocked_reason`, and MUST NOT
+rest the item at `blocked / needs-human`. When a later failure determined the
+terminal instead, that later failure keeps its own classification and route,
+including a non-eligible failure's route, and the reclassified attempt does not
+release the item. A run that reaches its successful exit keeps its outcome.
+The run's overall outcome, successful or not, never retires the reclassified
+attempt's hold or warning; their existing retirement rules still apply. The release
+record MUST name the matched signature's source as `turn.final_output`.
+
 **Holds are per provider domain and discoverable host-wide from factory-native
 run records.** A domain hold keyed on a provider allowance's `availability_key`
 is the per-provider hold; a candidate hold keys on the exact identity pair.
@@ -7608,8 +9170,14 @@ entitlement, occurrence time, and typed availability outcome. Hold observations
 and their retirement evidence MUST remain reconstructible after any
 repository-local dispatch journal is removed. Dispatch journals MAY record audit
 references but MUST NOT be the sole authority for holds. The participating
-factory instances are every factory declared under `dispatcher.factories`; each
-Dispatcher MUST read availability evidence from every declared factory, so an
+factory instances are every factory declared under `dispatcher.factories`, every
+implicitly declared factory, and every recorded-target factory (§"Factory
+addresses resolved from a host registry"); each Dispatcher MUST read
+availability evidence from every participating factory. A participating factory
+whose evidence cannot be read, including a recorded-target factory the registry
+no longer resolves, has the existing unavailable-evidence treatment: losing a
+factory's address does not retire a hold recorded there, and its holds retire
+only through the confirmations and operator clearances this section defines, so an
 observation made by any repository's run on a participating factory is visible
 to every repository that dispatches to it. Observations, successful availability
 confirmations, and operator clearances MUST each be recorded as a factory-native
@@ -7738,8 +9306,11 @@ When a run terminates -- through any terminal, the workflow's `needs_human` term
 
 **Recovery from the failed run's preserved work.** An item is *released for
 recovery* when its latest journaled dispatch ended in a first-stall release
-(§"Dispatcher progress watchdog"), a `provider-limit-release` record, or an
-`adapter-launch-release` record. Both `dispatch` and `loop` MUST perform
+(§"Dispatcher progress watchdog"), a `provider-limit-release` record, an
+`adapter-launch-release` record, or a `stale-assignee-clear` record for that
+dispatch's run; an item is also released for recovery while it is a stale
+assignee whose run stamp names a run (§"Stranded claim release" → "Stale
+assignee clearance"). An item is also released for recovery when its latest journaled dispatch ended at the workflow's `needs_human` terminal or at a `non_converged` terminal, the item has since returned to `ready` by any path (a human valve, a groom, or a return from `backlog`), and no newer dispatch has been submitted for it. For such an item, the pre-claim refusal of §"Across-dispatch required-result progress" MUST be graded BEFORE recovery routing: an item that refusal refuses MUST NOT be routed, MUST NOT be offered to the admission valve in that pass, and keeps that section's refusal and remedy. This ordering is what bounds the release, because the release consumes no budget of §"The three rework caps". An item the refusal does not refuse MUST be graded by recovery routing exactly as every other released candidate is: `resume` at the anchored node when every precondition of §"Resume from a published pull request (`resume --item`)" passes, `seeded` from its preserved work when every applicable resume refusal is fallback-permitting and preserved work is verified, `fresh` only when preserved work is confirmed absent, and `held` when a non-fallback refusal applies or a measurement routing needs cannot be taken. Its preserved work MUST be taken in the preference order this clause states below, so the pushed ref a needs-human ending preserves under §"A factory run never awaits a human", and the preservation ref of a failed engine checkpoint, are preferred over the observed published head. A Definition of Done changed by a groom while the item rested is the existing fallback-permitting refusal, so such an item MUST be seeded and MUST NOT inherit proof from the earlier Definition of Done. This release MUST NOT change how §"Across-dispatch required-result progress" counts the dispatch that ended it. The goal brief of a `resume` or `seeded` dispatch of such an item SHOULD name the terminal it recovers from and the needs-human or non-convergence cause recorded on the item. Both `dispatch` and `loop` MUST perform
 *recovery routing* for every released candidate. Routing comes after the
 pre-dispatch wall and BEFORE the admission valve, while the item is still
 `ready`, and assigns the item exactly one route. Routes are graded in the order
@@ -7948,7 +9519,7 @@ watchdog, MUST resolve from configuration rather than from literals hard-coded
 in the workflow graph.
 
 **Keys.** `dispatcher.node_timeouts` is a table keyed by node name
-(`dod_gate`, `implement`, `fix`, `review_fix`, `proof_capture`, `review`,
+(`dod_gate`, `implement`, `commit_red`, `commit_green`, `fix`, `review_fix`, `proof_capture`, `review`,
 `disposition`, `proof_verify`, `proof_grade`, `publish_draft`, `pr_refresh`, `pr`, `janitor`) whose values are positive
 integers of seconds; `dispatcher.stall_timeout_seconds`
 is a positive integer of seconds for the run-level stall watchdog. A node with
@@ -8035,9 +9606,13 @@ needs-human ending that has a different cause. `blocked_reason` gains no member
 and the run still preserves its work under "A factory run never awaits a human".
 Scenario 177 in `scenarios.md` exercises this paragraph.
 
-**A commit leg completes past one tool call.** The implement-work-item workflow MUST provide, inside the factory sandbox, a detached commit runner for every stage whose ACP agent commits (`implement`, `fix` and `review_fix`), and each such stage's prompt MUST direct every `git commit` the agent makes — a Red commit, a Green amend, or any later commit — through that runner. Starting a commit through the runner MUST run the given `git commit` arguments unchanged, with the repository's commit hooks running exactly as they run for a foreground commit, in a session that outlives the tool call that started it, and MUST return that commit run's identity without waiting for the commit. Waiting on a commit run MUST block for no longer than a bound in seconds that the caller supplies, MUST then report either `running` or the run's terminal state, MAY be repeated in later tool calls any number of times, and MUST leave the commit run untouched when it returns or is interrupted. The terminal state MUST be derived from records the commit run's own process writes, never from the waiting agent's view: `passed` when the commit process exited on its own with status zero; `failed` when it exited on its own with any non-zero status; and `no-verdict` when it was ended by a signal or is no longer running without having recorded an exit status. A terminal report MUST carry the exit status when one was recorded, the resulting `HEAD` commit id when the state is `passed`, and the final lines of the commit's combined output. A commit run whose state is `failed` or `no-verdict` is not a commit, and the prompt MUST direct the agent not to treat it as one. The runner MUST NOT pass `--no-verify`, set any variable that skips or relaxes a check, or change the severity of any hook, and MUST refuse to start a commit run while an earlier commit run in the same sandbox is still `running`, naming that run. The stage's rule that nothing it started is left running when its turn ends is unchanged: before the agent's final message every commit run it started MUST be terminal or stopped, and the detached commit run with its bounded waits is the only exception that stage's prompt makes to its rule against backgrounding a tool call. This paragraph does not replace "Repository hooks that outlive a limit", which still governs any commit or push that does not go through the runner. Scenario 179 in `scenarios.md` exercises this paragraph.
+**A commit leg completes past one tool call.** The implement-work-item workflow MUST provide, inside the factory sandbox, a detached commit runner for every stage whose ACP agent commits (`fix` and `review_fix`), and each such stage's prompt MUST direct every `git commit` the agent makes — a Red commit, a Green amend, or any later commit — through that runner. Starting a commit through the runner MUST run the given `git commit` arguments unchanged, with the repository's commit hooks running exactly as they run for a foreground commit, in a session that outlives the tool call that started it, and MUST return that commit run's identity without waiting for the commit. Waiting on a commit run MUST block for no longer than a bound in seconds that the caller supplies, MUST then report either `running` or the run's terminal state, MAY be repeated in later tool calls any number of times, and MUST leave the commit run untouched when it returns or is interrupted. The terminal state MUST be derived from records the commit run's own process writes, never from the waiting agent's view: `passed` when the commit process exited on its own with status zero; `failed` when it exited on its own with any non-zero status; and `no-verdict` when it was ended by a signal or is no longer running without having recorded an exit status. A terminal report MUST carry the exit status when one was recorded, the resulting `HEAD` commit id when the state is `passed`, and the final lines of the commit's combined output. A commit run whose state is `failed` or `no-verdict` is not a commit, and the prompt MUST direct the agent not to treat it as one. The runner MUST NOT pass `--no-verify`, set any variable that skips or relaxes a check, or change the severity of any hook, and MUST refuse to start a commit run while an earlier commit run in the same sandbox is still `running`, naming that run. The stage's rule that nothing it started is left running when its turn ends is unchanged: before the agent's final message every commit run it started MUST be terminal or stopped, and the detached commit run with its bounded waits is the only exception that stage's prompt makes to its rule against backgrounding a tool call. This paragraph does not replace "Repository hooks that outlive a limit", which still governs any commit or push that does not go through the runner. Scenario 179 in `scenarios.md` exercises this paragraph.
 
-**A commit run outlives a node-timeout cut.** The preceding paragraph's end-of-turn rule governs a turn that ends with the agent's final message, and that rule is unchanged. A turn that its node's resolved timeout ends is a separate case, because the agent sends no final message and cannot stop what it started. When an `implement`, `fix` or `review_fix` turn is ended by its node's resolved timeout while a commit run it started through the commit runner is still `running`, ending the turn MUST NOT terminate that commit run. Before the `needs_human` node makes its preservation commit, it MUST wait on every commit run still `running` in the sandbox with bounded waits, ending that wait while enough of the `needs_human` node's own timeout remains for a bounded preservation attempt, and MUST then stop any commit run still `running`, so that no commit run executes concurrently with the preservation commit; a commit run stopped this way is `no-verdict`. Preservation then proceeds exactly as "A factory run never awaits a human" requires, by a pushed ref or, when the push does not complete, the preserve-by-reference pointer. When the commit run that was `running` at the cut reaches `passed` before preservation begins, its resulting `HEAD` commit MUST be in the preserved tree's history; this clause does not require an earlier commit that the agent itself superseded, such as a Red commit replaced by a Green amend, to remain in that history. When such a cut is the cause of the run's needs-human ending, the needs-human cause recorded on the item MUST name `node-timeout`, the node whose turn was cut, that node's resolved timeout in seconds, and, for each commit run the cut turn had started, its identity and its terminal state when preservation began. Scenario 192 in `scenarios.md` exercises this paragraph.
+**A commit run outlives a node-timeout cut.** The preceding paragraph's end-of-turn rule governs a turn that ends with the agent's final message, and that rule is unchanged. A turn that its node's resolved timeout ends is a separate case, because the agent sends no final message and cannot stop what it started. When a `fix` or `review_fix` turn is ended by its node's resolved timeout while a commit run it started through the commit runner is still `running`, ending the turn MUST NOT terminate that commit run. Before the `needs_human` node makes its preservation commit, it MUST wait on every commit run still `running` in the sandbox with bounded waits, ending that wait while enough of the `needs_human` node's own timeout remains for a bounded preservation attempt, and MUST then stop any commit run still `running`, so that no commit run executes concurrently with the preservation commit; a commit run stopped this way is `no-verdict`. Preservation then proceeds exactly as "A factory run never awaits a human" requires, by a pushed ref or, when the push does not complete, the preserve-by-reference pointer. When the commit run that was `running` at the cut reaches `passed` before preservation begins, its resulting `HEAD` commit MUST be in the preserved tree's history; this clause does not require an earlier commit that the agent itself superseded, such as a Red commit replaced by a Green amend, to remain in that history. When such a cut is the cause of the run's needs-human ending, the needs-human cause recorded on the item MUST name `node-timeout`, the node whose turn was cut, that node's resolved timeout in seconds, and, for each commit run the cut turn had started, its identity and its terminal state when preservation began. Scenario 192 in `scenarios.md` exercises this paragraph.
+
+**The recorded hook verdict outranks the agent's account of it.** When a run ends at the `needs_human` terminal after a `fix` or `review_fix` turn whose latest commit attempt was refused, as "An implement turn that ends incomplete does not succeed" defines a refused attempt, the needs-human cause recorded on the item MUST name that attempt's recorded exit status and the failed target names the hook's recorded output reports, read from the run's recorded tool output and never from the agent's reply, and the dispatch journal's outcome row for the run MUST carry the same exit status and failed target names in a field separate from the agent's own failure text. When the agent's failure text describes that hook as interrupted, terminated or not completed while the recorded output shows the hook completed with a refusal, the needs-human cause MUST label the agent's text as agent-reported and MUST state the recorded refusal beside it. A commit attempt whose recorded output shows no hook run, or one ended by a limit before its hook finished, is not governed by this paragraph and retains its existing classification under the preceding paragraphs. For the implement stage, the needs-human cause after an exhausted `commit_red` or `commit_green` re-entry MUST name that command node's recorded exit status and failed target names. Scenario 179 in `scenarios.md` exercises this paragraph.
+
+**A refused commit's needs-human cause is attributable from the ledger.** This paragraph governs every needs-human cause that the preceding paragraph requires to name a refused commit's recorded exit status and failed target names: the cause after a `fix` or `review_fix` turn whose latest commit attempt was refused, and the cause after an exhausted `commit_red` or `commit_green` re-entry of the implement stage. Each such cause MUST also carry one failure excerpt taken from the same recorded hook output: the first failing test id that output reports, or, when it reports none, its first line that reports an error. The excerpt MUST be at most 200 characters, and an excerpt shortened to that bound MUST say that it was truncated. When the recorded hook output is absent, cannot be read, or names no failed target, the cause MUST state that the failing target is unknown and MUST name which of those three reasons applies; it MUST NOT consist of the hook script's exit status alone, such as `script exited with status 1`. Neither the cause nor the excerpt MAY carry the value of any environment variable that the dispatch supplied to the run's sandbox. Before the cause is written, the Dispatcher MUST withhold any excerpt line that contains such a value, written verbatim or as a JSON-escaped string, and MUST put in its place a statement naming the environment variable by its key name only. A value shorter than eight characters is exempt from this check. The excerpt MUST NOT replace the exit status and failed target names that the preceding paragraph requires. Scenario 285 in `scenarios.md` exercises this paragraph.
 
 **The run's working tree survives the agent.** Inside the factory sandbox, a shell command that an ACP agent runs MUST be refused before any part of it executes when any executed segment of it would remove, move, or replace one of the run's protected paths: the sandbox root `/workspace`, the run's working directory, the working-directory link that points at the run's clone, and the clone's own directory. A command MUST be refused whether the protected path is written literally, written with a trailing slash, reached through a relative path from a directory the same command changed into, or produced by a glob that the shell would expand to it. The refusal MUST name the protected path it matched. A protected path that appears in the command only as data MUST NOT cause a refusal: an argument to `echo` or `printf`, a here-document body, a commit message, or a quoted pattern given to a search command. This paragraph's refusal condition is not met by an executed segment that removes, moves, or replaces only paths that are not protected paths, including a path under a scratch directory such as `/tmp`, or a file or directory inside the repository tree; whether the command as a whole is refused is decided by the paragraph "One decision covers the run's protections." below. The protection MUST apply to every ACP agent adapter the workflow launches whose runtime offers a hook that runs before each shell command; an adapter whose runtime offers no such hook is outside this paragraph. Scenario 180 in `scenarios.md` exercises this paragraph.
 
@@ -8048,6 +9623,110 @@ Scenario 177 in `scenarios.md` exercises this paragraph.
 **One decision covers the run's protections.** A shell command that an ACP agent runs inside the factory sandbox MUST be refused before any part of it executes when any one of its executed segments meets the refusal condition of "The run's working tree survives the agent.", of "The run's repository survives the agent.", or of "The run's sandbox processes survive the agent.", and MUST NOT be refused under those paragraphs otherwise. A segment that meets none of the three conditions never exempts another segment that meets one. A protected path or process that appears in the command only as data, exactly as "The run's working tree survives the agent." defines data, meets no condition, and it does not exempt any executed segment of the same command. The three protections apply to every ACP agent adapter the workflow launches whose runtime offers a hook that runs before each shell command. The paragraph "A repository agent hook survives an unparseable project manifest." still governs whether a hook launched through `uv` runs at all, and a call it allows while `pyproject.toml` cannot be parsed does not breach this paragraph.
 
 **A repository agent hook survives an unparseable project manifest.** A PreToolUse hook command that this repository commits in `.claude/settings.json` and launches through `uv` MUST NOT refuse a tool call because the repository's `pyproject.toml` cannot be parsed. A `pyproject.toml` carrying unresolved merge-conflict markers is an ordinary intermediate state of a refresh repair, and a refusal there withdraws the very tools that could resolve it. When `pyproject.toml` fails to parse, each such hook command MUST allow the Write, Edit, MultiEdit or Bash call it guards, and MUST write one line to standard error naming `pyproject.toml` as unparseable and stating that its guard was skipped for that call. When `pyproject.toml` parses, each such hook command MUST return the same allow or refuse decision for a tool call that it returned before this paragraph was ratified. This paragraph governs only the launch of those hook commands; it does not change what any guard decides when it runs. Scenario 194 in `scenarios.md` exercises this paragraph.
+
+## ACP turn stop reasons are recorded
+
+Every ACP turn of a factory run ends with the stop reason the agent's
+`session/prompt` response returns (for example `end_turn`, `max_tokens`,
+`max_turn_requests`, `refusal` or `cancelled`). The engine MUST record that
+stop reason, verbatim, on the run event that closes the step the turn belongs
+to, and every ACP stage's outcome record, as `fabro inspect` and `fabro dump`
+render it, MUST carry the stop reason of that stage's last turn. A turn whose
+response carries no stop reason MUST be recorded with an explicit absent
+marker rather than with a substituted default, so a missing value is
+distinguishable from a reported `end_turn`.
+
+A turn that ended with `refusal`, or with a turn or token ceiling, MUST stay
+distinguishable from one that ended with `end_turn` in the run's own export,
+whatever outcome the stage was booked with. The stop reason is a per-run fact:
+it MUST be recorded in the run event stream and the stage outcome record, and
+the Dispatcher's dispatch journal MUST NOT be extended to carry it. The stop
+reason MUST NOT carry, or be derived from, any environment value or resolved
+credential.
+
+## Factory step span attributes
+
+Every visit of every node of a factory run MUST emit exactly one step span
+through the run's OTLP export route, parented under the dispatch span that
+§"Bounded session waits and observable inventory" defines when the run
+carries that dispatch's trace parent. The span MUST end when the step ends,
+whatever outcome the step is booked with, so a failed, cancelled or
+timed-out step still has its span.
+
+Every step span MUST carry these attributes:
+
+- `work.item.id` and `livespec.dispatch.id`, with the values the run's
+  correlation labels carry;
+- `fabro.run_id`, the run id;
+- `fabro.node`, the node name, and `fabro.node.visit`, the 1-based visit
+  count of that node within the run;
+- `fabro.step.outcome`, the outcome the step was booked with;
+- `fabro.step.duration_ms`, the step's wall duration as a non-negative
+  integer.
+
+A step span of an ACP node MUST additionally carry:
+
+- `acp.model`, the model the turn ran on, and `acp.candidate.index`, the
+  0-based index of the fallback-chain candidate that ran it;
+- `acp.stop_reason`, the stop reason of the step's last turn, with the
+  value §"ACP turn stop reasons are recorded" requires the engine to record,
+  including its explicit absent marker;
+- `acp.last_tool.name`, the name of the last tool call the agent made in the
+  step, and `acp.last_tool.state`, one of `completed`, `failed` or
+  `in_flight`, where `in_flight` means the call had not reported a terminal
+  status when the step ended;
+- `acp.context.used_tokens`, the context tokens in use when the step ended,
+  and `acp.context.window_tokens`, the context window size of the model the
+  turn ran on, both as non-negative integers.
+
+A step span of a gate node, one that runs a deterministic check and books a
+pass or a fail (for example the janitor's check aggregate or a merge gate),
+MUST additionally carry `gate.verdict`, either `pass` or `fail`, and, when
+the verdict is `fail`, `gate.failed_targets`, the names of the targets that
+failed.
+
+When a run's sandbox is a Kubernetes pod, every step span of that run, and
+every `run_turn` span the run's engine exports, MUST additionally carry
+`k8s.node.name`: the name of the cluster node the pod was scheduled on, as
+the cluster reports it in the pod's `spec.nodeName`. That is the node
+`kubectl get pod -o wide` shows for the pod. The value names where the
+sandbox ran, not where the engine's worker ran. A dispatch whose pod is
+scheduled on a node other than the factory host therefore names that other
+node, beside the `livespec.dispatch.factory` value naming the factory. A
+run whose sandbox is not a Kubernetes pod (for example a Docker container
+on the factory host) MUST NOT carry `k8s.node.name`; its omission is not an
+unobservable value, so it is not named in `fabro.step.unavailable_fields`.
+When the sandbox IS a pod but its node cannot be read, the attribute
+follows the unobservable-value rule below.
+
+A value the factory cannot observe MUST be omitted rather than fabricated,
+and the span MUST then carry `fabro.step.unavailable_fields`, naming each
+omitted attribute. In particular a step whose agent made no tool call MUST
+omit both `acp.last_tool` attributes and name them there, and an unknown
+context size MUST NOT be exported as zero. `acp.stop_reason` follows its own
+absent marker instead of this rule.
+
+The span MUST NOT carry tool-call arguments or output, prompts, transcripts,
+command text, environment values, resolved credentials or credential-bearing
+paths or URLs. The receiver allowlist that this orchestrator owns MUST admit
+every attribute this section names. Emitting and exporting a step span
+follows the bounded asynchronous telemetry rules of §"Bounded session waits
+and observable inventory": an export failure MUST NOT fail, delay or alter
+the step or the run.
+
+As a result, one query over the Honeycomb environment that receives factory
+spans, filtered by `fabro.run_id`, MUST return one row per step visit of
+that run, giving why the step ended (its outcome, its stop reason, its last
+tool call and that call's state, its gate verdict and failed targets, and
+its context used against window size) without a run dump.
+
+### Factory Codex response token counts
+
+A Codex `handle_responses` span that a factory run exports MUST reach the Honeycomb export with `gen_ai.usage.cache_read.input_tokens` and `gen_ai.usage.cache_write.input_tokens` present whenever the Codex runtime recorded them, each as the non-negative integer it recorded. The receiver allowlist MUST admit both keys beside `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`. The forwarding stage MUST NOT rename, sum, default or derive either value. A span on which the runtime recorded neither key MUST pass through with neither key, and MUST NOT be given a zero.
+
+### Factory Claude cache-write lifetimes
+
+The host-owned enrichment stage MUST attach `cache_creation_5m_tokens` and `cache_creation_1h_tokens` to every Claude API-request record that a factory run exports, before the record reaches the Honeycomb export. It takes their values from the `ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens` fields of the `cache_creation` object in that API response's usage block, as non-negative integers. The same stage MUST attach `livespec.dispatch.id`, with the value of the run's correlation label, and MUST keep the record's existing `request_id`, which is the key that joins it to its API call. When the usage block reports both lifetimes, the sum of the two counts MUST equal the record's `cache_creation_tokens`. When the usage block reports only one lifetime, the stage MUST carry that one and MUST NOT carry the other. When it reports neither, the record MUST omit both lifetime keys rather than assign the undivided count to either. The receiver allowlist MUST admit `cache_creation_5m_tokens` and `cache_creation_1h_tokens`, beside the `livespec.dispatch.id` and `request_id` it already admits.
 
 ## Provider-limit permanence and root-cause surfacing
 
@@ -8194,6 +9873,8 @@ MAY ratify a lesson.
   uncommitted edit to the lessons file — MUST NOT influence brief
   composition.
 
+**Work-item riders are scoped to the stages they name.** A rider is a ledger comment on the work item that the Dispatcher renders into a stage's goal brief as operator instruction. A rider MAY name the stages it applies to on its own first line, in the form `FOR <stage>[, <stage>...] ONLY:`, using the workflow's stage names. The goal brief the Dispatcher renders for a stage MUST carry each rider that names that stage, and MUST NOT carry a rider that names only other stages. A rider that names no stage MUST reach only the `implement` and `review_fix` stages' briefs, because those are the stages that change the tree; it MUST NOT reach the `review`, `proof_capture` or `proof_verify` briefs. Ledger comments that are records rather than instructions, such as Definition-of-Done judgement records, remain excluded from every brief as they are today.
+
 
 ## Beads connection model
 
@@ -8254,6 +9935,15 @@ retired in livespec core's research consolidation):
   that would let that registration succeed. A `bd` call made through the
   plugin from the repository root MUST NOT print an `auto-backup failed`
   warning. Scenario 181 in `scenarios.md` exercises this bullet.
+- **Comment bodies travel by file.** Every ledger comment the plugin writes
+  through the live backend MUST reach `bd` through a file (`--file`), and its
+  body MUST NOT be passed as a command-line argument, because the
+  kernel caps one argument at a length (131072 bytes on Linux) far below what
+  the store holds. A comment's text MUST read back byte-identical through
+  `bd comments <id> --json` whatever its length within the store's own limit;
+  in particular a plan record at the 196608-byte proof record budget MUST be
+  written to its plan epic as one ledger comment that reads back
+  byte-identical.
 - **In-memory fake backend.** For hermetic CI and the
   no-live-connection runtime fallback, the plugin selects an in-memory
   fake backend (via `LIVESPEC_BEADS_FAKE=1` or the `connection.fake`
@@ -8274,7 +9964,7 @@ required non-null `rank`, the `admission_policy`/`acceptance_policy`/
 dropped);
 only the on-substrate home of each field differs. The materialized
 work-item the skills read back carries the SAME logical fields the
-plaintext sibling exposes, so cross-boundary consumers (doctor, the
+plaintext sibling exposes, so cross-boundary consumers (the
 ranker, the console) see a consistent shape.
 
 > **Invariants (doctor-checkable; restated for the consumer):**
@@ -8396,9 +10086,9 @@ Logical field → beads home:
   policy/reason label reads back `None` (inherit / the system safe
   default — the blessed optional-on-read pattern).
 - `factory_safety` — beads label
-  `factory-safety:<needs-host-secrets|mutates-host-machinery|needs-privileged-host>`.
+  `factory-safety:<needs-host-secrets|mutates-host-machinery|needs-privileged-host|needs-host-only-input>`.
   An absent label reads back `None`, meaning FACTORY-SAFE — the fleet is
-  factory-safe BY DEFAULT and only an explicit reason opts out. The three
+  factory-safe BY DEFAULT and only an explicit reason opts out. The four
   reasons name work that genuinely cannot run in a sandbox executing
   agent-written code: `needs-host-secrets` (verification requires real
   secrets that must never enter such a sandbox), `mutates-host-machinery`
@@ -8406,9 +10096,15 @@ Logical field → beads home:
   timers, credential wrappers, the plugin cache, and Fabro servers — or
   changes external merge-gate machinery under `.github/workflows/`), and
   `needs-privileged-host` (privileged provisioning — a Dolt server, a
-  1Password environment, a per-tenant Fabro server). The sharp line:
-  writing CODE for any of these (including the Dispatcher's own code) is
-  factory-safe; APPLYING host or external factory-gate state is host-only.
+  1Password environment, a per-tenant Fabro server), and
+  `needs-host-only-input` (the item's authoritative input — a file, verdict
+  or state it must read — exists only on the host and cannot be committed to
+  the repository or fetched into the sandbox; an input that CAN be committed
+  is not this reason, and committing it is the remedy; an input that is
+  itself a secret is `needs-host-secrets`, which takes precedence). The
+  sharp line for the first three: writing CODE for any of these (including
+  the Dispatcher's own code) is factory-safe; APPLYING host or external
+  factory-gate state is host-only.
   Editing `.github/workflows/` remains host-routed even while ordinary CI
   runs on GitHub-hosted capacity, because those files are the factory's own
   executable merge gates and an agent must not rewrite its own examiner.
@@ -8435,10 +10131,18 @@ Logical field → beads home:
   `bd dep add <this-issue> <blocker> --type blocks` edge exists; the
   reader populates `depends_on` from these edges.
 - `superseded_by` — beads `supersedes` dependency edge (`bd dep add
-  <superseding> <this> --type supersedes`). Present iff non-null.
+  <superseding> <this> --type supersedes`) when both items live in one tenant; when the superseding item lives in another tenant, which no dependency edge can reach, the item's `metadata.superseded_by` key holding the superseding item's id. Present iff non-null.
 - epic linkage — beads native `parent-child` (`bd create … --parent
-  <epic>` / `bd update <child> --parent <epic>`). An epic is a
-  `type: epic` issue whose members are its beads children.
+  <epic>` / `bd update <child> --parent <epic>`), or a `tracks` dependency
+  edge from the record to the epic. An epic is a `type: epic` issue whose
+  members are its beads children. Every surface that reports a record's
+  parent or enumerates an epic's children, including the plan
+  child-enumeration union, the `context` envelope's children, the
+  `list-work-items --json` projection's `parent`, the plan-progress
+  attribution of §"Attention without confusing activity with results" and
+  the epic-close check of the merge-evidence exemption, MUST
+  honour both edge types, so that no two surfaces disagree on what an epic
+  linkage is. Scenario 215 in `scenarios.md` exercises this bullet.
 - `captured_at` — beads `created_at`. On live create the value is read
   back from the server; on import the supplied timestamp is preserved.
 - `resolution` (typed enum) — beads label `resolution:<enum>`, one of:
@@ -8521,7 +10225,8 @@ For each work-item with `status == "closed"`:
 
 Work-items with `type == "epic"` are EXEMPT from the merge-evidence
 requirement. Epics close when their child work-items (beads
-parent-child members) are all closed; the check INSTEAD requires that
+epic-linkage members, `parent-child` or `tracks`, per §"Work-item
+beads-issue mapping") are all closed; the check INSTEAD requires that
 every child resolves to a closed work-item.
 
 All operations are local `git` invocations (`cat-file`, `merge-base`);
@@ -8541,14 +10246,15 @@ closed-item-integrity invariant in `constraints.md` §"Closed-item
 integrity" — it makes "closed but unproven is forbidden" un-bypassable
 rather than a remember-to-verify review.
 
-The `closed_item_integrity` check MUST enumerate every closed gap-tied work-item in the beads store, derive each item's `gap-id` from its `gap-id:<id>` label, resolve that gap-id to an acceptance scenario via the `clauses[]` gap-id→scenario map in `tests/heading-coverage.json`, and emit a `closed-item-integrity` finding for any such item whose resolved scenario's `heading-coverage` entry is still bound to the `TODO` sentinel (not a real integration-tier-or-above test node id) OR which lacks the `resolution:completed` label.
+The `closed_item_integrity` check MUST enumerate every closed gap-tied work-item in the beads store, derive each item's `gap-id` from its `gap-id:<id>` label, resolve that gap-id to its acceptance heading — a heading-derived gap-id (the live `detect-impl-gaps` derivation) names its heading's own `heading-coverage` entry directly, and a historical clause-derived gap-id, which a closed item keeps per §"`detect-impl-gaps`" → "Migration of clause-derived gap ids", resolves via the `clauses[]` gap-id→scenario map in `tests/heading-coverage.json` — and emit a `closed-item-integrity` finding for any such item whose resolved scenario's `heading-coverage` entry is still bound to the `TODO` sentinel (not a real integration-tier-or-above test node id) OR which lacks the `resolution:completed` label.
 
 The `closed_item_integrity` check MUST be always-wired into the `just check` aggregate and always-running; it MUST NOT be silently skipped. Its severity is governed by a self-documenting per-check lever — the `LIVESPEC_CLOSED_ITEM_INTEGRITY` environment variable — whose only recognized values are `warn` and `fail`. In `warn` mode (the DEFAULT) the check MUST surface each offender as a warning and exit `0`; in `fail` mode it MUST surface each offender as an error and exit non-zero. An unset or unrecognized lever value MUST default to `warn`. The lever is the SEVERITY switch, not a wiring carve-out: the check always enumerates every closed gap-tied item and always runs regardless of the lever value.
 
 The check REUSES existing primitives and introduces NO new gap-id logic:
-it derives gap-ids through the shared `livespec_spec_clauses` extractor
-(the same primitive impl-beads' `detect-impl-gaps` detector already
-imports — single-source gap-id, no duplication), reads the `clauses[]`
+it reads each item's gap-id from its label, resolves a
+historical clause-derived id through the shared `livespec_spec_clauses`
+extractor (single-source clause-id, no duplication) and a heading-derived
+id through the same derivation `detect-impl-gaps` uses, reads the `clauses[]`
 map already defined by livespec core's `constraints.md`, and reads
 closed gap-tied items through the existing beads
 reader (`bd` store). This check is enforced by
@@ -8561,8 +10267,9 @@ each gap-tied behavior clause (linking its gap-id to its acceptance
 scenario's H2 section name) — this is the core `clauses[]` contract
 (`constraints.md`, `non-functional-requirements.md`) that impl-beads
 adopts; and
-(b) the shared `livespec_spec_clauses` extractor available to
-impl-beads' dev-tooling. Both are existing primitives; the impl
+(b) for historical clause-derived gap-ids only, the shared
+`livespec_spec_clauses` extractor available to impl-beads' dev-tooling.
+Both are existing primitives; the impl
 work-item adopts the `clauses[]` map into impl-beads' heading-coverage
 and wires the check — it does not build new gap-id machinery.
 
@@ -8748,11 +10455,6 @@ this plugin participates in these red-edge handoffs:
 
 1. `/livespec-orchestrator-beads-fabro:capture-spec-drift` →
    `/livespec:propose-change` (drift findings).
-2. `/livespec:doctor` → `/livespec-orchestrator-beads-fabro:list-work-items --json`
-   (work-item structural invariants).
-3. `/livespec:doctor` → `/livespec-orchestrator-beads-fabro:detect-impl-gaps --json`
-   (gap-detection invariants `gap-tracking-one-to-one` and
-   `no-stale-gap-tied`).
 
 The handoff mechanism is namespace invocation (per
 `livespec/SPECIFICATION/contracts.md`) —
@@ -8789,15 +10491,21 @@ run budget. When the freshness gate cannot be satisfied, the Dispatcher MUST ref
 the dispatch and MUST surface that the host credential requires renewal, rather
 than projecting a credential that MAY expire mid-run.
 
+The worker's maximum run budget is the smaller of two figures. The first is the execution allowance the Dispatcher derives from the resolved workflow graph. The second is the bounded credential-use window, which is the resolved `dispatcher.credential_queue_allowance_seconds` plus the whole-run wall budget resolved for the same dispatch (§"ACP node timeouts", "Whole-run wall budget key"). The worker's credential-use deadline MUST be the projection instant plus that same figure, and the in-sandbox guard MUST stop coding-agent execution at that deadline, so the host gate and the in-sandbox guard use one figure. The freshness gate MUST require that figure plus the documented margin. The bound on credential use is the guard deadline, not the progress watchdog. The whole-run wall budget is not itself a hard bound: queue time is excluded from it, a held or unmeasured budget lets a run continue past it, and it is enforced only while the watchdog polls. A run first launched within the credential queue allowance is never stopped by the deadline before the whole-run wall budget's worth of running time has elapsed. At the run's first coding-agent launch, the in-sandbox start check MUST refuse the launch when the time remaining before the credential-use deadline is less than the resolved whole-run wall budget, naming the deadline, the remaining time and the budget. This is the queue-exceeded refusal. It is a different measurement from the start check's comparison of the credential's remaining life against the freshness requirement, and both MUST be made. A run that queued past the credential queue allowance is therefore refused before any coding-agent turn starts, and is never stopped by the guard in the middle of a turn on its queue's account. `dispatcher.credential_queue_allowance_seconds` is a committed-only positive integer of seconds, default **86400**. A non-positive or non-integer value MUST be rejected before any run exists, naming the key. Its resolution and journaling follow the whole-run wall budget key. The status and manual-renewal surfaces MUST report the same figure and name which of the two figures governed. For a dispatch in flight they MUST also report the queue time consumed against the credential queue allowance. Scenario 228 in `scenarios.md` exercises this paragraph.
+
+**A run ended by its credential-use deadline.** When the in-sandbox guard stops a coding agent at the credential-use deadline in the middle of a node, or refuses an agent launch because the deadline has passed, the Dispatcher MUST end the run under the export-then-terminate precondition of §"A factory run never awaits a human". It exports the run's record and writes and reads back the preserve-by-reference pointer, which names the run's published pull request and publish branch head when they exist, before the run is ended. It MUST journal exactly one `credential-use-deadline-reached` record carrying the run id, the factory, the node, the projection instant, the credential-use deadline, the queue time consumed, the governing figure, the preserve-by-reference pointer, and the cause. The cause is `queue-exceeded` for the start check's queue-exceeded refusal, `launch-refused` for a later agent launch refused because the deadline has passed, and `killed-mid-node` for an agent stopped at the deadline. The same disposition applies to all three. It MUST rest the item at `blocked` with `blocked_reason` `needs-human`, with a ledger comment naming the run, the node, the deadline, the cause and the pointer. The record anchors resume under §"Resume from a published pull request (`resume --item`)" exactly as a `run-wall-budget-exceeded` record does. The same published-head, stage and proof-record-precedence restrictions apply. A deadline record without those prerequisites preserves the recovery reference but does not itself authorize `resume --item`. Such an ending MUST NOT be reported as a plain failed run, MUST NOT be left without a journal record, and MUST NOT count toward any non-convergence or rework bound. Scenario 228 in `scenarios.md` exercises this paragraph.
+
 The orchestrator **host** MUST be the sole owner and refresher of each long-lived
 provider refresh credential; worker sandboxes MUST be read-only consumers of the
 projected snapshots.
 
 The projection mechanism — the per-provider projection shape, which projected
-credentials the freshness gate covers, the credential file or field layout, the
-encoding that renders the snapshot non-rotatable, and the numeric freshness
-threshold — is implementation-owned and MUST NOT be fixed by this contract. The
-behavior is exercised by Scenario 18 and Scenario 19 in `scenarios.md`.
+credentials the freshness gate covers, the credential file or field layout, and
+the encoding that renders the snapshot non-rotatable — is implementation-owned
+and MUST NOT be fixed by this contract. The maximum run budget, credential-use
+deadline and freshness requirement follow the rules above; the documented
+margin remains implementation-owned. The behavior is exercised by Scenario 18,
+Scenario 19 and Scenario 228 in `scenarios.md`.
 
 ## Proof credential projection
 
@@ -8847,8 +10555,8 @@ credential. The behaviour is exercised by Scenario 134 in `scenarios.md`.
 
 ## Bounded session waits and observable inventory
 
-The plugin MUST expose a host-session CLI with `wait`, `inventory`, `ack` and
-`check` operations for detached gates and qualified Herdr panes. It MUST NOT
+The plugin MUST expose a host-session CLI with `wait`, `inventory`, `ack`,
+`retire` and `check` operations for detached gates and qualified Herdr panes. It MUST NOT
 introduce another planning skill or an independent daemon.
 
 ### First-event waits and operational inventory
@@ -8857,11 +10565,11 @@ The wait subcommand MUST require a positive finite explicit deadline budget, bin
 
 All observations, subprocesses, transport operations and final return MUST share one monotonic deadline, including cancellation of a hung probe at expiry. Observation cadence MUST be no slower than one second while budget remains, and a slow target MUST NOT serialize observation of other targets. The result MUST identify the triggering target, each target's last observed state and freshness, and unfinished targets at expiry. Command outcome and a target's exit code MUST remain separate, both visible. A stale running observation MUST be labeled with its timestamp rather than asserted current.
 
-Arming MUST atomically register a schema-versioned wait beneath the primary repository's ignored tmp/session-waits store before blocking. Records MUST hold session/wait identities, frozen targets, audit/deadline times, waiter process generation, observation sequence, return-ready state and acknowledgement. Concurrent writers MUST preserve each other's records. Inventory MUST re-observe targets and waiter generations, report ended-but-unacknowledged, running-without-waiter and overdue records, and expose corrupt, unsupported or unreadable records as unavailable. Unacknowledged records MUST survive session and waiter exit until explicit disposition; acknowledged retention and export queues MUST be bounded. The waiter's return-ready record proves only result production. An explicit ack by the receiving session MUST mark receipt acknowledgement only; execution consumption and target-result fulfillment MUST remain distinct under the shared obligation contract below. An exporter success or process exit MUST NOT establish any of those later states.
+Arming MUST atomically register a schema-versioned wait beneath the primary repository's ignored tmp/session-waits store before blocking. Records MUST hold session/wait identities, frozen targets, audit/deadline times, waiter process generation, observation sequence, return-ready state and acknowledgement. Concurrent writers MUST preserve each other's records. Inventory MUST re-observe targets and waiter generations, report ended-but-unacknowledged, running-without-waiter and overdue records, and expose corrupt, unsupported or unreadable records as unavailable. Unacknowledged records MUST survive session and waiter exit until explicit disposition; acknowledged retention and export queues MUST be bounded. The waiter's return-ready record proves only result production. An explicit ack by the receiving session MUST mark receipt acknowledgement only; execution consumption and target-result fulfillment MUST remain distinct under the shared obligation contract below. **A successor retires a terminal wait it does not own.** The `retire` operation MUST let a session other than the record's owning session dispose of a wait record, given the retiring session id and a non-empty reason. It MUST refuse, as `target-not-terminal` and without changing the record, while any target of the wait is in a still-running state. A retired record MUST keep its original session identity, frozen targets and observations unchanged, and MUST gain a retirement disposition carrying the retiring session id, the reason, the retirement time and the observed terminal state of every target. Retirement is a disposition, not a receipt acknowledgement: it MUST NOT mark the wait acknowledged by its owner, and MUST NOT establish execution consumption or target-result fulfillment. Inventory and the host turn-end check MUST NOT report a retired record as ended-but-unacknowledged. Retirement MUST publish a `session.wait.retired` event carrying the retiring and the original owning session ids, which joins the wait-family event catalog. Retired records count toward the bounded acknowledged retention. An exporter success or process exit MUST NOT establish any of those later states.
 
 The check subcommand MUST expose those same mismatches before turn end. Existing host planning/drive guidance MUST use the shipped command rather than hand-written serial or single-status wait loops and MUST derive monitoring claims from inventory. Automatic stop integration MUST be claimed only for a runtime whose installed hook surface is exercised; where unavailable, guidance MUST explicitly invoke check and disclose that limit. Factory execution guidance MUST preserve the no-blocking-wait constraint.
 
-The session producer MUST use OTLP/HTTP-JSON trace export to the configured host-local receiver and its /v1/traces surface, followed by host-owned enrichment and scrubbing before Honeycomb export. The receiver/exporter and its shared attribute allowlist are owned by this orchestrator; producers and consumers MUST co-evolve that allowlist and the vocabulary below. The host credential wrapper supplies the existing Honeycomb credential to the host exporter only; this contract MUST NOT introduce direct producer-to-Honeycomb credentials or a second collector. When this route is configured, arming, observation changes, return, acknowledgement and inventory snapshots MUST publish curated OTLP/HTTP-JSON trace events through the existing host-local enrichment/scrub and Honeycomb path. Resource service.name MUST be livespec-dispatcher and service.namespace MUST be livespec-family; scope MUST be livespec.orchestrator.session_wait with a version. The wait-family event catalog is session.wait.armed, session.wait.observed, session.wait.returned, session.wait.acknowledged and session.wait.inventory. Arming MUST enqueue its lifecycle observation before the waiter may terminate; remote delivery follows the bounded asynchronous failure rules below. Events MUST preserve allowlisted repository/session/wait identity, opaque target identity and kind, snapshot/observation identity and sequence, observed state, return reason, acknowledgement and waiter liveness. Existing work.item.id, dispatch.id and fabro.run_id MUST be populated only when known. Context MUST use an existing trace parent when present and otherwise a stable new wait trace.
+The session producer MUST use OTLP/HTTP-JSON trace export to the configured host-local receiver and its /v1/traces surface, followed by host-owned enrichment and scrubbing before Honeycomb export. The receiver/exporter and its shared attribute allowlist are owned by this orchestrator; producers and consumers MUST co-evolve that allowlist and the vocabulary below. The host credential wrapper supplies the existing Honeycomb credential to the host exporter only; this contract MUST NOT introduce direct producer-to-Honeycomb credentials or a second collector. When this route is configured, arming, observation changes, return, acknowledgement and inventory snapshots MUST publish curated OTLP/HTTP-JSON trace events through the existing host-local enrichment/scrub and Honeycomb path. Resource service.name MUST be livespec-dispatcher and service.namespace MUST be livespec-family; scope MUST be livespec.orchestrator.session_wait with a version. The wait-family event catalog is session.wait.armed, session.wait.observed, session.wait.returned, session.wait.acknowledged, session.wait.retired and session.wait.inventory. Arming MUST enqueue its lifecycle observation before the waiter may terminate; remote delivery follows the bounded asynchronous failure rules below. Events MUST preserve allowlisted repository/session/wait identity, opaque target identity and kind, snapshot/observation identity and sequence, observed state, return reason, acknowledgement and waiter liveness. Existing work.item.id, dispatch.id and fabro.run_id MUST be populated only when known. Context MUST use an existing trace parent when present and otherwise a stable new wait trace.
 
 Elapsed seconds, remaining budget, observation age, overdue seconds, target count, active/unacknowledged counts and export drop/rejection counts MUST be exported as typed numeric fields. An inventory invocation MUST publish its summary plus per-wait observations, including an explicit zero-count summary. Unchanged observation export MUST be rate-limited to at most once per minute; lifecycle changes MUST remain distinguishable immediately. Snapshot time and identity MUST keep repeated observations distinguishable from new waits. These trace measurements satisfy the initial metrics publication contract; a native OTLP metrics signal MAY be added only through a demonstrated ecosystem metrics route with bounded aggregate dimensions. Any unsupported publication MUST have a documented reason and equivalent trace representation where possible.
 
@@ -8877,6 +10585,37 @@ This subsection extends the shared attribute vocabulary above to the Dispatcher'
 Every `fabro run` the Dispatcher launches MUST pass the correlation triple as run labels: `--label work.item.id=<work-item id>`, `--label livespec.dispatch.id=<dispatch id>` and `--label livespec.dispatch.factory=<factory name>`, each carrying that dispatch's own value. A correlation value is identifier-shaped when, after surrounding whitespace is removed, it is 1 to 128 bytes long and every byte is an ASCII letter, an ASCII digit, `.`, `_`, `:` or `-`, so hyphenated work-item ids such as `bd-ib-5jvgfr` and factory names such as `hp-candidate` are identifier-shaped. A value that is not identifier-shaped MUST be left out of the argv, and leaving it out MUST NOT fail the dispatch.
 
 The Dispatcher MUST emit one dispatch span per dispatch through its existing OTLP export path, carrying the correlation triple as span attributes. The span's trace id and span id MUST be derived from the dispatch id alone. Re-deriving the ids for the same dispatch id MUST yield the same trace id and span id. The derivation MUST use domain-separated SHA-256 outputs truncated to the required widths, with a deterministic non-zero fallback. Collisions in the resulting truncated identifiers are permitted. Emitting and exporting the dispatch span follows this section's bounded asynchronous telemetry and scrubbing rules, and an export failure MUST NOT fail the dispatch. The Dispatcher MUST set `TRACEPARENT` in the `fabro run` environment to `00-<trace id>-<span id>-01`, where the trace id is 32 and the span id 16 lowercase hexadecimal digits and neither is all zeros, using that dispatch span's ids, so that a factory which honours the run labels and the caller's trace parent places its run spans under the dispatch span. A factory that ignores either MUST NOT cause the dispatch to fail.
+
+When a dispatch reaches a terminal state, the Dispatcher MUST emit exactly one terminal span named `livespec.dispatch.terminal` to service `livespec-dispatcher`. Its parent MUST be the dispatch span, and it MUST carry the correlation triple. It MUST carry `livespec.dispatch.outcome`, exactly one of:
+
+- `succeeded`: the dispatch's work merged or was accepted;
+- `failed`: the run ended in a terminal failure;
+- `cancelled`: the run was cancelled;
+- `rework`: acceptance returned the item for rework;
+- `abandoned`: the dispatch ended without a terminal run outcome, for example a run that never started or was reaped as an orphan.
+
+The outcome is the dispatch's final disposition: a dispatch whose run failed and whose item acceptance then returned for rework carries `rework`, and `failed` means the run failed with no acceptance verdict following it.
+
+The terminal span MUST also carry `livespec.dispatch.attempt_count`. An attempt, in this paragraph, is one run of the dispatch's implementing turn on one candidate of its ACP fallback chain; it is not a rework attempt. For each attempt the dispatch made, the Dispatcher MUST emit one child span of the terminal span, named `livespec.dispatch.attempt`. Its start and end times MUST be the attempt's start and end. It MUST carry `livespec.dispatch.id`, `livespec.dispatch.attempt.index` (0-based), `acp.model` naming the model the attempt ran on, and `livespec.dispatch.attempt.fallback`, which is true exactly when the attempt ran on a candidate after the first in its fallback chain. A value the Dispatcher cannot observe MUST be omitted, never fabricated, and named in `livespec.dispatch.unavailable_fields` on the span that omits it. The receiver allowlist MUST admit every attribute this paragraph names. Emitting these spans follows this section's bounded asynchronous telemetry rules: an export failure MUST NOT fail, delay or alter the dispatch's recorded outcome.
+
+### Host model-judgement caller labelling
+
+This subsection extends the shared attribute vocabulary above to the model-judgement subprocesses the plugin launches on the host. A host model-judgement spawn is any subprocess the plugin starts on the host to obtain a model judgement, whichever agent runtime or model the resolved judge chain selects; a module that only wraps a caller-supplied model runner, or only reads verdict types, launches nothing and is not a spawn site.
+
+Every host model-judgement spawn MUST carry a `livespec.caller=<caller>` entry in the `OTEL_RESOURCE_ATTRIBUTES` of the child's environment, naming the judgement that launched it. The caller value MUST be supplied by the launching judgement through the launch seam, and MUST NOT be inferred from the prompt, the model or the call stack, so that two judgements sharing one prompt and one launch seam are still told apart. The caller values are:
+
+- `drift_run` for the drift run's spec-stated judgement;
+- `dod_governing_heading` for the host governing-heading verdict, although it reaches the judge through the same launch seam as the drift run;
+- `dod_judgement_pre_admission` and `dod_judgement_pre_dispatch` for the Definition-of-Done judgement taken before admission and before dispatch respectively;
+- `ledger_intent_scan` for the ledger-intent scan's operator-supplied judge command.
+
+A new spawn site MUST add its own caller value to this list in the same change that introduces it. Every caller value MUST be identifier-shaped as defined in §"Dispatch trace correlation".
+
+When the launching environment already carries `OTEL_RESOURCE_ATTRIBUTES`, the child MUST receive every existing entry unchanged, in its original order, with the `livespec.caller` entry appended as a further comma-separated entry. When it carries none, the child's `OTEL_RESOURCE_ATTRIBUTES` MUST consist of the `livespec.caller` entry alone. Labelling MUST NOT add, remove or rewrite any other environment variable of the child, and a failure to compose the label MUST NOT fail or alter the judgement.
+
+The receiver allowlist MUST admit `livespec.caller` as a resource attribute, so that judge spend can be grouped by caller downstream. The attribute carries the caller identifier only; it MUST NOT carry the prompt, the subject under judgement or any environment value, per the curated-field rule above.
+
+Scenario 280 in `scenarios.md` exercises this subsection.
 
 ### Launch obligations and consumed recovery
 
@@ -8904,3 +10643,80 @@ Wait/target outcomes such as unknown, gone or unavailable MUST NOT directly sati
 Live Codex/Herdr and Honeycomb proof MUST use the host-captured Proof of Done procedure with a separately started independent replay session. A runnable normally installed released-host scenario MUST exercise real Codex/Herdr turn completion (including FINAL), detached failure and independently executed recovery command, including coordinator idle/gone, absent/dead waiter, dropped notification, owner loss, duplicate events, valid HOLD, active commit/open Red pair and unmonitored refusal controls. Capture MUST measure actual command effect and next action, not just an alert, submitted prompt, ack, claimed lease, changed-approach declaration or a replacement process being alive. Independent replay and Honeycomb identity/latency retrieval with local outage controls are required for plan closure. A filed sibling referral, a merged test alone or report-only attention MUST NOT be presented as autonomous stall prevention.
 
 A Claude Stop hook or a simulated session MUST NOT satisfy the Codex/Herdr incident proof. Other supported runtime results MUST be independently labeled. Missing Codex automatic hooks MUST NOT waive launch-time registration and independent consumption on the Codex no-wait path; if that path is unsupported, the actual incident MUST be disclosed as uncovered and its proof assertion MUST remain unmet.
+
+## Provisional fleet launch scripts
+
+The top-level `fleet-launch/` directory is a PROVISIONAL and EXPERIMENTAL caller-side launch loop: it decides only WHEN a caller invokes `drive --action impl:<item>` or `resume --item <item>`, as §"Dispatcher admission, WIP cap, and post-merge acceptance" permits a caller to do ("A caller MAY add gates of its own for conditions the Dispatcher does not own"). Its shared fleet cap, per-factory FIFO tickets and mutex, hold file, board and in-flight readers are caller-side gates; per §"Host concurrency belongs to the Fabro scheduler" the Dispatcher MUST NOT read, enforce or depend on any of them, and `fleet-launch/` MUST NOT re-implement, pre-empt or stand in for any admission condition the Dispatcher owns.
+
+Every script under `fleet-launch/` MUST open with a banner marking it PROVISIONAL and EXPERIMENTAL that names the livespec console application and the committed launch-loop tool (work-item bd-ib-jr6w7v) as its first-class replacement. Every host-specific value a `fleet-launch/` script reads MUST be assigned in `fleet-launch/config.sh` or in one constants block at the head of a Python script, and each such value MUST be overridable from an environment variable whose name begins with `FLEET_LAUNCH_`, so the scripts can be exercised against stubs. The launcher's bound on how long it waits for a factory slot, `FLEET_LAUNCH_MAX_WAIT_S`, MUST default to 86400 seconds (24 hours) and remains an overridable host value like any other, and a launcher that gives up waiting at that bound MUST log the work-item id it was launching and the queue ticket it held.
+
+A `fleet-launch/` launcher MAY gate its launches onto a factory whose node it shares with CI workloads on that node's CPU load. When it does, the gate MUST measure *factory-class pressure*, never whole-host idle. Factory-class pressure is the CPU used over the sample window by two things, as a percentage of the node's CPU capacity:
+
+- pods in the factory namespaces that factory's sandboxes run in;
+- the host's `system.slice`, which holds the k3s agent, the Fabro servers and any resident host service.
+
+The measure is chosen by WHAT a workload is, never by its Kubernetes QoS class: CI workflow pods carry no CPU limits, so a burstable or best-effort CI pod can drive whole-host idle to zero without competing with factory pods for the CPU they request.
+
+The threshold MUST be assigned in `fleet-launch/config.sh` and MUST be overridable by a `FLEET_LAUNCH_` environment variable, like every other host value. A launcher MUST treat the factory as green for this gate only when factory-class pressure is at or below the threshold. Above the threshold it MUST hold the launch. A reading that cannot be taken or parsed MUST hold the launch, and MUST NOT be read as green. Every gate decision MUST log the pressure value the launcher used, or `unknown`, together with the threshold.
+
+A `fleet-launch/` impl launcher that holds a per-factory FIFO ticket MUST run its launch-time Definition-of-Done preflight while it is queued behind older tickets, and MUST NOT wait to reach the head of the FIFO before its preflight starts. A preflight pass is reusable for `FLEET_LAUNCH_PREFLIGHT_REUSE_S` seconds, a host value assigned in `fleet-launch/config.sh` and overridable like any other. A launcher that reaches the head of the FIFO holding a reusable pass MUST proceed to that factory's mutex without running the preflight again. A launcher that reaches the head with no pass, or with only a pass older than the reuse window, MUST run the preflight again before it takes the mutex. A failed preflight, whether it ran while queued or at the head, MUST end that launcher without a launch, and the launcher MUST drop its FIFO ticket without taking the mutex. Running the preflight while queued MUST NOT change the order in which queued launchers bind: tickets still bind in FIFO order, and a launcher MUST NOT add any ordering rule beside the FIFO ticket. The per-factory mutex MUST be held only from the binding count to its release, and that release MUST come before `drive --action impl:<item>` starts. A preflight pass is not a hold check: a reused pass MUST NOT stand in for, or let the launcher skip, any hold-file check the launcher makes before `drive --action impl:<item>` starts.
+
+The launch-time preflight a `fleet-launch/` launcher runs is the committed `dev-tooling/dod-preflight.sh`. A launcher MUST NOT substitute a launcher-local copy of it, and that script MUST behave as follows wherever a launcher runs it:
+
+- Run under a tenant credential wrapper that resets PATH, it MUST still resolve the `claude` and `codex` CLIs from the operator's user tool directory and complete its judgement, rather than failing with a command-not-found error.
+- It MUST treat a legacy string-form adapter entry, consisting of environment assignments followed by a `claude-agent-acp` command line, as a claude-acp route, and MUST run its judgement rather than refuse the entry.
+- It MUST run its Definition-of-Done and drift judges through the configured Codex-first judge chain, so that a Codex pass completes the preflight without a Claude judge call.
+- It MUST take the models of its governing-heading, Definition-of-Done and reflector judges from the repository's committed judge configuration, including when the launcher that runs it exports no judge model.
+
+A `fleet-launch/` launcher MAY also launch `resume --item <item>`. A resume launcher is a caller-side launch exactly as an impl launcher is, and it MUST pass through the same caller-side gates before it invokes `resume`:
+
+- It MUST take a ticket on the target factory's FIFO and MUST start only when its ticket is the live head of that FIFO, so impl launchers and resume launchers queued on one factory bind in one ticket order.
+- At the head of the FIFO it MUST take that factory's mutex and read the shared fleet count under it. It MUST start the resume only while that count is below the shared fleet cap. Otherwise it MUST release the mutex, keep its ticket, and wait. A count that cannot be read MUST be treated as at the cap.
+- Before it releases the mutex to start a resume, it MUST write a fleet in-flight marker that every launcher's fleet count includes until the resumed run lists on its factory board, and it MUST remove that marker when the resume ends.
+- It MUST hold while the hold file exists, as an impl launcher does.
+
+A resume launcher MUST NOT run the launch-time Definition-of-Done preflight, because a resume re-enters a run whose item was already admitted. It MUST release the factory's mutex before `resume --item <item>` starts, as an impl launcher releases it before `drive --action impl:<item>` starts.
+
+`just check` MUST run a `check-fleet-launch` target, declared in the justfile's `check:` targets array, that runs shellcheck over every shell script under `fleet-launch/` and runs a hermetic harness. The harness MUST exercise the launcher against stub factory boards and throwaway queue, lock, in-flight and state directories, and its cases MUST cover at least: reading a factory board; refusing a launch when the shared fleet cap is reached; launching two queued tickets in FIFO order; holding a launch while the hold file exists; counting a retired factory's board as zero rather than as unknown; treating a shared factory node as green when CI pods drive whole-host idle down while factory-class pressure is at or below the threshold; holding a launch when factory-class pressure is above the threshold; holding a launch when the node reading cannot be taken or parsed; starting a queued launcher's preflight before an older ticket binds while the older still binds first; reusing a preflight pass younger than `FLEET_LAUNCH_PREFLIGHT_REUSE_S` at the head of the FIFO; holding a launch at the head of the FIFO while the hold file exists even though the launcher's preflight pass is reusable; re-running a stale preflight pass at the head before the mutex; and dropping the FIFO ticket of a launcher whose preflight fails while it is queued, without taking the mutex. A change to a `fleet-launch/` launcher that breaks any of those cases MUST make `just check` exit non-zero. A syntax check alone MUST NOT be treated as satisfying this obligation.
+
+The `check-fleet-launch` harness cases MUST also cover a resume launcher that waits while the fleet count is at the cap and starts once it drops below the cap, and a resume launcher queued behind an impl launcher on the same factory that binds after it.
+
+The directory MUST be deleted once every factory launch on the operator host is made by the livespec console application or by the committed launch-loop tool, and no seat runs a `fleet-launch/` script.
+
+## Expedited incident lifecycle
+
+For an authorized recorded incident only, this section MUST take precedence over conflicting ordinary admission, factory provenance, WIP, reconciliation and completion clauses. It MUST preserve the ordinary policy for every other item and for normal repayment. The incident phase is context on the canonical ledger item, not a second work-item store or lifecycle authority.
+
+The plugin MUST preserve one canonical incident work-item id through repair, revert, corrected attempts, normal factory repayment and later reopening. Each attempt MUST bind its repository, immutable operation id, attempt id, phase/generation, exact base/head, carrier PR, complete landed commit/tree identities and cumulative original scope. Claim stamps, branch recovery, merged-PR resolution, proof publication, acceptance and closure MUST select that explicit current identity; the first merged branch match, latest title mention, or marker-removal diff alone MUST NOT select it. Existing explicit multi-PR selection work remains a prerequisite; this contract does not replace its general ambiguity refusals.
+
+
+The sanctioned incident transition MUST publish the following phase and canonical lifecycle-state pair. Host-owned active phases MUST carry the incident owner rather than a factory claim and MUST NOT consume a factory slot. Unknown phase/state combinations MUST produce a named configuration refusal. Only the incident transition may establish these exceptional host phases; flags alone MUST NOT mutate lifecycle state. Ordinary factory admission and acceptance govern the repayment phases.
+
+| Incident phase | Canonical lifecycle state | Transition condition |
+| --- | --- | --- |
+| repair | active | Authorized canonical entry or corrected repair with fresh evidence. |
+| master-observation | active | The exact expedited repair carrier merged. |
+| reverting | active | A current incident failure requires the recorded inverse recovery. |
+| rollback-conflict | blocked | The controller records an owned inverse-patch conflict with its release condition. |
+| collecting-failures | active | Revert receipt exists and original failed CI evidence remains incomplete. |
+| repayment-admission | pending-approval | Complete normal master CI succeeded and ordinary repayment admission remains owed. |
+| repayment-ready | ready | Ordinary admission approved the unchanged incident behavioral Definition of Done. |
+| repayment-active | active | One fresh normal factory claim is admitted. |
+| repayment-acceptance | acceptance | The current normal repayment carrier merged and awaits final proof. |
+| closed | done | All incident completion requirements below are satisfied. |
+
+Canonical entry MUST preserve the item's original behavioral Definition of Done, or its initially recorded incident behavioral intent until normal grooming authors that section, across all phases. A current attributable regression after closure MUST reopen the same item into reverting, fenced against the closed generation; a completed revert and collected failure evidence permit a new repair phase only with the fresh evidence required below.
+
+Incident entry MUST reuse an existing item or canonically file a minimal identified incident with impact, owner, scope and behavioral intent, recording ordinary model-backed admission and spec debt as deferred to normal repayment. Slow Definition-of-Done/governing-heading judgement, factory capacity, provider probes and green-master preconditions MUST NOT delay that authorized host repair or recorded emergency revert. This is not permission for ordinary implementation to evade admission. A missing tenant MUST use a previously recorded canonical incident id and trusted receipt; it MUST NOT invent a second work-item identity or treat a failed read as absence.
+
+Before local ownership begins, the sanctioned transition MUST record immutable intent, cancel or fence the item's live factory attempt, disarm queued duplicate dispatch and preserve the prior run/claim history. One current generation and operation identity MUST govern writes. Lifecycle mutation exclusion MUST be enforced by a server-side conditional operation available to all tenant writers, never a host-local lock or client read-modify-write. The transition MUST refuse with a named capability error rather than pretend it fenced writers when no such conditional operation is available. Every proof, completion, claim recovery and dispatch effect MUST revalidate current generation immediately before its side effect; a late old run MUST NOT publish proof, consume a claim, merge cleanup or close the item. Recovery intent and receipt reconciliation across tenant failure MUST interoperate with the independently available trusted controller receipt/fence owned by dev-tooling; the plugin MUST reconcile exact receipts back idempotently without creating a second lifecycle truth or requiring the failed tenant to authorize emergency rollback.
+
+A valid incident repair receipt MUST admit only the exact authorized local repair carrier through factory provenance and the retrospective bypass audit; a valid emergency-revert receipt MUST admit only the recorded complete inverse carrier. The receipt MUST record deferred verification honestly and remain distinct from normal factory/TDD proof. Historical validation MUST bind exact PR/head/landed identities after environment and labels disappear. An arbitrary label, caller environment, Factory-Override trailer or code marker alone MUST NOT confer an exception. Workflow-edit authorization remains separately scoped; factory workers MUST retain their existing credential boundary. Normal factory repayment MUST require normal provenance and complete validation.
+
+After the expedited merge's complete normal master CI succeeds, the incident MUST remain unfinished and enter one same-item normal factory repayment. Its eligibility MUST derive from the recorded successful attempt and outstanding repayment, even though an earlier PR already merged. Before dispatch, normal Definition-of-Done and governing-heading admission MUST be completed and deferred spec obligations resolved through their normal owners. No incident execution flag MAY be set before provider selection and before sandbox/hooks/PR execution, including malformed inherited values. The fresh factory run and carrier PR MUST remove the original code/test marker and exercise cumulative original incident paths, relevant tests, deferred validation and spec debt. Acceptance MUST receive that original change/evidence corpus plus follow-up changes, not only marker removal. Cancellation, restart or duplicate delivery MUST resume the same recorded operation rather than create a second repayment run.
+
+A defect found only by deferred factory verification while deployed master remains healthy MUST be repaired in that normal repayment PR without reverting the successful expedited merge solely for the deferred finding. A demonstrated incident-attributable regression on master, another PR or an adopted consumer MUST instead request recovery through the trusted controller and fence stale repayment before a corrected expedited attempt. First-failure recovery semantics belong to the controller contract and MUST NOT be delayed by acceptance classification or ordinary rework budgets. Failed original master runs MUST remain attributable and retained to terminal evidence; a corrected attempt MUST carry fresh repair or measured resolution evidence on the same item, rather than an unchanged reland to retry a broken base.
+
+No accept, reconcile-merged, close/no-change-needed, proof-only resume or automatic completion path MAY discharge an incident from its expedited merge alone. Closure MUST require the current normal factory repayment PR merged, its normal master CI successful, original behavioral proof and manual outcome satisfied, marker removal, repaid spec/verification debt and disposition of related consumer/PR failures. Missing, cancelled or unreadable CI and absent proof MUST remain named outstanding obligations. Incident recovery attempts MUST be accounted separately from ordinary acceptance rework/nonconvergence budgets. Durable incident-to-change attribution MUST survive closure; a later demonstrated related regression MUST reopen the same item, increment/fence the generation and restore recovery plus normal repayment obligations.
+
+Inspection MUST report the item's attempts, owner/generation, current carrier, merge/revert SHAs, CI run identities, skipped work, focused evidence, retained failures, deferred debt, recovery receipts and final normal proof. Readers and installed consumers MUST be released and verified to preserve this context before enablement; developing and adopting this feature MUST use normal gates.

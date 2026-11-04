@@ -50,10 +50,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_fallback_events import scan
 from livespec_orchestrator_beads_fabro.commands._acp_model_entry import AcpModelEntry
 from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
-from livespec_orchestrator_beads_fabro.commands._acp_projection_run import (
-    ACP_EVENTS_TIMEOUT_SECONDS,
-    resolve_projection_factory,
-)
 from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
     dispatcher_block,
@@ -78,11 +74,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_fabro_bin,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_run_target import (
+    ACP_EVENTS_TIMEOUT_SECONDS,
+    resolve_item_run_factory,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "chain_costs",
+    "run_attempt_windows",
     "run_chain_cost",
 ]
 
@@ -115,10 +116,10 @@ def chain_costs(
 
     `factory_of` is the per-item factory resolution, injected so a test can
     drive the composition without a committed `.livespec.jsonc`; it defaults to
-    the same `resolve_projection_factory` the hold projection uses, so a cost
-    read and a hold read of one run always agree about which host to ask.
+    the shared `resolve_item_run_factory`, which reads the item's own recorded
+    dispatch stamp, so every read of one run agrees about which host to ask.
     """
-    resolver = resolve_projection_factory if factory_of is None else factory_of
+    resolver = resolve_item_run_factory if factory_of is None else factory_of
     costs: dict[str, ChainCost] = {}
     for outcome in outcomes:
         if outcome.status != "green" or outcome.fabro_run_id is None:
@@ -149,7 +150,7 @@ def run_chain_cost(
     runner: CommandRunner | None = None,
 ) -> ChainCost | None:
     """One run's per-attempt cost, or None when the events establish no chain."""
-    windows = _windows(
+    windows = run_attempt_windows(
         repo=repo,
         run_id=run_id,
         factory=factory,
@@ -186,7 +187,7 @@ def _resolved_factory(
     return resolved
 
 
-def _windows(
+def run_attempt_windows(
     *, repo: Path, run_id: str, factory: FactoryTarget, runner: CommandRunner
 ) -> tuple[AcpAttemptWindow, ...]:
     """The run's attempt windows, read server-qualified, or `()`.
@@ -195,6 +196,12 @@ def _windows(
     invocation answers for the LOCAL server, where this run does not exist --
     a clean, plausible, wrong answer with no error, which here would read as
     "this run executed no chain".
+
+    PUBLIC because `_dispatcher_released_run_cost` needs the same reading for a
+    run that did NOT succeed, and a second account of it would be a second
+    chance to take it unqualified -- the exact wrong answer the paragraph above
+    exists to prevent. What differs between the two callers is what they do
+    with the windows, not how the stream is read.
     """
     scan = attempt(
         action=lambda: _scan(repo=repo, run_id=run_id, factory=factory, runner=runner),

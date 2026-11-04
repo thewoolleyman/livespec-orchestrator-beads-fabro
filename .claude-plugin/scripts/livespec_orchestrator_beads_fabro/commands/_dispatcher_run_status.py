@@ -35,6 +35,11 @@ class PrView:
     optional rather than defaulted to a sentinel a comparison would silently
     accept.
 
+    `terminal_check_failures` names every rollup entry that concluded terminally
+    badly, REQUIRED OR NOT: `gh pr view` does not say which entries are required,
+    so the required subset is the forge's separate answer
+    (`_dispatcher_required_checks`), and the merge wait intersects the two.
+
     `base` is the pull request's `baseRefOid` — the tip of the branch it is
     opened against, which for every dispatch here is the default branch. It
     rides THIS view, beside the mergeability the overtaken-arming ending routes
@@ -49,12 +54,12 @@ class PrView:
     auto_merge_armed: bool
     merge_state_status: str
     merge_sha: str | None
-    terminal_required_check_failures: tuple[str, ...]
     diff_size: int | None = None
     head: str | None = None
     base: str | None = None
     head_ref_name: str | None = None
     head_repository: str | None = None
+    terminal_check_failures: tuple[str, ...] = ()
 
     def matches_publication(self, *, branch: str, head: str, repository: str) -> bool:
         """Whether this is a live or merged publication of the checkpoint head."""
@@ -92,7 +97,7 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         name
         for item in _status_check_rollup_items(rollup_raw=parsed.get("statusCheckRollup"))
         if isinstance(item, dict)
-        for name in [_terminal_required_check_failure_name(item=cast("dict[str, Any]", item))]
+        for name in [_terminal_check_failure_name(item=cast("dict[str, Any]", item))]
         if name is not None
     )
     state_raw: object = parsed.get("state")
@@ -105,12 +110,12 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         auto_merge_armed=parsed.get("autoMergeRequest") is not None,
         merge_state_status=merge_state_raw if isinstance(merge_state_raw, str) else "UNKNOWN",
         merge_sha=_merge_sha_of(parsed=parsed),
-        terminal_required_check_failures=terminal_failures,
         diff_size=pr_diff_size_of(payload=parsed),
         head=head_raw if isinstance(head_raw, str) and head_raw else None,
         base=base_raw if isinstance(base_raw, str) and base_raw else None,
         head_ref_name=_optional_string(value=parsed.get("headRefName")),
         head_repository=_head_repository_of(parsed=parsed),
+        terminal_check_failures=terminal_failures,
     )
 
 
@@ -143,9 +148,7 @@ def _status_check_rollup_items(*, rollup_raw: object) -> list[object]:
     return []  # pragma: no cover - defensive malformed gh JSON
 
 
-def _terminal_required_check_failure_name(*, item: dict[str, Any]) -> str | None:
-    if item.get("required") is not True and item.get("isRequired") is not True:
-        return None
+def _terminal_check_failure_name(*, item: dict[str, Any]) -> str | None:
     conclusion_raw: object = item.get("conclusion")
     if not isinstance(conclusion_raw, str):
         return None

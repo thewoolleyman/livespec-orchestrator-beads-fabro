@@ -1,15 +1,16 @@
-"""Scenario 147 — an expired obligation reopens only through typed causal recovery.
+"""Scenario 147 — an overdue obligation never blocks, and a recovery attempt is optional.
 
-`contracts.md` section "Required result, budget and progress epoch": "After
-expiry, same-obligation continuation MUST be refused before appending a handoff
-or updating the pointer unless a fresh typed causal recovery attempt is supplied
-or a genuine required human decision is recorded. Neither path resets or
-postpones the original obligation deadline." And: "A changed approach MUST be a
-typed causal recovery event naming the unresolved obligation, previous epoch,
-measured failure evidence, cause classification, executable authorized next
-operation, stable unique attempt id and bounded attempt deadline. A prose
-`approach:` line, acknowledgment, repair-child milestone or cosmetic pointer
-rewrite MUST NOT qualify."
+`contracts.md` section "Required result, budget and progress epoch" (v286): "At
+the exact deadline, or when accepted handoffs reach max_handoffs, the obligation
+is overdue. ... Same-obligation continuation, a replacement and a handoff MUST
+each be accepted on an overdue obligation exactly as on one within budget: no
+write is refused, and none requires a typed causal recovery attempt, a
+continuation ruling or a recorded human decision". And: "A changed approach MAY
+be recorded as a typed causal recovery event ... no write requires one."
+
+The expiry gate these cases once asserted was deleted on the maintainer's
+attended ruling of 2026-11-03. What remains graded is the attempt ITSELF when one
+is carried, because the independent consumer executes the operation it names.
 
 THE TWO MEASURED DEFECTS THIS MODULE EXISTS TO CLOSE, both recorded on
 `bd-ib-zi5ygh` from a read-only probe of the terminal run's draft validator:
@@ -63,6 +64,11 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     NextAction,
     set_next_action,
 )
+from livespec_orchestrator_beads_fabro.commands.plan import (
+    PlanContinuationAuthorization,
+    PlanContinuationRevocation,
+    record_scope_event,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _PROJECT_NAME = "repo"
@@ -72,6 +78,10 @@ _ORIGINAL_DEADLINE = "2026-10-14T09:00:00Z"
 _AFTER_DEADLINE = "2026-10-15T09:00:00Z"
 _ATTEMPT_DEADLINE = "2026-10-15T12:00:00Z"
 _BEFORE_DEADLINE = "2026-10-13T09:00:00Z"
+_RULING_RECORDED_AT = "2026-10-15T08:00:00Z"
+_RULING_UNTIL = "2026-10-16T09:00:00Z"
+_AFTER_RULING_UNTIL = "2026-10-17T09:00:00Z"
+_RULING_BY = "Chad Woolley"
 _EVIDENCE = "hp run 01M4HQQZJCNP5HZ89M80PYCHXK ended: provider usageLimitExceeded at 18:13:14Z"
 _MODULE = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_plan_recovery.py"
@@ -190,6 +200,40 @@ def _handoff_comments(*, config: StoreConfig) -> list[dict[str, Any]]:
     ]
 
 
+def _record_current_continuation(*, config: StoreConfig) -> None:
+    assert (
+        record_scope_event(
+            config=config,
+            epic_id=_EPIC_ID,
+            requirements=(),
+            deferrals=(),
+            author="maintainer-session",
+            now=_RULING_RECORDED_AT,
+            continuation=PlanContinuationAuthorization(
+                until=_RULING_UNTIL,
+                by=_RULING_BY,
+                directive="Continue through the plan archive.",
+            ),
+        )
+        is None
+    )
+
+
+def _record_continuation_revocation(*, config: StoreConfig) -> None:
+    assert (
+        record_scope_event(
+            config=config,
+            epic_id=_EPIC_ID,
+            requirements=(),
+            deferrals=(),
+            author="maintainer-session",
+            now=_RULING_RECORDED_AT,
+            continuation=PlanContinuationRevocation(by=_RULING_BY),
+        )
+        is None
+    )
+
+
 def _recovery(
     *,
     cause: str,
@@ -212,15 +256,10 @@ def _recovery(
     return module.CausalRecovery(**fields)
 
 
-def test_an_expired_obligation_refuses_plain_continuation_before_any_write(
+def test_an_overdue_obligation_accepts_plain_continuation(
     tmp_path: Path,
 ) -> None:
-    """The deadline has passed and no recovery is supplied, so nothing is written.
-
-    The comment count is asserted because the refusal is required BEFORE the
-    handoff is appended — a writer that appended first and refused afterwards
-    would leave the entry on the timeline permanently.
-    """
+    """The deadline has passed and no recovery is supplied: the handoff is written."""
     config = _seed(tmp_path=tmp_path)
     comments_before = len(_handoff_comments(config=config))
 
@@ -233,21 +272,65 @@ def test_an_expired_obligation_refuses_plain_continuation_before_any_write(
         next_action=_action(),
     )
 
-    assert refusal is not None
-    assert "expired" in refusal.detail
-    assert len(_handoff_comments(config=config)) == comments_before
-    assert _authority(config=config).consumed_handoffs == 0
+    assert refusal is None, refusal
+    assert len(_handoff_comments(config=config)) == comments_before + 1
+    authority = _authority(config=config)
+    assert authority.consumed_handoffs == 1
+    assert authority.original_deadline == _ORIGINAL_DEADLINE
 
 
-def test_an_exhausted_handoff_ceiling_refuses_the_next_continuation(
+def test_overdue_writers_need_no_continuation_ruling(
     tmp_path: Path,
 ) -> None:
-    """The other limit, reached exactly: "when accepted handoffs reach
-    max_handoffs, the next continuation is expired".
+    """No, revoked, elapsed and current rulings all leave both writers accepting.
 
-    The ceiling of 2 is set by the ESTABLISHING write, because a later write
-    cannot lower it — and the clock is deliberately left unexpired throughout,
-    so the refusal can only come from the count.
+    The writes ask for a later deadline and a higher ceiling; the original limits
+    stand, because a same-obligation write never resets them.
+    """
+    for ruling in ("none", "revoked", "elapsed", "current"):
+        reset_fake_singleton()
+        case_path = tmp_path / ruling
+        case_path.mkdir()
+        config = _seed(tmp_path=case_path)
+        if ruling != "none":
+            _record_current_continuation(config=config)
+        if ruling == "revoked":
+            _record_continuation_revocation(config=config)
+        now = _AFTER_RULING_UNTIL if ruling == "elapsed" else _AFTER_DEADLINE
+
+        comments_before = len(_handoff_comments(config=config))
+        pointer_refusal = set_next_action(
+            config=config,
+            epic_id=_EPIC_ID,
+            action=_action(deadline="2099-01-01T00:00:00Z", max_handoffs=99),
+            session="relay-session",
+            now=now,
+        )
+        handoff_refusal = append_handoff(
+            config=config,
+            epic_id=_EPIC_ID,
+            body="Continue whatever the ruling says.",
+            author="relay-session",
+            now=now,
+            next_action=_action(deadline="2099-01-01T00:00:00Z", max_handoffs=99),
+        )
+
+        assert pointer_refusal is None, (ruling, pointer_refusal)
+        assert handoff_refusal is None, (ruling, handoff_refusal)
+        assert len(_handoff_comments(config=config)) == comments_before + 1
+        authority = _authority(config=config)
+        assert authority.original_deadline == _ORIGINAL_DEADLINE
+        assert authority.max_handoffs == 5
+        assert authority.consumed_handoffs == 1
+
+
+def test_an_exhausted_handoff_ceiling_accepts_the_next_continuation(
+    tmp_path: Path,
+) -> None:
+    """The other limit, reached exactly: the next handoff is still accepted.
+
+    The ceiling of 2 is set by the ESTABLISHING write, and the clock is left
+    unexpired, so this case is the handoff ceiling alone.
     """
     config = _seed(tmp_path=tmp_path, max_handoffs=2)
     for index in range(2):
@@ -273,8 +356,10 @@ def test_an_exhausted_handoff_ceiling_refuses_the_next_continuation(
         next_action=_action(max_handoffs=2),
     )
 
-    assert refusal is not None
-    assert "expired" in refusal.detail
+    assert refusal is None, refusal
+    authority = _authority(config=config)
+    assert authority.consumed_handoffs == 3
+    assert authority.max_handoffs == 2
 
 
 def test_prose_passed_as_the_next_operation_is_refused(tmp_path: Path) -> None:
@@ -430,18 +515,6 @@ def test_a_recovery_attempt_never_postpones_the_original_deadline(
     authority = _authority(config=config)
     assert authority.original_deadline == _ORIGINAL_DEADLINE
     assert authority.max_handoffs == 5
-    # The obligation is STILL expired after the attempt: recovery authorizes one
-    # bounded attempt, it does not reopen the budget.
-    refusal = append_handoff(
-        config=config,
-        epic_id=_EPIC_ID,
-        body="And again, with nothing new.",
-        author="relay-session",
-        now=_AFTER_DEADLINE,
-        next_action=_action(),
-    )
-    assert refusal is not None
-    assert "expired" in refusal.detail
 
 
 def test_a_stale_previous_epoch_is_refused_as_a_replayed_attempt(
@@ -500,13 +573,12 @@ def test_a_fresh_attempt_asserting_an_execution_receipt_is_refused(
     assert "receipt" in refusal.detail
 
 
-def test_recovery_supplied_to_an_unexpired_obligation_is_refused(
+def test_recovery_supplied_to_an_unexpired_unmet_obligation_is_recorded(
     tmp_path: Path,
 ) -> None:
-    """There is nothing to recover from, so the attempt is not admitted.
+    """An attempt is optional and no longer tied to expiry: a valid one is recorded.
 
-    Admitting one would let a session bank recovery attempts against a healthy
-    obligation and spend them later.
+    The obligation keeps both of its original limits.
     """
     config = _seed(tmp_path=tmp_path)
 
@@ -520,8 +592,8 @@ def test_recovery_supplied_to_an_unexpired_obligation_is_refused(
         recovery=_recovery(cause="host", next_operation=f"impl:{_TARGET_ID}"),
     )
 
-    assert refusal is not None
-    assert "not expired" in refusal.detail
+    assert refusal is None, refusal
+    assert _authority(config=config).original_deadline == _ORIGINAL_DEADLINE
 
 
 def test_an_unrecognized_cause_classification_is_refused(tmp_path: Path) -> None:

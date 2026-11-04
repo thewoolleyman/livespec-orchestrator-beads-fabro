@@ -91,16 +91,6 @@ class _Transport:
         )
 
 
-def _recording_dump(*, routed: list[str]) -> Any:
-    def dump(self, *, run_id: str, output_dir: Path, timeout_seconds: float) -> Any:
-        _ = (self, run_id, output_dir, timeout_seconds)
-        routed.append("dump")
-        types = _module(name="_fabro_port_types")
-        return types.FabroCommandResult(command=CommandResult(exit_code=0, stdout="", stderr=""))
-
-    return dump
-
-
 def _recording_system_info(*, routed: list[str]) -> Any:
     def system_info(self, *, timeout_seconds: float) -> Any:
         _ = (self, timeout_seconds)
@@ -115,6 +105,22 @@ def _recording_system_info(*, routed: list[str]) -> Any:
         )
 
     return system_info
+
+
+def _recording_run_state(*, routed: list[str]) -> Any:
+    def run_state(self, *, run_id: str, timeout_seconds: float) -> Any:
+        _ = (self, run_id, timeout_seconds)
+        routed.append("run_state")
+        http = _module(name="_fabro_port_http")
+        return http.FabroHttpResult(
+            status=200,
+            body='{"stages": {}}',
+            error=None,
+            payload={"stages": {}},
+            succeeded=True,
+        )
+
+    return run_state
 
 
 def _undigested_pointer_body() -> str:
@@ -162,7 +168,7 @@ def test_dump_and_system_info_live_on_the_facade_and_every_caller_routes_through
     assert transport.urls == [f"GET {_SERVER}{http_module.SYSTEM_INFO_PATH}"]
 
     routed: list[str] = []
-    monkeypatch.setattr(port_module.FabroPort, "dump", _recording_dump(routed=routed))
+    monkeypatch.setattr(http_module.FabroHttpPort, "run_state", _recording_run_state(routed=routed))
     monkeypatch.setattr(
         http_module.FabroHttpPort, "system_info", _recording_system_info(routed=routed)
     )
@@ -192,4 +198,4 @@ def test_dump_and_system_info_live_on_the_facade_and_every_caller_routes_through
         transport=_Transport(),
     )()
 
-    assert routed == ["dump", "dump", "system_info"]
+    assert routed == ["run_state", "run_state", "system_info"]

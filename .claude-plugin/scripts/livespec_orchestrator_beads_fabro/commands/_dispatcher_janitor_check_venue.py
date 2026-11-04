@@ -77,6 +77,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema import (
     JANITOR_CHECK_SUITE_KEY,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_failure_diagnostics import (
+    janitor_failure_diagnosis,
+)
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 if TYPE_CHECKING:
@@ -229,7 +232,8 @@ def host_janitor_red(*, result: CommandResult, checkout: Path) -> str | None:
         return None
     return (
         f"post-merge janitor red in fresh checkout {checkout} "
-        f"(kept for diagnosis): {tail(text=result.stderr)}"
+        f"(kept for diagnosis): "
+        f"{janitor_failure_diagnosis(stdout=result.stdout, stderr=result.stderr).detail}"
     )
 
 
@@ -265,7 +269,8 @@ def cluster_janitor_red(
     if state == _GATE_FAILED:
         return (
             f"post-merge janitor RED: the cluster gate Job reported a FAILED verdict for the "
-            f"fresh checkout {checkout} (kept for diagnosis): {tail(text=result.stderr)}"
+            f"fresh checkout {checkout} (kept for diagnosis): "
+            f"{janitor_failure_diagnosis(stdout=result.stdout, stderr=result.stderr).detail}"
         )
     return (
         f"post-merge janitor RED: the cluster gate reached no verdict for the fresh checkout "

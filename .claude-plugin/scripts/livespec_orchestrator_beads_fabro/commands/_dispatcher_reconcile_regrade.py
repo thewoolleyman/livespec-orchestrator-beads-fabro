@@ -38,7 +38,11 @@ from pathlib import Path
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
+    AcceptancePassResult,
     run_acceptance_pass,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_park import (
+    park_in_acceptance,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
@@ -46,15 +50,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion_close import (
     close_dispatch_item,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    read_dispatch_labels,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_labels,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
+    write_work_item_status_and_reconcile,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
@@ -174,7 +182,7 @@ def _grade_and_dispose(
     runner: CommandRunner,
     journal: JournalFile,
 ) -> DispatchOutcome:
-    """Run the acceptance pass over the verified merge and dispose on PASS alone.
+    """Run the acceptance pass over the verified merge and dispose on a clear PASS.
 
     The outcome handed to the pass reports `green` because the merge evidence
     the arm just verified is what the telemetry leg asks about, and it is the
@@ -220,7 +228,49 @@ def _grade_and_dispose(
     # a named constant here reads to the lint rule set as a hardcoded secret.
     if result.verdict != "PASS":
         return _leave_regraded_item(item=item, outcome=outcome, verdict=result.verdict)
+    if result.proof is not None and (
+        result.proof.pending_host_captured or result.proof.pending_human_attested
+    ):
+        return _park_regraded_item(
+            repo=repo,
+            item=item,
+            outcome=outcome,
+            policy=policy,
+            result=result,
+            journal=journal,
+        )
     return _close_regraded_item(repo=repo, item=item, outcome=outcome, journal=journal)
+
+
+def _park_regraded_item(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    policy: str,
+    result: AcceptancePassResult,
+    journal: JournalFile,
+) -> DispatchOutcome:
+    """Park a passing re-grade whose host or human proof leg is still pending."""
+    write_work_item_status_and_reconcile(
+        path=store_config(repo=repo), item_id=item.id, status="acceptance"
+    )
+    park_in_acceptance(
+        repo=repo,
+        item_id=item.id,
+        policy=policy,
+        acceptance_pass=result,
+        outcome=outcome,
+        journal=journal,
+    )
+    return DispatchOutcome(
+        work_item_id=item.id,
+        status="green",
+        stage="acceptance",
+        pr_number=outcome.pr_number,
+        merge_sha=outcome.merge_sha,
+        detail="re-graded PASS; parked pending proof verification",
+    )
 
 
 def _close_regraded_item(

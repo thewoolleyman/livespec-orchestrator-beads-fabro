@@ -15,6 +15,7 @@ would satisfy at every other assertion.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -263,8 +264,13 @@ def test_the_version_read_addresses_the_targets_own_server_through_the_environme
     `fabro version` takes no per-subcommand `--server` on the pinned engine, so
     the port addresses the target through `FABRO_SERVER`; an unaddressed read
     returns whichever server the host's ambient configuration names.
+
+    THE REST OF THAT DELTA IS A SCRUB, and it is covered by
+    `test_fabro_currency_probe_credential_scrub.py` rather than here: a foreign
+    Fabro home has to be PRESENT in the dispatching environment for the removal
+    to be observable at all, and this case asserts only the binding.
     """
-    captured: list[dict[str, str] | None] = []
+    captured: list[Mapping[str, str | None] | None] = []
 
     @dataclass(kw_only=True)
     class _EnvRunner:
@@ -274,7 +280,7 @@ def test_the_version_read_addresses_the_targets_own_server_through_the_environme
             argv: list[str],
             cwd: Path,
             timeout_seconds: float,
-            env: dict[str, str] | None = None,
+            env: Mapping[str, str | None] | None = None,
             stdin: int | None = None,
         ) -> CommandResult:
             del argv, cwd, timeout_seconds, stdin
@@ -287,7 +293,7 @@ def test_the_version_read_addresses_the_targets_own_server_through_the_environme
         factory=_factory(), fabro_bin=_FABRO_BIN, runner=_EnvRunner(), cwd=_REPO
     )
 
-    assert captured == [{"FABRO_SERVER": _SERVER}]
+    assert [None if one is None else one.get("FABRO_SERVER") for one in captured] == [_SERVER]
 
 
 def test_a_client_that_exits_non_zero_reports_no_serving_commit() -> None:

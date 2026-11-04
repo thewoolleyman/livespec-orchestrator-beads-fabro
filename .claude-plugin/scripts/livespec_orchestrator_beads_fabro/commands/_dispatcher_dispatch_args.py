@@ -99,6 +99,23 @@ def add_dispatch_common(*, parser: argparse.ArgumentParser) -> None:
             "command and its arguments); repeatable"
         ),
     )
+    # The MOST SPECIFIC layer of the whole-run wall budget. An ARGUMENT and
+    # never an environment variable, for the reason `--acp-node` above is: an
+    # ad-hoc shell must not be able to re-budget how long a run may hold a
+    # factory slot with nothing in the committed record or the journal to show
+    # for it. It is taken as TEXT rather than `type=int` so a non-integer
+    # refuses as a dispatch refusal naming the argument, before any run exists,
+    # rather than as an argparse usage error naming a type.
+    _ = parser.add_argument(
+        "--run-wall-budget-seconds",
+        dest="run_wall_budget_seconds",
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "bound how long this run may hold a factory slot, overriding "
+            "dispatcher.run_wall_budget_seconds and the 21600-second default"
+        ),
+    )
     _ = parser.add_argument("--poll-attempts", dest="poll_attempts", type=int, default=80)
     _ = parser.add_argument(
         "--poll-interval-seconds",

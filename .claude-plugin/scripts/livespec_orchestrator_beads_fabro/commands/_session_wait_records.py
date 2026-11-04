@@ -38,6 +38,7 @@ __all__: list[str] = [
     "read_wait_record",
     "record_observations",
     "record_return_ready",
+    "recorded_associations",
     "register_wait",
     "wait_record_path",
     "wait_store_lock",
@@ -137,6 +138,18 @@ def read_wait_record(*, path: Path) -> WaitRecordRead:
     return WaitRecordRead(payload=payload, diagnostic=None)
 
 
+def recorded_associations(*, payload: dict[str, object]) -> dict[str, str]:
+    """The work associations a wait recorded at arming, or none when it recorded none."""
+    recorded = payload.get("associations")
+    if not isinstance(recorded, dict):
+        return {}
+    return {
+        key: value
+        for key, value in cast("dict[str, object]", recorded).items()
+        if isinstance(value, str)
+    }
+
+
 def _well_formed(*, payload: dict[str, object]) -> bool:
     """Whether a version-1 record carries every field at an indexable type."""
     return all(
@@ -196,6 +209,9 @@ def _register_wait(
             "session_id": None,
         },
         "armed_at": armed_at,
+        "associations": (
+            {} if request.publisher is None else request.publisher.associations_record()
+        ),
         "deadline_at": armed_at + request.deadline_seconds,
         "deadline_seconds": request.deadline_seconds,
         "observation_sequence": 0,

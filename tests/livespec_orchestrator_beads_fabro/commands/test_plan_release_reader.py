@@ -99,7 +99,7 @@ class _Forge:
         endpoint = next(one for one in argv if one.startswith("repos/"))
         if "--include" in argv:
             return self._probe(repository=endpoint.removeprefix("repos/"))
-        return self._tags(repository=endpoint.removeprefix("repos/").removesuffix("/tags"))
+        return self._tags(repository=endpoint.removeprefix("repos/").removesuffix("/releases"))
 
     def _probe(self, *, repository: str) -> CommandResult:
         if repository in self.unprobeable:

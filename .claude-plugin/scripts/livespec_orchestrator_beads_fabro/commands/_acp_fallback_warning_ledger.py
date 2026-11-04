@@ -38,20 +38,38 @@ generation against the node's CURRENT one is what retires it. A
 fallback-only edit leaves that generation untouched, so the same pass
 leaves the warning standing -- the discrimination falls out of which
 digest is compared rather than out of a rule about edits.
+
+THIS MODULE OWNS THE RULE AND NOT THE EVIDENCE, which is the seam the
+selection source sits on. `primary_attempts_from_scan` reads an ENGINE
+event stream, which is how the existing fallback audit records stay
+readable; `selection_primary_attempts` and `selection_warning_records`
+read the DISPATCHER'S OWN selection records, which is where v127 moved
+the live observation to, and they live next door in
+`_acp_fallback_selection_warnings` with the private helpers only they
+use. Both are imported back here, so this module's surface answers for
+warnings derived from per-node selection records exactly as it answers
+for the fold -- and both hand the SAME `AcpPrimaryAttempt` to the one
+clearance predicate, which is what keeps the contract's four conditions
+stated once rather than once per source.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_event_types import AcpEventScan
+from livespec_orchestrator_beads_fabro.commands._acp_fallback_selection_warnings import (
+    selection_primary_attempts,
+    selection_warning_records,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records import (
     MODEL_FALLBACK_CLEARED_STAGE,
     MODEL_FALLBACK_STAGE,
     MODEL_FALLBACK_SUPERSEDED_STAGE,
+    AcpPrimaryAttempt,
     ModelFallbackWarning,
     parse_model_fallback_warning,
 )
@@ -61,13 +79,17 @@ from livespec_orchestrator_beads_fabro.commands._acp_journal_records import jour
 __all__: list[str] = [
     "AcpPrimaryAttempt",
     "ModelFallbackWarningLedger",
+    "fold_model_fallback_warnings",
     "ingest_model_fallback_warning",
+    "ledger_with_appended",
     "newest_warning_per_node",
     "primary_attempt_clears",
     "primary_attempts_from_scan",
     "primary_replacement_records",
     "primary_success_clearance_records",
     "read_model_fallback_warnings",
+    "selection_primary_attempts",
+    "selection_warning_records",
 ]
 
 _RETIREMENT_STAGES = frozenset({MODEL_FALLBACK_CLEARED_STAGE, MODEL_FALLBACK_SUPERSEDED_STAGE})
@@ -80,29 +102,13 @@ class _Journal(Protocol):
 
 
 @dataclass(frozen=True, kw_only=True)
-class AcpPrimaryAttempt:
-    """One node attempt by candidate ZERO, as the clearance rule reads it.
-
-    `executed` is separate from `succeeded` on purpose. A credential probe
-    and a preflight selection both have "no failure" to report, so a type
-    carrying only `succeeded` would let either of them answer True and
-    clear a warning the contract says they cannot touch.
-    """
-
-    node: str
-    primary_generation: str
-    started_at: str
-    executed: bool
-    succeeded: bool
-
-
-@dataclass(frozen=True, kw_only=True)
 class ModelFallbackWarningLedger:
     """Every live model-fallback warning, plus what could not be read."""
 
     warnings: tuple[ModelFallbackWarning, ...]
     unobservable: tuple[Mapping[str, object], ...]
     warning_ids: frozenset[str]
+    retired_ids: frozenset[str] = frozenset()
 
 
 def read_model_fallback_warnings(*, journal_path: Path | None) -> ModelFallbackWarningLedger:
@@ -114,11 +120,22 @@ def read_model_fallback_warnings(*, journal_path: Path | None) -> ModelFallbackW
     a `now` would invite exactly the silent third retirement route the
     hold ledger's bounded expiry is careful to be the ONLY instance of.
     """
+    return fold_model_fallback_warnings(records=journal_records(journal_path=journal_path))
+
+
+def fold_model_fallback_warnings(
+    *, records: Iterable[Mapping[str, Any]]
+) -> ModelFallbackWarningLedger:
+    """The same fold over records a caller has already read.
+
+    A reconcile pass holds the whole journal in memory already, and re-reading
+    it per warning was 98% of a pre-launch dispatcher's CPU (bd-ib-6bbcda).
+    """
     observed: dict[str, ModelFallbackWarning] = {}
     unobservable: list[Mapping[str, object]] = []
     seen: set[str] = set()
     retired: set[str] = set()
-    for record in journal_records(journal_path=journal_path):
+    for record in records:
         stage = record.get("stage")
         if stage in _RETIREMENT_STAGES:
             retired.update(_retired_ids(record=record))
@@ -133,7 +150,39 @@ def read_model_fallback_warnings(*, journal_path: Path | None) -> ModelFallbackW
         _ = observed.setdefault(parsed.warning_id, parsed)
     live = tuple(warning for key, warning in observed.items() if key not in retired)
     return ModelFallbackWarningLedger(
-        warnings=live, unobservable=tuple(unobservable), warning_ids=frozenset(seen)
+        warnings=live,
+        unobservable=tuple(unobservable),
+        warning_ids=frozenset(seen),
+        retired_ids=frozenset(retired),
+    )
+
+
+def ledger_with_appended(
+    *, ledger: ModelFallbackWarningLedger, record: Mapping[str, Any]
+) -> ModelFallbackWarningLedger:
+    """The ledger the journal would fold to once `record` is appended to it.
+
+    Equal to re-folding the whole journal, so a pass that keeps its ledger in
+    memory dedupes and clears exactly as a pass that re-read the file.
+    """
+    stage = record.get("stage")
+    if stage in _RETIREMENT_STAGES:
+        retired = _retired_ids(record=record)
+        return replace(
+            ledger,
+            warnings=tuple(w for w in ledger.warnings if w.warning_id not in retired),
+            retired_ids=ledger.retired_ids | retired,
+        )
+    if stage != MODEL_FALLBACK_STAGE:
+        return ledger
+    parsed = parse_model_fallback_warning(record=record)
+    if isinstance(parsed, str):
+        return replace(ledger, unobservable=(*ledger.unobservable, record))
+    known = parsed.warning_id in ledger.warning_ids or parsed.warning_id in ledger.retired_ids
+    return replace(
+        ledger,
+        warnings=ledger.warnings if known else (*ledger.warnings, parsed),
+        warning_ids=ledger.warning_ids | {parsed.warning_id},
     )
 
 

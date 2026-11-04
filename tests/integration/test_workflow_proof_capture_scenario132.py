@@ -192,7 +192,9 @@ def test_publish_draft_fails_closed_to_needs_human_and_falls_through_to_capture(
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_PUBLISH)
 
     assert edges, "publish_draft declares no outgoing edges"
-    assert [edge for edge in edges if "condition=" not in edge] == [f"{_PUBLISH} -> {_CAPTURE}"]
+    assert [edge for edge in edges if "condition=" not in edge] == [
+        f"{_PUBLISH} -> publish_merged_reconcile_route"
+    ]
     blocked = [edge for edge in edges if edge.startswith(f"{_PUBLISH} -> refresh_repair")]
     assert len(blocked) == 1
     assert 'condition="outcome=failed"' in blocked[0]
@@ -200,6 +202,10 @@ def test_publish_draft_fails_closed_to_needs_human_and_falls_through_to_capture(
     classifier = _edges_from(text=_dot(payload=_BUNDLE), node="refresh_repair")
     assert [edge for edge in classifier if "condition=" not in edge] == [
         "refresh_repair -> needs_human"
+    ]
+    landed = _edges_from(text=_dot(payload=_BUNDLE), node="publish_merged_reconcile_route")
+    assert [edge for edge in landed if "condition=" not in edge] == [
+        "publish_merged_reconcile_route -> proof_capture"
     ]
 
 
@@ -232,18 +238,33 @@ def test_proof_capture_is_an_acp_node_on_its_own_adapter_input() -> None:
     assert (_BUNDLE / "prompts" / "proof-capture.md").is_file()
 
 
-def test_proof_capture_is_entered_only_from_publish_draft() -> None:
-    """Nothing but `publish_draft` reaches the capture node.
+def test_proof_capture_is_entered_only_from_a_published_draft_or_a_recapture() -> None:
+    """Every entry into the capture node is one the contract names, and no other.
 
-    The contract says "entered only from `publish_draft`", and the reason is the
-    pull request: a capture entered from anywhere else could run before any draft
-    existed and would have nowhere to post its record.
+    The reason the set is closed at all is the pull request: a capture entered
+    from somewhere that had not published could run before any draft existed and
+    would have nowhere to post its record. The THREE sources the ratified text
+    names are `publish_draft`, a changed-head `pr_refresh` whose decision is
+    `reproof_required` (the `pr_refresh_head` breaker), and — since v175's
+    proof-record paragraph, work-item bd-ib-j56cur — a `recapture` review verdict
+    through `recapture_route`. Each of the three runs after a publish, which is
+    what keeps the closure's PURPOSE intact while its membership grew.
+
+    READ STRUCTURALLY RATHER THAN BY LINE SUFFIX, which is the correction this
+    case needed. The retired form matched `edge.endswith("-> proof_capture")`, so
+    an edge carrying any attribute block could not match it — and
+    `pr_refresh_head -> proof_capture [label=...]` has carried one since v121, so
+    the assertion read as a closed set of ONE while the graph already had two
+    entries. An instrument that cannot see an entry cannot establish that no
+    other entry exists.
     """
-    edges = _edges(text=_dot(payload=_BUNDLE))
+    parsed = parse_workflow_graph(text=_dot(payload=_BUNDLE))
 
-    assert [edge for edge in edges if edge.endswith(f"-> {_CAPTURE}")] == [
-        f"{_PUBLISH} -> {_CAPTURE}"
-    ]
+    assert set(parsed.predecessors(node=_CAPTURE)) == {
+        "publish_merged_reconcile_route",
+        "pr_refresh_head",
+        "recapture_route",
+    }
 
 
 def test_proof_capture_routes_a_defect_to_fix_and_a_failure_to_needs_human() -> None:
@@ -351,7 +372,7 @@ def test_proof_capture_is_a_registered_acp_node_with_its_own_input_candidate() -
     assert NODE_INPUT_CANDIDATES[_CAPTURE] == (_CAPTURE_ADAPTER_INPUT,)
 
 
-def test_the_capture_node_dominates_every_green_path_so_it_is_success_critical() -> None:
+def test_a_landed_publication_bypasses_capture_so_the_later_acceptance_grades_its_absence() -> None:
     """The fallback-priority clause names the capture node admission-required.
 
     Derived from the committed graph rather than asserted as a literal set: the
@@ -370,7 +391,7 @@ def test_the_capture_node_dominates_every_green_path_so_it_is_success_critical()
     critical = derive_success_critical(graph=parse_workflow_graph(text=_dot(payload=_BUNDLE)))
 
     assert not isinstance(critical, str), critical
-    assert _CAPTURE in critical.nodes
+    assert _CAPTURE not in critical.nodes
     assert _PUBLISH not in critical.nodes
 
 

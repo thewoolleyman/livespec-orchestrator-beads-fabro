@@ -524,7 +524,7 @@ def test_a_darkened_chain_refuses_an_unattended_drain(
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "livespec-test-topic")
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_cost_chain"
-        ".resolve_projection_factory",
+        ".resolve_item_run_factory",
         lambda **_: _FACTORY,
     )
     args = _args(journal_path=tmp_path / "journal.jsonl")
@@ -560,7 +560,7 @@ def test_a_darkened_chain_only_warns_a_hand_picked_item_dispatch(
     monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_cost_chain"
-        ".resolve_projection_factory",
+        ".resolve_item_run_factory",
         lambda **_: _FACTORY,
     )
     args = _args(journal_path=tmp_path / "journal.jsonl", items=[_WORK_ITEM])
@@ -594,7 +594,7 @@ def test_the_report_mode_summary_names_the_pricing_cause(
     """
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_cost_chain"
-        ".resolve_projection_factory",
+        ".resolve_item_run_factory",
         lambda **_: _FACTORY,
     )
     args = _args(journal_path=tmp_path / "journal.jsonl")

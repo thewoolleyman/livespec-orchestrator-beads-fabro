@@ -484,6 +484,11 @@ def test_an_admission_pass_journals_one_assessment_record_per_work_item(
             "five_hour_drain_percent_per_hour": None,
             "projection": None,
             "unverified_provider_reset_claim": None,
+            "seven_day": {
+                "utilization_percent": None,
+                "status": None,
+                "unobservable": headroom.ABSENT_SEVEN_DAY_READING,
+            },
         }
     ]
 

@@ -43,6 +43,23 @@ instead.
   the line reports a correct observation while permanently retiring the
   carry-forward route.
 
+- `test_proof_capture_record_run_id.py` — bd-ib-oa67lv: every record header the
+  proof-capture prompt publishes — the `captured` record and the `not_captured`
+  finding — resolves its run id from `livespec.factoryRunId` INSIDE the command
+  that writes the header, and the capture stops with the needs-human protocol
+  rather than posting a header with an empty one. The needles are scoped to the
+  indented COMMAND BLOCK each `printf` sits in, because the defect was not a
+  missing source: Step 4 already named `livespec.factoryRunId` correctly as its
+  second source, and the posting command — a later and separate tool call —
+  expanded the hook-only `$FABRO_RUN_ID`, which no agent shell holds. A
+  whole-file probe reads that shape as satisfied. The hook-only variable is
+  pinned by ORDER rather than by absence, so the prohibition explaining the
+  hazard is still allowed to name it. A prompt test because the header is
+  authored out of this prose and rendered by no Python caller, and because both
+  mechanical halves that CAN observe the fault — the publication-head refusal
+  and `proof_grade`'s — fire only after the capture has posted a comment that
+  cannot be edited.
+
 - `test_proof_capture_git_history_anchoring.py` — bd-ib-ltjrn: the proof-capture
   prompt's `Deterministic` bullet requires a reproduction step that reads git
   history to name a fixed commit sha or use a depth-independent predicate,
@@ -56,21 +73,94 @@ instead.
   caller: a HEAD-anchored step passes capture and surfaces one stage later as
   a `not_reproduced` verdict against a correct implementation.
 
-- `test_implement_coverage_before_green.py` — bd-ib-z6fmp: the implement-stage
-  prompt requires the repository's per-file coverage check to be run over the
-  FULL suite, with every gap closed, BEFORE any Green commit or amend — the hook
-  runs the whole declared check suite and fails at that gate LAST, so a gap
-  found there costs two full suite runs. The prompt is DERIVED from the graph's
-  `implement` node rather than named, with a control asserting the derivation
-  found exactly one such node whose prompt is on disk. The changed-files-only
-  prohibition is pinned POSITIVELY (both physical lines of the sentence are
-  required) because a probe for the absence of a narrowing phrase could never
-  return a hit and would read clean over a prompt that said nothing. This tier
+- `test_review_proof_record_currency.py` — bd-ib-qnokup: the review prompt
+  judges a captured record's currency by comparing TREES — a record is CURRENT
+  when the tree of the commit it names equals the tree of the head under review
+  — and it forbids the timestamp, sha-equality and commit-order readings
+  outright, carries the moving-HEAD reason in the rule, keeps an absent record
+  and an absent head declaration blocking, and routes its finding through this
+  graph's `fix` label. A prompt test because the judgement is made by the
+  `review` agent out of this prose and is rendered by no Python caller: a
+  reviewer comparing timestamps emits a well-formed blocking finding, the run
+  re-enters capture, and the defect surfaces only as a run that spends its whole
+  firing budget rejecting correct records (measured 2026-10-20 on runs
+  `01M5CE38SZJW` and `01M5CDH2FZSE`). The needles are scoped to the currency
+  SECTION, since the prompt says `[BLOCKING]` a dozen times for a dozen
+  unrelated conditions and separately tells the capture prompt where to read its
+  head. The routing case is POSITIVE rather than a probe for the absence of
+  v175's reverted `recapture` label: it enumerates the labels the prompt offers
+  and requires exactly the two the shipped graph has, because an absence probe
+  could never return a hit. The SEVERITY end of the same section stays bound in
+  `tests/integration/test_workflow_proof_verify_scenario132.py`.
+
+- `test_proof_record_self_contained_programs.py` — bd-ib-qnokup: the
+  proof-capture prompt's `Self-contained` bullet scopes the publish-the-source
+  duty by what the REPLAYER has — every program a step executes that is neither
+  tracked in the repository at the commit the record names nor an installed tool
+  invoked by its name goes into the record, inline or as a named proof asset —
+  and it states both exemptions and the scratch directory that is untracked by
+  construction. A prompt test for the reason its sibling modules record: the
+  steps are authored out of this prose and rendered by no Python caller, so a
+  record whose step runs an untracked helper publishes cleanly and surfaces one
+  stage later as a `not_reproduced` verdict against a correct implementation.
+  The needles are scoped to that BULLET, because the prompt's Step 5 body list
+  separately requires the `COMPLETE SOURCE of any program it runs` and would
+  satisfy a whole-file probe over a bullet that scoped nothing. The
+  OUTPUT-IS-NOT-SOURCE clause and the round trip it pairs with stay bound in
+  `tests/integration/test_proof_finding_work_order_scenario138.py`.
+
+- `test_dod_gate_nested_heading_scope.py` — bd-ib-uwhvdv: check 4 of the
+  Definition-of-Done gate prompt reads a referenced heading as its WHOLE
+  section — the named H2 plus every nested heading, to the next H2 — states
+  that governing text found in such a nested section governs the assertion
+  rather than being a finding, and requires a finding about such a reference
+  to name the nested heading as well as the H2, in a written form. A prompt
+  test because the judgement is made by the `dod_gate` agent out of this prose
+  and is rendered by no Python caller: `_dispatcher_dod_judgement`'s
+  `_section_of` already carries the whole H2 section to both the in-run gate
+  and the host preflight, so nothing mechanical can observe that the judge was
+  told to read less than it was handed, and a judge that read only the lead
+  text refused four items in one week with an unfixable remedy (check 2 admits
+  an H2 and nothing deeper, so no permitted reference names the H3). The
+  needles are scoped to check 4's own numbered item, because checks 2 and 6
+  both discuss headings and reference lines at length and would satisfy a
+  whole-file probe over a check 4 that said nothing about nesting; the control
+  pins the slice both ways, naming a sentence only check 4 carries and one
+  each from checks 3, 5 and 6 that it must not.
+
+- `test_implement_hook_is_the_full_check.py` — the implement-stage prompt makes
+  the commit hook's run of the declared check suite (coverage gate included) the
+  stage's ONE full check: the implementer runs only targeted tests, never a
+  whole-suite or per-file-coverage command of its own, and when the hook refuses
+  it closes EVERY gap the refusal names before the next commit. It supersedes
+  bd-ib-z6fmp's coverage-before-Green section, which three measured
+  partial-progress runs of 2026-10-31 showed had turned into duplicate aggregate
+  runs (57 of overseer-e6bvmt's 95 implement minutes). The prompt is DERIVED from
+  the graph's `implement` node rather than named, with a control asserting the
+  derivation found exactly one such node whose prompt is on disk. The self-run
+  prohibition and the whole-suite reason are pinned POSITIVELY by their physical
+  lines; the one absence assertion targets the superseded section's own heading,
+  which a revert would restore, so it can return a hit. This tier
   reads the COMMITTED prompt; its DISPATCHED counterpart — the same instruction
   in the per-dispatch payload, with the check-suite input bound from the target
   repository's own declaration — is
   `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_implement_prompt.py`,
   per the rendering-seam convention below.
+
+- `test_implement_completion_field.py` — bd-ib-ahxcjx, the PROSE half of the
+  v165 clause "An implement turn that ends incomplete does not succeed": the
+  implement prompt directs the turn to end its final reply with a structured
+  completion field stating whether the Definition of Done is complete on the
+  committed branch, and enumerates all three verdicts — complete, incomplete,
+  and stated nothing, which the clause reads as incomplete. A prompt test
+  because the field is authored by the agent out of this instruction and is
+  rendered by no Python caller, so nothing host-side can observe whether a turn
+  was ever asked for it. The record PATH is derived from the completion gate's
+  own script rather than spelled on both sides, because the two halves are
+  useless apart and a rename of either reads as a turn that recorded correctly
+  and a gate that found nothing — which the gate then reports as the agent's
+  fault. The mechanism that reads the field is
+  `tests/integration/test_implement_completion_field_scenario204.py`.
 
 - `test_fix_check_suite_once_per_tree_scenario199.py` — bd-ib-k6dwyv, and the
   registry binding for `SPECIFICATION/scenarios.md` Scenario 199: the fix-stage
@@ -95,6 +185,29 @@ instead.
   list MARKER rather than at blank lines, since the refresh-repair steps are
   adjacent lines and a blank-line split would let a qualifier on step 1 satisfy
   an assertion about step 2.
+
+- `test_commit_hook_outlasts_a_tool_call.py` — bd-ib-aaxsta: the implement and
+  fix prompts carry ONE wording of the four commit-hook directions — how long
+  the hook aggregate runs (minutes, measured at 142 and 553 seconds), that a
+  tool call returning mid-hook is not a failed commit, that a running hook is
+  waited out before any further commit without killing its processes and
+  without a second live `git commit`, and that the turn does not end while a
+  hook it started is still running. A prompt test because no timeout fired on
+  the runs that lost their Green amend: the turns ran 32.6 and 27.6 minutes
+  against a 14400-second node limit and both ACP turns ended `end_turn`, so
+  nothing host-side could have intervened and the prompt is the whole
+  mitigation. The two prompts are derived from the graph's `implement` and
+  `fix` node blocks, with a control asserting one prompt per node on disk, and
+  the fix prompt's compliance is asserted BOTH per-needle and as byte-identity
+  with the implement section, because two paraphrases satisfy a needle list
+  while drifting apart. Every needle is a sentence that must be PRESENT: an
+  absence probe would read clean over the prompts as they stood, which is the
+  state the item exists to end. Two needles pin compatibility with
+  `contracts.md` §"A commit leg completes past one tool call" — the waiting
+  direction admits a commit runner's bounded waits, and over-limit reaping is
+  the run's job, not the agent's — so bd-ib-sufca7, which owns that clause and
+  Scenario 179's registry binding, can ship the runner without contradicting
+  this prose.
 
 Conventions:
 

@@ -13,10 +13,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     hook_over_limit_from_text,
     journal_hook_over_limit,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_failure_diagnostics import (
+    janitor_failure_diagnosis,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
     retained_output_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
+    RUN_WALL_BUDGET_EXCEEDED_STAGE,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -37,6 +43,7 @@ __all__: list[str] = [
     "journal_run_output_markers",
     "journal_stage",
     "run_stage",
+    "run_wall_budget_outcome",
     "stalled_outcome",
     "tail",
 ]
@@ -60,6 +67,7 @@ class StageJournalOptions:
     # other one has to read past. `None` means this stage owes no account
     # beyond the shared fields.
     extra_fields: Mapping[str, object] | None = None
+    janitor_failure_diagnostics: bool = False
 
 
 # The row field naming what a stage's child environment LOST against the
@@ -171,6 +179,46 @@ def stalled_outcome(
     )
 
 
+def run_wall_budget_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    run_id: str,
+) -> DispatchOutcome:
+    """The terminal a run cancelled on its whole-run wall budget reports.
+
+    Its OWN status rather than the stall status, because the two carry opposite
+    dispositions: a first stall cancel releases the item to `ready` for the
+    ordinary admission valve, while a budget cancel rests it at `blocked` /
+    `needs-human` and nothing automatic leaves that state.
+
+    The detail names the resolved budget, the LAYER that supplied it and the key
+    an operator would raise, because the terminal is what a dispatch RESULT
+    reports while the `run-wall-budget-exceeded` journal row carrying the
+    measured elapsed seconds is a per-clone file — so a reader holding only the
+    result still knows which number was applied and where it came from.
+    """
+    budget = plan.run_wall_budget
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status=RUN_WALL_BUDGET_EXCEEDED_STAGE,
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail=(
+            f"run {run_id} held a factory slot past its whole-run wall budget of "
+            f"{int(budget.seconds)} seconds (supplied by the {budget.layer} layer); "
+            f"its record was exported and read back and the run was then cancelled "
+            f"to release the slot. Raise dispatcher.run_wall_budget_seconds, or pass "
+            f"--run-wall-budget-seconds, if this item's runs legitimately need "
+            f"longer. The {RUN_WALL_BUDGET_EXCEEDED_STAGE} journal row carries the "
+            f"elapsed slot-holding seconds measured and the preserve-by-reference "
+            f"pointer the tree was exported to."
+        ),
+        fabro_run_id=run_id,
+    )
+
+
 def journal_stage(
     *,
     journal: JournalWriter,
@@ -228,6 +276,11 @@ def journal_stage(
                 result=result,
             )
         )
+    if journal_options.janitor_failure_diagnostics and result.exit_code != 0:
+        diagnosis = janitor_failure_diagnosis(stdout=result.stdout, stderr=result.stderr)
+        record["detail"] = diagnosis.detail
+        if diagnosis.failed_targets:
+            record["failed_targets"] = list(diagnosis.failed_targets)
     journal.append(record=record)
 
 

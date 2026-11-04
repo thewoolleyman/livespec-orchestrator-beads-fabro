@@ -101,11 +101,16 @@ def _exemption(*, lines: Sequence[str], first: int, last: int) -> tuple[bool, bo
     rarely fits after `time.sleep(_SETTLE_SECONDS)` inside this repository's
     100-column limit, and the alternative authors reach for is a reason trimmed
     until it says nothing. One line of lead-in keeps the marker bound to the
-    single occurrence it stands down, which a file-level pragma would not.
+    single occurrence it stands down, which a file-level pragma would not. The
+    lead-in counts only when it is a comment line: a code line above carrying its
+    own marker belongs to ITS occurrence, and borrowing it would exempt a second
+    offence placed directly beneath.
     """
+    lead_in = lines[max(0, first - 2) : max(0, first - 1)]
+    own = list(lines[first - 1 : last])
     reasons = [
         line.partition(EXEMPTION_MARKER)[2].strip()
-        for line in lines[max(0, first - 2) : last]
+        for line in [*(entry for entry in lead_in if entry.lstrip().startswith("#")), *own]
         if EXEMPTION_MARKER in line
     ]
     return (bool(reasons), any(reasons))

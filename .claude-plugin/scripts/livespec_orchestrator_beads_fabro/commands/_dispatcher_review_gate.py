@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -41,7 +42,13 @@ _FABRO_EVENTS_TIMEOUT_SECONDS = 60.0
 
 
 class CommandRunner(Protocol):
-    """Subprocess seam needed to query `fabro events`."""
+    """Subprocess seam needed to query `fabro events`.
+
+    `env` is the child's environment DELTA, as every runner seam in this package
+    declares it: a string value SETS the variable and a `None` value REMOVES it.
+    A runner declaring the narrower string-only mapping cannot satisfy
+    `FabroRunner`, which this module hands one to through `fabro_port_for_plan`.
+    """
 
     def run(
         self,
@@ -49,7 +56,7 @@ class CommandRunner(Protocol):
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
     ) -> CommandResult:
         """Run argv and return a completed command result."""

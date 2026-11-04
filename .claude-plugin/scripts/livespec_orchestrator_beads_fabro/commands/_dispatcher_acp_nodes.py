@@ -22,20 +22,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
-    builtin_acp_identities,
-)
-from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
-    acp_capability_refusal,
-)
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
     AcpCatalogs,
     resolve_acp_catalogs,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import (
-    AcpChainResolution,
-    attach_acp_chains,
-)
+from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import AcpChainResolution
 from livespec_orchestrator_beads_fabro.commands._acp_factory_capabilities import (
     factory_capability_reader,
 )
@@ -50,11 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     resolve_acp_nodes,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
-    repository_acp_chains,
     repository_acp_overlays,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_selection import (
-    acp_node_selection_record,
     selected_candidate_identities,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
@@ -67,13 +56,20 @@ from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget, dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_chain_attachment import (
+    resolve_chains,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     GROOM_ONLY_ACP_NODES,
     scoped_repository_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection import (
     SelectedAcpNodes,
-    select_acp_node_adapters,
+    factory_name,
+    select_and_gate_acp_node_adapters,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection_journal import (
+    append_acp_node_selection,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
@@ -89,6 +85,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "ACP_NODES_STAGE",
+    "acp_override_refusal",
     "dispatch_acp_overlays",
     "prepare_acp_nodes",
     "workflow_adapter_inputs",
@@ -195,6 +192,7 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     overrides: tuple[str, ...],
     journal: JournalWriter,
     work_item_id: str,
+    dispatch_id: str | None = None,
     factory: FactoryTarget | None = None,
     verdict: AcpPreflightVerdict | None = None,
 ) -> AcpNodeResolution | str:
@@ -221,32 +219,10 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     deliberately NOT the same answer as an empty verdict, which means every
     candidate was filtered out and refuses an admission-required node.
     """
-    block = dispatcher_block(cwd=repo)
-    configured = _dispatch_workflow_configuration(block=block, committed=committed)
-    if isinstance(configured, str):
-        return configured
-    catalogs, workflow_inputs, workflow_kind = configured
-    scoped_block, not_applied = scoped_repository_block(block=block, workflow_kind=workflow_kind)
-    layers = _overlay_layers(block=scoped_block, catalogs=catalogs, overrides=overrides)
-    if isinstance(layers, str):
-        return layers
-    repository, dispatch = layers
-    resolution = resolve_acp_nodes(
-        workflow_inputs=workflow_inputs,
-        repository=repository,
-        dispatch=dispatch,
-    )
-    if isinstance(resolution, str):
-        return resolution
-    chains = _resolve_chains(
-        block=scoped_block,
-        catalogs=catalogs,
-        resolution=resolution,
-        dispatch=dispatch,
-        workflow_inputs=workflow_inputs,
-    )
-    if isinstance(chains, str):
-        return chains
+    layered = _layered_acp_nodes(repo=repo, committed=committed, overrides=overrides)
+    if isinstance(layered, str):
+        return layered
+    resolution, chains, not_applied = layered
     selected = _select_and_gate(
         resolution=resolution, chains=chains, verdict=verdict, factory=factory
     )
@@ -271,13 +247,69 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     # two answer different questions -- what each node's CHAIN resolved to, and
     # which position of it this dispatch ran -- and a reader triaging a fallback
     # needs the first to make sense of the second.
-    journal.append(
-        record={
-            **acp_node_selection_record(selected=selected.selected),
-            "work_item_id": work_item_id,
-        }
+    append_acp_node_selection(
+        journal=journal,
+        selected=selected.selected,
+        work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
     )
     return resolution
+
+
+def acp_override_refusal(*, repo: Path, committed: Path, overrides: tuple[str, ...]) -> str | None:
+    """The refusal `--acp-node` overrides would draw at resolution, or `None`.
+
+    Runs the same layering and chain attachment `prepare_acp_nodes` runs and stops
+    short of everything that needs a CLAIMED dispatch: no journal is written, no
+    admission verdict is consulted and no factory capability is read. That is the
+    point of the split -- an override refused by the resolution grammar is knowable
+    from the dispatch's own arguments and the committed configuration, so it can
+    refuse BEFORE the claim instead of stranding one.
+
+    No overrides is not a refusal here: a refusal that does not come from an
+    override stays with `prepare_acp_nodes` and the stages that own it.
+    """
+    if not overrides:
+        return None
+    layered = _layered_acp_nodes(repo=repo, committed=committed, overrides=overrides)
+    return layered if isinstance(layered, str) else None
+
+
+def _layered_acp_nodes(
+    *, repo: Path, committed: Path, overrides: tuple[str, ...]
+) -> tuple[AcpNodeResolution, AcpChainResolution, tuple[dict[str, str], ...]] | str:
+    """The three-layer resolution and its attached chains, or the first refusal.
+
+    Shared by the claim-time resolution and the pre-claim override check, so the
+    two cannot disagree about which override the grammar refuses.
+    """
+    block = dispatcher_block(cwd=repo)
+    configured = _dispatch_workflow_configuration(block=block, committed=committed)
+    if isinstance(configured, str):
+        return configured
+    catalogs, workflow_inputs, workflow_kind = configured
+    scoped_block, not_applied = scoped_repository_block(block=block, workflow_kind=workflow_kind)
+    layers = _overlay_layers(block=scoped_block, catalogs=catalogs, overrides=overrides)
+    if isinstance(layers, str):
+        return layers
+    repository, dispatch = layers
+    resolution = resolve_acp_nodes(
+        workflow_inputs=workflow_inputs,
+        repository=repository,
+        dispatch=dispatch,
+    )
+    if isinstance(resolution, str):
+        return resolution
+    chains = resolve_chains(
+        block=scoped_block,
+        catalogs=catalogs,
+        resolution=resolution,
+        dispatch=dispatch,
+        workflow_inputs=workflow_inputs,
+    )
+    if isinstance(chains, str):
+        return chains
+    return resolution, chains, not_applied
 
 
 def _overlay_layers(
@@ -375,16 +407,6 @@ def _workflow_configuration(
     return rendered if isinstance(rendered, str) else (rendered, kind)
 
 
-def _factory_name(*, factory: FactoryTarget | None) -> str:
-    """The resolved factory's name for a refusal message.
-
-    A dispatch path always pins one; the fallback covers the non-dispatching
-    entry points that reach this code with a Namespace that never carried it,
-    so a refusal names something rather than crashing on `None`.
-    """
-    return "(unresolved)" if factory is None else factory.name
-
-
 def _select_and_gate(
     *,
     resolution: AcpNodeResolution,
@@ -392,76 +414,11 @@ def _select_and_gate(
     verdict: AcpPreflightVerdict | None,
     factory: FactoryTarget | None,
 ) -> SelectedAcpNodes | str:
-    """Choose each node's candidate, then refuse one the factory cannot configure.
-
-    WHICH candidate of each node's chain this dispatch renders, folded onto the
-    finished resolution rather than resolved beside it, so the launch reads the
-    adapters from the same object the record was projected from. A launch that
-    selected its own would be a second read of one configuration, and the
-    disagreement would be invisible: both reads produce a perfectly well-formed
-    candidate.
-
-    THE CAPABILITY GATE SITS HERE, AFTER THE SELECTION, because the one
-    remaining engine capability gates the candidate this dispatch RENDERS: an
-    unselected fallback's `config_options` is a request no engine is asked to
-    honour here, so gating on it would refuse a dispatch that would have run
-    correctly. It is still before any Fabro run exists, exactly as every other
-    refusal in this seam is -- the move is a few lines within one pre-run
-    function, so nothing about its position relative to the claim changes.
-
-    ONE reader, built here and passed in, so the dispatch issues at most one
-    `GET /system/info` however many nodes are in question.
-    """
-    selected = select_acp_node_adapters(resolution=resolution, chains=chains, verdict=verdict)
-    if isinstance(selected, str):
-        return selected
-    uncapable = acp_capability_refusal(
-        selected=selected.selected,
-        factory_name=_factory_name(factory=factory),
+    """Delegate selection and the factory-capability gate to their shared concern."""
+    return select_and_gate_acp_node_adapters(
+        resolution=resolution,
+        chains=chains,
+        verdict=verdict,
+        factory_name=factory_name(factory=factory),
         capabilities=factory_capability_reader(factory=factory),
     )
-    if uncapable is not None:
-        return uncapable
-    return selected
-
-
-def _resolve_chains(
-    *,
-    block: dict[str, object],
-    catalogs: AcpCatalogs,
-    resolution: AcpNodeResolution,
-    dispatch: Mapping[str, AcpNodeOverlay],
-    workflow_inputs: Mapping[str, str],
-) -> AcpChainResolution | str:
-    """Attach each node's candidate chain to its resolved primary, or refuse.
-
-    The chain is attached STRICTLY AFTER `resolve_acp_nodes` has finished,
-    which is the ordering `SPECIFICATION/contracts.md` section
-    "Factory-configurable ACP fallback priority" requires: candidate zero
-    comes through the existing layers first, and identity or fallback
-    metadata may only attach to what those layers produced.
-
-    The BLOCK and the CATALOGS are the caller's, resolved once for the whole
-    dispatch. Re-reading them here would make the chain resolve against a
-    second read of the same file, which nothing can prove agrees with the first
-    -- and the disagreement would be invisible, because both reads produce a
-    perfectly well-formed catalog.
-
-    What comes back is the WHOLE attached resolution, because the caller
-    needs two projections of it that must agree: the REDACTED structural
-    record each new-grammar-enabled node journals, and the SELECTED
-    candidate identity each node's run labels name. Returning one
-    projection and re-deriving the other from a second attach would give
-    the journal and the labels independent answers about which candidate
-    one dispatch rendered, with nothing announcing the divergence.
-    """
-    declared = repository_acp_chains(block=block, catalogs=catalogs)
-    if isinstance(declared, str):
-        return declared
-    attached = attach_acp_chains(
-        resolution=resolution,
-        chains=declared,
-        dispatch=dispatch,
-        builtins=builtin_acp_identities(workflow_inputs=workflow_inputs),
-    )
-    return attached

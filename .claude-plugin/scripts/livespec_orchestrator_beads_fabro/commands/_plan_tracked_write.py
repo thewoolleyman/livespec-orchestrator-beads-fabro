@@ -10,10 +10,12 @@ hosts that share nothing but that server (`.ai/ledger-writers-are-multi-host.md`
 maintainer ruling 2026-10-12).
 
 THE ORDER OF THE SEQUENCE IS THE CLAUSE'S AND IS LOAD-BEARING AT EVERY STEP.
-"After expiry, same-obligation continuation MUST be refused BEFORE appending a
-handoff or updating the pointer", so the prior obligation is read and the
-decision taken before any mutation. The chain transition then commits, and only
-a transition that actually committed appends the comment and writes the pointer —
+A committed operation identity is recognised FIRST, then the prior obligation is
+read and the decision taken, and both happen before any mutation, so a refused
+write (an unreadable result reference, a malformed budget, an invalid recovery
+attempt) leaves no partial handoff or pointer behind. The chain transition then
+commits, and only a
+transition that actually committed appends the comment and writes the pointer —
 which is what makes both of those PROJECTIONS of the chain rather than
 independent records that could disagree with it.
 
@@ -24,6 +26,18 @@ payload; appending the comment again would duplicate the handoff the clause
 forbids, and re-writing the pointer would re-render a projection that is already
 correct. So a recovered commit returns the original epoch and consumed count
 with `idempotent=True` and performs no write at all.
+
+AND WHY THE RECOGNITION RUNS AHEAD OF THE DECISION RATHER THAN INSIDE THE
+COMMIT. `commit_transition` carries its own retry guard, which is the chain's
+last word and stays exactly where it is — but a write refused before it is
+reached never gets the recovery the clause owes. The decision reads the
+OBSERVED head, so a retry whose original write already moved the chain would be
+decided against a state that write itself produced. The identity question is
+therefore asked first, where it cannot be pre-empted by any refusal the ladder grows later, and
+a recognised retry short-circuits the whole sequence. `recover_committed_
+operation` performs no write, so asking early costs one comment read and can
+change nothing; a twin that commits in the window between that scan and the
+chain's own is still answered as a recovery, by the chain's guard.
 
 WHY AN EPIC WITH NO CHAIN IS WRITTEN ON THE LEGACY PATH RATHER THAN REFUSED.
 Research note 007 and this item's brief are explicit: these writers MUST NEVER
@@ -46,13 +60,8 @@ which is a gauge passing because it was blinded.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from hashlib import sha256
-from json import dumps
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     COMMITTED,
     ChainHead,
@@ -61,16 +70,16 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain import (
     TransitionRequest,
     commit_transition,
     read_chain_head,
+    recover_committed_operation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_findings import (
     MISSING_TRACKING,
     ChainFinding,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
-    NextAction,
-    next_action_metadata,
-    plan_record_metadata,
+from livespec_orchestrator_beads_fabro.commands._plan_epoch_projection import (
+    write_tracked_projection,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
 from livespec_orchestrator_beads_fabro.commands._plan_next_action_admission import (
     admit_next_action,
 )
@@ -82,16 +91,17 @@ from livespec_orchestrator_beads_fabro.commands._plan_obligation import (
     projected_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_progress_decision import (
-    TrackedDecision,
-    TrackedRefusal,
     decide_tracked_write,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
-from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
-from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
-    PLAN_HANDOFF_PREFIX,
-    plan_comment_body,
+from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
+    TrackedDecision,
+    TrackedRefusal,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
+from livespec_orchestrator_beads_fabro.commands._plan_tracked_observation import (
+    prior_observation,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_write_identity import derived_operation_id
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
@@ -103,7 +113,6 @@ __all__: list[str] = [
     "TrackedWrite",
     "TrackedWriteRequest",
     "commit_tracked_write",
-    "derived_operation_id",
 ]
 
 
@@ -114,8 +123,9 @@ class TrackedWriteRequest:
     `body` is the handoff entry's prose and is present exactly when `is_handoff`
     is true. `operation_id` is the identity a retry is recognised by; a caller
     that supplies none gets `derived_operation_id`'s deterministic value.
-    `recovery` is the typed causal attempt an EXPIRED obligation needs before it
-    will accept any continuation at all.
+    `recovery` is an OPTIONAL typed causal recovery attempt on an unmet
+    obligation; no write requires one, and one that is carried is graded and
+    recorded so the independent consumer never executes an unvalidated operation.
     """
 
     config: StoreConfig
@@ -140,44 +150,6 @@ class TrackedWrite:
     tracked: bool
 
 
-def derived_operation_id(*, request: TrackedWriteRequest) -> str:
-    """A deterministic operation identity for a caller that named none.
-
-    Two calls agreeing on the epic, author, instant, WHOLE pointer and handoff
-    body are the SAME logical operation — a retry — and must recover one event rather than
-    consume two handoff units. Anything that differs in any of those is a
-    different operation.
-
-    THE PROPOSED OBLIGATION IS PART OF THE IDENTITY, including the budget the
-    continuation path goes on to discard. On the FRESH-obligation arm the
-    proposed budget is the very thing that becomes durable, so excluding it
-    would let the second of two distinct establishing writes be recovered as a
-    retry of the first, silently adopting a budget its caller never asked for.
-
-    A digest is used rather than the fields themselves because the identity
-    rides in a close reason and a progress event, and an unbounded
-    concatenation of caller prose does not belong in either. The parts are
-    joined on a unit separator so no two different field splits can render one
-    string, and `sort_keys` makes the reference rendering independent of dict
-    insertion order so two equal references cannot digest differently.
-    """
-    material = "\x1f".join(
-        (
-            request.epic_id,
-            request.author,
-            request.now,
-            request.action.kind,
-            request.action.ref,
-            request.action.text,
-            request.body or "",
-            str(request.is_handoff),
-            dumps(request.action.required_result, sort_keys=True, default=str),
-            dumps(request.action.budget, sort_keys=True, default=str),
-        )
-    )
-    return f"plan-write-{sha256(material.encode('utf-8')).hexdigest()[:16]}"
-
-
 def commit_tracked_write(*, request: TrackedWriteRequest) -> TrackedWrite | NextActionRefusal:
     """Admit, serialize and persist one sanctioned plan pointer write."""
     refusal = admit_next_action(
@@ -194,7 +166,7 @@ def commit_tracked_write(*, request: TrackedWriteRequest) -> TrackedWrite | Next
                 return NextActionRefusal(
                     detail=(
                         "causal recovery is invalid: this epic carries no authority chain,"
-                        " so it holds no obligation that could have expired"
+                        " so it holds no obligation that could be recovered"
                     )
                 )
             return _legacy_write(request=request)
@@ -207,7 +179,23 @@ def _tracked_write(
     request: TrackedWriteRequest,
     head: ChainHead,
 ) -> TrackedWrite | NextActionRefusal:
-    """Decide against the observed head, then commit and project the result."""
+    """Recover a retry, else decide against the observed head and commit.
+
+    The recovery runs BEFORE the decision, for the reason this module's
+    docstring records: the decision's expiry ladder would otherwise refuse the
+    retry of the very handoff that exhausted the budget.
+    """
+    operation_id = request.operation_id or derived_operation_id(request=request)
+    recovered = recover_committed_operation(
+        config=request.config,
+        epic_id=request.epic_id,
+        operation_id=operation_id,
+        observed_head=head,
+    )
+    if isinstance(recovered, ChainFinding):
+        return NextActionRefusal(detail=f"{recovered.code}: {recovered.detail}")
+    if recovered is not None:
+        return _recovered_write(request=request, committed=recovered)
     decision = decide_tracked_write(
         epic_id=request.epic_id,
         head=head,
@@ -219,7 +207,6 @@ def _tracked_write(
     )
     if isinstance(decision, TrackedRefusal):
         return NextActionRefusal(detail=decision.detail)
-    operation_id = request.operation_id or derived_operation_id(request=request)
     committed = commit_transition(
         config=request.config,
         epic_id=request.epic_id,
@@ -230,6 +217,7 @@ def _tracked_write(
             event_kind=decision.event_kind,
             author=request.author,
             now=request.now,
+            replaced_result=decision.replaced_result,
         ),
     )
     if isinstance(committed, StaleEpochRefusal):
@@ -244,6 +232,20 @@ def _tracked_write(
     return _persist(request=request, decision=decision, committed=committed)
 
 
+def _prior_observation(
+    *,
+    request: TrackedWriteRequest,
+    head: ChainHead,
+) -> ResultObservation | None:
+    """Keep the tracked-write observation seam while delegating its one concern."""
+    return prior_observation(
+        config=request.config,
+        epic_id=request.epic_id,
+        authority=head.authority,
+        now=request.now,
+    )
+
+
 def _persist(
     *,
     request: TrackedWriteRequest,
@@ -254,50 +256,59 @@ def _persist(
 
     A RECOVERED transition projects nothing: its original call already wrote
     both, so appending again would duplicate the handoff the retry clause
-    forbids.
+    forbids. The arm survives the pre-decision scan above because the chain's
+    own guard sees a window that scan cannot — a twin of this call committing
+    between the two readings.
     """
+    if committed.source != COMMITTED:
+        return _recovered_write(request=request, committed=committed)
     authority = committed.payload.authority
     action = projected_action(
         action=decision.action,
         authority=authority,
         epoch=committed.payload.new_epoch,
     )
-    obligation = obligation_of(authority=authority)
-    if committed.source != COMMITTED:
-        return TrackedWrite(
-            action=action,
-            epoch=committed.payload.new_epoch,
-            consumed_handoffs=authority.consumed_handoffs,
-            idempotent=True,
-            tracked=obligation is not None,
-        )
-    client = make_beads_client(config=request.config)
-    if request.is_handoff:
-        client.add_comment(
-            issue_id=request.epic_id,
-            body=plan_comment_body(
-                prefix=PLAN_HANDOFF_PREFIX,
-                author=request.author,
-                now=request.now,
-                body=request.body or "",
-            ),
-        )
-    record = client.show_issue(issue_id=request.epic_id)
-    client.update_issue(
-        issue_id=request.epic_id,
-        metadata=next_action_metadata(
-            existing_metadata=plan_record_metadata(record=record),
-            action=action,
-            session=request.author,
-            now=request.now,
-        ),
-    )
+    _write_projection(request=request, action=action)
     return TrackedWrite(
         action=action,
         epoch=committed.payload.new_epoch,
         consumed_handoffs=authority.consumed_handoffs,
         idempotent=False,
-        tracked=obligation is not None,
+        tracked=obligation_of(authority=authority) is not None,
+    )
+
+
+def _recovered_write(
+    *,
+    request: TrackedWriteRequest,
+    committed: CommittedTransition,
+) -> TrackedWrite:
+    """Hand back the transition this operation already committed, writing nothing.
+
+    The pointer is projected from the REQUEST's action rather than from any
+    decision, because no decision was taken: the projection overlays the
+    committed authority onto whatever tracking the action carries, so the two
+    agree wherever a decision exists and the recovery needs none.
+    """
+    authority = committed.payload.authority
+    return TrackedWrite(
+        action=projected_action(
+            action=request.action,
+            authority=authority,
+            epoch=committed.payload.new_epoch,
+        ),
+        epoch=committed.payload.new_epoch,
+        consumed_handoffs=authority.consumed_handoffs,
+        idempotent=True,
+        tracked=obligation_of(authority=authority) is not None,
+    )
+
+
+def _write_projection(*, request: TrackedWriteRequest, action: NextAction) -> None:
+    """Keep request-shaped writer inputs at this module's public boundary."""
+    write_tracked_projection(
+        request=request,
+        action=action,
     )
 
 
@@ -308,56 +319,11 @@ def _legacy_write(*, request: TrackedWriteRequest) -> TrackedWrite:
     pointer acquires its five-field shape, and every reader keeps reporting
     missing tracking until the sanctioned migration establishes the chain.
     """
-    client = make_beads_client(config=request.config)
-    if request.is_handoff:
-        client.add_comment(
-            issue_id=request.epic_id,
-            body=plan_comment_body(
-                prefix=PLAN_HANDOFF_PREFIX,
-                author=request.author,
-                now=request.now,
-                body=request.body or "",
-            ),
-        )
-    record = client.show_issue(issue_id=request.epic_id)
-    client.update_issue(
-        issue_id=request.epic_id,
-        metadata=next_action_metadata(
-            existing_metadata=plan_record_metadata(record=record),
-            action=request.action,
-            session=request.author,
-            now=request.now,
-        ),
-    )
+    _write_projection(request=request, action=request.action)
     return TrackedWrite(
         action=request.action,
         epoch=0,
         consumed_handoffs=0,
         idempotent=False,
         tracked=False,
-    )
-
-
-def _prior_observation(
-    *,
-    request: TrackedWriteRequest,
-    head: ChainHead,
-) -> ResultObservation | None:
-    """Read the PRIOR obligation's target, which is what continuity turns on.
-
-    The clause says "All sanctioned pointer writers MUST read the prior
-    obligation and its target before accepting continuation", and the target read
-    is the PRIOR one rather than the candidate's: reading the candidate's target
-    would let a writer rename the obligation to something already satisfied and
-    have the rename grade itself.
-    """
-    obligation = obligation_of(authority=head.authority)
-    if obligation is None:
-        return None
-    project_root = request.config.repo_root
-    return read_result(
-        project_root=Path.cwd() if project_root is None else project_root,
-        reference=obligation.required_result,
-        runner=ShellCommandRunner(),
-        now=request.now,
     )

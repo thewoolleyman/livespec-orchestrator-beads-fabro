@@ -8,8 +8,11 @@ handoff self-sufficiency findings, which still probe the prose a person reads.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
     FakeBeadsClient,
     IssueDraft,
@@ -30,6 +33,17 @@ from livespec_orchestrator_beads_fabro.commands.plan import (
     recorded_next_actions,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._plan_timeline import PlanTimelineSkip
+
+
+@dataclass(frozen=True, kw_only=True)
+class _LedgerComment:
+    text: str
+    comment_id: str
+    created_at: str | None = None
+
 
 _HANDOFF_ONE_ACTION = (
     "Thread reopened after a context-threshold restart.\n"
@@ -206,3 +220,28 @@ def test_read_timeline_labels_each_entry_with_its_kind() -> None:
     entries = read_timeline(config=_config(), epic_id="bd-ib-plan")
 
     assert [entry.kind for entry in entries] == ["scope", "handoff"]
+
+
+def test_a_skipped_comment_that_carries_a_ledger_id_is_reported_by_that_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_read_comments(*, path: StoreConfig, work_item_id: str) -> tuple[_LedgerComment, ...]:
+        _ = path
+        _ = work_item_id
+        return (
+            _LedgerComment(text="plan-handoff-entry\n\nNo author line.", comment_id="comment-7"),
+        )
+
+    monkeypatch.setattr(_plan_timeline, "read_work_item_comments", fake_read_comments)
+    skips: list[PlanTimelineSkip] = []
+
+    entries = read_timeline(config=_config(), epic_id="bd-ib-plan", on_skip=skips.append)
+
+    assert entries == ()
+    [skip] = skips
+    assert skip.comment_ref == "comment-7"
+    assert skip.reason == "missing author line"
+    assert (
+        "expected plan timeline header "
+        "`plan-handoff-entry|plan-scope-event`, `author: `, `timestamp: `"
+    ) in skip.message

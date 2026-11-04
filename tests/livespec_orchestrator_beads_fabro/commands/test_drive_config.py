@@ -104,6 +104,7 @@ def test_drive_reads_all_effective_dispatcher_settings_with_sources(tmp_path: Pa
         "ready_aging_threshold_hours",
         "wip_cap",
         "drift_capture_merge_threshold",
+        "drift_proposal_queue_cap",
     }
     assert by_key["auto_approve_ready"] == {
         "key": "auto_approve_ready",
@@ -309,6 +310,12 @@ def test_drive_publishes_api_configurable_key_manifest(tmp_path: Path) -> None:
             "key": "drift_capture_merge_threshold",
             "type": "positive_integer",
             "default": 1,
+            "per_item_override": False,
+        },
+        "drift_proposal_queue_cap": {
+            "key": "drift_proposal_queue_cap",
+            "type": "positive_integer",
+            "default": 5,
             "per_item_override": False,
         },
     }

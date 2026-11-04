@@ -15,9 +15,16 @@ here, beside the constants they read.
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
+    CLEAR_FACTORY_SAFETY_ACTION,
     FACTORY_SAFETY_ACTION,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import CAP_ACTION_VERBS
+from livespec_orchestrator_beads_fabro.commands._drive_release_spec_tier_valve import (
+    RELEASE_SPEC_TIER_ACTION,
+)
+from livespec_orchestrator_beads_fabro.commands._drive_relink_spec_tier_valve import (
+    RELINK_SPEC_TIER_ACTION,
+)
 
 __all__: list[str] = [
     "ACTION_WITH_ITEM_PARTS",
@@ -51,7 +58,11 @@ VALUE_ALLOWLISTS = {
 # canonical reasons, and an id rejected here reaches the operator as the generic
 # "Unsupported human valve action id." — the one message that cannot tell a
 # typo'd reason from a typo'd verb.
-_UNGRADED_VALUE_ACTIONS: frozenset[str] = CAP_ACTION_VERBS | {"move", FACTORY_SAFETY_ACTION}
+_UNGRADED_VALUE_ACTIONS: frozenset[str] = CAP_ACTION_VERBS | {
+    "move",
+    FACTORY_SAFETY_ACTION,
+    RELINK_SPEC_TIER_ACTION,
+}
 
 
 def is_human_valve_action(*, action_id: str) -> bool:
@@ -65,18 +76,25 @@ def is_human_valve_action(*, action_id: str) -> bool:
             "set-admission:",
             "set-acceptance:",
             f"{FACTORY_SAFETY_ACTION}:",
+            f"{CLEAR_FACTORY_SAFETY_ACTION}:",
             "set-workflow-scope-override:",
             "set-merge-on-review-cap:",
             "set-review-fix-cap:",
             "set-acceptance-rework-cap:",
             "set-merge-hold:",
             "move:",
+            f"{RELEASE_SPEC_TIER_ACTION}:",
+            f"{RELINK_SPEC_TIER_ACTION}:",
         )
     )
 
 
 def parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] | None:
     """Split one action id into (verb, work-item id, value), or `None` if malformed."""
+    if action_id.startswith(f"{RELEASE_SPEC_TIER_ACTION}:"):
+        return _parse_release_spec_tier(action_id=action_id)
+    if action_id.startswith(f"{CLEAR_FACTORY_SAFETY_ACTION}:"):
+        return _parse_clear_factory_safety(action_id=action_id)
     parts = action_id.split(":")
     parsed = _parse_action_with_item(parts=parts)
     if parsed is not None:
@@ -105,3 +123,25 @@ def _parse_action_with_value(*, parts: list[str]) -> tuple[str, str, str | None]
     if allowed_values is None or value not in allowed_values:
         return None
     return (action, item, value)
+
+
+def _parse_release_spec_tier(*, action_id: str) -> tuple[str, str, str | None] | None:
+    """Split `release-spec-tier:<id>:<heading>`, the heading being the REST of the id.
+
+    A heading is arbitrary specification text and may itself carry a colon, so
+    the generic three-field split would refuse every such title as malformed.
+    """
+    _, _, rest = action_id.partition(":")
+    item, separator, heading = rest.partition(":")
+    if not separator or item == "" or heading.strip() == "":
+        return None
+    return (RELEASE_SPEC_TIER_ACTION, item, heading)
+
+
+def _parse_clear_factory_safety(*, action_id: str) -> tuple[str, str, str | None] | None:
+    """Split a clear action, retaining colons in the operator's rationale."""
+    _, _, rest = action_id.partition(":")
+    item, separator, rationale = rest.partition(":")
+    if not separator or item == "":
+        return None
+    return (CLEAR_FACTORY_SAFETY_ACTION, item, rationale)

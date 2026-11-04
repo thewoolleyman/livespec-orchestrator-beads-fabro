@@ -10,6 +10,13 @@ each: a proof record carrying the dispatch's identifier always wins, the cancel
 record anchors only from `proof_capture`, and a record naming no head anchors
 nothing.
 
+THE ELISION ABOVE HIDES A SECOND ADMITTED STAGE, deliberately, because this
+module is about the stall one. The full clause reads "a `watchdog-stall-cancel`
+record **or a `run-wall-budget-exceeded` record**", and the budget stage's own
+cases — including the one that proves the two name DIFFERENT sources — live in
+`test_dispatcher_resume_cancel_anchor_budget.py`. Read that module as the other
+half of this one rather than as a variant of it.
+
 WHY EACH BOUND IS ASSERTED SEPARATELY RATHER THAN THROUGH ONE HAPPY PATH. All
 three produce the SAME observable — no anchor — so a single negative case passes
 just as well for a reader that happens to refuse everything. Each case therefore

@@ -1,0 +1,289 @@
+"""The priority-epic idle-slot audit: one read-only pass, one finding line.
+
+The audit exists because idle capacity beside dispatchable work is the
+quietest failure a factory has. On 2026-10-16 nine hp slots sat idle for about
+five hours while four priority-set items were dispatchable, because three
+successive driver sessions repeated a handoff's "nothing can use the slots"
+instead of measuring the queue. This is that measurement, shipped.
+
+WHAT THE FINDING ASSERTS, AND WHAT IT DOES NOT. It fires on an OBSERVABLE
+board whose QUEUED count is zero with at least one child classified
+`DISPATCHABLE-NOW` or `STALE-EDGE`. There is no slot ceiling and no free-slot
+count anywhere in this module: host concurrency belongs to the Fabro
+scheduler, so an empty queue is evidence that nothing WAITS, never that a slot
+is FREE, and the line asserts only the former. A run rests briefly at
+`runnable` after every start even when the scheduler has room, so the finding
+may clear for one scheduler tick after a dispatch — that is the designed
+behaviour of keying on the queue.
+
+WHY THIS WRITES NOTHING. The audit reads tenants, reads one board, and
+returns. No ledger, no dispatch journal, no factory, no credential probe, no
+availability confirmation turn — which is what lets it be run from a snapshot
+surface without two invocations against an unchanged store disagreeing.
+
+The three collaborators are SEAMS rather than direct calls because each one is
+a different substrate — a tenant's beads store, a factory's run board, and the
+shared admission verdict — and a test that had to stand all three up at once
+could not isolate any of them. The parameter defaults are the real readers.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_board import (
+    UNOBSERVABLE_BOARD,
+    BoardReading,
+    read_idle_slot_board,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_classify import (
+    CLASS_DISPATCHABLE_NOW,
+    CLASS_STALE_EDGE,
+    READY_STATUS,
+    ClassifiedChild,
+    classify_child,
+    open_blockers,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_config import (
+    IdleSlotAuditConfig,
+    PriorityEntry,
+    resolve_idle_slot_audit,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_holds import (
+    tenant_hold_reasons,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_tenants import (
+    EntryChildren,
+    TenantReader,
+    TenantReading,
+    entry_children,
+    read_tenant,
+)
+from livespec_orchestrator_beads_fabro.types import WorkItem
+
+__all__: list[str] = [
+    "BoardLister",
+    "EntryAudit",
+    "HoldReader",
+    "IdleSlotAuditResult",
+    "IdleSlotFinding",
+    "idle_slot_audit",
+]
+
+BoardLister = Callable[..., BoardReading]
+HoldReader = Callable[..., "dict[str, str]"]
+_FINDING_CLASSES = (CLASS_DISPATCHABLE_NOW, CLASS_STALE_EDGE)
+
+
+@dataclass(frozen=True, kw_only=True)
+class EntryAudit:
+    """One priority entry's classified children, and what could not be read."""
+
+    repo: str
+    root: str
+    epic: str | None
+    item_ids: tuple[str, ...]
+    unreadable: bool
+    children: tuple[ClassifiedChild, ...]
+    missing_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class IdleSlotFinding:
+    """The finding the audit's last line reports, when it reports one."""
+
+    factory: str
+    live_count: int
+    child_ids: tuple[str, ...]
+    dispatchable_ids: tuple[str, ...]
+    stale_edge_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class IdleSlotAuditResult:
+    """The whole audit: configuration state, board, per-entry rows, finding.
+
+    `configured` is False with `configuration_finding` None exactly when the
+    object is absent, which is an answer rather than a fault. A malformed
+    object is `configured` False WITH a finding — the two absences are
+    deliberately distinguishable, because one composes a refusal and the other
+    composes nothing.
+    """
+
+    configured: bool
+    configuration_finding: str | None
+    factory: str | None
+    board: BoardReading
+    entries: tuple[EntryAudit, ...]
+    finding: IdleSlotFinding | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Readers:
+    """The resolved substrate readers for one audit pass."""
+
+    tenant: TenantReader
+    board: BoardLister
+    holds: HoldReader
+
+
+def idle_slot_audit(
+    *,
+    project_root: Path,
+    tenant_reader: TenantReader | None = None,
+    board_reader: BoardLister | None = None,
+    hold_reader: HoldReader | None = None,
+) -> IdleSlotAuditResult:
+    """Run the read-only audit over the committed priority sets and one board.
+
+    Each reader defaults to the production one, resolved INSIDE the call rather
+    than as a parameter default: a default evaluated at definition time binds
+    the function object itself, so a test could no longer substitute the
+    production reader by name and would have to thread a seam through every
+    caller to reach it.
+    """
+    resolved = resolve_idle_slot_audit(cwd=project_root)
+    if resolved is None:
+        return _unconfigured(finding=None)
+    if isinstance(resolved, str):
+        return _unconfigured(finding=resolved)
+    tenant_reads: dict[Path, TenantReading | None] = {}
+    hold_reads: dict[Path, dict[str, str]] = {}
+    tenant = read_tenant if tenant_reader is None else tenant_reader
+    holds = tenant_hold_reasons if hold_reader is None else hold_reader
+
+    def _tenant_once(*, repo: Path) -> TenantReading | None:
+        cache_key = repo.resolve()
+        if cache_key not in tenant_reads:
+            tenant_reads[cache_key] = tenant(repo=repo)
+        return tenant_reads[cache_key]
+
+    def _holds_once(*, repo: Path, items: list[WorkItem]) -> dict[str, str]:
+        cache_key = repo.resolve()
+        if cache_key not in hold_reads:
+            hold_reads[cache_key] = holds(repo=repo, items=items)
+        return hold_reads[cache_key]
+
+    readers = _Readers(
+        tenant=_tenant_once,
+        board=read_idle_slot_board if board_reader is None else board_reader,
+        holds=_holds_once,
+    )
+    board = readers.board(repo=project_root, factory=resolved.factory)
+    entries = tuple(
+        _entry_audit(project_root=project_root, entry=entry, board=board, readers=readers)
+        for entry in resolved.priority
+    )
+    return IdleSlotAuditResult(
+        configured=True,
+        configuration_finding=None,
+        factory=resolved.factory,
+        board=board,
+        entries=entries,
+        finding=_finding(config=resolved, board=board, entries=entries),
+    )
+
+
+def _unconfigured(*, finding: str | None) -> IdleSlotAuditResult:
+    return IdleSlotAuditResult(
+        configured=False,
+        configuration_finding=finding,
+        factory=None,
+        board=UNOBSERVABLE_BOARD,
+        entries=(),
+        finding=None,
+    )
+
+
+def _entry_audit(
+    *,
+    project_root: Path,
+    entry: PriorityEntry,
+    board: BoardReading,
+    readers: _Readers,
+) -> EntryAudit:
+    resolved = entry_children(project_root=project_root, entry=entry, reader=readers.tenant)
+    return EntryAudit(
+        repo=entry.repo,
+        root=str(resolved.root),
+        epic=entry.epic,
+        item_ids=entry.items,
+        unreadable=resolved.tenant is None,
+        children=_classified(resolved=resolved, board=board, readers=readers),
+        missing_ids=resolved.missing_ids,
+    )
+
+
+def _classified(
+    *,
+    resolved: EntryChildren,
+    board: BoardReading,
+    readers: _Readers,
+) -> tuple[ClassifiedChild, ...]:
+    tenant = resolved.tenant
+    if tenant is None:
+        return ()
+    statuses = {item.id: item.status for item in tenant.items}
+    # ONE hold evaluation per tenant per audit, and only when a `ready` child could
+    # consume it: the shared verdict reads the tenant's whole ready set plus
+    # its spec tree, so running it per child would re-read both once per row
+    # to reach the identical answer.
+    holds = (
+        readers.holds(repo=resolved.root, items=list(tenant.items))
+        if any(item.status == READY_STATUS for item in resolved.children)
+        else {}
+    )
+    return tuple(
+        classify_child(
+            item=item,
+            blockers=open_blockers(item=item, statuses=statuses),
+            board=board,
+            hold_reasons=holds,
+        )
+        for item in resolved.children
+    )
+
+
+def _finding(
+    *,
+    config: IdleSlotAuditConfig,
+    board: BoardReading,
+    entries: tuple[EntryAudit, ...],
+) -> IdleSlotFinding | None:
+    """The finding, or `None` when any of its three conditions fails.
+
+    An unobservable board composes nothing — its counts are unknown rather
+    than zero, so there is no empty queue to assert. A board with a runnable
+    row composes nothing either: something already waits. The `live_count`
+    narrowing rides the same condition because an observable board always
+    carries both counts, so a separate test for it would assert a state
+    `BoardReading` cannot hold.
+    """
+    live_count = board.live_count
+    child_ids = _ids_classified(entries=entries, classifications=_FINDING_CLASSES)
+    if not board.observable or board.queued_count != 0 or live_count is None or not child_ids:
+        return None
+    return IdleSlotFinding(
+        factory=config.factory,
+        live_count=live_count,
+        child_ids=child_ids,
+        dispatchable_ids=_ids_classified(
+            entries=entries, classifications=(CLASS_DISPATCHABLE_NOW,)
+        ),
+        stale_edge_ids=_ids_classified(entries=entries, classifications=(CLASS_STALE_EDGE,)),
+    )
+
+
+def _ids_classified(
+    *,
+    entries: tuple[EntryAudit, ...],
+    classifications: tuple[str, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        child.id
+        for entry in entries
+        for child in entry.children
+        if child.classification in classifications
+    )

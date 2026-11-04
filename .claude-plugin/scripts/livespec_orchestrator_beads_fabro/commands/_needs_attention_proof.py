@@ -78,6 +78,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_missing_pointer import (
+    missing_proof_pointer_items,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -86,11 +89,38 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "pending_host_leg_items",
     "pending_human_attestation_items",
+    "proof_hygiene_items",
     "stale_proof_pointer_items",
 ]
 
 _ACCEPTANCE_STATUS = "acceptance"
 _CLOSED_STATUS = "done"
+
+
+def proof_hygiene_items(
+    *, project_root: Path, repo: str, items: list[WorkItem]
+) -> list[AttentionItem]:
+    """The four Proof of Done hygiene rows, composed as the one group they are.
+
+    The composition reached for these four separately, and the prose it carried
+    described them as one group anyway — three rows about a pointer an item
+    HAS, and the fourth about an item that has none. Reaching for them through
+    one entry point is what keeps that grouping in the code rather than only in
+    a comment above four call sites.
+
+    The two PENDING legs stay separate rows, because different parties clear
+    them: an agent session on an operator host captures and a second session
+    replays the host leg, while a human attests the other. The two POINTER rows
+    stay separate for the mirror reason — both of the first two read a pointer
+    the item already carries, so an item with none is invisible to them, which
+    is exactly the state the missing-pointer lane exists for.
+    """
+    return (
+        pending_host_leg_items(project_root=project_root, repo=repo, items=items)
+        + pending_human_attestation_items(project_root=project_root, repo=repo, items=items)
+        + stale_proof_pointer_items(project_root=project_root, repo=repo, items=items)
+        + missing_proof_pointer_items(project_root=project_root, repo=repo, items=items)
+    )
 
 
 def pending_host_leg_items(

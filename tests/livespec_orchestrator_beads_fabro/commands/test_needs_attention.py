@@ -373,7 +373,7 @@ def test_build_attention_surfaces_a_live_plan_with_an_insufficient_newest_handof
     )
 
 
-def test_build_attention_advertises_approve_only_for_effective_manual_policy(
+def test_build_attention_uses_committed_auto_approval_over_manual_labels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_config(tmp_path, auto_approve_ready=True)
@@ -395,15 +395,14 @@ def test_build_attention_advertises_approve_only_for_effective_manual_policy(
     )
 
     assert [item.id for item in attention] == [
-        "valve:approve:bd-manual",
         "hygiene:awaiting-admission:bd-auto",
+        "hygiene:awaiting-admission:bd-manual",
         # The effective-`auto` item is admission-eligible and nothing is
         # claimed, so the same pass reports the factory as idle.
         "hygiene:idle-factory:repo",
     ]
-    assert attention[0].handoff.action_id == "approve:bd-manual"
-    assert attention[1].kind == "internal"
-    assert "Dispatcher admission pass" in attention[1].summary
+    assert attention[0].kind == "internal"
+    assert "Dispatcher admission pass" in attention[0].summary
 
 
 def test_build_attention_surfaces_ready_factory_safety_item_as_host_only(

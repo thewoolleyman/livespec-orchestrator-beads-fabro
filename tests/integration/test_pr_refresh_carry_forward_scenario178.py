@@ -70,6 +70,7 @@ _ITEM_ONLY_AFTER_DEFAULT = _ITEM_ONLY_SEED.replace("one", "one changed on the de
 # observation scope: its operand does not reach a file at the verified head, and
 # the decision rejects the operand rather than reporting an overlap.
 _SCOPED_INERT = "plan/topic/note.md"
+_PYPROJECT_SEED = '[project]\nname = "item"\nversion = "1.0.0"\ndependencies = []\n'
 _RECORD_URL = "https://forge.invalid/pull/7#issuecomment-99"
 _IDENTITY_LINE = re.compile(r"^(?:Verified|New) patch identity: (\S+)$", re.MULTILINE)
 
@@ -116,6 +117,7 @@ def _seed(*, tmp_path: Path) -> Path:
     _write(cwd=repo, path=_OBSERVED, text=_SEED_BODY)
     _write(cwd=repo, path=_SCOPED_INERT, text="a plan note\n")
     _write(cwd=repo, path=_ITEM_ONLY, text=_ITEM_ONLY_SEED)
+    _write(cwd=repo, path="pyproject.toml", text=_PYPROJECT_SEED)
     _write(cwd=repo, path="SPEC/history/v1/spec.md", text="old\n")
     _write(cwd=repo, path="SPEC/templates/one/history/v1/spec.md", text="old\n")
     _ = _commit(cwd=repo, message="seed")
@@ -499,6 +501,149 @@ def test_an_incoming_change_outside_the_inert_classes_reproves(
     assert code == 1
     assert "— reproof_required —" in posted[0]
     assert "incoming-path-outside-inert-classes: module.py" in posted[0]
+
+
+def _reproved_once(*, fixture: dict[str, object], tmp_path: Path) -> dict[str, object]:
+    """Drive one re-proving refresh, and return the run as its re-proof leaves it.
+
+    The first refresh brings in a non-inert path, so it MUST re-prove — which is
+    asserted here rather than assumed, because the cases below are only about a
+    run that has re-proved once if the first decision really said so. The
+    returned fixture is the state the run's second `pr_refresh` meets: its
+    verified head and previous published head are both the re-proved head.
+    """
+    moved = _rebase_onto(fixture=fixture, paths={"module.py": "value = 1\n"})
+    code, _, _, posted = _call(fixture=moved, tmp_path=tmp_path / "first")
+    assert code == 1
+    assert "— reproof_required —" in posted[0]
+    reproved = dict(moved)
+    reproved["verified_head"] = moved["new_head"]
+    reproved["previous_head"] = moved["new_head"]
+    reproved["previous_base"] = moved["new_base"]
+    return reproved
+
+
+def test_after_one_reproof_a_non_overlapping_refresh_carries_forward(
+    inert_refresh: dict[str, object], tmp_path: Path
+) -> None:
+    """Scenario 229's first case: a re-proved run stops chasing the default branch.
+
+    The second refresh brings in a Python module that is neither an item path nor
+    in the observation scope. Before v177 that re-proved on every base advance;
+    after one re-proof it carries forward, and the record says why, because a
+    carried_forward record whose incoming paths are not all inert would otherwise
+    read as a misclassification.
+    """
+    reproved = _reproved_once(fixture=inert_refresh, tmp_path=tmp_path)
+    second = _rebase_onto(fixture=reproved, paths={"second.py": "value = 2\n"})
+
+    code, _, err, posted = _call(fixture=second, tmp_path=tmp_path / "second")
+
+    assert code == 0, err
+    assert len(posted) == 1
+    record = posted[0]
+    assert "— carried_forward —" in record
+    assert f"Verified head: {reproved['verified_head']}" in record
+    assert f"New head: {second['new_head']}" in record
+    assert "Incoming paths: second.py" in record
+    assert (
+        "Inert classes: not every incoming path is inert; " "the run's one re-proof covered them"
+    ) in record
+
+
+def test_after_one_reproof_an_overlapping_refresh_still_reproves(
+    inert_refresh: dict[str, object], tmp_path: Path
+) -> None:
+    """Scenario 229's second case: the widening never reaches the observation scope.
+
+    The second refresh changes the one file the proof reads. The scope, blob and
+    replay checks all still run after a re-proof, so the record names the path
+    and the run re-enters proof_capture.
+    """
+    reproved = _reproved_once(fixture=inert_refresh, tmp_path=tmp_path)
+    repo = reproved["repo"]
+    assert isinstance(repo, Path)
+    reads = {_SCOPED_INERT: _worktree_identity(repo=repo, path=_SCOPED_INERT)}
+    second = _rebase_onto(fixture=reproved, paths={_SCOPED_INERT: "the note changed\n"})
+
+    code, _, _, posted = _call(
+        fixture=second,
+        tmp_path=tmp_path / "second",
+        steps=[f"cat {_SCOPED_INERT}"],
+        proofs=[["a plan note"]],
+        reads=reads,
+    )
+
+    assert code == 1
+    assert "— reproof_required —" in posted[0]
+    assert f"incoming-path-in-observation-scope: {_SCOPED_INERT}" in posted[0]
+    assert f"blob-identity-differs: {_SCOPED_INERT}" in posted[0]
+
+
+_RELEASE_BOOKKEEPING = {
+    ".release-please-manifest.json": '{".": "1.0.1"}\n',
+    "CHANGELOG.md": "# Changelog\n\n## 1.0.1\n\n* a fix\n",
+    "pyproject.toml": _PYPROJECT_SEED.replace("1.0.0", "1.0.1"),
+}
+
+
+def _release_onto(*, fixture: dict[str, object], paths: dict[str, str]) -> dict[str, object]:
+    """A second refresh whose incoming range is exactly the release commit.
+
+    The fixture's own refresh already brought in a plan note, so the range of
+    this one starts at the base that refresh reached, as it does when a release
+    lands on a branch the run has already refreshed onto.
+    """
+    moved = _rebase_onto(fixture=fixture, paths=paths)
+    moved["previous_base"] = fixture["new_base"]
+    moved["previous_head"] = fixture["new_head"]
+    return moved
+
+
+# A step the direct-read grammar refuses on two counts, a pipe and a dollar
+# sign, which is the shape every step of the measured vdleg7 record took.
+_OUTSIDE_GRAMMAR_STEP = "just check | tail -n 1 $HOME"
+
+
+def test_a_refresh_bringing_in_only_release_bookkeeping_carries_forward_whatever_the_proof(
+    inert_refresh: dict[str, object], tmp_path: Path
+) -> None:
+    """A release-please commit carries forward even when no step is a direct read.
+
+    Run 01M5QEE4090K spent 271 minutes re-proving the version bumps every merge
+    to the default branch brings in, because its steps were outside the
+    direct-read grammar. Bookkeeping that changes only the release manifest,
+    the changelog and version lines has no behavioural content, so it carries
+    forward without grading or replaying a single step.
+    """
+    moved = _release_onto(fixture=inert_refresh, paths=_RELEASE_BOOKKEEPING)
+
+    code, _, err, posted = _call(fixture=moved, tmp_path=tmp_path, steps=[_OUTSIDE_GRAMMAR_STEP])
+
+    assert code == 0, err
+    assert "— carried_forward —" in posted[0]
+    assert "Inert classes: every incoming path is release bookkeeping" in posted[0]
+
+
+def test_a_manifest_change_beyond_its_version_line_is_not_release_bookkeeping(
+    inert_refresh: dict[str, object], tmp_path: Path
+) -> None:
+    """The control: a pyproject change that also adds a dependency still re-proves.
+
+    Without it, the case above is equally consistent with an arm that treats
+    every change to those four paths as bookkeeping.
+    """
+    paths = dict(_RELEASE_BOOKKEEPING)
+    paths["pyproject.toml"] = _PYPROJECT_SEED.replace("1.0.0", "1.0.1").replace(
+        "[]", '["requests"]'
+    )
+    moved = _release_onto(fixture=inert_refresh, paths=paths)
+
+    code, _, _, posted = _call(fixture=moved, tmp_path=tmp_path, steps=[_OUTSIDE_GRAMMAR_STEP])
+
+    assert code == 1
+    assert "— reproof_required —" in posted[0]
+    assert "incoming-path-outside-inert-classes: pyproject.toml" in posted[0]
 
 
 @pytest.mark.parametrize(

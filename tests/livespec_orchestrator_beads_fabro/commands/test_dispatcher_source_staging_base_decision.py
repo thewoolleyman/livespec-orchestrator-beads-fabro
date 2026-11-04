@@ -139,7 +139,7 @@ def _git(*, repo: Path, args: list[str]) -> str:
     return result.stdout.strip()
 
 
-def _source_holding_an_unpushed_commit(*, root: Path) -> Path:
+def _source_holding_an_unpushed_commit(*, root: Path, unrelated_ref_count: int = 0) -> Path:
     origin = root / "origin.git"
     repo = root / "source"
     _git(repo=root, args=["init", "--bare", "--initial-branch=master", str(origin)])
@@ -151,13 +151,37 @@ def _source_holding_an_unpushed_commit(*, root: Path) -> Path:
     _git(repo=repo, args=["add", "tracked.txt"])
     _git(repo=repo, args=["commit", "-m", "source"])
     _git(repo=repo, args=["push", "origin", "master"])
+    remote_head = _git(repo=repo, args=["rev-parse", "HEAD"])
+    for index in range(unrelated_ref_count):
+        _git(
+            repo=origin,
+            args=["update-ref", f"refs/heads/unrelated-{index:04d}", remote_head],
+        )
+    if unrelated_ref_count:
+        _git(repo=repo, args=["fetch", "--quiet", "origin"])
     (repo / "tracked.txt").write_text("only here\n", encoding="utf-8")
     _git(repo=repo, args=["commit", "-am", "unpublished work"])
     return repo
 
 
-def test_a_head_no_origin_ref_reaches_is_refused_before_any_staging(*, tmp_path: Path) -> None:
-    repo = _source_holding_an_unpushed_commit(root=tmp_path)
+@pytest.mark.parametrize(
+    ("unrelated_ref_count", "expected_origin_ref_count", "expected_origin_refs"),
+    [
+        (0, 1, ("origin/master",)),
+        (1_000, 1_001, ("origin/master", "origin/unrelated-0999")),
+    ],
+)
+def test_a_head_no_origin_ref_reaches_is_refused_before_any_staging(
+    *,
+    tmp_path: Path,
+    unrelated_ref_count: int,
+    expected_origin_ref_count: int,
+    expected_origin_refs: tuple[str, ...],
+) -> None:
+    repo = _source_holding_an_unpushed_commit(
+        root=tmp_path,
+        unrelated_ref_count=unrelated_ref_count,
+    )
     journal = _Journal()
     worktree_root = tmp_path / ".worktrees"
     runner = staging.SourceStagingRunner(
@@ -174,4 +198,15 @@ def test_a_head_no_origin_ref_reaches_is_refused_before_any_staging(*, tmp_path:
     assert "preserve the unpushed commit(s) on a branch/worktree" in result.stderr
     assert not worktree_root.exists()
     assert not any(row["stage"] == "source-checkout-stage" for row in journal.records)
-    assert _git(repo=repo, args=["ls-remote", "--heads", "origin"]).endswith("refs/heads/master")
+    refusal = next(
+        row for row in journal.records if row["stage"] == "source-checkout-origin-reachability"
+    )
+    origin_refs = refusal["origin_refs"]
+    assert isinstance(origin_refs, list)
+    assert len(origin_refs) == expected_origin_ref_count
+    assert set(expected_origin_refs).issubset(origin_refs)
+    unpushed_commits = refusal["unpushed_commits"]
+    assert isinstance(unpushed_commits, list)
+    assert len(unpushed_commits) == 1
+    assert "unpublished work" in unpushed_commits[0]
+    assert "refs/heads/master" in _git(repo=repo, args=["ls-remote", "--heads", "origin"])

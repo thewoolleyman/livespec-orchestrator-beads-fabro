@@ -7,6 +7,7 @@ import shlex
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from livespec_runtime.needs_attention import PlanThreadOutput
 
@@ -18,10 +19,15 @@ from livespec_orchestrator_beads_fabro.commands.list_plans import list_plans
 from livespec_orchestrator_beads_fabro.commands.plan import handoff_timeline_findings, read_timeline
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands.plan import PlanTimelineSkip
+
 __all__: list[str] = [
+    "availability_wait_journal_command",
+    "clear_acp_availability_hold_command",
+    "clear_provider_exhaustion_command",
     "dispatcher_loop_command",
     "drive_command",
-    "fabro_events_command",
     "host_only_command",
     "model_fallback_journal_command",
     "plans",
@@ -36,6 +42,25 @@ __all__: list[str] = [
 _PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
 
 _DISPATCH_JOURNAL_SUBPATH = "tmp/fabro-dispatch-journal.jsonl"
+
+# The two append-only stages an availability wait is reconstructible from: the
+# observed-hold records the filter skipped candidates on, and the containment
+# refusals that recorded the wait those skips produced. Both are needed, and in
+# opposite directions -- an UNAVAILABLE evidence source empties a chain while
+# recording no hold at all, so a pattern naming only the hold stage prints
+# nothing for exactly the condition an operator cannot otherwise see.
+_AVAILABILITY_WAIT_STAGES = "acp-availability-observed|acp-preflight-refusal"
+
+# NO `--reason` IS RENDERED INTO EITHER CLEARANCE VALVE, and the omission is the
+# justification rather than a gap in it. A clearance "asserts the entitlement is
+# available again, which no observation supports", so the reason is the human act
+# the valve exists to record -- but both valves refuse only a BLANK one, so a
+# rendered placeholder is ACCEPTED: an operator running the advertised handoff
+# verbatim performs the irreversible clearance and persists the placeholder
+# itself as the recorded justification, which is a clearance whose audit record
+# states nothing. `--reason` is `required=True` in both argparse surfaces, so
+# omitting it yields a usage error naming the flag, which is what makes the
+# operator state one -- exactly as the omitted `--invoker` already does.
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -93,9 +118,24 @@ def _plan_topic(*, item: WorkItem) -> str | None:
 
 
 def _timeline_findings(*, config: StoreConfig, epic_id: str | None) -> tuple[str, ...]:
+    """One plan's timeline findings; each comment the reader skipped is itself a finding.
+
+    `read_timeline` skips a comment whose header it cannot parse and reports it
+    through `on_skip`, so one malformed comment never costs the plan its timeline.
+    It is also never dropped silently here: the attention surface composes every
+    plan, item and hygiene fact of the repository, and measured 2026-10-25 on
+    four of four fleet repositories, one legacy single-line `plan-handoff-entry
+    (...)` comment on one epic (written before the structured header existed)
+    erased the whole report with a traceback. Scenario 79's rule governs this
+    surface: the unreadable input is skipped and surfaced as that plan's own
+    high-urgency repair finding, with the comment named so the operator can fix
+    or retire it.
+    """
     if epic_id is None:
         return ()
-    return handoff_timeline_findings(entries=read_timeline(config=config, epic_id=epic_id))
+    skips: list[PlanTimelineSkip] = []
+    entries = read_timeline(config=config, epic_id=epic_id, on_skip=skips.append)
+    return (*(skip.message for skip in skips), *handoff_timeline_findings(entries=entries))
 
 
 def _plan_thread_output(
@@ -171,25 +211,6 @@ def reconcile_runs_command(*, project_root: Path, factory: str) -> str:
     )
 
 
-def fabro_events_command(*, fabro_bin: str, run_id: str, server_url: str) -> str:
-    """The SERVER-QUALIFIED events read, spelled exactly as the port spells it.
-
-    `SPECIFICATION/contracts.md` section "Factory-configurable ACP
-    fallback priority" requires the projection-failure fact to carry "a
-    `shell` handoff containing the same executable server-qualified
-    inspection command reconciliation uses", so the argv below mirrors
-    `FabroPort.events` term for term -- including `--server` AFTER the
-    subcommand, which the pinned 0.254.0 CLI requires and a top-level
-    `--server` hard-errors on. A handoff an operator pastes and watches
-    fail is worse than none: it reads as the factory being broken when
-    the command was.
-    """
-    return (
-        f"{shlex.quote(fabro_bin)} events {shlex.quote(run_id)} "
-        f"--json --server {shlex.quote(server_url)}"
-    )
-
-
 def model_fallback_journal_command(*, project_root: Path, node: str) -> str:
     """Show every model-fallback record this repository holds for ONE node.
 
@@ -202,6 +223,75 @@ def model_fallback_journal_command(*, project_root: Path, node: str) -> str:
     journal = shlex.quote(f"{project_root}/{_DISPATCH_JOURNAL_SUBPATH}")
     node_field = shlex.quote(json.dumps({"node": node})[1:-1])
     return f"grep -F acp-model-fallback {journal} | grep -F {node_field}"
+
+
+def clear_acp_availability_hold_command(
+    *,
+    project_root: Path,
+    scope: str,
+    hold_key: str,
+    candidate_key: str | None,
+) -> str:
+    """Retire ONE typed observed-availability record, by its exact identity.
+
+    The EXACT target is what the clause asks for — "exact scope/key clearance
+    for current records" — and the valve enforces it: a candidate-scoped
+    clearance that omits its `--candidate-key`, or a domain-scoped one that
+    supplies it, is refused outright. So the key is rendered when and only when
+    the record carries one.
+
+    NEITHER `--invoker` NOR `--reason` IS RENDERED, and both omissions are the
+    attribution rather than a gap in it. The valve resolves the invoker itself
+    and refuses any invocation that resolves to the unattributed mark, and it
+    requires a `--reason` it refuses only when blank — naming, in each case,
+    exactly what satisfies the requirement. So an operator who runs this
+    verbatim without an identity or a justification is told exactly that, while
+    a rendered placeholder for either would be ACCEPTED and would record a
+    clearance attributed to nobody, or justified by the placeholder itself.
+    """
+    exact = f"--scope {shlex.quote(scope)} --hold-key {shlex.quote(hold_key)}"
+    if candidate_key is not None:
+        exact = f"{exact} --candidate-key {shlex.quote(candidate_key)}"
+    return (
+        f"python3 {_quote(path=_wrapper_path(name='dispatcher.py'))} "
+        f"clear-acp-availability-hold --repo {_quote(path=project_root)} {exact}"
+    )
+
+
+def clear_provider_exhaustion_command(*, project_root: Path, provider: str) -> str:
+    """Retire the LEGACY provider-wide exhaustion record for one vendor.
+
+    The sibling of the valve above and deliberately not interchangeable with
+    it: a legacy record is scoped to a whole vendor and carries no scope, hold
+    key or candidate key, so the typed valve's exactness refusal could never be
+    satisfied for one. The two write different journal stages, and neither scan
+    reads the other's, so offering the wrong valve here would advertise a
+    clearance that retires nothing.
+
+    It renders no `--reason` either, for the reason the module comment above
+    gives: this valve carries the identical blank-only refusal, so a placeholder
+    rendered here would be accepted just as readily.
+    """
+    return (
+        f"python3 {_quote(path=_wrapper_path(name='dispatcher.py'))} "
+        f"clear-provider-exhaustion --repo {_quote(path=project_root)} "
+        f"--provider {shlex.quote(provider)}"
+    )
+
+
+def availability_wait_journal_command(*, project_root: Path) -> str:
+    """Show the recorded availability wait and the observations behind it.
+
+    The INSPECTION handoff the wait item carries when no live hold is its
+    target: "Otherwise its handoff MUST inspect the recorded wait and
+    unavailable or failed observation; it MUST NOT advertise clearance of a
+    nonexistent live hold." Read-only by construction, exactly as
+    `model_fallback_journal_command` beside it is -- an operator reading this
+    row cannot clear anything, because there is nothing live to clear, so the
+    handoff must offer evidence rather than an act.
+    """
+    journal = shlex.quote(f"{project_root}/{_DISPATCH_JOURNAL_SUBPATH}")
+    return f"grep -E {shlex.quote(_AVAILABILITY_WAIT_STAGES)} {journal}"
 
 
 def pr_view_command(*, project_root: Path, pr_number: int) -> str:

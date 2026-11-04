@@ -248,7 +248,7 @@ def read_next_action(*, config: StoreConfig, epic_id: str) -> NextAction | None:
     )
 
 
-def set_next_action(  # noqa: PLR0913 -- kw-only writer; `operation_id` and `recovery` are independent transport inputs.
+def set_next_action(  # noqa: PLR0913 -- kw-only writer; each tracking input is an independent transport field.
     *,
     config: StoreConfig,
     epic_id: str,
@@ -265,6 +265,11 @@ def set_next_action(  # noqa: PLR0913 -- kw-only writer; `operation_id` and `rec
     progress epoch". It reaches the ledger through the same epoch transition
     every sanctioned writer takes, so the pointer it stores is a projection of
     the durable authority rather than whatever budget the caller proposed.
+
+    A write naming a different required result than the unmet obligation's
+    REPLACES it, under this write's own budget, recorded as a `replacement`
+    progress event; a passed deadline or an exhausted handoff count never
+    refuses it.
     """
     from livespec_orchestrator_beads_fabro.commands._plan_tracked_write import (
         TrackedWriteRequest,

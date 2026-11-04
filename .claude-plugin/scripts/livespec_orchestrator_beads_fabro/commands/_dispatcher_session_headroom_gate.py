@@ -44,7 +44,6 @@ separate functions.
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -53,6 +52,10 @@ from returns.io import IOResult
 from returns.result import Failure, Result, Success
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import CodexHeadroomReading
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom_records import (
+    codex_headroom_assessment_record,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
     DEFAULT_SESSION_HEADROOM_FLOOR_PERCENT,
@@ -71,8 +74,15 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_projection
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_records import (
     session_headroom_assessment_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_headroom_gate import (
+    codex_headroom_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_headroom_io import (
+    read_projected_codex_headroom,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
-    select_factory_credential,
+    injected_credential_slots,
+    register_admission_slot_chooser,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
@@ -83,6 +93,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_bas
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_io import (
     read_projected_session_headroom,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_pool import (
+    PoolSelection,
+    select_pool_slot,
 )
 
 __all__: list[str] = [
@@ -168,6 +182,7 @@ def session_headroom_policy(
     now_iso: str,
     journal_path: Path | None,
     read: Callable[..., SessionHeadroomReading] = read_projected_session_headroom,
+    codex_read: Callable[..., CodexHeadroomReading] = read_projected_codex_headroom,
 ) -> SessionHeadroomPolicy:
     """This evaluation's two dials plus its at-most-once reading of the projection.
 
@@ -186,6 +201,10 @@ def session_headroom_policy(
     MUST be computed only from journaled assessments and MUST NOT issue any
     usage request beyond the one bounded reading this clause already requires"
     a property of the memo rather than a second guarantee to maintain.
+
+    THE MEMO IS THE WHOLE INJECTED SLOT POOL, assessed once and ranked, and the
+    slot it chooses is registered as the factory credential every other consumer
+    resolves, so one slot is chosen per evaluation and used for the dispatch.
     """
     floor = unsafe_perform_io(
         resolve_session_headroom_floor_percent(cwd=repo).value_or(
@@ -197,14 +216,13 @@ def session_headroom_policy(
             DEFAULT_SESSION_HEADROOM_HORIZON_MINUTES
         )
     )
-    taken: list[SessionHeadroomReading] = []
+    taken: list[PoolSelection] = []
 
-    def read_once() -> SessionHeadroomReading:
+    def pool_once() -> PoolSelection:
         if not taken:
-            reading = read(token=_projected_token(), observed_at=now_iso)
             taken.append(
-                _assessed(
-                    reading=reading,
+                _assessed_pool(
+                    read=read,
                     floor_percent=floor,
                     horizon_minutes=horizon,
                     journal_path=journal_path,
@@ -213,7 +231,21 @@ def session_headroom_policy(
             )
         return taken[0]
 
-    return SessionHeadroomPolicy(floor_percent=floor, horizon_minutes=horizon, read=read_once)
+    register_admission_slot_chooser(chooser=lambda: pool_once().chosen_slot)
+
+    return SessionHeadroomPolicy(
+        floor_percent=floor,
+        horizon_minutes=horizon,
+        read=lambda: pool_once().representative,
+        pool_read=lambda: pool_once().readings,
+        codex_read=codex_headroom_source(
+            now_iso=now_iso,
+            journal_path=journal_path,
+            floor_percent=floor,
+            horizon_minutes=horizon,
+            read=codex_read,
+        ),
+    )
 
 
 def _assessed(
@@ -269,19 +301,57 @@ def _assessed(
     )
 
 
-def _projected_token() -> str | None:
-    """The token the dispatch would project: the caam-selected slot, else unnumbered.
+def _assessed_pool(
+    *,
+    read: Callable[..., SessionHeadroomReading],
+    floor_percent: int,
+    horizon_minutes: int,
+    journal_path: Path | None,
+    now_iso: str,
+) -> PoolSelection:
+    """Assess EVERY injected slot once, then rank them for this evaluation.
 
-    The same selector the projection and the usability probe call, so all three
-    name ONE account (`bd-ib-nzp5ln`: reading the unnumbered variable here
-    assessed anthropic-1 while the projection billed anthropic-3).
+    A pool with no injected slot at all is one absent-credential reading, which
+    the filter grades exactly as it always has. The chosen slot is whatever
+    `select_pool_slot` ranks first; the caam-published account plays no part.
     """
-    choice = select_factory_credential(
-        environ=os.environ,
-        home=Path.home(),
-        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
+    slots = injected_credential_slots(environ=os.environ)
+    if not slots:
+        lone = _assessed(
+            reading=read(token=None, observed_at=now_iso),
+            floor_percent=floor_percent,
+            horizon_minutes=horizon_minutes,
+            journal_path=journal_path,
+            now_iso=now_iso,
+        )
+        return PoolSelection(readings=(lone,), chosen_slot=None, representative=lone)
+    return select_pool_slot(
+        readings=tuple(
+            (
+                slot,
+                _assessed(
+                    reading=read(token=_projected_token(env_name=slot), observed_at=now_iso),
+                    floor_percent=floor_percent,
+                    horizon_minutes=horizon_minutes,
+                    journal_path=journal_path,
+                    now_iso=now_iso,
+                ),
+            )
+            for slot in slots
+        ),
+        floor_percent=floor_percent,
     )
-    return os.environ.get(choice.env_name)
+
+
+def _projected_token(*, env_name: str) -> str | None:
+    """The token one injected pool slot would project.
+
+    Each slot is read by its own name; which slot the dispatch then projects is
+    decided once, at admission, and every other consumer follows that choice
+    through `select_factory_credential` (`bd-ib-nzp5ln`: assessing a different
+    account from the one billed gates on someone else's window).
+    """
+    return os.environ.get(env_name)
 
 
 def _bounded_dial(
@@ -332,15 +402,29 @@ def journal_session_headroom(
     A floor of ZERO is neither of those: the reading is still attempted and
     still journaled, which is why the guard tests the floor for `None` rather
     than for falsity.
+
+    THE CODEX ASSESSMENTS ARE A SECOND ROW UNDER THEIR OWN STAGE, written after
+    the Claude one and under the same two conditions: the two providers' rows are
+    each read back by their own baseline reader, so neither may be folded into the
+    other's assessments.
     """
     floor = verdict.session_headroom_floor_percent
-    if floor is None or not verdict.headroom_assessments:
+    if floor is None:
         return
-    journal.append(
-        record=session_headroom_assessment_record(
-            work_item_id=work_item_id,
-            floor_percent=floor,
-            assessments=verdict.headroom_assessments,
-            nodes=verdict.nodes,
+    if verdict.headroom_assessments:
+        journal.append(
+            record=session_headroom_assessment_record(
+                work_item_id=work_item_id,
+                floor_percent=floor,
+                assessments=verdict.headroom_assessments,
+                nodes=verdict.nodes,
+            )
         )
-    )
+    if verdict.codex_headroom_assessments:
+        journal.append(
+            record=codex_headroom_assessment_record(
+                work_item_id=work_item_id,
+                floor_percent=floor,
+                assessments=verdict.codex_headroom_assessments,
+            )
+        )

@@ -3,9 +3,15 @@
 The implementation modules behind the thin-transport wrappers. One
 public module per query-only skill:
 
-- `detect_impl_gaps.py` — mechanical spec→impl gap detection via the
-  Spec Reader; pure read-and-emit (never mutates the JSONL, never
-  prompts).
+- `detect_impl_gaps.py` — mechanical HEADING-COVERAGE enumeration via
+  the Spec Reader: one gap per H2 heading of the governed spec tree that
+  no test exercises. Pure read-and-emit (never mutates the store, never
+  prompts). Despite the `-impl-gaps` name it performs no spec↔impl
+  comparison and never reads implementation state. The enumeration and
+  the stable heading-derived gap-id live in the private
+  `_heading_gaps.py` sibling, which the dispatcher's
+  `no-stale-gap-tied` invariant reads too — so the detector and that
+  invariant can never drift onto two derivations.
 - `list_work_items.py` — JSONL store listing.
 - `context.py` — the item-context read primitive
   (SPECIFICATION/contracts.md §"`context`"): resolves one `plan_slug` or
@@ -56,7 +62,7 @@ public module per query-only skill:
   `ready` items up to the per-repo `dispatcher.wip_cap`, set the assignee,
   transition `ready → active`; a manual / unresolvable-assignee item is
   held + surfaced → Fabro sandbox run, guarded by a coarse wall-clock
-  progress watchdog that `fabro rm -f`-es a sustained-no-progress run and
+  progress watchdog that cancels a sustained-no-progress run through the factory server (keeping its record) and
   reports a distinct `stalled-no-progress` outcome → auto-merge
   confirmation → post-merge janitor in a fresh detached worktree of merged
   master, with provisioning failures classified as janitor-env-degraded
@@ -137,6 +143,50 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   in-memory `index: dict[str, WorkItem]`); callers (`next`,
   `list-work-items`, the Dispatcher) import them from there.
 - `_jsonc.py` — JSONC parsing for `.livespec.jsonc`.
+- The LEDGER-INTENT SCAN of `SPECIFICATION/contracts.md`
+  §"`capture-spec-drift`" (`bd-ib-dzk5jd`, Scenario 38) — the second of the two
+  drift sources, ratified in v026 and unbuilt until now. Three cohesive
+  modules, split pure-from-impure the usual way, and the dependency direction
+  reads bottom-up: `_ledger_intent_cut` (the instant one ratified spec version
+  was CUT, read off its revision record's `revised_at` front matter) →
+  `_ledger_intent_scan` (PURE: the population rule, the statement the four
+  intent fields render into, and the finding) → `_ledger_intent_coverage` (how
+  one scan DESCRIBES itself to the detection-coverage anchor) →
+  `_orchestrator_ledger_intent`
+  (the `orchestrator ledger-intent-scan` subcommand: the injected judge, the
+  store read, the detection-coverage record and the envelope).
+  Five properties an editor must not invert. The FOUR intent fields are judged
+  as ONE statement rather than four, because the clause names them as one
+  item's intent and a title and its acceptance criteria are halves of one
+  behaviour — judging either alone reports `unstated` for intent the other
+  states. The stored TYPE is neither rendered into the statement nor allowed to
+  filter: "an item's type is never a detection exclusion" is the clause's own
+  wording, and `bug` / `chore` / `non_functional` is a DISPATCH exemption that
+  lives elsewhere. An UNRESOLVABLE cut REFUSES rather than defaulting, because
+  both available sentinels are silently wrong in opposite directions — the
+  epoch admits every item the tenant holds, so the scan reports a population
+  nobody scoped, and a far-future instant admits none, so it reports the clean
+  empty answer on exactly the population it exists to cover. An UNREADABLE
+  verdict exits the wire-shape code naming each item it could not judge, never
+  reporting those items as carrying no drift, which is the one answer a
+  detector must make impossible. And the coverage record is written through the
+  SHARED `_detection_coverage.record_detection_run` and never assembled here:
+  that writer is the only surface that may decide whether a completed record is
+  claimable, so a scan that judged its own completeness would be the second
+  authority on the all-or-nothing rule.
+  THREE FURTHER PROPERTIES OF THE COVERAGE PROJECTION. The record is written
+  under the DRIFT operation, because the ledger-intent scan is one of the two
+  sources the clause names and a private operation name would make its records
+  invisible to the staleness fact computed from that operation. The COVERAGE
+  POINT is supplied by the caller and never invented, since the drift point is
+  the processed-merge FRONTIER and only a caller that walked those merges knows
+  it — a standalone scan has done half the detection, so an invented point
+  would clear drift staleness on a pass that never ran the impl-to-spec half.
+  And the WRITE half does not fail soft where `completed_coverage_point`'s read
+  half does: that read answers `None` for an anchor naming no live row because
+  it runs inside the needs-attention composition, while here the record IS what
+  the contract requires of the invocation, so the expected `BeadsMappingError`
+  is caught only to turn it into a refusal naming the anchor.
 - `_dispatcher_sandbox_worktree_pack.py` — the gitignored worktree-discipline pack
   a fleet-default sandbox installs before anything reads it (`bd-ib-tlmq3m`,
   Scenarios 30 and 96), plus the premise that decides whether it is owed. PURE,
@@ -160,6 +210,207 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   renders NO worktree exclusion, and that is deliberate: every pack member is
   already in the governed repository's own tracked `.gitignore`, which is the same
   fact that makes the pack absent to begin with.
+- FACTORY OVERFLOW SELECTION — where an UNPINNED dispatch is placed, in THREE
+  cohesive modules, and the dependency direction reads bottom-up:
+  `_dispatcher_overflow_factories` (the committed-only
+  `dispatcher.overflow_factories` array, its three outcomes and the pre-claim
+  refusal) and `_dispatcher_factory_capacity` (ONE candidate's reading: its own
+  server's non-terminal run count and its own `max_concurrent_runs`, or which
+  measurement stopped it) -> `_dispatcher_overflow_selection` (the ranking, and
+  the one journal record per selection). `_dispatcher_factory_ledger._placement`
+  is the one caller; `_factory_default` is the leaf both the overflow grading
+  and `_config.resolve_fabro_factory` read the configured default from.
+  Seven properties an editor must not invert. The comparison is a RATIO and
+  never a count, a free-slot tally or remaining capacity: hp reports a
+  `max_concurrent_runs` of 10 against petri's 2 (measured 2026-10-19), which is
+  the asymmetry the rule exists for, and the ratio is also the only reading
+  under which 5-of-10 and 1-of-2 TIE — at which point the clause takes the
+  EARLIER candidate, which is the default. Selection NEVER refuses, defers or
+  counts on capacity grounds, so the no-free-slot arm is a PLACEMENT on the
+  default whose scheduler then queues the run, and nothing in these modules has
+  a refusal to return. A candidate that could not be MEASURED has no free slot,
+  and its reason rides the record: a saturated candidate reaches the ranking
+  identically, so without the reason the journal cannot say which measurement
+  stopped it. NEITHER figure is ever coerced to a zero — a run count of zero is
+  an idle factory and a ceiling of zero is a stopped scheduler, so a coerced
+  zero is indistinguishable from a measurement, and in the run-count direction
+  it is the one coercion that sends work to a server nobody could reach. A
+  ceiling below 1 is NOT an unreadable read: its effect is identical (no free
+  slot) and its evidence is the opposite, so it is carried as a reported figure
+  and the journal shows `0 of 0` rather than a reason that sends an operator to
+  debug a read that worked. The registry is resolved BEFORE either read and
+  graded here, so an unresolvable one names the registry instead of surfacing as
+  a factory that declares no server — the same `None` value an unconfigured
+  entry carries and a completely different remedy. And the committed array is
+  graded against `_factory_default.configured_factory_name` and never
+  `resolve_fabro_factory`, which reads `LIVESPEC_FABRO_FACTORY` first: an
+  operator who exported the overflow factory's own name would otherwise see the
+  array that names the committed default ADMITTED — the one shape the clause
+  forbids — and would see the candidate list open with the overflow factory,
+  where a utilization tie makes it win.
+  ONE ASYMMETRY BETWEEN THE TWO LEDGER CALLERS IS LOAD-BEARING. Both
+  `_unrecorded_pin` (the pre-claim gates and the admission stamp) and
+  `resolve_dispatch_factory_target` RANK; only the second JOURNALS, because it
+  is the one that records the chosen factory. A record per gate would make the
+  clause's "one record" several, each describing a reading no dispatch acted on.
+  THE RANKING IS TAKEN ONCE PER INVOCATION, through `_ranking`, and `_placement`
+  takes it rather than performing it. Every unpinned item of one wave resolves
+  to the same ranked choice, so a ranking reached inside the gate's per-item
+  loop spends four engine round trips per ITEM — and is several independent live
+  readings, which can disagree, while the `dispatcher.minimum_release` floor is
+  graded only against the targets that one gate call returns.
+  AND THE PIN PRECEDENCE CARRIES ITS OWN ENVIRONMENT LAYER, in `_pinned_factory`
+  rather than in `resolve_fabro_factory`. An unpinned placement hands that
+  function the RANKED name, which suppresses its `LIVESPEC_FABRO_FACTORY`
+  layer, so a dispatch pinned only by the variable ranked anyway — spending the
+  reads the clause forbids a pinned dispatch, and stamping the claim with a
+  factory the dispatch never reaches, since the resolution does honour the
+  variable. That variable is the only routing mechanism `drive.py` has, and it
+  is used precisely when the recorded factory identity is the point.
+  THE LAYER SITS ABOVE THE RECORDED PIN, not below it, which is the ratified
+  order of the selection clause and one place where it is spelled. A pin is the
+  item's OWN dispatch history and the variable is this invocation's routing
+  decision, so an item an operator re-routes is exactly one that has been
+  dispatched elsewhere before — measured 2026-10-19, an item carrying fifteen hp
+  journal rows was dispatched with the variable naming `petri` and had its claim
+  stamped `hp`, after which reconcile held that claim against hp for a run living
+  on gmktec. `explicit_dispatch_factory` therefore reads the `--factory` FLAG
+  alone: the variable is one layer below it in `_pinned_factory`, and reading it
+  in both places is what gave a namespace-carrying caller its own copy of the
+  order and let the two copies drift apart.
+  THAT FLAG READER IS PUBLIC BECAUSE ADMISSION NEEDS IT AND HOLDS NO NAMESPACE.
+  The valve writes the pending claim stamp, and the flag is the one precedence
+  layer the variable cannot stand in for, so each of the three dispatch paths
+  reads it and hands `admit_and_select` the NAME through `explicit_factory`. A
+  valve reaching for `args.factory` itself would be the second reader this
+  entry's first half exists to retire.
+- `_dispatcher_record_files.py` — the `generator` key of a committed
+  `dispatcher.record_files` entry, read and graded, with the pre-claim refusal a
+  malformed one earns. The declared-record-file clause makes a generated record
+  file's correct content "its generator's output over the tree it sits in", so a
+  refresh resolves a conflict in one by RUNNING that argv rather than by merging
+  its text; until this module existed nothing read the key, so no repository
+  could declare a generated record file at all. Same
+  answer-or-finding-or-absent shape `_dispatcher_overflow_factories` uses, and
+  wired into the same `_dispatcher_run_checks` arm. Three properties an editor
+  must not invert. The resolution is POSITIONAL and grades `generator` ALONE:
+  the same ratified paragraph governs the entry-wise merge of Scenario 200,
+  whose `path` / `format` / `key` parse is a separate unimplemented TODO owned
+  by work-item bd-ib-davaxq, so grading those keys here would make this a second
+  authority on the entry grammar and the two would drift in the direction
+  nothing announces — both would keep producing a well-formed entry list. An
+  entry that names NO generator is an ANSWER and resolves to `None` in its slot,
+  never a refusal, because the clause makes the key optional and a refusal there
+  would stop every repository that declares a record file at all. And a refused
+  declaration yields the finding and NOTHING ELSE, never the slots that happened
+  to parse: the refusal exists to precede a refresh that would otherwise run one
+  of these commands, and a list built from the survivors would read exactly like
+  a healthy one. Scenario 238's refresh behaviour is NOT here — it is produced by
+  the graph's own command scripts against a released payload, so it is captured
+  on an operator host rather than proved in a sandbox.
+- `_dispatcher_record_file_regeneration.py` — the Dispatcher-materialized program
+  the refreshing stages resolve a GENERATED record file through, plus the prepare
+  step that lands it. Three modes, one per thing a refresh needs to decide:
+  `--resolve` writes every conflicted generated record file from its generator
+  and stages it, `--brief` emits the `regenerate: <path> via <generator argv>`
+  lines a refresh-repair brief carries, and `--check-head` fails a refreshed head
+  whose committed generated file is not its generator's output, with the gate
+  target `generated-record-file:<path>`, BEFORE the repository-declared gate
+  runs. Four properties an editor must not invert. It reads `path` where
+  `_dispatcher_record_files` deliberately does not, because a generator is an
+  argv that rewrites a FILE and there is no pairing without it; what it does with
+  a `path` it cannot use is the whole of the distinction — it refuses the
+  resolution outright rather than dropping the entry, since a dropped entry makes
+  the file read as UNDECLARED, which is exactly the state in which a `fix` turn
+  hand-merges the register. An UNREADABLE declaration is never an empty one: both
+  read as "no generated record file here", so collapsing them hand-merges a
+  register whose declaration was merely unparsed. A conflicted declared record
+  file naming NO generator is a refusal rather than a no-op, because only the
+  entry-wise merge that work-item bd-ib-davaxq owns resolves one and that is
+  implemented nowhere — writing the generated half of a wider conflict would
+  stage a tree still carrying the other file's markers. And `--check-head`
+  RESTORES every path it touched, comparing the tree's status against the reading
+  taken before any generator ran rather than demanding cleanliness: the
+  repository-declared gate runs immediately after it, so output left behind
+  would gate a head nobody committed, while demanding a clean tree would hold on
+  every sandbox's own provisioning residue.
+- `_dispatcher_journal_file.py` — the append-only dispatch journal and the
+  attribution stamp it owns, split out of `_dispatcher_io` for the same reason
+  `_dispatcher_shell_runner` was: that aggregate's import closure reaches the
+  watched Fabro launcher, which reaches the factory-ledger resolution, so a
+  module that writes the journal AND resolves a dispatch factory closes a cycle
+  — and the overflow-selection record is exactly such a writer.
+  `_dispatcher_io` still RE-EXPORTS `JournalFile` and `utc_now_iso`, so every
+  existing caller is untouched; only a module inside the launcher's own import
+  reach needs the leaf directly, which is also why `_acp_factory_run_reader`
+  now takes `ShellCommandRunner` from `_dispatcher_shell_runner` rather than
+  from the aggregate. The stamped-once refusal moved WITH the append that
+  applies it: a copy left behind would be a second authority on which fields no
+  writer may supply.
+- `_dispatcher_pass_snapshot.py` — the ONE parsed snapshot of the append-only
+  dispatch journal a dispatch pass shares, and the pass-scoped `fabro inspect`
+  memo (`bd-ib-6bbcda`). A host profile put 98% of a pre-launch dispatcher's CPU
+  in readers each re-parsing a 307 MB journal. `pass_snapshot()` opens the scope
+  (the three dispatch commands and `reconcile_runs_pass` do), readers ask
+  `snapshot_records` and fall back to their own read when it answers `None`, and
+  the launch calls `release_pass_snapshot()` because the snapshot's memory is a
+  pre-launch cost. Three properties an editor must not invert. The snapshot is
+  never stale: `JournalFile.append` hands each record to `record_journal_append`,
+  another process's append is read from the offset already consumed, and a
+  rewritten file fails its anchor and is rebuilt. A reader keeps its OWN account
+  of a failure this module cannot read (`None`, never an invented empty), which
+  is why `_acp_hold_ledger` still raises on an unreadable journal: the provider
+  limit disposition guards exactly that `OSError`. The inspect memo is keyed
+  on the factory SERVER and the run id, never on a port object, because every
+  reader opens its own port onto the same factory, and it never holds the pass
+  lock across the read: the selection-replay lane inspects different runs on
+  worker threads, and a second reader of the SAME pair waits for the first
+  reading instead. And `_dispatcher_journal_tail.journal_tail_records` answers
+  from the pass snapshot while one is live, so the readers already routed
+  through the process-wide tail cache share the pass's one parse too.
+- `_dispatcher_item_run_target.py` — the factory ONE item's dispatch went to,
+  resolved from the item's own recorded `dispatch_factory` stamp and falling
+  back to the repository default, plus `ACP_EVENTS_TIMEOUT_SECONDS`, the bound
+  on a single `fabro events` read. Both names lived in the `agent.acp.failover`
+  event projection that v127 retired (`bd-ib-qm6r1`) and neither belonged to
+  it: the per-attempt cost read `_dispatcher_cost_chain` performs asks the same
+  two questions. Three properties an editor must not invert. It answers `None`
+  and never a `FactoryTarget` carrying `server=None`, because that value is
+  what an UNCONFIGURED repository holds and every consumer reads it as the
+  ambient LOCAL engine — so answering with one surveys whichever Fabro the
+  dispatching host runs and reports a clean reading taken on the wrong machine,
+  the trap `AGENTS.md` catalogues. Every arm fails SOFT onto that `None`,
+  because each caller runs after the work it follows has already finished and
+  an unreachable tenant must not raise through a caller with nothing left to
+  do. And the item's stamp wins over the repository default, for the reason
+  `targeted_factories` gives: an item dispatched to one factory must not have
+  its run looked for on another, where the clean answer is a run that does not
+  exist. It is a LEAF of its own rather than a member of the cost chain, so a
+  later retirement of some other consumer cannot take the cost read's bound
+  with it — a removal whose only symptom is an unbounded subprocess against a
+  slow factory.
+- `_fabro_port_workflow.py` and the credential half of `_fabro_port_auth.py` —
+  the two invocations whose bodies left the `FabroPort` class when the facade
+  reached its file LLOC ceiling and the `settings` verb needed room. Both stay
+  inside the `_fabro_port` facade FAMILY, which is what keeps every engine
+  invocation behind the one seam `check-fabro-port-seam` enforces, and both are
+  named in that check's `DISCOVERY_ANCHORS` — a family member holding an engine
+  invocation must be, or the check's SEAM control fails rather than certifying
+  an exemption over a module it does not account for. `fabro auth login` sits
+  beside `resolve_bearer_token` because it WRITES the `~/.fabro/auth.json` that
+  resolution reads, so the write and the read of one file are stated in one
+  place. `FabroPort.settings` is read for ONE figure — the server's own
+  `scheduler.max_concurrent_runs` — and hands back the whole payload, because
+  the nesting differs between builds and
+  `_fabro_port_records.scheduler_max_concurrent_runs_from_payload` is where
+  this family's readings of a payload live. That reader SEARCHES for a
+  `scheduler` block rather than reading a fixed path, and the reason is
+  measured: the ratifying revision named `server.scheduler.max_concurrent_runs`
+  while the 2026-08-22 retention spike recorded the block under
+  `server.server`, so a fixed-path read answers one build and returns `None` for
+  the other — and `None` reads downstream as "no free slot", which retires
+  overflow selection silently while every surface still reports a healthy
+  dispatch.
 - `_dispatcher_minijinja_escape.py` — the shared MiniJinja literal escaper every
   untrusted-prose renderer routes through, so arbitrary item prose cannot alter
   graph semantics when Fabro renders the goal. It lived in `_dispatcher_overlay`
@@ -285,6 +536,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   URL already carrying a username and a password, so the token Fabro embeds in
   the origin URL still wins there. That precedence is git's own, not something
   arranged here, which is why both cases are asserted as a pair.
+- `_dispatcher_prepare_payload.py` — how a prepare step carries a helper program
+  or archive WITHOUT putting its bytes in the step's script (`bd-ib-coxsfu`). The
+  Petri engine's default `compact` fidelity re-sends every completed command
+  stage's full `Script:` text on every agent request and never sends its `env`, so
+  46 prepare scripts cost about 241,400 tokens, 71% of the first-request floor.
+  A payload step is therefore a short script that writes a variable
+  (`payload_write_command`, `printf %s` so nothing in the payload is expanded) plus
+  the bytes in the step's own `env` (`PrepareStep`, `render_prepare_step`). Three
+  properties an editor must not invert. The variable is checked with `${VAR:?}`
+  before it is written, because a step whose env the engine did not deliver would
+  otherwise write an EMPTY helper and succeed. Each value is capped under the
+  kernel's per-string exec limit (`bd-ib-gnli`) and measured in BYTES. And the
+  strings are written WITHOUT `json.dumps`'s ASCII escaping: it emits a non-BMP
+  character as a surrogate pair, which TOML rejects, so one emoji in a pull-request
+  body made the whole overlay unparseable. Do NOT put a payload back in a script
+  to "keep it readable" — `test_dispatcher_prepare_payload_off_script` renders the
+  whole overlay and refuses any heredoc or long base64 run in a script. A test that
+  EXECUTES a payload step needs the script AND its env (`tests/prepare_step_support`).
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
   shared by ALL FOUR projections that write a fixed `/workspace` path:
@@ -571,6 +840,89 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   and that event would open a new window, so within one window a node once
   observed open is still open and a later reading that misses it has failed to
   observe it (the events reader tolerates a stream truncated mid-record).
+- The `_dispatcher_run_wall_*` family — the WHOLE-RUN WALL BUDGET
+  (`bd-ib-sdxfsn`, Scenario 175, `contracts.md` §"Dispatcher progress watchdog"
+  and §"ACP node timeouts", v133). The stall window above bounds a run's QUIET
+  TIME and cannot bound a run that keeps emitting events while heading for
+  `needs_human`; measured on hp, such a run holds a factory slot for hours and
+  no layer reclaims it. The budget is the second, orthogonal bound: past it the
+  run is exported and cancelled whatever its event stream says.
+  The family splits by what each piece can fail on, and the split is not
+  cosmetic — the clock is the half that is easiest to get silently wrong, so it
+  carries no I/O at all.
+  - `_dispatcher_run_wall_budget.py` — the budget VALUE and its three-layer
+    resolution (per-dispatch argument, then `dispatcher.run_wall_budget_seconds`,
+    then the workflow default of 21600 seconds), plus the pre-dispatch refusal
+    `node_timeout_conflict`. The resolved `RunWallBudget` carries its own LAYER,
+    which is what makes every downstream record able to name where the number
+    came from; a bare float would make the record say what the bound was and not
+    which surface an operator must edit to change it. The refusal names both keys
+    and both values and fires BEFORE any run exists, because a budget smaller
+    than a node's own timeout cancels a healthy node every time and the cancel
+    reads exactly like a legitimate one.
+  - `_dispatcher_run_wall_clock.py` — the SLOT-HOLDING clock. PURE, and the
+    module whose key tuple is the whole claim: `RUNNING_SINCE_KEYS` deliberately
+    EXCLUDES `start_time` and `start_record`, which include the time a run spent
+    `runnable` in the factory's queue. A run charged for queue time is cancelled
+    for a slot it never held, and the record would read identically. When no
+    running instant can be read and no poll has yet observed the run running the
+    start is UNFIXED, `slot_holding_seconds` answers `None`, and
+    `budget_exceeded` is `False` — unmeasured means no cancel, never a cancel on
+    a default. The start is fixed ONCE per run (the watch's `RunWallBudgetWatch`
+    holds it), so a later poll whose record has lost the instant cannot restart
+    the clock.
+  - `_dispatcher_run_wall_budget_preserve.py` and
+    `_dispatcher_run_wall_budget_watch.py` — the EXPORT-THEN-TERMINATE
+    precondition and the per-poll verdict. The pointer is written AND READ BACK
+    before `fabro rm -f`, and a read-back that fails yields `HELD` rather than
+    `CANCELLED`: the run keeps its slot for one more poll and the export is
+    re-attempted. The `HELD` arm must stay an explicit `continue` in the watch
+    loop and never a fall-through — a quiet run past its budget satisfies the
+    stall rule as well, so a fall-through cancels it as stalled, with the wrong
+    record, the wrong disposition, and the pointer the hold exists to secure
+    still unwritten.
+  - `_dispatcher_run_wall_budget_records.py`,
+    `_dispatcher_run_wall_budget_comment.py` and
+    `_dispatcher_run_wall_budget_disposition.py` — the two journal records, the
+    durable ledger comment, and the rest state. The `exceeded` record composes
+    the shared `watchdog_cancel_fields`, so a budget cancel and a stall cancel
+    describe one run the same way; the `held` record deliberately carries NO
+    stage, pull request or head, because nothing was cancelled and a record
+    naming a publication would read as a completed cancel. The disposition
+    writes the comment BEFORE the blocked transition and rests the item at
+    `blocked` / `needs-human` carrying the remedy `resolve-blocked:<id>:ready`;
+    it has no release arm, since a budget cancel is not a non-convergence
+    observation and must not bounce the slice to `backlog`.
+  THE `exceeded` RECORD ALSO ANCHORS A RESUME, and that reader is
+  `_dispatcher_resume_cancel_anchor` rather than anything in this family — the
+  clause says the record "anchors resume ... exactly as a
+  `watchdog-stall-cancel` record does", so the anchor's stage test is MEMBERSHIP
+  in its `_CANCEL_SOURCES` map and every other bound reads one shape. Two
+  properties an editor must not invert, and both are about failing in the
+  expensive direction. A reader recognising only the stall stage REFUSES
+  NOTHING: the budget row is well-formed, the anchor returns nothing, the resume
+  reports a headless pull request, and the re-dispatch reclaims the publish
+  branch and spends another whole budget rebuilding implement, janitor and
+  publish_draft — the waste the budget exists to stop, re-entered through the
+  recovery path. And the two stages name DIFFERENT sources
+  (`SOURCE_CANCEL_RECORD` / `SOURCE_BUDGET_CANCEL_RECORD`), each the journal
+  stage an operator can grep for, so the source rides the `CancelAnchor` rather
+  than being read from a constant at the call site; one shared value would send
+  an operator reading a budget-anchored resume after a row that run's journal
+  does not carry. A third cancel class means one more row in that map and
+  nothing else.
+  The extractions that made room for it are leaves with no budget knowledge of
+  their own: `_fabro_record_instant.py` (the nested-record instant reader, moved
+  verbatim out of `_dispatcher_reconcile_runs_grace.py`),
+  `_dispatcher_journal_rows.py`, `_dispatcher_watchdog_run_probe.py`,
+  `_dispatcher_stale_item_reap.py`, `_dispatcher_watch_poll.py` (one poll's
+  whole observation — its `stamped_attribution` call is an explicit statement
+  BEFORE the `WatchPoll` construction, because field-order evaluation would
+  otherwise put the reap row ahead of the dispatch stamp rows in the journal),
+  and `_dispatcher_shell_runner.py` (`ShellCommandRunner` and `child_env`, split
+  out of `_dispatcher_io.py` to break the import cycle the budget's preserve leg
+  closed; `_dispatcher_io.py` still RE-EXPORTS both, and only a module inside the
+  launcher's own import reach needs to import the leaf directly).
 - `_dispatcher_sandbox_image_source.py` — WHICH of the three sources supplies one
   dispatch's sandbox image (`bd-ib-jy7fuh`, Scenario 169). PURE and a leaf; the
   decision is resolved ONCE in `_dispatcher_loop_plan`, rides
@@ -602,13 +954,63 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   asked". The record's `sandbox_image` argument is REQUIRED for the mirror
   reason: a default is how one dispatch's record silently reports the
   no-declaration answer for a dispatch that had a declaration.
+  THE TWO `[environments.<id>.*]` TABLES THE OVERLAY RENDERS ARE KEYED ON
+  DIFFERENT IDS, and the asymmetry is a correctness requirement rather than an
+  oversight (`bd-ib-kyeor4`). The ENV table follows the catalog environment the
+  resolved FACTORY declares, because the engine reads an overlay only from
+  `[environments.<selected id>]` and the id-less `[run.environment]` — so once
+  the dispatch began passing `--environment <that id>`, a factory environment
+  spelled differently from the committed `[run.environment] id` made the engine
+  resolve an EMPTY `env` and silently drop every projected variable and every
+  credential (measured on gmktec run 01M5MH0JBKGJ2HRW7VCBP3PGK4, which died in
+  preparation with an empty `CODEX_HOME`, against a Docker run on the same
+  server under the committed id that resolved 37 keys). The IMAGE table stays
+  keyed on the COMMITTED id, because on a registered-provider environment Petri
+  refuses an image found under the selected id and the image is the catalog's to
+  supply — so that is where `resolve_sandbox_image` finds the committed
+  declaration and WITHHOLDS it. Moving both tables together reads as correct at
+  the env table while leaving the committed pin standing under a key the engine
+  does read, overriding the catalog. The id is the SAME
+  `factory_environment_id` projection `fabro run --environment` is rendered
+  from, threaded from the plan through `materialize_overlay` rather than
+  re-resolved: a second resolution can key the table away from the environment
+  the launch selected, and both readings are well-formed. `None` is a factory
+  declaring none, which is the pinned-engine posture and keys the env table
+  exactly where every dispatch keyed it before the parameter existed.
+- `_dispatcher_overlay_input_tokens.py` — rendering the committed run config's
+  `{{ inputs.<name> }}` prepare-command tokens HOST-SIDE, because the pinned
+  engine renders `inputs.*` in graph node attributes and leaves `run.prepare`
+  verbatim. Moved out of `_dispatcher_overlay` by cohesion when the env-table
+  keying above needed room under that file's LLOC ceiling: the overlay ASSEMBLES
+  a run config, while this is the TOML-string surgery one of its inputs needs.
+  Entry point only — the TOML escaper stays private inside it, because importing
+  a `_`-prefixed name across modules is what pyright strict's
+  `reportPrivateUsage` and the `private_calls` check both reject — and NO
+  re-export shim was left behind, for the reason `_dispatcher_minijinja_escape`
+  records. An input name the mapping does not carry is LEFT ALONE rather than
+  blanked, so an unresolved premise fails visibly at its own step instead of
+  quietly becoming a no-op.
+- `_dispatcher_item_ledger_reads.py` — the ONE item's own ledger readings a
+  dispatch needs before it can decide: the operator riders its goal brief must
+  carry, and the raw beads labels its per-item policy overrides ride on. Moved
+  out of `_dispatcher_credentials` by cohesion for the same reason, and for the
+  same reason the credential-wrapper reader left it: that module PROJECTS
+  credentials and sibling clones into a sandbox overlay, and neither of these is
+  a credential. Both route their failure as DATA rather than raising, and the two
+  reasons differ — a brief assembled WITHOUT comments silently drops binding
+  scope nothing else announces, so a failed read refuses the dispatch, while an
+  unreadable label record is the same absence an unlabelled one is, so that read
+  answers the empty tuple for a record carrying no labels and a refusal only for
+  a read that could not be taken. `_LEDGER_READ_ERRORS` moved WITH them: a copy
+  left behind would be a second account of which beads failures are routable as
+  data.
 - `_dispatcher_proof_budget.py` — the declared size budget every proof record is
   measured against before it is posted (`bd-ib-555xcd`). PURE, and the ONE place
   the three figures are named: the MEASURED forge comment ceiling, the record
   budget below it, and the per-assertion inline allowance a capture agent plans
   its proof recipe against. Three properties an editor must not invert. The
   ceiling is a MEASUREMENT with its provenance recorded beside it
-  (`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`),
+  (`plan/archive/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`),
   and it is NOT 65536 — that figure is what the forge's own rejection message
   says, and that message is wrong in both its number (the enforced ceiling is
   four times it) and its unit. Every measurement is in UTF-8 BYTES and never
@@ -755,6 +1157,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   every new refusal to be wired twice. Do NOT re-inline it into either command
   module: that is the duplicate returning, and it is also what put the
   single-dispatch module over its file LLOC ceiling.
+- `_dispatcher_session_headroom_screen.py` — the SECOND row of that wall, and
+  the admission session-headroom assessment moved ahead of every row that spends
+  anything (`bd-ib-tsrkqf`). The assessment used to run only inside the admission
+  valve, after the App reach probe, the Definition-of-Done judgement's model
+  call, the proof-asset store and the Codex credential gate, so a dispatch it was
+  going to refuse paid about 14 minutes for work it threw away. Three properties
+  an editor must not invert. It adds NO decision: the verdict comes from the
+  valve's own `admission_acp_verdict` and the refusal is journaled through the
+  valve's own `filter_eligible_candidates`, so the rows and the scheduled
+  reevaluation are the ones the valve writes. It refuses ONLY a headroom-governed
+  verdict, because a chain emptied by a hold or a configuration fault keeps its
+  existing position. And a dispatch it passes spends NO second usage request:
+  the verdict rides `args` to the valve, which reuses it only while it is younger
+  than `SCREENED_VERDICT_REUSE_SECONDS` and repeats the assessment otherwise,
+  because the clause requires the assessment before claim and the rows between
+  the two can run for minutes.
 - `_dispatcher_codex_credential_gate.py` — the fourth refusal in that wall,
   and the pre-CLAIM half of the host Codex credential decision
   (`SPECIFICATION/scenarios.md` Scenario 19). Three properties an editor must
@@ -946,6 +1364,77 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   dispatch — every dispatch in this fleet today — pays no round trip.
   `_dispatcher_acp_nodes._resolve_chains` is where it is called, before the
   attach.
+- The SELECTION-TO-EXECUTION REPLAY of `contracts.md`'s "Factory-configurable
+  ACP fallback priority" clause (`bd-ib-augqc2`, Scenario 127) — the other half
+  of the v127 proposal whose first half retired the engine failover projection.
+  Split pure-from-impure the usual way:
+  `_acp_fallback_selection_warnings` (PURE: what one selection record plus one
+  run's node outcomes EVIDENCE — a non-primary selection the run executed is a
+  warning, a primary selection it executed successfully is the attempt that can
+  retire one) → `_dispatcher_reconcile_acp_selection` (the lane:
+  `pass_selection_replays`, which `reconcile_runs` calls after its factory loop).
+  The RULE stayed in `_acp_fallback_warning_ledger`, which imports both entry
+  points back, so the contract's four clearance conditions are stated once and
+  both sources of evidence hand the same `AcpPrimaryAttempt` to the one
+  predicate; `AcpPrimaryAttempt` therefore moved to
+  `_acp_fallback_warning_records`, since defining it in either module that reads
+  it would close an import cycle.
+  Six properties an editor must not invert. The outcome map is TRI-STATE and the
+  third state is load-bearing: `None` is a run whose outcomes could not be READ,
+  which must neither mint a warning nor clear one, while the empty tuple is a
+  selection that joins to no executed node — the clause's own "an unexecuted
+  preflight selection for a node never reached emits no fallback warning". The
+  outcome keys are VISIT-QUALIFIED and a selection's are not, so they are divided
+  through the port's own `fabro_stage_node` before matching; Petri keys its stage
+  map `<node>@<visit>` and comparing the two directly matches nothing, SILENTLY,
+  which leaves every warning unminted and the attention lane reading as a
+  repository where no fallback has ever run. The join is the immutable
+  `dispatch_id` both records carry and never journal order, which is the only key
+  that survives a same-item re-dispatch. It is a LANE of its own rather than a
+  step of the orphan path, exactly as the container sweep is: the orphan join
+  considers only NON-TERMINAL runs while this evidence belongs to runs that have
+  ENDED, so a replay folded into that loop would never see one. The SUPERSEDE
+  pass runs ONCE per reconciliation and not once per factory, because it is
+  driven by the repository's current primaries rather than by any run and a
+  per-factory call would make one replacement read as several. And a DRY RUN
+  replays nothing at all — every output of the lane is a journal append, so a
+  pass asked only to report has nothing it could legitimately do and a factory
+  read there would be a round trip taken for a decision nobody will record.
+  `primary_attempts_from_scan` is deliberately LEFT in place beside the new
+  reading: it reads the ENGINE event stream, which is how the existing fallback
+  audit records stay readable, and the clause requires exactly that.
+  THE REPLAY SET IS BOUNDED, and both bounds are read off the journal rather
+  than configured. Ledger-side idempotence makes a repeat APPEND harmless and
+  says nothing about the cost of taking the reading again, so the set itself has
+  to be bounded: the root timer drives this lane every ten minutes, and an
+  unbounded set re-inspects every stamp the journal has ever carried — per-pass
+  cost growing monotonically with the repository's lifetime dispatch count, and
+  the growth feeding back, since the journal is the same file the lane re-reads
+  per warning and per attempt. A stamp older than `SELECTION_REPLAY_WINDOW`
+  measured from the journal's NEWEST stamp is passed over, and a run already
+  reported unavailable `SELECTION_OUTCOMES_UNAVAILABLE_ATTEMPT_LIMIT` times is
+  too. Three properties an editor must not invert. The window's reference is the
+  journal's own newest stamp and never a wall clock, so the window is a span of
+  the repository's own dispatch history and a pass decides the same thing
+  whenever it runs — and that reference is taken across EVERY factory, because a
+  per-factory horizon lets a quiet factory's whole history stay in the set for
+  ever, which is the unbounded set arriving one factory at a time. The attempt
+  ceiling stops the lane ASKING and clears nothing, which is what keeps it
+  compatible with the clause's "MUST NOT clear an existing warning": factory run
+  storage is pruned, so a historical run becomes PERMANENTLY unreadable and the
+  ratified retry has to be a retry rather than one append per pass for the rest
+  of the journal's life. And both are applied in `stamped_runs` (module
+  `_dispatcher_reconcile_acp_selection_stamps`, which owns the window, the
+  ceiling and the stage names) rather than inside `_replay_one_run`, because
+  the cost they bound is the `fabro inspect` that function opens with — a
+  ceiling read after the round trip has been spent bounds the journal and not
+  the pass. A third bound skips a run whose node outcomes were already read
+  while the run was TERMINAL (`SELECTION_OUTCOMES_READ_STAGE` on the journal,
+  so it survives the fresh process each timer tick starts); a run still moving
+  or with an unrecognised status is read again, and an unreadable run earns the
+  unavailable record instead and keeps its retry. The inspects that remain run
+  concurrently, at most `SELECTION_INSPECT_WORKERS` at once, while every journal
+  append stays in the pass's own thread.
 - `_acp_dispatch_coverage` is the DISPATCH-scoped half of the legacy
   provider-record coverage rule: `_acp_hold_coverage` answers it for one
   candidate, and this answers it for the whole set a dispatch's resolved node
@@ -1082,6 +1571,334 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   such a record covers only a candidate whose own key the engine would have
   recorded the same way, and broadening it would name an entitlement nobody
   declared.
+- `_acp_availability_confirmation.py` — the POST-EXPIRY CONFIRMATION of the same
+  section's "A candidate covered by an expired domain or candidate hold carries
+  an outstanding availability confirmation, and per-node selection MUST skip
+  that candidate until that confirmation is satisfied" (`bd-ib-nk7jiz`,
+  Scenarios 60, 94 and 127). PURE, and the other half of the retirement entry
+  above: expiry ENDS a hold and establishes nothing, so before this an expired
+  observation made its candidate immediately selectable and every expiry was
+  followed by a real dispatch that rediscovered the outage by failing — the
+  measured outages lasted DAYS against a fifteen-minute bounded expiry, so that
+  rediscovery was the ordinary case. `_acp_hold_ledger` now carries the expired
+  records alongside the live ones, `_dispatcher_acp_preflight` derives the
+  confirmations from the SAME factory read the holds come from, and
+  `_acp_candidate_preflight` applies them as one more skip reason.
+  Four properties an editor must not invert. The retirement predicate is REUSED
+  rather than restated, because `retired_by_success` already carries both the
+  time ordering — which IS the clause's "MUST NOT satisfy a newer observation" —
+  and the domain-or-candidate scoping; what differs is the direction, since a
+  confirmation must retain the observation id a retirement deletes. A success
+  whose factory row recorded NO CANDIDATE KEY confirms nothing for anybody, the
+  deliberate asymmetry with retirement: such an attempt still retires the right
+  DOMAIN record, but availability is confirmed only by a turn whose candidate
+  identity is known, so the candidate keeps its outstanding confirmation. A
+  confirmation is matched on the candidate's EXACT identity pair and never on
+  the hold's scope, which is what leaves one DOMAIN observation outstanding per
+  covered candidate separately. And the SCHEDULING is the cadence of
+  `dispatcher.credential_reprobe_interval_seconds` and never a provider's own
+  advertised reset instant — an expired record has no expiry left for
+  `_acp_availability_wait._reevaluate_at` to take, so the claim is the only
+  other instant in the evaluation and it is carried as unverified provenance
+  on the headroom reading alone, read by no decision.
+  `dispatcher.availability_probe_timeout_seconds`
+  (`_dispatcher_policy_settings`, committed-only, positive integer, default
+  120) bounds the confirmation TURN, which `_acp_availability_probe` below
+  builds and `bd-ib-n3pzcl` consumes the key for.
+  THE GOVERNING-CONDITION PRECEDENCE PUTS IT BELOW BOTH HOLDS, which is the
+  one place that tuple follows the CLAUSE's ordering rather than the filter's —
+  the filter consults the confirmation before the legacy blanket, while "when
+  no hold governs the refusal" makes a live record outrank it. Omitting it
+  from the tuple was silent and wrong: a node emptied by a confirmation alone
+  substantiated no listed condition and fell through to
+  `unavailable-availability-evidence`, reporting an unreadable factory for a
+  chain whose evidence had been read perfectly well.
+- `_acp_availability_probe.py` — the TURN the entry above had nothing to run
+  (`bd-ib-n3pzcl`, Scenarios 60 and 127): "Availability is confirmed only by a
+  successfully completed ACP prompt turn using the candidate's pinned adapter
+  version, requested model and effort, and projected worker credential
+  identity. ... otherwise the probe MUST be a minimal factory run. The probe
+  sends one fixed minimal prompt." PURE, and the shape only: the fixed prompt,
+  the one-ACP-node graph, the run labels, and the two candidates no turn can
+  confirm. A HOST-SIDE probe is not available to us — the clause permits one
+  only when its outcome is "durably observable through the same authoritative
+  evidence source", and that source is the factory's own run records, which
+  nothing host-side writes.
+  Four properties an editor must not invert. `acp.command` is `render_adapter`
+  over the candidate's OWN adapter, which is the one function the dispatch
+  renders a node's adapter through, and that byte equality IS the equivalence
+  claim the clause rests on — a probe rendering anything else exercised a
+  neighbour. ONE adapter-bearing node is the whole of "minimal": a second would
+  spend a second allowance per probe, and a script node would put a recorded
+  success on a node that launched no adapter, which the succeeded-attempt
+  reader would then read as a confirmation of an allowance nothing spent. The
+  LABELS are the mechanism rather than a decoration — `_acp_factory_hold_
+  evidence._successes` derives its observation only where a run's labels record
+  an entitlement for that node's own id, so labelling the probe node is what
+  makes the confirmation host-wide with no peer list and no sidecar. And the
+  OBSERVATION IDS are deliberately NOT in a label: which expired records a
+  confirmation satisfies is DERIVED by `retired_by_success` from the attempt's
+  start instant, so a label naming them would be a second account that cannot
+  know which records expired while the probe ran.
+  TWO CANDIDATES ARE REFUSED BEFORE ANY RUN EXISTS, both conservatively. An
+  identity-less candidate belongs to no typed domain, so no observation is about
+  it and its legacy blanket governs it. An IN-PROTOCOL candidate carries its
+  requested model and effort in `config_options` and nothing in its adapter, and
+  no build renders those into a run — so a turn would not use the requested
+  model, and calling it a confirmation would confirm a model nobody ran. Each is
+  the clause's "any other probe failure": skip for this evaluation, no hold,
+  selection continues.
+- `_acp_availability_probe_outcome.py` — WHAT one confirmation turn's ending
+  MEANS: "Session creation, process exit alone, timeout, cancellation, and an
+  ACP refusal do not confirm availability." PURE, and the grading only; the
+  vocabulary is CLOSED (`PROBE_ENDINGS`) so a consumer can exhaust it, and
+  exactly one member confirms.
+  THE SIX UNCONFIRMED ENDINGS ARE KEPT APART rather than collapsed into one
+  boolean, which is the decision an editor is most likely to undo on the
+  grounds that the clause treats them alike. It does not: downstream they take
+  THREE routes — an eligible REFUSAL mints a hold at the probe's own occurrence
+  time, a TIMEOUT must mint nothing because a turn the Dispatcher terminated
+  measured no provider, and a process exit, a bare session, a cancellation and
+  an authentication failure are neither. One boolean makes a terminated probe
+  indistinguishable from a measured outage. The authentication failure
+  (`bd-ib-3pfauo`) is the Dispatcher's own missing credential, not the
+  provider's: it ranks below the bound, the completed turn and the cancellation
+  but ABOVE the refusal, and it is read from the probe NODE's recorded failure,
+  because the graph routes a failed turn to `exit` and the run then reads
+  succeeded with no failure block of its own.
+  THREE PRECEDENCE STEPS ARE LOAD-BEARING. The BOUND is read FIRST, before any
+  recorded text: a killed turn's record can carry the provider's last sentence,
+  so a text-first grader would mint a hold from a measurement it interrupted.
+  The COMPLETED TURN is read SECOND, ahead of every failure arm, because a
+  run-level failure block legitimately names something other than the turn. And
+  the bare SESSION is told from a PROCESS EXIT by the `agent.acp.started` event
+  alone — the adapter-launch clause's own prompt-boundary reading — never by a
+  message. The `turn.final_output` reclassification ("a provider refusal booked
+  as a successful turn is a failed attempt") is deliberately NOT graded here:
+  this module sees no turn output, which is what keeps the "never an arbitrary
+  exec-output tail" rule structural.
+- `_acp_availability_probe_records.py` — the RECORDS one confirmation turn
+  leaves: "An eligible refusal creates a new occurrence-time-scoped hold. Any
+  other probe failure skips that candidate for the current evaluation, creates
+  no hold". PURE, and the records only.
+  THE EVIDENCE KIND IS `candidate-attempt`, which is a CONTRACT claim rather
+  than a convenience: `hold_observation_record` refuses any kind outside its
+  closed set precisely so a credential probe, a catalog read or a provider's
+  reset claim cannot mint a hold — and the clause forbidding those is the same
+  one that names a refused confirmation turn an actual attempt, on the stated
+  ground that it "runs the candidate's own adapter". So a refused probe is
+  admitted through the existing door rather than by widening the set.
+  THE REFUSAL ARM IS THE ONLY ARM, and it is a lookup on the ENDING rather than
+  on the recorded text: a terminated turn's record can carry the provider's
+  last sentence, so a builder reading the text first mints a hold from a
+  measurement the Dispatcher interrupted. The ending is graded INSIDE
+  `probe_hold_record` rather than accepted as a parameter, so exactly one route
+  decides when an allowance is held.
+  THE SIGNAL DIFFERS FROM THE TERMINAL-READING ONE IN ONE FIELD.
+  `provider_limit_signal` is REUSED, because its own docstring carries the two
+  measurements behind putting a recorded cause on the protocol MESSAGE and a
+  second account here would be a second authority on whether a signature can
+  ever match; what a probe knows and a terminal reading does not is that the
+  turn STARTED, since the refusal ending is reachable only through
+  `agent.acp.started`. An unreadable occurrence instant mints NOTHING rather
+  than substituting a clock — the one substitution "never from ingestion"
+  forbids outright.
+  THE JOURNAL ROW BESIDE IT IS WRITTEN FOR EVERY ENDING — "Every probe turn is
+  journaled with the candidate identity, outcome, occurrence time and, where
+  observable, its cost" — and the BREADTH is the part an implementation
+  narrows: a row written only on refusal makes the measurement that found a
+  provider HEALTHY invisible, which is exactly what an operator asks while a
+  chain is waiting, and an absent row reads downstream as a probe nobody ran.
+  One stage with the ending as a field, so a fold over the journal asks a
+  single question. "Where observable" is about the MEASUREMENT and not about
+  the key: the row carries an explicit null beside a stated flag, because an
+  omitted key is what a row from a build predating cost looks like and zero is
+  a measured figure. `confirmed` is DERIVED through `probe_confirms` rather
+  than compared, so the journal and the filter cannot disagree about an
+  ending. And the observation ids it names are PROVENANCE — what the probe was
+  FOR — never a claim about what it cleared, which `retired_by_success` derives
+  from the attempt's own instant.
+- `_acp_availability_probe_run.py` — PERFORMING the turn, and the only half that
+  reaches a factory. A HOST-SIDE probe is not available to us, which is why
+  this is a run: the clause permits one "only when these execution properties
+  are equivalent and its outcome is durably observable through the same
+  authoritative evidence source", and that source is the factory's own run
+  records.
+  THE TURN IS PLACED IN THE FACTORY'S DECLARED ENVIRONMENT, which is the fourth
+  of the four execution properties the clause names and the only one that is a
+  property of the SANDBOX rather than of the adapter: `_acp_availability_probe`
+  argues the first three from `render_adapter`'s byte equality, and the
+  "projected worker credential identity" is whatever the server-catalog
+  environment supplies. A target built from the server alone omits
+  `--environment` and lands the turn in the server's DEFAULT environment, which
+  is wrong in both directions and announces itself in neither — with no
+  credential there no healthy provider can ever earn a confirmation and the
+  post-expiry stall persists unchanged, and with one the turn confirms a
+  credential identity nobody dispatches with. The id is the dispatch path's own
+  `factory_environment_id` projection rather than a second read, so the probe
+  and a dispatch to the same factory cannot disagree about where they ran, and
+  an unusable declaration reduces to None here exactly as it does there —
+  safe for the same reason, since `factory_declaration_refusal` has already
+  refused the invocation.
+  TERMINATION IS PERFORMED BEFORE ANYTHING IS READ, which is the mechanics
+  worth reading twice. The bound must include "termination of unfinished probe
+  work", so a probe past it is reaped FIRST — `fabro rm -f`, the watchdog's own
+  verb — and its cost reported unobservable. Reading first would buy one cost
+  figure at the price of leaving an adapter running against a provider, and a
+  terminated probe's cost is the one figure nobody acts on.
+  FOUR READINGS AN EDITOR MUST NOT LOOSEN. A timed-out launch is exit 124,
+  which is `ShellCommandRunner`'s OWN mapping and is exported so the bound's
+  test reads that value rather than a literal beside it. The run id is read off
+  a PARTIAL launch deliberately, because `fabro run` prints it early and it is
+  the only thing that can reap the work — and a launch carrying none reports
+  `terminated=False`, since there is unfinished work this Dispatcher cannot
+  name and a record claiming otherwise is the one lie a later reader cannot
+  check. The prompt boundary is read from the `agent.acp.started` EVENT'S
+  PRESENCE rather than through `scan_acp_events`, which requires
+  `candidate_index` before it admits a start: this asks the strictly weaker
+  question the adapter-launch clause answers, so a pre-chain engine's start
+  still tells a created session from an adapter that exited. And the node
+  outcome is keyed through `fabro_stage_node`, so the Petri-era `confirm@1` and
+  a pinned-engine `confirm` both resolve — comparing the node id against the
+  raw key matches nothing, which would report every successful probe as
+  unconfirmed.
+  TWO REFUSALS RETURN BEFORE ANY RUN EXISTS: the candidate the probe cannot
+  faithfully run, and a repository declaring no participating factory — which
+  is NOT a fallback to a host-side probe, because such a repository has no
+  authoritative source for the confirmation to become evidence in.
+- `_acp_availability_probe_credential.py` — the WORKER CREDENTIAL one confirmation
+  turn carries (`bd-ib-3pfauo`). A turn placed in the factory's environment with no
+  token in it answered `session/prompt` with `Authentication required` and could
+  never confirm, so admission kept refusing exactly as before the seam existed.
+  Three properties an editor must not invert. The value is the one
+  `select_factory_credential` names, the same selector a dispatch, the headroom
+  gate and `claude-cred-status` call, projected under the standard
+  `CLAUDE_CODE_OAUTH_TOKEN` name. The transport is the factory's declared one,
+  routed through `route_secrets_through_vault` itself: a native-channel factory
+  gets the value stored in its vault under the dispatch's stable key and only a
+  reference in the manifest, and the launch lock the store takes is released by
+  the performing half when the turn ends. And only a Claude candidate is handed
+  it, by the provenance question `headroom_covers_candidate` answers; an absent
+  value launches anyway and is graded as the authentication failure it produces,
+  while a credential with no catalog environment to key its table under refuses.
+- `_dispatcher_acp_confirmation_seam.py` — the production supplier of the
+  filter's `confirm` seam (`bd-ib-i4nert`): what admission RUNS for a candidate
+  an expired hold leaves owing a post-expiry confirmation. The filter, the
+  probe's shape and its performing half all existed and NOTHING handed the
+  filter a seam, so a tenant with no successful dispatch refused every admission
+  indefinitely with an empty `confirmation_turn_endings` — neither a
+  configuration gate nor one entry point, since `dispatch` and `loop --item`
+  reach the same valve. Four properties an editor must not invert. The seam is
+  built from the evaluation's OWN `PreflightInputs`, so the expired observations
+  a turn names are the ones the filter skipped for. Every turn is journaled and
+  its attempt-cost record is charged to the ONE first-evaluated item. The pre-
+  dispatch session-headroom screen MUST supply it too, because the valve reuses
+  the screen's verdict while fresh and a verdict taken without the seam would be
+  reused as the refusal the seam exists to prevent. And a probe run's success is
+  exempt from the factory read's `HOLD_INTERVAL` window
+  (`_acp_factory_hold_evidence._confirmation_instant`), since otherwise the next
+  admission after fifteen minutes owes the same confirmation again. Snapshot
+  composers (wait attention, idle-factory) still supply no seam. The seam module
+  imports NOTHING from the performing half: the preflight sits inside the
+  engine's import closure, which `_acp_availability_probe_run` re-enters through
+  `_dispatcher_shell_runner`, so the real performer is INJECTED as
+  `ConfirmationTurns.perform` by `_dispatcher_admission_confirmation` -- the one
+  module the valve imports. Importing it directly closed a circular import that
+  only the `tests/bin` fresh-interpreter payload tests could see.
+  `_dispatcher_admission_slots.py` is the pure slot arithmetic that left the
+  valve for size.
+- `_acp_preflight_skips.py` — the VALUES one preflight evaluation is made of,
+  split out of `_acp_candidate_preflight` by cohesion when the confirmation
+  seam took that module past the LLOC ceiling: what a skip IS, the three
+  disjoint field sets the three kinds populate, the factory for each, and the
+  two carriers one node's filtering reads and returns. The filter imports these
+  and re-exports the public names, so every caller's import is unchanged; every
+  name crossing the boundary is PUBLIC, because a cross-module private import
+  is rejected by pyright strict and the `private_calls` check alike. THE THREE
+  KINDS KEEP DISJOINT FIELDS, which is why there are three factories and not
+  one taking every field: one factory accepting all of them is how a durable
+  typed cause comes to be written onto an ephemeral skip, after which a
+  credential merely rate-limited on this host is indistinguishable, downstream,
+  from an entitlement the provider revoked.
+  `_acp_availability_wait` gained the OTHER half of the probe clause with it —
+  "If no candidate remains eligible, the Dispatcher MUST retry automatically
+  after `dispatcher.credential_reprobe_interval_seconds`; it MUST NOT
+  busy-loop". The cadence arm was already correct, because an EXPIRED record
+  carries no live expiry for `_reevaluate_at` to take; what was missing was
+  whether the Dispatcher ASKED. A node emptied because no probe seam was
+  supplied and a node emptied because every turn was TERMINATED both rendered
+  as `outstanding-availability-confirmation`, and the remedies differ — the
+  first waits out the cadence, the second says the turns are being killed. So
+  `confirmation_endings` / `CONFIRMATION_ENDINGS_FIELD` names the ending each
+  turn reached on the FIRST emptied node, deduplicated in chain order (three
+  terminated probes are one condition), and is EMPTY when no turn was run,
+  which must not be filled in with a plausible ending.
+- The FACTORY-NATIVE OPERATOR CLEARANCE of the same paragraph's "an operator
+  clearance by a minimal factory-native record whose recorded outcome carries
+  the clearance's exact identity, actor, time, and reason" (`bd-ib-dtfv2p`,
+  Scenarios 116 and 127) is split pure-from-impure the usual way:
+  `_acp_clearance_records` (PURE: what one clearance IS, the one label a reader
+  recognises its run by, the single line its recorded outcome carries, and the
+  parse of that line) → `_acp_clearance_factory_record` (the write: one
+  deterministic single-script-node run, launched through the existing
+  `FabroPort` facade) and `_acp_factory_clearance_evidence` (the read: where in
+  a run's own `inspect` record that line is found). `_acp_hold_clear` is the
+  write's one caller; `_acp_factory_hold_evidence`'s clearance arm is the
+  read's, and it REPORTS the ids rather than applying them, because a clearance
+  may name an observation this read derived, one the reading repository's own
+  journal carries, or one neither holds any more — and only the union has all
+  of them in hand, which is the same reason the other two retirement routes are
+  applied there.
+  Eight properties an editor must not invert. The FACTORY record is the
+  AUTHORITY and the journal line is its AUDIT REFERENCE — the
+  provider-exhaustion clause says so in as many words — so the valve writes the
+  journal only once the factory write has succeeded, and a repository that
+  cannot record on a participating factory is REFUSED rather than falling back
+  to its own journal: a journal-only retirement clears the hold for that
+  checkout while every peer, which has no access to that journal by
+  construction, keeps dispatching into a record its operator believes is gone.
+  Every pre-existing refusal returns BEFORE the write, which is what keeps a
+  record a peer reads as a clearance from describing a clearance the valve went
+  on to reject. The LABEL carries nothing a reader decides on, because an
+  `availability_key` is opaque by contract and a `--reason` is operator prose,
+  so neither fits the engine's label alphabet — the label says which rows are
+  worth a per-run read and the OUTCOME carries the clearance. The engine
+  version is MEASURED rather than assumed, because the two engine generations
+  take their workflow argument differently and a Petri-era engine refuses a
+  config file before any run exists. And the payload rides the script through
+  TWO deterministic encodings in one order only — shell-quote the line, then
+  DOT-escape the result — so the recorded outcome is the line itself, plainly
+  readable by an operator looking at the run, rather than an encoded form only
+  this package can decode. The PARSE lives beside the RENDER so one record
+  format cannot drift across two files, and it is STRICT in the destructive
+  direction: a line missing the marker, or carrying a field of the wrong type,
+  reads back as NOTHING rather than as a clearance assembled out of whichever
+  fields happened to parse — a retirement cannot be undone, so a half-read
+  record would retire an observation nobody cleared. And the read scans BOTH
+  engines' outcome maps (the Petri-era `stages` map and the pinned
+  checkpoint's `node_outcomes`) without consulting the node id, because the two
+  spell that id differently — `record` against `002-record@1` — while the
+  record carries at most one clearance line and that line carries its own
+  marker; reading one map only answers `None` on the other engine, which at the
+  evidence surface is indistinguishable from a run that recorded no clearance.
+  And the clearance ARM is bounded by the run's START, exactly as the
+  confirmation arm is and for the same reason — a clearance recorded longer ago
+  than `HOLD_INTERVAL` can only retire a record that has already expired on its
+  own — so a clearance row outside that window costs no per-run read at all.
+  AT THE UNION (`_dispatcher_acp_preflight._unioned`) the two clearance SOURCES
+  are UNIONED rather than preferred between: a clearance this repository's own
+  operator performed is a line in its journal and one a PEER's operator
+  performed is a record on the factory, both name observation ids, and an id is
+  a digest of the evidence plus the scope it lands on — so an id either side
+  names is naming the same record, and a repository that cleared one hold
+  locally while a peer cleared another must see both retired rather than
+  whichever source it happened to read. The merged set is carried ON the ledger
+  value and not merely consumed, so a later reader of
+  `retired_observation_ids` cannot answer a different question from the filter
+  above it. What this delivers at the wave is the clause's own scheduling rule:
+  the next loop-wave evaluation re-derives the chain, finds the cleared record
+  retired, and proceeds — instead of parking again for the instant the previous
+  evaluation scheduled, however long ago the operator cleared the outage.
 - The ADMISSION SESSION-HEADROOM FILTER of `contracts.md`'s "Admission filters
   candidates by projected Claude session headroom" paragraph (`bd-ib-jwuxs4`,
   Scenario 60) lives in SEVEN cohesive modules, split pure-from-impure the usual
@@ -1195,6 +2012,70 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   projection are two readings of ONE history, and a second journal read would
   let a rate measured against one baseline sit beside a projection naming
   another.
+  THE SEVEN-DAY ALLOWANCE IS THE SAME CLAUSE'S THIRD SHORTFALL (v182, Scenario
+  231, `bd-ib-u3jq5r`), and it adds NO module: `SevenDayReading` and
+  `seven_day_skips_candidate` sit beside the five-hour value in
+  `_acp_session_headroom`, `_dispatcher_session_headroom_io` reads two more
+  headers off the response it already had, and
+  `_acp_candidate_preflight._headroom_skip_kind` grows one arm. It closes a
+  defect the five-hour reading structurally cannot see: an account with
+  five-hour room and NO weekly room passes every existing arm and is dispatched
+  into a refusal it cannot avoid — measured on gmktec run 01M580PF02S0, where
+  `proof_verify@3` failed after 6h02m with "You've hit your weekly limit".
+  SIX PROPERTIES AN EDITOR MUST NOT INVERT. Both windows come off ONE response,
+  which is the clause's own "from the same provider response" and the reason the
+  read grew two header names rather than a second request — admission spends one
+  bounded request per credential per evaluation, and a second round trip would
+  double what the brake costs the provider to answer a question the first
+  response already answered. The STATUS is the whole test and the weekly
+  UTILIZATION decides nothing, which the clause states outright ("a warning
+  status, a utilization below 100, or any other value is not exhaustion"): a
+  window reported fully spent that the provider still serves must be admitted,
+  and that is also what makes the decision immune to whether the provider
+  reports that figure as a fraction or a percentage. The weekly reading is a
+  VALUE with its own unobservable result rather than two more columns, because
+  the two windows fail independently — the response most likely to carry a
+  weekly refusal is a REFUSED one, whose five-hour header may be absent — so
+  `unobservable_session_headroom` carries the weekly half through. Every
+  unrecognised value fails OPEN by construction, since `exhausted` compares
+  against one literal and nothing else. The SAME floor governs it and a floor of
+  0 disables it, never a weekly dial of its own, or an operator who switched the
+  filter off would still have dispatches refused by the arm they had not heard
+  of. And the weekly arm is tested AFTER the floor and BEFORE the projection:
+  the floor is the dial an operator acts on directly, and a weekly refusal is
+  one the PROVIDER has already issued while a projection is this build's own
+  extrapolation, so where both hold the measured one is what an operator can
+  check against the account.
+  THE SEVEN-DAY HEADER NAMES ARE SIBLINGS OF A MEASURED ONE, not a second
+  measurement, and that is recorded rather than implied:
+  `anthropic-ratelimit-unified-5h-utilization` was measured on this host
+  2026-10-15, and the weekly pair is the same unified family's `7d` spelling. An
+  unrecognised header reads as an ABSENT weekly reading, which the clause
+  forbids from skipping anything, so a wrong spelling degrades to the
+  five-hour-only behaviour rather than to a wrong refusal — which is why the
+  fail-open direction is load-bearing here and not merely conservative.
+- The CODEX SIBLING of that filter (`bd-ib-4jdgcw`, Scenario 243, `contracts.md`
+  "Admission filters Codex candidates by projected usage-window headroom") lives
+  in FIVE modules and reuses the Claude filter's two dials, its at-most-once
+  memo and its skip semantics: `_acp_codex_headroom` (PURE: the reading, its
+  whole-reading grade, coverage and the three skip kinds) →
+  `_acp_codex_headroom_projection` (PURE: the per-window projection) and
+  `_acp_codex_headroom_records` (PURE: the journal row, the skip fields) and
+  `_dispatcher_codex_headroom_io` (the one bounded `wham/usage` read) →
+  `_dispatcher_codex_headroom_gate` (the memoized per-evaluation source and the
+  per-window-length baseline read). Five properties an editor must not invert.
+  `_acp_codex_headroom` imports NOTHING from the Claude headroom module, because
+  `SessionHeadroomPolicy` carries the Codex read seam and the opposite direction
+  closes a cycle. Validity is decided for the WHOLE reading: a valid window beside
+  a malformed one is unobservable and is never used to admit. Credits are never
+  headroom, so only `rate_limit` fields are read. A baseline is keyed on the
+  credential AND the window length, and the Codex journal stage is distinct from
+  the Claude one so neither provider's baseline reader sees the other's rows. And
+  the credential identity digests the ACCOUNT identifier, not the access token,
+  because the token rotates on every host refresh and would discard the baseline
+  with it. `tests/conftest.py` stubs the Codex read to an untouched window beside
+  the Claude one, for the same reason: a fixture chain carrying a Codex
+  candidate would otherwise read the host `auth.json`.
 - The **TDD order calibration** modules (plan `factory-test-first-enforcement`
   slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
   adapter on the terminal `dispatcher.calibration` span, so "is the factory
@@ -1501,6 +2382,44 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `none` pointer names no repository at all, so an opinion here would either
   restate another module's refusal or invent one for a correct pointer.
 
+- RELAY DELIVERY of `contracts.md`'s "Relay delivery" clause (`bd-ib-t3znvw`,
+  Scenario 149) — the plan primitive that records a relay, and the one thing
+  that discharges it. FIVE cohesive modules, split pure-from-impure the usual
+  way, and the dependency direction reads bottom-up: `_plan_relay_record`
+  (PURE: the three delivery legs, the record, and the two selections a retry
+  and a recheck resolve a relay through) and `_plan_relay_admission` (PURE:
+  every refusal, plus the explicit supersession that admits a conflicting
+  target) → `_plan_relay_payload` (PURE: the canonical payload and the
+  `plan-relay-event` body, render and parse together) →
+  `_plan_relay_projection` (the one write and the one read of those epic
+  comments) → `_plan_relay_delivery` (the primitive: grade, observe through the
+  shared authoritative result reader, then record what was observed).
+  SIX PROPERTIES AN EDITOR MUST NOT INVERT. `delivered` is written from ONE
+  input — a `satisfied` reading taken in this call — and never from anything a
+  caller supplied, which is why the caller's type (`RelayAcknowledgements`)
+  carries only `receipt_ack` and `peer_recorded` while the recorded type
+  (`RelayLegs`) carries all three: a caller-writable evidence leg would be the
+  sender certifying its own delivery, and a record holding all three reads as
+  discharged whoever wrote the third. The DEADLINE a record carries is read back
+  off the relay's own history and never off the request — the SENDER is the
+  party recording, so a stored request deadline lets it roll its own clock
+  forward on every recheck, with every record well-formed either way; the
+  request's deadline is used only where the relay has no history. A RETRY is
+  answered from the record and never by observing again, and the operation
+  identity is matched WITHIN the relay: matched epic-wide it would answer a
+  fresh relay's first recording with another relay's record, naming a target the
+  caller never named. A CONFLICTING target is refused rather than recorded, the
+  supersession that admits one must carry its own relay id (reusing the
+  displaced id makes the successor the latest record for that id and shadows the
+  disposition the clause requires preserved), and a supersession of an UNCHANGED
+  target is refused too — without that arm the deadline rule is launderable by a
+  fresh relay id plus a record that reads as the sanctioned path. The epic's
+  relay comments are read ONCE per call and the resolved records handed down, so
+  no two grades can disagree about what the ledger holds. And every malformed
+  payload parses to `None` rather than to a partial record — a half-read one
+  would answer a retry with an observation the READER assembled, satisfaction
+  included.
+
 - The PLAN-AUTHORITY EPOCH CHAIN of `contracts.md`'s "Required result, budget
   and progress epoch" clause (`bd-ib-wdl577`, Scenario 147) — how a plan epic's
   authority transitions serialize when several writers commit from one epoch at
@@ -1601,12 +2520,95 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   with an unknown cause were both ACCEPTED). These writers NEVER create a chain
   genesis — research note 007 — so an epic without one takes the legacy path and
   every reader reports `plan-progress-tracking: missing` naming
-  `migrate-plan-records`. And the DIAGNOSIS reads the obligation from the chain
+  `migrate-plan-records`. A chain that READS CLEANLY while tracking no
+  obligation reports that same code with a DIFFERENT remedy, and the two must
+  never collapse (`bd-ib-paevjd`, live instance `bd-ib-lrik25`): the migration
+  creates only a genesis token, so naming it for an epic that already has one
+  names a remedy whose re-run creates nothing and can never clear the finding —
+  only an executable-kind pointer write carrying `required_result` and `budget`
+  creates the obligation. So that arm names the OPEN TOKEN too, since "the chain
+  is present" has to be checkable. And the DIAGNOSIS reads the obligation from the chain
   rather than parsing the pointer, which is the repair rather than a guard in
   front of the old dereferences: the handler it replaces cast an optional parse
   to a `NextAction` and reached through a `ResultReferenceRefusal` for an
   identity, crashing on an epic with no pointer and on a legacy one — the two
   states it most needed to answer for.
+  AN EIGHTH PROPERTY, AND IT IS ABOUT THE ORDER OF `_plan_tracked_write`'S
+  SEQUENCE (`bd-ib-b5npv2`). The OPERATION IDENTITY is recognised FIRST, through
+  the chain's public `recover_committed_operation`, and only then is the
+  obligation decided. `commit_transition` carries its own retry guard and keeps
+  it — that guard is the chain's last word, and a caller cannot be allowed to
+  satisfy it on the chain's behalf — but a write refused BEFORE it is reached
+  never gets the recovery the clause owes: the decision's expiry ladder reads the
+  OBSERVED head, so the retry of the handoff that consumed the final
+  `max_handoffs` unit is read as an expired continuation and refused, although
+  the write it retries succeeded. Nothing duplicated, and the caller was told to
+  register a causal recovery for an obligation it had just met. Asking early
+  costs one comment read and can change nothing, because that reading performs
+  no write; the CONTROL is that a DIFFERENT operation identity at the same
+  exhausted budget is still refused, which is what keeps the repair from being
+  "stop grading expiry". A twin committing in the window between that scan and
+  the chain's own is still answered as a recovery, by the chain's guard, which is
+  why `_persist`'s idempotent arm stays reachable rather than becoming dead.
+- The CARRIER GATE that stops a plan deriving a plan-level step while a carrier
+  of one of its assertions is still open (`bd-ib-evrynu`), split
+  pure-from-impure the usual way and reading bottom-up: `_plan_carrier_map`
+  (PURE: the `carriers:` block, written AND read — `last_carrier_map_carriers`
+  is the read half) → `_plan_carrier_tenancy` (which repository one carrier id
+  names, from each configured tenant's own create-prefix) →
+  `_plan_carrier_gate` (the first carrier that is not closed) →
+  `_plan_resume_advance`, the one caller. `_plan_ready_child` is the ledger
+  half of that advance, extracted so the carrier question and the child
+  question sit beside each other rather than one inside the other's module.
+  Six properties an editor must not invert. The gate sits BETWEEN the child
+  check and the plan-level leg: a ready child is the next step whatever the
+  carrier map says, and every plan-level leg asserts something about the WHOLE
+  Definition of Done, so asking the gate first holds a plan's own child behind a
+  sibling tenant's carrier and asking it afterwards asks it too late. The LATEST
+  carrier-map event governs and the events are never unioned, because such an
+  event RESTATES the whole map — a union makes a plan wait on work its own
+  maintainer re-assigned. A `plan-level proof` entry is NOT a work-item carrier
+  and is discharged by the plan's own proof record, so it is dropped at the
+  parse rather than refused downstream. The status comes from the SHARED result
+  reader and never from a local `bd` call, because every carrier of a real plan
+  is cross-tenant and a local call answers, for an id this tenant never minted,
+  that the carrier is not closed — a confident negative on the wrong
+  population. Only a `satisfied` reading establishes closure, so an
+  `unobservable` one is OPEN: the other way round makes an unreachable tenant
+  the cheapest route to a proof record asserting work nobody could look at. And
+  the carrier wait is the ONE derived step whose obligation names a repository
+  other than the plan's own, because its target is a work-item in the carrier's
+  tenant rather than the plan epic — the exception that proves `_carried`'s
+  rule rather than an exception to it.
+  THE GATE HAS TWO READINGS AND NOT ONE VERDICT, and they pull in OPPOSITE
+  directions, so neither may be collapsed onto the other. `first_open_carrier`
+  passes a carrier nothing can place OVER, so it cannot hide the open carrier
+  behind it; `unplaceable_carrier_ids` then reports exactly those passed-over
+  carriers, because a carrier whose status nobody measured must not read as
+  closed. The advance's rest state for the second is a `human` pointer NAMING
+  the carriers — configuring the sibling, re-assigning the assertion, or
+  recording that the carrier is done are all decisions, and none is one an
+  unattended resume may take — with explicit null tracking so the unmet
+  obligation stays in the progress history rather than being discharged by
+  pointing elsewhere.
+- PLAN OBLIGATION EXPIRY IS DELETED (v286, maintainer ruling 2026-11-03 recorded
+  on `livespec-dev-tooling-6tgd2z`: "Whatever 'stall' rule is in effect here,
+  completely delete it"). The budget is a reporting datum only: an overdue
+  obligation never refuses a write, never needs a recovery attempt, ruling or
+  human decision, and never makes `resume_directive` withhold its action. The
+  evidenced causal supersession (the `_plan_supersession*` modules, Scenario 211)
+  went with it, because the rename refusal it unlocked existed only to stop a
+  rename evading expiry. A different required result is now a `replacement`: a
+  fresh obligation under the write's own budget, whose progress event carries
+  `replaced-result:` (`TransitionPayload.replaced_result`). Do NOT re-add a
+  refusal keyed on `obligation_expiry`; that reading feeds findings only.
+  `_plan_progress_outcome` and `_plan_progress_unmet` are a cohesion split: the
+  outcome leaf imports nothing from the family, the unmet module owns the
+  continue-or-replace arm (and grades an OPTIONAL typed causal recovery), and
+  `_plan_progress_decision` is the DISPATCH plus the arms that ESTABLISH a
+  budget. `_plan_write_identity` is the pure retry-identity derivation, split off
+  `_plan_tracked_write` for the same pure-from-impure reason. None of these
+  leaves a re-export shim; callers import from the module that owns the name.
 - `_plan_resume_reconcile.py` — the reconciliation half of the resume, split out
   of `_plan_resume` by cohesion once the durable progress check pushed that file
   past its size ceiling. `_plan_resume` keeps the TOP-LEVEL sequence (the
@@ -1616,6 +2618,42 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   that is both expired and missing its Definition of Done must report the
   expiry, and settling the dispatch question first answers with the gap pointer
   and never reads the obligation.
+- `_plan_result_plan_owned.py` — the ONE entry point every plan-level obligation
+  is read through (`read_plan_owned_result`), and the repository an obligation
+  naming THE PLAN EPIC ITSELF is read against (`bd-ib-woacnk`). A plan-level leg
+  targets the epic, the epic lives in the plan's own tenant whatever the record
+  says, and an unobservable
+  obligation withholds dispatch while being unreplaceable by design — so one
+  stale `repo` field locks a plan for its whole budget. Three properties an
+  editor must not invert. It owns THE WHOLE READ and not merely the redirect,
+  because one plan-level obligation is read THREE times on the way through a
+  single resume and the redirect alone is a rule each call site has to remember —
+  each read was added for its own reason, and settling any subset of them leaves
+  the plan stopped a different
+  way: `evaluate_resume_progress` reads the CHAIN-held authority and
+  `decide_plan_resume` returns on that verdict BEFORE the pointer is consulted,
+  so a redirect living at the pointer read alone is unreachable for every
+  chain-tracked plan — which is every plan the progress gate can lock, including
+  the measured one; `result_observation` reads the recorded POINTER, which is
+  what decides the satisfied step is stale; and
+  `_plan_tracked_write._prior_observation` reads the chain-held authority AGAIN
+  for the sanctioned write that persists the derived pointer, where the reading
+  DECIDES rather than reports — an unobservable prior obligation cannot be
+  replaced, so the derived step is refused and the resume answers with no
+  further step at all, which under an unattended resume is a plan silently
+  stopping rather than one diagnosably locked. Of the three steps a caller
+  composing them itself would repeat — resolve this project's root, redirect,
+  read — only the root announces its own absence, so a forgotten redirect
+  returns a well-formed `unobservable` reading of another repository's tenant;
+  reaching `read_result` directly from a plan-level caller is that defect
+  returning. The discriminator is the
+  obligation's own TARGET and never the pointer's kind: the chain records no
+  kind, and a kind test buys nothing either way, since an `impl` leg's target is
+  a CHILD and an id equal to the epic's resolves in exactly one tenant. And the
+  rewrite persists NOTHING — it is read-time on all three paths, each of them
+  observing rather than recording (the write's own reading is of the PRIOR
+  obligation, which it grades), and the ordinary advance is what replaces a
+  recorded pointer.
 - `_drive_cli.py` — the `drive` CLI's operator transport, split out of `drive.py`
   on the same seam `_session_wait_cli` sits on for `session_wait` once routing
   the diagnosis executor pushed that file past its size ceiling. `drive.py` keeps
@@ -1628,6 +2666,38 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   runs — a `--repo` that does not exist and an unattributed state-changing
   invocation. Do NOT keep one code private by splitting the set across the two
   modules: that is how the surface comes to disagree with itself.
+- The SESSION TELEMETRY of `contracts.md`'s "Bounded session waits and observable
+  inventory" clause (`bd-ib-4mcuty`, Scenario 159) — the curated, typed, bounded
+  export of the wait and recovery families through the EXISTING host-local
+  enrichment/scrub/egress route. The dependency direction reads bottom-up:
+  `_session_telemetry_events` (PURE: the two CLOSED event catalogs, the OTLP
+  rendering under service `livespec-dispatcher`, namespace `livespec-family` and
+  scope `livespec.orchestrator.session_wait`, and the `EventSink` seam) and
+  `_session_telemetry_gate` (PURE: the once-a-minute limit on UNCHANGED
+  observations, persisted between invocations) → `_session_telemetry_export` (the
+  bounded asynchronous exporter: a bounded queue, one daemon worker, a per-call
+  timeout, a fixed attempt count, a bounded shutdown, and ONE local report) →
+  `_session_wait_events`, `_session_wait_telemetry` and `_session_inventory_events`
+  (what each fact of a wait or a snapshot becomes) and
+  `_session_recovery_telemetry` (what each recovery transition, registration and
+  coverage grade becomes, plus `record_transition`, the one place a transition is
+  both written and published). Six properties an editor must not invert. The
+  exporter holds NO Honeycomb credential and REFUSES an endpoint naming
+  Honeycomb: the route is the host receiver's, and a second credentialed route is
+  exactly what the clause forbids. `emit` only enqueues, so a blocked or absent
+  exporter can never move a wait's deadline, and the CLI prints a result BEFORE it
+  closes the exporter. Absent configuration is reported once as local-only and a
+  refused endpoint, transport failure, partial rejection, overflow or abandoned
+  tail as one bounded line, and that line is a plain local write that is never
+  itself an event. Every key an event carries must ALSO be in
+  `_otel_scrub.ATTRIBUTE_ALLOWLIST`, because the receiver rebuilds attributes from
+  it and drops the rest silently; measurements ride as `doubleValue` and arrays as
+  `arrayValue` through `measured_attr`, which sits BESIDE `attr` rather than
+  inside it because every older emitter relies on `attr` stringifying a float. An
+  absent value is omitted, never a zero: a recovery measurement that could not be
+  taken is named in `session.recovery.unavailable` instead. And a recovery event
+  says what a consumer DID; target fulfillment belongs to the canonical result
+  reader alone.
 - The DURABLE LAUNCH OBLIGATION of `contracts.md`'s "Launch obligations and
   consumed recovery" clause (`bd-ib-zejlae`, Scenarios 160 and 161) — the record
   a dispatch or a delegation persists BEFORE it may report a protected launch.
@@ -1663,6 +2733,55 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   the relay contract's and arrive AS GIVEN; nothing here computes, defaults or
   refreshes any of them, because that would be the second result model the same
   clause forbids.
+- The CONSUMED RECOVERY of the same clause (`bd-ib-dle6l3`, Scenarios 162, 163
+  and 164) — the orchestrator-side consumer API a supervised scheduler drives
+  over ONE recovery attempt, plus the sanctioned-action bridge it executes
+  through. The overseer repository owns the daemon, the schedule and the
+  takeover; what lives here is one PASS and its result. Nine cohesive modules,
+  dependency direction bottom-up: `_session_recovery_shape` (PURE: what a
+  version-1 attempt record IS, and the three ways bytes fail to be one) and
+  `_session_recovery_lease_reading` (PURE: the standing lease, or the fact that
+  it cannot be read) → `_session_recovery_records` (the attempt, the closed
+  transition vocabulary, and the two writes: open, then append-once) →
+  `_session_recovery_consumption` (PURE: consumed only on execution evidence,
+  and the latency that took) and `_session_recovery_lease` (the
+  generation-fenced claim, takeover and fence accounting) and
+  `_session_recovery_effect` (the execution receipt and the two seams a caller
+  supplies) and `_session_recovery_safety` (PURE: the three real barriers and
+  the four facts that only look like one) and `_session_recovery_action` (PURE:
+  the typed action current ledger/forge/remote-factory evidence sanctions) →
+  `_session_recovery_execution` (run the command at most once) →
+  `_session_recovery_outcome` (what the pass reports) →
+  `_session_recovery_consumer` (the ORDER of the pass: receipt, claim, safety,
+  action, execution, reconciled next action).
+  Seven properties an editor must not invert. The transition vocabulary is
+  CLOSED and holds no word for fulfillment, so no surface here can discharge
+  the relay-owned required result — the consumption grade reports the identity
+  it leaves outstanding instead. CONSUMPTION is execution EVIDENCE and nothing
+  else: a receipt and a claim leave recovery unconsumed, which is the whole of
+  Scenario 162. A DUPLICATE converges on the first observation and is COUNTED
+  rather than appended, and a displaced consumer's refused mutation is counted
+  too, because `duplicate_count` and `fenced_count` are measurements the clause
+  asks for and a silently dropped event reports a clean zero. A LAPSED HOLDER
+  reclaiming gets a NEW generation, which is the one arm where a duplicate
+  effect otherwise survives — a paused process is still inside its own command
+  when its newer self reclaims. A `started` transition with NO effect IS the
+  ambiguity, so it routes the next pass into the durable-effect LOOKUP and an
+  unobservable lookup writes nothing and runs nothing; this family claims no
+  exactly-once arbitrary shell execution and there is no shell string anywhere
+  in it — the command is a protocol the caller supplies. The LOCAL GATE OUTCOME
+  is carried and never consulted: the measured 2026-10-09 case had a gate
+  reporting FAILED at 05:19:06Z for a pull request that merged at 05:18:03Z, so
+  the forge rung precedes the ledger rung and a failed gate selects the same
+  action a green one would. And a SAFETY DEFERRAL writes exactly one
+  transition: the original deadline, the epoch and the required result are read
+  BACK off the record and reported, which is how "retaining the original
+  obligation/deadline history" is checkable from the outcome rather than from
+  this family's care. The stable attempt id, the epoch, the original deadline
+  and the executable-operation grammar are the relay contract's and arrive AS
+  GIVEN — `sanctioned_operation` reaches the relay's own
+  `is_executable_operation` and adds exactly ONE consumer-side form, the
+  per-item `reconcile-merged`.
 - The PROOF CARRY-FORWARD DECISION a changed-head `pr_refresh` takes
   (`contracts.md` §"Definition-of-Done and Proof-of-Done stages" → "Proof
   carry-forward across a refresh", "The observation scope" and "The decision";
@@ -1701,6 +2820,320 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   clause requires exactly one decision record on every changed-head refresh,
   and the condition hardest to reconstruct afterwards is exactly the one a
   silent refusal would leave no artifact for.
+
+- The READ-ONLY SANDBOX-IMAGE ENUMERATION of `contracts.md`'s "Sandbox image
+  enumeration" subsection (`bd-ib-nqmltq`, Scenario 212) — the answer to "which
+  sandbox image would a dispatch to this factory pull RIGHT NOW", which the
+  host's image-warm timer needs before the first run that needs the tag. FOUR
+  cohesive modules, and the dependency direction reads bottom-up:
+  `_dispatcher_plugin_install_registry` (the ONE read of
+  `~/.claude/plugins/installed_plugins.json`: which repositories this plugin is
+  registered for, and at which build) and `_dispatcher_sandbox_images` (ONE
+  repository's ordered entries) -> `_dispatcher_sandbox_image_builds` (which
+  builds are executing host-wide) -> `_dispatcher_sandbox_images_command` (the
+  scope, the one JSON array and the exit code).
+  Six properties an editor must not invert. EVERY ENTRY IS DECIDED BY THE
+  FUNCTIONS A DISPATCH CALLS -- `has_fabro_factory`, `resolve_fabro_factory`
+  plus `factory_environment_id`, `resolve_fabro_sandbox_image`,
+  `sandbox_image_source` and `workflow_toml` -- never by a copy of their
+  ladders, because the whole point of the enumeration is that the warm timer
+  and a real dispatch cannot disagree about the tag, and a second derivation
+  produces a well-formed answer on each side with nothing announcing the
+  divergence. The dispatch journal could not answer this: on the
+  `committed_run_config` arm it writes `sandbox_image` null, deliberately.
+  The COMMITTED-versus-BUNDLED choice is read off `workflow_toml`'s own answer
+  -- asked once per build, with the new `payload_root` keyword, and tested for
+  whether the path it returned sits under that build -- rather than re-decided,
+  which is what makes a target-local copy yield exactly ONE entry however many
+  builds execute. An UNREADABLE source moves the EXIT CODE and nothing else:
+  stopping at the first one would report a partial enumeration as a complete
+  one, and reporting every entry at exit zero would hand the warm timer a tag
+  list with a silent hole in it; a run config that was READ and declares no pin
+  is image-less rather than unreadable, which is why `_WorkflowUnreadable` is
+  its own type and not a None. LEASE LIVENESS is the existence of the recorded
+  pid's `/proc` entry and never a comparison against the start time the lease
+  also records -- that file's encoding is Claude Code's, not a contract this
+  read may assume -- and the weaker reading errs in the harmless direction,
+  since a recycled pid can only warm one extra tag. The EXECUTING-BUILD set is
+  keyed on a running Dispatcher's own ARGV rather than on
+  `LIVESPEC_RETAINED_PAYLOAD_ROOT`, because the launcher exports that variable
+  only when it has copied a release aside, so an environ scan reports a host
+  with no running Dispatcher while several are executing. And the command
+  CHANGES NOTHING, which holds structurally rather than carefully: `rglob`,
+  `iterdir`, `read_bytes` and `read_text` are the whole host surface, and
+  nothing in the four modules reaches the ledger, the dispatch journal or a
+  factory.
+
+- The PER-MERGE DRIFT RUN of the detection coverage-record contract's "The
+  drift run" bullet (`bd-ib-yvjxo4`, Scenario 207) lives in SEVEN cohesive
+  modules, and the dependency direction reads bottom-up:
+  `_drift_run_findings` (PURE leaf: one merge as git records it, the behaviour
+  statement the shared judgement is asked about, the finding, and the stable
+  finding identity) -> `_drift_run_merges` (the merges after a frontier and one
+  merge's own diff, plus the ONE account of which ref the default branch is and
+  which range "after the frontier" names) and `_drift_run_proposals` (the
+  drift-origin proposal document, where it rests, which identities are already
+  filed, and which drift-origin proposals are OPEN) and `_drift_run_held` (the
+  held-finding records on the detection-coverage anchor) ->
+  `_drift_run_disposition` (file one finding, or hold it past
+  `dispatcher.drift_proposal_queue_cap`) and `_drift_run_frontier` (PURE: the
+  contiguous all-filed prefix, and whether the scope closed) -> `_drift_run`
+  (the pass: enumerate, judge, dispose) -> `_dispatcher_reconcile_drift_lane`
+  (resolve the frontier off the anchor, run the pass, record it).
+  `_drift_run_judge` is the leaf model seam; `_dispatcher_reconcile_runs_command`
+  is the ONE caller, which is what makes the contract's "each reconcile pass"
+  true rather than leaving a primitive nobody invokes.
+  Eight properties an editor must not invert. The ENUMERATION excludes no class
+  of commit — no `--merges`, no `--first-parent`, no path filter — because under
+  this repository's rebase-merge discipline a landed pull request appears as its
+  REBASED SERIES, so a merge-commit filter enumerates almost nothing while
+  reporting a clean empty answer and the frontier advances over merges nobody
+  judged. ORDER is oldest-first, since a pass judging newest-first files the
+  newest merge's proposal while an earlier merge still blocks the frontier. The
+  judge prompt travels on STANDARD INPUT and never as an argv entry: it carries
+  the whole ratified tree (1.36 MB here, measured 2026-10-22) against a 131072-byte
+  single-entry kernel cap, so an argv-borne prompt makes every judgement of
+  every pass fail at `execve` for a reason nothing names. The ALL-OR-NOTHING
+  rule is NOT re-implemented in the lane — it describes the pass honestly in a
+  `DetectionRun` and `_detection_coverage.completed_coverage_is_claimable`
+  grades it, which is also what makes a HELD finding stop the frontier with no
+  code saying so: a held finding is surfaced and NOT disposed. The FRONTIER is
+  the contiguous all-filed PREFIX and never the newest filed merge, because a
+  later merge's success must not advance past an earlier failure. A merge with
+  NO VERDICT is not a merge whose every finding is filed — the set-equality test
+  alone reads it as one, which is the exact reading that advances over an
+  unprocessed merge. The already-filed set spans the ARCHIVE as well as the open
+  queue (a ratified proposal has been filed and must not be re-filed every ten
+  minutes) while the queue CAP counts the open queue alone (a cap counting
+  ratified proposals closes permanently). And with NO frontier on record the
+  lane judges NOTHING: the honest reading of the range would be the whole
+  branch, thousands of commits at one model call each, and a cap imposed here
+  would record a frontier covering merges nobody judged — recording the baseline
+  is separately owned work (plan `spec-implementation-lockstep`'s host-routed
+  R2). `_needs_attention_held_drift_findings` is the attention lane the cap
+  clause requires, composed inside `_needs_attention_detection_staleness`
+  because all three facts are readings of the one committed anchor that function
+  already resolves; it subtracts the FILED set, since the hold records are
+  append-only and a filed finding would otherwise sit in the inbox for ever.
+  THAT INERT ARM RECORDS ONCE RATHER THAN ONCE PER TICK (`bd-ib-yfn7ht`), and
+  the three properties of the de-duplication are in
+  `_dispatcher_reconcile_drift_lane`'s own docstring. The one worth knowing
+  before editing either module: the record is de-duplicated and the REPORT is
+  not, so `withheld_reason` carries the state on every pass while `records` is
+  None on a skipped one — a tick that recorded nothing and said nothing reads as
+  a lane that had advanced, which is the one reading a withheld frontier must
+  never produce. `_detection_coverage.attempt_record_present` is the reader that
+  makes it possible, matched on the DECLARED SCOPE because that is the only
+  field two invocations describing one unchanged repository state agree on, and
+  fail-soft onto False so a blinded read records rather than suppresses. The
+  reporting half is `_dispatcher_reconcile_runs_command`'s `drift` key and
+  `DRIFT` line, written BEFORE its zero-factory early return.
+- `_spec_tree_condensation.py` — the spec tree a spec-stated judgement is
+  actually taken against, and the ONE entry point every consumer of that
+  judgement in this repository goes through (`bd-ib-a2bfp3`). PURE.
+  `livespec_runtime.spec_stated.judge` renders the WHOLE current spec tree into
+  every prompt, which against this repository is 1354623 characters (measured
+  2026-10-22) while a Codex judge refuses an input over 1048576 outright with
+  `input_too_large` — so a ledger-intent scan over nine work-items judged none
+  of them, recorded a failed attempt on its coverage anchor and exited 4, and a
+  Claude judge with a million-token context accepts the same prompt at roughly
+  340000 input tokens per item, which is the same defect paid for rather than
+  refused. The renderer lives upstream and is vendored, so this module condenses
+  the TREE rather than the rendering: one block per path exactly as before,
+  carrying every H2 heading the file carries and the full body of only the
+  clauses a cheap inverse-clause-frequency retrieval selects for the statement.
+  Five properties an editor must not invert. EVERY H2 HEADING SURVIVES whether
+  or not its body does, because `judge` derives the citable clause set from the
+  tree it is HANDED and refuses a `stated_by` naming a heading that tree does
+  not carry — so a condensation that dropped headings turns a correct `stated`
+  verdict into an unreadable response, and the consumer reports that as an item
+  it could not judge rather than as a clause the condensation removed. The
+  elision is IN-BAND and self-describing, because a heading whose body is absent
+  with nothing saying so invites the model to report `unstated` for a clause it
+  was simply never shown. The split uses the SAME heading pattern the shared
+  judgement uses, restated rather than imported because the upstream name is
+  private, with the heading-inventory test as the control that the two still
+  agree. The budget buys as much spec text as FITS in relevance order rather
+  than a fixed clause count, which is wrong in both directions at once — it
+  withholds text a one-megabyte budget would have paid for, and it overflows on
+  a tree whose clauses are long. And a clause that does not fit is PASSED OVER
+  rather than ending the walk, since stopping would let one enormous low-ranked
+  clause withhold every smaller clause behind it. Both consumers —
+  `_orchestrator_ledger_intent._verdict` and `_drift_run._judge_one` — call
+  `judge_within_ceiling` and never `spec_stated.judge`: a caller that reached
+  the bare entry point would not take a bigger judgement but NO judgement, and
+  the refusal surfaces as a verdict that could not be read. That entry point
+  also composes the citation resolution below, for the same reason.
+- `_spec_stated_citation.py` — the clause a spec-stated judgement CITED, read
+  at the level that governs (`bd-ib-n2drk5`). PURE. The ratified text cites its
+  own SUBSECTIONS by name, so a model that reads a clause correctly names the
+  H3 or H4 subsection it actually read — written with a leading H2 marker,
+  because the prompt asks for one — and `judge` refuses any `stated_by` its
+  tree does not carry as an H2. Measured 2026-10-22 on released v0.234.2, that
+  refused 9 of 15 ledger-intent judgements against this repository, exited the
+  scan 4 and wrote no completed-coverage record, while every rejected name
+  existed one level down in `SPECIFICATION/contracts.md` and was in the
+  condensed prompt with its body. So a citation naming an existing H3 or H4
+  heading is resolved to the governing clause enclosing it, for `stated_by` and
+  `generalization_target` alike, before the shared judgement validates it.
+  Five properties an editor must not invert. The PROMPT IS NOT THE REMEDY: it
+  already demands verbatim H2 headings and already forbids an invented one, so
+  the model's habit is predictable rather than aberrant and only a
+  deterministic resolution makes the correct reading expressible. A heading the
+  tree carries at NO level is STILL REFUSED, which is the only observation that
+  distinguishes resolving existing subsections from accepting whatever a
+  response names. A citation NO SINGLE CLAUSE ENCLOSES is refused too — a title
+  two clauses carry, or a subsection standing before any clause of its file, is
+  absent from the map rather than guessed, since naming one would send a
+  proposal to a clause the model never cited. An ALREADY-GOVERNING citation is
+  carried through BEFORE the title-keyed map is consulted, so a title a clause
+  and a subsection happen to share cannot rewrite the clause's own citation.
+  And a response this cannot read is returned VERBATIM: the shared parser owns
+  what a malformed response means and names the field it could not read, so a
+  second account here would report one shape of malformedness as another. The
+  map is built from the GOVERNED tree and not the condensed one, because a
+  clause whose body the condensation withheld still encloses the subsections
+  the specification states it through.
+
+- The ATTEMPT-COST RECORD of `contracts.md` §"Factory-configurable ACP fallback
+  priority" → "Cost follows every attempt" (`bd-ib-a2rhtt`, Scenarios 45 and
+  127) — one observation per provider-limit-released run and per availability
+  confirmation turn, and the per-item sequence total built from them. Four
+  cohesive pieces, and the dependency direction reads bottom-up:
+  `_dispatcher_cost_attempts` gains the RECORD (its stage, its two sources, its
+  stable identity, and the per-attempt entries) beside the per-attempt
+  arithmetic it already owned; `_dispatcher_cost_sequence` (PURE: the per-item
+  fold, its dedupe, and the sequence total with its labelled subtotal) →
+  `_dispatcher_released_run_cost` (the one impure reading: a released run's own
+  record on its own factory) and `_acp_availability_probe_records`'
+  `probe_attempt_cost_record`. `_dispatcher_provider_limit_disposition` and
+  `_acp_availability_probe_run` are the two writers.
+  Seven properties an editor must not invert. The record GATES NOTHING, which
+  holds structurally rather than carefully: neither record module can import
+  `_dispatcher_cost`, `_dispatcher_cost_gate` or `_dispatcher_cost_wave`, so
+  neither can produce a verdict whatever its fields are called, and the
+  fail-closed gate keeps reading only successful runs with a confirmed run
+  record. The identity is REPRODUCIBLE AND DISCRIMINATING and neither half is
+  worth anything alone — a constant collapses two releases of one item onto one
+  observation and loses a real charge, while a counter or a clock makes every
+  replay a second observation and double-counts the sequence. The whole-run
+  figure is the ENGINE'S OWN and is never taken from the host cost sink: that
+  sink accrues per WORK ITEM rather than per run, so a second release of one
+  item would have the first run's calls attributed to the second run's attempt
+  windows and the fold would count that spend twice. A row whose identity
+  cannot be read is CARRIED rather than dropped, because dropping it
+  under-reports a real charge while leaving a well-formed row behind — and it
+  costs nothing, since such a row states no figure either. One unobservable
+  figure darkens the WHOLE total while the subtotal survives labelled, the
+  final run being one term of the same sum rather than a separately guarded
+  one. The two released-run reads fail INDEPENDENTLY — a refused `events`
+  leaves the engine's figure readable and a refused `ps` leaves the attempts
+  readable — and a record is owed for EVERY released run, so no arm returns
+  nothing. And the confirmation turn's record is charged to exactly ONE item,
+  which is the whole of "a shared availability probe MUST NOT be charged in
+  full to multiple items": nothing downstream divides a charge, so the peers'
+  folds see nothing at all rather than a share or a zero.
+  TWO FIGURES ARE STATED ABSENT PER ATTEMPT RATHER THAN OMITTED OR ZEROED. No
+  engine this fleet runs reports a per-node usage struct, so an entry carries
+  the engine's own elapsed measurement and explicit nulls for the token use and
+  the per-attempt price; an omitted key is what a record from a build predating
+  the clause looks like, and a zero is a MEASURED figure everywhere else here.
+  `_acp_availability_probe_reading` is the cohesion split that made room for the
+  turn's third record: reading one ENDED probe run moved out of
+  `_acp_availability_probe_run`, which was at its file LLOC ceiling, and the run
+  module COMPOSES that one reading — a second copy would be two readings of one
+  run that can disagree about whether it confirmed, each well-formed.
+- The SPEC-CHANGE TIER of the autonomy-tier bullet of
+  `SPECIFICATION/contracts.md` (`bd-ib-57ss2n`, Scenario 206, absorbing
+  `bd-ib-yykjko`) lives in FIVE cohesive modules plus one groom-side leaf, and
+  the dependency direction reads bottom-up: `_spec_change_tier` (PURE: the
+  decision — `feature` AND a `partial`/`unstated` verdict — the asked-for
+  behaviour statement, its reuse digest, the derived proposal topic, and
+  `SPEC_DIRNAME`) -> `_spec_change_tier_record` (the ledger record, render and
+  parse together) and `_spec_change_tier_hold` (PURE: whether a recorded tier
+  still HOLDS the item, and which of its three reasons) ->
+  `_spec_change_tier_gate` (the composed classify-then-judge-then-record, with
+  the reuse read first) -> `_spec_change_tier_wall` (the pre-dispatch wall's
+  exit-`5` row, the drain's filter, and `classify_and_hold`, the one
+  composition the armed cadence points take). `_groom_spec_change_classification`
+  is the groom-side peer; `_dispatcher_spec_commitments.ratified_proposal_topics`
+  is the model-free ratification read, which lives there because that module
+  already walks the same revision records through the same front-matter parse.
+  Ten properties an editor must not invert. THE TIER IS A CONJUNCTION and both
+  halves matter: dropping the classification holds every bug whose fix the spec
+  happens not to state, and dropping the verdict holds every feature for ever.
+  `partial` IS HELD beside `unstated` (research note 005, finding 6). The STORED
+  TYPE never reaches the decision — it is evidence the CLASSIFIER weighs, and
+  the audit behind this plan measured 22 of 29 actionable ungoverned items typed
+  `bug`. `spec_commitment_hint` NEVER decides anything: the plan-child
+  disposition clause of `SPECIFICATION/constraints.md` says the two "are
+  near-opposites", so the two predicates that read it gated the wrong set in
+  BOTH directions — refusing every ratified follow-up and admitting every
+  unratified feature — and both now read the recorded classification.
+  PRESENCE IS NOT RATIFICATION: a `reject` revision archives its proposal under
+  the same path as an `accept` one, so the read walks the revision records
+  (note 005, finding 1). The LINKED TOPIC is derived from the ITEM and never
+  from the verdict, because the generalization target is the judgement's own
+  answer and moves between judgements, which would point the hold at a stem
+  nobody will ever write a revision record for. THE RELEASE NEEDS NO PASS OF ITS
+  OWN, and that is the design rather than an omission: the record names the spec
+  version it was taken against, so the revision that ratifies the topic retires
+  it, the classification is re-taken against the ratified tree, returns `stated`
+  and records tier `none` — a second mechanism would be a second authority on
+  when a hold ends. The hold READS THE LEDGER after classifying, never the
+  classification's own return value, because a did-not-run must leave a standing
+  record governing — otherwise one unavailable model releases every held item in
+  the tenant and the release reads exactly like a ratification. An EXEMPT
+  classification owes NO judgement and its record says `(not taken)` rather than
+  a synthesized verdict, which would read as a judgement that returned `stated`.
+  And the two absences are taken in OPPOSITE directions by design: the wall and
+  the drain filter PROCEED on an item with no recorded classification (its own
+  clause makes `dod_gate` the backstop, and holding would empty the queue),
+  while plan-child disposition REFUSES — "where it cannot determine a child's
+  autonomy tier from that recorded classification, it MUST refuse the
+  disposition and surface it".
+  TWO EXEMPTIONS ARE LOAD-BEARING. A GROOM-kind variant is exempt at both wall
+  surfaces through the shared `criteria_wall_variant`, because a groom target
+  reaches that door BECAUSE it is not yet decomposed: judging it holds the groom
+  door shut on the one run that could open it. And an EMPTY spec tree is treated
+  exactly as an unreadable one, which is the arm most easily left out because the
+  reader does not fail on it — `rglob` over an absent directory yields nothing,
+  so a missing spec tree reads back as a well-formed snapshot carrying no files
+  and every feature in such a repository would be held for a proposal against a
+  specification that does not exist.
+- THE HUMAN WAY THROUGH A MISJUDGED HOLD (`release-spec-tier`, the same
+  autonomy-tier bullet) is two leaves and a valve. `_spec_tier_attestation` is
+  the ledger record of the attestation and the rule for whether it still STANDS;
+  `_spec_tier_attested_verdict` turns a standing one into the governing-heading
+  verdict the Definition-of-Done judgement's reuse read
+  (`_dispatcher_dod_governing_reuse`) and the goal block (`_dispatcher_goal`)
+  return. Four properties an editor must not invert. THE ATTESTATION IS NOT A
+  CACHED CLASSIFICATION: the classification records retire on every revision,
+  while an attestation is voided ONLY by a change to the attested input (the
+  item's asked-for behaviour digest) or to the cited clause's heading and body,
+  so `_spec_change_tier_outcome.standing_outcome` (the outcome type and the
+  recorders, split out of the gate for size) reads it BEFORE the reuse read and
+  records a `none` tier once per specification version. THE COMPARISON BLOCK
+  IS SEPARATE FROM THE QUOTED TEXT: the asked-for behaviour and the assertions
+  are quoted below a blank line because a description line shaped like
+  `input-digest: ...` would win a last-occurrence parse. THE NEWEST ATTESTATION
+  COMMENT DECIDES, and a malformed newest one means nothing is attested. THE
+  LEDGER IS CHECKED BEFORE THE DISK in `attested_governing_heading`, which runs
+  on every taking and every goal render.
+  THE VALVE ITSELF (`_drive_release_spec_tier_valve`, routed from
+  `_drive_valves` and recognised by `_drive_valve_grammar`) WRITES NO STATUS:
+  it appends the attestation, journals it, asks the same classification gate
+  every cadence point asks (which now records a `none` tier), and then either
+  leaves an `active` `rework:pending` item exactly where it is or sends every
+  other item back through `apply_intake_dor`, whose admission policy, findings,
+  dependencies and size gate all still apply. Every refusal precedes the first
+  write (lane, standing hold, live run, dispatch lock, then the heading),
+  because beads comments are append-only and a refusal after the attestation
+  would leave a standing override on an item the valve reported unreleased. A
+  run inventory that cannot be MEASURED refuses like a live run
+  (`observe_item_run_liveness`, shared with the merge-hold arming guard). The
+  heading is the REST of the action id, since a specification title may carry a
+  colon.
 
 Rules an agent editing this tree must follow:
 

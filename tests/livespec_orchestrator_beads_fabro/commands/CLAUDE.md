@@ -75,6 +75,52 @@ Tests for the thin-transport command modules under
   defect these cases were added to close, where a merge nobody could read graded
   as a merge nobody recorded and the containment relation then did not run.
 
+- `test_plan_relay_record.py`, `test_plan_relay_payload.py`,
+  `test_plan_relay_projection.py`, `test_plan_relay_delivery.py` and
+  `test_plan_relay_retry.py` — the relay-delivery primitive. The scenario itself
+  is bound at the integration tier by
+  `tests/integration/test_plan_relay_delivery_scenario149.py`; these cover what
+  that tier cannot observe, and the split follows the one in the product tree.
+  Three of them are worth knowing about before editing. `..._delivery` names a
+  LATER deadline on every recheck, because a recheck asking for the deadline it
+  already has passes against an implementation that simply stores whatever it is
+  handed — which is the defect, since the SENDER is the party recording and every
+  record it writes is well-formed either way; its conflicting-target pair changes
+  only the target, so the refusal is evidence about the target rather than about
+  anything else the request carries. `..._retry` MOVES THE TARGET between the two
+  calls, which is the one fixture under which a re-observing implementation
+  cannot return the recorded observation by coincidence, and each of its other
+  cases reads something the return value cannot carry — the comment count, or the
+  forge read count — because a re-observing retry agrees with the first record on
+  the deadline, the relay and the target, the three fields an obvious assertion
+  would check. Both modules reach the supersession surface through an ASSERTION
+  rather than an import, since the name does not exist when their Red is authored
+  and a top-level import of an absent name dies at collection, proving only that
+  the name is absent.
+
+- `test_plan_carrier_map_reader.py`, `test_plan_carrier_tenancy.py` and
+  `test_plan_carrier_gate.py` — the three modules of the carrier gate
+  (`bd-ib-evrynu`). The gate's end-to-end behaviour is bound at the integration
+  tier by `tests/integration/test_plan_resume_open_carrier_await.py`; these cover
+  what that tier cannot DISCRIMINATE, because several distinct readings all
+  produce a derived proof pointer there and so look identical from the resume's
+  own surface. Three things to know before editing. The reader module's cases are
+  mostly about what is NOT a carrier, because a scope-event body is made of list
+  lines from its first section onward — a reader collecting every `- ` line would
+  hand the resume a sentence of requirement prose as a work-item id, and the
+  resume would then wait on it. The tenancy module is filesystem-only and its
+  load-bearing case is the OVERLAPPING-PREFIX one, in the shape this family
+  actually has (`livespec-driver-codex` beside `livespec-driver-pi`): a
+  first-match scan over the manifest's own order gives one tenant's carriers to
+  the other, and the resulting obligation is well-formed, so the wrong answer
+  surfaces as an `unsatisfied` reading from a tenant that never held the item.
+  And the gate module's two discriminating cases pull in OPPOSITE directions — an
+  unplaceable carrier is passed over so the scan reaches the open carrier behind
+  it, while a carrier whose status cannot be READ is reported open — so neither
+  may be collapsed onto the other; its no-carrier-map case is the positive
+  control, without which a gate answering `None` unconditionally passes every
+  absence in the module.
+
 - `test_plan_next_action_admission.py` sits beside those too, on the WRITER's
   side of the same repository identity: a `repo` value the writer accepted could
   be one the reader can never resolve, which locked a plan for its whole budget
@@ -256,6 +302,374 @@ Tests for the thin-transport command modules under
   no-op while the work a snapshot must not do has already been spent. Its
   positive control is the `_repository` module, which resolves the same fixture
   and reads once as soon as a policy is supplied.
+
+- The four `test_*_seven_day_*` modules cover the session-headroom clause's
+  SEVEN-DAY half (`bd-ib-u3jq5r`). Scenario 231 is bound at the integration tier
+  by `tests/integration/test_session_headroom_seven_day_scenario231.py`; these
+  cover what that tier cannot DISCRIMINATE, and the split follows the one
+  assertion each one can fail on. `test_dispatcher_session_headroom_seven_day_
+  read` owns the READ, and its load-bearing assertion is the request COUNT
+  rather than the figures: both windows come off one response's headers, so a
+  build spending a second bounded request returns the identical reading and
+  satisfies every figure assertion while doubling what the brake costs the
+  provider. `..._skip` owns the skip and the continued selection, read off the
+  SURVIVING candidate rather than off the skip — a node that recorded the skip
+  while emptying its chain satisfies every assertion about the skip itself — and
+  its control is a FULLY SPENT weekly window the provider still serves, the
+  sharpest form available, since a build inferring exhaustion from the
+  percentage skips that one too. `..._arms` owns the seven readings that are not
+  refusals plus the floor-of-0 dial; every case there is an ADMISSION, so every
+  one is satisfied by a build that reads no weekly window at all, and what
+  discriminates is the refusing reading each case is paired against on the same
+  fixture. `..._naming` owns the two record surfaces and is explicitly a set of
+  CONTROLS: the kind is one field the filter sets and all three record surfaces
+  render, so no case there could have failed before the filter learned to report
+  it — they are what would fail if a later edit reached for a second skip REASON
+  per shortfall, which would leave every consumer keying on the reason unable to
+  see a weekly skip at all.
+  EVERY FIGURE IN ALL FOUR IS A PERCENTAGE, and that is worth knowing before
+  editing a fixture: the provider's header carries a FRACTION and the read
+  converts it once, so a fixture spelling `1.0` where it means a full window
+  builds a reading of one percent wearing the look of a spent one. Measured
+  2026-10-23 while authoring these — the first draft of the record module's
+  expectations did exactly that, and the rows labelled `below-100` and
+  `at-100-unrefused` would not have been the rows they claim to be.
+
+- The `test_dispatcher_run_wall_*` family covers the whole-run wall budget
+  (`bd-ib-sdxfsn`). Scenario 175 is bound at the integration tier by
+  `tests/integration/test_run_wall_budget_scenario175.py`; these cover what that
+  tier cannot observe, and the split follows the one in the product tree.
+  `..._budget` and `..._budget_admission` own the three-layer resolution and the
+  pre-dispatch node-timeout refusal, with the ADMITTED dispatch as the control
+  for the refusal — a wall that refused every budget would satisfy the refusal
+  case exactly as well. `..._clock` owns the slot-holding clock, and its
+  load-bearing case is the NEGATIVE one: a record carrying `start_time` and no
+  running instant must leave the start UNFIXED, because a reader that accepted
+  it returns a larger, plausible elapsed value and the cancel it produces reads
+  like a legitimate one. `..._records` and `..._publication` own the two record
+  shapes, and the `held` record is asserted to carry NO stage, pull request or
+  head, since an omitted field is what every record written before the hold
+  existed looks like. `..._watch` and `..._held` own the per-poll verdict and the
+  read-back failure; the held case keeps the event stream FROZEN throughout, so
+  the run satisfies the stall rule as well and the arm's `continue` is graded on
+  the three stages that must be absent rather than on the one that is present.
+  `..._disposition` and `..._not_non_convergence` own the rest state, the second
+  being a control for the first: "the item rests at blocked" is otherwise
+  equally consistent with a build that also journals a non-convergence bounce.
+  `..._launcher` and `..._terminal` own the wiring — the budget arm reached
+  BEFORE `decide_stall`, and the engine routing a launcher's budget report to its
+  own terminal, which `run_dispatch` reaches and `launch` cannot.
+
+- `test_dispatcher_resume_cancel_anchor_budget.py` is the other half of
+  `test_dispatcher_resume_cancel_anchor.py`: the clause admits the cancel anchor
+  for TWO stages, and that module's quote elides the second. Its cases establish
+  that the reader's bounds hold for `run-wall-budget-exceeded` too, which is a
+  different claim and fails for a different reason. Two pairings are
+  load-bearing. Every NEGATIVE case here produces the same observable the
+  pre-repair build produced for every budget row — no anchor — so a reader that
+  still recognised only the stall stage passes all of them and only the positive
+  control discriminates; measured by mutation on 2026-10-19, dropping the budget
+  row from `_CANCEL_SOURCES` reds that control, the latest-row case and the
+  unanchoring-stage case. And the two source values are asserted as DISTINCT
+  beside a stall row that must still carry the STALL source, because a build
+  reporting the budget source for every cancel row satisfies every budget case
+  in the module while mislabelling every stall-anchored resume in the
+  repository — that second mutation reds this module's stall control plus three
+  existing modules.
+
+- `test_dispatcher_definition_of_done_advisory_scenario_bodies.py` and
+  `test_dispatcher_definition_of_done_advisories.py` split the filing-time
+  scenario advisory's BODY score by what each one can observe, and neither is
+  redundant. The first drives the fixture a MEASURED miss was taken from — the
+  five assertions `bd-ib-yw7otf` was filed with, against Scenario 127's own text
+  — and carries the altitude claim, that such a candidate reaches a filer under
+  the display's ADVISORY leader rather than the mechanical one. The second
+  carries the BOUNDARY, that the body each scenario is scored on ends at the next
+  `## ` heading, which needs a SECOND scenario in the fixture and so cannot be
+  observed over the real one at all: its decoy heading sits one term short of the
+  bound, so a build scoring every scenario against the whole file reaches the
+  bound on the decoy and, being earlier in document order, reports it instead.
+  Its paired control asserts the decoy WAS in the candidate set, without which a
+  build that merely dropped the decoy would satisfy the absence assertion.
+  The Scenario 127 fixture is SLICED OUT OF `SPECIFICATION/scenarios.md` at run
+  time rather than pasted, because the assertions it drives were filed and
+  delivered against that scenario's own text and a pasted copy would keep passing
+  after the scenario had been rewritten — green, and no longer about anything.
+  Keep the BODY-STRIPPED control beside the body-matching case: with the body
+  removed the same heading reaches the bound on nothing, which is the whole
+  measurement behind the change, and a build that had stopped reading bodies
+  satisfies the negative alone.
+
+- `test_dispatcher_loop_unattended_picking.py` — the v127 retirement of the
+  rule that an unresolved projection-failure fact stopped unattended picking
+  (`bd-ib-qm6r1`). It is one of the few modules here whose subject is an
+  ABSENCE, so it asserts that absence three ways, each catching a different
+  half-done retirement: the module file is gone, the module is unimportable
+  (which a stale bytecode cache or a re-export shim would otherwise hide), and
+  the loop command's own SOURCE names neither the posture nor its stop-picking
+  rule — the one instrument that catches a gate re-expressed inline under a
+  different spelling. Its behavioural case is the exact INVERSE of the deleted
+  `test_the_unattended_drain_stops_before_reaching_the_dispatch_wave`: the same
+  journal record, and the pass must now reach the wave. Without that case the
+   three absences are equally consistent with a build that moved the same gate
+   somewhere this module cannot see; the drain's end-to-end half is
+   `tests/integration/test_unattended_drain_past_projection_facts.py`.
+
+- `test_dispatch_pass_fallback_history_sources.py`,
+  `test_acp_fallback_warning_primitives.py` and
+  `test_dispatcher_item_run_target.py` — the v127 removal of the
+  `agent.acp.failover` event projection from the dispatch pass (`bd-ib-qm6r1`).
+  The first asserts the removal as an IMPORT-GRAPH property over a STATED scope
+  (every `.py` under the package's `commands/` tree), because a call site
+  removed while a sibling still imports the module leaves the projection one
+  line from returning and a per-file assertion cannot see that; its positive
+  control is the other half of the same clause, the two authoritative record
+  stages asserted present and still written, since "removed" is satisfied just
+  as well by a build that removed those too. The second keeps the warning and
+  hold PRIMITIVES covered through the interval in which they have no production
+  caller at all — the clause requires existing records to stay readable and the
+  lifecycle to be re-sourced from selection records by the work-item that
+  follows — and each of its cases is paired with the near-miss it must refuse,
+  because every one has a plausible wrong answer that looks correct: a
+  domain-scoped failure carrying a candidate key, a transition BACK to the
+  primary read as a fallback, an unknown `schema_version` read on v1's field
+  meanings, and a retirement line whose `warning_ids` is not a list read as
+  retiring everything. The third covers the two names that outlived the
+  projection, in both directions, since a resolution answering `None` for
+  everything satisfies its unresolvable case exactly as well as a correct one.
+
+- `test_dispatcher_reconcile_selection_warnings.py`,
+  `test_acp_fallback_selection_warning.py`,
+  `test_acp_fallback_selection_warning_tolerances.py`,
+  `test_acp_fallback_selection_primary_attempts.py` and
+  `test_acp_selection_dispatch_correlation.py` — the selection-to-execution
+  replay (`bd-ib-augqc2`), split by what each one can FAIL on. The first is the
+  only one that drives `reconcile_runs`, and that is its whole point: the pure
+  reading was already correct and already covered when the item was filed, and
+  what was absent was any CALLER — so `ingest_model_fallback_warning` had no
+  production reader at all and the attention lane reported a repository where no
+  fallback had ever run. A case built on a hand-written outcome map cannot fail
+  for that reason, because it passes against a dispatcher that never looks at a
+  run; its outcome maps are therefore produced by the real port out of real
+  `fabro inspect` stdout, and its `inspect` fixtures spell `implement@1` rather
+  than `implement`, which is the visit-qualified key a hand-built map hides.
+  Three further things to know before editing. It selects TWO nodes and executes
+  only ONE throughout, since "the run executed it" cannot fail on a one-node
+  fixture — a build minting a warning per SELECTED node satisfies every
+  assertion about the executed one. Every retirement case sits beside the
+  near-miss it must refuse, and all three near-misses produce a well-formed
+  executed primary attempt: a primary that STARTED BEFORE the warning, one that
+  executed without succeeding, and a fallback-only chain edit whose full-chain
+  digest no longer matches anything declared. And its `_configured_repo` fixture
+  is used by the supersede cases ALONE, with every other case on a bare
+  `tmp_path`, because a repository that resolves a current primary generation
+  would retire the warnings those cases just minted — the fallback-only control
+  reads that generation through the production resolver rather than transcribing
+  it, so a configuration change makes the control stop matching instead of
+  leaving it agreeing with a constant nobody rechecks.
+- `test_dispatch_pass_replay_obligation_record.py` sits beside those three and
+  covers what the surviving DESIGN RECORD at that deletion site may claim. The
+  v127 paragraph carries TWO obligations, and the comment left in place of the
+  deleted call site asserted the second — the idempotent selection-to-execution
+  replay — was discharged by the orphan disposal below it, which names no
+  selection, fallback or release and never reaches the release leg. That is the
+  confident-wrong-answer-that-forecloses-the-action class: the comment is the
+  only design record at the site, so it is what a later v127 conformance audit
+  finds, and the live risk was closing the follow-on half (`bd-ib-augqc2`) as
+  already-covered on the strength of it. Its two prose assertions are MEANINGLESS
+  without their control, which is the measurement that made the claim false — a
+  module carrying neither word would satisfy them while saying nothing about
+  where the leg runs — and that control reads the importers through `ast` rather
+  than as text, because the one module mentioning the release symbol WITHOUT
+  importing it mentions it in a comment, which a text scan reports as a second
+  caller that does not exist. The comment block is located by the clause's own
+  words and read CONTIGUOUSLY, since a whole-file read is satisfied by a build
+  that moved the false attribution into another comment in the same module.
+
+- `test_needs_attention_model_fallback_warning_only.py` and
+  `test_needs_attention_model_fallback_rows.py` — the v127 retirement of the
+  `hygiene:model-fallback-projection` fact and its clearance valve
+  (`bd-ib-qm6r1`), and the aggregation of the row that survives. The first
+  drives a journal carrying BOTH kinds of record, which is what makes it able to
+  fail: a fixture holding only the warning is satisfied by a lane that composed
+  nothing from the retired record because no such record was there. Its absence
+  assertions sit beside the surviving row asserted IN FULL, since "composes only
+  the warning fact" is satisfied just as well by a lane that composes nothing;
+  and its control reads the two SIBLING clearance valves off the help text an
+  operator reads, because a build that had removed the whole clearance family
+  would satisfy every absence in the module. The second is what
+  `test_acp_projection_surfaces.py` became once it lost its other two subjects:
+  it owns the AGGREGATION, over three observations across two nodes with two
+  sharing a node, which one observation per node cannot show — a lane emitting a
+  row per RECORD would pass that weaker fixture, and "the newest supplies the
+  summary" would hold by construction rather than by reading.
+
+- `test_retired_projection_journal_tolerance.py` — the clause that outlives the
+  v127 retirement (`bd-ib-qm6r1`): "Existing versioned hold observations,
+  retirement records, and fallback audit records remain readable. Removing
+  dependence on new engine failover events MUST NOT discard existing holds or
+  reinterpret unknown record versions." It drives ONE journal rather than one per
+  reader, because a real journal holds every writer's records interleaved — this
+  repository's held 153 `acp-projection-failure` records beside its live holds
+  and warnings when the retirement was measured — and a per-reader fixture
+  carrying only that reader's own stages never puts a retired record in front of
+  it at all. Every reader is asserted to return its LIVE SET rather than merely
+  to avoid raising, which is the failure mode that matters: "still parses" is
+  satisfied by a reader that swallows the file and reports nothing, and a hold
+  silently discarded is a candidate silently re-dispatched into an outage. The
+  retired records' PRESENCE in the raw read is asserted too, since they are
+  history and the retirement must not rewrite them; and the unknown-version arm
+  asserts the record comes back UNINTERPRETED with its entitlements unconfirmed,
+  because scoping a skip from a field nobody may read is the reinterpretation the
+  clause forbids.
+
+- The four `test_dispatcher_sandbox_image*` modules cover the read-only
+  sandbox-image enumeration (`bd-ib-nqmltq`). Scenario 212 is bound at the
+  integration tier by `tests/integration/test_sandbox_images_scenario212.py`;
+  these cover what that tier cannot observe, and the split follows the one in
+  the product tree. Three of them are worth knowing about before editing.
+  `..._images_unreadable` produces a read failure with INVALID UTF-8 rather
+  than a mode bit, because this suite runs as root in the factory sandbox and
+  root bypasses permission bits -- a `chmod 000` fixture reads successfully and
+  the case passes against an implementation with no read-failure arm at all;
+  its one parseable-but-pinless case is the control that keeps "was read and
+  declares nothing" from collapsing onto "could not be read". `..._image_builds`
+  spawns REAL processes against the REAL `/proc`, since a fake proc tree cannot
+  make a live lease and a stale one differ for the right reason, and it makes a
+  pid stale by WAITING on the child: an unreaped child is a zombie whose
+  `/proc/<pid>` entry still exists. Its running-Dispatcher fixture is
+  deliberately NOT a Python child -- `check-tests-no-subprocess-spawn` asks
+  tests not to spawn one, and the argv is the whole of what the reader observes.
+  And `..._images_command` gives nearly every repository fixture a CATALOG or
+  CONFIGURED image, so almost no assertion depends on the host's executing-build
+  set.
+  NO ASSERTION IN EITHER MODULE -- NOR IN THE INTEGRATION MODULE -- MAY TAKE AN
+  EXACT-EQUALITY READING OF A HOST-WIDE SET, and this is the one thing to know
+  before editing any of the three. The payload route scans the real `/proc` for
+  any argv naming a `scripts/bin/dispatcher.py`, which is host-wide BY DESIGN,
+  so every such process is a legitimate build a dispatch could execute from.
+  Measured 2026-10-21 under `pytest -n 18`, which is how CI runs: a sibling
+  worker's `tests/bin/test_payload*` fixture spawns exactly that child out of a
+  full copy of the plugin root, so foreign roots such as
+  `/tmp/livespec-public-route-exact-*/install-True` entered the union and four
+  cases across the three modules reddened on correct readings while the sandbox
+  gate, where nothing else ran concurrently, passed. The three repairs each keep
+  the real `/proc` reading the liveness claim needs and scope only the
+  COMPARISON: `..._image_builds` and the integration module filter to their own
+  scratch tree through their own `_own` helper, and `..._images_command`'s one
+  bundled-arm case asserts its registered build's entry is PRESENT rather than
+  sole, since "`--repo` scopes repositories, not builds" is a claim about that
+  entry. Where the array is host-wide the exit code is read as the RULE an
+  unreadable source moves rather than as a constant; the concrete 0-and-non-zero
+  readings stay on the sibling cases whose arrays are the fixture's alone.
+
+- The eight `test_drift_*` modules cover the per-merge drift run
+  (`bd-ib-yvjxo4`). Scenario 207 is bound at the integration tier by
+  `tests/integration/test_per_merge_drift_run_scenario207.py`, which also
+  carries Scenario 82's re-bound drift case; these cover what that tier cannot
+  observe, and the split follows the one in the product tree. Five of them are
+  worth knowing about before editing. `..._merge_enumeration` asserts the
+  rev-list argv carries NO filter beyond `--reverse`, because a `--merges`-style
+  filter returns a clean empty answer under this repository's rebase-merge
+  discipline and every other assertion in the module would still pass.
+  `..._proposal_filing` drives the whole pass TWICE over one merge rather than
+  calling the identity function twice, since a stable identity the filer never
+  consults files a second proposal on every ten-minute tick; its `stated`
+  verdict is the control, without which a build filing on every verdict passes
+  every positive case. `..._queue_cap`'s below-the-cap and at-the-cap cases are
+  each other's control — either alone is satisfied by a build that always does
+  that one thing — and the held case asserts the open queue is UNCHANGED, since
+  a build that recorded the hold AND wrote the document defeats the cap while
+  satisfying every hold assertion. `..._judge_seam` asserts its property over a
+  prompt LARGER than the 131072-byte argv-entry cap, because a small prompt
+  passes whether or not the prompt travels on stdin, which is exactly why that
+  defect would have shipped; and its fake runner reads the descriptor
+  UNCONDITIONALLY, because a guard there is an arm no call can reach and an
+  unreachable arm in a fake is a fake that has stopped describing the seam. And
+  `..._lane_unrecordable` keeps the four record-nothing arms apart — no tenant
+  connection, no committed anchor, no recorded baseline, an unenumerable range —
+  with a scope-that-advances case as the positive control, without which a lane
+  that never advanced would satisfy every other assertion in the module; its
+  no-baseline case asserts ZERO git reads, which is the only observation that
+  distinguishes "judged nothing" from "judged the whole branch".
+  `..._lane_inert_record_dedup` sits beside it on the one arm that records at
+  most once (`bd-ib-yfn7ht`), and it is the module most easily weakened: its
+  count is read on EVERY tick rather than after the last, because a lane that
+  recorded nothing at all satisfies a final-state reading exactly as well as one
+  that recorded once, and its baselined case is the positive control for the
+  same reason in the opposite direction. The count is scoped to the DRIFT
+  operation with a gap-capture record seeded on the same anchor, since one
+  anchor carries both operations' bookkeeping and a de-duplication graded on
+  every record there would be graded on the wrong population. And its
+  report-on-every-tick case is what keeps the de-duplication from buying silence:
+  the lane's own report is what the pass renders, so a tick that recorded nothing
+  AND said nothing reads as a lane that had advanced.
+
+- `test_reconcile_pass_drift_report.py` covers the other half of that repair
+  (`bd-ib-yfn7ht`): the pass's own output, which is now where the lane's state
+  lives between the first inert tick and whenever an operator next reads the
+  anchor. Its two subject cases drive the REAL lane end to end, because a
+  constructed outcome cannot fail for the reason the defect existed — the pass
+  discarded the lane's return value, so a hand-built one is satisfied by a
+  command that never calls the lane. Its third case is the rendering CONTROL and
+  is the only one that patches the lane: without a lane that ADVANCED rendering
+  differently, a renderer printing a constant line satisfies both subject cases
+  while telling an operator nothing. It also asserts the drift line is the FIRST
+  line, which is what pins it ahead of the zero-factory early return — the one
+  place a drift report is silently lost to the other lane's refusal.
+
+- The three `test_spec_tree_condensation_*` modules cover the condensed spec
+  tree a spec-stated judgement is taken against (`bd-ib-a2bfp3`), split by what
+  each one can FAIL on. `..._prompt_ceiling` measures the prompt at the
+  `run_model` SEAM rather than over the condensation's own return value,
+  because the prompt is rendered inside the vendored `judge` by a renderer this
+  repository does not own — and its CONTROL is the same measurement through the
+  unreduced tree, without which the assertion passes for every repository whose
+  spec tree is small, which is every repository but this one.
+  `..._heading_inventory` carries assertion 2, and its discriminating case
+  cites the clause the retrieval did NOT select: a clause the retrieval DID
+  select is carried whole whatever the condensation does with the rest, so a
+  case that only ever cites a selected clause passes against a condensation
+  that drops every unselected one entirely. Its real-tree case is universally
+  quantified over every H2 heading the five spec files carry, with the same
+  citation against the UNREDUCED tree as the control that pins the module's own
+  heading regex to the one the shared judgement validates against; and its
+  invented-heading negative is what tells "carries every real heading" apart
+  from "carries everything". `..._budget` owns the degenerate trees a real tree
+  never has, and its ordering is counted in clause BODIES WITHHELD and never in
+  characters — the marker standing in for a body is longer than a short body,
+  so a tighter budget legitimately yields a LONGER tree and a character count
+  would report the design working as the design failing.
+
+- The six `test_dispatcher_attempt_cost_*`, `test_dispatcher_cost_sequence*`,
+  `test_dispatcher_released_run_cost` and
+  `test_acp_availability_probe_attempt_cost` modules cover the attempt-cost
+  record (`bd-ib-a2rhtt`), split by the one assertion each one can fail on.
+  Five things to know before editing. EVERY FIGURE IN EVERY SEQUENCE FIXTURE IS
+  DISTINCT, which is what makes the totals evidence: three equal figures add to
+  the same total whether a replayed observation was counted once, twice or
+  dropped, so a fixture that reused a figure would pass against every wrong
+  fold. The two POSTURE modules are explicitly sets of CONTROLS — nothing in
+  them could have failed before the record existed — and both drive the
+  STRICTEST posture, `enforce` on an unattended drain, because in `report` mode
+  the gate refuses nothing and a record that DID gate would be invisible; each
+  one's green-and-resolvable case refuses, which is what makes its absences
+  evidence rather than consistent with a gate that had stopped working.
+  `..._gates_nothing` asserts its central claim over the IMPORT GRAPH of a
+  stated scope, with a positive control that the named gate modules really are
+  the gate, since an absence over a population that does not contain the thing
+  is no evidence. `..._cost_gate_scope_unchanged` drives each non-green status
+  with a CONFIRMED run record, because with the record absent as well the same
+  absence would be equally consistent with the skip arm, and its absent-record
+  fixture carries ANOTHER repository's run rather than an empty listing. And
+  `..._released_run_cost` states its expectations PER ARM rather than
+  collapsing them: a refused event stream leaves the engine's figure readable
+  and a refused `ps` leaves the attempts readable, so an arm asserting both
+  dark would pass against an implementation that darkens on any fault.
+  `..._probe_attempt_cost`'s two timed-out arms are likewise not one case
+  repeated — a turn this Dispatcher REAPED and one whose run it could not even
+  name both spent an allowance, and the second is the arm where every other
+  field of the record is absent.
 
 Conventions:
 

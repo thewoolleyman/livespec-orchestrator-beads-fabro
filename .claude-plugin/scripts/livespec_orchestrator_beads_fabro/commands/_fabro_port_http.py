@@ -245,6 +245,20 @@ class FabroHttpPort:
             timeout_seconds=timeout_seconds,
         )
 
+    def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+        """Read one run's whole record -- the projection `fabro inspect` prints.
+
+        The availability-evidence reader takes it here rather than through the
+        CLI because the CLI gives up at a fixed 30 s (bd-ib-fhmpik); paired with
+        `_fabro_port_compressed`'s transport it arrives compressed and bounded.
+        """
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/state",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
     def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
         """Cancel one run through the server's lifecycle route."""
         return self._verb(

@@ -134,7 +134,7 @@ log_has() { [ -f "$CLOG" ] && grep -qF -- "$1" "$CLOG"; }
 # killed. Stdlib http.server only — no network, no external deps.
 CAP_PY="${WORK}/capture.py"
 cat > "$CAP_PY" <<'CAPPY'
-import http.server, sys
+import http.server, os, sys, time
 OUT, PORTF = sys.argv[1], sys.argv[2]
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -148,6 +148,11 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
     def log_message(self, *a):  # silence access log
         return
+fail_status = os.environ.get("CAPTURE_SERVER_FAIL_STATUS")
+if fail_status:
+    print(os.environ.get("CAPTURE_SERVER_FAIL_STDERR", "capture server failed"), file=sys.stderr)
+    sys.exit(int(fail_status))
+time.sleep(float(os.environ.get("CAPTURE_START_DELAY_SECONDS", "0")))
 srv = http.server.HTTPServer(("127.0.0.1", 0), H)
 with open(PORTF, "w") as f:
     f.write(str(srv.server_address[1]))
@@ -178,18 +183,53 @@ VERIFYPY
 
 CAP_PID=""
 CAP_PORT=""
+CAP_EXIT_STATUS=""
+CAP_BOUND_REACHED=0
+CAP_ERR_FILE=""
+
+# capture_start_detail — explain why start_capture returned without a port.
+capture_start_detail() {
+    local captured_stderr
+    captured_stderr="$(tr '\n' ' ' < "$CAP_ERR_FILE" 2>/dev/null || true)"
+    if [ "$CAP_BOUND_REACHED" -eq 1 ]; then
+        printf 'still running at 30-second bound; stderr=%s' "$captured_stderr"
+    else
+        printf 'exit status %s; stderr=%s' "$CAP_EXIT_STATUS" "$captured_stderr"
+    fi
+}
+
 # start_capture <out-file> <port-file> — launch the capture server and block
-# (up to ~2s) until it has published its port into CAP_PORT.
+# until it has published its port, exits, or the 30-second bound elapses.
 start_capture() {
-    rm -f "$1" "$2"
-    python3 "$CAP_PY" "$1" "$2" &
+    CAP_PORT=""
+    CAP_EXIT_STATUS=""
+    CAP_BOUND_REACHED=0
+    CAP_ERR_FILE="${2}.stderr"
+    rm -f "$1" "$2" "$CAP_ERR_FILE"
+    python3 "$CAP_PY" "$1" "$2" 2>"$CAP_ERR_FILE" &
     CAP_PID=$!
     local i=0
-    while [ ! -s "$2" ] && [ "$i" -lt 40 ]; do
+    while [ ! -s "$2" ] && [ "$i" -lt 600 ]; do
+        if ! kill -0 "$CAP_PID" 2>/dev/null; then
+            wait "$CAP_PID"
+            CAP_EXIT_STATUS=$?
+            CAP_PID=""
+            break
+        fi
         sleep 0.05
         i=$((i + 1))
     done
     CAP_PORT="$(cat "$2" 2>/dev/null || echo "")"
+    if [ -z "$CAP_PORT" ] && [ -n "$CAP_PID" ]; then
+        if kill -0 "$CAP_PID" 2>/dev/null; then
+            CAP_BOUND_REACHED=1
+            stop_capture
+        else
+            wait "$CAP_PID"
+            CAP_EXIT_STATUS=$?
+            CAP_PID=""
+        fi
+    fi
 }
 # stop_capture — kill the capture server if running.
 stop_capture() {
@@ -601,24 +641,69 @@ if [ -n "$CAP_PORT" ]; then
         fail "telemetry: emit/payload shape (rc=$TRC, stdout=$(cat "$OUT_FILE"), cap=$(cat "$TCAP" 2>/dev/null))"
     fi
 else
-    fail "telemetry: capture server did not start (9.1)"
+    fail "telemetry: capture server did not start (9.1): $(capture_start_detail)"
 fi
 stop_capture
 
-# 9.2 fail-open when the endpoint is dead. Point at a refused port; the emit is
-#     detached, so the wrapper returns immediately and bd is unaffected — no
-#     multi-second hang regardless of the collector being down.
-T92_START=$(date +%s)
+# 9.2 fail-open when the endpoint is dead. Point at a refused port: bd's
+#     stdout, stderr and exit are unchanged. No wall-clock bound is asserted
+#     here: timing the wrapper measures host load, not the detach contract,
+#     which 9.2b proves by ordering instead.
 LIVESPEC_BD_REAL=/bin/echo \
 LIVESPEC_BD_GUARD_OTLP=on \
 LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:1/v1/traces" \
     "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
 T92_RC=$?
-T92_ELAPSED=$(( $(date +%s) - T92_START ))
-if [ "$T92_RC" -eq 0 ] && stdout_is "list" && stderr_empty && [ "$T92_ELAPSED" -lt 2 ]; then
-    pass "telemetry: dead endpoint is fail-open (bd stdout/exit unchanged, returns promptly in ${T92_ELAPSED}s)"
+if [ "$T92_RC" -eq 0 ] && stdout_is "list" && stderr_empty; then
+    pass "telemetry: dead endpoint is fail-open (bd stdout/stderr/exit unchanged)"
 else
-    fail "telemetry: dead-endpoint fail-open (rc=$T92_RC, elapsed=${T92_ELAPSED}s, stdout=$(cat "$OUT_FILE"), stderr=$(cat "$ERR_FILE"))"
+    fail "telemetry: dead-endpoint fail-open (rc=$T92_RC, stdout=$(cat "$OUT_FILE"), stderr=$(cat "$ERR_FILE"))"
+fi
+
+# 9.2b the emit is DETACHED: the wrapper returns BEFORE its emit child exits.
+#      A held stub emitter records that it started, then blocks until this
+#      test releases it. When the wrapper has returned, the stub must have
+#      started and must NOT yet have exited: an ordering event, not a timing.
+HELD_DIR="${WORK}/held-emit"
+rm -rf "$HELD_DIR"
+mkdir -p "$HELD_DIR"
+HELD_EMIT="${HELD_DIR}/held-emit.py"
+cat >"$HELD_EMIT" <<'HELDPY'
+import os
+import pathlib
+import time
+
+held = pathlib.Path(os.environ["BDG_HELD_DIR"])
+(held / "started").write_text("1")
+for _ in range(1200):  # safety cap only (60 s); the test releases it first
+    if (held / "release").exists():
+        break
+    time.sleep(0.05)
+(held / "exited").write_text("1")
+HELDPY
+BDG_HELD_DIR="$HELD_DIR" \
+LIVESPEC_BD_REAL=/bin/echo \
+LIVESPEC_BD_GUARD_OTLP=on \
+LIVESPEC_BD_GUARD_EMIT="$HELD_EMIT" \
+LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:1/v1/traces" \
+    "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
+T92B_RC=$?
+held_poll() {
+    local i=0
+    while [ ! -f "$1" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+    [ -f "$1" ]
+}
+T92B_EXITED_AT_RETURN=0
+[ -f "${HELD_DIR}/exited" ] && T92B_EXITED_AT_RETURN=1
+T92B_STARTED=0
+held_poll "${HELD_DIR}/started" && T92B_STARTED=1
+: >"${HELD_DIR}/release"
+held_poll "${HELD_DIR}/exited" || true
+if [ "$T92B_RC" -eq 0 ] && stdout_is "list" && [ "$T92B_STARTED" -eq 1 ] \
+        && [ "$T92B_EXITED_AT_RETURN" -eq 0 ]; then
+    pass "telemetry: wrapper returns before its detached emit child exits (emit started, still held at return)"
+else
+    fail "telemetry: emit not detached (rc=$T92B_RC, started=$T92B_STARTED, exited-at-return=$T92B_EXITED_AT_RETURN, stdout=$(cat "$OUT_FILE"))"
 fi
 
 # 9.3 disabled -> transparent passthrough, NO emit attempted.
@@ -636,7 +721,7 @@ if [ -n "$CAP_PORT" ]; then
         fail "telemetry: disabled still emitted (rc=$TRC, cap=$(cat "$TCAP" 2>/dev/null))"
     fi
 else
-    fail "telemetry: capture server did not start (9.3)"
+    fail "telemetry: capture server did not start (9.3): $(capture_start_detail)"
 fi
 stop_capture
 
@@ -658,7 +743,7 @@ if [ -n "$CAP_PORT" ]; then
         fail "telemetry: exit-code fidelity (rc=$TRC expected 1, cap=$(cat "$TCAP" 2>/dev/null))"
     fi
 else
-    fail "telemetry: capture server did not start (9.4)"
+    fail "telemetry: capture server did not start (9.4): $(capture_start_detail)"
 fi
 stop_capture
 

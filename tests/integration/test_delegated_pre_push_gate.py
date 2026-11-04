@@ -13,10 +13,9 @@ WHY IT IS WORTH OPTING IN. A push from the VPS runs the full `just check`
 aggregate on the VPS — measured at about 17 minutes on this repository. The
 delegated gate runs that same aggregate as a Job in the self-hosted k3s
 cluster's `gates` namespace and gates the push on its verdict instead. This
-repository's default suite has already run green there (gate Job
-`gate-livespec-orchestrator-beads-fabro-1c5e8de33c1f`, 92 targets), so no
-`gate_check_suite` declaration is wanted: the client's own documented
-fall-through is the sequence this repository's pre-push already runs.
+repository declares the established pre-push sequence explicitly: the
+pre-commit delegate derives its gated-tree final member from that declaration,
+while the pre-push delegate retains the declared sequence unchanged.
 
 DELEGATION IS SELECTED BY TWO FACTS, AND ONLY ONE OF THEM IS IN THIS TREE. The
 switch travels with the code and names no host; whether the pushing user can
@@ -58,7 +57,7 @@ _GATES_KUBECONFIG_ENV = "GATES_KUBECONFIG"
 
 _ENABLED_PROBE = "gate_remote_delegate enabled"
 _DELEGATED_RUN = "gate_remote_delegate run"
-_GREEN_TOKEN_PROBE = "green_token check"
+_GREEN_TOKEN_PROBE = "green-token-scope.sh check"
 _AGGREGATE = "just check-skipping check-codex-skill-picker"
 
 _LIVE_OID = "b3d4f1a90c7e25486fd1c0b8a7e6554321098765"
@@ -104,7 +103,9 @@ def _run_delegate_probe(
     return returncode, capsys.readouterr().err
 
 
-def _run_pre_push(*, tmp_path: Path, enabled_exit: int, run_exit: int) -> tuple[int, list[str]]:
+def _run_pre_push(
+    *, tmp_path: Path, enabled_exit: int, run_exit: int, skip_targets: str | None = None
+) -> tuple[int, list[str]]:
     """Run the shipped gate script on an ordinary publish, for one delegated-client answer.
 
     The script is executed as the SHIPPED BYTES, with `uv` and `just` replaced
@@ -132,6 +133,9 @@ def _run_pre_push(*, tmp_path: Path, enabled_exit: int, run_exit: int) -> tuple[
             "STUB_RUN_EXIT": str(run_exit),
         }
     )
+    _ = env.pop("SKIP_TARGETS", None)
+    if skip_targets is not None:
+        env["SKIP_TARGETS"] = skip_targets
     completed = subprocess.run(
         ["bash", str(_SCRIPT)],
         cwd=str(tmp_path),
@@ -165,19 +169,17 @@ def test_this_repository_declares_the_delegated_gate_switch() -> None:
     )
 
 
-def test_this_repository_declares_no_gate_suite_and_takes_the_shared_fall_through() -> None:
-    """No declaration is the deliberate choice, not an omission.
-
-    A declaration here would gate the tree on recipes chosen in this file rather
-    than on the ones the repository's own pre-push actually runs — which is how
-    a consumer's gate goes red on a green tree. The client's fall-through is
-    that sequence, and it has already passed on the cluster for this repository.
-    """
+def test_this_repository_declares_the_existing_pre_push_gate_suite() -> None:
+    """The explicit suite preserves the pre-push sequence and feeds pre-commit derivation."""
     declared = load_gate_check_suite(repo_root=_REPO_ROOT)
 
-    assert declared is None, (
-        "this repository must declare NO gate suite, so the delegated gate runs the "
-        "shared pre-push sequence its local fall-through runs; "
+    assert declared == (
+        "install-worktree-pack",
+        "install-commit-refuse-hooks",
+        "check-pre-push",
+    ), (
+        "this repository must explicitly retain its established delegated pre-push "
+        "sequence, so the pre-commit delegate can replace only its final member; "
         f"declared={declared!r}"
     )
 
@@ -306,3 +308,34 @@ def test_a_delegated_run_that_reaches_no_verdict_refuses_the_push(*, tmp_path: P
 
     assert code != 0, f"a delegated run that did not pass must refuse the push; invoked={invoked}"
     assert _invocation_index(invoked=invoked, needle=_AGGREGATE) < 0, f"invoked={invoked}"
+
+
+def test_the_local_fall_through_honours_the_delegated_clients_skip_targets(
+    *, tmp_path: Path
+) -> None:
+    """The gate Job's own pre-push forwards the members the client left to the host.
+
+    Inside the gate pod nothing re-delegates, so the Job's `check-pre-push` takes
+    this same local fall-through. The client exports the members that read
+    authority held outside the tree into `SKIP_TARGETS` and runs them on the
+    pushing host instead; a fall-through that drops the variable runs them in a
+    pod holding no ledger credential, where `check-no-workflow-edits` fails
+    closed on every tree that carries a workflow edit — measured on gate Job
+    `gate-livespec-orchestrator-beads-fabro-44vss` (2026-10-31), which refused
+    an approved edit for bd-ib-aqrdhl.
+    """
+    code, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        enabled_exit=1,
+        run_exit=0,
+        skip_targets="check-branch-protection-alignment check-no-workflow-edits",
+    )
+
+    assert code == 0, f"invoked={invoked}"
+    aggregate = [line for line in invoked if _AGGREGATE in line]
+    assert aggregate, f"the local fall-through must still run; invoked={invoked}"
+    assert aggregate[0].split()[2:] == [
+        "check-codex-skill-picker",
+        "check-branch-protection-alignment",
+        "check-no-workflow-edits",
+    ], f"every exported skip target must reach the aggregate's skip list; invoked={invoked}"

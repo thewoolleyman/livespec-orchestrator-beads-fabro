@@ -85,15 +85,14 @@
     "critique_mode": "batch",
     "in_flight_alignment": "default-align",
     "revise_decision_mode": "delegated",
-    // ratification_review: "auto-spawn" is inert without a configured
-    // reviewer model (effective.py's effective_ratification_review returns
-    // requires_input=True when ratification_reviewer_model is None). The
-    // reviewer model is the OpenAI Codex model gpt-6-astra, driven in a
-    // separate read-only Codex session, per maintainer direction 2026-10-10
-    // (it was "sonnet" from 2026-08-24, chosen over livespec core's "fable"
-    // convention when that model returned 529 Overloaded errors).
+    // ratification_reviewer_model: an ordered list. Opus is the primary
+    // ratification reviewer and auto-spawn selects it; gpt-6-astra (Codex) is the
+    // fallback, and a review by EITHER model ratifies. The models are
+    // interchangeable like any other model selection here. "auto-spawn" below is
+    // inert when this key is null.
+    // History: "sonnet" 2026-08-24, "gpt-6-astra" 2026-10-10, "opus" 2026-10-26 (maintainer), ["opus", "gpt-6-astra"] 2026-10-26 (R70).
     "ratification_review": "auto-spawn",
-    "ratification_reviewer_model": "gpt-6-astra",
+    "ratification_reviewer_model": ["sonnet"],
     "spec_pr_merge": "auto-on-green"
   },
   // Optional — spec_governance: the complete safe-default reference block.
@@ -158,6 +157,56 @@
       "github_url": "https://github.com/thewoolleyman/livespec-dev-tooling",
       "local_clone": "/data/projects/livespec-dev-tooling",
       "default_branch": "master"
+    },
+    "livespec-driver-codex": {
+      "github_url": "https://github.com/thewoolleyman/livespec-driver-codex",
+      "local_clone": "/data/projects/livespec-driver-codex",
+      "default_branch": "master"
+    },
+    "livespec-driver-pi": {
+      "github_url": "https://github.com/thewoolleyman/livespec-driver-pi",
+      "local_clone": "/data/projects/livespec-driver-pi",
+      "default_branch": "master"
+    },
+    "livespec-console-beads-fabro": {
+      "github_url": "https://github.com/thewoolleyman/livespec-console-beads-fabro",
+      "local_clone": "/data/projects/livespec-console-beads-fabro",
+      "default_branch": "master"
+    },
+    "dolt-server": {
+      "github_url": "https://github.com/thewoolleyman/dolt-server",
+      "local_clone": "/data/projects/dolt-server",
+      "default_branch": "master"
+    },
+    "livespec-tdd-proof": {
+      "github_url": "https://github.com/thewoolleyman/livespec-tdd-proof",
+      "local_clone": "/data/projects/livespec-tdd-proof",
+      "default_branch": "master"
+    },
+    "livespec-runtime": {
+      "github_url": "https://github.com/thewoolleyman/livespec-runtime",
+      "local_clone": "/data/projects/livespec-runtime",
+      "default_branch": "master"
+    },
+    "livespec-driver-claude": {
+      "github_url": "https://github.com/thewoolleyman/livespec-driver-claude",
+      "local_clone": "/data/projects/livespec-driver-claude",
+      "default_branch": "master"
+    },
+    "livespec-orchestrator-git-jsonl": {
+      "github_url": "https://github.com/thewoolleyman/livespec-orchestrator-git-jsonl",
+      "local_clone": "/data/projects/livespec-orchestrator-git-jsonl",
+      "default_branch": "master"
+    },
+    "resume": {
+      "github_url": "https://github.com/thewoolleyman/resume",
+      "local_clone": "/data/projects/resume",
+      "default_branch": "master"
+    },
+    "openbrain": {
+      "github_url": "https://github.com/thewoolleyman/openbrain",
+      "local_clone": "/data/projects/openbrain",
+      "default_branch": "main"
     }
   },
   "livespec-orchestrator-beads-fabro": {
@@ -171,7 +220,7 @@
       // contract-version-compatibility invariant fires `warn` against
       // "master" pins; that is expected during bootstrap.
       "livespec": ">=0.1.0,<1.0.0",
-      "pinned": "v0.42.1"
+      "pinned": "v0.45.1"
     },
     // Per-repo beads tenant CONNECTION block. These keys are read by
     // commands/_config.py and overlaid by the LIVESPEC_BD_PATH /
@@ -225,9 +274,63 @@
     // every comment here while reporting green — tracked as bd-ib-lmi5.
     "dispatcher": {
       "auto_approve_ready": true,
-      "wip_cap": 10,
+      // wip_cap: 16 matches the factory's 16-run cap (coordinator R99:
+      // max_concurrent_runs 16, quota 64/32). Raised from 10 to 12 on
+      // 2026-10-26 (R77) and from 12 to 16 on 2026-10-27 (R115), both under the
+      // maintainer's direction to max out factory capacity: at each lower cap the
+      // orchestrator's own active items filled it and further tickets were
+      // capacity-deferred. Read on each admission pass; no restart needed.
+      "wip_cap": 16,
       "acceptance_mode": "ai-only",
-      "default_factory": "hp",
+      // Committed maintainer delegations of the human valves (contracts.md,
+      // journal invoker attribution, "Delegated valve authority"). A press
+      // `--invoker delegate:<delegate> --delegation <ref>` is admitted only on
+      // resolve-blocked, approve, accept, reject and release-spec-tier, and only
+      // when its ref and delegate match an entry here. NOT API-configurable:
+      // adding a grant is a reviewed commit. R493 is the maintainer's standing
+      // grant ("the coordinator presses human valves on the maintainer's
+      // authority, except credentials, irreversible or outward-facing acts"),
+      // made first-class by the maintainer's 2026-11-02T23:22:22Z ruling.
+      "valve_delegations": [
+        {
+          "ref": "R493",
+          "delegate": "legacy-coordinator-agent",
+          "grantor": "human:thewoolleyman",
+          "record": "livespec-dev-tooling-6tgd2z plan-scope-event 2026-11-01T22:36:24Z"
+        }
+      ],
+      // The shared append-only records a refresh may merge entry by entry
+      // instead of spending a repair round. Entries must remain independent:
+      // default-branch records stay first and this run's additions follow.
+      "record_files": [
+        {
+          "path": "tests/heading-coverage.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/heading-coverage-debt.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/integration/CLAUDE.md",
+          "format": "markdown-insertions"
+        },
+        {
+          "path": "tests/prompts/CLAUDE.md",
+          "format": "markdown-insertions"
+        }
+      ],
+      // The REGISTRY-BACKED name of the hp-xubuntu :32276 instance running the
+      // pinned 0.254 engine — the same instance the entry called `hp` addressed
+      // before this table named factories instead of machines, so this rename
+      // changed no routing. The cutover (bd-ib-iud52v) then moved the default
+      // to `petri`, the gmktec-xubuntu :32276 Petri-era instance, and carried
+      // nothing else. `legacy` was then retired and removed on 2026-10-24 (plan
+      // fabro-currency); a recorded pin naming it, or the retired `hp` name,
+      // now falls back to `petri`.
+      "default_factory": "petri",
       // THE DELIBERATE OPERATOR FLOOR, and the only currency form with any
       // blocking authority at admission: a dispatch refuses before claim when
       // the EXECUTING plugin release is below this value. Ambient staleness
@@ -345,16 +448,34 @@
         "verify_commit_refuse_hook": { "mode": "internal_livespec_dev_tooling" },
         "verify_plugin_resolution": { "mode": "internal_livespec_dev_tooling" }
       },
-      // The two TOOLCHAIN premises the sandbox prepare chain establishes
+      // The three TOOLCHAIN premises the sandbox prepare chain establishes
       // before the conformance gate above — fields
-      // `dispatcher.prepare_toolchain.mise` (the version-manager install) and
+      // `dispatcher.prepare_toolchain.mise` (the version-manager install),
+      // `dispatcher.prepare_toolchain.python_sync` (the Python dependency sync
+      // that populates the sandbox's project environment) and
       // `dispatcher.prepare_toolchain.lefthook` (the hook-manager install).
       // Each is an argv the Dispatcher resolves ONCE and renders into the
       // workflow payload's prepare steps as `inputs.prepare_toolchain_*`; the
       // committed payload spells NO fleet tool of its own (the
       // fleet-toolchain literal ban scans it), so the fleet member's actual
-      // commands live HERE. An adopter without either tool declares nothing
-      // and the step resolves to the ratified explicit no-op.
+      // commands live HERE. An adopter without one of these tools declares
+      // nothing for it and the step resolves to the ratified explicit no-op.
+      //
+      // WHY `python_sync` IS A PREMISE AND NOT A CONSTANT (work-item
+      // bd-ib-xti6q, measured 2026-10-24 01:19Z on run 01M5NQVKAENN): the
+      // committed payload used to run this fleet's dependency sync
+      // unconditionally, so a dispatch of a governed repository carrying no
+      // `pyproject.toml` — a JavaScript repository with `package.json` and
+      // `mise.toml`, and no target-local workflow — exited 2 in preparation
+      // with `error: No pyproject.toml found in current directory or any
+      // parent directory`, before any agent turn. Both neighbouring premises
+      // were already declarable; this one was the last fleet-toolchain prepare
+      // constant the factory-sandbox-toolchain-disposition clause forbids.
+      // THIS repository MUST keep declaring it: the sandbox venv it populates
+      // is what the `internal_livespec_dev_tooling` conformance Verifiers
+      // above, the `install-worktree-pack` recipe and every check node run
+      // through, so an absent declaration here is a silently unprovisioned
+      // sandbox rather than a visibly skipped step.
       //
       // WHY THE VERSION-MANAGER INSTALL IS ANONYMOUS (work-item bd-ib-bic7hb,
       // root-caused 2026-07-26 by live capture inside the sandbox image):
@@ -383,6 +504,7 @@
       // into the sandbox image) remains open on bd-ib-bic7hb behind bd-ib-dwv.
       "prepare_toolchain": {
         "mise": ["sh", "-c", "mise trust && env -u GITHUB_TOKEN -u GH_TOKEN -u GITHUB_API_TOKEN mise install --quiet"],
+        "python_sync": ["uv", "sync", "--all-groups"],
         "lefthook": ["uv", "run", "lefthook", "install"]
       },
       // WHERE the post-merge janitor runs its fresh-checkout check suite
@@ -484,12 +606,79 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
-      // The structured "acp_nodes" entries below put implement and fix on Codex
-      // (codex-acp / gpt-5.6-terra, effort high) with a Claude Opus 5 fallback;
-      // dod_gate, review_fix, proof_capture, proof_verify and review on Claude
-      // Opus 5, and pr and disposition on Claude Sonnet 4.6, each with a Codex
-      // Terra fallback, so a Claude session-headroom exhaustion no longer leaves
-      // a node without a candidate. Maintainer direction 2026-10-18 (plan
+      // RESTORED 2026-10-25 ~21:1xZ (coordinator gitops-fleet-capacity-monitoring
+      // countermand): implement is Codex-first again. The ~20:56Z revert
+      // (ee6ddb6b5) crossed the coordinator's 20:38:47Z NO REVERT ruling: the
+      // bd-ib-vswuhz ending was WORKFLOW-class (implement -> needs_human on
+      // outcome=failed fires ahead of implement_hook_route; fix bd-ib-uk3fop),
+      // not model quality, so it counts toward neither tally. A failure counts
+      // toward the revert only when its measured cause is the model's output.
+      //
+      // CURRENT ROUTING (2026-10-25, CODEX-FIRST on every node; maintainer-approved
+      // ~13:4xZ "Yes do that", relayed by coordinator gitops-fleet-capacity-monitoring):
+      // the Anthropic pool was nearly exhausted (a0 capped, a1/a2/a3/a5 at 3-8%
+      // weekly left) while Codex had quota, so each node's primary is the codex-acp
+      // candidate and claude-acp is its fallback, used only when Codex hits its
+      // limit. implement, dod_gate, review, review_fix: gpt-5.6-terra high ->
+      // claude-opus-5 high. fix: unchanged (already Terra-first). proof_capture,
+      // proof_verify: gpt-5.6-luna medium -> claude-sonnet-5-5 medium. pr,
+      // disposition: gpt-5.6-luna low -> claude-sonnet-5-5 medium. Only Terra and
+      // Luna, the slugs proven reachable on the factory's ChatGPT account. This
+      // re-takes the 2026-10-24 canary (8b79488e, reverted in ba805331b on two
+      // quit-on-a-fixable-gate Terra implement failures) now that the
+      // provider-limit release fix (bd-ib-3jboeo) and the incomplete-turn
+      // re-entry (bd-ib-r4fl2h) shipped in v0.242.0. Counting rule, per node: a
+      // dispatch counts when implement ran codex-acp at selected_index 0; revert
+      // at 2 quality failures, stable at 6. Node timeouts are unchanged.
+      //
+      // AMENDED 2026-10-20 (coordinator R273, stability): implement is back on
+      // claude-acp / claude-opus-5 / high PRIMARY with codex-acp / gpt-5.6-terra /
+      // high as its fallback. Codex-Terra implement failed 3 of 4 runs with one
+      // signature, LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS (Red committed, Green amend
+      // or the full hook interrupted); it returns to Codex only after the measured
+      // root cause is fixed and one clean canary. fix stays on Terra for now.
+      //
+      // EARLIER ROUTING (2026-10-20, coordinator R267, maintainer direction to
+      // use all available tokens holistically): implement and fix stay
+      // codex-acp gpt-5.6-terra high with their Claude Opus fallback; every
+      // other node returns to its pre-R261 Claude tier (dod_gate, review,
+      // review_fix on claude-opus-5 high; proof_capture, proof_verify, pr,
+      // disposition on claude-sonnet-5-5 medium), each with its R261 Codex model
+      // as fallback (Terra high, Luna medium, Luna low by tier). Each run then
+      // draws on both the Anthropic and the Codex pools.
+      //
+      // PREVIOUS ROUTING (2026-10-19, coordinator R261, maintainer direction:
+      // "switch factory nodes to codex corresponding models and use those
+      // available tokens"): every node is Codex-primary, tier for tier, with its
+      // previous Claude model as the fallback. Opus-high nodes (dod_gate,
+      // implement, fix, review, review_fix) -> gpt-5.6-terra high; Sonnet-medium
+      // proof nodes -> gpt-5.6-luna medium; pr and disposition -> gpt-5.6-luna
+      // low. Live ACP turns on the factory's Codex (ChatGPT) account the same day
+      // answered OK for terra and luna, and refused gpt-5.4-mini, gpt-5.4,
+      // gpt-5.3-codex-spark, gpt-6-luna and gpt-6-sol with HTTP 400 "not
+      // supported when using Codex with a ChatGPT account".
+      //
+      // HISTORY. The structured "acp_nodes" entries below put implement and fix on Claude
+      // Opus 5 (effort high) with a Codex Terra fallback. Maintainer direction
+      // 2026-10-19 ~04:0xZ, relayed by the coordinator: "Okay, go ahead and
+      // switch the implement back to Opus. It's obviously failing." fix moves
+      // with it: Terra fix went 0 for 3 that night (bd-ib-sufca7, bd-ib-davaxq,
+      // bd-ib-quzpge). Before that, implement and fix ran codex-acp /
+      // gpt-5.6-terra from 2026-10-18 (PR #3265).
+      // PR #3276 moved them to gpt-6-sol on 2026-10-19 and was REVERTED the
+      // same day: the Codex adapter runs on a ChatGPT account, which answered
+      // HTTP 400 "The 'gpt-6-sol' model is not supported when using Codex with
+      // a ChatGPT account" (run 01M592CTREYP, bd-ib-irh4js), so every dispatch
+      // died at implement. A model_catalog entry establishes local discovery
+      // only; prove a Codex slug is reachable on the factory account before
+      // routing a node to it. The other nodes keep a Terra fallback;
+      // dod_gate, review_fix and review on Claude Opus 5, and proof_capture,
+      // proof_verify, pr and disposition on Claude Sonnet 5.5 at medium effort,
+      // each with a Codex Terra fallback, so a Claude session-headroom
+      // exhaustion no longer leaves a node without a candidate. The Sonnet 5.5
+      // step is maintainer-approved 2026-10-19 (relayed by the coordinator,
+      // R207 step 2) ahead of the fifth measured Codex implement run, because
+      // the Anthropic seven-day budget was projected to run out that night. Maintainer direction 2026-10-18 (plan
       // fabro-currency, maintainer item 40; R209 relayed by the coordinator):
       // implement and fix run Terra, quality-conservative, with the Codex burn
       // watched per run; GPT-6 Luna was the first choice and is the burn
@@ -566,12 +755,26 @@
       // Codex 0.162.1 account catalog fetched 2026-10-14. Listing establishes
       // local discovery; factory reachability is separate evidence.
       // Prices are the published Standard, short-context USD per 1M tokens,
-      // verified 2026-10-14 (gpt-5.6-terra: 2026-10-18, base rates for prompts up
+      // verified 2026-10-14 (gpt-5.6-terra: 2026-10-18; gpt-5.6-luna: 2026-10-19; base rates for prompts up
       // to 272K tokens; cache writes are 1.25x input) at
       // https://developers.openai.com/api/docs/models/
       // followed by each model id below. The existing four-rate schema holds
       // base rates, not long-context or service-tier multipliers.
       "model_catalog": {
+        // Claude Sonnet 5.5 is not in the shipped snapshot. Prices are the
+        // Anthropic first-party API rates (claude-api reference, cached
+        // 2026-10-06): 2.00 input and 10.00 output USD per 1M tokens, cache
+        // reads 0.20, and cache writes at the 1.25x-input five-minute rate.
+        "anthropic/claude-sonnet-5-5": {
+          "display_name": "Claude Sonnet 5.5",
+          "pricing": {
+            "model": "claude-sonnet-5-5",
+            "input_usd_per_million": 2.0,
+            "output_usd_per_million": 10.0,
+            "cache_write_usd_per_million": 2.5,
+            "cache_read_usd_per_million": 0.2
+          }
+        },
         "openai/gpt-6.1-sol": {
           "display_name": "GPT-6.1 Sol",
           "pricing": {
@@ -612,6 +815,16 @@
             "cache_read_usd_per_million": 0.2
           }
         },
+        "openai/gpt-5.6-luna": {
+          "display_name": "GPT-5.6 Luna",
+          "pricing": {
+            "model": "gpt-5.6-luna",
+            "input_usd_per_million": 0.2,
+            "output_usd_per_million": 1.2,
+            "cache_write_usd_per_million": 0.25,
+            "cache_read_usd_per_million": 0.02
+          }
+        },
         "openai/gpt-6-luna": {
           "display_name": "GPT-6 Luna",
           "pricing": {
@@ -624,15 +837,21 @@
         }
       },
       "acp_nodes": {
-        "dod_gate": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "proof_capture": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "proof_verify": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "review": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "pr": { "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] }
+        "dod_gate": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" },
+        // 2026-10-30: implement, fix and review on Codex Terra with a Sonnet fallback (maintainer
+        // direction via the coordinator, superseding R153 for these three nodes); the Codex
+        // headroom brake skips to the fallback before the weekly window is spent.
+        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
+        "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
+        "review_fix": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" },
+        // 2026-10-25: proof nodes moved luna medium -> terra high on the canary's
+        // second proof-class model-output failure (yzk2h2, od7v54 run 01M5TA5ZX485),
+        // per coordinator ruling. Fallback unchanged; other nodes untouched.
+        "proof_capture": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" },
+        "proof_verify": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" },
+        "review": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
+        "pr": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" },
+        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "medium" }
       },
       // `review_fix` is a DIFFERENT node from `fix` and was absent here, so it
       // fell to the 1800 s default. Measured 2026-10-09/10 on run
@@ -680,19 +899,70 @@
       // tests/test_factory_checkpoint_declaration.py guards: inherited, the two
       // nodes demanded 31320 s more of a token's remaining life than declared at
       // 600 (bd-ib-kcq6pu).
+      //
+      // `implement_completion` is declared downward for the same reason and is
+      // the sharpest instance of it (v165, Scenario 204; bd-ib-ahxcjx): the
+      // implement stage's completion gate reads ONE file in this clone's own
+      // `$GIT_DIR` and decides, while sitting on the single fallthrough of the
+      // most-retried turn in the graph -- so the derivation bills it at that
+      // turn's attempt count, and 600 s is already three orders of magnitude
+      // above a file read.
+      //
+      // `recapture_route` is declared downward for the same reason (v175,
+      // Scenario 137; work-item bd-ib-j56cur): it increments one counter file in
+      // this clone's own `$GIT_DIR` and decides, running no suite, no push and no
+      // agent turn -- while sitting on a NEW cycle back into `proof_capture`, so
+      // the derivation bills it at that loop's own visit count and every
+      // inherited second would land in the Codex credential-lifetime floor
+      // tests/test_factory_checkpoint_declaration.py guards.
+      //
+      // `janitor_admission` is declared downward for the same reason
+      // (bd-ib-tusqrf): it reads and increments one counter under `$GIT_DIR`
+      // before a fresh janitor suite run, or records the named exhausted bound
+      // for needs_human. It never runs the suite itself.
       "node_timeouts": {
         "implement": 14400,
+        "implement_completion": 600,
+        "dod_gate": 600,
+        "janitor_admission": 600,
         "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200,
         "publish_draft": 3600,
         "pr_refresh": 3600,
         "proof_grade": 600,
-        "proof_grade_route": 600
+        "proof_grade_route": 600,
+        "recapture_route": 600
       },
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories
       // must stay absent so the host timer never contacts them.
+      //
+      // EVERY ENTRY HERE IS REGISTRY-BACKED, and that is the whole shape of
+      // this table: an entry carries `"registry": true` and NO address, so it
+      // names a FACTORY and never a machine. The two addresses — the Fabro
+      // server url and the sandbox Docker daemon — are resolved per host from
+      // the factory registry the fleet's provisioning renders at
+      // /etc/livespec/fabro-factories.json (override:
+      // LIVESPEC_FABRO_FACTORY_REGISTRY). Moving a factory to another machine
+      // is therefore a provisioning change and touches no tracked file in any
+      // governed repository; under the old literal form it was a commit, a
+      // release and a plugin refresh in every one of them, for a fact the
+      // inventory already held.
+      //
+      // The names are the registry's, not ours to choose: an entry whose name
+      // that file does not declare resolves to no address, which is REFUSED
+      // before the item is claimed rather than quietly sent to whichever Fabro
+      // the dispatching host runs. `petri` is the gmktec-xubuntu :32276
+      // Petri-era server (livespec-dev-tooling-txadim renders it).
+      //
+      // `"registry": true` is the one ratified spelling and it is tested for
+      // that value, not for the key's presence: any other value leaves the
+      // entry non-registry-backed, where a committed `server` decides as it
+      // did before — still the supported form for an adopter outside this
+      // fleet. An entry carrying `registry` TOGETHER with `server` or
+      // `docker_host` has two answers and no rule for choosing, so it is
+      // refused before the claim, naming the keys.
       //
       // Each entry may also carry an optional `bin` key: the absolute path to
       // the engine CLIENT binary that factory's server speaks to. It wins over
@@ -700,8 +970,8 @@
       // explicit `--fabro-bin`), because it states a COMPATIBILITY constraint
       // rather than a preference -- a Petri-era client cannot talk to a 0.254
       // server, nor the reverse -- and it is what makes an upgrade candidate
-      // runnable BESIDE production on one host. Omit it, as `hp` does, and
-      // that factory resolves the global binary exactly as before the key
+      // runnable BESIDE production on one host. Omit it,
+      // and that factory resolves the global binary exactly as before the key
       // existed. A `bin` naming no file, or a file with no execute bit, is
       // refused before the item is claimed.
       //
@@ -714,8 +984,8 @@
       // environment was selected). A run intent naming none sends `default`,
       // so a dispatch to such a server landed in `buildpack-deps:noble` with
       // no `mise` on PATH and died in a prepare step -- a failure that names
-      // nothing about the placement. Omit it, as `hp` does, and NO flag is
-      // emitted at all: the pinned 0.254 engine has no such flag and keeps
+      // nothing about the placement. Omit it, and NO flag
+      // is emitted at all: the pinned 0.254 engine has no such flag and keeps
       // selecting from the workflow, so an unconditional one would kill every
       // dispatch to that engine at argument parsing. A declared `environment`
       // that is not a non-empty string is refused before the item is claimed,
@@ -744,27 +1014,36 @@
       // A value this build does not recognise is REFUSED before the launch
       // rather than falling back to the inline transport -- guessing the
       // inline one on a Petri-era server is precisely the exposure above.
-      // The 0.378-nightly upgrade CANDIDATE instance on hp:32278 (plan
-      // `fabro-currency` research note 006) is deliberately NOT declared here
-      // yet, and the reason is this table's own first rule rather than
-      // reluctance. Every declared entry is surveyed by each `reconcile-runs`
-      // pass, and a Petri-era server cannot answer the pinned 0.254 client, so
-      // an entry without a `bin` pin would add one `ps-failed` error row to
-      // every pass until that pin lands. The pin is an absolute host path this
-      // repository cannot establish from a sandbox, so the entry belongs with
-      // the cutover that measures it (`bd-ib-sxcnj7`), alongside the Ansible
-      // per-instance binary override the same item owns. A canary against the
-      // candidate therefore declares its entry host-side, where the client
-      // path is known, which is also where that canary's proof is captured.
+      // The `petri` entry is the current Fabro server's Petri-era instance on
+      // the factory host the maintainer named its home (2026-10-18), declared
+      // under a name that is not a machine name. The maintainer directed it
+      // into this table on 2026-10-19 so ordinary dispatches can use it, not
+      // only canaries (plan `petri-factory-on-gmktec`, epic bd-ib-fyozyd). It
+      // carries the three non-address keys a Petri-era server needs: `bin`,
+      // the Petri client, because the pinned 0.254 client cannot answer it
+      // and every `reconcile-runs` pass surveys each entry; `secret_channel`
+      // `native_secrets`; and `environment` `livespec-ci`. Its two addresses
+      // — the server url and the sandbox-sweep `docker_host` — come from the
+      // factory registry, as every registry-backed entry's do (bd-ib-fubkcv, then bd-ib-3now6p
+      // switched this table over). The `bin` path is the operator host's,
+      // which is where every dispatch and reconcile pass of this repository
+      // runs. The server authenticates through the host's
+      // `~/.fabro/auth.json` login for its registry-resolved url, or a
+      // `FABRO_DEV_TOKEN__petri` override. Choose it per dispatch with
+      // `--factory petri` or `LIVESPEC_FABRO_FACTORY=petri`.
+      // `default_factory` names it since the cutover (bd-ib-iud52v), which
+      // carried no other change.
       //
-      // Each entry may ALSO carry an optional `docker_host` key: the Docker
-      // daemon that runs THAT factory's sandbox containers, spelled as the
-      // Docker CLI spells one and passed to it as `--host`. The
+      // Each entry ALSO resolves a `docker_host`: the Docker daemon that runs
+      // THAT factory's sandbox containers, spelled as the Docker CLI spells
+      // one and passed to it as `--host`. For every entry here it comes from
+      // the factory registry beside the server url; only a non-registry-backed
+      // entry commits one, and an entry may never do both. The
       // sandbox-container sweep of each `reconcile-runs` pass addresses it,
-      // and an entry declaring none is reported as UNOBSERVED rather than
+      // and a factory resolving none is reported as UNOBSERVED rather than
       // swept through whichever daemon the reconciling host runs. That is not
       // a conservative default, it is the only honest reading: the `server`
-      // url beside this key is no evidence of a daemon's whereabouts -- a
+      // url beside it is no evidence of a daemon's whereabouts -- a
       // loopback url is as likely to be a forwarded tunnel as a local engine
       // -- so inferring one fails in the expensive direction, removing a
       // container on the RECONCILING host on the strength of a run status
@@ -778,10 +1057,49 @@
       // reach the named daemon; while they do not, the pass says so on every
       // sweep record instead of reporting a clean factory.
       "factories": {
-        "hp": {
-          "server": "https://hp-xubuntu.perch-rudd.ts.net:32276",
-          "docker_host": "ssh://cwoolley@hp-xubuntu.perch-rudd.ts.net"
+        "petri": {
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
+          "secret_channel": "native_secrets",
+          // factory-python: the toolchain-named catalog id (livespec-dev-tooling
+          // SPECIFICATION, "Factory sandbox environment naming"). Its provider, not
+          // this id, says where the sandbox runs, so a provider move changes nothing here.
+          "environment": "factory-python"
+        },
+        // `candidate` is gmktec's fabro-server-candidate (:32278), the permanent
+        // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
+        // ruling 2026-11-02T19:22:32Z). Same keys as `petri`; its address comes
+        // from the factory registry. `bin` is the client of the build it serves
+        // (0.393.0-nightly.1 at 84fb903b8). It is never the default: choose it per
+        // dispatch with `--factory candidate`, and count its runs against the
+        // shared gmktec fleet cap.
+        "candidate": {
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro",
+          "secret_channel": "native_secrets",
+          "environment": "factory-python"
         }
+      },
+      // The priority-epic idle-slot audit (contracts.md, "Priority-epic
+      // idle-slot audit", Scenario 187; bd-ib-irh4js). Committed-only: it names
+      // the factory whose run board is read and the priority epics whose
+      // non-closed children are classified against it. It carries no slot or
+      // concurrency value by design. The set is the fleet capacity
+      // coordinator's ruling of 2026-10-19 (the maintainer's R226 priorities on
+      // livespec-dev-tooling-dfixhe): gmktec/petri, the Kubernetes sandbox
+      // backend and Fabro currency, audited first against `legacy`, the hp-xubuntu
+      // instance, and against `petri` since `legacy` was retired on 2026-10-24
+      // (plan fabro-currency). The
+      // name must be one `dispatcher.factories` above declares: it is
+      // validated there rather than at the board read, so that a name naming
+      // no entry is a configuration refusal and not a factory outage.
+      "idle_slot_audit": {
+        "factory": "petri",
+        "priority": [
+          { "repo": ".", "epic": "bd-ib-fyozyd" },
+          { "repo": ".", "epic": "bd-ib-nmuyjc" },
+          { "repo": ".", "epic": "bd-ib-6tcjfx" }
+        ]
       }
     }
     // The Dispatcher also resolves its `fabro`

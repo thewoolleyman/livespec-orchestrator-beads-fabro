@@ -74,20 +74,19 @@ __all__: list[str] = [
 # the post-run disposition sequence — long after the poll — and a reading taken
 # there would describe a different moment from the mergeability the ending
 # routed on, with nothing saying the two disagreed.
-_PR_VIEW_JSON_FIELDS = ",".join(
-    (
-        "number",
-        "state",
-        "autoMergeRequest",
-        "mergeStateStatus",
-        "mergeCommit",
-        "statusCheckRollup",
-        "additions",
-        "deletions",
-        "headRefOid",
-        "baseRefOid",
-    )
+_PR_VIEW_FIELDS = (
+    "number",
+    "state",
+    "autoMergeRequest",
+    "mergeStateStatus",
+    "mergeCommit",
+    "statusCheckRollup",
+    "additions",
+    "deletions",
+    "headRefOid",
+    "baseRefOid",
 )
+_PR_VIEW_JSON_FIELDS = ",".join(_PR_VIEW_FIELDS)
 
 
 # The Codex ACP adapter command: the successor `@agentclientprotocol/codex-acp`
@@ -313,8 +312,15 @@ def janitor_checkout_path(*, repo: Path, work_item_id: str) -> Path:
 
 
 def janitor_core_checkout_path(*, janitor_checkout: Path) -> Path:
-    """Livespec core clone provisioned inside the fresh janitor checkout."""
-    return janitor_checkout / ".livespec-core"
+    """Livespec core clone provisioned BESIDE the fresh janitor checkout, never in it.
+
+    An untracked directory inside the checkout is part of the tree the governed
+    repository's own formatter and lint gates scan, so a clean committed tree
+    would fail its own suite on files the repository never carried. The sibling
+    path keeps core out of that tree without asking any adopter to declare an
+    ignore entry for it.
+    """
+    return janitor_checkout.with_name(f"{janitor_checkout.name}-livespec-core")
 
 
 def janitor_reconcile_checkout_path(*, repo: Path, work_item_id: str) -> Path:
@@ -344,7 +350,7 @@ def janitor_core_repo_url_from_config(*, config_text: str) -> str:
     return resolve_janitor_core_provisioning(config_text=config_text).repo_url
 
 
-def pr_view_argv(*, plan: DispatchPlan) -> list[str]:
+def pr_view_argv(*, plan: DispatchPlan, include_status_checks: bool = True) -> list[str]:
     """The pull-request view the engine routes on, AND sizes from.
 
     `additions,deletions` is the branch-versus-base churn plan slice S4
@@ -354,7 +360,10 @@ def pr_view_argv(*, plan: DispatchPlan) -> list[str]:
     dispatch and could answer differently from the view beside it, for the same
     pull request, with nothing in the record saying which was read.
     """
-    return ["gh", "pr", "view", plan.branch, "--json", _PR_VIEW_JSON_FIELDS]
+    fields = _PR_VIEW_JSON_FIELDS
+    if not include_status_checks:
+        fields = ",".join(field for field in _PR_VIEW_FIELDS if field != "statusCheckRollup")
+    return ["gh", "pr", "view", plan.branch, "--json", fields]
 
 
 def pr_arm_argv(*, plan: DispatchPlan, number: int) -> list[str]:

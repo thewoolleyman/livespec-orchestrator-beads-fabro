@@ -23,6 +23,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
     default_invoker_identity,
@@ -55,6 +56,10 @@ from livespec_orchestrator_beads_fabro.commands._drive_plan_progress_diagnosis i
     is_plan_progress_diagnosis_action,
     run_plan_progress_diagnosis,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_valve_delegation import (
+    record_delegated_press,
+    verify_delegation,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import is_human_valve_action
 from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
 from livespec_orchestrator_beads_fabro.io import write_stderr
@@ -81,7 +86,8 @@ _UNSUPPORTED_ACTION_SUMMARY = (
     "'accept:<id>', 'reject:<id>:rework|regroom', "
     "'set-admission:<id>:auto|manual', "
     "'set-acceptance:<id>:ai-only|human-only|ai-then-human', "
-    "'set-factory-safety:<id>:needs-host-secrets|mutates-host-machinery|needs-privileged-host', "
+    "'set-factory-safety:<id>:needs-host-secrets|mutates-host-machinery|"
+    "needs-privileged-host|needs-host-only-input', "
     "'set-workflow-scope-override:<id>:citation-only', "
     "'set-merge-on-review-cap:<id>:true|false', "
     "'set-review-fix-cap:<id>:<positive-int>', "
@@ -121,6 +127,7 @@ def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per cla
     identity: InvokerIdentity | None = None,
     answer: str | None = None,
     driver_session: str | None = None,
+    delegation: str | None = None,
 ) -> dict[str, Any]:
     """Run one selected action-id.
 
@@ -143,13 +150,27 @@ def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per cla
     published, and `driver_session` the reference to the session that will drive
     a host-only item by hand. Each is refused here for any action that cannot
     deliver it, so a mis-aimed input is reported rather than dropped.
+
+    `delegation` is the `--delegation <ref>` a `delegate:<name>` press cites.
+    It is verified against the committed `dispatcher.valve_delegations` before
+    any action runs (`_drive_valve_delegation`), so a press that is delegated
+    in part, off the delegable allowlist, or under a grant nobody committed is
+    refused having written nothing.
     """
-    resolved_identity = default_invoker_identity() if identity is None else identity
     misaimed = _misaimed_input_refusal(
         action_id=action_id, answer=answer, driver_session=driver_session
     )
     if misaimed is not None:
         return misaimed
+    verdict = verify_delegation(
+        repo=repo,
+        action_id=action_id,
+        identity=default_invoker_identity() if identity is None else identity,
+        delegation=delegation,
+    )
+    if verdict.identity is None:
+        return verdict.refusal or {}
+    resolved_identity = verdict.identity
     if is_driver_dispatch_action(action_id=action_id):
         return run_driver_dispatch(
             repo=repo,
@@ -158,12 +179,19 @@ def run_action(  # noqa: PLR0911, PLR0913 — kw-only router; one return per cla
             driver_session=driver_session,
         )
     if is_human_valve_action(action_id=action_id):
-        return run_human_valve_action(
+        result = run_human_valve_action(
             repo=repo,
             action_id=action_id,
             runner=runner,
             identity=resolved_identity,
             answer=answer,
+        )
+        if resolved_identity.delegation is None:
+            return result
+        return record_delegated_press(
+            config=resolve_store_config(cwd=repo, work_items_arg=None),
+            identity=resolved_identity,
+            result=result,
         )
     if is_config_action(action_id=action_id):
         return run_config_action(repo=repo, action_id=action_id)
@@ -236,6 +264,7 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) 
         identity=invoker_from_args(args=args),
         answer=args.answer,
         driver_session=args.driver_session,
+        delegation=args.delegation,
     )
     emit_payload(payload=result, as_json=args.as_json)
     return exit_code_for_status(status=str(result["status"]))

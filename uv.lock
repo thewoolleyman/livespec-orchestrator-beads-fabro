@@ -480,8 +480,8 @@ wheels = [
 
 [[package]]
 name = "livespec-dev-tooling"
-version = "1.118.3"
-source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.118.3#d04b116fe84cc0fe8387e05930c54147544076ab" }
+version = "1.168.0"
+source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.168.0#a79b06c9131e969cfd24be61dc20e7050dd1d127" }
 
 [[package]]
 name = "livespec-orchestrator-beads-fabro"
@@ -502,6 +502,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-icdiff" },
+    { name = "pytest-rerunfailures" },
     { name = "pytest-xdist" },
     { name = "ruff" },
 ]
@@ -514,22 +515,23 @@ dev = [
     { name = "hypothesis", specifier = "==6.122.3" },
     { name = "hypothesis-jsonschema", specifier = "==0.23.1" },
     { name = "import-linter", specifier = "==2.1" },
-    { name = "livespec-dev-tooling", git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.118.3" },
-    { name = "livespec-runtime", git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.27.0" },
+    { name = "livespec-dev-tooling", git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.168.0" },
+    { name = "livespec-runtime", git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.29.1" },
     { name = "mutmut", specifier = "==3.2.3" },
     { name = "pyright", specifier = "==1.1.391" },
     { name = "pyte", specifier = "==0.8.2" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-cov", specifier = "==6.0.0" },
     { name = "pytest-icdiff", specifier = "==0.9" },
+    { name = "pytest-rerunfailures", specifier = "==14.0" },
     { name = "pytest-xdist", specifier = "==3.8.0" },
     { name = "ruff", specifier = "==0.8.6" },
 ]
 
 [[package]]
 name = "livespec-runtime"
-version = "0.27.0"
-source = { git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.27.0#eeeb8b427314e64aab096b8b25a84f0932966656" }
+version = "0.29.1"
+source = { git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.29.1#f525a0b1d10d3c62c449c51bd3a47e54c6f4844c" }
 dependencies = [
     { name = "returns", version = "0.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "returns", version = "0.29.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -970,6 +972,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5a/0c/66e1e2590e98f4428e374a3b6448dc086a908d15b1e24b914539d13b7ac4/pytest-icdiff-0.9.tar.gz", hash = "sha256:13aede616202e57fcc882568b64589002ef85438046f012ac30a8d959dac8b75", size = 7110, upload-time = "2023-12-05T11:18:30.192Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e2/e1/cafe1edf7a30be6fa1bbbf43f7af12b34682eadcf19eb6e9f7352062c422/pytest_icdiff-0.9-py3-none-any.whl", hash = "sha256:efee0da3bd1b24ef2d923751c5c547fbb8df0a46795553fba08ef57c3ca03d82", size = 4994, upload-time = "2023-12-05T11:18:28.572Z" },
+]
+
+[[package]]
+name = "pytest-rerunfailures"
+version = "14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cc/a4/6de45fe850759e94aa9a55cda807c76245af1941047294df26c851dfb4a9/pytest-rerunfailures-14.0.tar.gz", hash = "sha256:4a400bcbcd3c7a4ad151ab8afac123d90eca3abe27f98725dc4d9702887d2e92", size = 21350, upload-time = "2024-03-13T08:21:39.444Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dc/e7/e75bd157331aecc190f5f8950d7ea3d2cf56c3c57fb44da70e60b221133f/pytest_rerunfailures-14.0-py3-none-any.whl", hash = "sha256:4197bdd2eaeffdbf50b5ea6e7236f47ff0e44d1def8dae08e409f536d84e7b32", size = 12709, upload-time = "2024-03-13T08:21:37.199Z" },
 ]
 
 [[package]]

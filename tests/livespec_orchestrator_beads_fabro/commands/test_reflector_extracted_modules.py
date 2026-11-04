@@ -2,52 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands import _reflector_runtime as runtime
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._reflector_lessons import (
     GitPrLessonsProposer,
     LessonProposal,
 )
-
-
-def test_runtime_resolve_claude_path_covers_override_and_found_binary(
-    monkeypatch,
-) -> None:
-    assert (
-        runtime.resolve_claude_path(environ={"LIVESPEC_REFLECTOR_CLAUDE_PATH": "/opt/claude"})
-        == "/opt/claude"
-    )
-    monkeypatch.setattr(runtime.shutil, "which", lambda _name: "/usr/bin/claude")
-    assert runtime.resolve_claude_path(environ={}) == "/usr/bin/claude"
-
-
-def test_runtime_resolve_claude_path_covers_local_bin_fallback(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(runtime.shutil, "which", lambda _name: None)
-    fake_claude = tmp_path / "claude"
-    _ = fake_claude.write_text("#!/bin/sh\n", encoding="utf-8")
-    monkeypatch.setattr(runtime, "_CLAUDE_LOCAL_BIN_FALLBACK", str(fake_claude))
-    assert runtime.resolve_claude_path(environ={}) == str(fake_claude)
-    # Nothing on PATH and no local-bin file → the bare "claude" last resort
-    # (lets the runner surface the FileNotFoundError honestly). The fallback
-    # path is monkeypatched to a nonexistent file so coverage of this branch
-    # is host-independent — it never depends on whether ~/.local/bin/claude
-    # happens to exist on the runner.
-    monkeypatch.setattr(runtime, "_CLAUDE_LOCAL_BIN_FALLBACK", str(tmp_path / "nope" / "claude"))
-    assert runtime.resolve_claude_path(environ={}) == "claude"
-
-
-def test_runtime_resolve_claude_path_covers_bare_last_resort(monkeypatch, tmp_path: Path) -> None:
-    """No override, `which` misses, and the local-bin fallback file is ABSENT.
-
-    This drives the last-resort `return "claude"` (the `is_file()`-is-False
-    branch) deterministically, independent of whether `claude` happens to be
-    on the host's PATH — on a dogfooding host that carries `claude`,
-    `shutil.which` would otherwise short-circuit and leave this branch
-    uncovered.
-    """
-    monkeypatch.setattr(runtime.shutil, "which", lambda _name: None)
-    monkeypatch.setattr(runtime, "_CLAUDE_LOCAL_BIN_FALLBACK", str(tmp_path / "nope" / "claude"))
-    assert runtime.resolve_claude_path(environ={}) == "claude"
 
 
 class _RecordingRunner:

@@ -46,6 +46,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_pull_requests import (
+    dispatch_pull_requests_env_line,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     contract_prompt_variables,
 )
@@ -177,6 +180,14 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # contract gives: a credential stored in one server's vault while the run
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
+        # And that factory's declared CATALOG ENVIRONMENT, read off the SAME
+        # plan field `fabro run --environment` is rendered from. The engine
+        # reads an overlay's env table only under the environment the run
+        # intent selected, so this is what keys it; a second resolution here
+        # could key it away from the environment the launch names, and both
+        # readings would be well-formed (bd-ib-kyeor4).
+        factory_environment=plan.fabro_factory_environment,
+        github_app=plan.fabro_factory_github_app,
         secret_sink=overlay.secret_sink,
         # WHERE this dispatch's sandbox image comes from, read off the plan's
         # single resolution for the same resolve-once reason the integration
@@ -199,4 +210,12 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # RECORD happens to list is the fail-open this grade exists to close
         # (bd-ib-kcq6pu).
         proof_grade_env=proof_grade_assertions_env_lines(item=overlay.item),
+        # The pull requests the item's dispatch records name, which `publish_draft`
+        # needs to tell this item's merged publication from a merged pull request
+        # that merely reuses the branch name. Read from the journal here, where
+        # the journal path is held, and rendered always: an item with none renders
+        # an empty value the node reads as "nothing attributable".
+        dispatch_pull_requests_env=dispatch_pull_requests_env_line(
+            journal_path=overlay.journal.path, work_item_id=overlay.item.id
+        ),
     )

@@ -38,6 +38,7 @@ __all__: list[str] = [
     "STEP",
     "MasterCiOutcome",
     "MasterCiRefusal",
+    "green_ancestor_outcome",
     "pass_outcome",
     "pending_outcome",
     "red_outcome",
@@ -132,6 +133,35 @@ def pass_outcome(*, pipeline: MasterCiPipeline, branch: str, run_id: str) -> Mas
             "terminal": False,
             "status": "passed",
             "reason": _REASON_GREEN,
+        },
+    )
+
+
+def green_ancestor_outcome(
+    *,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    run_id: str,
+    head_sha: str,
+    pending_run_id: str,
+    pending_status: str,
+) -> MasterCiOutcome:
+    """The passing ancestor proof observed while a newer run remains pending."""
+    detail = (
+        f"passed on concluded green ancestor run {run_id} at {head_sha} while newer "
+        f"`{branch}` run {pending_run_id} is still {pending_status}"
+    )
+    return MasterCiOutcome(
+        refusal=None,
+        record={
+            **_identity(pipeline=pipeline, branch=branch, run_id=run_id),
+            "terminal": False,
+            "status": "passed",
+            "reason": _REASON_GREEN,
+            "detail": detail,
+            "head_sha": head_sha,
+            "pending_run_database_id": pending_run_id,
+            "pending_run_status": pending_status,
         },
     )
 

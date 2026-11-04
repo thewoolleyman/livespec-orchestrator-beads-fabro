@@ -108,6 +108,7 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import (
     EDGE_PARENT_CHILD,
+    BeadsClient,
     make_beads_client,
 )
 from livespec_orchestrator_beads_fabro._intake_factory_size_gate import (
@@ -121,6 +122,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_a
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+    judge_item_definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    STAGE_PRE_ADMISSION,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     resolve_adopted_assertion_count_ceiling,
@@ -136,7 +143,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ADMISSION_POLICY,
     effective_admission_policy,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import STAGE_FILING
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
+    classify_and_hold,
+)
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.factory_safety import (
+    out_of_enum_factory_safety_finding,
+)
 from livespec_orchestrator_beads_fabro.store import (
     INTAKE_TRIAGED_LABEL,
     append_work_item,
@@ -289,6 +303,7 @@ def apply_intake_dor(
     verdict = evaluate(checklist=checklist)
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
     findings = filing_findings(item=item, repo_root=path.repo_root)
+    factory_safety_finding = out_of_enum_factory_safety_finding(value=item.factory_safety)
     if status == _PENDING_APPROVAL_STATUS and not item.depends_on:
         repo_root = path.repo_root
         if repo_root is None:
@@ -306,7 +321,55 @@ def apply_intake_dor(
         # one deliberately does not: only the gate can judge a test-existence or
         # scenario-reference form, and withholding `ready` on a judgement this
         # surface cannot make would hand the operator a refusal nothing clears.
-        if policy == _AUTO_ADMISSION and not findings.withholds_ready:
+        # The SEMANTIC half, which only the judgement can decide, runs last and
+        # only where the mechanical half has already admitted the item: the
+        # judgement is a model call, and spending one on an item a free parse
+        # already holds back buys nothing. A judgement that could not run
+        # reports `holds` False, so the item routes exactly as it did before
+        # this clause existed while the record on it says the judgement did not
+        # happen.
+        # THE SPEC-CHANGE TIER IS CLASSIFIED HERE, which is the clause's FILING
+        # cadence point, and a held item is then withheld from `ready` — "The
+        # item MUST be held out of `ready` until BOTH hold".
+        #
+        # IT RUNS UNCONDITIONALLY rather than as a conjunct of the condition
+        # below, and that is the one thing about its placement worth reading
+        # twice. The clause's cadence is "every implement-kind item MUST be
+        # classified", with no exemption for an item whose admission policy
+        # happens to be `manual` — and the release arm it also serves is stated
+        # for BOTH policies: `auto` routes a released item to `ready` and
+        # `manual` rests it at `pending-approval`. Folded into the condition it
+        # would sit behind `policy == _AUTO_ADMISSION`, so a manual item would
+        # never be classified at all: its tier would never be recorded, the
+        # plan-child disposition and the pre-dispatch wall would both read a
+        # missing datum, and its hold could never be released because nothing
+        # would ever re-judge it. Measured while writing this: the manual case
+        # of Scenario 206 found NO ledger comment on the item.
+        #
+        # The RELEASE needs no pass of its own, which is why there is none: the
+        # classification is reused only while the specification it was taken
+        # against is unchanged, so the revision that ratifies the linked topic
+        # retires the record, the classification is re-taken against the
+        # ratified tree, returns `stated`, and the hold simply stops standing.
+        # The item then routes exactly as its own `admission_policy` decides.
+        #
+        # It is spent even where a MECHANICAL finding already withholds `ready`,
+        # unlike the Definition-of-Done judgement below. The two differ in what
+        # the spend buys: that judgement's verdict is consumed only by this
+        # routing decision, while the tier record is read later by the
+        # pre-dispatch wall and by plan-child disposition — so an item repaired
+        # and re-filed arrives already classified, and the reuse makes the
+        # second filing free.
+        spec_change = classify_and_hold(item=item, repo=repo_root, path=path, stage=STAGE_FILING)
+        if (
+            policy == _AUTO_ADMISSION
+            and not findings.withholds_ready
+            and factory_safety_finding is None
+            and spec_change is None
+            and not judge_item_definition_of_done(
+                item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
+            ).holds
+        ):
             status = _READY_STATUS
 
     # The triage marker is stamped for EVERY verdict, not just the routed-on
@@ -327,6 +390,11 @@ def apply_intake_dor(
     )
     for body in findings.comment_bodies():
         client.add_comment(issue_id=item_id, body=body)
+    _record_factory_safety_finding(
+        client=client,
+        item_id=item_id,
+        finding=factory_safety_finding,
+    )
     return IOSuccess(status)
 
 
@@ -371,3 +439,14 @@ def _routed_status(*, verdict: Verdict, has_dependencies: bool) -> Verdict:
     if has_dependencies and verdict == _PENDING_APPROVAL_STATUS:
         return _PENDING_APPROVAL_STATUS
     return verdict
+
+
+def _record_factory_safety_finding(
+    *, client: BeadsClient, item_id: str, finding: str | None
+) -> None:
+    """Persist the legacy-label finding beside the intake verdict when present."""
+    if finding is not None:
+        client.add_comment(
+            issue_id=item_id,
+            body=f"definition-of-done finding (mechanical): {finding}",
+        )

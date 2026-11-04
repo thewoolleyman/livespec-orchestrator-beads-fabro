@@ -1,6 +1,7 @@
 """Gate observations read the runner's files without spawning a status command."""
 
 import os
+from itertools import count
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,11 @@ def test_running_gate_is_observed_from_its_frozen_directory_without_commands(
             pane=HerdrPaneLauncher(),
         ),
         wait_store_root=tmp_path / "tmp/session-waits",
+        # The claim is about reading the frozen gate, not host scheduling. Advance
+        # logical time while retaining the deadline result so the observation is
+        # always taken before expiry under load.
+        monotonic=count(start=0.0, step=0.01).__next__,
+        sleeper=lambda **_: None,
     )
     observation = observe_gate_target(target=target, observed_at=123.0)
     assert calls == [], "observing a gate must never start a command"

@@ -55,6 +55,7 @@ exhausted credential.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from typing import cast
 
@@ -115,16 +116,43 @@ _SUBJECT_KEY = "subject"
 _SUBJECT_NODE_KEY = "node"
 _SUBJECT_NODE_NAME_KEYS: tuple[str, ...] = ("name",)
 
+# Where the Petri-era engine records each stage's own result in the inspect
+# record: a top-level `stages` map keyed `<node>@<visit>`, each entry carrying
+# `handler`, `state`, `output` and `response` (sometimes `diff`). Measured
+# 2026-10-24 on gmktec runs `01M5QNH88NHN68ST28Y80CZJ48` and
+# `01M5N3J02GQ1423GRX25HW0NPN` for work-item `bd-ib-36d3x5`. An agent stage's
+# structured verdict is the last line of its `output`; a timed-out agent has no
+# output but carries its reason at `completion.failure_reason`; and a command
+# stage whose output outgrew the inline record holds a `blob://` reference
+# instead of text.
+_STAGES_KEY = "stages"
+_STAGE_STATE_KEY = "state"
+_STAGE_FAILED_STATE = "failed"
+_STAGE_OUTPUT_KEY = "output"
+_STAGE_COMPLETION_KEY = "completion"
+_STAGE_VERDICT_REASON_KEY = "failure_reason"
+_BLOB_REFERENCE_PREFIX = "blob://"
 
-def terminal_event_output(*, payload: object | None) -> str:
-    """The latest terminal stage's emitted sentinel lines, or no observation."""
-    failures = _stage_failures(payload=payload, node=ESCALATION_NODE_ID)
+
+def terminal_event_output(
+    *,
+    payload: object | None,
+    node: str = ESCALATION_NODE_ID,
+    marker: str = NEEDS_HUMAN_MARKER,
+) -> str:
+    """The latest terminal stage's emitted sentinel lines, or no observation.
+
+    `node` and `marker` default to the needs-human terminal. The `non_converged`
+    terminal is read with its own pair, because it ends two caps and the line it
+    prints names the one that fired.
+    """
+    failures = _stage_failures(payload=payload, node=node)
     if not failures:
         return ""
     message = failures[-1].get("message")
     if not isinstance(message, str):
         return ""
-    return "\n".join(line for line in message.splitlines() if line.startswith(NEEDS_HUMAN_MARKER))
+    return "\n".join(line for line in message.splitlines() if line.startswith(marker))
 
 
 def routing_stage_failure(
@@ -197,7 +225,8 @@ def _routed_failure(
         detail = _failure_detail(block=block)
         if detail is not None:
             return detail
-    return checkpoint
+    recorded = _stage_record_failure(payload=inspect_payload, stage=stage)
+    return checkpoint if recorded is None else recorded
 
 
 def _carrying_observed_ceiling(
@@ -406,6 +435,105 @@ def _event_text(*, record: dict[str, object], keys: tuple[str, ...]) -> str | No
             if isinstance(value, str) and value.strip():
                 return value.strip()
     return None
+
+
+def _stage_record_failure(*, payload: object | None, stage: str) -> FabroFailureDetail | None:
+    """The failing stage's own recorded output, graded as this ending's cause.
+
+    THIS IS THE LAST READ, behind the checkpoint and the events, and it is the
+    one that cannot time out: the inspect record is already in hand. On the
+    Petri engine the checkpoint carries no `node_outcomes` and the event stream
+    is a second, slower command that a long run outlasts (`bd-ib-36d3x5`, run
+    `01M580PF02S0`: `fabro-terminal-events` timed out at 60 s), so for every
+    such ending the two preferred reads returned nothing and the cause the
+    engine HAD written — into `stages["<node>@<visit>"].output` — was reported
+    as absent. Measured 2026-10-24 on gmktec runs `01M5QNH88NHN68ST28Y80CZJ48`
+    and `01M5N3J02GQ1423GRX25HW0NPN`: a failed stage entry carries `handler`,
+    `state`, `output`, `response` and sometimes `diff`. A timed-out agent has
+    no output, but records its own failure reason at `completion.failure_reason`.
+
+    THE OUTPUT'S LAST LINE MAY BE THE STAGE'S STRUCTURED VERDICT. An agent
+    stage ends its transcript with one JSON object —
+    `{"outcome": "failed", "failure_reason": "<sentence>", …}` — and that
+    `failure_reason` is the very string the engine's dump writes to the stage's
+    `status.json`. Where it is present it is the innermost cause; where it is
+    not, the output stands as the cause whole. Both are graded through the ONE
+    classification pass, with the full output as the chain's outer element so a
+    provider ceiling anywhere in it is still recognised and its sentence lifted.
+    """
+    output = _failed_stage_output(payload=payload, stage=stage)
+    if output is None:
+        reason = _failed_stage_completion_reason(payload=payload, stage=stage)
+        return (
+            None
+            if reason is None
+            else fabro_failure_detail_from_payload(payload={"failure": {"causes": [reason]}})
+        )
+    reason = _verdict_failure_reason(output=output)
+    causes = [output] if reason is None else [output, reason]
+    return fabro_failure_detail_from_payload(payload={"failure": {"causes": causes}})
+
+
+def _failed_stage_output(*, payload: object | None, stage: str) -> str | None:
+    """The newest FAILED visit of `stage` in the record's `stages` map, read for its output.
+
+    The key is matched through `graph_node_id` so a bare node id and the
+    engine's `<node>@<visit>` spelling meet, and the newest visit wins in record
+    order. A succeeded visit is never read: only a failed entry speaks for the
+    stage that routed the run here.
+
+    A BLOB REFERENCE IS NOT A SENTENCE. A command stage whose output exceeded
+    the engine's inline size records `blob://sha256/<digest>` — a pointer to
+    bytes this host never fetched — and rendering it as the innermost cause
+    would state, in the engine's voice, something the engine never said.
+    """
+    record = fabro_inspect_record(payload=payload)
+    if record is None:
+        return None
+    wanted = graph_node_id(node=stage)
+    output: str | None = None
+    for key, raw in _mapping(value=record.get(_STAGES_KEY)).items():
+        entry = _mapping(value=raw)
+        if graph_node_id(node=key) != wanted or entry.get(_STAGE_STATE_KEY) != _STAGE_FAILED_STATE:
+            continue
+        text = entry.get(_STAGE_OUTPUT_KEY)
+        if isinstance(text, str) and text.strip() and not text.startswith(_BLOB_REFERENCE_PREFIX):
+            output = text.strip()
+    return output
+
+
+def _failed_stage_completion_reason(*, payload: object | None, stage: str) -> str | None:
+    """The newest FAILED visit's recorded completion reason, if it has no output.
+
+    A turn that times out never emits its structured final line, so its stage
+    record has no `output`. Its completion still carries the engine's sentence;
+    that sentence is the cause, not an invitation to make the slow event-stream
+    read mandatory.
+    """
+    record = fabro_inspect_record(payload=payload)
+    if record is None:
+        return None
+    wanted = graph_node_id(node=stage)
+    reason: str | None = None
+    for key, raw in _mapping(value=record.get(_STAGES_KEY)).items():
+        entry = _mapping(value=raw)
+        if graph_node_id(node=key) != wanted or entry.get(_STAGE_STATE_KEY) != _STAGE_FAILED_STATE:
+            continue
+        completion = _mapping(value=entry.get(_STAGE_COMPLETION_KEY))
+        value = completion.get(_STAGE_VERDICT_REASON_KEY)
+        if isinstance(value, str) and value.strip():
+            reason = value.strip()
+    return reason
+
+
+def _verdict_failure_reason(*, output: str) -> str | None:
+    """The `failure_reason` of a JSON verdict on the output's last line, or None."""
+    try:
+        verdict: object = json.loads(output.splitlines()[-1])
+    except ValueError:
+        return None
+    reason = _mapping(value=verdict).get(_STAGE_VERDICT_REASON_KEY)
+    return reason.strip() if isinstance(reason, str) and reason.strip() else None
 
 
 def _mapping(*, value: object) -> dict[str, object]:

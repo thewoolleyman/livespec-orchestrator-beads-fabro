@@ -11,10 +11,26 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import shutil
 import stat
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
+    PROOF_HEAD_PROGRAM_FILENAME,
+    proof_head_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
@@ -102,15 +118,20 @@ def _stale_run(*, tmp_path: Path) -> tuple[Path, str, str]:
     return run, base, current
 
 
-def _publish_script() -> str:
+def _publish_script(*, check_suite: str = "true") -> str:
     block = _NODE.search(_WORKFLOW.read_text(encoding="utf-8"))
     assert block is not None
     attr = _SCRIPT.search(block.group("body"))
     assert attr is not None
-    return attr.group("value").replace(r"\"", '"').replace("{{ inputs.default_branch }}", "master")
+    return (
+        attr.group("value")
+        .replace(r"\"", '"')
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
+    )
 
 
-def _forge_double(*, tmp_path: Path) -> Path:
+def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     gh = bin_dir / "gh"
@@ -118,11 +139,38 @@ def _forge_double(*, tmp_path: Path) -> Path:
         "#!/bin/sh\n"
         'for arg in "$@"; do printf \'%s\\n\' "$arg" >> "$GH_CALLS"; done\n'
         f"printf '%s\\n' '{_CALL_END}' >> \"$GH_CALLS\"\n"
+        'if test "$1" = pr && test "$2" = list && test "${LIVESPEC_LANDED_PR:-}" != ""; then\n'
+        '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LANDED_PR" && exit 0; done\n'
+        "fi\n"
+        'if test "$1 $2" = "pr view"; then printf \'%s\\n\' \'{"comments": []}\'; exit 0; fi\n'
+        'if test "$1 $2" = "pr list" && test "${LIVESPEC_LATE_LANDED_PR:-}" != "" '
+        '&& test -f "$GH_CREATE_REFUSED"; then\n'
+        '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LATE_LANDED_PR" && exit 0; done\n'
+        "fi\n"
+        'if test "$1 $2" = "pr create" && test "${LIVESPEC_LATE_LANDED_PR:-}" != ""; then\n'
+        '  : > "$GH_CREATE_REFUSED"\n'
+        '  echo "pull request create failed: No commits between master and $LIVESPEC_PUBLISH_BRANCH" >&2\n'
+        "  exit 1\n"
+        "fi\n"
         'if test "$1 $2" = "pr create"; then : > "$GH_DRAFT_CREATED"; fi\n'
         "exit 0\n",
         encoding="utf-8",
     )
     gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+    if push_refusal is not None:
+        real_git = shutil.which("git")
+        assert real_git is not None
+        git = bin_dir / "git"
+        git.write_text(
+            "#!/bin/sh\n"
+            'if test "$1" = push; then\n'
+            f"  printf '%s\\n' {shlex.quote(push_refusal)} >&2\n"
+            "  exit 1\n"
+            "fi\n"
+            f'exec {shlex.quote(real_git)} "$@"\n',
+            encoding="utf-8",
+        )
+        git.chmod(git.stat().st_mode | stat.S_IXUSR)
     return bin_dir
 
 
@@ -140,10 +188,30 @@ def _calls(*, path: Path) -> tuple[tuple[str, ...], ...]:
     return tuple(calls)
 
 
-def _publish(*, tmp_path: Path, run: Path) -> _Published:
+def _publish(
+    *,
+    tmp_path: Path,
+    run: Path,
+    landed_pr: str | None = None,
+    late_landed_pr: str | None = None,
+    dispatch_pull_requests: str | None = None,
+    check_suite: str = "true",
+    push_refusal: str | None = None,
+) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
-    bin_dir = _forge_double(tmp_path=tmp_path)
+    bin_dir = _forge_double(tmp_path=tmp_path, push_refusal=push_refusal)
+    plugins_root = tmp_path / "plugins"
+    plugins_root.mkdir()
+    _ = (plugins_root / PROOF_HEAD_PROGRAM_FILENAME).write_text(
+        proof_head_program_source(), encoding="utf-8"
+    )
+    _ = (plugins_root / RECORD_FILE_MERGE_PROGRAM_FILENAME).write_text(
+        record_file_merge_program_source(), encoding="utf-8"
+    )
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env = {
         key: value
         for key, value in os.environ.items()
@@ -155,10 +223,15 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
             "GH_CALLS": str(calls),
             "GH_DRAFT_CREATED": str(created),
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
+            "LIVESPEC_LANDED_PR": landed_pr or "",
+            "LIVESPEC_LATE_LANDED_PR": late_landed_pr or "",
+            "LIVESPEC_DISPATCH_PULL_REQUESTS": dispatch_pull_requests or "",
+            "GH_CREATE_REFUSED": str(tmp_path / "create-refused"),
+            "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
     )
     result = subprocess.run(
-        ["sh", "-c", _publish_script()],
+        ["sh", "-c", _publish_script(check_suite=check_suite)],
         cwd=str(run),
         env=env,
         text=True,
@@ -166,6 +239,71 @@ def _publish(*, tmp_path: Path, run: Path) -> _Published:
         check=False,
     )
     return _Published(result=result, calls=_calls(path=calls), draft_created=created.is_file())
+
+
+def _record_conflicted_run(*, tmp_path: Path) -> Path:
+    """A draft whose JSON record conflict removes distinct base entries."""
+    origin = tmp_path / "record-origin.git"
+    _git(tmp_path, "init", "--bare", "-b", "master", str(origin))
+
+    seed = tmp_path / "record-seed"
+    seed.mkdir()
+    _git(seed, "init", "-b", "master")
+    _configure(repo=seed)
+    _commit(
+        repo=seed,
+        path=".livespec.jsonc",
+        content=(
+            "{\n"
+            '  "livespec-orchestrator-beads-fabro": {\n'
+            '    "dispatcher": {\n'
+            '      "record_files": [\n'
+            '        {"path": "record.json", "format": "json-array", "key": ["id"]}\n'
+            "      ]\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        ),
+        message="declare record",
+    )
+    _commit(
+        repo=seed,
+        path=".gitattributes",
+        content="record.json merge=record-conflict\n",
+        message="configure record conflict",
+    )
+    _commit(
+        repo=seed,
+        path="record.json",
+        content='[{"id": "seed"}, {"id": "removed-by-run"}, {"id": "removed-by-default"}]\n',
+        message="seed record",
+    )
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-u", "origin", "master")
+
+    run = tmp_path / "record-run"
+    _git(tmp_path, "clone", str(origin), str(run))
+    _configure(repo=run)
+    _git(run, "config", "merge.record-conflict.driver", "false")
+    _git(run, "switch", "-c", "fabro/run/record")
+    _commit(
+        repo=run,
+        path="record.json",
+        content='[{"id": "seed"}, {"id": "removed-by-default"}]\n',
+        message="run record",
+    )
+
+    default = tmp_path / "record-default"
+    _git(tmp_path, "clone", str(origin), str(default))
+    _configure(repo=default)
+    _commit(
+        repo=default,
+        path="record.json",
+        content='[{"id": "seed"}, {"id": "removed-by-run"}]\n',
+        message="default record",
+    )
+    _git(default, "push", "origin", "master")
+    return run
 
 
 def test_stale_base_is_refreshed_before_a_workflow_clean_branch_is_published(
@@ -188,6 +326,42 @@ def test_stale_base_is_refreshed_before_a_workflow_clean_branch_is_published(
     assert "--draft" in create
     assert create[create.index("--base") + 1] == "master"
     assert create[create.index("--head") + 1] == _PUBLISH_BRANCH
+
+
+def test_declared_record_conflict_is_merged_before_draft_publication(tmp_path: Path) -> None:
+    """Scenario 200 preserves independent removals before draft publication."""
+    run = _record_conflicted_run(tmp_path=tmp_path)
+    trace = tmp_path / "publication-trace"
+    gate = tmp_path / "gate"
+    gate.write_text(
+        "#!/bin/sh\n"
+        f"printf 'gate:%s\\n' \"$(git rev-parse HEAD)\" >> {shlex.quote(str(trace))}\n",
+        encoding="utf-8",
+    )
+    gate.chmod(gate.stat().st_mode | stat.S_IXUSR)
+    pre_push = run / ".git" / "hooks" / "pre-push"
+    pre_push.write_text(
+        "#!/bin/sh\n"
+        f"printf 'push:%s\\n' \"$(git rev-parse HEAD)\" >> {shlex.quote(str(trace))}\n",
+        encoding="utf-8",
+    )
+    pre_push.chmod(pre_push.stat().st_mode | stat.S_IXUSR)
+
+    published = _publish(tmp_path=tmp_path, run=run, check_suite=f"sh {shlex.quote(str(gate))}")
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert (
+        "LIVESPEC_RECORD_FILE_MERGED: path=record.json format=json-array" in published.result.stderr
+    )
+    assert (run / "record.json").read_text(encoding="utf-8") == (
+        "[\n" "  {\n" '    "id": "seed"\n' "  }\n" "]\n"
+    )
+    refreshed_head = _git(run, "rev-parse", "HEAD").stdout.strip()
+    assert trace.read_text(encoding="utf-8").splitlines() == [
+        f"gate:{refreshed_head}",
+        f"push:{refreshed_head}",
+    ]
+    assert published.draft_created is True
 
 
 def test_reentry_after_master_advances_preserves_the_published_tip(
@@ -228,6 +402,121 @@ def test_reentry_after_master_advances_preserves_the_published_tip(
     assert remote_head.split()[0] == refreshed_tip
 
 
+def test_a_landed_publication_ends_before_push_or_draft_creation(tmp_path: Path) -> None:
+    """Scenario 256: a merge already in master does not need republication."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=f"73\t{merged_head}\t{merged_head}",
+        dispatch_pull_requests="12 73",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in published.result.stderr
+    assert published.draft_created is False
+    assert not any(call[:2] == ("pr", "create") for call in published.calls)
+    remote = _git(run, "ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}").stdout
+    assert remote == ""
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    marker_text = marker.read_text(encoding="utf-8")
+    assert "pull_request=73" in marker_text
+    assert f"merge_commit={merged_head}" in marker_text
+    assert f"merged_head={merged_head}" in marker_text
+    assert "proof_head=none" in marker_text
+    assert "heads_equal=false" in marker_text
+
+
+def test_a_publication_that_lands_before_draft_creation_is_refused_ends_as_landed(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: a refused creation re-asks whether the publication already landed."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        late_landed_pr=f"73\t{merged_head}\t{merged_head}",
+        dispatch_pull_requests="73",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" not in published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in published.result.stderr
+    assert published.draft_created is False
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert "pull_request=73" in marker.read_text(encoding="utf-8")
+
+
+def test_a_refused_draft_creation_with_nothing_landed_still_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: with no landed publication the creation refusal is unchanged."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(tmp_path=tmp_path, run=run, late_landed_pr="73\tnull\tnull")
+
+    assert published.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
+
+
+@pytest.mark.parametrize("dispatch_pull_requests", ["", "12 730", "7"])
+@pytest.mark.parametrize("phase", ["before_push", "after_refused_creation"])
+def test_a_merged_pull_request_no_dispatch_record_names_is_not_a_landed_publication(
+    tmp_path: Path, dispatch_pull_requests: str, phase: str
+) -> None:
+    """Scenario 256: a reused branch name's merged pull request is not this item's."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+    merged = f"73\t{merged_head}\t{merged_head}"
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=merged if phase == "before_push" else None,
+        late_landed_pr=merged if phase == "after_refused_creation" else None,
+        dispatch_pull_requests=dispatch_pull_requests,
+    )
+
+    assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert not marker.exists()
+    if phase == "before_push":
+        assert published.result.returncode == 0, published.result.stderr
+        assert published.draft_created is True
+    else:
+        assert published.result.returncode != 0
+        assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
+
+
+@pytest.mark.parametrize("rendered_merge_commit", ["", "null"])
+def test_a_merged_pull_request_with_no_merge_commit_is_not_a_landed_publication(
+    tmp_path: Path, rendered_merge_commit: str
+) -> None:
+    """Scenario 256: a merged pull request without a full merge commit name is not landed."""
+    run, _, merged_head = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=f"73\t{rendered_merge_commit}\t{merged_head}",
+        dispatch_pull_requests="73",
+    )
+
+    assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert not marker.exists()
+
+
 def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
     tmp_path: Path,
 ) -> None:
@@ -258,3 +547,138 @@ def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
     assert remote.split()[0] == prior_tip
     assert refused.calls == ()
     assert refused.draft_created is False
+
+
+def test_a_pre_push_hook_refusal_names_its_failed_targets_in_the_refresh_repair_brief(
+    tmp_path: Path,
+) -> None:
+    """Scenario 224 attributes a refused push to the hook that refused it."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    pre_push = run / ".git" / "hooks" / "pre-push"
+    pre_push.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' 'Failed targets (2):' >&2\n"
+        "printf '%s\\n' '  - check-per-file-coverage' >&2\n"
+        "printf '%s\\n' '  - check-coverage' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    pre_push.chmod(pre_push.stat().st_mode | stat.S_IXUSR)
+
+    refused = _publish(tmp_path=tmp_path, run=run)
+
+    assert refused.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_GATE_REJECTED" in refused.result.stderr
+    brief = run / ".git" / "livespec-publication" / "livespec-refresh-repair-brief"
+    assert "failed-gate-targets: check-per-file-coverage, check-coverage" in brief.read_text(
+        encoding="utf-8"
+    )
+    assert refused.draft_created is False
+
+
+def test_a_non_fast_forward_push_refusal_names_the_stale_publish_branch(
+    tmp_path: Path,
+) -> None:
+    """Scenario 224 directs the operator to reconcile an actually stale branch."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    gate_trace = tmp_path / "declared-gate-ran"
+
+    refused = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        check_suite=f"sh -c 'printf declared-gate-ran > {shlex.quote(str(gate_trace))}'",
+        push_refusal="! [rejected] HEAD -> feat/bd-ib-qustjx (non-fast-forward)",
+    )
+
+    assert refused.result.returncode != 0
+    assert (
+        gate_trace.exists()
+    ), "a refusal without a hook target summary still runs the declared gate"
+    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
+    assert "origin rejected the push as non-fast-forward" in message
+    assert "reconcile the stale publish branch" in message
+    assert refused.draft_created is False
+
+
+def test_an_unreachable_origin_is_named_after_the_push_marker(tmp_path: Path) -> None:
+    """Scenario 224 keeps a dead origin distinct from a stale branch."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    refused = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        push_refusal="fatal: Could not resolve host: origin.example.invalid",
+    )
+
+    assert refused.result.returncode != 0
+    message = refused.result.stderr.split("LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: ", 1)[1]
+    assert "origin could not be reached" in message
+    assert "stale publish branch" not in message
+    assert refused.draft_created is False
+
+
+def test_an_authentication_push_refusal_from_the_path_stub_stays_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """A recorded authentication refusal is never mistaken for a repairable gate failure."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    refused = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        push_refusal="fatal: Authentication failed for 'https://example.invalid/repo.git'",
+    )
+
+    assert refused.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in refused.result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in refused.result.stderr
+    brief = run / ".git" / "livespec-publication" / "livespec-refresh-repair-brief"
+    assert not brief.exists()
+    assert refused.draft_created is False
+
+
+def test_a_landed_publication_whose_pr_head_is_not_the_tip_still_ends_as_landed(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: containment and emptiness are judged against the tip, not the PR head."""
+    run, _, tip = _stale_run(tmp_path=tmp_path)
+    _git(run, "fetch", "origin", "master")
+    _git(run, "reset", "--hard", "origin/master")
+    absent_pr_head = "b" * 40
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        landed_pr=f"73\t{tip}\t{absent_pr_head}",
+        dispatch_pull_requests="73",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert "LIVESPEC_MERGED_RECONCILE" in published.result.stderr
+    assert published.draft_created is False
+    marker = run / ".git" / "livespec-publication" / "livespec-merged-reconcile"
+    assert f"merged_head={absent_pr_head}" in marker.read_text(encoding="utf-8")
+
+
+def test_verify_pr_accepts_a_recorded_merged_reconcile_ending(tmp_path: Path) -> None:
+    """A recorded merged-reconcile ending passes verify_pr without a head ancestry test."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    state = run / ".git" / "livespec-publication"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "livespec-merged-reconcile").write_text("pull_request=73\n", encoding="utf-8")
+    block = re.search(
+        r"^\s*verify_pr\s*\[(?P<body>.*?)^\s*\]",
+        _WORKFLOW.read_text(encoding="utf-8"),
+        re.DOTALL | re.MULTILINE,
+    )
+    assert block is not None
+    attr = _SCRIPT.search(block.group("body"))
+    assert attr is not None
+    script = attr.group("value").replace(r"\"", '"')
+
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=str(run), text=True, capture_output=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_MERGED_BEFORE_VERIFY" in result.stderr

@@ -47,6 +47,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
     published_head,
 )
 
+from tests.prepare_step_support import env_of, steps_in
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REAL_PAYLOADS = _REPO_ROOT / "tests" / "integration" / "fixtures" / "proof_records"
 
@@ -364,19 +366,19 @@ def test_the_prepare_step_lands_a_runnable_program_under_the_shared_root(
     """The step the overlay renders actually materializes the program.
 
     Run as the sandbox runs it -- the rendered TOML basic string handed to `sh`
-    -- rather than asserted as text, because the heredoc delimiter is QUOTED to
-    stop the shell substituting into a program that is full of dollar signs, and
-    that quoting is exactly the kind of thing a text assertion passes over.
+    -- rather than asserted as text, because the write must stop the shell
+    substituting into a program that is full of dollar signs, and that is
+    exactly the kind of thing a text assertion passes over.
     """
     block = proof_head_program_prepare_steps_block()
-    script = json.loads(block.split("script = ", 1)[1].strip())
+    [step] = steps_in(block=block)
 
     result = subprocess.run(
-        ["sh", "-c", script],
+        ["sh", "-c", step.script],
         capture_output=True,
         text=True,
         check=False,
-        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"},
+        env=env_of(step=step, base={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}),
     )
 
     landed = tmp_path / ".claude" / "plugins" / PROOF_HEAD_PROGRAM_FILENAME
@@ -524,3 +526,88 @@ def test_a_headless_carry_forward_record_establishes_nothing(tmp_path: Path) -> 
     assert code == 1
     assert out == ""
     assert "names no single full publish-branch head" in err
+
+
+# The comment link a refusal must NAME, and the header shape it must name it
+# for: the identity field carrying its introducer and nothing after it, which is
+# exactly what a capture posts when it expands an unset `$FABRO_RUN_ID` into
+# `printf '... run %s ...'`. Spelled verbatim rather than built by `_record`,
+# because the defect is IN the header and a helper that cannot produce a
+# malformed one cannot reach it. The two spaces after `run` are the measured
+# bytes from the record on `livespec-dev-tooling` pull request 2712.
+_EMPTY_ID_COMMENT = "https://forge/comment/empty-run-id"
+
+
+def _unattributed(*, verdict: str, url: str) -> dict[str, str]:
+    return {"body": f"Proof of Done — {verdict} — run  — 2026-10-21T04:34:04Z\n", "url": url}
+
+
+def test_a_capture_whose_header_carries_no_run_id_is_named_as_that_comment(
+    tmp_path: Path,
+) -> None:
+    """The refusal names the COMMENT and says the header carries no run id.
+
+    The header's third field is the publishing identity, so an introducer with
+    nothing after it is a header the format cannot attribute and the record
+    reader is right to drop the comment entirely. Reporting that drop as "the
+    pull request carries no captured record" is what cost run 01M5E8H65Z04 its
+    publication: the capture had posted, review and replay had both passed, and
+    the only account of the fault pointed at a stage that had in fact run. So
+    the diagnostic has to carry the comment an operator must read and the
+    measurement that stopped it — the remedy is a fresh capture, and nothing in
+    an absent-record message says which comment to look at.
+
+    `test_both_required_verdicts_naming_one_head_print_that_head` is the control:
+    a refusal that fired on every pull request would satisfy this case exactly
+    as well as a correct one does.
+    """
+    argv = ["--pull-request", "7"]
+    for verdict in PROOF_HEAD_REQUIRED_VERDICTS:
+        argv.extend(["--require", verdict])
+
+    code, out, err = _run_program(
+        tmp_path=tmp_path,
+        comments=[
+            _unattributed(verdict="captured", url=_EMPTY_ID_COMMENT),
+            _record(verdict=_VERIFIED, head=_SHA),
+        ],
+        argv=argv,
+    )
+
+    assert code == 1
+    assert out == ""
+    assert _EMPTY_ID_COMMENT in err
+    assert "no run id" in err
+
+
+def test_an_unattributable_capture_supersedes_an_earlier_well_formed_one(
+    tmp_path: Path,
+) -> None:
+    """A newer headless-identity capture is not rescued by an older real record.
+
+    This is the fail-OPEN direction and it is the reason the reading is of the
+    NEWEST comment of each required verdict rather than of the newest parsing
+    record. With the unattributable capture invisible, the older captured record
+    still answers the capture requirement, its head still agrees with the
+    replay's, and the newest factory record is still the verification — so every
+    arm passes and the stage publishes against a tree the latest capture never
+    claimed to have proved.
+    """
+    argv = ["--pull-request", "7"]
+    for verdict in PROOF_HEAD_REQUIRED_VERDICTS:
+        argv.extend(["--require", verdict])
+
+    code, out, err = _run_program(
+        tmp_path=tmp_path,
+        comments=[
+            _record(verdict="captured", head=_SHA),
+            _unattributed(verdict="captured", url=_EMPTY_ID_COMMENT),
+            _record(verdict=_VERIFIED, head=_SHA),
+        ],
+        argv=argv,
+    )
+
+    assert code == 1
+    assert out == ""
+    assert _EMPTY_ID_COMMENT in err
+    assert "no run id" in err

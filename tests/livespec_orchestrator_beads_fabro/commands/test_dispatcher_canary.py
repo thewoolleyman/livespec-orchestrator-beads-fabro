@@ -47,7 +47,7 @@ def _canary() -> Any:
     return import_module(_MODULE_NAME)
 
 
-def _fake_config() -> StoreConfig:
+def _fake_config(*, repo_root: Path = _REPO_ROOT) -> StoreConfig:
     return StoreConfig(
         tenant="livespec-orch-beads-fabro",
         prefix="bd-ib",
@@ -55,7 +55,7 @@ def _fake_config() -> StoreConfig:
         database="livespec-orch-beads-fabro",
         bd_path="bd",
         fake=True,
-        repo_root=_REPO_ROOT,
+        repo_root=repo_root,
     )
 
 
@@ -73,6 +73,19 @@ def _repo_whose_fixture_references(*, tmp_path: Path, heading: str) -> Path:
     doctored = tmp_path / canary.CANARY_FIXTURE_RELATIVE_PATH
     doctored.parent.mkdir(parents=True, exist_ok=True)
     doctored.write_text(f"{before}References: {heading}\n", encoding="utf-8")
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
     return tmp_path
 
 
@@ -193,7 +206,7 @@ def test_an_intake_route_that_fails_names_the_minted_id(*, monkeypatch: Any) -> 
     assert "bd-ib-" in refused.detail
 
 
-def test_an_intake_route_that_parks_the_canary_is_refused(tmp_path: Path) -> None:
+def test_an_intake_route_that_parks_the_canary_is_refused(tmp_path: Path, monkeypatch: Any) -> None:
     """A canary intake did not route to `ready` must not reach the dispatch.
 
     This is the fault that refused canaries 5 and 6 — a `References:` line
@@ -213,6 +226,12 @@ def test_an_intake_route_that_parks_the_canary_is_refused(tmp_path: Path) -> Non
     """
     canary = _canary()
     reset_fake_singleton()
+    # The spec-change tier is out of this case's subject, and the store's repo
+    # root is this repository's own tree, so classifying would read the committed
+    # routing; the mechanical wall is what parks the canary here.
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.intake_dor.classify_and_hold", lambda **_kw: None
+    )
     config = _fake_config()
     repo = _repo_whose_fixture_references(
         tmp_path=tmp_path,
@@ -255,7 +274,7 @@ def test_the_subcommand_refuses_when_intake_cannot_route(*, capsys: Any, monkeyp
     assert "intake could not route it" in captured.err
 
 
-def test_every_filed_canary_carries_the_fixture_dispatch_label() -> None:
+def test_every_filed_canary_carries_the_fixture_dispatch_label(tmp_path: Path) -> None:
     """The label is what tells a fixture dispatch from ordinary filed work.
 
     It is asserted on the LEDGER RECORD rather than on a constant, because the
@@ -266,11 +285,13 @@ def test_every_filed_canary_carries_the_fixture_dispatch_label() -> None:
     canary = _canary()
     assert hasattr(canary, "CANARY_LABEL"), dir(canary)
     reset_fake_singleton()
-    config = _fake_config()
-
-    filed = canary.file_canary_work_item(
-        repo=_REPO_ROOT, config=config, now_iso="2026-10-16T00:00:00Z"
+    repo = _repo_whose_fixture_references(
+        tmp_path=tmp_path,
+        heading="## Fabro runtime constraints",
     )
+    config = _fake_config(repo_root=repo)
+
+    filed = canary.file_canary_work_item(repo=repo, config=config, now_iso="2026-10-16T00:00:00Z")
 
     assert isinstance(filed, str), filed
     record = make_beads_client(config=config).show_issue(issue_id=filed)

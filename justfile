@@ -458,6 +458,7 @@ check:
         check-codex-plugin-structure
         check-pi-plugin-structure
         check-bd-guard
+        check-fleet-launch
         check-codex-skill-picker
         check-no-fleet-pat-dispatch-surface
         check-spec-governance-default-block
@@ -468,10 +469,36 @@ check:
         check-no-workflow-edits
         check-fresh-clone-setup
         check-doctor-static
+        check-acp-preflight-config
         check-tests-no-real-time
     )
     LIVESPEC_AGGREGATE_TARGETS
-    bash dev-tooling/just-check.sh
+    # `SKIP_TARGETS` is the fleet's recognised skip contract, the one livespec's
+    # `check` recipe reads too. The delegated gate client exports the members
+    # that read authority held outside the tree into it, so the gate Job leaves
+    # them to the pushing host; since livespec-dev-tooling v1.134.2 the client
+    # refuses to submit a Job for a recipe that reads no recognised skip
+    # variable (livespec-dev-tooling-ebtm6t). Unset, the full aggregate runs;
+    # either way `just-check.sh` records the green token's skipped-target scope.
+    # Scope the janitor token to the same omitted targets pre-push checks. The
+    # adapter owns that declaration so an environmental sandbox omission cannot
+    # persist a scope the same-tree push will reject (or vice versa).
+    mapfile -t reusable_scope < <(bash dev-tooling/green-token-scope.sh scope)
+    read -ra requested_skip_targets <<< "${SKIP_TARGETS:-}"
+    skip_targets=()
+    for skip_target in "${reusable_scope[@]}" "${requested_skip_targets[@]}"; do
+        duplicate=false
+        for existing_target in "${skip_targets[@]}"; do
+            if [[ "$existing_target" == "$skip_target" ]]; then
+                duplicate=true
+                break
+            fi
+        done
+        if [[ "$duplicate" == false ]]; then
+            skip_targets+=("$skip_target")
+        fi
+    done
+    bash dev-tooling/just-check.sh "${skip_targets[@]}"
 
 [positional-arguments]
 check-skipping *skip_targets:
@@ -731,6 +758,11 @@ check-no-fleet-toolchain-literals:
 check-bd-guard:
     bash dev-tooling/just-check-bd-guard.sh
 
+# Lints every fleet-launch shell script and drives its stubbed, hermetic
+# launcher harness; syntax alone cannot verify FIFO launch behaviour.
+check-fleet-launch:
+    bash dev-tooling/just-check-fleet-launch.sh
+
 # `check-bd-guard-candidate` — explicit Beads v1.2.2 qualification leg. It
 # downloads the official Linux amd64 release into a temporary directory, verifies
 # upstream and derived hashes, then runs the tracked guard with LIVESPEC_BD_REAL
@@ -885,6 +917,20 @@ install-ci-fabro:
 check-doctor-static:
     bash dev-tooling/just-check-doctor-static.sh
 
+# `check-acp-preflight-config` — evaluates the committed `.livespec.jsonc`
+# through the Dispatcher's own `resolve_acp_preflight` and fails, printing the
+# refusal text, when a node's candidate chain cannot resolve (a fallback model
+# the model catalog does not declare, for instance). Moves the Scenario 129
+# refusal from dispatch admission to commit time: the Codex-first routing
+# rollout copied `acp_nodes` into 13 fleet repositories whose catalogs lacked
+# the Claude fallback, and every one refused every dispatch while each hook and
+# CI run on the copying change passed. Supplies no probe, headroom policy,
+# factory reader or journal, so the verdict is deterministic and needs no
+# network. Fails only on a CONFIGURATION refusal, never on an availability wait.
+# Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
+check-acp-preflight-config:
+    uv run python dev-tooling/checks/acp_preflight_config.py
+
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).
 # Wired in alphabetical order to match the aggregate above.
@@ -1015,7 +1061,10 @@ check-no-direct-tool-invocation:
 # 2026-09-05 authorized workflow landing through the GitHub API, PR #2160), the
 # pack body honours a HUMAN authorization recorded on the ledger: a tracked
 # `.livespec-workflow-edit-exemption` declaration authored in the change, whose
-# named work item carries the human-set `approval:workflow-edit` label. The
+# named work item carries a tier label: `approval:workflow-edit-additive`
+# (delegable) for an add-only edit attested `change=additive` +
+# `ci_runtime=no-significant-increase`, the maintainer-only
+# `approval:workflow-edit` for anything else. The
 # Python module `_dispatcher_workflow_guard.py` (and its `workflow_guard.py` bin
 # wrapper) stays for the Dispatcher engine's programmatic use.
 check-no-workflow-edits:
@@ -1233,11 +1282,26 @@ reap-e2e-repos *ARGS:
 check-pre-commit:
     bash dev-tooling/just-check-pre-commit.sh
 
+check-pre-commit-gated-tree:
+    bash dev-tooling/check-pre-commit-gated-tree.sh
+
 # When zero `.py` files are staged, `check-pre-commit` delegates to this
 # conservative doc-only subset. This is a LOCAL pre-commit speed optimization
 # only — it is NOT a merge gate, and pre-push no longer delegates here.
 check-pre-commit-doc-only:
     bash dev-tooling/just-check-pre-commit-doc-only.sh
+
+# Green amends run this staged pre-check before their Red test and the full
+# aggregate.  The workflow check reports the configured ruff and pyright
+# finding verbatim, including its file, line and rule.
+check-staged-precheck:
+    uv run python -m livespec_dev_tooling.workflow_checks.staged_precheck
+
+# The Green-amend fast lane receives the test modules added or changed by the
+# Red commit at HEAD.  The whole suite still runs in check-skipping afterwards.
+[positional-arguments]
+check-staged-tests *test_paths:
+    uv run pytest "$@"
 
 # Run the full `just check` aggregate (PR gate ≡ master gate — the zero-.py
 # pre-push subset was retired so a doc-only push runs the same gate a code

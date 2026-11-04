@@ -316,6 +316,7 @@ def test_a_run_that_fails_after_its_pull_request_opened_still_carries_the_size(
             _ok(stdout="fabro done"),
             _ok(stdout=_pr_json()),
             _ok(stdout=_pr_json()),
+            CommandResult(exit_code=1, stdout="", stderr="gh failed at the final read"),
         ]
     )
 

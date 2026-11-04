@@ -42,10 +42,12 @@ __all__: list[str] = [
     "derive_fabro_timeout_seconds",
     "node_timeouts_from_block",
     "node_timeouts_journal_record",
+    "positive_int_seconds",
 ]
 
 _NODE_TIMEOUTS_KEY = "node_timeouts"
 _STALL_TIMEOUT_KEY = "stall_timeout_seconds"
+_IMPLEMENT_STAGE_NODES: frozenset[str] = frozenset({"red", "green"})
 
 DEFAULT_NODE_TIMEOUT_SECONDS = 1800
 DEFAULT_STALL_TIMEOUT_SECONDS = 7200
@@ -74,6 +76,30 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # in practice (one `git` call) and budgeting it at the guarded node's count is
 # what keeps the ceiling ABOVE the graph rather than level with an optimistic
 # reading of it.
+#
+# `implement_completion` (v165, Scenario 204; work-item bd-ib-ahxcjx) is the
+# OTHER postcondition of that same turn and is budgeted identically for the
+# identical reason: it sits on `implement`'s single fallthrough, so each attempt
+# of the turn can reach it once. It is cheaper still than the diff breaker --
+# one file read -- and this repository declares it DOWNWARD at 600 s in
+# `.livespec.jsonc`, which is the credential floor's own documented remedy
+# applied to work that genuinely takes milliseconds.
+#
+# `implement_hook_route` (v208, Scenario 204; work-item bd-ib-y7372n) sits on
+# `implement_completion`'s failure edge and can send an incomplete turn back to
+# `implement` ONCE, when the commit hook refused what the turn left staged, and
+# (bd-ib-xj3qqb) ONCE MORE without spending that budget when the turn ended while
+# a commit run it started was still running and that run passed. So `implement`
+# is reached by three visits of two attempts each, SIX, and the route, the
+# completion gate, the diff breaker and `implement_commit_settle` once per
+# visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three and
+# `fix_commit_settle` follows `fix`'s two. `janitor_admission` sits ahead of
+# each janitor visit and is likewise billed three times; it has its own
+# engine-side ninth visit only to name the exhausted eight-visit bound and
+# preserve the tree, which is not part of a successful run's longest path. The
+# route runs the repository's pre-commit hook, which can take the better part
+# of its timeout, so it is billed at its full visit count like any node that can
+# spend its ceiling.
 #
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
@@ -139,10 +165,15 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "implement": 2,
-    "implementation_diff": 2,
+    "implement": 6,
+    "implement_commit_settle": 3,
+    "implement_completion": 3,
+    "implement_hook_route": 3,
+    "implementation_diff": 3,
+    "janitor_admission": 3,
     "janitor": 3,
     "fix": 2,
+    "fix_commit_settle": 2,
     "publish_draft": 4,
     "proof_capture": 7,
     "review": 7,
@@ -151,6 +182,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "proof_grade_route": 3,
     "disposition": 3,
     "review_fix": 3,
+    "review_fix_commit_settle": 3,
     "pr_refresh": 8,
     "pr_refresh_head": 7,
     "pr": 4,
@@ -181,11 +213,15 @@ class NodeTimeouts:
 
     def seconds_for(self, *, node: str) -> int:
         """The resolved timeout in seconds for `node`."""
-        return self.configured.get(node, DEFAULT_NODE_TIMEOUT_SECONDS)
+        return self.configured.get(_configuration_node(node=node), DEFAULT_NODE_TIMEOUT_SECONDS)
 
     def layer_for(self, *, node: str) -> str:
         """Which layer supplied `node`'s timeout."""
-        return REPOSITORY_LAYER if node in self.configured else WORKFLOW_DEFAULT_LAYER
+        return (
+            REPOSITORY_LAYER
+            if _configuration_node(node=node) in self.configured
+            else WORKFLOW_DEFAULT_LAYER
+        )
 
 
 def default_node_timeouts() -> NodeTimeouts:
@@ -221,7 +257,7 @@ def node_timeouts_from_block(*, block: dict[str, Any]) -> NodeTimeouts | str:
     table = cast("dict[str, Any]", table_raw) if isinstance(table_raw, dict) else {}
     configured: dict[str, int] = {}
     for node in sorted(table):
-        seconds = _positive_int(value=table[node])
+        seconds = positive_int_seconds(value=table[node])
         if seconds is None:
             return (
                 f"dispatcher.{_NODE_TIMEOUTS_KEY}.{node} must be a positive "
@@ -280,7 +316,7 @@ def _with_stall(*, block: dict[str, Any], configured: dict[str, int]) -> NodeTim
             stall_seconds=DEFAULT_STALL_TIMEOUT_SECONDS,
             stall_layer=WORKFLOW_DEFAULT_LAYER,
         )
-    stall_seconds = _positive_int(value=stall_raw)
+    stall_seconds = positive_int_seconds(value=stall_raw)
     if stall_seconds is None:
         return (
             f"dispatcher.{_STALL_TIMEOUT_KEY} must be a positive integer of "
@@ -293,16 +329,32 @@ def _with_stall(*, block: dict[str, Any], configured: dict[str, int]) -> NodeTim
     )
 
 
-def _positive_int(*, value: object) -> int | None:
-    """The value as a positive int, or None when it is neither.
+def positive_int_seconds(*, value: object) -> int | None:
+    """The value as a positive int of seconds, or None when it is neither.
 
     `bool` is excluded explicitly: it is an `int` subclass in Python, so
     `true` in a config file would otherwise resolve to a one-second timeout
     -- a value that both passes validation and destroys every dispatch.
+
+    PUBLIC because all three keys of the same contracts section are "a
+    positive integer of seconds": the per-node timeouts and the stall window
+    here, and `dispatcher.run_wall_budget_seconds` in
+    `_dispatcher_run_wall_budget`. A second coercion over there would be a
+    second place for the `bool` trap above to be forgotten.
     """
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value if value > 0 else None
+
+
+def _configuration_node(*, node: str) -> str:
+    """The timeout configuration key that governs one workflow node.
+
+    `red` and `green` are the two future ACP turns of the implement stage.
+    They retain the stage's single `implement` configuration key; command nodes
+    such as `commit_red` and `commit_green` deliberately do not share it.
+    """
+    return "implement" if node in _IMPLEMENT_STAGE_NODES else node
 
 
 # The fully-defaulted resolution as a VALUE, for a caller that needs to put

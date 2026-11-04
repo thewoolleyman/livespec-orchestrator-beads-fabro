@@ -7,6 +7,10 @@ server-API face or the credential resolution. Seven of them are read-only and
 spend no run time, so they belong here beside the other tier 0 reads; `cancel`
 needs a live run and is in `test_tier1_fabro_port_lifecycle.py`.
 
+`settings` joined them when overflow selection needed a factory's own scheduler
+ceiling, and it is here for the same reason: it is read-only, it spends no run
+time, and the figure it is read for decides where every unpinned dispatch lands.
+
 Like its tier 0 siblings this suite sits outside `tests/` so the hermetic
 `just check` aggregate never needs a live Fabro server or credentials. Invoke
 it explicitly:
@@ -54,6 +58,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_auth import (
     FABRO_AUTH_FILE_RELATIVE,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import SYSTEM_INFO_PATH
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+    scheduler_max_concurrent_runs_from_payload,
+)
 
 __all__: list[str] = []
 
@@ -70,6 +77,10 @@ _BOGUS_DEV_TOKEN = "fabro-enemy-unit-test-not-a-credential"
 _HTTP_UNAUTHORIZED = 401
 _CLIENT_ERROR_FLOOR = 400
 _CAPABILITIES_KEY = "capabilities"
+# The smallest ceiling a factory this suite can run against could report. A
+# `max_concurrent_runs` below 1 is what the overflow clause calls no free slot,
+# so a server reporting one would admit no run at all.
+_MINIMUM_USABLE_CEILING = 1
 _SECRET_SET_NAME = "LIVESPEC_EUT_NATIVE_SECRET_CHANNEL"
 _SECRET_SET_VALUE = "fabro-enemy-unit-test-not-a-credential"
 
@@ -198,6 +209,33 @@ def test_dump_of_a_run_the_factory_does_not_hold_fails_rather_than_exports_nothi
 
     assert result.command.exit_code != 0
     assert not sorted(path for path in export_dir.rglob("*") if path.is_file())
+
+
+def test_settings_reports_this_servers_own_scheduler_ceiling(
+    *,
+    port: FabroPort,
+) -> None:
+    """The ONE figure overflow selection compares a candidate's run count against.
+
+    The assertion is on the PARSED ceiling rather than on the exit code, because
+    this verb is read for exactly one number and the whole decision degrades to
+    "this candidate has no free slot" when that number cannot be read. A build
+    whose settings nest the scheduler block elsewhere exits 0 and prints a
+    perfectly good payload while reporting no ceiling at all — which retires
+    overflow selection silently, so the parse is exactly the capability delta a
+    pinned-versus-candidate comparison must expose.
+
+    A ceiling of at least 1 is required rather than merely a non-`None`
+    reading: the clause calls a `max_concurrent_runs` below 1 no free slot, so a
+    server reporting one would admit no run at all, and this suite only ever
+    runs against a factory that does.
+    """
+    result = port.settings(timeout_seconds=TIMEOUT_SECONDS)
+
+    _assert_success(command=result.command)
+    ceiling = scheduler_max_concurrent_runs_from_payload(payload=result.payload)
+    assert ceiling is not None, "fabro settings --json reported no scheduler ceiling"
+    assert ceiling >= _MINIMUM_USABLE_CEILING
 
 
 def test_the_server_api_face_carries_this_ports_own_factory(

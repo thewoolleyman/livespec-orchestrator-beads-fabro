@@ -9,6 +9,22 @@ requires for a `scenarios.md` heading binding (integration-tier-or-above, never
 a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 `heading_coverage` check's default allowlist.
 
+- `test_fleet_launch_scenario297.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 297 by running the shipped `check-fleet-launch` driver over the
+  committed tree. The hermetic harness proves a queued younger ticket begins
+  its preflight before the older ticket binds, preserves FIFO bind order,
+  reuses fresh passes, renews stale passes at the head, releases the mutex
+  before drive, and drops a failed queued ticket without taking that mutex.
+
+- `test_merge_poll_budget_exhausted_scenario220.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 220": an exhausted merge-poll budget
+  re-reads the pull request, proceeds on MERGED and otherwise rests the item at
+  `blocked / needs-human` with the cause `merge-poll-budget-exhausted`. It runs the
+  production `run_dispatch` and `post_run_dispositions` against the in-memory
+  tenant, standing in only the subprocess seam and the Fabro launcher. Its
+  MERGED-at-the-final-read case and its conflicting-pull-request case are the
+  controls for the resting case: a build that rested every exhausted wait fails the
+  first, and one that rested none fails the second.
 - `test_regroom_state_machine_scenario9.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 9 — needs-regroom state and
   transitions": the three transitions of the `livespec_orchestrator_beads_fabro.regroom`
@@ -322,6 +338,20 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   no-run on two independent instruments: the launch seam was never entered, and
   no `dispatch-id` record was written.
 
+- `test_groom_cut_approval_arc.py` — binds `SPECIFICATION/scenarios.md`
+  "Scenario 118 — A groom workflow variant drafts a cut, parks it in the ledger,
+  and files only on a recorded approval" as ONE arc: the real groom door, the
+  propose phase's post-run disposition (draft recorded as a ledger comment, item
+  rested at `blocked / needs-human`, nothing filed), the real
+  `resolve-blocked:<id>:ready` valve, and the apply phase's post-run disposition
+  handed a filing plan. Only the Fabro CLI's `inspect` answer is stood in. The
+  approval's ORDER is read off a recording overlay on the fake's two write verbs,
+  not off the end state, since both orderings leave the same `ready` item. The
+  control leg answers the same parked draft with `backlog` and asserts the item
+  rests at `backlog`, nothing is filed and the draft is unapproved to the reader
+  the apply gate uses; mutating that reader to treat every answer as consent reds
+  it, which is what makes the `ready` leg's pass mean anything.
+
 - `test_groom_variant_criteria_wall.py` — the variant-aware pre-dispatch
   acceptance-criteria wall, where `SPECIFICATION/contracts.md` §"Effective
   acceptance criteria" meets §"Consensus-gated automated groom cut": the wall
@@ -586,25 +616,27 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 - `test_acp_fallback_journey_scenario127.py` — binds `SPECIFICATION/scenarios.md`
   "Scenario 127 — Ordered ACP fallback preserves primary resolution, failure
   honesty, and one node visit". One two-candidate structured chain, declared in a
-  `.livespec.jsonc` on disk, carried from the capability gate through to both
-  ledgers: the configuration read, the catalogs, the chain resolution, the gate,
-  the event scan, the hold and warning ledgers and the journal writes are all
-  production code. Exactly two sockets are stood in, each at a seam the product
+  `.livespec.jsonc` on disk, carried from the capability gate through the event
+  scan: the configuration read, the catalogs, the chain resolution, the gate and
+  the scan are all production code. One socket is stood in, at a seam the product
   publishes for the purpose — the factory's `GET /api/v1/system/info` answer
-  through `FabroHttpTransport`, and the run's own event stream through
-  `CommandRunner` — so the request path, the server qualification and the
-  `fabro events` argv remain the real ones. The agent is `glm-acp-agent`
+  through `FabroHttpTransport` — so the request path and the server qualification
+  remain the real ones. The agent is `glm-acp-agent`
   deliberately: its `protocol` mechanism makes BOTH candidates carry
   `config_options`, so one fixture owes both capability strings and can isolate
   each gate arm by advertising the other. Every assertion is chosen to be DERIVED
   rather than echoed, because a recorded stream can prove nothing a fixture
-  supplies: the hold's `expires_at` comes from occurrence time, the hold keys the
-  candidate that FAILED while the warning keys the one that RESCUED the node (no
-  single echoed field yields both), and the `primary_generation` the events carry
-  is computed from this repository's own resolved chain rather than transcribed,
-  so a configuration change that moved it makes the stream stop matching instead
-  of silently agreeing. `cleared` is asserted ZERO against a run that SUCCEEDED,
-  which is the scenario's own control that run success does not clear the primary.
+  supplies: the `primary_generation` the events carry is computed from this
+  repository's own resolved chain rather than transcribed, so a configuration
+  change that moved it makes the stream stop matching instead of silently
+  agreeing. ITS HOLD-AND-WARNING JOURNEY IS RETIRED, with the v127 removal of the
+  `agent.acp.failover` projection (work-item `bd-ib-qm6r1`): the case that drove
+  one failover into one hold and one warning read an event the engine no longer
+  emits, and the heading's own registry row recorded in advance that this
+  module's journey cases are "retired by that implementing work". The warning and
+  hold primitives it exercised keep their coverage at the unit tier, in
+  `tests/livespec_orchestrator_beads_fabro/commands/
+  test_acp_fallback_warning_primitives.py`.
   The version gate is bound on both halves — the FACTORY half in all four
   advertised states, including an unreachable server that must refuse rather than
   pass, and the RELEASE half read from this repository's own committed
@@ -613,12 +645,29 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   negative controls carry the rest: an absent run reads as unobservable cost, and
   a factory advertising neither capability refuses before any journey is
   reachable. "Unchanged run and sandbox identity" is asserted as what the
-  orchestrator can actually observe — one run id, reached through exactly one
-  events read against the pinned factory, inside one node visit — because this
-  repository holds no per-attempt container surface and an assertion about one
-  would be an assertion against the fixture. The live controlled run on `hp` is a
-  separate operational artefact of the same work-item; this module is what makes
-  its transcript checkable.
+  orchestrator can actually observe — one node visit over the scanned stream —
+  because this repository holds no per-attempt container surface and an assertion
+  about one would be an assertion against the fixture. The live controlled run on
+  `hp` is a separate operational artefact of the same work-item; this module is
+  what makes its transcript checkable.
+
+- `test_unattended_drain_past_projection_facts.py` — binds the first
+  Definition-of-Done assertion of work-item `bd-ib-qm6r1`, the v127 retirement
+  of the rule that an unresolved projection-failure fact stopped unattended
+  picking. The WHOLE invocation is driven — the real
+  `dispatcher.main(argv=["loop", "--dry-run", ...])` with no `--item`, over the
+  real store/client seam and a real on-disk journal — because the defect was a
+  gate that returned before selection: `[]` at exit 0, which is byte-identical
+  to what an empty ready set produces, so no assertion about the selection
+  function could have seen it. The journal records are TRANSCRIBED rather than
+  built through the retired writer's own record builder, since binding the case
+  to that module would bind it to the thing being deleted. Its control is the
+  same invocation over a clean journal, which must yield the IDENTICAL pick:
+  without it, "the drain picked the ready item" is equally consistent with a
+  build that ignores the journal for some unrelated reason. The case also
+  asserts the three facts are STILL in the journal afterwards, because the
+  retirement removes the gate and a pass that quietly resolved them would be a
+  second, unratified retirement.
 
 - `test_filing_definition_of_done_scenario140.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 140 — Filing displays
@@ -1064,6 +1113,41 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   absent-account case, because that one arm WIDENS a record's reach and is the
   direction every other case argues against.
 
+- `test_session_headroom_seven_day_scenario231.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 231 and the seven-day sentences of
+  `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance"
+  → "Admission filters candidates by projected Claude session headroom": an
+  account with five-hour room and no WEEKLY room is skipped at admission rather
+  than dispatched into a refusal. One case per gherkin block, each driving the
+  real `dispatcher.main(argv=["loop", ...])` over the real store/client seam, a
+  real on-disk journal, a real committed floor and the real chain resolution,
+  with only the Fabro launch and `urlopen` stood in. The weekly status therefore
+  enters the system the way a live one does — as one of four headers on one
+  response — rather than as a reading the test constructed, which matters
+  because the header names, the fraction-to-percentage conversion, the committed
+  dial, the chain order and the journal projection are each a place the decision
+  can be lost and only the whole pass exercises all of them.
+  THREE THINGS AN EDITOR MUST NOT WEAKEN. The module REPLACES the suite's own
+  autouse `_hermetic_session_headroom_reading`, which answers every admission
+  pass with an untouched window: under it every case reports an ABSENT weekly
+  reading whatever response the fixture builds, so the passes would be earned by
+  the stand-in. Each case re-arms the production read and injects `urlopen`
+  beneath it — one layer LOWER and no less hermetic, since no socket is opened
+  either way — and the CONTROL is the journaled credential identity, asserted to
+  be fingerprinted from the token this dispatch projects, which the stand-in's
+  own fixed identity cannot satisfy. The workflow is committed INSIDE the target
+  repository rather than parked beside it, because the chain resolution reads
+  the target's own `.fabro/workflows/implement-work-item/`: a workflow outside
+  the repo leaves the preflight resolving the plugin's BUNDLED graph, whose
+  other nodes are single-candidate built-in Claude adapters, so a refused weekly
+  allowance empties all seven and the dispatch is refused before this scenario's
+  own node is ever selected. And the skip is read off the SELECTED candidate and
+  the dispatch's own launch, never off the skip list alone, since "per-node
+  selection continues to the next eligible candidate" is a claim about what the
+  dispatch then ran on and a build that emptied the chain records the same skip.
+  Measured 2026-10-23: a mutation disabling the seven-day arm reds the first
+  case, while the two admitted cases stay green — which is what they are for.
+
 - `test_janitor_environment_scrub_scenario189.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 189 and the post-merge and reconcile
   janitor environment clause of `SPECIFICATION/contracts.md`: the janitor's
@@ -1140,6 +1224,562 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `.claude/settings.json`; that a dispatched run's agent actually reaches it is
   work-item bd-ib-jgedjo's HOST-CAPTURED assertion, proved on the factory
   against a released build.
+
+- `test_factory_registry_resolution_scenario182.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 182 and the host-factory-registry clause
+  of `SPECIFICATION/contracts.md`: a `dispatcher.factories` entry declaring
+  `"registry": true` names no machine, and its server and container-daemon
+  addresses are resolved by the entry's own name from the host factory registry.
+  Every case starts from a `.livespec.jsonc` and a registry JSON file on disk
+  and runs the production configuration, resolution, pre-claim declaration grade
+  and plan seams; the only things stood in are the two CLIs (a recording runner,
+  so the `fabro run` and `docker --host` argvs are observable without a server
+  or a daemon) and the ledger, through the hermetic `FakeBeadsClient`. Three
+  things an editor must not weaken. The address is asserted at the ARGV and at
+  the LEDGER as well as at the resolver, because a dropped address does not fail
+  — it resolves to None, which every surface reads as "this factory declares no
+  server" and therefore as the ambient LOCAL factory, so the run is created on
+  the wrong machine with nothing in the record saying so, and a registry-backed
+  entry is exactly the case where no committed `server` exists downstream to
+  fall back to. Every refusal is taken off `dispatch_preamble` with the item
+  SNAPSHOTTED before and compared after, because "refused before any claim,
+  ledger write of any kind, or Fabro run creation" is two claims and a refusal
+  string proves only the first. And the `env unset` registry-path case asserts a
+  NEGATIVE beside the constant — the resolution must not return the override
+  file's address — since asserting the default path alone is an echo of the
+  constant, while the negative is what an implementation reading the override
+  unconditionally cannot satisfy. That negative reads the real host
+  `/etc/livespec/fabro-factories.json`, which is unmanaged state this suite does
+  not own, so what keeps it hermetic is `_REGISTRY_SERVER` being a
+  RESERVED-domain sentinel no inventory can render — NOT an assumption about
+  what that file holds. Spelled as a machine this fleet provisions, the
+  assertion is false on exactly the host the registry maps `petri` on: measured
+  2026-10-18, writing the production pair into that path reds the case while the
+  code is correct, which is a false FAIL on every `just check` run there.
+  Every refusal row also asserts the FAULT it is refused FOR, which is what
+  makes the nine rows nine cases: all nine name the factory and the path and
+  exit alike, so a names-only assertion holds for any of them and a row whose
+  staging landed on an adjacent arm would report a real refusal for the wrong
+  reason and still pass. The `unreadable` registry is therefore staged as a
+  DIRECTORY at the registry path and discriminated on the `OSError` TYPE
+  (`IsADirectoryError`), NEVER by clearing the mode bits. Mode bits do not
+  refuse root and every dispatch and sandbox here runs as root: the read
+  succeeds, the file parses, and what follows is the `no-entry` refusal wearing
+  the `unreadable` label — the adjacent arm, a different remedy, and nothing in
+  the output saying so. Measured 2026-10-18 against both this suite and a Proof
+  of Done capture of the same arm: with a mode-bit staging the directory
+  assertion reds, and without it the mode-bit staging passed while establishing
+  `no-entry` twice and `unreadable` never. The rule binds any CAPTURE or REPLAY
+  demonstrating that arm as much as it binds this module. The consumer surfaces the
+  clause also names belong to `test_factory_registry_consumers_scenario182.py`
+  beside it; what this module establishes for them is that `FactoryTarget.server`
+  and `FactoryTarget.docker_host` already carry the registry's addresses, so no
+  consumer learns that an address came from a file.
+
+- `test_factory_registry_consumers_scenario182.py` — the CONSUMER half of
+  Scenario 182 and of the same clause: "Every surface that turns a declared
+  factory into an address MUST use this one resolution, and every surface whose
+  behaviour depends on whether a factory is remote MUST treat a registry-backed
+  entry as naming a server", together with the failure behaviour each of those
+  surfaces owes an unresolvable one. Every case writes a `.livespec.jsonc` and a
+  registry file and drives the production surface: the reconcile survey and its
+  claim lane through `reconcile_runs` over `reconcile_factory_targets`, plan
+  liveness through `observe_target_run`, the merge-hold guard through
+  `arm_refusal_for_release`, the per-item run target through
+  `resolve_item_run_factory`, the availability evidence through the production
+  `FactoryRunReader`, the valve through `needs_human_question_summary`, the
+  container sweep through the pass's own daemon lane, and the telemetry
+  classification through `factory_run_turn_observation`. Three things an editor
+  must not weaken. THE SURFACES NEED CASES OF THEIR OWN EVEN THOUGH THE
+  RESOLUTION IS SHARED, because an unresolvable registry answers with
+  `FactoryTarget.server` of `None` — the same value an unconfigured repository
+  carries, which every one of these surfaces already reads as the ambient LOCAL
+  Fabro — so a consumer that opened a port on it surveys whichever engine the
+  dispatching host runs, answers cleanly, and reports a factory as holding no
+  runs from a reading taken on the wrong machine. Measured on the pre-fix build:
+  the plan gauge asked the local engine about a run living elsewhere, and the
+  merge-hold guard read the empty listing it got back as "no run of this item is
+  live" and fell through to arm the pull request. EVERY LIVENESS CASE THEREFORE
+  ASSERTS THAT NO PROCESS WAS LAUNCHED for that factory, which is the only place
+  the right unobservable verdict is distinguishable from the wrong one — both
+  return the same value, and only one of them has already contacted a machine
+  the factory never named; the merge-hold case carries the mirror control, the
+  same guard over a sibling that DOES declare an address, because a guard that
+  had simply stopped asking anything would satisfy the refusal and the
+  nothing-launched assertion together while refusing every release this fleet
+  makes. And THE UNDECODABLE-REGISTRY CASE BELONGS HERE rather than beside the
+  resolution's own refusal rows: `Path.read_text(encoding="utf-8")` raises
+  `UnicodeDecodeError`, which is a `ValueError` and not an `OSError`, so such a
+  file escaped the reading entirely and reached every consumer as a traceback —
+  including the needs-human valve lane, whose absorbed set is `OSError` and the
+  beads family, so one byte of host state cost the whole valve list instead of
+  one item's enrichment. It is written as RAW BYTES, the only way to express a
+  file that never reaches the JSON reader, and driven through the survey rather
+  than through the reading, because the reading returning a detail proves only
+  that it no longer raises while the claim is that the pass completes and
+  reports the factory.
+
+- `test_factory_overflow_selection_scenario203.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 203 and the factory-overflow-selection
+  clause of `SPECIFICATION/contracts.md`: an unpinned dispatch goes to whichever
+  declared factory's own scheduler is least utilized and has a free slot. Every
+  case starts from a `.livespec.jsonc` on disk and drives the production
+  configuration read, capacity read, selection, ledger stamp and launch argv;
+  only the `fabro` CLI is stood in — at the runner, so the real
+  `FactoryRunReader` and the real `FabroPort` stay in the path and each
+  factory's run board and scheduler ceiling are scripted per SERVER URL — plus
+  the ledger, through the hermetic `FakeBeadsClient`. Four things an editor must
+  not weaken. The chosen factory is asserted at the ARGV and at the LEDGER as
+  well as at the resolved target, because a dropped name does not fail: the
+  dispatch proceeds to the default, which is the ordinary outcome of a healthy
+  ranking, of an unreachable overflow factory and of a build that ranked
+  nothing, with nothing in the record saying which. The PINNED case asserts the
+  capacity argv list is EMPTY rather than checking the answer, since a pinned
+  dispatch resolves to its own factory whether or not the reads were spent — the
+  unpinned cases are the positive control that the same runner IS reached. The
+  no-free-slot cases assert a launch ARGV beside the journal reason, because
+  "neither refused nor deferred" is a negative and a refusal leaves no argv at
+  all. And the equal-utilization row is what makes the comparison a RATIO: at 5
+  of 10 against 1 of 2 the default holds more runs by every absolute measure and
+  only utilization ties them, at which point the clause's earlier-candidate rule
+  keeps the dispatch on the default — an implementation comparing free slots or
+  remaining capacity sends that row to the overflow factory while passing the
+  row above it. The `ps` fixture carries a TERMINAL row beside its live ones,
+  since `max_concurrent_runs` bounds non-terminal runs and a reader counting
+  every row would report a long-lived factory as permanently saturated (hp
+  listed 1626 rows on 2026-10-12, nearly all terminal). The registry cases are
+  asserted at the capacity argv's SERVER, because a registry-backed entry
+  commits no address and a resolution that skipped the registry would read a
+  factory with no server and report the candidate unmeasured — which looks
+  exactly like a saturated one.
+
+- `test_run_wall_budget_scenario175.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 175 and the `contracts.md` paragraphs it exercises (the Dispatcher
+  progress watchdog's "The whole-run wall budget", and the whole-run wall budget
+  key of "ACP node timeouts"): a run whose slot-holding time passes the resolved
+  `dispatcher.run_wall_budget_seconds` has its preserve-by-reference pointer
+  written and read back, is then cancelled, and rests for a human. The journey
+  runs through the PRODUCTION launcher — a real `WatchedFabroLauncher`, a real
+  `FabroPort`, the real per-poll observation seam, the real export-then-terminate
+  precondition and real threading — with only the fabro subprocess stood in, and
+  stood in AT THE ARGV, because every sub-scenario is about which call a poll
+  ISSUES and in which ORDER and no returned verdict can tell a cancel that
+  exported first from one that did not.
+  THE OPEN-COMMAND-NODE CASE IS THE ONE A NARROWER TEST CANNOT REACH, and it is
+  what makes the two bounds independent rather than one deferring the other: the
+  stall watchdog deliberately widens its window to an open command node's own
+  timeout, so the fixture scripts a REAL `janitor` start event with no
+  completion AND a 36000-second `janitor` timeout, which means the production
+  stall decision genuinely would not cancel for hours — and the budget cancels
+  anyway. Three further things an editor must not weaken. The pointer is read
+  back off the tenant's own comment surface and indexed on `text`, never through
+  `bd show --json`, which carries no bodies at all and reports every landed
+  write as lost; a pointer read out of the journal alone is satisfied by a write
+  nobody confirmed. The queue-time case keeps the wall clock advancing a FULL
+  BUDGET PER POLL while the factory reports the run `runnable` throughout, so
+  the absence of a cancel is evidence the clock was never fixed rather than
+  evidence the clock never advanced. And the layer is asserted beside the
+  budget, because 3600 seconds is a deliberate repository override in this
+  fixture and only the layer separates that from a target that inherited the
+  fleet default.
+  ONE SUB-SCENARIO THE LAUNCHER CANNOT REACH is driven through the production
+  `gather_resume` instead: "A budget cancel between publication and capture can
+  anchor resume" is a claim about what a LATER invocation reads off the row this
+  watchdog wrote. The two halves are joined HERE rather than in two unit
+  modules — the journal that case reads is rendered by the production
+  `run_wall_budget_exceeded_record`, so a respelling of the stage on either side
+  fails the case instead of leaving two self-consistent modules that never meet,
+  and without the join "the budget record anchors" is a claim about a row a test
+  author typed. The entered stage is asserted as `proof_capture` rather than
+  merely "an anchor exists", because the pull request's proof record is ANOTHER
+  run's and its `captured` verdict implies `review`: the stage is the only thing
+  that separates the budget row's reading from the record's. Its control
+  rewrites that same row's `executing_stage` to `janitor` and asserts the anchor
+  falls BACK to the proof record, since "the budget record anchored" is
+  otherwise equally consistent with a reader that anchors on any budget row —
+  including a rework round whose head would not carry the rework.
+
+- `test_record_file_refresh_merge_scenario200.py` — binds Scenario 200's
+  declaration of the four shared record files. Its stage-level cases live in
+  `test_scripted_refresh_execution.py` and
+  `test_workflow_publish_draft_refresh.py`, where the shipped `pr_refresh` and
+  `publish_draft` scripts are exercised against real Git remotes: independent
+  JSON records and Markdown insertions merge in default-then-run order, while
+  foreign paths, divergent keyed records, and a rejected merged head still take
+  refresh repair.
+
+- `test_implement_completion_field_scenario204.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 204 and the v165 clause "An implement
+  turn that ends incomplete does not succeed": the implement stage's outcome is
+  decided from a structured completion field the turn states, and an incomplete
+  or UNSTATED one fails the stage with a partial-progress cause on the same
+  failure edge any other implement failure takes. The measured incident is run
+  01M58QNY3ZNM2YCVVB9G2383M0, whose turn ended "Partial progress only" with one
+  declaration and one test committed and was recorded SUCCEEDED, after which
+  janitor, publication and capture were all spent before the feature was found
+  absent. Two layers, neither establishing the other: the committed GRAPH
+  decides the gate's position, routing and cost, and the gate's own SCRIPT BYTES
+  decide what counts as a stated completion — so the three sub-scenarios take
+  those bytes through `parse_dot_graph` and execute them against a real
+  throwaway clone, because every arm is shell and a substring assertion cannot
+  tell an arm that RUNS from one sitting behind an earlier `exit`. Three
+  controls carry it. The stated-complete case is the control for the two
+  failures, since a script that always exited non-zero satisfies both and stops
+  every conforming run at the gate. The EMPTY record is asserted beside the
+  absent one, because an emptied file is what a half-written record leaves
+  behind and a `test -f` guard would admit it. And the stale-cause case asserts
+  a passing gate leaves no cause standing, since the terminal reads that file
+  whichever stage ended the run — an inherited value would be reported as the
+  question for a failure somewhere else entirely. The budget case asserts the
+  EXACT visit count the gate is billed at rather than "more than nothing": a
+  node absent from that table is billed at ZERO and is one the Dispatcher can
+  kill the engine out from under, while a budget of one is reachable by a second
+  attempt of the turn it guards and would read as correct. The prompt half of
+  the clause is `tests/prompts/test_implement_completion_field.py`.
+
+- `test_session_recovery_receipt_scenario162.py` and
+  `test_session_recovery_reconciliation_scenario163.py` — bind
+  `SPECIFICATION/scenarios.md` Scenarios 162 and 163 and the consumed-recovery
+  half of `SPECIFICATION/contracts.md` §"Launch obligations and consumed
+  recovery". Both drive the PUBLIC consumer pass — `consume_recovery_obligation`
+  over a real on-disk attempt store — rather than the grades in isolation,
+  because every claim here is about what a real pass LEAVES BEHIND and a
+  hand-built record satisfies each assertion while establishing nothing about
+  the path a daemon takes. Nothing is stood in but the two seams the product
+  publishes for it: the sanctioned command and the durable-effect lookup.
+  Four pairings must not be split. 162's unconsumed leg is a REAL deferred pass
+  behind a valid HOLD and its executed leg CONTINUES THE SAME ATTEMPT, so
+  consumption becoming observable is attributable to the execution rather than
+  to a second fixture — a separate attempt for the executed leg agrees with a
+  build that marks every claimed recovery consumed. 163's convergence case
+  shares ONE command object across a first pass, a duplicate and a replacement
+  consumer at a new generation, so "one effect" is a count of real invocations
+  rather than an inspection of three returned values. Its gate control is the
+  identical evidence with the gate SUCCEEDING, asserting the same operation,
+  because the failed-gate case alone is equally consistent with a build that
+  redispatches on any gate failure and happened to be handed a merge — the
+  fixture is the measured 2026-10-09 case, where a gate reported FAILED at
+  05:19:06Z for a pull request that merged at 05:18:03Z. And the ambiguous leg
+  asserts the lookup was CONSULTED and the command was NOT, across both the
+  unobservable round and the recovering one, since `uncertain` twice over is
+  equally consistent with a pass that never asked. The ambiguous leg uses its
+  own attempt, because a recorded effect short-circuits the very lookup it
+  exists to exercise. 162 asserts fulfillment as an ABSENCE OF VOCABULARY — the
+  consumption grade's state set cannot express it and the required-result
+  identity survives untouched — which is what leaves that question with the
+  relay authority that owns it.
+
+- `test_sandbox_history_preparation.py` — the FIRST `[[run.prepare.steps]]` entry
+  of the shipped implement-work-item run config, EXECUTED under `/bin/sh` against
+  real complete and shallow clones (work-item bd-ib-ukht2p). It executes rather
+  than matching the command line because the assertion is what the step does to a
+  clone, and a conditional that inspects the wrong thing — or swallows a failure
+  behind a successful fallback — reads as correct and is not. Three things carry
+  the module. The measured failure is its own case: the retired unconditional
+  `git fetch --unshallow --quiet` must still be refused by the SAME complete
+  fixture, so the positive reading is evidence of the repair rather than of a
+  fixture that was shallow all along. The two fail-closed controls are separate
+  cases, one per command that can fail, each reading the recorded `git` argv to
+  say WHICH command was reached, since one exit code cannot distinguish them. And
+  `GIT_CEILING_DIRECTORIES` is pinned at the fixture root: this suite's pytest
+  basetemp carries a `.git` of its own, which is an ANCESTOR of every `tmp_path`,
+  so without the ceiling the inspection-failure control walked out of its fixture
+  and answered confidently for the suite's own repository.
+
+- `test_check_suite_plugin_gate_reentry.py` — every graph node that runs the
+  declared check suite re-enters the materialized plugin-cache gate BEFORE the
+  suite (work-item bd-ib-3f79, the recurrence of bd-ib-cewr.3). Its docstring
+  carries the MEASURED CAUSE the two earlier readings never established, taken
+  from this repository's own live Fabro sandbox: the Claude Agent SDK's session
+  start is a registry SYNC and not an installer, so it writes a record whose
+  `installPath` is a COMPUTED cache location and leaves materialization to the
+  loader — which rules the atomic-install fix shape out, since the write happens
+  inside the closed-source engine. The janitor cases EXECUTE the shipped node
+  bytes against a prepared plugins root under `tmp_path`, never the enclosing
+  run's own; the unrepairable case asserts the stand-in suite's marker is ABSENT,
+  which is the ordering proof and the one assertion the pre-repair bytes could
+  not satisfy. One case isolates cache completeness from pin enforcement by
+  pinning the build first and breaking its cache afterwards, and asserts the
+  advanced-build marker is absent so the drop is attributable to the
+  `required_paths` reading alone. `publish_draft` carries no re-entry of its own
+  and the last case measures WHY — `janitor` is its only in-edge — rather than
+  trusting it.
+
+- `test_sandbox_images_scenario212.py` — the read-only sandbox-image enumeration,
+  driven through the production `dispatcher.py` parser and handler table over
+  REAL host state in a scratch HOME: a real `installed_plugins.json`, real
+  repository checkouts, real plugin-cache builds, real `.in_use` lease files and
+  real processes. Two claims put it here rather than at the unit tier. The join
+  between the three layers — registry to repositories, lease and process scan to
+  builds, resolver to entries — so a respelling at any seam leaves each unit
+  module self-consistent while the command reports the wrong array; and the
+  CHANGE-NOTHING claim, which is about the whole host tree before and after and
+  so is measured as a recursive snapshot of every path the command could have
+  written. Its stale-lease fixture WAITS on the child rather than merely killing
+  it: an unreaped child is a zombie whose `/proc/<pid>` entry still exists, so a
+  signalling-only fixture reports every stale lease as live and the case passes
+  against an implementation that never asked.
+
+- `test_list_work_items_lane_scenario26.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 26 — list-work-items emits lane and
+  lane_reason", whose registry row owed an integration-tier test "exercising
+  user-observable Dispatcher/store behavior against the in-memory
+  `FakeBeadsClient`". The scenario's three `Then`s are ONE case over ONE
+  `--json` payload, deliberately: a lane is DERIVED, so the ready item's lane
+  depends on the state of the other item it depends on, and a reading that
+  seeded each item into its own tenant would pass against a build that never
+  consulted a dependency — the ready item would have had none to consult.
+  Nothing is stood in; `main` resolves its own tenant out of a committed
+  `.livespec.jsonc` as an operator's invocation does. The two blocked rows are
+  what make the reason discriminating: both emit lane `blocked`, and a
+  projection emitting one constant reason satisfies neither assertion. The
+  per-lane cases stay at the unit tier in
+  `tests/livespec_orchestrator_beads_fabro/commands/test_list_work_items.py`.
+- `test_acp_node_layer_resolution_scenarios87_88.py` — binds
+  `SPECIFICATION/scenarios.md` Scenarios 87 and 88 through `prepare_acp_nodes`,
+  the one function a dispatch calls, from a committed `.livespec.jsonc` on disk
+  against this repository's OWN committed `workflow.toml`. That join is the
+  tier: `tests/livespec_orchestrator_beads_fabro/commands/test_acp_node_layers.py`
+  grades the merge against overlays handed to it, and a correct merge nothing
+  wires to the operator's configuration — or to the record a triager reads —
+  looks identical. The workflow layer is the real committed one because a
+  fixture would keep every assertion true while the shipped workflow stopped
+  declaring an adapter input for a node, which is how a node becomes
+  unconfigurable while the journal still reports the adapter it was told to run.
+  NO ASSERTION NAMES AN AGENT OR A MODEL (`tests/conftest.py`
+  `_no_test_reads_the_committed_acp_routing`, maintainer ruling 2026-10-18): the
+  claims are read structurally — which layer supplied each field, per env KEY,
+  and that the env segment is sorted and precedes the command — which is also
+  what the two scenarios actually say. The rendered bytes are asserted as a
+  SUFFIX rather than whole, because a repository entry supplying a `command`
+  still merges the workflow default's env over which it sits, so the full string
+  necessarily carries the committed dial's values. `_ROUTER_ENV` is declared out
+  of sorted order on purpose, so a render preserving declaration or mapping
+  order fails rather than coinciding with the answer; and the unknown-node case
+  asserts the journal carries no ACP record, since a refusal that still
+  journaled a resolved node set reads afterwards exactly like an admitted
+  dispatch.
+- `test_heading_gap_enumeration_scenario205.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 205 — Gap detection enumerates headings
+  without an exercising test" by carrying ONE uncovered heading from the shipped
+  `detect-impl-gaps --json` entry point, over a real spec tree and coverage
+  registry on disk, through the filing composition and the REAL store write to
+  the labels read back off the beads seam. The gap-id the filed record is
+  asserted to carry is the one the DETECTION emitted rather than a value
+  recomputed here, because that identity is the only thing holding the two
+  halves together: a renamed heading or a changed hash leaves each half
+  internally consistent while the filed label stops naming a heading anybody can
+  find. Two controls carry it. The fixture's second heading names an EXISTING,
+  RESOLVABLE test node — materialized as a real module with a real function,
+  since "names an existing test" is a claim about the tree — and must produce
+  neither a gap nor a finding, without which "exactly one gap" is equally
+  consistent with a build that enumerates everything. And four MUST/SHOULD
+  clauses sit under the uncovered heading, so "no clause is enumerated" is a
+  reading the fixture can actually falsify. The dangling-entry case is the same
+  registry shape with an unresolvable node, which must be both a gap and a
+  finding. Its unit-tier counterpart with the frozen golden gap-ids is
+  `tests/livespec_orchestrator_beads_fabro/commands/test_detect_impl_gaps.py`.
+
+- `test_answer_disposition_press_scenario122.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 122 — An attention item's answer
+  disposition governs who may answer it", whose four gherkin scenarios are the
+  four cases, driven through the public `drive.run_action` press and through the
+  composed `build_attention` envelope rendered to JSON. The two surfaces are the
+  ratified advertiser-and-enforcer pair, which is why neither is read in
+  isolation: a case calling `answer_press_refusal` directly could show that the
+  gate computes a verdict and could not show that `drive` consults it. EVERY
+  REFUSAL CASE ALSO READS THE TENANT, because a refusal is a claim about what did
+  not happen and the payload cannot carry it — a build that refused the press
+  AFTER writing the comment returns the identical dictionary, so each refused
+  press asserts the item is still `blocked` and the ledger still carries no
+  comment. And the two consensus cases run against a `consensus` GLOBAL with a
+  `human` LABEL on one of two rows in ONE tenant, so the labelled row reading
+  `human` and the unlabelled row reading `consensus` is the same snapshot
+  disagreeing with itself — which neither a label-blind nor a global-blind build
+  can produce, while a `human` global would have made one of the two answers
+  indistinguishable from doing nothing.
+- `test_answer_comment_route_scenario124.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 124 — The human answer lands as a marked
+  ledger comment before the transition, and a poisoned answer is refused". THE
+  CLEAN CASE OBSERVES THE WRITE SEQUENCE and not only the end state, because the
+  end state is the same for both orderings: a build that transitioned first and
+  commented second leaves a `ready` item carrying the identical comment. The
+  order is read off a recording overlay on the fake's two write verbs that
+  DELEGATES to the real implementations — nothing is stubbed, so removing the
+  overlay changes no behaviour — and EVERY call of either verb is recorded,
+  UNFILTERED, so that the assertion is "exactly these two writes, in this
+  order". Keeping only the status-bearing `update_issue` calls would read the
+  same way on a build that slipped an unrelated write between the comment and
+  the transition, which is the one thing a sequence assertion is for; do not
+  narrow the recorder. The header is matched field by field rather than as a
+  prefix, and the answer is two lines, because a single-line answer cannot tell
+  a verbatim copy from one the writer reflowed.
+  THE POISON CASE READS THE TENANT for the same reason the refusals above do, and
+  reads it three ways: the payload names the cause, NO write of either verb was
+  made, and the item is still `blocked` on `needs-human` with an empty comment
+  list.
+- `test_needs_human_valve_run_account_scenario125.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 125 — The needs-attention valve item
+  carries the terminated run's account and fails soft" through the COMPOSED
+  envelope rather than through the enrichment function, because the two claims
+  are properties of the valve ITEM: that its summary carries the account, and
+  that the item is still THERE when the factory is not. An enrichment read in
+  isolation can show the first and structurally cannot show the second — an
+  absent lane and an unenriched lane are the same return value once the row that
+  would have carried it is gone. THE FAIL-SOFT DIRECTION IS THE EXPENSIVE ONE: a
+  lane that vanished on a network fault reads downstream as a decision already
+  made, so the human being asked is never asked again. That case asserts EVERY
+  field of the account absent plus the clause that joins it, not merely the run
+  id, because a half-written account is the shape that reads as an answer while
+  carrying none; and it asserts the factory WAS addressed, which is the only
+  place an unreachable host is distinguishable from one the read never contacted.
+  The unreachable factory is modelled as a REFUSED CONNECTION raised by the
+  process seam rather than as a non-zero exit, which is the arm a real
+  unreachable host takes. Its unit-tier counterpart, covering the attribution
+  precedence and the per-field degradations, is
+  `tests/livespec_orchestrator_beads_fabro/commands/test_needs_attention_needs_human_question.py`.
+- `test_proof_verify_fidelity_recapture_scenario137.py` — binds work-item
+  `bd-ib-v3uksp` against the v205 `proof_verify` clauses of `contracts.md` and
+  Scenarios 137 and 138: a `not_reproduced` verdict whose every difference is
+  record fidelity ends `proof_verify` with `recapture` and reaches
+  `recapture_route`, never `fix`; a behaviour difference keeps its `fix` edge;
+  and `fix` takes the record the entering stage graded in that visit, never a
+  capture a later `proof_capture` superseded. The graph is read structurally, the
+  prompts through whitespace-collapsed needles, and the route node's shipped
+  script is executed to show the two-lap bound is shared by both recapture
+  sources.
+- `test_non_converged_cause_line.py` and
+  `test_dispatcher_recapture_exhausted_rest.py` — bind work-item `bd-ib-iy4cd4`:
+  the `non_converged` terminal ends TWO caps, the janitor's fix loop and
+  `recapture_route`'s third recapture verdict, and its one fixed line used to name
+  the janitor cap for both, which bounced a run whose real fault was a proof
+  record failing the record grammar to `backlog`. The first module EXECUTES the
+  shipped `non_converged` script bytes (taken through `parse_dot_graph`) in a
+  throwaway clone, reaching the recapture arm the way a run does — three entries
+  of the real `recapture_route` node, which writes the counter the terminal reads
+  — with a stub `gh` standing in for the forge; the jq filter that picks the
+  recurring findings out of the review records is NOT run there, since the
+  sandbox carries no `jq`. The second carries the cause line through the REAL
+  terminal mapper and `dispatcher.main`, and reads the ledger (status,
+  blocked reason, the cause comment, the journal stages) rather than the exit
+  code, because a bounce and a needs-human rest both exit non-zero. Both carry the
+  janitor-cap ending as the control: a recapture arm that swallowed it would pass
+  the positive cases alone.
+- `fixture_check_env.py` and `test_fixture_check_environment.py` — the one
+  helper every test that runs a fixture `just check` builds its process
+  environment through. The repository's `check` recipe merges an inherited
+  `SKIP_TARGETS` into the green token's skipped-target scope, and the delegated
+  gate client exports its authority-reading members into that variable, so a
+  fixture run that copied `os.environ` went red under the gate while GitHub CI,
+  which never sets it, stayed green. The helper drops the inherited variable and
+  keeps everything else; the test asserts both halves.
+  `test_skipped_green_token_scope.py` sets `SKIP_TARGETS` in its own janitor
+  case so the leak is exercised on every venue.
+
+- `test_spec_tier_release_valve_scenario206.py` — binds the HUMAN-WAY-THROUGH
+  gherkin scenarios of `SPECIFICATION/scenarios.md` Scenario 206 (the attested
+  release, the pending-rework release, the unresolved-heading refusal, and the
+  attestation that survives an unrelated revision and a rejected proposal but
+  voids on a changed clause). Every case drives the real `release-spec-tier`
+  valve through `run_human_valve_action` over the real intake route, the real
+  pre-dispatch wall, a real spec tree and the real store/client seam; the judge
+  is stood in at the executable and the Definition-of-Done rubric is stood down
+  so the reply sequence lines up with the classification alone. Every refusal is
+  asserted together with the hold STANDING (the wall still refuses, the ledger
+  carries no attestation), and the wall is driven rather than the gate because
+  "the wall treats the citation as stated" is a claim about what it does NOT
+  refuse.
+
+- `test_needs_human_node_timeout_cut_scenario192.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 192 and the `contracts.md` paragraph "A
+  commit run outlives a node-timeout cut" (work-item `bd-ib-ptnxyg`). The committed
+  `needs_human` script body is executed by `sh` against a real throwaway origin, a
+  real repository hook and the real materialized commit runner, with the work a cut
+  turn leaves behind (a commit run, or a plain `git commit`) still going when the
+  node starts. The three gherkin scenarios are three cases: a run that passes
+  inside the bounded wait (its HEAD is read back from the pushed ref's history), a
+  run still running at the bound (stopped BEFORE the preservation sentinel in the
+  output, and no hook process left), and an in-turn commit whose hook is executing.
+  A fourth case is the control that a node with nothing left running prints no
+  sentinel. Each case feeds the script's stderr to the Dispatcher's own reader, so
+  the sentinel the sandbox prints and the line the host parses cannot drift.
+
+- `test_sandbox_commit_runner_scenario179.py` — binds the runner sub-scenarios of
+  `SPECIFICATION/scenarios.md` Scenario 179 and the `contracts.md` paragraph "A
+  commit leg completes past one tool call" (work-item `bd-ib-sufca7`): a slow
+  hook, a refusing hook, a signal death and a second start while one is live, each
+  against REAL processes. The runner is materialized by EXECUTING the prepare step
+  the plugin renders, so the bytes under test are the ones a sandbox receives, and
+  the repository is a real `git init` clone with real `pre-commit` and
+  `commit-msg` shell hooks. The slow hook waits for a RELEASE FILE rather than
+  sleeping, so "outlasts the first bounded wait" holds on any host load and the
+  running report is not a race. Three things an editor must not weaken. The
+  passing case reads the trailers off the commit itself and the `head` off the
+  report AGAINST `git rev-parse HEAD`, because a report naming a commit that is
+  not HEAD satisfies a state-only assertion. The refusal and signal cases assert
+  HEAD unchanged, since "no commit" is the claim and an exit code cannot show it.
+  And the signal case ends the whole process group of the recorded worker and
+  asserts `no-verdict` on TWO successive waits with no passed report between, so a
+  reader that reported the verdict once and then drifted is excluded. The
+  needs-human sub-scenario is the Dispatcher's replay of a recorded verdict and
+  stays at the unit tier, in `test_dispatcher_commit_runner_replay.py`. Every
+  child is spawned with all `GIT_` and coverage variables removed: this suite can
+  itself run under a commit hook, whose `GIT_INDEX_FILE` would otherwise point the
+  fixture's commits at the outer repository.
+
+- `test_dod_gate_mutation_guard.py` — binds work-item `bd-ib-al54tl`: a
+  `dod_gate` turn that edits, writes into the working tree or commits ends the
+  run at needs-human with a reason naming the mutation, while a grading turn
+  that changes nothing proceeds to `implement`. The `dod_gate_mutation_guard`
+  node's own script is extracted from the committed graph, unescaped and run by
+  `sh` in a throwaway repository whose run branch carries engine-shaped
+  `fabro(<run>): <node> (<status>)` checkpoint commits, because the starting
+  state it compares against is read off that chain. Each mutation arm (an edited
+  file committed by the checkpoint, a new untracked file, an agent commit even
+  when empty) sits beside the clean-turn control, and a run with no checkpoint
+  before the node must fail closed rather than pass. The prompt half and the
+  edge shape are asserted beside it.
+
+- `test_failed_janitor_target_attribution_scenario167.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 167 — A failed janitor names the
+  aggregate runner's failed targets" through the real post-merge janitor child
+  process and real journal. It covers an over-window structured summary, a
+  passing recipe at the end of stderr, the aggregate's stdout summary winning
+  over nested and stderr-emitted ones, the labelled two-stream fallback, the
+  retained artifact path and digest, and artifact-write failure without a
+  verdict or attribution change.
+
+- `test_pr_stage_merge_hold_scenario119.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 119 — A per-item merge hold publishes the
+  pull request and merges only on release" as ONE arc: a dispatch plan declaring
+  `squash` renders `merge_hold` true and is journaled through the production
+  record writer, the shipped `pr` node bytes (taken through `parse_dot_graph`)
+  run under `bash` in a real clone, and the production `set-merge-hold:<id>:off`
+  valve then releases the hold, both stages sharing one `gh` stub's forge state so
+  the release acts on the pull request the held stage published. The held leg
+  asserts the pull request is readied, `MERGE_HOLD=held` prints beside the
+  `PR_NUMBER` line and no `gh pr merge` was issued; the declaration is then
+  rewritten to `rebase`, with a plan resolved from the rewritten file asserted to
+  arm `--rebase`, so the `--squash` the release arms can only have come from the
+  journal. The sibling case is the control leg and is load-bearing: the identical
+  stage with `merge_hold` false must arm with the declared mode and the proved
+  head, because "nothing was armed" passes equally against a stage that never arms.
+
+- `test_session_wait_telemetry_scenario159.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 159 — Wait inventory and measurements
+  arrive in Honeycomb without controlling liveness". The lifecycle case runs the
+  installed host CLI through ONE arc against a real localhost `OtelReceiver`, so
+  an attribute the receiver allowlist would silently drop fails here: the
+  explicit zero-count summary, arming, both observation changes and the return,
+  a populated snapshot with one identity across its summary and its per-wait
+  observation, the once-a-minute limit (an unchanged inventory exports nothing
+  while the receipt acknowledgement exports at once), a second wait with no known
+  associations carrying none, and a canary secret plus the repository path absent
+  from everything delivered. Its siblings pin the wire contract against a
+  capturing socket and run the Outline's four export conditions around a REAL
+  recovery pass, asserting the local effect first (the command ran once) and the
+  local report second. Arrival in Honeycomb itself is declared host-captured on
+  the work item and is not asserted here.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small

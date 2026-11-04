@@ -63,6 +63,9 @@ def test_review_prompt_publishes_blocking_findings_under_round_indexed_context()
     assert "context_updates" in text
     assert "review_findings_r<N>" in text
     assert "count prior visible `review_findings_r*`" in text
+    assert "LAST `## Context` block of the preamble" in text
+    assert "immediately before the stage prompt" in text
+    assert "one `- <key>: <value>` line per key" in text
     assert "the exact finding lines" in text
     assert '{"preferred_next_label": "fix"' in text
 
@@ -74,6 +77,10 @@ def test_disposition_prompt_reads_current_review_findings_key_and_fails_closed()
     assert "highest-numbered" in text
     assert "current round" in text
     assert "review stage" in text
+    assert "LAST `## Context` block of the preamble" in text
+    assert "immediately before the stage prompt" in text
+    assert "one `- <key>: <value>` line per key" in text
+    assert "search your own prompt for the literal key `review_findings_r<N>:`" in text
     assert "missing `review_findings_r<N>`" in text
     assert '"outcome": "failed"' in text
 

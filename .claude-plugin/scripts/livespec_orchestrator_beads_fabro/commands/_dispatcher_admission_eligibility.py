@@ -59,13 +59,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
     resolve_dispatch_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     resolve_adopted_assertion_count_ceiling,
     route_factory_size_dispatch_entry,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_labels,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
@@ -134,9 +136,12 @@ def filter_eligible_candidates(
     # provider gate is scoped on. They belong to the pass for the same reason
     # the rendered candidates do: one admission evaluation takes at most one
     # reading per distinct projected credential, so every row of the wave is
-    # graded against the very accounts that reading named.
+    # graded against the very accounts that reading named. A pool slot admission
+    # passed over is assessed but NOT projected, so only the chosen one counts.
     projected_identities = frozenset(
-        reading.credential_identity for reading in preflight.headroom_assessments
+        reading.credential_identity
+        for reading in preflight.headroom_assessments
+        if reading.slot is None or reading.slot.chosen
     )
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []

@@ -65,6 +65,15 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
     resolve_fabro_bin,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
+    registry_sourced_path,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_client_settings import (
+    FACTORY_BIN_KEY,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_client_source import (
+    client_key_source,
+)
 
 __all__: list[str] = [
     "factory_bin_refusal",
@@ -106,18 +115,30 @@ def factory_bin_refusal(*, factory: FactoryTarget | None) -> str | None:
     through `PATH`, because a bare name would reintroduce exactly the ambiguity
     the key exists to remove — which client a given factory speaks to would
     again depend on the environment the Dispatcher happened to run in.
+
+    The message NAMES THE SOURCE, which for a registry-backed factory is the
+    registry rather than a committed key. The value reaches this field from
+    either source — that identity is how a registry-backed factory gets the
+    registry's client — so without the distinction the refusal names
+    `dispatcher.factories.<factory>.bin` for a line the repository never wrote
+    and tells the operator to remove it, an edit they cannot make.
     """
     if factory is None or factory.fabro_bin is None:
         return None
     declared = factory.fabro_bin
     if Path(declared).is_file() and os.access(declared, os.X_OK):
         return None
+    source = client_key_source(
+        factory=factory.name,
+        key=FACTORY_BIN_KEY,
+        registry_path=registry_sourced_path(factory=factory, key=FACTORY_BIN_KEY),
+    )
     return (
         f"ERROR: factory {factory.name} declares"
-        f" dispatcher.factories.{factory.name}.bin {declared!r},"
+        f" {source.name} {declared!r}{source.location},"
         " which is not an existing executable file; point it at the fabro"
         f" client binary that matches factory {factory.name}'s server, or"
-        " remove the key to fall back to the global resolution"
+        f" remove {source.remedy} to fall back to the global resolution"
         " (LIVESPEC_FABRO_BIN, dispatcher.fabro_bin, $HOME/.fabro/bin/fabro)\n"
     )
 

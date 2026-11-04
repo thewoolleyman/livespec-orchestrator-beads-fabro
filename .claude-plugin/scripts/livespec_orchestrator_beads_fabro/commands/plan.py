@@ -58,6 +58,17 @@ from livespec_orchestrator_beads_fabro.commands._plan_record_rate import (
     PlanRecordRateWarning,
     plan_record_rate_warnings,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_relay_delivery import (
+    RelayRefusal,
+    RelayRequest,
+    RelaySupersession,
+    record_relay,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_relay_record import (
+    RelayAcknowledgements,
+    RelayLegs,
+    RelayRecord,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_scope_event import (
     PlanContinuationAuthorization,
     PlanContinuationRefusal,
@@ -70,6 +81,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
     UNATTENDED_ENV_VAR,
     PlanTimelineEntry,
+    PlanTimelineSkip,
     handoff_timeline_findings,
     is_unattended_session,
     read_timeline,
@@ -97,6 +109,13 @@ __all__: list[str] = [
     "PlanDispositionRefusedError",
     "PlanRecordRateWarning",
     "PlanTimelineEntry",
+    "PlanTimelineSkip",
+    "RelayAcknowledgements",
+    "RelayLegs",
+    "RelayRecord",
+    "RelayRefusal",
+    "RelayRequest",
+    "RelaySupersession",
     "ResumeDirective",
     "_blocking_dependency_ids",
     "_is_blocks_dependency_edge",
@@ -112,6 +131,7 @@ __all__: list[str] = [
     "plan_record_rate_warnings",
     "read_timeline",
     "record_completeness_review_evidence",
+    "record_relay",
     "record_scope_event",
     "recorded_next_actions",
     "reparent_plan_child",

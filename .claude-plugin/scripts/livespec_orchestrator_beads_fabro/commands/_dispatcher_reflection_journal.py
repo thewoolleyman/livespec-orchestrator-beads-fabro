@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
-from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_tail import (
+    journal_tail_records,
+)
 
 __all__: list[str] = [
     "items_with_retries",
@@ -34,18 +36,9 @@ def read_journal_records(*, journal_path: Path | None) -> tuple[dict[str, object
     reader asking one where its history lives must get "none to offer" rather
     than an `AttributeError` from a caller that had no way to know.
     """
-    if journal_path is None or not journal_path.is_file():
+    if journal_path is None:
         return ()
-    records: list[dict[str, object]] = []
-    for line in journal_path.read_text(encoding="utf-8").splitlines():
-        parsed = parse_json(text=line)
-        if isinstance(parsed, JsonParseFailure):
-            continue
-        if isinstance(parsed, dict):
-            mapping = cast("dict[object, object]", parsed)
-            typed: dict[str, object] = {str(key): value for key, value in mapping.items()}
-            records.append(typed)
-    return tuple(records)
+    return journal_tail_records(journal_path=journal_path)
 
 
 def items_with_timeout(*, records: tuple[dict[str, object], ...]) -> tuple[str, ...]:

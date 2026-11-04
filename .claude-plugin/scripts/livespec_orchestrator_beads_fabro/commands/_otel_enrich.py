@@ -64,7 +64,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._otel_enrich_export import (
     HoneycombHttpExporter,
@@ -80,6 +80,7 @@ from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
     REDACTION_MARKER,
     attr,
     is_allowed_attr,
+    measured_attr,
     scrub,
 )
 
@@ -275,11 +276,11 @@ def enrich_span(
             if not isinstance(key, str) or not is_allowed_attr(key=key):
                 continue
             scalar = _scalar_value(entry=entry)
-            if isinstance(scalar, str) and scrub(value=scalar) == REDACTION_MARKER:
+            if _credential_shaped(scalar=scalar):
                 # A credential-shaped value in an allowlisted attribute:
                 # reject the whole span (fail closed), do not partially ship.
                 return None
-            forwarded_attrs.append(attr(key=key, value=scalar))
+            forwarded_attrs.append(measured_attr(key=key, value=scalar))
     for triple_key, triple_value in triple.items():
         forwarded_attrs.append(attr(key=triple_key, value=triple_value))
     rebuilt: dict[str, object] = {k: v for k, v in span.items() if k != "attributes"}
@@ -288,26 +289,74 @@ def enrich_span(
 
 
 def _scalar_value(*, entry: dict[str, object]) -> object:
-    """Unwrap an OTLP attribute `value` block to its scalar Python value.
+    """Unwrap an OTLP attribute `value` block to its Python value.
 
-    Maps `stringValue` / `intValue` / `boolValue` back to a Python scalar;
-    an int value arrives as a numeric string per OTLP/HTTP-JSON, so it is
-    coerced back to `int`. An unrecognized shape falls back to the raw
-    rendered text (which `scrub` then guards).
+    Maps `stringValue` / `intValue` / `boolValue` / `doubleValue` back to a
+    Python scalar and an `arrayValue` of strings back to a list; an int value
+    arrives as a numeric string per OTLP/HTTP-JSON, so it is coerced back to
+    `int`. An unrecognized shape falls back to the raw rendered text (which
+    `scrub` then guards).
     """
     value = entry.get("value")
     if not isinstance(value, dict):
         return ""
     block = cast("dict[str, object]", value)
-    if "boolValue" in block:
-        return bool(block["boolValue"])
-    if "intValue" in block:
-        raw_int = block["intValue"]
-        return int(raw_int) if isinstance(raw_int, str | int) else 0
+    for kind, unwrap in _VALUE_UNWRAPPERS:
+        if kind in block:
+            return unwrap(raw=block[kind])
     string_value = block.get("stringValue")
-    if isinstance(string_value, str):
-        return string_value
-    return ""
+    return string_value if isinstance(string_value, str) else ""
+
+
+class _Unwrap(Protocol):
+    def __call__(self, *, raw: object) -> object: ...
+
+
+def _unwrap_bool(*, raw: object) -> bool:
+    return bool(raw)
+
+
+def _unwrap_int(*, raw: object) -> int:
+    return int(raw) if isinstance(raw, str | int) else 0
+
+
+def _unwrap_double(*, raw: object) -> float | str:
+    return float(raw) if isinstance(raw, int | float | str) else ""
+
+
+def _unwrap_array(*, raw: object) -> list[str]:
+    return _array_strings(raw_array=raw)
+
+
+_VALUE_UNWRAPPERS: tuple[tuple[str, _Unwrap], ...] = (
+    ("boolValue", _unwrap_bool),
+    ("intValue", _unwrap_int),
+    ("doubleValue", _unwrap_double),
+    ("arrayValue", _unwrap_array),
+)
+
+
+def _array_strings(*, raw_array: object) -> list[str]:
+    if not isinstance(raw_array, dict):
+        return []
+    values = cast("dict[str, object]", raw_array).get("values")
+    if not isinstance(values, list):
+        return []
+    strings: list[str] = []
+    for raw in cast("list[object]", values):
+        if isinstance(raw, dict):
+            text = cast("dict[str, object]", raw).get("stringValue")
+            if isinstance(text, str):
+                strings.append(text)
+    return strings
+
+
+def _credential_shaped(*, scalar: object) -> bool:
+    if isinstance(scalar, str):
+        return scrub(value=scalar) == REDACTION_MARKER
+    if isinstance(scalar, list):
+        return any(scrub(value=item) == REDACTION_MARKER for item in cast("list[str]", scalar))
+    return False
 
 
 @dataclass(kw_only=True)

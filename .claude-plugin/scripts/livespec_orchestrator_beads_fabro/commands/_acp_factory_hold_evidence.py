@@ -86,15 +86,23 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._acp_availability_probe import (
+    is_availability_probe_run,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_records import (
-    PROVIDER_LIMIT_CAUSE,
     FactoryHoldObservation,
     observation_hold,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_factory_run_attempts import (
+    cleared_observation_ids,
+    failed_observation,
+    succeeded_confirmations,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_factory_success_records import (
     FactorySuccessObservation,
@@ -108,23 +116,12 @@ from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_factories import (
     declared_factory_names,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import REPOSITORY_LABEL_KEY
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import (
-    executed_candidate_identity,
     recorded_availability_keys,
-)
-from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
-    fabro_inspect_checkpoints,
-)
-from livespec_orchestrator_beads_fabro.commands._fabro_port_node_outcomes import (
-    fabro_node_outcomes,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroRunSummary,
-    fabro_failure_detail_from_payload,
-    fabro_inspect_record,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
 
 __all__: list[str] = [
     "EMPTY_FACTORY_HOLD_EVIDENCE",
@@ -143,8 +140,10 @@ LISTING_UNREADABLE = "factory-listing-unreadable"
 OCCURRENCE_UNREADABLE = "attempt-occurrence-unreadable"
 INSPECT_UNREADABLE = "run-record-unreadable"
 
+# The most `inspect` reads in flight at once against one factory.
+_INSPECT_WORKERS = 8
+
 _FAILED_STATUS_KIND = "failed"
-_SUCCEEDED_STATUS = "succeeded"
 _ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 # The sub-second fraction an engine instant may carry. The Petri-era build
@@ -178,19 +177,28 @@ class FactoryHoldEvidence:
     field rather than something a consumer derives from `unobservable`: the
     entry's shape belongs to this read, and a candidate filter interpreting one
     would be a second reader of a record it never produced.
+
+    `retired_observation_ids` is what the OPERATOR-CLEARANCE arm found, and it
+    is reported rather than applied for the same reason the two halves of the
+    retirement routes are applied at the union: a clearance recorded on the
+    factory may name an observation this read derived, one the reading
+    repository's own journal carries, or one neither holds any more, and only
+    the union has all of them in hand. Reporting it here is what makes a
+    clearance recorded by ANOTHER repository visible to this one at all.
     """
 
     observations: tuple[FactoryHoldObservation, ...] = ()
     successes: tuple[FactorySuccessObservation, ...] = ()
     unobservable: tuple[Mapping[str, object], ...] = ()
     unconfirmed_keys: frozenset[str] = frozenset()
+    retired_observation_ids: frozenset[str] = frozenset()
 
     @property
     def holds(self) -> tuple[AcpAvailabilityHold, ...]:
         """Each observation as the live typed hold the candidate filter reads.
 
         No expiry filter is applied here, and that is deliberate rather than
-        missing: `_row_evidence` has already bounded the scan to attempts
+        missing: `_row_plan` has already bounded the scan to attempts
         inside `HOLD_INTERVAL`, so every observation that reached this point
         is one whose record still stands. A second test would be a second
         measurement of one window.
@@ -199,6 +207,15 @@ class FactoryHoldEvidence:
 
 
 EMPTY_FACTORY_HOLD_EVIDENCE = FactoryHoldEvidence()
+
+
+@dataclass(frozen=True, kw_only=True)
+class _PendingInspect:
+    """A listed row whose window tests passed and which still needs its `inspect`."""
+
+    row: FabroRunSummary
+    failed_at: datetime | None
+    began_at: datetime | None
 
 
 def factory_hold_evidence(
@@ -227,11 +244,44 @@ def _factory_evidence(
         return FactoryHoldEvidence(
             unobservable=({"factory": factory, "reason": LISTING_UNREADABLE},)
         )
+    plans = tuple(_row_plan(factory=factory, row=row, now_iso=now_iso) for row in rows)
+    pending = tuple(plan for plan in plans if isinstance(plan, _PendingInspect))
+    payloads = iter(_inspected(factory=factory, pending=pending, reader=reader))
     return _merged(
         reads=tuple(
-            _row_evidence(factory=factory, row=row, reader=reader, now_iso=now_iso) for row in rows
+            _pending_evidence(factory=factory, plan=plan, payload=next(payloads))
+            if isinstance(plan, _PendingInspect)
+            else plan
+            for plan in plans
         )
     )
+
+
+def _inspected(
+    *, factory: str, pending: tuple[_PendingInspect, ...], reader: FactoryRunReader
+) -> list[object | None]:
+    """Each pending row's `inspect` payload, read CONCURRENTLY, in listing order.
+
+    A factory serving this fleet listed 25 in-window runs on 2026-10-25, and
+    taking their `inspect` reads one after another cost about 48 seconds of
+    wall time on every dispatch -- the pass lasted the SUM of its round trips.
+    Each read is independent of the others, so they overlap, at most
+    `_INSPECT_WORKERS` in flight at a time. ONLY the reads overlap: the window
+    tests ran before this and the grading runs after it, in the scan's own
+    thread and in listing order, so the evidence is the same value a serial
+    scan derived. Nothing is cached between evaluations; each evaluation
+    still reads every in-window run fresh.
+
+    A read that could not be taken answers `None` for THAT run alone -- the
+    reader reports a failure or a timeout as `None`, never by raising -- so
+    the other runs' payloads are untouched.
+    """
+    with ThreadPoolExecutor(max_workers=_INSPECT_WORKERS) as pool:
+        futures = [
+            pool.submit(reader.inspect_payload, factory=factory, run_id=plan.row.run_id)
+            for plan in pending
+        ]
+        return [future.result() for future in futures]
 
 
 def _merged(*, reads: tuple[FactoryHoldEvidence, ...]) -> FactoryHoldEvidence:
@@ -246,13 +296,16 @@ def _merged(*, reads: tuple[FactoryHoldEvidence, ...]) -> FactoryHoldEvidence:
         successes=tuple(success for read in reads for success in read.successes),
         unobservable=tuple(entry for read in reads for entry in read.unobservable),
         unconfirmed_keys=frozenset(key for read in reads for key in read.unconfirmed_keys),
+        retired_observation_ids=frozenset(
+            identifier for read in reads for identifier in read.retired_observation_ids
+        ),
     )
 
 
-def _row_evidence(
-    *, factory: str, row: FabroRunSummary, reader: FactoryRunReader, now_iso: str
-) -> FactoryHoldEvidence:
-    """One listed run's contribution, spending at most ONE `inspect` on it.
+def _row_plan(
+    *, factory: str, row: FabroRunSummary, now_iso: str
+) -> FactoryHoldEvidence | _PendingInspect:
+    """One listed run's contribution, or the ONE `inspect` it still needs.
 
     TWO ARMS, TWO WINDOW TESTS, ONE PER-RUN READ. The OBSERVATION arm is bounded
     by the attempt's completion instant, because that is when the allowance was
@@ -276,11 +329,21 @@ def _row_evidence(
     began_at = _confirmation_instant(row=row, now_iso=now_iso)
     if failed_at is None and began_at is None:
         return EMPTY_FACTORY_HOLD_EVIDENCE
-    payload = reader.inspect_payload(factory=factory, run_id=row.run_id)
+    return _PendingInspect(row=row, failed_at=failed_at, began_at=began_at)
+
+
+def _pending_evidence(
+    *, factory: str, plan: _PendingInspect, payload: object | None
+) -> FactoryHoldEvidence:
+    """What one planned row's `inspect` payload says, or that it was unreadable."""
     if payload is None:
-        return _row_unreadable(factory=factory, row=row, reason=INSPECT_UNREADABLE)
+        return _row_unreadable(factory=factory, row=plan.row, reason=INSPECT_UNREADABLE)
     return _read_evidence(
-        factory=factory, row=row, payload=payload, failed_at=failed_at, began_at=began_at
+        factory=factory,
+        row=plan.row,
+        payload=payload,
+        failed_at=plan.failed_at,
+        began_at=plan.began_at,
     )
 
 
@@ -296,19 +359,23 @@ def _read_evidence(
     observation = (
         None
         if failed_at is None
-        else _observation(
+        else failed_observation(
             factory=factory, row=row, payload=payload, occurred_at=failed_at.strftime(_ISO_FORMAT)
         )
     )
     successes = (
         ()
         if began_at is None
-        else _successes(
+        else succeeded_confirmations(
             factory=factory, row=row, payload=payload, started_at=began_at.strftime(_ISO_FORMAT)
         )
     )
     return FactoryHoldEvidence(
-        observations=() if observation is None else (observation,), successes=successes
+        observations=() if observation is None else (observation,),
+        successes=successes,
+        retired_observation_ids=cleared_observation_ids(
+            row=row, payload=payload, began_at=began_at
+        ),
     )
 
 
@@ -323,11 +390,28 @@ def _observation_instant(*, row: FabroRunSummary, now_iso: str) -> datetime | No
 
 
 def _confirmation_instant(*, row: FabroRunSummary, now_iso: str) -> datetime | None:
-    """When this row's run BEGAN, if a confirmation from it could still matter."""
+    """When this row's run BEGAN, if a confirmation from it could still matter.
+
+    AN AVAILABILITY CONFIRMATION TURN IS NEVER AGED OUT. The window below exists
+    because a confirmation an ordinary dispatch happened to make could only
+    retire a record that had expired on its own, and a listing of 1626 rows makes
+    reading every old one unaffordable. Neither reason holds for a probe: since
+    the post-expiry confirmation an EXPIRED record governs selection until a
+    success satisfies it, and a probe is the one run whose whole purpose is to
+    satisfy it. Ageing its success out after `HOLD_INTERVAL` would leave a
+    low-traffic tenant owing the same confirmation again at its next admission,
+    and running another turn to satisfy it -- indefinitely. Probes are rare and
+    carry a label the listing row already shows, so reading every one costs one
+    `inspect` per probe, not per run.
+    """
     if row.start_time is None:
         return None
     started = parse_hold_instant(text=_SUBSECOND.sub("", row.start_time))
-    if started is None or not _within_hold_window(occurred=started, now_iso=now_iso):
+    if started is None:
+        return None
+    if is_availability_probe_run(labels=row.labels):
+        return started
+    if not _within_hold_window(occurred=started, now_iso=now_iso):
         return None
     return started
 
@@ -345,78 +429,6 @@ def _row_unreadable(
     return FactoryHoldEvidence(
         unobservable=({"factory": factory, "run_id": row.run_id, "reason": reason},),
         unconfirmed_keys=recorded_availability_keys(labels=row.labels),
-    )
-
-
-def _observation(
-    *, factory: str, row: FabroRunSummary, payload: object, occurred_at: str
-) -> FactoryHoldObservation | None:
-    """One failed run's typed availability attempt, or `None` when it is not one.
-
-    `None` covers both ways this is not evidence about a provider, and they
-    stay un-surfaced because neither is a failure to measure: a failure the
-    cause chain does not classify as a ceiling, and a failing node the run
-    recorded no entitlement for -- which is the conservative legacy posture an
-    identity-less adapter keeps, where there is no entitlement a typed record
-    could be scoped by.
-    """
-    failure = fabro_failure_detail_from_payload(payload=payload)
-    if failure is None or not failure.provider_usage_limit:
-        return None
-    evidence = terminal_evidence(payload=payload)
-    executed = executed_candidate_identity(
-        labels=row.labels, node=None if evidence is None else evidence.current_predecessor
-    )
-    if executed is None:
-        return None
-    return FactoryHoldObservation(
-        factory=factory,
-        repository=row.labels.get(REPOSITORY_LABEL_KEY),
-        run_id=row.run_id,
-        node_attempt=executed.node,
-        availability_key=executed.availability_key,
-        candidate_key=executed.candidate_key,
-        cause=PROVIDER_LIMIT_CAUSE,
-        occurred_at=occurred_at,
-    )
-
-
-def _successes(
-    *, factory: str, row: FabroRunSummary, payload: object, started_at: str
-) -> tuple[FactorySuccessObservation, ...]:
-    """Every SUCCEEDED node attempt one run's record carries, as confirmations.
-
-    The grading is the port's own `fabro_node_outcomes`, which resolves BOTH
-    inputs the two engines write -- the newest checkpoint's `node_outcomes`,
-    else the record's own top-level `stages` map, visit-collapsed. A second
-    reading here would make this and `_observation` above disagree about
-    whether one record is readable at all.
-
-    A succeeded node the run recorded NO entitlement for yields nothing, which
-    is the same conservative legacy posture `_observation` keeps one function
-    up: an identity-less adapter names no allowance, so its success confirms no
-    allowance either. An unusable payload yields nothing for the same reason it
-    yields no observation -- the record was read, and what it says is that it
-    establishes no attempt.
-    """
-    record = fabro_inspect_record(payload=payload)
-    if record is None:
-        return ()
-    checkpoints = fabro_inspect_checkpoints(record=record)
-    outcomes = fabro_node_outcomes(record=record, checkpoint=checkpoints[-1] if checkpoints else {})
-    return tuple(
-        FactorySuccessObservation(
-            factory=factory,
-            repository=row.labels.get(REPOSITORY_LABEL_KEY),
-            run_id=row.run_id,
-            node_attempt=executed.node,
-            availability_key=executed.availability_key,
-            candidate_key=executed.candidate_key,
-            started_at=started_at,
-        )
-        for stage, outcome in outcomes.items()
-        if outcome.get("status") == _SUCCEEDED_STATUS
-        and (executed := executed_candidate_identity(labels=row.labels, node=stage)) is not None
     )
 
 

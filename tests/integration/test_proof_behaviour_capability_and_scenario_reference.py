@@ -277,6 +277,43 @@ def test_the_capture_prompt_forbids_suite_output_as_the_proof_of_a_behaviour() -
     assert "supporting evidence beside a real exercise" in prompt
 
 
+def test_the_capture_prompt_refuses_suite_only_evidence_before_publication() -> None:
+    """A capture audits each assertion before its record can reach the forge.
+
+    The existing prohibition was not enough: a stage could recite it, then post
+    a record made only of a pytest transcript and leave `proof_verify` to find
+    the defect. The refusal therefore belongs before Step 5's post, names the
+    affected assertion, and directs the capture back to an observable exercise
+    that records output and an exit status.
+    """
+    step = _step(name="proof-capture.md", number=4)
+    start = step.index("### Pre-publication proof refusal")
+    refusal = step[start:]
+
+    assert "each `factory_captured` assertion" in refusal
+    assert "test-suite output alone" in refusal
+    assert "pass count or test-runner output" in refusal
+    assert "DO NOT publish the record" in refusal
+    assert "Name the assertion" in refusal
+    assert "capture behaviour evidence" in refusal
+    assert "output and exit status" in refusal
+
+
+def test_the_capture_prompt_makes_the_positive_and_pass_through_paths_explicit() -> None:
+    """Capture names both the direct exercise and the unchanged success path.
+
+    A suite-only refusal that does not say what counts as the replacement left
+    capture to prove prompt prose, while a refusal that does not say what
+    happens after every assertion clears it invites a second publication path.
+    """
+    step = _step(name="proof-capture.md", number=4)
+
+    assert "running the code under test on a fixture" in step
+    assert "showing its output and exit status" in step
+    assert "every assertion carries behaviour evidence" in step
+    assert "continue to Step 5 exactly as written" in step
+
+
 def test_the_capture_prompt_ends_needs_human_on_a_surface_it_cannot_reach() -> None:
     """An unreachable surface ENDS the run; it never gets a stand-in.
 

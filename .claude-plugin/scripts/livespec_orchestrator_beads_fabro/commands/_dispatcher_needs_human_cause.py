@@ -56,9 +56,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import (
     hook_over_limit_cause_lines,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import (
+    hook_verdict_cause_lines,
+    innermost_cause_label,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
     NEEDS_HUMAN_CAUSE_ABSENT,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import (
+    node_timeout_cut_cause_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
@@ -210,8 +217,21 @@ def _attribution(*, outcome: DispatchOutcome) -> tuple[str, ...]:
     if outcome.fabro_failure_cause is None:
         lines.append(NEEDS_HUMAN_CAUSE_ABSENT)
     else:
-        lines.append(f"innermost cause: {_safe(text=outcome.fabro_failure_cause)}")
+        # Labelled agent-reported when the recorded hook verdict below contradicts
+        # it; the agent's sentence is kept because it is what the agent believed.
+        label = innermost_cause_label(
+            verdict=outcome.hook_verdict, agent_cause=outcome.fabro_failure_cause
+        )
+        lines.append(f"{label}: {_safe(text=outcome.fabro_failure_cause)}")
         lines.extend(_fault(cause=outcome.fabro_failure_cause))
+    # The recorded hook verdict, OUR text (node id, integer, recipe names), after
+    # the cause it qualifies and under STAGE_FAILURE only, like the hook-over-limit
+    # lines beside it.
+    lines.extend(
+        hook_verdict_cause_lines(
+            verdict=outcome.hook_verdict, agent_cause=outcome.fabro_failure_cause
+        )
+    )
     # The hook-over-limit classification, when the ending is attributed to one.
     #
     # OUR OWN TEXT, so it does not pass through `_safe`: every field is an
@@ -224,6 +244,8 @@ def _attribution(*, outcome: DispatchOutcome) -> tuple[str, ...]:
     # exactly that, and the event reaching this writer at all means the run
     # ended on the stage the observation came from.
     lines.extend(hook_over_limit_cause_lines(event=outcome.hook_over_limit))
+    # The node-timeout cut, OUR text, under STAGE_FAILURE only for the reason above.
+    lines.extend(node_timeout_cut_cause_lines(cut=outcome.node_timeout_cut))
     if outcome.fabro_failure_category is not None:
         lines.append(f"failure category: {outcome.fabro_failure_category}")
     if outcome.fabro_failure_signature is not None:

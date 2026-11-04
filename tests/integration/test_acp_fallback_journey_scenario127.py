@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -63,27 +64,18 @@ from livespec_orchestrator_beads_fabro.commands._acp_factory_capabilities import
 )
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_event_types import AcpEventScan
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_events import scan_acp_events
-from livespec_orchestrator_beads_fabro.commands._acp_fallback_warning_records import (
-    MODEL_FALLBACK_STAGE,
-)
-from livespec_orchestrator_beads_fabro.commands._acp_hold_records import HOLD_STAGE
-from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpAdapter
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
 from livespec_orchestrator_beads_fabro.commands._acp_node_selection import SelectedAcpCandidate
-from livespec_orchestrator_beads_fabro.commands._acp_projection_run import (
-    AcpProjectionRequest,
-    project_run_events,
-    resolve_acp_primary_generations,
-)
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import observe_run_cost
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_minimum_release_floor import (
     minimum_release_verdict,
     resolve_minimum_release,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import SYSTEM_INFO_PATH
+
+_PREFLIGHT = "livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight"
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FACTORY_NAME = "hp"
@@ -219,38 +211,6 @@ class _Transport:
         )
 
 
-@dataclass(kw_only=True)
-class _EventsRunner:
-    """A recorded `fabro events <run> --json --server <factory>` answer."""
-
-    payload: object
-    calls: list[list[str]] = field(default_factory=list)
-
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        _ = (cwd, timeout_seconds, env, stdin)
-        self.calls.append(list(argv))
-        return CommandResult(exit_code=0, stdout=json.dumps(self.payload), stderr="")
-
-
-@dataclass(kw_only=True)
-class _Journal:
-    """The real journal file every projection record is appended to."""
-
-    path: Path
-
-    def append(self, *, record: dict[str, object]) -> None:
-        with self.path.open("a", encoding="utf-8") as handle:
-            _ = handle.write(json.dumps(record) + "\n")
-
-
 def _target() -> FactoryTarget:
     return FactoryTarget(name=_FACTORY_NAME, server=_SERVER, dev_token=None)
 
@@ -349,39 +309,16 @@ def _journey(*, repo: Path) -> list[dict[str, Any]]:
     chain rather than transcribed, so a configuration change that moved the
     generation would make the stream stop matching instead of silently agreeing.
     """
-    generation = resolve_acp_primary_generations(repo=repo)[_NODE]
+    # Imported LAZILY, exactly as the unit-tier modules that read this
+    # function do: `_dispatcher_acp_preflight` sits on a module-level cycle
+    # through `_dispatcher_engine`, so it cannot be the first member of the
+    # `_dispatcher_*` family a fresh interpreter imports.
+    preflight = import_module(_PREFLIGHT)
+    generation = preflight.resolve_acp_primary_generations(repo=repo)[_NODE]
     return [
         _started(index=0, model=_PRIMARY_MODEL, generation=generation),
         _failover(generation=generation),
         _started(index=1, model=_FALLBACK_MODEL, generation=generation),
-    ]
-
-
-def _project(*, repo: Path, tmp_path: Path) -> tuple[Any, _EventsRunner, Path]:
-    """Project the journey through the real seam, writing a real journal."""
-    journal_path = tmp_path / "journal.jsonl"
-    runner = _EventsRunner(payload=_journey(repo=repo))
-    result = project_run_events(
-        request=AcpProjectionRequest(
-            repo=repo,
-            repo_name=_REPO_NAME,
-            work_item_id=_WORK_ITEM,
-            run_id=_RUN_ID,
-            journal_path=journal_path,
-            run_succeeded=True,
-        ),
-        journal=_Journal(path=journal_path),
-        runner=runner,
-        factory=_target(),
-    )
-    return (result, runner, journal_path)
-
-
-def _stage(*, journal_path: Path, stage: str) -> list[dict[str, Any]]:
-    return [
-        dict(record)
-        for record in journal_records(journal_path=journal_path)
-        if record.get("stage") == stage
     ]
 
 
@@ -523,56 +460,6 @@ def test_the_committed_floor_clears_the_release_that_first_supported_the_grammar
     assert verdict is not None
     assert verdict.refusal_detail is None
     assert verdict.undetermined_detail is None
-
-
-def test_the_journey_projects_one_failover_one_hold_and_one_warning(tmp_path: Path) -> None:
-    """The whole fallback journey, from the run's own events to both ledgers.
-
-    `cleared` is asserted ZERO against a run that SUCCEEDED, which is Scenario
-    127's own control: "overall run success does not clear the primary". A
-    successful fallback is not evidence the primary recovered.
-    """
-    repo = _repo(tmp_path=tmp_path)
-
-    result, runner, journal_path = _project(repo=repo, tmp_path=tmp_path)
-
-    assert result.read is True
-    assert result.holds == 1
-    assert result.warnings == 1
-    assert result.cleared == 0
-    assert result.unobservable == 0
-    assert result.nodes == (_NODE,)
-
-    # One events read, server-qualified against the pinned factory and naming
-    # exactly the one run: the journey never reached a second run or a second
-    # host, which is what "unchanged run identity" means from here.
-    [argv] = runner.calls
-    assert argv[1:4] == ["events", _RUN_ID, "--json"]
-    assert argv[-2:] == ["--server", _SERVER]
-
-    [hold] = _stage(journal_path=journal_path, stage=HOLD_STAGE)
-    # The hold keys the candidate that FAILED, never the one that rescued the
-    # node -- the precise inversion the ordered chain exists to prevent.
-    assert hold["hold_key"] == _PRIMARY_KEY
-    assert hold["candidate_key"] == _PRIMARY_KEY
-    assert hold["cause"] == _CAUSE
-    assert hold["scope"] == "candidate"
-    assert hold["evidence_id"] == _FAILOVER_EVENT_ID
-    assert hold["work_item_id"] == _WORK_ITEM
-    # Derived from occurrence time by the ledger, not carried by the event.
-    assert hold["occurred_at"] == _FAILOVER_AT
-    assert hold["expires_at"] == _EXPIRES_AT
-
-    [warning] = _stage(journal_path=journal_path, stage=MODEL_FALLBACK_STAGE)
-    # The warning names the candidate that RAN; the hold above names the one that
-    # failed. One echoed field could not produce both.
-    assert warning["candidate_key"] == _FALLBACK_KEY
-    assert warning["candidate_index"] == 1
-    assert warning["hold_key"] == _PRIMARY_KEY
-    assert warning["node"] == _NODE
-    assert warning["event_id"] == _FAILOVER_EVENT_ID
-    assert warning["full_chain"] == _CHAIN_DIGEST
-    assert warning["primary_generation"] == resolve_acp_primary_generations(repo=repo)[_NODE]
 
 
 def test_the_journey_stays_in_one_node_visit_and_replays_no_predecessor(

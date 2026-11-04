@@ -29,6 +29,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_allowance
     per_attempt_overhead_seconds,
     requirement_detail,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_window import (
+    CREDENTIAL_USE_WINDOW_FIGURE,
+    EXECUTION_ALLOWANCE_FIGURE,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
+    CODEX_FRESHNESS_MARGIN_SECONDS,
+)
 
 _TEN_MINUTES = 600
 _STOCK = 30
@@ -138,7 +148,7 @@ def test_the_detail_names_the_inputs_the_figure_read() -> None:
     """
     detail = requirement_detail(
         workflow_name="implement-work-item",
-        allowance_seconds=1000,
+        requirement=_requirement(execution_allowance_seconds=1000),
         overhead_seconds=285,
         inputs={"review_fix_visit_cap": 4},
     )
@@ -152,11 +162,48 @@ def test_the_detail_names_the_inputs_the_figure_read() -> None:
     assert "NOT the graph's" in detail
 
 
+def test_the_detail_names_which_of_the_two_figures_governed() -> None:
+    """Both branches, because the two have OPPOSITE remedies and share a number.
+
+    A detail naming only a figure sends an operator to shorten a node timeout
+    when the key to raise was the queue allowance, and the two cases are
+    indistinguishable in the number alone.
+    """
+    bounded = requirement_detail(
+        workflow_name="fixture",
+        requirement=_requirement(execution_allowance_seconds=902_955),
+        overhead_seconds=285,
+        inputs={},
+    )
+    shorter = requirement_detail(
+        workflow_name="fixture",
+        requirement=_requirement(execution_allowance_seconds=60_000),
+        overhead_seconds=285,
+        inputs={},
+    )
+
+    assert f"The {CREDENTIAL_USE_WINDOW_FIGURE} governs at 108000 seconds" in bounded
+    assert "requires 111600 seconds of usable lifetime" in bounded
+    assert f"The {EXECUTION_ALLOWANCE_FIGURE} governs at 60000 seconds" in shorter
+    assert "requires 63600 seconds of usable lifetime" in shorter
+
+
+def _requirement(*, execution_allowance_seconds: int) -> CredentialLifetimeRequirement:
+    """One requirement carrying the documented window and a chosen allowance."""
+    return CredentialLifetimeRequirement(
+        execution_allowance_seconds=execution_allowance_seconds,
+        credential_use_window_seconds=108_000,
+        credential_queue_allowance_seconds=86_400,
+        margin_seconds=CODEX_FRESHNESS_MARGIN_SECONDS,
+        detail="",
+    )
+
+
 def test_the_detail_reports_no_inputs_rather_than_an_empty_list() -> None:
     """A graph guarding no edge on an input still renders a readable detail."""
     detail = requirement_detail(
         workflow_name="fixture",
-        allowance_seconds=10,
+        requirement=_requirement(execution_allowance_seconds=10),
         overhead_seconds=1,
         inputs={},
     )

@@ -33,15 +33,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import (
     TransitionPayload,
     parse_payload,
     render_payload,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
+    next_action_metadata,
+    plan_record_metadata,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import plan_comment_body
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
+    from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
+    from livespec_orchestrator_beads_fabro.commands._plan_tracked_write import TrackedWriteRequest
 
 __all__: list[str] = [
     "CHAIN_METADATA_KEY",
@@ -56,6 +63,7 @@ __all__: list[str] = [
     "read_progress_events",
     "write_chain_cache",
     "write_progress_event",
+    "write_tracked_projection",
 ]
 
 CHAIN_METADATA_KEY = "plan_epoch_chain"
@@ -69,6 +77,11 @@ PLAN_PROGRESS_PREFIX = "plan-progress-event"
 
 _OPERATION_LABEL = "operation: "
 _PAYLOAD_LABEL = "payload: "
+# The two header fields `plan_comment_body` renders above every plan comment,
+# read back through the same labelled-line reader the payload uses so one
+# format is never parsed two ways.
+_AUTHOR_LABEL = "author: "
+_RECORDED_LABEL = "recorded: "
 _METADATA_FIELD = "metadata"
 _TEXT_FIELD = "text"
 
@@ -89,10 +102,21 @@ class ProgressEvent:
     That is kept apart from the comment's absence because a recovery owes the
     retry the event that was RECORDED, and an unparseable record is reportable
     rather than something to fill in.
+
+    `author` and `recorded_at` are the comment's own two header fields, and they
+    are here because the payload cannot carry either: it is rendered before the
+    comment exists, while WHO committed a transition and WHEN is precisely what
+    an evidenced causal supersession must establish about the derivation it
+    supersedes. Both default to the empty string, so a comment found without
+    them is a DEGRADED read rather than an unparseable event — an absent author
+    is simply not one of the reserved derivation actors, which is the fail-closed
+    answer.
     """
 
     operation_id: str
     payload: TransitionPayload | None
+    author: str = ""
+    recorded_at: str = ""
 
 
 def chain_cache_metadata(
@@ -160,6 +184,9 @@ def progress_event_body(*, payload: TransitionPayload, now: str) -> str:
     differs from the one the transition committed.
     """
     state = payload.authority
+    replaced = (
+        () if payload.replaced_result is None else (f"replaced-result: {payload.replaced_result}",)
+    )
     return "\n".join(
         (
             f"{_OPERATION_LABEL}{payload.operation_id}",
@@ -171,6 +198,7 @@ def progress_event_body(*, payload: TransitionPayload, now: str) -> str:
             f"max-handoffs: {state.max_handoffs}",
             f"consumed-handoffs: {state.consumed_handoffs}",
             f"recorded: {now}",
+            *replaced,
             f"{_PAYLOAD_LABEL}{render_payload(payload=payload)}",
         )
     )
@@ -196,6 +224,35 @@ def write_progress_event(
     )
 
 
+def write_tracked_projection(
+    *,
+    request: TrackedWriteRequest,
+    action: NextAction,
+) -> None:
+    """Project one committed chain transition onto its pointer and handoff entry."""
+    client = make_beads_client(config=request.config)
+    if request.is_handoff:
+        client.add_comment(
+            issue_id=request.epic_id,
+            body=plan_comment_body(
+                prefix="plan-handoff-entry",
+                author=request.author,
+                now=request.now,
+                body=request.body or "",
+            ),
+        )
+    record = client.show_issue(issue_id=request.epic_id)
+    client.update_issue(
+        issue_id=request.epic_id,
+        metadata=next_action_metadata(
+            existing_metadata=plan_record_metadata(record=record),
+            action=action,
+            session=request.author,
+            now=request.now,
+        ),
+    )
+
+
 def read_progress_events(*, client: BeadsClient, epic_id: str) -> tuple[ProgressEvent, ...]:
     """Read every progress event on one epic, oldest first."""
     events: list[ProgressEvent] = []
@@ -215,7 +272,12 @@ def _parse_event(*, text: str) -> ProgressEvent | None:
         return None
     payload_text = _labelled_value(text=text, label=_PAYLOAD_LABEL)
     payload = None if payload_text is None else parse_payload(text=payload_text)
-    return ProgressEvent(operation_id=operation_id, payload=payload)
+    return ProgressEvent(
+        operation_id=operation_id,
+        payload=payload,
+        author=_labelled_value(text=text, label=_AUTHOR_LABEL) or "",
+        recorded_at=_labelled_value(text=text, label=_RECORDED_LABEL) or "",
+    )
 
 
 def _labelled_value(*, text: str, label: str) -> str | None:

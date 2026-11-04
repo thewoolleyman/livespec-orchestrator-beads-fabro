@@ -229,6 +229,74 @@ def test_loop_without_item_drains_ranked_queue_by_default(
     assert recording.calls == ["a-1", "b-2"]
 
 
+def test_loop_journals_a_cpu_row_for_every_phase_before_each_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every item the drain launches carries the drain's own pre-admission phases."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item(id="a-1", rank="a1"))
+    append_work_item(path=_config(), item=_item(id="b-2", rank="a2"))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _RecordingRunDispatch())
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "2",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    rows = [json.loads(line) for line in journal_text.splitlines()]
+    phases = {
+        item_id: [
+            row["phase"]
+            for row in rows
+            if row["stage"] == "pre-launch-cpu" and row["work_item_id"] == item_id
+        ]
+        for item_id in ("a-1", "b-2")
+    }
+    assert exit_code == 0
+    assert phases["a-1"][:6] == [
+        "drive-startup",
+        "dispatch-preamble",
+        "otel-egress",
+        "ledger-prepare",
+        "configuration-and-ledger-check",
+        "factory-size-check",
+    ]
+    for phase in (
+        "candidate-selection",
+        "acp-preflight",
+        "credential-wait",
+        "recovery-routing",
+        "admission",
+        "publish-branch-reclaim",
+        "recovery-route",
+        "record-dispatch",
+    ):
+        assert phase in phases["a-1"]
+    shared = phases["a-1"].index("recovery-route") + 1
+    assert phases["b-2"][:shared] == phases["a-1"][:shared]
+    assert phases["b-2"][shared] == "record-dispatch"
+    dispatch_ids = {
+        item_id: {
+            row["dispatch_id"]
+            for row in rows
+            if row["stage"] == "pre-launch-cpu" and row["work_item_id"] == item_id
+        }
+        for item_id in ("a-1", "b-2")
+    }
+    assert [len(ids) for ids in dispatch_ids.values()] == [1, 1]
+    assert dispatch_ids["a-1"] != dispatch_ids["b-2"]
+
+
 def test_loop_without_candidates_emits_nothing_dispatched(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
@@ -290,10 +358,19 @@ def test_loop_with_item_dispatches_requested_not_top_ranked(
     assert recording.calls == ["b-2"]
 
 
-def test_dispatch_records_factory_and_retry_reuses_it(
+def test_dispatch_records_its_factory_and_a_later_fresh_dispatch_does_not_reuse_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The record is written per dispatch, and a FRESH dispatch does not read it.
+
+    The second invocation names no factory and recovery routing assigns it no
+    resume route, so it is a fresh dispatch — and "a fresh dispatch MUST NOT read
+    the item's recorded factory as a pin", which lands it on this repository's own
+    ambient default rather than back on the factory the first run used. Both halves
+    are asserted together because the WRITE is what makes the read tempting: the
+    record stays, for every surface that locates an item's earlier run through it.
+    """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item(id="factory-pinned")
     append_work_item(path=_config(), item=item)
@@ -335,8 +412,10 @@ def test_dispatch_records_factory_and_retry_reuses_it(
     comments = read_work_item_comments(path=_config(), work_item_id="factory-pinned")
     assert first_exit == 0
     assert second_exit == 0
-    assert recording.factories == ["remote", "remote"]
-    assert [comment.text for comment in comments].count("livespec-dispatch-factory: remote") == 1
+    assert recording.factories == ["remote", "default"]
+    texts = [comment.text for comment in comments]
+    assert texts.count("livespec-dispatch-factory: remote") == 1
+    assert texts.count("livespec-dispatch-factory: default") == 1
 
 
 def test_loop_dry_run_plans_selection_without_dispatch_or_ledger_mutation(

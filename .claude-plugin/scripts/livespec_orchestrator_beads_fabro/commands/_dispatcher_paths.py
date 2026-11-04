@@ -77,7 +77,12 @@ def store_config(*, repo: Path) -> StoreConfig:
     return resolve_store_config(cwd=repo, work_items_arg=None)
 
 
-def workflow_toml(*, args: argparse.Namespace, variant_directory: str | None = None) -> Path:
+def workflow_toml(
+    *,
+    args: argparse.Namespace,
+    variant_directory: str | None = None,
+    payload_root: Path | None = None,
+) -> Path:
     """The committed Fabro workflow config this dispatch runs, by precedence.
 
     1. An explicit `--workflow <path>` always wins — the raw-path escape
@@ -109,6 +114,13 @@ def workflow_toml(*, args: argparse.Namespace, variant_directory: str | None = N
     directory with no repo to anchor it is that same degradation rather than
     a refusal: the surfaces reaching here without `--repo` (the reconcile and
     check subcommands) never select a variant in the first place.
+
+    `payload_root` names the build step 4 resolves the bundled default under,
+    for the ONE caller that is not asking about its own execution: the read-only
+    sandbox-image enumeration asks this question of EVERY executing build on the
+    host, and `executing_payload_root()` can only ever answer for the process
+    doing the asking. Left None it is exactly that root, so every dispatch path
+    reads as it always has.
     """
     if args.workflow is not None:
         return Path(args.workflow)
@@ -120,7 +132,8 @@ def workflow_toml(*, args: argparse.Namespace, variant_directory: str | None = N
         repo_local = repo_root.joinpath(*_RESERVED_WORKFLOW_SUBPATH)
         if repo_local.is_file():
             return repo_local
-    return executing_payload_root().joinpath(*_RESERVED_WORKFLOW_SUBPATH)
+    root = executing_payload_root() if payload_root is None else payload_root
+    return root.joinpath(*_RESERVED_WORKFLOW_SUBPATH)
 
 
 def journal_path(*, args: argparse.Namespace, repo: Path) -> Path:

@@ -1,12 +1,43 @@
-"""Tests for the detect-impl-gaps thin-transport command."""
+"""Tests for the detect-impl-gaps thin-transport command.
+
+The command is a HEADING-COVERAGE enumerator per `SPECIFICATION/contracts.md`
+and Scenario 205 of `SPECIFICATION/scenarios.md`: it emits one gap per H2
+heading of the governed spec tree that no test exercises, and never
+enumerates MUST/SHOULD clauses.
+
+Gap-ids are asserted as FROZEN GOLDEN CONSTANTS rather than recomputed
+through the derivation under test. Recomputing them would make every
+assertion here true by construction — a renamed heading, a changed
+payload separator or a different hash would all keep passing — and the
+whole point of the id is that the SAME heading yields the SAME id across
+runs and releases, which only a frozen value can hold the implementation
+to.
+"""
 
 import json
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import (
-    detect_rules,
-    main,
+from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import main
+
+# Frozen heading-derived gap-ids for the fixture headings below. Each is a
+# pure function of the spec-root-relative spec file and the verbatim H2
+# heading line, so the same pair reproduces the same id on every platform.
+_GAP_ABSENT = "gap-yazf6mdi"  # spec.md "## Absent heading"
+_GAP_TODO = "gap-cklnfbug"  # spec.md "## Todo heading"
+_GAP_DANGLING = "gap-z7ijrvk5"  # spec.md "## Dangling heading"
+_GAP_SHARED_IN_CONTRACTS = "gap-furwz3zz"  # contracts.md "## Shared heading"
+_GAP_SHARED_IN_SCENARIOS = "gap-ycahxxq5"  # scenarios.md "## Shared heading"
+_GAP_SPEC_STABLE = "gap-ex3uacav"  # spec.md "## Stable heading"
+_GAP_CONTRACTS_OLD = "gap-lnvdmile"  # contracts.md "## Old heading"
+_GAP_CONTRACTS_NEW = "gap-27jaon24"  # contracts.md "## New heading"
+_GAP_CONTRACTS_REMOVED = "gap-ucynx5xw"  # contracts.md "## Removed heading"
+
+_EXISTING_TEST_NODE = "tests.integration.test_present.test_present_case"
+
+_THREE_UNCOVERED_HEADINGS = (
+    "# Title\n\n## Absent heading\n\nProse.\n\n## Todo heading\n\nProse.\n\n"
+    "## Dangling heading\n\nProse.\n"
 )
 
 
@@ -18,443 +49,611 @@ def _write_spec(*, root: Path, files: dict[str, str]) -> None:
         (root / name).write_text(content)
 
 
-def test_main_no_rules_human_output(
+def _write_coverage(*, project_root: Path, entries: list[dict[str, str]]) -> None:
+    coverage = project_root / "tests" / "heading-coverage.json"
+    coverage.parent.mkdir(parents=True, exist_ok=True)
+    coverage.write_text(json.dumps(entries))
+
+
+def _write_existing_test_node(*, project_root: Path) -> None:
+    """Materialize the test `_EXISTING_TEST_NODE` names, so the node resolves.
+
+    A real module with a real function, because "names an existing test" is a
+    claim about the tree: an entry pointing at nothing must not read as
+    covering, and only a resolvable counterpart can tell the two apart.
+    """
+    module = project_root / "tests" / "integration" / "test_present.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text("def test_present_case() -> None:\n    pass\n")
+
+
+def _uncovered_fixture(*, project_root: Path) -> None:
+    """A spec tree whose three H2 headings are uncovered in three ways."""
+    _write_spec(
+        root=project_root / "SPECIFICATION",
+        files={"spec.md": _THREE_UNCOVERED_HEADINGS},
+    )
+    _write_coverage(
+        project_root=project_root,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Todo heading",
+                "test": "TODO",
+                "reason": "an integration-tier test is owed for this heading",
+            },
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Dangling heading",
+                "test": "tests.integration.test_vanished.test_vanished_case",
+            },
+        ],
+    )
+
+
+def test_json_emits_one_gap_per_uncovered_heading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Absent, `TODO`-bound and dangling entries each leave their heading a gap."""
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload["gap_ids"] == sorted([_GAP_ABSENT, _GAP_TODO, _GAP_DANGLING])
+
+
+def test_json_payload_carries_only_the_gap_ids_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The machine surface stays the ratified one-key object.
+
+    Doctor's two cross-boundary invariants subprocess this surface and read
+    its stdout, so a second key here is a wire-format change for them.
+    """
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert list(json.loads(captured.out)) == ["gap_ids"]
+
+
+def test_gap_ids_are_identical_across_two_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The same spec tree yields the same gap-id set, so an id can anchor a label."""
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    assert main(argv=["--json"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert main(argv=["--json"]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert first == second
+
+
+def test_human_output_names_the_spec_file_and_heading_each_gap_derives_from(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(root=spec, files={"spec.md": "# Heading\n\nNo rules here.\n"})
+    _uncovered_fixture(project_root=tmp_path)
     rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
-    assert "(no rules detected)" in captured.out
+    assert f"SPECIFICATION/spec.md > ## Absent heading  [{_GAP_ABSENT}]" in captured.out
 
 
-def test_main_detects_must_and_should_rules(
+def test_human_output_reports_an_entirely_covered_tree_as_no_gaps(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
+    _write_spec(root=tmp_path / "SPECIFICATION", files={"spec.md": "# Title\n\nProse only.\n"})
+    _write_coverage(project_root=tmp_path, entries=[])
+    rc = main(argv=[])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "(no uncovered headings detected)" in captured.out
+
+
+def test_no_must_or_should_clause_is_enumerated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A clause-bearing file yields one gap for its heading, never one per clause."""
+    monkeypatch.chdir(tmp_path)
     _write_spec(
-        root=spec,
+        root=tmp_path / "SPECIFICATION",
         files={
             "spec.md": (
-                "# Top\n\n"
-                "## Section A\n\n"
+                "# Title\n\n## Absent heading\n\n"
                 "Every reader MUST validate the input.\n"
                 "Implementations SHOULD prefer the typed API.\n"
                 "Callers MUST NOT pass null.\n"
                 "Plugins SHOULD NOT shell out.\n"
-                "\n"
-                "## Section B\n\n"
-                "Just a normal paragraph with must in lowercase — no rule.\n"
-            ),
+            )
         },
     )
-    rc = main(argv=[])
-    captured = capsys.readouterr()
-    assert rc == 0
-    assert "MUST validate" in captured.out
-    assert "SHOULD prefer" in captured.out
-    assert "MUST NOT pass" in captured.out
-    assert "SHOULD NOT shell out" in captured.out
-    # Lowercase 'must' MUST NOT match.
-    assert "no rule" not in captured.out
-
-
-def test_main_excludes_code_fences(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={
-            "spec.md": (
-                "# Top\n\n"
-                "Outside the fence: implementations MUST honor this.\n"
-                "\n"
-                "```python\n"
-                "# inside fence: this MUST be skipped\n"
-                "def f(): pass\n"
-                "```\n"
-                "\n"
-                "After the fence: callers SHOULD retry.\n"
-            ),
-        },
-    )
-    rc = main(argv=[])
-    captured = capsys.readouterr()
-    assert rc == 0
-    assert "MUST honor" in captured.out
-    assert "SHOULD retry" in captured.out
-    assert "MUST be skipped" not in captured.out
-
-
-def test_main_emits_json_payload(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={"spec.md": "# T\n\nEverything MUST be deterministic.\n"},
-    )
+    _write_coverage(project_root=tmp_path, entries=[])
     rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    assert "gap_ids" in payload
-    assert len(payload["gap_ids"]) == 1
-    assert payload["gap_ids"][0].startswith("gap-")
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
 
 
-def test_main_excludes_proposed_changes(
+def test_headings_outside_the_governed_nlspec_files_are_not_enumerated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The governed population is the NLSpec file set the coverage map covers.
+
+    `SPECIFICATION/README.md` is skill-owned prose that carries no coverage
+    entry, so enumerating its headings would report three permanent gaps
+    nobody can ever close.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={
+            "spec.md": "# Title\n\n## Absent heading\n\nProse.\n",
+            "README.md": "# Readme\n\n## Not governed\n\nProse.\n",
+            "schema.json": '{"note": "## not a heading"}\n',
+        },
+    )
+    _write_coverage(project_root=tmp_path, entries=[])
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+
+
+def test_proposed_changes_headings_are_not_enumerated(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
     spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={"spec.md": "# T\n\nLive rules MUST land here.\n"},
-    )
+    _write_spec(root=spec, files={"spec.md": "# Title\n\n## Absent heading\n\nProse.\n"})
     proposed = spec / "proposed_changes"
     proposed.mkdir()
-    (proposed / "draft.md").write_text("# Draft\n\nThis pending rule MUST not surface.\n")
+    (proposed / "spec.md").write_text("# Draft\n\n## Pending heading\n\nProse.\n")
+    _write_coverage(project_root=tmp_path, entries=[])
     rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    # Only the live spec.md rule surfaces; the proposed_changes draft does not.
-    assert len(payload["gap_ids"]) == 1
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
 
 
-def test_main_uses_explicit_spec_target_and_project_root(
+def test_explicit_spec_target_and_project_root_resolve_the_coverage_map(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     project = tmp_path / "elsewhere"
-    spec = project / "MyCustomSpec"
-    _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(argv=["--project-root", str(project), "--spec-target", str(spec), "--json"])
+    _write_spec(
+        root=project / "MyCustomSpec",
+        files={"spec.md": "# Title\n\n## Absent heading\n\nProse.\n"},
+    )
+    _write_coverage(project_root=project, entries=[])
+    rc = main(
+        argv=[
+            "--project-root",
+            str(project),
+            "--spec-target",
+            str(project / "MyCustomSpec"),
+            "--json",
+        ]
+    )
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    assert len(payload["gap_ids"]) == 1
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
 
 
-def test_main_project_root_with_default_spec_target(
+def test_project_root_alone_defaults_the_spec_target(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     project = tmp_path / "elsewhere"
-    spec = project / "SPECIFICATION"
-    _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
+    _write_spec(
+        root=project / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n\nProse.\n"},
+    )
+    _write_coverage(project_root=project, entries=[])
     rc = main(argv=["--project-root", str(project), "--json"])
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    assert len(payload["gap_ids"]) == 1
-
-
-def test_main_skips_non_markdown_files(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={
-            "spec.md": "# T\n\nMarkdown rule MUST surface.\n",
-            "schema.json": '{"note": "JSON files MUST not be scanned"}\n',
-        },
-    )
-    rc = main(argv=["--json"])
-    captured = capsys.readouterr()
-    assert rc == 0
-    payload = json.loads(captured.out)
-    assert len(payload["gap_ids"]) == 1
-
-
-def test_main_skips_blank_lines_with_keyword(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    # A line that's only whitespace MUST NOT count even if the regex
-    # would otherwise match (defensive — the regex needs a real word
-    # boundary).
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={
-            "spec.md": (
-                "# Top\n"
-                "\n"
-                "MUST\n"  # standalone keyword on its own line — still a rule
-                "\n"
-                "Real rule: callers MUST do X.\n"
-            ),
-        },
-    )
-    rc = main(argv=["--json"])
-    captured = capsys.readouterr()
-    assert rc == 0
-    payload = json.loads(captured.out)
-    # Two non-empty lines matched: "MUST" alone and "callers MUST do X."
-    assert len(payload["gap_ids"]) == 2
-
-
-def test_main_detects_rule_at_top_of_file_without_heading(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={"spec.md": "Readers MUST handle the no-heading case.\n# Then Heading\n"},
-    )
-    rc = main(argv=[])
-    captured = capsys.readouterr()
-    assert rc == 0
-    assert "(top)" in captured.out
-
-
-def test_main_heading_stack_handles_level_jumps(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    # Skip from H1 directly to H3 (no H2). Stack should pad an empty H2.
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={
-            "spec.md": (
-                "# H1\n"
-                "\n"
-                "### H3 (jumped)\n"
-                "\n"
-                "Rule MUST appear under jumped heading path.\n"
-            ),
-        },
-    )
-    rc = main(argv=[])
-    captured = capsys.readouterr()
-    assert rc == 0
-    assert "H1 >  > H3 (jumped)" in captured.out
-
-
-def test_detect_rules_deterministic_across_calls(tmp_path: Path) -> None:
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={"spec.md": "# Heading\n\nReaders MUST cope.\nCallers SHOULD retry.\n"},
-    )
-    first = detect_rules(spec_root=spec)
-    second = detect_rules(spec_root=spec)
-    assert [r.gap_id for r in first] == [r.gap_id for r in second]
-
-
-def test_detect_rules_returns_sorted_by_file_heading_text(tmp_path: Path) -> None:
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(
-        root=spec,
-        files={
-            "z_last.md": "# Z\n\nFile Z MUST appear after.\n",
-            "a_first.md": "# A\n\nFile A MUST appear first.\n",
-        },
-    )
-    rules = detect_rules(spec_root=spec)
-    spec_files = [r.spec_file for r in rules]
-    assert spec_files == sorted(spec_files)
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
 
 
 # ---------------------------------------------------------------
-# --since-version flag tests
+# A heading an existing test exercises is not a gap
 # ---------------------------------------------------------------
 
 
-def _write_history_version(*, spec_root: Path, version: int, files: dict[str, str]) -> None:
-    """Populate <spec_root>/history/v<NNN>/ with the given files."""
-    version_dir = spec_root / "history" / f"v{version:03d}"
-    version_dir.mkdir(parents=True, exist_ok=True)
-    for name, content in files.items():
-        target = version_dir / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
-
-
-def test_since_version_filters_to_diff_against_history(
+def test_a_heading_whose_entry_names_an_existing_test_produces_no_gap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--since-version v080 filters detection to spec diff v080→latest."""
+    """The covered heading drops out while its uncovered sibling stays.
+
+    Both headings live in ONE fixture because each is the other's control: a
+    build that emitted a gap for every heading satisfies the sibling's
+    presence, and one that emitted none satisfies the covered heading's
+    absence.
+    """
     monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    spec.mkdir()
-    # v080 baseline: two files, both with one rule each.
-    _write_history_version(
-        spec_root=spec,
-        version=80,
-        files={
-            "stable.md": "# Stable\n\nLegacy callers MUST honor this.\n",
-            "changed.md": "# Changed\n\nOld rule MUST survive.\n",
-        },
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Covered heading\n\nProse.\n\n## Absent heading\n"},
     )
-    # Latest history snapshot (v081) and live tree: stable.md untouched;
-    # changed.md gains a NEW rule.
-    _write_history_version(
-        spec_root=spec,
-        version=81,
-        files={
-            "stable.md": "# Stable\n\nLegacy callers MUST honor this.\n",
-            "changed.md": ("# Changed\n\nOld rule MUST survive.\nBrand-new readers MUST adapt.\n"),
-        },
-    )
-    (spec / "stable.md").write_text("# Stable\n\nLegacy callers MUST honor this.\n")
-    (spec / "changed.md").write_text(
-        "# Changed\n\nOld rule MUST survive.\nBrand-new readers MUST adapt.\n"
-    )
-    rc = main(argv=["--json", "--since-version", "v080"])
-    captured = capsys.readouterr()
-    assert rc == 0
-    payload = json.loads(captured.out)
-    # Only rules in `changed.md` (the diffing file) surface.
-    # stable.md's rule MUST NOT appear because the file is unchanged.
-    assert len(payload["gap_ids"]) == 2
-    # And human form names changed.md only.
-    rc2 = main(argv=["--since-version", "v080"])
-    captured2 = capsys.readouterr()
-    assert rc2 == 0
-    assert "changed.md" in captured2.out
-    assert "stable.md" not in captured2.out
-
-
-def test_since_version_accepts_bare_integer(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """--since-version 80 (bare integer) works identically to v080."""
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    spec.mkdir()
-    _write_history_version(
-        spec_root=spec,
-        version=80,
-        files={"spec.md": "# T\n\nOld rule MUST hold.\n"},
-    )
-    (spec / "spec.md").write_text("# T\n\nOld rule MUST hold.\nNew rule MUST land.\n")
-    rc = main(argv=["--json", "--since-version", "80"])
-    captured = capsys.readouterr()
-    assert rc == 0
-    payload = json.loads(captured.out)
-    assert len(payload["gap_ids"]) == 2
-
-
-def test_no_since_version_preserves_full_scan(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Flag absent → existing behavior: full scan, all gaps."""
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    spec.mkdir()
-    _write_history_version(
-        spec_root=spec,
-        version=80,
-        files={
-            "stable.md": "# Stable\n\nLegacy callers MUST honor this.\n",
-            "changed.md": "# Changed\n\nOld rule MUST survive.\n",
-        },
-    )
-    (spec / "stable.md").write_text("# Stable\n\nLegacy callers MUST honor this.\n")
-    (spec / "changed.md").write_text(
-        "# Changed\n\nOld rule MUST survive.\nNew readers MUST adapt.\n"
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Covered heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
     )
     rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    # Without scoping, all three live rules surface (stable + 2 from changed).
-    assert len(payload["gap_ids"]) == 3
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
 
 
-def test_since_version_invalid_non_integer(
+def test_coverage_entries_match_on_spec_root_spec_file_and_heading_together(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Invalid --since-version value (vXXX) → exit 2 with usage error."""
+    """One entry covers ONE file's heading, never every file's same-named one.
+
+    Two spec files carry the identical H2 heading text and only `scenarios.md`
+    is covered, so a match on heading alone — or on file-and-heading without
+    the root — reports no gap at all and the contracts.md heading goes
+    permanently unnoticed.
+    """
     monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(argv=["--since-version", "vXXX"])
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={
+            "contracts.md": "# Contracts\n\n## Shared heading\n",
+            "scenarios.md": "# Scenarios\n\n## Shared heading\n",
+        },
+    )
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "heading": "## Shared heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_SHARED_IN_CONTRACTS]
+    assert _GAP_SHARED_IN_SCENARIOS not in json.loads(captured.out)["gap_ids"]
+
+
+def test_an_entry_naming_another_spec_root_covers_nothing_here(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The root is part of the key, so a sibling tree's entry is not this one's."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION/templates/other",
+                "spec_file": "spec.md",
+                "heading": "## Absent heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+
+
+# ---------------------------------------------------------------
+# A defective entry is an uncovered heading AND a surfaced finding
+# ---------------------------------------------------------------
+
+
+def test_a_dangling_entry_is_surfaced_as_a_finding_naming_it_and_its_defect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A test that was renamed away leaves an entry nobody can read as evidence.
+
+    The gap alone would be a CLEAN ABSENCE — indistinguishable from a heading
+    that was never entered — so the entry and its defect are named too.
+    """
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert _GAP_DANGLING in json.loads(captured.out)["gap_ids"]
+    assert "dangling-test" in captured.err
+    assert "SPECIFICATION/spec.md" in captured.err
+    assert "## Dangling heading" in captured.err
+    assert "tests.integration.test_vanished.test_vanished_case" in captured.err
+
+
+def test_an_entry_that_states_no_test_value_is_a_gap_and_a_finding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An incomplete entry identifies its heading and claims nothing for it."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Absent heading",
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert "incomplete-entry" in captured.err
+    assert "## Absent heading" in captured.err
+
+
+def test_the_todo_sentinel_is_a_gap_and_carries_no_finding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`TODO` is the sanctioned debt row, not a defect — this is the discriminator.
+
+    Without it, a build that surfaced a finding for every uncovered heading
+    satisfies both cases above while burying the two real defects under this
+    repository's 128 `TODO` rows.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Todo heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Todo heading",
+                "test": "TODO",
+                "reason": "an integration-tier test is owed for this heading",
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_TODO]
+    assert captured.err == ""
+
+
+def test_a_heading_with_no_entry_at_all_carries_no_finding_of_its_own(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An absent entry is the ordinary state of an un-entered heading."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_coverage(project_root=tmp_path, entries=[])
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert captured.err == ""
+
+
+def test_findings_never_enter_the_machine_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Findings ride stderr so doctor's stdout read stays the one-key object."""
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert list(json.loads(captured.out)) == ["gap_ids"]
+    assert "dangling-test" not in captured.out
+
+
+def test_findings_are_surfaced_in_the_human_form_too(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _uncovered_fixture(project_root=tmp_path)
+    rc = main(argv=[])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "dangling-test" in captured.err
+
+
+# ---------------------------------------------------------------
+# An entry that identifies no live heading is a finding and never a gap
+# ---------------------------------------------------------------
+
+
+def test_an_entry_stating_no_heading_is_a_finding_and_produces_no_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The row identifies nothing, so there is no heading it could be a gap for.
+
+    The live heading beside it is the control: it still becomes a gap, which is
+    what tells "the unidentifiable row produced no gap" apart from "the scan
+    produced no gaps".
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[{"test": "TODO", "reason": "an integration-tier test is owed"}],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert "unidentifiable-entry" in captured.err
+
+
+def test_an_entry_naming_a_heading_the_live_tree_does_not_contain_is_a_finding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A heading that was renamed or deleted leaves a row pointing at nothing.
+
+    The row names an EXISTING test, so a build that only checked the test
+    would read it as proven coverage and say nothing — the row then sits in
+    the registry for ever, claiming a heading no longer there.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n"},
+    )
+    _write_existing_test_node(project_root=tmp_path)
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Ghost heading",
+                "test": _EXISTING_TEST_NODE,
+            }
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
+    assert "unidentifiable-entry" in captured.err
+    assert "## Ghost heading" in captured.err
+
+
+def test_both_unidentifiable_shapes_surface_one_finding_each(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One finding per row, and every live heading with no entry still a gap."""
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={"spec.md": "# Title\n\n## Absent heading\n\n## Todo heading\n"},
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {"test": "TODO", "reason": "an integration-tier test is owed"},
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Ghost heading",
+                "test": "TODO",
+                "reason": "an integration-tier test is owed",
+            },
+        ],
+    )
+    rc = main(argv=["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_ABSENT, _GAP_TODO])
+    assert captured.err.count("unidentifiable-entry") == 2
+
+
+# ---------------------------------------------------------------
+# --since-version validation
+# ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw", ["vXXX", "-3", "0"])
+def test_since_version_that_is_not_a_positive_integer_exits_two(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    raw: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_spec(root=tmp_path / "SPECIFICATION", files={"spec.md": "# T\n\nProse.\n"})
+    _write_coverage(project_root=tmp_path, entries=[])
+    rc = main(argv=["--since-version", raw])
     captured = capsys.readouterr()
     assert rc == 2
     assert "ERROR" in captured.err
     assert "--since-version" in captured.err
 
 
-def test_since_version_invalid_negative(
+def test_since_version_naming_an_absent_history_directory_exits_three(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Negative integer → exit 2 with usage error."""
     monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(argv=["--since-version", "-3"])
-    captured = capsys.readouterr()
-    assert rc == 2
-    assert "ERROR" in captured.err
-
-
-def test_since_version_invalid_zero(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Zero is not a positive integer → exit 2 with usage error."""
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(argv=["--since-version", "0"])
-    captured = capsys.readouterr()
-    assert rc == 2
-    assert "ERROR" in captured.err
-
-
-def test_since_version_nonexistent_history_dir(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Missing version dir → exit 3 with PreconditionError naming the path."""
-    monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    # Only v001 exists (created by _write_spec). v999 does not.
+    _write_spec(root=tmp_path / "SPECIFICATION", files={"spec.md": "# T\n\nProse.\n"})
+    _write_coverage(project_root=tmp_path, entries=[])
     rc = main(argv=["--since-version", "v999"])
     captured = capsys.readouterr()
     assert rc == 3
@@ -462,67 +661,154 @@ def test_since_version_nonexistent_history_dir(
     assert "v999" in captured.err
 
 
-def test_since_version_equals_latest_empty_diff(
+# ---------------------------------------------------------------
+# --since-version restricts the enumeration to the changed files
+# ---------------------------------------------------------------
+
+
+def _write_history_version(*, spec_root: Path, version: int, files: dict[str, str]) -> None:
+    version_dir = spec_root / "history" / f"v{version:03d}"
+    version_dir.mkdir(parents=True, exist_ok=True)
+    for name, content in files.items():
+        (version_dir / name).write_text(content)
+
+
+def _diffing_tree_fixture(*, project_root: Path) -> None:
+    """A tree where `contracts.md` changed since v080 and `spec.md` did not.
+
+    `contracts.md` KEEPS a heading that predates v080 and GAINS one, and also
+    drops one the snapshot carried — the three cases the flag must separate.
+    """
+    spec = project_root / "SPECIFICATION"
+    spec.mkdir(parents=True, exist_ok=True)
+    _write_history_version(
+        spec_root=spec,
+        version=80,
+        files={
+            "spec.md": "# Spec\n\n## Stable heading\n",
+            "contracts.md": "# Contracts\n\n## Old heading\n\n## Removed heading\n",
+        },
+    )
+    (spec / "spec.md").write_text("# Spec\n\n## Stable heading\n")
+    (spec / "contracts.md").write_text("# Contracts\n\n## Old heading\n\n## New heading\n")
+    _write_coverage(project_root=project_root, entries=[])
+
+
+def test_since_version_restricts_the_enumeration_to_the_files_that_differ(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--since-version v<N> where the live tree matches v<N> → empty gap-id set."""
+    """The unchanged file's heading drops out; the changed file's two stay.
+
+    The unchanged heading is the control: without it a build that ignored the
+    flag entirely and one that scoped correctly emit the same set.
+    """
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "v080"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW])
+    assert _GAP_SPEC_STABLE not in json.loads(captured.out)["gap_ids"]
+
+
+def test_a_changed_file_resurfaces_every_uncovered_live_heading_it_carries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The flag is NOT "headings added since vN", and the contract says so.
+
+    `## Old heading` predates v080 and was untouched by the edit, yet it
+    resurfaces because its FILE changed. A caller reading this output as a
+    diff of newly-introduced headings would be wrong about most of it.
+    """
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "v080"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert _GAP_CONTRACTS_OLD in json.loads(captured.out)["gap_ids"]
+
+
+def test_a_heading_the_diff_removed_is_not_a_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Only LIVE headings are considered: removed spec content is not owed a test."""
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "v080"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert _GAP_CONTRACTS_REMOVED not in json.loads(captured.out)["gap_ids"]
+
+
+def test_since_version_accepts_the_bare_integer_form(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json", "--since-version", "80"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW])
+
+
+def test_a_tree_identical_to_its_snapshot_yields_an_empty_gap_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """No file differs, so nothing is in scope — a real answer, not a degraded one."""
     monkeypatch.chdir(tmp_path)
     spec = tmp_path / "SPECIFICATION"
-    spec.mkdir()
-    files = {"spec.md": "# T\n\nReaders MUST cope.\nWriters MUST close.\n"}
+    spec.mkdir(parents=True)
+    files = {"spec.md": "# Spec\n\n## Stable heading\n"}
     _write_history_version(spec_root=spec, version=42, files=files)
-    # Live tree matches v042 byte-for-byte.
     for name, content in files.items():
         (spec / name).write_text(content)
+    _write_coverage(project_root=tmp_path, entries=[])
     rc = main(argv=["--json", "--since-version", "v042"])
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    assert payload["gap_ids"] == []
+    assert json.loads(captured.out)["gap_ids"] == []
 
 
-def test_since_version_skips_removed_in_diff(
+def test_omitting_since_version_scans_every_governed_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Rules removed by the diff are NOT gaps — only LIVE rules surface."""
+    """The control for every case above: unscoped, the stable heading is a gap."""
     monkeypatch.chdir(tmp_path)
-    spec = tmp_path / "SPECIFICATION"
-    spec.mkdir()
-    # v050: file has a rule that gets removed in the live spec.
-    _write_history_version(
-        spec_root=spec,
-        version=50,
-        files={"shrink.md": "# Shrink\n\nA: callers MUST quack.\nB: writers MUST close.\n"},
-    )
-    # Live tree: rule A removed, B retained.
-    (spec / "shrink.md").write_text("# Shrink\n\nB: writers MUST close.\n")
-    rc = main(argv=["--json", "--since-version", "v050"])
+    _diffing_tree_fixture(project_root=tmp_path)
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    # The file CHANGED, so it's in scope. Only the surviving rule
-    # (rule B) surfaces — rule A was removed.
-    assert len(payload["gap_ids"]) == 1
+    assert json.loads(captured.out)["gap_ids"] == sorted(
+        [_GAP_SPEC_STABLE, _GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW]
+    )
 
 
-def test_since_version_passes_through_spec_target(
+def test_since_version_composes_with_an_explicit_spec_target(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """--since-version composes with explicit --spec-target / --project-root."""
     project = tmp_path / "elsewhere"
     spec = project / "MySpec"
     spec.mkdir(parents=True)
     _write_history_version(
         spec_root=spec,
         version=10,
-        files={"spec.md": "# T\n\nOld rule MUST survive.\n"},
+        files={"contracts.md": "# Contracts\n\n## Old heading\n"},
     )
-    (spec / "spec.md").write_text("# T\n\nOld rule MUST survive.\nNew rule MUST land.\n")
+    (spec / "contracts.md").write_text("# Contracts\n\n## Old heading\n\n## New heading\n")
+    _write_coverage(project_root=project, entries=[])
     rc = main(
         argv=[
             "--project-root",
@@ -536,5 +822,4 @@ def test_since_version_passes_through_spec_target(
     )
     captured = capsys.readouterr()
     assert rc == 0
-    payload = json.loads(captured.out)
-    assert len(payload["gap_ids"]) == 2
+    assert json.loads(captured.out)["gap_ids"] == sorted([_GAP_CONTRACTS_OLD, _GAP_CONTRACTS_NEW])

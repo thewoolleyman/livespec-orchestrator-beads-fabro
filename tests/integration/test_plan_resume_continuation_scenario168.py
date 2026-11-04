@@ -571,7 +571,7 @@ def _assert_a_refused_replacement_pointer_continues_nothing(*, repo: Path) -> No
     _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
 
 
-def _assert_expired_and_unobservable_results_do_not_continue(*, repo: Path) -> None:
+def _assert_overdue_results_continue_and_unobservable_ones_do_not(*, repo: Path) -> None:
     for epic_id, budget in (
         (
             "bd-ib-deadline-expired",
@@ -590,10 +590,11 @@ def _assert_expired_and_unobservable_results_do_not_continue(*, repo: Path) -> N
             ruling=True,
             budget=budget,
         )
-        expired = resume_directive(config=_config(repo=repo), epic_id=epic_id, unattended=False)
-        assert not expired.ask
-        assert expired.next_action is None
-        assert "expired" in expired.reason
+        overdue = resume_directive(config=_config(repo=repo), epic_id=epic_id, unattended=False)
+        # v286 deleted plan obligation expiry: an overdue budget under a current
+        # ruling is taken exactly as one within budget.
+        assert not overdue.ask
+        assert overdue.next_action == "impl:bd-ib-child"
 
     _seed_epic(
         repo=repo,
@@ -646,7 +647,7 @@ def test_scenario168_current_ruling_takes_all_six_typed_actions_and_preserves_pi
     _assert_disposed_plan_advances_to_proof_review_then_archive(repo=repo)
     _assert_derived_step_still_needs_a_ruling(repo=repo)
     _assert_a_refused_replacement_pointer_continues_nothing(repo=repo)
-    _assert_expired_and_unobservable_results_do_not_continue(repo=repo)
+    _assert_overdue_results_continue_and_unobservable_ones_do_not(repo=repo)
     _assert_unknown_kind_asks(repo=repo)
 
 

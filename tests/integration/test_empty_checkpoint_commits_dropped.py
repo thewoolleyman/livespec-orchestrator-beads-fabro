@@ -59,7 +59,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_progra
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
-    plugin_cache_gate_script,
+    plugin_cache_gate_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
@@ -69,12 +69,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     PUBLISH_HEAD_LABEL,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
+
+from tests.prepare_step_support import runnable_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GRAPH_PATH = (
@@ -281,11 +287,17 @@ def _run_publish_draft(
     no helper, so every case takes the inline push fallback identically here and
     on a CI runner.
     """
+    plugins_root = world.clone.parent / "plugins"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     env = {
         "PATH": f"{world.forge_bin}:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(world.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
     }
     return subprocess.run(
         ["bash", "-c", _node_script(node="publish_draft", check_suite="true")],
@@ -413,6 +425,14 @@ def _materialized_push_program(*, root: Path) -> Path:
     """
     plugins_root = root / "plugins"
     plugins_root.mkdir(parents=True, exist_ok=True)
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and a refreshing stage that cannot resolve it
+    # fails closed before the repository-declared gate -- so a harness omitting
+    # it would exercise that refusal on every case rather than the route under
+    # test.
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = program.write_text(publication_push_program_source(), encoding="utf-8")
     program.chmod(0o700)
@@ -469,6 +489,23 @@ def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
     move the ref to the same sha, so nothing in the final refs tells them apart;
     with no helper materialized, a stage that tried to lease fails closed before
     pushing anything.
+
+    AND THE ADVANCED DEFAULT IS ASSERTED CONTAINED, which is the control the
+    drop above cannot supply and the one this case was missing. The merge arm
+    exists to bring the moved default branch IN, and every assertion about
+    dropped empties, a preserved tip and a reviewer's fix is satisfied just as
+    well by a stage that merged the wrong target: the drop ran, the published
+    tip is still an ancestor, the fix is still in the tree, the push still
+    reports `LIVESPEC_PUBLISH_DRAFT_REFRESH` success, and the pull request
+    quietly stops tracking master. Measured on the bytes this case guards: the
+    drop rebase assigned its target to the same `refresh_target` the enclosing
+    script owns — POSIX sh gives a function no scope — so the merge that follows
+    it received the already-published tip, an ancestor of HEAD, and merged
+    nothing. `base_before` equalled `base_after` and the advanced default was
+    absent from the republished head, at exit 0. Reading containment off git
+    rather than off the base pair is what keeps the assertion about the
+    published object: a stage that moved its own base without pushing would
+    satisfy a base-pair comparison.
     """
     world = _petri_run(root=tmp_path)
     _ = _advance_default(world=world)
@@ -488,7 +525,7 @@ def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
     assert (
         len(_commits_that_started_empty(world=world, base=published_first, head="HEAD")) == 2
     ), "the fixture carries no empty commits above the published tip"
-    _ = _advance_default(world=world, path="second.txt", text="moved again\n")
+    advanced = _advance_default(world=world, path="second.txt", text="moved again\n")
 
     result = _run_publish_draft(world=world)
 
@@ -500,6 +537,9 @@ def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
     assert _ancestor_of(
         world=world, earlier=published_first, later=republished
     ), "the already-published tip was rewritten rather than preserved"
+    assert _ancestor_of(
+        world=world, earlier=advanced, later=republished
+    ), "the merge arm did not bring the advanced default branch into the republished head"
     assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{republished}\n"
     assert (
         _git("show", f"{republished}:{_OWNED_FILE}", cwd=world.clone).stdout
@@ -708,7 +748,9 @@ def _refresh_plugins_root(*, root: Path) -> Path:
     """
     plugins_root = _materialized_push_program(root=root)
     gate_script = root / "install-plugin-gate.sh"
-    _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
+    _ = gate_script.write_text(
+        runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8"
+    )
     _ = subprocess.run(
         ["bash", str(gate_script)],
         check=True,

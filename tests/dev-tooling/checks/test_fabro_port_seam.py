@@ -47,20 +47,10 @@ _SLUG = "check-fabro-port-seam"
 # every private module's violations while printing a perfectly clean scan.
 _NON_FAMILY_ANCHOR = "commands/_dispatcher_engine.py"
 
-# The routed form each converted call site carries, and the direct form it
-# carried on `origin/master`. Every pair is a literal re-inline, not a
+# The routed form the converted server call site carries, and the direct form
+# it carried on `origin/master`. The pair is a literal re-inline, not a
 # paraphrase, so a mutation that matched nothing leaves the file byte-identical
 # and is caught by the read-back rather than passing as a clean scan.
-_ROUTED_DUMP = """        dumped = port.dump(
-            run_id=run_id,
-            output_dir=output_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
-        ).command"""
-_INLINED_DUMP = """        dumped = command_runner.run(
-            argv=[fabro_bin, "dump", run_id, "--server", server_url, "-o", str(output_dir)],
-            cwd=repo,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
-        )"""
 _ROUTED_SYSTEM_INFO = """    result = FabroHttpPort(
         target=FabroTarget(server_url=factory.server, dev_token=factory.dev_token),
         transport=transport,
@@ -267,26 +257,6 @@ def test_matcher_control_fails_the_build_when_the_fixture_is_missing(
 # ---------------------------------------------------------------------------
 
 
-def test_a_reinlined_fabro_dump_argv_is_caught(
-    check: ModuleType,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    package = _seed_package(repo_root=tmp_path, relpaths=check.DISCOVERY_ANCHORS)
-    _ = _seed_fixture(repo_root=tmp_path, check=check)
-    target = "commands/_dispatcher_preserve_reference.py"
-
-    _reinline(path=package / target, routed=_ROUTED_DUMP, inlined=_INLINED_DUMP)
-
-    findings = check.package_findings(repo_root=tmp_path)
-    assert [(finding.relpath, finding.form) for finding in findings] == [
-        (target, check.FORM_BINARY_ARGV)
-    ]
-    assert check.control_failures(repo_root=tmp_path) == []
-    monkeypatch.chdir(tmp_path)
-    assert check.main() == 1
-
-
 def test_a_reinlined_transport_request_and_api_path_are_both_caught(
     check: ModuleType,
     tmp_path: Path,
@@ -313,12 +283,9 @@ def test_the_unmutated_seed_of_the_same_call_sites_is_clean(
 ) -> None:
     # The negative controls' own control: the identical seed, unmutated, must
     # pass — otherwise neither finding above says anything about the edit.
-    package = _seed_package(repo_root=tmp_path, relpaths=check.DISCOVERY_ANCHORS)
+    _ = _seed_package(repo_root=tmp_path, relpaths=check.DISCOVERY_ANCHORS)
     _ = _seed_fixture(repo_root=tmp_path, check=check)
 
-    assert _ROUTED_DUMP in (package / "commands" / "_dispatcher_preserve_reference.py").read_text(
-        encoding="utf-8"
-    )
     assert check.package_findings(repo_root=tmp_path) == []
 
 

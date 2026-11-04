@@ -598,7 +598,11 @@ def test_every_criteria_gate_resolves_through_the_one_primitive() -> None:
         "groom.py",
     )
     repository_aware_gates = (
-        "_drive_valves.py",
+        # The `approve` valve, which moved out of `_drive_valves` when the
+        # pre-admission Definition-of-Done judgement gave it a model call.
+        # Naming the router here would assert the gate is still in the module
+        # whose only job is routing.
+        "_drive_approve_valve.py",
         # BOTH dispatch paths, as ONE entry. The criteria wall used to be
         # duplicated per command module; it now lives in the shared
         # pre-dispatch wall `_dispatcher_run_commands` and

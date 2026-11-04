@@ -22,17 +22,23 @@ from typing import TypeVar
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _config,
+    _dispatcher_commit_runner,
     _dispatcher_git_credential_helper,
     _dispatcher_harness_shell_policy,
     _dispatcher_hook_limit_program,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
+    _dispatcher_pyright_cache,
+    _dispatcher_review_guard,
     _dispatcher_tmux_socket_root,
+    _factory_presence,
 )
 from livespec_orchestrator_beads_fabro.commands._config import (
-    resolve_credential_wrapper,
     resolve_fabro_bin,
     resolve_store_config,
+)
+from livespec_orchestrator_beads_fabro.commands._config_credential_wrapper import (
+    resolve_credential_wrapper,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     SandboxImageSource,
@@ -356,10 +362,12 @@ def test_non_object_root_names_the_shape_not_a_missing_prefix(
     "call",
     [
         pytest.param(
-            lambda cwd: _config.has_fabro_factory(cwd=cwd, factory="default"),
+            lambda cwd: _factory_presence.has_fabro_factory(cwd=cwd, factory="default"),
             id="has_fabro_factory",
         ),
-        pytest.param(lambda cwd: _config.has_fabro_factories(cwd=cwd), id="has_fabro_factories"),
+        pytest.param(
+            lambda cwd: _factory_presence.has_fabro_factories(cwd=cwd), id="has_fabro_factories"
+        ),
         pytest.param(
             lambda cwd: _config.resolve_fabro_factory(cwd=cwd), id="resolve_fabro_factory"
         ),
@@ -498,6 +506,40 @@ def test_default_fabro_bin_returns_concrete_home_path_when_unresolvable(
     assert resolve_fabro_bin(cwd=tmp_path) == str(tmp_path / ".fabro" / "bin" / "fabro")
 
 
+_REAL_IS_FILE = Path.is_file
+
+
+def _raise_permission_error(self: Path) -> bool:
+    """Stand in for `Path.is_file` on an unreadable `$HOME` (EACCES escapes pathlib)."""
+    if self.name == "fabro":
+        raise PermissionError(13, "Permission denied", str(self))
+    return _REAL_IS_FILE(self)
+
+
+def test_default_fabro_bin_unreadable_home_falls_back_to_path_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OSError probing the home candidate degrades to the PATH lookup, not a crash."""
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(Path, "is_file", _raise_permission_error)
+    monkeypatch.setattr(_CONFIG_SHUTIL_WHICH, lambda _name: "/usr/local/bin/fabro")
+    assert resolve_fabro_bin(cwd=tmp_path) == "/usr/local/bin/fabro"
+
+
+def test_default_fabro_bin_unreadable_home_returns_concrete_home_path_when_no_path_hit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OSError probing the home candidate with no PATH hit still yields the home path."""
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(Path, "is_file", _raise_permission_error)
+    monkeypatch.setattr(_CONFIG_SHUTIL_WHICH, lambda _name: None)
+    assert resolve_fabro_bin(cwd=tmp_path) == str(tmp_path / ".fabro" / "bin" / "fabro")
+
+
 def test_resolve_fabro_bin_uses_dispatcher_config_key(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -608,16 +650,35 @@ def test_resolve_fabro_factory_defaults_to_configured_default_entry(
     assert target.dev_token is None
 
 
-def test_committed_config_sets_hp_default_factory(
+def test_committed_config_resolves_its_default_factory_through_the_registry(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """This repo's committed config selects the hp Fabro host by default."""
+    """This repo's committed default is `petri` (bd-ib-iud52v), whose address is host state.
+
+    The registry is pointed at a FIXTURE file rather than left to the host
+    default, for two reasons that pull the same way. It makes the test
+    hermetic — a developer's machine, the factory sandbox and CI each carry a
+    different `/etc/livespec/fabro-factories.json`, or none — and it makes the
+    address that resolves one this test WROTE, which is the positive control
+    the assertion needs: the committed entry declares no address at all, so a
+    server equal to the fixture's can only have come through the registry.
+    """
     monkeypatch.delenv("LIVESPEC_FABRO_FACTORY", raising=False)
-    monkeypatch.delenv("FABRO_DEV_TOKEN__hp", raising=False)
+    monkeypatch.delenv("FABRO_DEV_TOKEN__petri", raising=False)
+    registry = tmp_path / "fabro-factories.json"
+    _ = registry.write_text(
+        json.dumps({"petri": {"server": "https://petri.example.test:32276"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LIVESPEC_FABRO_FACTORY_REGISTRY", str(registry))
     repo_root = Path(__file__).parents[3]
+
     target = _config.resolve_fabro_factory(cwd=repo_root)
-    assert target.name == "hp"
-    assert target.server == "https://hp-xubuntu.perch-rudd.ts.net:32276"
+
+    assert target.name == "petri"
+    assert target.registry.declared is True
+    assert target.server == "https://petri.example.test:32276"
     assert target.dev_token is None
 
 
@@ -776,6 +837,9 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         # graph path these cases name does not exist on disk, so the limit is
         # WITHHELD and only the observer is materialized.
         + _dispatcher_hook_limit_program.hook_limit_prepare_steps_block(limit_seconds=None)
+        + _dispatcher_commit_runner.commit_runner_prepare_steps_block()
+        + _dispatcher_review_guard.review_guard_prepare_steps_block()
+        + _dispatcher_pyright_cache.pyright_cache_prepare_steps_block()
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + "[environments.livespec-ci.env]\n"
@@ -817,13 +881,15 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     # The committed `just bootstrap` step, the tmux socket root's
     # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file's
     # exclude-then-write PAIR (bd-ib-rv2jk4), the git credential helper
-    # (bd-ib-52zt3o), the plugin-cache gate and the FOUR publication helpers
+    # (bd-ib-52zt3o), the plugin-cache gate and the SIX publication helpers
     # the gate's block materializes beside it (v121: the publication-head
     # reader and the exact-head push program; v138: the carry-forward
-    # decision; v156: the per-assertion proof grade, bd-ib-kcq6pu), plus the
+    # decision; v156: the per-assertion proof grade, bd-ib-kcq6pu;
+    # bd-ib-ze7xxj: generated-record-file resolution and bd-ib-davaxq's
+    # record-file merger), plus the
     # repository-hook limit observer (bd-ib-xi63mq) — the hostile value
     # smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 12
+    assert rendered.count("[[run.prepare.steps]]") == 17
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

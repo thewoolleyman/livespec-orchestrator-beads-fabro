@@ -86,7 +86,7 @@ def _description(*, assertion: str, references: str) -> str:
     return f"## Definition of Done\n\n- {assertion}\n\nReferences: {references}\n"
 
 
-def _seed_issue(*, issue_id: str, description: str) -> None:
+def _seed_issue(*, issue_id: str, description: str, labels: list[str] | None = None) -> None:
     client = make_beads_client(config=_config())
     _ = client.create_issue(
         draft=IssueDraft(
@@ -97,7 +97,7 @@ def _seed_issue(*, issue_id: str, description: str) -> None:
             priority=2,
             assignee=None,
             created_at="2026-10-04T00:00:00Z",
-            labels=["admission:auto"],
+            labels=["admission:auto"] if labels is None else labels,
             metadata={},
             spec_id=None,
             parent_id=None,
@@ -132,6 +132,47 @@ def _comments(*, issue_id: str) -> tuple[str, ...]:
     return tuple(
         comment.text for comment in read_work_item_comments(path=_config(), work_item_id=issue_id)
     )
+
+
+def _finding_comments(*, issue_id: str) -> tuple[str, ...]:
+    """Only the host-side WALL's finding comments, which is what these cases grade.
+
+    The pre-admission judgement records its own verdict on the same sidecar, so
+    an unfiltered read here would grade the wall against a record a different
+    clause writes.
+    """
+    return tuple(
+        body
+        for body in _comments(issue_id=issue_id)
+        if body.startswith("definition-of-done finding")
+    )
+
+
+def test_intake_holds_an_out_of_enum_factory_safety_label_with_a_named_finding(
+    tmp_path: Path,
+) -> None:
+    """A legacy raw label cannot be routed through auto-admission to ready."""
+    issue_id = "bd-legacy-factory-safety"
+    legacy_value = "cross-repo-dev-tooling"
+    _seed_issue(
+        issue_id=issue_id,
+        description=_description(
+            assertion="The item is autonomously verifiable.",
+            references=_RESOLVABLE_HEADING,
+        ),
+        labels=["admission:auto", f"factory-safety:{legacy_value}"],
+    )
+
+    verdict = _route(issue_id=issue_id, repo=_repo(tmp_path=tmp_path))
+
+    assert verdict == "pending-approval"
+    assert _status(issue_id=issue_id) == "pending-approval"
+    finding = "\n".join(_finding_comments(issue_id=issue_id))
+    assert legacy_value in finding
+    assert "needs-host-secrets" in finding
+    assert "mutates-host-machinery" in finding
+    assert "needs-privileged-host" in finding
+    assert "needs-host-only-input" in finding
 
 
 def test_evaluate_routes_epic_to_backlog() -> None:
@@ -176,10 +217,17 @@ def test_a_mechanical_finding_withholds_ready_and_is_recorded_as_a_ledger_commen
 
     assert verdict == "pending-approval"
     assert _status(issue_id="li-mechanical") == "pending-approval"
-    comments = _comments(issue_id="li-mechanical")
-    assert len(comments) == 1
-    assert comments[0].startswith("definition-of-done finding (mechanical):")
-    assert "does not resolve" in comments[0]
+    # The FINDING comments are selected through the existing helper rather than
+    # indexed off an unfiltered read, for the reason that helper already gives:
+    # another clause records its own verdict on the same sidecar. The
+    # spec-change-tier classification is now a third such writer — it runs at
+    # this same filing cadence point and records its outcome (here a
+    # did-not-run, since this fixture installs no judge) — so a count of every
+    # comment on the item grades the wall against records other clauses write.
+    findings = _finding_comments(issue_id="li-mechanical")
+    assert len(findings) == 1
+    assert findings[0].startswith("definition-of-done finding (mechanical):")
+    assert "does not resolve" in findings[0]
 
 
 def test_an_advisory_finding_is_recorded_and_does_not_withhold_ready(tmp_path: Path) -> None:
@@ -196,14 +244,21 @@ def test_an_advisory_finding_is_recorded_and_does_not_withhold_ready(tmp_path: P
 
     assert verdict == "ready"
     assert _status(issue_id="li-advisory") == "ready"
-    comments = _comments(issue_id="li-advisory")
-    assert len(comments) == 1
-    assert comments[0].startswith("definition-of-done finding (advisory):")
-    assert "regression tests" in comments[0]
+    findings = _finding_comments(issue_id="li-advisory")
+    assert len(findings) == 1
+    assert findings[0].startswith("definition-of-done finding (advisory):")
+    assert "regression tests" in findings[0]
 
 
 def test_a_conforming_filing_reaches_ready_and_records_no_comment(tmp_path: Path) -> None:
-    """The control for both cases above: a clean item is neither held nor annotated."""
+    """The control for both cases above: a clean item is neither held nor annotated.
+
+    The wall's own findings are what this asserts the absence of. The
+    pre-admission Definition-of-Done judgement writes its own separate record
+    when it cannot run — there is no judge executable in this tier — and that
+    record is the subject of `test_dod_judgement_pre_admission_scenario174`,
+    not of the wall's finding set.
+    """
     _seed_issue(
         issue_id="li-clean",
         description=_description(
@@ -215,7 +270,7 @@ def test_a_conforming_filing_reaches_ready_and_records_no_comment(tmp_path: Path
     verdict = _route(issue_id="li-clean", repo=_repo(tmp_path=tmp_path))
 
     assert verdict == "ready"
-    assert _comments(issue_id="li-clean") == ()
+    assert _finding_comments(issue_id="li-clean") == ()
 
 
 def test_an_item_with_no_section_is_held_out_of_ready_by_the_absent_section_finding(
@@ -232,9 +287,9 @@ def test_an_item_with_no_section_is_held_out_of_ready_by_the_absent_section_find
     verdict = _route(issue_id="li-sectionless", repo=_repo(tmp_path=tmp_path))
 
     assert verdict == "pending-approval"
-    comments = _comments(issue_id="li-sectionless")
-    assert len(comments) == 1
-    assert "carries no Definition of Done section" in comments[0]
+    findings = _finding_comments(issue_id="li-sectionless")
+    assert len(findings) == 1
+    assert "carries no Definition of Done section" in findings[0]
 
 
 def test_a_verdict_reached_without_a_repository_root_grades_nothing() -> None:

@@ -172,3 +172,21 @@ def test_a_payload_whose_event_kind_is_not_text_fails_closed() -> None:
         parse_payload(text=json.dumps({key: whole[key] for key in whole if key != "event_kind"}))
         is None
     )
+
+
+def test_a_replaced_result_round_trips_and_a_malformed_one_fails_closed() -> None:
+    """A replacement records the identity it replaced; old payloads stay readable."""
+    payload = _payload(event_kind="replacement", replaced_result="repo|item_status|bd-ib-old|done")
+    whole = json.loads(render_payload(payload=payload))
+    legacy = {key: value for key, value in whole.items() if key != "replaced_result"}
+    legacy_with_ruling = {
+        **legacy,
+        "continuation_ruling_by": "Chad Woolley",
+        "continuation_ruling_recorded_at": "2026-10-15T08:00:00Z",
+    }
+
+    assert parse_payload(text=render_payload(payload=payload)) == payload
+    assert parse_payload(text=json.dumps(legacy)) == _payload(event_kind="replacement")
+    assert parse_payload(text=json.dumps(legacy_with_ruling)) == _payload(event_kind="replacement")
+    assert parse_payload(text=json.dumps({**whole, "replaced_result": 7})) is None
+    assert parse_payload(text=json.dumps({**whole, "replaced_result": " "})) is None

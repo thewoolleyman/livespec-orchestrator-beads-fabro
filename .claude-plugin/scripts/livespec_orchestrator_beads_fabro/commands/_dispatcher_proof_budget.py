@@ -18,7 +18,7 @@ the wrong number arrives stamped with the forge's authority.
 
 Measured against live GitHub on 2026-10-07, bracketed to a single byte, and
 written up with its controls in
-`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`:
+`plan/archive/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`:
 the enforced issue-comment ceiling is **262144 UTF-8 bytes**, four times the
 advertised figure. Do not "correct" the constant below back toward 65536 on the
 strength of the forge's message or of upstream documentation; re-measure instead,

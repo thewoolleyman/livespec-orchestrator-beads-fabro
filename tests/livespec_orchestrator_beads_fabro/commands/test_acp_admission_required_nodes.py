@@ -206,8 +206,8 @@ def test_the_committed_graph_requires_every_reachable_acp_node() -> None:
     }
 
 
-def test_derive_success_critical_still_returns_the_dominator_set() -> None:
-    """The paired control: the wider set did not displace the narrower one."""
+def test_derive_success_critical_excludes_the_optional_proof_cycle() -> None:
+    """A merged publication reaches verification without a fresh proof cycle."""
     module = _module(name="_acp_success_critical")
     graph = _graph(text=_WORKFLOW_GRAPH.read_text(encoding="utf-8"))
     critical = module.derive_success_critical(graph=graph)
@@ -215,9 +215,6 @@ def test_derive_success_critical_still_returns_the_dominator_set() -> None:
     assert set(critical.nodes) == {
         "dod_gate",
         "implement",
-        "proof_capture",
-        "proof_verify",
-        "review",
     }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"

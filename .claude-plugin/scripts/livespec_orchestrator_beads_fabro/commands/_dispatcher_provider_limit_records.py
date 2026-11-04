@@ -43,9 +43,14 @@ of leaving a reader to infer the posture from absent fields.
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from livespec_orchestrator_beads_fabro.commands._acp_factory_hold_records import (
     AUDIT_REFERENCE_KEY,
     FACTORY_EVIDENCE_KIND,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
+    AcpAvailabilityFailure,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_records import hold_observation_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
@@ -54,6 +59,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_class
 
 __all__: list[str] = [
     "PROVIDER_LIMIT_RELEASE_STAGE",
+    "HoldEvidence",
     "provider_limit_hold_record",
     "provider_limit_release_record",
 ]
@@ -63,6 +69,30 @@ __all__: list[str] = [
 # and the name the clause itself uses, because the "released for recovery"
 # paragraph keys recovery routing on finding this very stage.
 PROVIDER_LIMIT_RELEASE_STAGE = "provider-limit-release"
+
+
+class HoldEvidence(Protocol):
+    """What a terminal-derived hold needs of the attempt it is derived from.
+
+    Both a release and a reclassified turn satisfy it, so one record builder
+    serves a hold minted by a release and a hold minted by a turn that ended
+    nothing -- which is what lets the two derive the identical observation id.
+    """
+
+    @property
+    def matched(self) -> AcpAvailabilityFailure | None:
+        """The typed verdict the hold is scoped by, or `None` on the legacy posture."""
+        ...
+
+    @property
+    def node_attempt(self) -> str:
+        """The failing node attempt."""
+        ...
+
+    @property
+    def release_key(self) -> str:
+        """The `factory:run:node attempt` triple the hold's evidence id is."""
+        ...
 
 
 def provider_limit_release_record(
@@ -83,6 +113,7 @@ def provider_limit_release_record(
         "run_id": release.run_id,
         "factory": release.factory,
         "node_attempt": release.node_attempt,
+        "source": release.source,
         "cause": None if matched is None else matched.cause,
         "scope": None if matched is None else matched.scope,
         "hold_key": None if matched is None else matched.hold_key,
@@ -95,7 +126,7 @@ def provider_limit_release_record(
 
 
 def provider_limit_hold_record(
-    *, release: ProviderLimitRelease, work_item_id: str, occurred_at: str
+    *, release: HoldEvidence, work_item_id: str, occurred_at: str
 ) -> dict[str, object] | str | None:
     """The hold this release observed, a refusal naming what is wrong, or `None`.
 

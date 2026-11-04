@@ -27,6 +27,56 @@ typed into, and later messages to the new session go through `SendMessage`. The
 launch-argument form has not yet been re-measured through `herdr agent start`, so confirm
 the session reached the plan picker before leaving it.
 
+Measured 2026-10-20: `herdr agent start` returned
+`{"error":{"code":"timeout","message":"timed out waiting for agent startup"}}` after its
+240-second wait, but the plan session had started and was already working. A startup
+timeout is therefore not a failed launch. Before concluding anything, read the pane with
+`herdr pane read <pane-id> --lines 25`.
+
+## Placing a tab: herdr CAN move tabs, through its socket API
+
+**Do not tell the maintainer that herdr cannot move or place a tab.** Two sessions have
+said so, and the maintainer had to correct it. The confusion has a specific cause:
+- `herdr tab create` always APPENDS the new tab at the END of the workspace. It has no
+  position option.
+- The `herdr tab` command-line wrapper only offers `list`, `create`, `get`, `focus`,
+  `rename` and `close`. It has no `move` subcommand.
+- `herdr --skill` mentions `pane move` but never `tab move`.
+
+The SOCKET API has a `tab.move` method, with params `{"tab_id": <id>, "insert_index": <n>}`.
+`insert_index` is the 0-based position in the workspace's tab order, as `herdr tab list`
+returns it. To place a new tab immediately to the RIGHT of your own:
+- read your own position (`HERDR_TAB_ID`) in `herdr tab list --workspace "$HERDR_WORKSPACE_ID"`;
+- move the new tab to that index plus one.
+
+Measured 2026-10-20: `insert_index: 1` moved tab `w2H:tW` from the end to directly right of
+`w2H:t2`, which was at index 0. The response is the reordered tab list.
+
+```bash
+python3 - <<'PY'
+import json, os, socket
+s = socket.socket(socket.AF_UNIX); s.connect(os.environ["HERDR_SOCKET_PATH"])
+s.sendall((json.dumps({"id": "move-tab", "method": "tab.move",
+    "params": {"tab_id": "<new-tab-id>", "insert_index": <your-index-plus-one>}}) + "\n").encode())
+s.settimeout(10); buf = b""
+while b"\n" not in buf:
+    chunk = s.recv(65536)
+    if not chunk: break
+    buf += chunk
+print(buf.decode())
+PY
+```
+
+The general lesson: a command-line wrapper is not the whole API. Before reporting that herdr
+"cannot" do something, check the full method list:
+
+```bash
+herdr api schema --json | grep -o '"tab\.[a-z_]*"' | sort -u
+```
+
+Swap `tab` for `pane`, `workspace` or `agent` to check those. The CLI's subcommand list is an
+instrument that cannot show socket-only methods, so an absence there is not evidence.
+
 Three rules from that run:
 
 1. **A herdr agent name must match `[a-z][a-z0-9_-]{0,31}`**, so a plan slug

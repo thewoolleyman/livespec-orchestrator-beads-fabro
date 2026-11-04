@@ -98,7 +98,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     DEFAULT_SANDBOX_GH_REFRESH_ROOT,
-    MAX_PREPARE_STEP_BYTES,
     SANDBOX_GH_REFRESH_ROOT_ENV_VAR,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_install_recipe import (
@@ -109,7 +108,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
     WatchedFabroLauncher,
-    _decode,  # pyright: ignore[reportPrivateUsage]
     utc_now_iso,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_checks import run_janitor_checks
@@ -117,6 +115,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import
     LedgerFinding,
     run_ledger_checks,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import workflow_payload_dir
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -146,6 +145,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import (
     release_pre_run_claim_if_needed,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    MAX_PAYLOAD_VALUE_BYTES,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
     ReviewGateTelemetry,
@@ -154,6 +156,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     github_token_supplier,
     post_verdict_runner,
+)
+
+# `_decode` stayed PRIVATE when the production runner moved to its own leaf
+# module to break an import cycle, so it is reached where it is defined rather
+# than through the facade that re-exports the runner beside it.
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
+    _decode,  # pyright: ignore[reportPrivateUsage]
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
@@ -175,6 +184,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_failure_detail_from_payload,
     fabro_status_kind_from_payload,
 )
+from livespec_orchestrator_beads_fabro.commands._heading_gaps import live_headings
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     default_node_timeouts,
     derive_fabro_timeout_seconds,
@@ -189,7 +199,6 @@ from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
     ATTRIBUTE_ALLOWLIST,
     is_allowed_attr,
 )
-from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_rules
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.store import (
@@ -201,6 +210,8 @@ from livespec_orchestrator_beads_fabro.store import (
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.cross_repo.types import CrossRepoManifest
 from livespec_runtime.github_auth.errors import GithubAppAuthError
+
+from tests.prepare_step_support import runnable_script, steps_in
 
 _GITHUB_APP_ENV_KEYS = (
     "GITHUB_APP_ID",
@@ -222,6 +233,16 @@ def test_dispatcher_plan_decomposition_contract() -> None:
     assert (base / "_dispatcher_fabro_argv.py").is_file()
     assert (base / "_dispatcher_run_status.py").is_file()
     assert (base / "_dispatcher_overlay.py").is_file()
+
+
+def test_workflow_payload_directory_encodes_dotted_work_item_ids_injectively() -> None:
+    """Dotted Beads child ids need dot-free, collision-free Fabro directories."""
+    dotted = workflow_payload_dir(work_item_id="bd-ib-abc123.2")
+    hyphenated = workflow_payload_dir(work_item_id="bd-ib-abc123-2")
+
+    assert "." not in dotted.name
+    assert dotted.name == "fabro-workflow-62642d69622d6162633132332e32"
+    assert dotted != hyphenated
 
     from livespec_orchestrator_beads_fabro.commands import (
         _dispatcher_fabro_argv,
@@ -504,6 +525,7 @@ class _FakeRunner:
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
     timeouts: list[float] = field(default_factory=list)
     envs: list[dict[str, str] | None] = field(default_factory=list)
+    reject_status_rollup: bool = False
 
     def run(
         self,
@@ -519,6 +541,12 @@ class _FakeRunner:
         self.calls.append((argv, cwd))
         self.timeouts.append(timeout_seconds)
         self.envs.append(env)
+        if (
+            self.reject_status_rollup
+            and argv[:3] == ["gh", "pr", "view"]
+            and "statusCheckRollup" in argv[-1]
+        ):
+            return _err(stderr="GraphQL: Resource not accessible by integration")
         return self.queue.pop(0)
 
 
@@ -854,7 +882,7 @@ def _revision(*, decision: str) -> str:
 
 
 def _spec_tree(*, tmp_path: Path) -> Path:
-    """Build a SPECIFICATION tree with one live MUST rule + a rich history walk."""
+    """Build a SPECIFICATION tree with one live H2 heading + a rich history walk."""
     spec = tmp_path / "SPECIFICATION"
     v1 = spec / "history" / "v001" / "proposed_changes"
     v1.mkdir(parents=True)
@@ -979,7 +1007,12 @@ def test_spec_checks_flag_stalled_epics() -> None:
         ),
         _item(id="epic-rolling", type="epic", status="active", depends_on=("dep-1",)),
     ]
-    findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
+    findings = run_spec_checks(
+        items=items,
+        spec_root=Path("/nonexistent"),
+        project_root=Path("/nonexistent"),
+        manifest=_manifest(),
+    )
     stalled = [finding for finding in findings if finding.check == "no-stalled-epic"]
     assert [(finding.item_id, finding.severity) for finding in stalled] == [
         ("epic-rolling", "fail"),
@@ -1006,12 +1039,22 @@ def test_spec_checks_epic_not_stalled_when_any_dep_unresolved_or_open() -> None:
         _item(id="epic-closed", type="epic", status="done", depends_on=("dep-closed",)),
         _item(id="task-done-deps", depends_on=("dep-closed",)),
     ]
-    findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
+    findings = run_spec_checks(
+        items=items,
+        spec_root=Path("/nonexistent"),
+        project_root=Path("/nonexistent"),
+        manifest=_manifest(),
+    )
     assert [finding for finding in findings if finding.check == "no-stalled-epic"] == []
 
 
 def test_spec_checks_skip_spec_tree_checks_without_spec_root(tmp_path: Path) -> None:
-    findings = run_spec_checks(items=[], spec_root=tmp_path / "missing", manifest=_manifest())
+    findings = run_spec_checks(
+        items=[],
+        spec_root=tmp_path / "missing",
+        project_root=tmp_path,
+        manifest=_manifest(),
+    )
     assert [(finding.check, finding.severity) for finding in findings] == [
         ("no-stale-gap-tied", "skipped"),
         ("unresolved-spec-commitment", "skipped"),
@@ -1021,7 +1064,7 @@ def test_spec_checks_skip_spec_tree_checks_without_spec_root(tmp_path: Path) -> 
 
 def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
     spec = _spec_tree(tmp_path=tmp_path)
-    fresh_gap = detect_rules(spec_root=spec)[0].gap_id
+    fresh_gap = live_headings(spec_root=spec, project_root=tmp_path)[0].gap_id
     items = [
         _item(id="g-fresh", origin="gap-tied", gap_id=fresh_gap),
         _item(id="g-stale", origin="gap-tied", gap_id="gap-gone1234", status="active"),
@@ -1029,7 +1072,9 @@ def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
         _item(id="g-none", origin="gap-tied", gap_id=None),
         _item(id="f-free", gap_id="gap-gone1234"),
     ]
-    findings = run_spec_checks(items=items, spec_root=spec, manifest=_manifest())
+    findings = run_spec_checks(
+        items=items, spec_root=spec, project_root=tmp_path, manifest=_manifest()
+    )
     stale = [finding for finding in findings if finding.check == "no-stale-gap-tied"]
     assert [(finding.item_id, finding.severity) for finding in stale] == [("g-stale", "warn")]
     assert "gap-gone1234" in stale[0].message
@@ -1038,7 +1083,9 @@ def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
 
 def test_spec_checks_no_gap_findings_without_open_gap_tied_items(tmp_path: Path) -> None:
     spec = _spec_tree(tmp_path=tmp_path)
-    findings = run_spec_checks(items=[_item()], spec_root=spec, manifest=_manifest())
+    findings = run_spec_checks(
+        items=[_item()], spec_root=spec, project_root=tmp_path, manifest=_manifest()
+    )
     assert [finding for finding in findings if finding.check == "no-stale-gap-tied"] == []
 
 
@@ -1048,7 +1095,9 @@ def test_spec_checks_flag_unresolved_commitments(tmp_path: Path) -> None:
         _item(id="filed-1", spec_commitment_hint="hint-filed"),
         _item(id="empty-hint", spec_commitment_hint=""),
     ]
-    findings = run_spec_checks(items=items, spec_root=spec, manifest=_manifest())
+    findings = run_spec_checks(
+        items=items, spec_root=spec, project_root=tmp_path, manifest=_manifest()
+    )
     unresolved = [finding for finding in findings if finding.check == "unresolved-spec-commitment"]
     assert [(finding.item_id, finding.severity) for finding in unresolved] == [
         ("hint-unfiled", "fail")
@@ -1615,7 +1664,7 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         "--branch",
         "master",
         "https://github.com/thewoolleyman/livespec.git",
-        str(tmp_path / "janitor-co" / ".livespec-core"),
+        str(tmp_path / "janitor-co-livespec-core"),
     ]
 
 
@@ -1657,13 +1706,13 @@ def test_parse_pr_view_reads_fields_and_defaults() -> None:
     assert full is not None
     assert (full.number, full.state, full.auto_merge_armed) == (7, "MERGED", True)
     assert full.merge_sha == "abc123"
-    assert full.terminal_required_check_failures == ()
+    assert full.terminal_check_failures == ()
     sparse = parse_pr_view(stdout=json.dumps({"number": 3}))
     assert sparse is not None
     assert (sparse.state, sparse.merge_state_status) == ("UNKNOWN", "UNKNOWN")
     assert sparse.auto_merge_armed is False
     assert sparse.merge_sha is None
-    assert sparse.terminal_required_check_failures == ()
+    assert sparse.terminal_check_failures == ()
     weird = parse_pr_view(stdout=json.dumps({"number": 3, "mergeCommit": {"oid": ""}}))
     assert weird is not None
     assert weird.merge_sha is None
@@ -1672,20 +1721,20 @@ def test_parse_pr_view_reads_fields_and_defaults() -> None:
     assert nonsense.merge_sha is None
 
 
-def test_parse_pr_view_records_only_required_terminal_check_failures() -> None:
+def test_parse_pr_view_records_every_terminal_check_failure_without_a_required_key() -> None:
     view = parse_pr_view(
         stdout=_pr_json(
             checks=[
-                {"name": "check-coverage", "isRequired": True, "conclusion": "FAILURE"},
-                {"name": "lint", "required": True, "conclusion": "success"},
-                {"name": "docs", "isRequired": False, "conclusion": "failure"},
-                {"name": "slow-ci", "isRequired": True, "status": "IN_PROGRESS"},
-                {"context": "startup", "isRequired": True, "conclusion": "startup_failure"},
+                {"name": "check-coverage", "conclusion": "FAILURE"},
+                {"name": "lint", "conclusion": "success"},
+                {"name": "docs", "conclusion": "failure"},
+                {"name": "slow-ci", "status": "IN_PROGRESS"},
+                {"context": "startup", "conclusion": "startup_failure"},
             ]
         )
     )
     assert view is not None
-    assert view.terminal_required_check_failures == ("check-coverage", "startup")
+    assert view.terminal_check_failures == ("check-coverage", "docs", "startup")
 
 
 def test_parse_pr_view_reads_connection_shaped_status_check_rollup() -> None:
@@ -1697,7 +1746,6 @@ def test_parse_pr_view_reads_connection_shaped_status_check_rollup() -> None:
                     "nodes": [
                         {
                             "name": "check-coverage",
-                            "isRequired": True,
                             "conclusion": "FAILURE",
                         }
                     ]
@@ -1706,7 +1754,7 @@ def test_parse_pr_view_reads_connection_shaped_status_check_rollup() -> None:
         )
     )
     assert view is not None
-    assert view.terminal_required_check_failures == ("check-coverage",)
+    assert view.terminal_check_failures == ("check-coverage",)
 
 
 def test_parse_pr_view_reads_context_connection_shaped_status_check_rollup() -> None:
@@ -1719,7 +1767,6 @@ def test_parse_pr_view_reads_context_connection_shaped_status_check_rollup() -> 
                         "nodes": [
                             {
                                 "name": "check-coverage",
-                                "isRequired": True,
                                 "conclusion": "FAILURE",
                             }
                         ]
@@ -1729,7 +1776,7 @@ def test_parse_pr_view_reads_context_connection_shaped_status_check_rollup() -> 
         )
     )
     assert view is not None
-    assert view.terminal_required_check_failures == ("check-coverage",)
+    assert view.terminal_check_failures == ("check-coverage",)
 
 
 # The fake token the autouse fixture plants in the process env; the
@@ -1831,9 +1878,13 @@ def test_render_run_config_overlay_prepares_refreshing_gh_wrapper(
     env_table_at = rendered.index("[environments.livespec-ci.env]")
     assert "livespec-refreshing-gh-wrapper" in rendered[:env_table_at]
     assert "mint_app_token.py" in rendered[:env_table_at]
-    assert 'token="$(python3 ' in rendered[:env_table_at]
-    assert 'real_gh="$(command -v gh)"' in rendered[:env_table_at]
-    assert 'mv "$real_gh" "$wrapped_gh"' in rendered[:env_table_at]
+    prepared = "\n".join(
+        "\n".join([step.script, *step.env.values()])
+        for step in steps_in(block=rendered[:env_table_at])
+    )
+    assert 'token="$(python3 ' in prepared
+    assert 'real_gh="$(command -v gh)"' in prepared
+    assert 'mv "$real_gh" "$wrapped_gh"' in prepared
     env_table = rendered[env_table_at:]
     assert "\nPATH = " not in env_table
     assert "{{ env.PATH }}" not in rendered
@@ -1863,8 +1914,11 @@ def test_render_run_config_overlay_projects_gh_mint_helper_for_target_without_sc
     prepare_steps = rendered[:env_table_at]
     assert "/workspace/.livespec-gh-refresh/bin/mint_app_token.py" in prepare_steps
     assert "$PWD/.claude-plugin/scripts/bin/mint_app_token.py" not in prepare_steps
-    assert 'token="$(python3 "$mint")"' in prepare_steps
-    assert 'tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz")' in prepare_steps
+    steps = steps_in(block=rendered)
+    # The wrapper's fixed tail is a helper source, so it rides a step's env; the
+    # unpack program is a short command and stays in the script.
+    assert any('token="$(python3 "$mint")"' in v for s in steps for v in s.env.values())
+    assert any('tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz")' in s.script for s in steps)
 
 
 def test_render_run_config_overlay_ignores_target_repo_mint_helper_when_present(
@@ -1954,12 +2008,14 @@ def _assert_projected_gh_wrapper_publishes(
     # production path must not appear in any emitted step.
     for script in scripts:
         assert DEFAULT_SANDBOX_GH_REFRESH_ROOT not in script
-    # The payload must never ride in one argv slot again (bd-ib-gnli): fabro
-    # runs each step as `bash -c <script>`, and Linux caps a SINGLE argument at
+    # The payload must never ride in one exec slot above the cap again
+    # (bd-ib-gnli): Linux caps a SINGLE argument or environment string at
     # MAX_ARG_STRLEN (131072), not the total. One 186KB step killed every
-    # dispatch at exec with "argument list too long".
-    for script in scripts:
-        assert len(script.encode()) <= MAX_PREPARE_STEP_BYTES
+    # dispatch at exec with "argument list too long". The payload now rides each
+    # step's env, and `render_prepare_step` enforces the cap per value.
+    for step in steps_in(block=rendered):
+        for value in step.env.values():
+            assert len(value.encode()) <= MAX_PAYLOAD_VALUE_BYTES
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     capture = tmp_path / "gh-calls.txt"
@@ -2060,9 +2116,9 @@ def _gh_refresh_prepare_scripts(*, rendered: str) -> list[str]:
         if offset != -1
     ]
     end = min(boundaries) if boundaries else len(tail)
-    found = re.findall(r"script = '''\n(.*?)\n'''", tail[:end], re.DOTALL)
+    found = [runnable_script(step=step) for step in steps_in(block=tail[:end])]
     assert found
-    return list(found)
+    return found
 
 
 def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> None:
@@ -2261,11 +2317,14 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     # Two clones, the tmux socket root's exclude-then-create PAIR
     # (bd-ib-5qxa5q), the harness settings file's exclude-then-write PAIR
     # (bd-ib-rv2jk4), the plugin-cache gate, the git credential helper
-    # (bd-ib-52zt3o), the FOUR publication helpers the gate's block
+    # (bd-ib-52zt3o), the FIVE publication helpers the gate's block
     # materializes beside it (v121's publication-head reader and exact-head
-    # push program, v138's carry-forward decision, and v156's per-assertion
-    # proof grade), and the repository-hook limit observer (bd-ib-xi63mq).
-    assert rendered.count("[[run.prepare.steps]]") == 13
+    # push program, v138's carry-forward decision, v156's per-assertion
+    # proof grade, the generated-record-file resolution of bd-ib-ze7xxj and
+    # bd-ib-davaxq's record-file merger), the repository-hook limit observer
+    # (bd-ib-xi63mq), the detached commit runner (bd-ib-atyefi), and the
+    # review-turn guard (bd-ib-azxvoo).
+    assert rendered.count("[[run.prepare.steps]]") == 18
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
@@ -2392,11 +2451,14 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
     assert rendered is not None
     # The tmux socket root's exclude-then-create PAIR (bd-ib-5qxa5q), the
     # harness settings file's exclude-then-write PAIR (bd-ib-rv2jk4), the
-    # plugin-cache gate, the git credential helper (bd-ib-52zt3o), the FOUR
-    # publication helpers the gate's block materializes beside it (v121, v138
-    # and v156's per-assertion proof grade), and the repository-hook limit
-    # observer (bd-ib-xi63mq) — no clone step among them.
-    assert rendered.count("[[run.prepare.steps]]") == 11
+    # plugin-cache gate, the git credential helper (bd-ib-52zt3o), the SIX
+    # publication helpers the gate's block materializes beside it (v121, v138,
+    # v156's per-assertion proof grade, bd-ib-ze7xxj's generated-record-file
+    # resolution and bd-ib-davaxq's record-file merger), the repository-hook
+    # limit observer (bd-ib-xi63mq), and the detached commit runner
+    # (bd-ib-atyefi) and the review-turn guard (bd-ib-azxvoo) — no clone step
+    # among them.
+    assert rendered.count("[[run.prepare.steps]]") == 16
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 
@@ -2600,7 +2662,7 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
     # verdict is about the merge rather than about how this dispatch was routed
     # and attributed.
     assert runner.envs[12] == {
-        "LIVESPEC_CORE_PLUGIN_ROOT": str(checkout / ".livespec-core" / ".claude-plugin"),
+        "LIVESPEC_CORE_PLUGIN_ROOT": str(tmp_path / "janitor-co-livespec-core" / ".claude-plugin"),
         "LIVESPEC_FABRO_FACTORY": None,
         "LIVESPEC_INVOKER": None,
     }
@@ -2786,6 +2848,16 @@ def test_engine_fails_when_no_pr_found(tmp_path: Path) -> None:
     assert (outcome.status, outcome.stage) == ("failed", "pr-view")
 
 
+def test_engine_names_an_unobservable_pr_read_instead_of_claiming_no_pr(tmp_path: Path) -> None:
+    error = "GraphQL: Resource not accessible by integration"
+    runner = _FakeRunner(queue=[_ok(), _err(stderr=error)])
+
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+
+    assert (outcome.status, outcome.stage) == ("failed", "pr-view")
+    assert outcome.detail == f"pull-request read unobservable: {error}"
+
+
 def test_engine_arms_auto_merge_as_fallback(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
@@ -2817,6 +2889,28 @@ def test_engine_skips_arming_when_pr_already_merged(tmp_path: Path) -> None:
     outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
     assert outcome.status == "green"
     assert all(call[0][:3] != ["gh", "pr", "merge"] for call in runner.calls)
+
+
+def test_engine_merges_without_reading_an_unavailable_status_rollup(tmp_path: Path) -> None:
+    runner = _FakeRunner(
+        queue=[
+            _ok(),
+            _ok(stdout=_pr_json(armed=True)),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe10")),
+            _pr_association(),
+            *_post_merge_green_tail(),
+        ],
+        reject_status_rollup=True,
+    )
+
+    outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path, attempts=1)
+
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert (outcome.pr_number, outcome.merge_sha) == (7, "cafe10")
+    assert "janitor-post-merge" in [record["stage"] for record in journal.records]
+    pr_view_calls = [argv for argv, _cwd in runner.calls if argv[:3] == ["gh", "pr", "view"]]
+    assert any("statusCheckRollup" in argv[-1] for argv in pr_view_calls)
+    assert pr_view_calls[-1][-1].split(",").count("statusCheckRollup") == 0
 
 
 def test_engine_fails_when_review_after_arming_fails(tmp_path: Path) -> None:
@@ -2864,6 +2958,30 @@ def test_engine_updates_branch_when_behind_then_merges(tmp_path: Path) -> None:
 
 
 def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) -> None:
+    required_answer = {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "commits": {
+                        "nodes": [
+                            {
+                                "commit": {
+                                    "statusCheckRollup": {
+                                        "contexts": {
+                                            "nodes": [
+                                                {"name": "check-coverage", "isRequired": True},
+                                                {"name": "docs", "isRequired": False},
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
     runner = _FakeRunner(
         queue=[
             _ok(),
@@ -2873,28 +2991,27 @@ def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) 
                     armed=True,
                     merge_state="BLOCKED",
                     checks=[
-                        {
-                            "name": "check-coverage",
-                            "isRequired": True,
-                            "conclusion": "failure",
-                        },
-                        {"name": "docs", "isRequired": False, "conclusion": "failure"},
+                        {"name": "check-coverage", "conclusion": "failure"},
+                        {"name": "docs", "conclusion": "failure"},
                     ],
                 )
             ),
+            _ok(stdout=json.dumps(required_answer)),
         ]
     )
     outcome, journal, naps = _dispatch(runner=runner, repo=tmp_path, attempts=80)
-    assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
+    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
     assert outcome.pr_number == 7
-    assert "check-coverage" in outcome.detail
-    assert "docs" not in outcome.detail
+    assert "required check failed terminally: check-coverage" in outcome.detail
+    assert "resolve-blocked:x-1:ready" in outcome.detail
+    assert "resume --item x-1" in outcome.detail
     assert naps == []
     assert [record["stage"] for record in journal.records] == [
         "fabro-run",
         "pr-view",
         "pr-open-diff-size",
         "pr-view",
+        "required-checks",
     ]
 
 
@@ -2923,11 +3040,12 @@ def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -
                     ],
                 )
             ),
+            _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED")),
         ]
     )
     outcome, _, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
-    assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
-    assert outcome.detail == "PR did not reach MERGED within the poll budget"
+    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
+    assert outcome.detail.startswith("merge-poll-budget-exhausted:")
     assert naps == [0.5]
 
 
@@ -2938,6 +3056,7 @@ def test_engine_poll_budget_exhaustion_keeps_pr_number(tmp_path: Path) -> None:
             _ok(stdout=_pr_json(armed=True)),
             _err(stderr="transient gh failure"),
             _ok(stdout=_pr_json(armed=True)),
+            _err(stderr="transient gh failure at the final read"),
         ]
     )
     outcome, _, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
@@ -4254,7 +4373,12 @@ def test_dispatch_green_closes_item_and_journals(
     goal_text = (tmp_path / f"fabro-goal-{item.id}.md").read_text(encoding="utf-8")
     assert "A ready task" in goal_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
-    stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
+    records = [json.loads(line) for line in journal_text.splitlines()]
+    stages = [record["stage"] for record in records]
+    prelaunch_phases = [
+        record["phase"] for record in records if record["stage"] == "pre-launch-cpu"
+    ]
+    stages = [stage for stage in stages if stage != "pre-launch-cpu"]
     # The master-CI preflight records its PASS first, before anything is admitted:
     # a pre-dispatch step has exactly three sanctioned outcomes and a pass is a
     # journaled one, so the evidence the step ran precedes the first state write.
@@ -4371,6 +4495,40 @@ def test_dispatch_green_closes_item_and_journals(
         "run-turn-telemetry-check",
         "reflection",
     ]
+    assert prelaunch_phases == [
+        "drive-startup",
+        "dispatch-preamble",
+        "otel-egress",
+        "ledger-prepare",
+        "factory-size-check",
+        "ledger-check",
+        "target-selection",
+        "factory-safety-screen",
+        "implementation-pr-override",
+        "acp-node-override",
+        "session-headroom-screen",
+        "app-reach",
+        "fabro-currency",
+        "pre-dispatch-criteria",
+        "dod-judgement",
+        "definition-of-done-workflow",
+        "spec-change-tier",
+        "proof-asset-store",
+        "proof-credential-gate",
+        "credential-requirement",
+        "codex-credential-gate",
+        "recovery-routing",
+        "admission",
+        "publish-branch-reclaim",
+        "recovery-route",
+        "record-dispatch",
+        "github-app-auth",
+        "goal-minijinja-preflight",
+        "factory-auth",
+        "run-config-overlay",
+        "goal-render-and-write",
+        "dispatch-span",
+    ]
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
     assert (poll.attempts, poll.interval_seconds) == (80, 30.0)
@@ -4424,7 +4582,7 @@ def test_dispatch_id_journal_records_resolved_factory_without_rewriting_existing
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.status == "green"
@@ -4480,7 +4638,7 @@ def test_dispatch_threads_its_dispatch_id_into_the_watchdog_launcher(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.status == "green"
@@ -4595,7 +4753,7 @@ def test_dispatch_id_journal_omits_factory_when_target_was_not_resolved(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.status == "green"
@@ -4631,7 +4789,7 @@ def test_dispatch_pre_run_failure_releases_admitted_claim(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage, outcome.fabro_run_id) == (
@@ -4711,7 +4869,7 @@ def test_dispatch_hands_the_journaled_proof_rendering_to_the_overlay(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage) == ("failed", "run-config-overlay")
@@ -4772,7 +4930,7 @@ def test_dispatch_tells_the_overlay_which_client_build_it_resolved(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage) == ("failed", "run-config-overlay")
@@ -4835,7 +4993,7 @@ def test_dispatch_fabro_run_failure_without_run_id_releases_admitted_claim(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage, outcome.fabro_run_id) == ("failed", "fabro-run", None)
@@ -4960,7 +5118,7 @@ def test_dispatch_does_not_release_claim_after_fabro_run_exists(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.fabro_run_id == "01RUNEXISTS"
@@ -5429,7 +5587,7 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     # and it is torn down with the overlay when the run returns.
     payload_graph = Path(overlay_text.split('graph = "', 1)[1].split('"', 1)[0])
     assert payload_graph.name == "workflow.fabro"
-    assert payload_graph.parent.name == f"fabro-workflow-{item.id}"
+    assert payload_graph.parent.name == f"fabro-workflow-{item.id.encode('utf-8').hex()}"
     assert payload_graph.parent != workflow.parent
     assert not payload_graph.parent.exists()
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
@@ -6453,6 +6611,75 @@ def test_render_goal_omits_comments_section_when_none(tmp_path: Path) -> None:
     assert "Ledger comments" not in goal
 
 
+def test_render_goal_carries_every_rider_and_omits_the_judgement_records(
+    tmp_path: Path,
+) -> None:
+    """A judgement record is a RECEIPT, not brief, so the node never reads one.
+
+    `contracts.md`'s one-rubric-one-subject clause excludes the Dispatcher's own
+    Definition-of-Done judgement records from the node's rendered goal for the
+    same reason it excludes them from the subject the host takings grade: they
+    are what the Dispatcher wrote ABOUT the brief, and a node that read them
+    would grade a brief that grows by one paragraph every time a verdict is
+    recorded.
+
+    The RIDERS are the control, and they are what makes this case able to fail: a
+    renderer that dropped every comment would satisfy the two absences while
+    withholding exactly the prose an operator appends to correct the section.
+    """
+    comments = (
+        WorkItemComment(text="rider one", author="operator", created_at=None),
+        WorkItemComment(
+            text=(
+                "livespec-dod-judgement\n\nwork-item: bd-ib-1\nstage: pre-dispatch\n"
+                "outcome: admitted\nsubject-digest: aaa\nrubric-digest: bbb"
+            ),
+            author="Chad Woolley",
+            created_at=None,
+        ),
+        WorkItemComment(
+            text=(
+                "livespec-dod-judgement-unavailable\n\n"
+                "judgement-unavailable-cause: judge-command-failed"
+            ),
+            author="Chad Woolley",
+            created_at=None,
+        ),
+        WorkItemComment(text="rider two", author="operator", created_at=None),
+    )
+
+    goal = render_goal(item=_item(), repo=tmp_path, branch="feat/t", comments=comments)
+
+    assert "rider one" in goal
+    assert "rider two" in goal
+    assert "livespec-dod-judgement" not in goal
+    # The two surviving riders are renumbered from one, so the brief carries no
+    # gap where a receipt was dropped — a gap reads as a comment the renderer
+    # lost rather than one it deliberately omitted.
+    assert "[1] (operator) rider one" in goal
+    assert "[2] (operator) rider two" in goal
+
+
+def test_render_goal_omits_the_comments_section_when_only_records_remain(
+    tmp_path: Path,
+) -> None:
+    # An item whose only comments are receipts carries no rider, so the section
+    # is absent exactly as it is for an item with no comment at all. A section
+    # with nothing under it would tell the node riders exist.
+    goal = render_goal(
+        item=_item(),
+        repo=tmp_path,
+        branch="feat/t",
+        comments=(
+            WorkItemComment(
+                text="livespec-dod-judgement\n\noutcome: admitted", author=None, created_at=None
+            ),
+        ),
+    )
+
+    assert "Ledger comments" not in goal
+
+
 # MiniJinja's three opening delimiters: expression `{{`, statement `{%`,
 # comment `{#`. Fabro renders the run goal through MiniJinja (the graph's
 # `goal` attribute) and into the prompts as `{{ goal }}`, so any one of
@@ -6685,7 +6912,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
         raise BeadsCommandError(command="bd comments", exit_code=1, stderr="connection lost")
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_credentials.read_work_item_comments",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads.read_work_item_comments",
         _boom,
     )
     exit_code = main(

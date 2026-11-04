@@ -128,7 +128,7 @@ def test_an_unbound_poll_lists_the_factory_because_nothing_else_can_find_the_run
     runner = _runner(stdout_by_verb={"ps": _PS_ROW})
     journal = _Journal(records=[])
 
-    run = observed_run(
+    observed = observed_run(
         work_item_id="bd-ib-mine",
         port=_port(runner=runner),
         journal=journal,
@@ -136,7 +136,10 @@ def test_an_unbound_poll_lists_the_factory_because_nothing_else_can_find_the_run
         bound_run_id=None,
     )
 
+    run = observed.run
     assert runner.verbs == ["ps"]
+    # The listing route reads no per-run record, so it carries none.
+    assert observed.record is None
     assert run is not None
     assert run.run_id == "01BOUND"
     assert [record["stage"] for record in journal.records] == [DISCOVERY_JOURNAL_STAGE]
@@ -152,7 +155,7 @@ def test_a_bound_poll_reads_its_run_and_issues_no_listing() -> None:
     runner = _runner(stdout_by_verb={"inspect": _INSPECT_RECORD})
     journal = _Journal(records=[])
 
-    run = observed_run(
+    observed = observed_run(
         work_item_id="bd-ib-mine",
         port=_port(runner=runner),
         journal=journal,
@@ -160,8 +163,12 @@ def test_a_bound_poll_reads_its_run_and_issues_no_listing() -> None:
         bound_run_id="01BOUND",
     )
 
+    run = observed.run
     assert runner.verbs == ["inspect"]
     assert "ps" not in runner.verbs
+    # The per-run read carries its own record, which is what lets a caller read
+    # a FIELD of the run without spending a second round trip on it.
+    assert observed.record is not None
     assert run is not None
     assert run.run_id == "01BOUND"
     assert [record["stage"] for record in journal.records] == [BOUND_POLL_JOURNAL_STAGE]
@@ -369,7 +376,7 @@ def test_a_bound_poll_whose_factory_holds_no_such_run_reports_it_through_the_por
     )
     journal = _Journal(records=[])
 
-    run = observed_run(
+    observed = observed_run(
         work_item_id="bd-ib-mine",
         port=_port(runner=runner),
         journal=journal,
@@ -377,7 +384,7 @@ def test_a_bound_poll_whose_factory_holds_no_such_run_reports_it_through_the_por
         bound_run_id="01BOUND",
     )
 
-    assert run is None
+    assert observed.run is None
     assert runner.verbs == ["inspect"]
     assert [record["reason"] for record in journal.records] == [_RUN_NOT_HELD]
 
@@ -466,7 +473,7 @@ def test_an_unreachable_factory_reports_unobservable_through_the_port() -> None:
     )
     journal = _Journal(records=[])
 
-    run = observed_run(
+    observed = observed_run(
         work_item_id="bd-ib-mine",
         port=_port(runner=runner),
         journal=journal,
@@ -474,5 +481,5 @@ def test_an_unreachable_factory_reports_unobservable_through_the_port() -> None:
         bound_run_id="01BOUND",
     )
 
-    assert run is None
+    assert observed.run is None
     assert [record["reason"] for record in journal.records] == [_UNOBSERVABLE]

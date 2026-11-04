@@ -25,16 +25,41 @@ Report a specific unresolved input, refusal, or outage as incomplete work. Never
 Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime
 binding only maps its tools to it.
 
+## Plugin Package Imports
+
+Before running any Python snippet in this operation that imports
+`livespec_orchestrator_beads_fabro`, resolve the governed project's registered
+install. Use this bootstrap once in the Python process before those imports:
+
+```python
+import os
+import subprocess
+import sys
+
+_registered_plugin_root = subprocess.run(
+    [
+        "python3",
+        f"{os.environ['CLAUDE_PLUGIN_ROOT']}/scripts/bin/registered_plugin_root.py",
+        "--repo", os.getcwd(),
+    ],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.strip()
+sys.path.insert(0, f"{_registered_plugin_root}/scripts")
+sys.path.insert(0, f"{_registered_plugin_root}/scripts/_vendor")
+```
+
 ## Bounded Host Waits
 
-When planning delegates long-running commands through detached gates, arm ONE
-bounded first-event wait over all of them through the plugin's
-`scripts/bin/session_wait.py`: `wait`, given the repository, a unique wait id,
-the owning session id, a positive finite deadline and one `--gate <run-id>` per
-target, freezes those ids at arming, returns the first terminal gate with that
-gate's own verdict, and leaves every gate running. Run `inventory` or `check`
-for the durable census before parking, then `ack` once the owning session has
-RECEIVED the result — receipt ONLY, never recovery execution or fulfillment.
+When planning delegates long-running commands through detached gates, arm ONE bounded first-event wait over all of them
+through the plugin's `scripts/bin/session_wait.py`: `wait` takes the repository, a unique wait id, the owning session id,
+an explicit deadline and one `--gate <run-id>` per target; it returns the first terminal gate's own verdict and leaves
+every gate running. Run `check` before parking and at turn end: it reads waits and the durable launch-obligation store,
+so unfinished work is reported even when no wait was ever armed. `ack` records receipt ONLY, never recovery execution
+or fulfillment. Every wait needs an explicit deadline and an explicit owner `ack`; derive monitoring claims from
+`inventory` or `check`, never from memory of what was armed. Only Claude's `Stop` hook runs `check` automatically;
+Codex and pi invoke it explicitly. A factory agent turn runs no blocking host wait.
 
 ## Flow
 
@@ -227,14 +252,14 @@ The next action is epic metadata, not prose. Every new write carries exactly fiv
 - `kind: proof` — `capture:<epic-id>` posts captured plan proof through the plan-record posting primitive; `verify:<epic-id>` starts a separate replaying session and posts its verdict through that same primitive.
 - `kind: review` — the epic id; commission the independent completeness reviewer described by the archive gate.
 - `kind: archive` — the epic id; call `archive_thread(...)` and obey every refusal it returns.
-- `kind: await` — `run:`, `gate:`, `item:`, or `epic:` plus its id; perform a bounded wait on that named handle and report expiry through the required-result rules, never by treating elapsed time as a result.
+- `kind: await` — `run:`, `gate:`, `item:`, or `epic:` plus its id; perform a bounded wait on that named handle and report the observation through the required-result rules, never by treating elapsed time as a result.
 - `kind: human` or `none` — always raises the picker; `none` has an empty ref.
 
 The six executable kinds carry an authoritative `required_result` and a budget with an absolute UTC `deadline` and positive `max_handoffs`. `human` and `none` carry EXPLICITLY NULL tracking fields, and changing to one retains any unmet obligation in the progress history rather than discharging it. A legacy three-key pointer stays readable and acquires the new shape on its next sanctioned write. Write pointers only through `append_handoff(...)`, `append_supervisor_handoff(...)`, or `set_next_action(...)`; those writers refuse any other kind, malformed ref, or malformed budget field. Never hand-edit epic metadata.
 
 THE POINTER IS A PROJECTION, NOT THE AUTHORITY. The original deadline, the `max_handoffs` ceiling and the accepted-handoff count live in the epic's authority chain, and every sanctioned writer commits through that chain's single-use epoch token, which hands back the ORIGINAL budget rather than the candidate one — so you cannot move either limit by asking for a different one. That is deliberate: the pointer is one metadata object each writer rewrites wholesale, so a budget kept there is one any writer could grant itself.
 
-What each write costs is fixed. An accepted handoff consumes ONE handoff unit; a direct `set_next_action(...)` consumes none; neither resets either limit. Only a SATISFIED result permits advancing to a new result and a new budget: an unobservable one preserves the original budget and refuses any transition claiming completion, renaming an unmet target is refused rather than read as new work, and a retried write carrying the same operation identity recovers its original transition instead of appending a second handoff or extending a deadline.
+What each write costs is fixed. An accepted handoff consumes ONE handoff unit; a direct `set_next_action(...)` consumes none; neither resets either limit. A SATISFIED result advances to a new result and a new budget. An unmet or unobservable one is either continued under its original limits or REPLACED: a write naming a different required result begins a fresh obligation under its own budget, recorded as a `replacement` progress event that names the result it replaced. Nothing claims completion of an unobservable result, and a retried write carrying the same operation identity recovers its original transition instead of appending a second handoff or extending a deadline.
 
 A maintainer may authorize attended continuation by passing `PlanContinuationAuthorization(until=..., by=..., directive=...)` to `record_scope_event(...)`. Only an attended session may write it; the primitive writes `recorded-attended: true` itself, as the ruling's last line. Revoke through `PlanContinuationRevocation(by=...)`. The latest complete ruling in timeline order governs; one missing any required line, or carrying any line after the attended marker, is not current. A ruling authorizes continuation only: it never supplies store-write consent or admission.
 
@@ -246,13 +271,13 @@ A resume is *unattended* when the environment variable `LIVESPEC_PLAN_UNATTENDED
 
 Call `resume_directive(config=..., epic_id=..., unattended=...)`. It reads the epic's `next_action` — it parses no comment body — and returns `ask`, `next_action`, a `reason`, `findings`, and the authoritative result observation:
 
-- An unattended resume takes any of the six executable kinds with a non-empty ref when its result is observably unsatisfied and its budget is unexpired. An attended resume does the same under a current continuation ruling and names that ruling in its reason. Without a ruling it presents the epic's `next_action` as the default choice of that picker, or the derived step when the pointer was stale. A standing maintainer directive to continue satisfies that picker only when recorded as that ruling: take the default without re-prompting. `human` and `none` always ask.
+- An unattended resume takes any of the six executable kinds with a non-empty ref when its result is observably unsatisfied, whatever its deadline or handoff count. An attended resume does the same under a current continuation ruling and names that ruling in its reason. Without a ruling it presents the epic's `next_action` as the default choice of that picker, or the derived step when the pointer was stale. A standing maintainer directive to continue satisfies that picker only when recorded as that ruling: take the default without re-prompting. `human` and `none` always ask.
 - Reconcile before acting, in order. SATISFIED is stale: report the observed result, do not execute the pointer, then re-read the ledger and persist a replacement pointer naming the next ready child, or — when every child is disposed — the proof, review, or archive step, under a fresh epoch and the plan's own unextended deadline. That derived step is still only TAKEN without the picker when a ruling authorizes it.
-- If still unsatisfied and within budget, an `impl` or `spec-op` target already driven by a live factory run is rewritten to `await` with `run:<id>`, preserving the required result, epoch, original deadline, and handoff count; do not start a second dispatch. A factory that cannot be inspected fails closed rather than re-dispatching. An in-budget unsatisfied `await` reports waiting, performs the bounded wait on its named handle, and is not rewritten. Unobservable or expired obligations do not continue: the directive withholds the dispatch, RETAINS the obligation and exposes an authorized action instead of stalling — `diagnose-plan-progress:<epic-id>`, or a recorded still-bounded recovery attempt's own operation — and reading an obligation is never a write.
+- If still unsatisfied, an `impl` or `spec-op` target already driven by a live factory run is rewritten to `await` with `run:<id>`, preserving the required result, epoch, original deadline, and handoff count; do not start a second dispatch. A factory that cannot be inspected fails closed rather than re-dispatching. An unsatisfied `await` reports waiting, performs the bounded wait on its named handle, and is not rewritten. Only an UNOBSERVABLE obligation does not continue: the directive withholds the dispatch, RETAINS the obligation and exposes `diagnose-plan-progress:<epic-id>` instead of stalling, and reading an obligation is never a write.
 
-EXPIRY IS EXACT AND INCLUSIVE. At the deadline, or when accepted handoffs reach `max_handoffs`, the next continuation is expired; it is refused BEFORE the handoff is appended or the pointer updated, and an expired wall clock is visible even when no new handoff is written. Continuing anyway takes a typed causal recovery attempt, passed as `recovery=` to `append_handoff(...)` or `set_next_action(...)`, naming the unresolved obligation, the previous epoch, measured failure evidence, a cause (`host`, `item`, or `unknown`), an executable authorized next operation, a stable unique attempt id and a bounded attempt deadline. Nothing self-declared qualifies: a prose `approach:` line, an acknowledgment, a repair-child milestone and a cosmetic pointer rewrite are all refused.
+AN OVERDUE BUDGET NEVER BLOCKS THE PLAN. At the deadline, or when accepted handoffs reach `max_handoffs`, the obligation is OVERDUE: `resume_directive` reports `plan-progress-tracking: overdue` and still takes or presents the pointer's own action, and every writer still accepts the continuation, handoff or replacement. No recovery attempt, continuation ruling or human decision is needed to keep going. The expiry rule that once refused these writes and rewrote the resume to a diagnosis was deleted on the maintainer's 2026-11-03 ruling ("Whatever 'stall' rule is in effect here, completely delete it").
 
-Two independent things must hold of that next operation: it is in the closed grammar this fleet can actually execute — `impl:<item-id>`, `diagnose-plan-progress:<epic-id>`, or `propose-change|revise|critique|prune-history:<topic>` — AND it equals the one the measured cause authorizes. An unknown cause authorizes diagnosis and nothing else; a host or item-attributable cause authorizes the pointer's own operation re-run under the attempt's bound. You do not choose it, and equality with an operation you wrote yourself authorizes nothing. The attempt's deadline bounds the ATTEMPT and never replaces or postpones the original obligation deadline, which survives every attempt; host and unknown causes leave the item-attributable repetition count alone. Registering an attempt is not running it, and running it is not fulfilling the target: claim, execution and outcome receipts stay distinct, and a fresh attempt asserting any of them is refused.
+A typed causal recovery attempt, passed as `recovery=` to `append_handoff(...)` or `set_next_action(...)`, is OPTIONAL. When you do record one it names the unresolved obligation, the previous epoch, measured failure evidence, a cause (`host`, `item`, or `unknown`), an executable authorized next operation in the closed grammar — `impl:<item-id>`, `diagnose-plan-progress:<epic-id>`, or `propose-change|revise|critique|prune-history:<topic>` — that equals the one the cause authorizes, a stable unique attempt id and a bounded attempt deadline, and it is graded before it is recorded. Its deadline never replaces the obligation's. Registering an attempt is not running it, and claim, execution and outcome receipts stay distinct.
 
 Store-write consent remains governed by the consent contract; a typed pointer or standing continuation directive does not
 manufacture consent for a new write.
@@ -261,7 +286,17 @@ Report the `reason` when the picker is raised in an unattended session: that str
 
 ALWAYS surface every entry in `findings`, in both modes. `plan-definition-of-done: missing` names a plan epic created before that section was required: an ATTENDED resume MUST author the section with the maintainer before recording any further carrier-map event, while an UNATTENDED resume MUST NOT author the assertions on the maintainer's behalf — `resume_directive` has already set `next_action` to `kind: human` naming the gap, and `ask` is true — unless `next_action` was already `kind: impl`, which it still takes, because that names work already filed and admitted.
 
-`plan-progress-tracking: missing` names an epic whose pointer predates the tracking fields, or whose authority chain was never established; these writers never create one, so the remedy the finding names is `migrate-plan-records`, the sanctioned write that supplies the fields. Expired and unobservable obligations report the same way, each with its authorized action. The finding is reported either way: reported and acted on are different things.
+`plan-progress-tracking: missing` names an epic whose pointer predates the tracking fields, or whose authority chain was never established; these writers never create one, so the remedy the finding names is `migrate-plan-records`, the sanctioned write that supplies the fields. Overdue obligations report `plan-progress-tracking: overdue` without withholding anything; unobservable ones report with their authorized diagnosis. The finding is reported either way: reported and acted on are different things.
+
+#### Relays to another track
+
+A relay is work handed to someone else — a peer session, another repository's lane, a person — and it stays YOUR obligation until the thing you asked for has happened. Record one with `record_relay(...)`, passing a `RelayRequest` carrying a stable `relay_id`, a stable `operation_id`, the `sender` that owes it, a typed `required_result`, an absolute UTC `deadline`, and a `RelayAcknowledgements` holding whatever transport receipts you have. It observes that result through the same authoritative reader every deadline uses and appends one `plan-relay-event` record to the epic; an untyped expected result or a blank identity field is refused unwritten.
+
+DELIVERY IS A TARGET EFFECT, NOT A REPLY. `delivered` is written from one input — a `satisfied` reading taken in that call — and from nothing you supply, which is why you may fill `receipt_ack` and `peer_recorded` and may NOT fill the third leg: the queue took it, the peer answered, the peer wrote it down, and none of those is the thing you asked for. A pane-only acknowledgment is the sharpest case, someone replying while no ledger moved. An `unsatisfied` or `unobservable` reading records an UNDELIVERED relay with the observation it took, and you still owe it; ownership transfers or the obligation closes only once all three legs are present, which `RelayRecord.ownership_transferable` answers.
+
+THE DEADLINE IS THE RELAY'S, NOT THE REQUEST'S. Every later observation of one relay id re-renders the deadline its FIRST recording established, so passing a longer one moves nothing. Retrying the same `operation_id` returns the observation that act recorded — no second record, no second read, and the original reading even if the target has since moved; a DISTINCT `operation_id` is a recheck, which observes again under that same original deadline, and subsequent target evidence discharges the relay. Expiry transfers nothing: the sender keeps the relay and the original deadline while the independent consumer performs bounded recovery, and an owner that disappears is taken over explicitly rather than discharged silently.
+
+A CONFLICTING TARGET TAKES AN EXPLICIT SUPERSESSION. Reusing a relay id against a different expected result is refused: pass `supersedes=RelaySupersession(relay_id=..., reason=...)` naming the DISPLACED relay, under a NEW relay id of your own, and the new record carries the old obligation's disposition forward. A supersession naming its own id, naming no recorded relay, stating no cause, or naming an unchanged target is refused — the last of those is what keeps a fresh relay id from being a route to a fresh deadline on the same obligation.
 
 ### Step 4 - Handoff Timeline And Exit Audit
 

@@ -52,8 +52,8 @@ reference is recorded in `.copier-answers.yml`
 
 The plugin's Planning Lane MUST distinguish a required result from activity:
 relay fulfillment requires authoritative target evidence, original deadlines
-survive cosmetic rewrites and repair work, and expired obligations trigger
-bounded causal recovery without inventing a human decision. Registered
+survive cosmetic rewrites and repair work, and an overdue obligation is
+reported without ever blocking the plan or inventing a human decision. Registered
 unfinished work MUST remain discoverable to an independent recovery consumer
 after coordinator turn completion. This includes the real Codex-in-Herdr
 no-wait incident and preserves valid HOLD, commit and Red-Green protections.
@@ -129,6 +129,18 @@ Persistent Agent Knowledge store as these files plus the harness
 instruction files that load them progressively. (This slot is
 substrate-independent and identical to the plaintext sibling's.)
 
+**Spec-change tier classification stage** — A point at which a work-item's
+spec-change tier is decided by the spec-stated judgement
+(`contracts.md` §"Grooming and slice-size calibration" → "The four
+maintainer touchpoints", touchpoint 1, "An autonomy tier is assigned") and recorded in a `livespec-spec-change-tier` record on the item.
+The record carries a `stage`. The stages are filing, groom, the pre-dispatch
+wall, and `classify`. `classify` is a
+standalone classification of one work-item, requested by an operator or session
+through the Dispatcher's `classify-tier` verb. It decides the tier through the
+same spec-stated judgement as the other stages, records the result in the same
+`livespec-spec-change-tier` record shape with `stage: classify`, and is never a
+dispatch.
+
 **Truly-unresolvable decision** — Under §"Dispatcher policy settings", a
 human-delegable decision the Dispatcher MUST NOT auto-dispose under any
 policy setting — either because it is human-gated BY DESIGN (the
@@ -156,8 +168,16 @@ the Dispatcher, owns them (drift acceptance conditionally so, per its bullet):
   architecture", the drift-doctrine paragraph, as amended to admit the
   consensus tier).
 - **Spec-change slices** — a slice whose autonomy tier is spec-change is
-  human-gated: it routes through `/livespec:propose-change` /
-  `/livespec:revise` and is never factory-dispatched or auto-admitted.
+  human-gated: its spec change always routes through
+  `/livespec:propose-change` / `/livespec:revise`, and the item is never
+  factory-dispatched or auto-admitted while it is held for that change's
+  ratification. Once the linked proposal's revision record carries
+  decision `accept` or `modify` and the spec-stated judgement returns
+  `stated` for its asked-for behaviour, the item is an implementation
+  follow-up to an already ratified change and routes as ordinary
+  dispatchable work (`contracts.md` §"Grooming and slice-size
+  calibration", touchpoint 1). This release on ratification is the
+  maintainer's 2026-10-20 refinement of the 2026-07-10 declaration below.
 - **Regroom / backlog bounce** — grooming stays human; a non-convergence
   bounce lands in `backlog` and escalates, and is never auto-groomed.
 
@@ -208,14 +228,17 @@ by independent `dispatcher.*` policy settings. Each setting is a GLOBAL
 DEFAULT for the repo, and (except for the per-repo concurrency ceiling
 `wip_cap`) each is OVERRIDABLE PER WORK-ITEM by a ledger label: the per-item
 label wins over the global default, and an item carrying no label inherits
-the global. The settings are independent — no setting implies another, and
+the global. Admission is the one exception to that precedence: when the repo
+COMMITS `auto_approve_ready`, the committed value decides every item's
+admission and a per-item admission label does not override it; a deliberate
+per-item hold is the `blocked` status with its reason recorded. The settings are independent — no setting implies another, and
 there is no master switch. Every setting is settable through the orchestrator
 API and, through it, the Control-Plane console; the orchestrator owns the
 setting state, and the console only commands and observes.
 
 The settings compose the existing gate, valve, and consent model — they never
-bypass or re-implement it. Every safety floor holds under every setting: a
-design-human-gated (spec-change-tier) item is never auto-approved; every
+bypass or re-implement it. Every safety floor holds under every setting: a design-human-gated (spec-change-tier) item is never auto-approved while
+it is held for its linked proposal's ratification; every
 truly-unresolvable decision (see §"Terminology") still escalates and is
 surfaced to a human, never guessed (a drift acceptance still escalates and is
 still never guessed; under an explicit per-repo opt-in its acceptance MAY be

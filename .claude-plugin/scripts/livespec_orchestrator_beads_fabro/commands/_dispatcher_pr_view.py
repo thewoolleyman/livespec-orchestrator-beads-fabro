@@ -15,6 +15,7 @@ caller is going to compare them, so the ordinary green dispatch pays nothing.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
@@ -27,12 +28,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+        CommandResult,
         CommandRunner,
         JournalWriter,
     )
 
 __all__: list[str] = [
     "GH_TIMEOUT_SECONDS",
+    "PrViewReading",
     "view_pr",
 ]
 
@@ -42,14 +45,23 @@ GH_TIMEOUT_SECONDS = 300.0
 _PUBLICATION_FIELDS = ",headRefName,headRepository"
 
 
+@dataclass(frozen=True, kw_only=True)
+class PrViewReading:
+    """One pull-request read, including an observation failure when it had one."""
+
+    view: PrView | None
+    error: str | None
+
+
 def view_pr(
     *,
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
     include_publication: bool = False,
-) -> PrView | None:
-    argv = pr_view_argv(plan=plan)
+    include_status_checks: bool = True,
+) -> PrViewReading:
+    argv = pr_view_argv(plan=plan, include_status_checks=include_status_checks)
     if include_publication:
         argv[-1] = f"{argv[-1]}{_PUBLICATION_FIELDS}"
     result = runner.run(
@@ -59,5 +71,17 @@ def view_pr(
     )
     journal_stage(journal=journal, plan=plan, stage="pr-view", result=result)
     if result.exit_code != 0:
+        return PrViewReading(view=None, error=_pr_view_error(result=result))
+    view = parse_pr_view(stdout=result.stdout)
+    return PrViewReading(
+        view=view,
+        error=None if view is not None else "pull-request view returned unreadable JSON",
+    )
+
+
+def _pr_view_error(*, result: CommandResult) -> str | None:
+    """Return a non-absence forge failure without reclassifying it as no PR."""
+    stderr = result.stderr
+    if "no pr" in stderr.lower() or "no pull request" in stderr.lower():
         return None
-    return parse_pr_view(stdout=result.stdout)
+    return stderr

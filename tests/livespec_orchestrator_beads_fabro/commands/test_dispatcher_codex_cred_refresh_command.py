@@ -128,10 +128,15 @@ def test_the_timer_spends_the_ungated_account_read_rpc_not_a_gated_exec(
     guard while reporting that it had tried.
     """
     runner = _AppServerRunner(result=CommandResult(exit_code=0, stdout="{}\n", stderr=""))
+    # The POST-REFRESH read is positioned relative to the derived guard for the
+    # reason the constants above are: it was the literal `864_000`, which cleared
+    # the floor as it then stood and sits BELOW the one v175's recapture route
+    # resolves -- so the renewed credential silently became a still-due one and
+    # the case failed on a figure this item never touched.
     reads = iter(
         (
             _auth_json_with_exp(exp=_NOW + _DUE_REMAINING),
-            _auth_json_with_exp(exp=_NOW + 864_000),
+            _auth_json_with_exp(exp=_NOW + _NOT_DUE_REMAINING),
         )
     )
 

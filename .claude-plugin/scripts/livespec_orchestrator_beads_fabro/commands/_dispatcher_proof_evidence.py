@@ -124,23 +124,27 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
     PENDING_HOST_LEG_REASON,
     HostAssertionGrade,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import (
+    records_proving_head,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment_verify import (
     AttachmentDigestReader,
     attachment_digest_reader,
-    attachment_is_evidence,
     unverified_attachment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
     MergingDispatch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_factory_evidence import (
+    factory_assertion_evidence,
+    newest_proof_verify_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
-    PROOF_RECORD_EVIDENCE_LEG,
     AssertionEvidence,
     ProofLeg,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
-    PROOF_RECORD_TITLE,
-    VERDICT_VERIFIED,
+    VERDICT_CAPTURED,
     ProofRecord,
     latest_proof_record,
     proof_records,
@@ -199,6 +203,7 @@ def read_proof_leg(
     outcome: DispatchOutcome,
     runner: CommandRunner,
     dispatch: MergingDispatch,
+    merged_head: str | None = None,
 ) -> ProofLeg:
     """Read the merging dispatch's record off the pull request and grade against it.
 
@@ -225,6 +230,11 @@ def read_proof_leg(
             reason=f"pull request #{pr_number} comments unreadable",
         )
     run_ids = dispatch.run_ids
+    # After a merged-reconcile ending the run wrote no record for the merged head, so
+    # only a record naming it may grade the factory assertions; see the module that
+    # owns the rule.
+    if merged_head is not None:
+        records = records_proving_head(records=records, run_ids=run_ids, merged_head=merged_head)
     # Resolved BEFORE the identifier arm splits, because the HOST leg does not
     # depend on the factory identifiers at all: a host replay carries a session
     # identity, `proof_leg` deliberately does not filter host records by
@@ -298,7 +308,8 @@ def proof_leg(
     `contains_merge` does: a caller that forgot to supply one parks an
     attachment-bearing assertion rather than closing it on a digest nobody compared.
     """
-    record = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=run_ids)
+    record = newest_proof_verify_record(records=records, run_ids=run_ids)
+    captured = latest_proof_record(records=records, verdict=VERDICT_CAPTURED, run_ids=run_ids)
     host = host_leg_for_records(
         assertions=criteria.host_captured_assertions,
         records=records,
@@ -311,6 +322,7 @@ def proof_leg(
                 text=text,
                 proof_mode=mode,
                 record=record,
+                captured=captured,
                 host=grades.get(text),
                 attachment_digest=attachment_digest,
             )
@@ -320,6 +332,7 @@ def proof_leg(
         records=tuple(records),
         reason=reason,
         host=host,
+        captured=captured,
     )
 
 
@@ -328,6 +341,7 @@ def _assertion_evidence(
     text: str,
     proof_mode: str,
     record: ProofRecord | None,
+    captured: ProofRecord | None,
     host: HostAssertionGrade | None,
     attachment_digest: AttachmentDigestReader,
 ) -> AssertionEvidence:
@@ -356,59 +370,12 @@ def _assertion_evidence(
             record_comment=None,
             check=CriterionCheck(text=text, passed=True, reason=PENDING_HUMAN_ATTESTATION_REASON),
         )
-    if record is None:
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=PROOF_RECORD_EVIDENCE_LEG,
-            record_comment=None,
-            check=None,
-        )
-    reproduced = record.reproduced(assertion=text)
-    if reproduced is None:
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=PROOF_RECORD_EVIDENCE_LEG,
-            record_comment=record.url,
-            check=None,
-        )
-    # An assertion whose proof travels as an ASSET is graded on the asset, not on
-    # the record's account of it: the record holds a pointer rather than the
-    # evidence, so a verdict read from the record alone would rest on the
-    # publisher's say-so. A missing or mismatched asset is ABSENT evidence — the
-    # same unevidenced shape as an unreadable verdict — and never a FAIL, because
-    # an unfetchable proof says nothing about whether the behaviour holds and a
-    # FAIL would consume a rework attempt the clause forbids spending.
-    attachment = record.attachment(assertion=text)
-    if attachment is not None and not attachment_is_evidence(
-        attachment=attachment, fetched=attachment_digest(name=attachment.name)
-    ):
-        return AssertionEvidence(
-            text=text,
-            proof_mode=proof_mode,
-            leg=PROOF_RECORD_EVIDENCE_LEG,
-            record_comment=record.url,
-            check=None,
-        )
-    return AssertionEvidence(
+    return factory_assertion_evidence(
         text=text,
         proof_mode=proof_mode,
-        leg=PROOF_RECORD_EVIDENCE_LEG,
-        record_comment=record.url,
-        check=CriterionCheck(
-            text=text,
-            passed=reproduced,
-            reason=_graded_reason(record=record, reproduced=reproduced),
-        ),
-    )
-
-
-def _graded_reason(*, record: ProofRecord, reproduced: bool) -> str:
-    listing = "reproduced" if reproduced else "not reproduced"
-    return (
-        f"{PROOF_RECORD_TITLE} {record.verdict} record {record.url}"
-        f" lists the assertion as {listing}"
+        record=record,
+        captured=captured,
+        attachment_digest=attachment_digest,
     )
 
 

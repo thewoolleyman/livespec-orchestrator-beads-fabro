@@ -14,12 +14,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_container_po
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.store import append_work_item, record_dispatch_factory
-from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem, WorkItemStatus
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_run_reconcile_hook"
-_MODULE_PATH = Path(
-    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
-    "/_dispatcher_run_reconcile_hook.py"
+_MODULE_PATH = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/") / (
+    "_dispatcher_run_reconcile_hook.py"
 )
 _HP = "https://hp.example.test"
 _VPS = "https://vps.example.test"
@@ -207,19 +206,25 @@ def test_only_the_named_items_run_is_reconciled(tmp_path: Path) -> None:
     assert [run.run_id for run in summary.reconciled] == ["01MINE"]
 
 
-def test_an_already_terminal_run_is_left_alone_so_the_hook_is_idempotent(tmp_path: Path) -> None:
+def test_a_closed_items_ended_run_is_removed_through_its_factory_without_force(
+    tmp_path: Path,
+) -> None:
     hook = importlib.import_module(_MODULE)
     repo = _repo(tmp_path=tmp_path)
     append_work_item(path=_config(), item=_item(status="done"))
+    _journal_dispatch(repo=repo, item_id="bd-ib-1", run_id="01DONE")
     runner = _Runner(ps_by_server={_HP: _ps(run_id="01DONE", kind="succeeded")})
-    transport = _Transport()
 
     summary = hook.reconcile_runs_for_item(
-        repo=repo, item_id="bd-ib-1", runner=runner, http=transport
+        repo=repo, item_id="bd-ib-1", runner=runner, http=_Transport()
     )
 
     assert (summary.reconciled, summary.errors) == ((), ())
-    assert transport.calls == []
+    assert [call[1:] for call in runner.calls] == [
+        ["ps", "-a", "--json", "--server", _HP],
+        ["rm", "01DONE", "--server", _HP],
+        ["ps", "-a", "--json", "--server", _VPS],
+    ]
 
 
 def test_a_reconciliation_failure_is_journaled_and_never_raises(
@@ -364,7 +369,7 @@ def _ps(*, run_id: str, kind: str, work_item_id: str = "bd-ib-1") -> str:
     )
 
 
-def _item(*, item_id: str = "bd-ib-1", status: str = "active") -> WorkItem:
+def _item(*, item_id: str = "bd-ib-1", status: WorkItemStatus = "active") -> WorkItem:
     return WorkItem(
         id=item_id,
         type="task",

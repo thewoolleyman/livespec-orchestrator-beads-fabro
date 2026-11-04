@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema i
     MERGE_MODE_FIELD,
     PREPARE_TOOLCHAIN_LEFTHOOK_FIELD,
     PREPARE_TOOLCHAIN_MISE_FIELD,
+    PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD,
     SANDBOX_CHECK_SUITE_FIELD,
     SANDBOX_EXEMPT_MARKER_FIELD,
 )
@@ -79,6 +80,7 @@ class RepoIntegrationContract:
     core_repo_url: str
     core_pinned_ref: str
     prepare_toolchain_mise: tuple[str, ...]
+    prepare_toolchain_python_sync: tuple[str, ...]
     prepare_toolchain_lefthook: tuple[str, ...]
     conformance_hook_install: tuple[str, ...]
     conformance_verify_commit_refuse_hook: tuple[str, ...]
@@ -140,6 +142,9 @@ def resolve_integration_contract(
         core_pinned_ref=resolved_name(resolution=resolved[CORE_PINNED_REF_FIELD.attribute]),
         prepare_toolchain_mise=resolved_argv(
             resolution=resolved[PREPARE_TOOLCHAIN_MISE_FIELD.attribute]
+        ),
+        prepare_toolchain_python_sync=resolved_argv(
+            resolution=resolved[PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD.attribute]
         ),
         prepare_toolchain_lefthook=resolved_argv(
             resolution=resolved[PREPARE_TOOLCHAIN_LEFTHOOK_FIELD.attribute]

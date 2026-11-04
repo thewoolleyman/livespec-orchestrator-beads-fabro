@@ -12,3 +12,4 @@ else
     echo "WARNING: shellcheck not found; skipping shell lint (hermetic tests still run)" >&2
 fi
 bash bd-guard/test/run-tests.sh
+bash bd-guard/test/test-capture-start.sh

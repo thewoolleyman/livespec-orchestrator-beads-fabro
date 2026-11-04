@@ -107,6 +107,7 @@ class _Log:
 
     events: list[str] = field(default_factory=list)
     dispatched_args: list[argparse.Namespace] = field(default_factory=list)
+    dispatched_launches: list[object] = field(default_factory=list)
 
 
 def _item(*, status: str = "ready") -> WorkItem:
@@ -227,6 +228,7 @@ def _stub_resume(
     def _dispatch(**kwargs: Any) -> DispatchOutcome:
         log.events.append("launch")
         log.dispatched_args.append(kwargs["args"])
+        log.dispatched_launches.append(kwargs["launch"])
         return DispatchOutcome(
             work_item_id=item.id,
             status="green",
@@ -267,7 +269,7 @@ def test_the_router_registers_a_resume_subcommand() -> None:
     assert handlers["resume"] is module.run_resume_command
 
 
-def test_a_clean_resume_claims_launches_and_carries_the_entry_node_and_head(
+def test_a_clean_resume_claims_launches_and_carries_the_entry_node_head_and_cpu_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The resumed dispatch enters at the anchored stage, on the anchored head."""
@@ -294,6 +296,7 @@ def test_a_clean_resume_claims_launches_and_carries_the_entry_node_and_head(
     assert dispatched.resume_entry_node == RESUMED_AT_PR
     assert dispatched.resume_head == _HEAD
     assert dispatched.workflow_name == _WORKFLOW
+    assert log.dispatched_launches[0].prelaunch_profile is not None
 
 
 def test_a_clean_resume_journals_its_record_before_the_claim(

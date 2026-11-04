@@ -20,6 +20,32 @@ this repository's proof-record reader folds assertion text would make
 direction; the reader of a wrapped marker is the one who should choose a marker
 that does not wrap.
 
+AND WHY A MARKER IS ONLY FOUND WHERE A RECORD OPENS, which is the other half of
+the same fail-open question and the one that was measured. A marker names a
+RECORD KIND, and every record this reader answers for is a comment whose FIRST
+LINE opens with its marker: a plan Proof of Done record's first line is
+`Plan Proof of Done — <verdict> — …`, and a completeness-review evidence
+comment's first line is `plan-completeness-review-evidence`. Scanning whole
+comment bodies instead matched the marker wherever it was MENTIONED — and the
+plan's own bookkeeping mentions it on every write. Every sanctioned pointer write
+appends a `plan-progress-event` whose payload serializes the obligation's own
+`required_result`, marker included, so an `item_comment` obligation naming the
+plan epic was satisfied by the comment that RECORDED it, the instant it was
+recorded; a scope event quoting the marker in prose did the same. Measured
+2026-10-20 on plan epic `bd-ib-fyozyd` and again 2026-10-21 on
+`livespec-dev-tooling-mvalxq`: the proof pointer self-satisfied, the resume
+derived the review pointer, that pointer self-satisfied in its turn, and the plan
+skipped proof and review while every surface read as a correctly advancing chain.
+
+The placement rule is deliberately the FAIL-CLOSED one, and it binds whoever
+authors an obligation by hand as well as the two legs derived here: a marker that
+does not open the record it names is never satisfied, so such an obligation
+stalls its plan diagnosably rather than discharging itself silently. Narrowing by
+SKIPPING the known event prefixes instead would have left every other comment —
+a handoff entry, an operator rider, a relay event — able to discharge an
+obligation by quoting it, which is the same defect reached through a different
+comment kind.
+
 WHY THE COMMENT EVIDENCE PREFERS AN ID, THEN A TIMESTAMP, THEN A POSITION. The
 clause asks for a "ledger comment/version" identity, and a real `bd comments`
 record carries an id. Where the substrate omits it the creation instant is the
@@ -33,12 +59,39 @@ record has no version an operator can cite independently of the field being
 observed, so the record id and the observed status together are the evidence —
 which is also what makes a satisfied and an unsatisfied status observation
 comparable: the two differ in exactly the field under test.
+
+AND THE STATUS COMPARISON GOES THROUGH THE ADAPTER, NEVER BY STRING EQUALITY.
+The two sides are written in two vocabularies. An obligation names a WORK-ITEM
+LIFECYCLE status, whose terminal name is `done`; the record carries the stored
+BEADS-NATIVE status, which the work-item beads-issue mapping of
+`SPECIFICATION/contracts.md` spells `closed` for exactly that lifecycle state.
+Comparing the two spellings directly therefore reported an item that had been
+closed for hours as standing somewhere else, so an obligation naming `done` was
+unsatisfiable for the rest of its plan's budget — and the fault did not look
+like one, because every surface reported a well-formed `unsatisfied` reading
+quoting the real stored status. Measured 2026-10-21 on plan epic
+`bd-ib-jxvgq5`, whose chain obligation named `item_status bd-ib-rszkjc status
+done` while the ledger held that item at `closed`.
+
+Both sides are normalized onto the LIFECYCLE vocabulary rather than the target
+alone being mapped onto the stored one, and the symmetry is the point: this
+tenant holds obligations in both spellings — `_plan_resume_advance` derives its
+own with the native `closed` literal while a hand-authored plan obligation names
+`done` — so normalizing both makes "either vocabulary reaches the same verdict"
+a property of the comparison rather than a special case that has to be kept in
+step with whichever side is thought to be canonical.
+
+The EVIDENCE and the DETAIL still quote the status the ledger STORES, unmapped.
+The mapping decides how two names are compared; it is not a rewriting of what
+was observed, and an operator told an item stands at a status the store does not
+hold has been pointed at the wrong record.
 """
 
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_statuses import livespec_status_for
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     SOURCE_LEDGER,
     ResultObservation,
@@ -128,7 +181,7 @@ def observe_item_status(
                 " so it is evidence of nothing about where the item stands"
             ),
         )
-    if status != target.status:
+    if livespec_status_for(status=status) != livespec_status_for(status=target.status):
         return unsatisfied(
             repo=repository.name,
             target=target.identity,
@@ -146,14 +199,21 @@ def observe_item_status(
         source=SOURCE_LEDGER,
         now=now,
         evidence=f"ledger record {target.item_id} at status {status}",
-        detail=f"the ledger reports {target.item_id} at the expected status {status}",
+        detail=(
+            f"the ledger reports {target.item_id} at status {status}, which is the"
+            f" expected {target.status}"
+        ),
     )
 
 
 def observe_item_comment(
     *, repository: ResultRepository, target: ItemCommentTarget, now: str
 ) -> ResultObservation:
-    """Observe whether one ledger item carries the exact requested marker."""
+    """Observe whether one ledger item carries a RECORD of the requested marker.
+
+    A record is a comment whose first line opens with the marker; a comment that
+    merely mentions it is not one. The module docstring carries the measurement.
+    """
     config = result_store_config(repository=repository)
     if config is None:
         return _unreadable(
@@ -174,7 +234,7 @@ def observe_item_comment(
         )
     comments = tuple(read)
     for position, comment in enumerate(comments, start=1):
-        if target.marker not in comment.text:
+        if not _opens_record(text=comment.text, marker=target.marker):
             continue
         identity = comment.comment_id or comment.created_at or f"position {position}"
         return satisfied(
@@ -195,10 +255,24 @@ def observe_item_comment(
         now=now,
         evidence=f"{len(comments)} ledger comment(s) read on {target.item_id}",
         detail=(
-            f"none of the {len(comments)} comment(s) on {target.item_id} carries the"
-            f" marker {target.marker!r}"
+            f"none of the {len(comments)} comment(s) on {target.item_id} opens with"
+            f" the marker {target.marker!r}, so the item carries no record of that"
+            " kind; a comment that merely mentions the marker is not one"
         ),
     )
+
+
+def _opens_record(*, text: str, marker: str) -> bool:
+    """Whether one comment is a RECORD of the requested marker's kind.
+
+    The FIRST line decides it, and nothing is stripped first: every record this
+    reader answers for is rendered with its marker as the comment's leading
+    bytes, so tolerating a leading blank line or indentation would widen the
+    match to shapes no writer here produces, in the one direction the module
+    docstring records as the measured defect.
+    """
+    first_line, _, _ = text.partition("\n")
+    return first_line.startswith(marker)
 
 
 def _unreadable(

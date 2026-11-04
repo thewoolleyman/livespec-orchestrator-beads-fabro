@@ -26,7 +26,7 @@ dev = [
 # Consumed as a uv git source (not on PyPI), pinned to the current dev-tooling
 # release tag in lockstep with the orchestrator's own pyproject and the Fabro
 # sandbox image pin (orchestrator-image/Dockerfile / workflow.toml).
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v0.39.0" }
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.154.0" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

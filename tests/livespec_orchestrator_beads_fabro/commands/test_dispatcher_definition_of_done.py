@@ -123,6 +123,28 @@ def test_the_reference_line_is_not_a_gradeable_assertion() -> None:
     assert "References:" not in section.criteria_text
 
 
+def test_the_layout_keeps_an_indented_references_continuation_of_an_assertion() -> None:
+    # Only the standalone section reference belongs outside the rendered layout.
+    # An indented `References:` line belongs to the preceding bullet, just as it
+    # does in `criteria_text`, so omitting it would silently shorten the
+    # assertion the judgement subject asks a judge to grade.
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "- The rendered assertion retains every continuation line.\n"
+        "  References: this clause is part of the assertion.\n"
+        "\n"
+        "References: ## Effective acceptance criteria\n"
+    )
+
+    section = definition_of_done(description=description)
+
+    assert section.criteria_layout == (
+        "- The rendered assertion retains every continuation line.\n"
+        "  References: this clause is part of the assertion."
+    )
+
+
 def test_a_description_with_no_heading_carries_no_section() -> None:
     section = definition_of_done(description="Do the thing.\n")
 

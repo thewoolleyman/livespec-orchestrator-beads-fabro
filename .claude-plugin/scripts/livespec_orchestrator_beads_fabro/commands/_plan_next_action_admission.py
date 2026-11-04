@@ -99,39 +99,32 @@ def _unresolvable_repository(
     parsed = parse_result_reference(value=required_result)
     if isinstance(parsed, ResultReferenceRefusal):
         return None
+    canonical = _canonical_bare_identity(project_root=project_root, name=parsed.repo)
+    if canonical is not None:
+        return NextActionRefusal(
+            detail=(
+                f"required_result names the repository {parsed.repo!r}; this project resolves"
+                f" as {canonical!r}, so new plan pointers must use the canonical bare"
+                " repository identity"
+            )
+        )
     if resolve_result_repository(project_root=project_root, name=parsed.repo) is not None:
         return None
-    remedy = _bare_identity_remedy(project_root=project_root, name=parsed.repo)
     return NextActionRefusal(
         detail=(
             f"required_result names the repository {parsed.repo!r}, which the shared"
             " authoritative result reader cannot resolve for this project, so every"
-            f" observation of this obligation would be unobservable{remedy}"
+            " observation of this obligation would be unobservable"
         )
     )
 
 
-def _bare_identity_remedy(*, project_root: Path, name: str) -> str:
-    """Name the bare identity a forge-path spelling was reaching for, when it resolves.
-
-    The measured incident named this project's own repository as `<owner>/<repo>`,
-    which is the right identity on every other surface this fleet has, so a
-    refusal that only echoed the value back reads as a refusal of the correct
-    answer. The segment after the last separator is RESOLVED before it is
-    suggested, so a path whose tail is equally unresolvable gets no suggestion
-    rather than a confident-looking wrong one.
-
-    THE SUGGESTION IS NEVER APPLIED HERE, and that is deliberate rather than
-    timid. Stripping the owner would make `<any-owner>/<this-repo-name>` resolve
-    to THIS checkout — the one thing `_plan_result_repository`'s own origin-name
-    resolution refuses to do, because it would read another repository's result
-    as this project's and report it satisfied. A refusal costs its author one
-    edit; a wrong normalization costs a false observation nobody can see.
-    """
+def _canonical_bare_identity(*, project_root: Path, name: str) -> str | None:
+    """Return the bare canonical spelling a path-form self-identity must use."""
     bare = name.rsplit("/", 1)[-1]
     if bare == name or resolve_result_repository(project_root=project_root, name=bare) is None:
-        return ""
-    return f"; this project resolves as {bare!r}, so name that rather than a forge path"
+        return None
+    return bare
 
 
 def _project_root(*, config: StoreConfig) -> Path:

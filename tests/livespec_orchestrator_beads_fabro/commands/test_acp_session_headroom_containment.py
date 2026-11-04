@@ -233,6 +233,11 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "five_hour_drain_percent_per_hour": None,
                 "projection": None,
                 "unverified_provider_reset_claim": None,
+                "seven_day": {
+                    "utilization_percent": None,
+                    "status": None,
+                    "unobservable": headroom.ABSENT_SEVEN_DAY_READING,
+                },
             },
         ),
         (
@@ -246,6 +251,11 @@ def _refusal(*, records: list[dict[str, Any]]) -> dict[str, Any]:
                 "five_hour_drain_percent_per_hour": None,
                 "projection": None,
                 "unverified_provider_reset_claim": None,
+                "seven_day": {
+                    "utilization_percent": None,
+                    "status": None,
+                    "unobservable": headroom.ABSENT_SEVEN_DAY_READING,
+                },
             },
         ),
     ],

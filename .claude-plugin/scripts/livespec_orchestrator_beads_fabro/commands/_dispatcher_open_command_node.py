@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import NodeTimeou
 __all__: list[str] = [
     "COMMAND_NODES",
     "open_command_node",
+    "updated_open_command_node",
 ]
 
 # Every COMMAND node of the `implement-work-item` workflow — the nodes the
@@ -68,18 +69,30 @@ __all__: list[str] = [
 # this tuple against the committed graph so the set cannot drift away from it.
 COMMAND_NODES: tuple[str, ...] = (
     "dead_implementer",
+    "dod_gate_mutation_guard",
+    "fix_commit_settle",
+    "implement_amendment_route",
+    "implement_commit_settle",
+    "implement_completion",
+    "implement_hook_route",
     "implementation_diff",
     "janitor",
+    "janitor_admission",
     "needs_human",
     "non_converged",
     "pr",
     "pr_refresh",
     "pr_refresh_head",
+    "pr_refresh_merged_reconcile_route",
     "pr_route",
     "proof_grade",
     "proof_grade_route",
     "publish_draft",
+    "publish_merged_reconcile_route",
+    "recapture_route",
     "refresh_repair",
+    "review_fix_admission",
+    "review_fix_commit_settle",
     "verify_pr",
 )
 
@@ -88,14 +101,22 @@ COMMAND_NODES: tuple[str, ...] = (
 # and bare on others. A FAILED stage ends the node exactly as a completed one
 # does: when the failure is retryable the engine emits a fresh start event,
 # which the start/completion count then reads as open again.
-_STARTED_SUFFIX = "stage.started"
-_ENDED_SUFFIXES: tuple[str, ...] = ("stage.completed", "stage.failed")
+_STARTED_SUFFIXES: tuple[str, ...] = ("stage.started", "step.started")
+_ENDED_SUFFIXES: tuple[str, ...] = ("stage.completed", "stage.failed", "step.finished")
 
 # Where a record's event name lives, in the same descending preference the
 # review-gate parser reads it in, so one stream shape is not read two ways.
 _NAME_KEYS: tuple[str, ...] = ("event", "name", "event_name", "type")
 
 _NODE_ID_KEY = "node_id"
+_PETRI_ITEM_KEY = "item"
+_PETRI_RECORD_KEY = "record"
+_PETRI_BODY_KEY = "body"
+_PETRI_SUBJECT_KEY = "subject"
+_PETRI_NODE_KEY = "node"
+_PETRI_NODE_NAME_KEY = "name"
+_PETRI_NODE_KIND_KEY = "kind"
+_PETRI_COMMAND_KIND = "attractor/command"
 
 
 def open_command_node(*, events_json: str, timeouts: NodeTimeouts) -> OpenCommandNode | None:
@@ -121,7 +142,7 @@ def open_command_node(*, events_json: str, timeouts: NodeTimeouts) -> OpenComman
         if node is None:
             continue
         name = _event_name(event=event)
-        if name.endswith(_STARTED_SUFFIX):
+        if name.endswith(_STARTED_SUFFIXES):
             unfinished[node] = unfinished.get(node, 0) + 1
         elif name.endswith(_ENDED_SUFFIXES):
             unfinished[node] = unfinished.get(node, 0) - 1
@@ -133,6 +154,34 @@ def open_command_node(*, events_json: str, timeouts: NodeTimeouts) -> OpenComman
     if not candidates:
         return None
     return max(candidates, key=lambda candidate: candidate.timeout_seconds)
+
+
+def updated_open_command_node(
+    *,
+    established: OpenCommandNode | None,
+    events_json: str,
+    timeouts: NodeTimeouts,
+) -> OpenCommandNode | None:
+    """Update an open command node from one incremental event read.
+
+    A delta can omit a still-running command node entirely, so it cannot be
+    interpreted as a complete stream. An unreadable delta and a readable delta
+    with no lifecycle event both retain the established node; only an observed
+    completion of that specific node clears it.
+    """
+    events = fabro_event_records_from_stdout(stdout=events_json)
+    if events is None:
+        return established
+    current = open_command_node(events_json=events_json, timeouts=timeouts)
+    if current is not None:
+        return current
+    if established is not None and any(
+        _command_node_id(event=event) == established.node
+        and _event_name(event=event).endswith(_ENDED_SUFFIXES)
+        for event in events
+    ):
+        return None
+    return established
 
 
 def _command_node_id(*, event: dict[str, Any]) -> str | None:
@@ -149,6 +198,12 @@ def _command_node_id(*, event: dict[str, Any]) -> str | None:
         value: object = source.get(_NODE_ID_KEY)
         if isinstance(value, str) and value in COMMAND_NODES:
             return value
+    node = _petri_node(event=event)
+    if node is None or node.get(_PETRI_NODE_KIND_KEY) != _PETRI_COMMAND_KIND:
+        return None
+    value = node.get(_PETRI_NODE_NAME_KEY)
+    if isinstance(value, str) and value in COMMAND_NODES:
+        return value
     return None
 
 
@@ -158,6 +213,22 @@ def _properties(*, event: dict[str, Any]) -> dict[str, object]:
     if isinstance(properties, dict):
         return cast("dict[str, object]", properties)
     return {}
+
+
+def _petri_node(*, event: dict[str, Any]) -> dict[str, object] | None:
+    """The Petri-era subject node, or None when this is not its envelope."""
+    item: object = event.get(_PETRI_ITEM_KEY)
+    if not isinstance(item, dict):
+        return None
+    item_mapping = cast("dict[str, object]", item)
+    subject: object = item_mapping.get(_PETRI_SUBJECT_KEY)
+    if not isinstance(subject, dict):
+        return None
+    subject_mapping = cast("dict[str, object]", subject)
+    node: object = subject_mapping.get(_PETRI_NODE_KEY)
+    if not isinstance(node, dict):
+        return None
+    return cast("dict[str, object]", node)
 
 
 def _event_name(*, event: dict[str, Any]) -> str:
@@ -171,4 +242,19 @@ def _event_name(*, event: dict[str, Any]) -> str:
         value: object = event.get(key)
         if isinstance(value, str):
             return value
+    item: object = event.get(_PETRI_ITEM_KEY)
+    if not isinstance(item, dict):
+        return ""
+    item_mapping = cast("dict[str, object]", item)
+    record: object = item_mapping.get(_PETRI_RECORD_KEY)
+    if not isinstance(record, dict):
+        return ""
+    record_mapping = cast("dict[str, object]", record)
+    body: object = record_mapping.get(_PETRI_BODY_KEY)
+    if not isinstance(body, dict):
+        return ""
+    body_mapping = cast("dict[str, object]", body)
+    value = body_mapping.get("event")
+    if isinstance(value, str):
+        return value
     return ""

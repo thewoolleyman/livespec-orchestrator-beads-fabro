@@ -80,7 +80,13 @@ _UNCHANGED_TREE_EXIT = 1
 # RENDERED. Keying on it is what lets a case assert the dispatch-base fetch is a
 # Dispatcher-rendered step rather than merely a step that happens to be present.
 _MATERIALIZED_MARKER = "# --- Dispatcher-materialized"
-_FETCH_STEP_RE = re.compile(r'^script = ("git fetch .*")$', re.MULTILINE)
+# Matches a prepare step whose script PERFORMS a fetch, wherever in the command
+# line the `git fetch` sits. It was anchored at the start of the script until
+# bd-ib-ukht2p made the committed history-preparation step conditional on
+# `git rev-parse --is-shallow-repository`: the fetch moved behind that inspection,
+# the anchored form matched nothing, and `_committed_run_config` reported that the
+# shipped payload carries NO fetch step rather than that its shape had changed.
+_FETCH_STEP_RE = re.compile(r'^script = (".*git fetch .*")$', re.MULTILINE)
 
 
 def test_a_changed_tree_passes_implementation_diff_against_the_projected_dispatch_base(
@@ -276,11 +282,14 @@ def _materialized_region(*, rendered: str) -> str:
 
 
 def _fetch_steps(*, text: str) -> list[str]:
-    """Every `git fetch`-shaped prepare step, decoded from its TOML basic string.
+    """Every FETCHING prepare step, decoded from its TOML basic string.
 
-    Scoped to `git fetch` deliberately: the surrounding blocks provision a tmux
-    root, a credential helper and the plugin-cache gate, and this caller EXECUTES
-    what it returns against the runner's own environment.
+    Scoped to steps that perform a `git fetch` deliberately: the surrounding
+    blocks provision a tmux root, a credential helper and the plugin-cache gate,
+    and this caller EXECUTES what it returns against the runner's own environment.
+    The committed history-preparation step qualifies even though its fetch now
+    sits behind a shallowness inspection — see `_FETCH_STEP_RE` for the anchoring
+    that stopped matching it.
     """
     decoded: list[str] = []
     for literal in _FETCH_STEP_RE.findall(text):

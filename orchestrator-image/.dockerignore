@@ -9,3 +9,5 @@
 !bd-guard/**
 !plugin-scripts
 !plugin-scripts/**
+!plugin-meta
+!plugin-meta/**

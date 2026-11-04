@@ -21,12 +21,16 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_chain_head import Ch
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_payload import AuthorityState
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
 from livespec_orchestrator_beads_fabro.commands._plan_progress_decision import (
+    decide_tracked_write,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_progress_outcome import (
     EVENT_HANDOFF,
     EVENT_PICKER,
     EVENT_POINTER,
+    EVENT_RECOVERY,
+    EVENT_REPLACEMENT,
     TrackedDecision,
     TrackedRefusal,
-    decide_tracked_write,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_recovery import CausalRecovery
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
@@ -217,41 +221,67 @@ def test_an_unsatisfied_result_preserves_both_limits_and_counts_only_handoffs(
     assert decision.action.required_result == _PRIOR_RESULT
 
 
-def test_renaming_an_unmet_target_is_refused_rather_than_read_as_new_work() -> None:
-    """The one rewrite that would otherwise look like legitimate advancement."""
-    refusal = _refusal(
+@pytest.mark.parametrize("status", ["unsatisfied", "unobservable"])
+@pytest.mark.parametrize(("is_handoff", "consumed"), [(True, 1), (False, 0)])
+def test_renaming_an_unmet_target_replaces_it_under_the_writes_own_budget(
+    status: str,
+    is_handoff: bool,  # noqa: FBT001 -- parametrized pytest argument.
+    consumed: int,
+) -> None:
+    """A different required result is a REPLACEMENT, never a refusal.
+
+    The rename refusal existed only to stop a rename from evading expiry, and
+    expiry is deleted, so the write begins a new obligation under its own budget
+    and records the replaced identity. An unobservable target is re-aimable too:
+    a reader that cannot measure the old target must not pin the plan to it.
+    """
+    decision = _decision(
         decide_tracked_write(
             epic_id=_EPIC_ID,
             head=_head(authority=_prior_authority()),
             candidate=_candidate(required_result=_RENAMED_RESULT),
             now=_NOW,
-            is_handoff=False,
+            is_handoff=is_handoff,
+            observation=_observation(status=status),
+        )
+    )
+
+    assert decision.event_kind == EVENT_REPLACEMENT
+    assert decision.authority.required_result == _RENAMED_RESULT
+    assert decision.authority.original_deadline == _LATER_DEADLINE
+    assert decision.authority.max_handoffs == 99
+    assert decision.authority.consumed_handoffs == consumed
+    assert decision.replaced_result is not None
+    assert "bd-ib-prior" in decision.replaced_result
+
+
+def test_an_overdue_obligation_continues_with_no_recovery_or_ruling() -> None:
+    """Both limits reached, an unsatisfied result: the handoff is accepted.
+
+    This is the deleted expiry gate's own case. The decision is the ordinary
+    continuation, consuming one unit past the ceiling.
+    """
+    decision = _decision(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(
+                authority=AuthorityState(
+                    required_result=_PRIOR_RESULT,
+                    original_deadline="2020-01-01T00:00:00Z",
+                    max_handoffs=2,
+                    consumed_handoffs=2,
+                )
+            ),
+            candidate=_candidate(),
+            now=_NOW,
+            is_handoff=True,
             observation=_observation(status="unsatisfied"),
         )
     )
 
-    assert "cannot be renamed" in refusal.detail
-    assert "causal supersession" in refusal.detail
-
-
-def test_renaming_an_unobservable_target_is_refused_naming_the_measurement() -> None:
-    """The remedy differs, so the refusal says the target was UNOBSERVABLE.
-
-    A reader told only "cannot be renamed" would look for a supersession to
-    author, when what is actually owed is a diagnosis of the broken reading.
-    """
-    refusal = _refusal(
-        decide_tracked_write(
-            epic_id=_EPIC_ID,
-            head=_head(authority=_prior_authority()),
-            candidate=_candidate(required_result=_RENAMED_RESULT),
-            now=_NOW,
-            is_handoff=False,
-            observation=_observation(status="unobservable"),
-        )
-    )
-
-    assert "is unobservable" in refusal.detail
+    assert decision.event_kind == EVENT_HANDOFF
+    assert decision.authority.consumed_handoffs == 3
+    assert decision.authority.original_deadline == "2020-01-01T00:00:00Z"
 
 
 @pytest.mark.parametrize(
@@ -420,7 +450,7 @@ def _recovery() -> CausalRecovery:
 
 
 def test_recovery_against_an_epic_with_no_obligation_at_all_is_refused() -> None:
-    """There is nothing expired, so there is nothing to recover.
+    """There is no obligation, so there is nothing to recover.
 
     Admitting one would let a session bank attempts before any obligation
     exists and spend them against whatever obligation arrived later.
@@ -437,7 +467,7 @@ def test_recovery_against_an_epic_with_no_obligation_at_all_is_refused() -> None
         )
     )
 
-    assert "not expired" in refusal.detail
+    assert "no obligation stands" in refusal.detail
 
 
 def test_recovery_against_a_satisfied_obligation_is_refused() -> None:
@@ -454,4 +484,56 @@ def test_recovery_against_a_satisfied_obligation_is_refused() -> None:
         )
     )
 
-    assert "not expired" in refusal.detail
+    assert "already satisfied" in refusal.detail
+
+
+def test_a_valid_recovery_on_an_unexpired_unmet_obligation_is_recorded() -> None:
+    """An attempt is optional and no longer gated on expiry: it is graded and recorded."""
+    decision = _decision(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(authority=_prior_authority()),
+            candidate=_candidate(),
+            now=_NOW,
+            is_handoff=False,
+            observation=_observation(status="unsatisfied"),
+            recovery=_recovery(),
+        )
+    )
+
+    assert decision.event_kind == EVENT_RECOVERY
+    assert decision.authority.original_deadline == _ORIGINAL_DEADLINE
+
+
+def test_a_recovery_cannot_ride_on_a_replacement() -> None:
+    """The attempt names the obligation it recovers, so it cannot replace that obligation."""
+    refusal = _refusal(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(authority=_prior_authority()),
+            candidate=_candidate(required_result=_RENAMED_RESULT),
+            now=_NOW,
+            is_handoff=False,
+            observation=_observation(status="unsatisfied"),
+            recovery=_recovery(),
+        )
+    )
+
+    assert "replaces" in refusal.detail
+
+
+def test_an_invalid_recovery_is_refused() -> None:
+    """A carried attempt is still graded: an elapsed attempt bound is refused."""
+    refusal = _refusal(
+        decide_tracked_write(
+            epic_id=_EPIC_ID,
+            head=_head(authority=_prior_authority()),
+            candidate=_candidate(),
+            now="2026-10-21T00:00:00Z",
+            is_handoff=False,
+            observation=_observation(status="unsatisfied"),
+            recovery=_recovery(),
+        )
+    )
+
+    assert "already" in refusal.detail

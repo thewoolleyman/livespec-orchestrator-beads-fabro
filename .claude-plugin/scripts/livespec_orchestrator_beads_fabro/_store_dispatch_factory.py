@@ -27,6 +27,7 @@ __all__: list[str] = [
     "dispatch_factory_from_record",
     "dispatch_run_id_from_record",
     "dispatch_run_ids_for",
+    "read_dispatch_factories",
     "record_dispatch_factory",
     "record_dispatch_run",
 ]
@@ -47,6 +48,27 @@ def dispatch_factory_for(*, path: StoreConfig, work_item_id: str) -> str | None:
     if factory is not None:
         return factory
     return _latest_comment_marker(path=path, work_item_id=work_item_id)
+
+
+def read_dispatch_factories(*, path: StoreConfig) -> dict[str, str]:
+    """Every item's stamped dispatch factory, read from ONE `bd list` of the tenant.
+
+    The narrow-raw-read shape `read_merge_held_work_item_ids` uses: the marker rides
+    each record's metadata, which the list already returns, so a snapshot that needs
+    the factory for many items reads it here once instead of `dispatch_factory_for`'s
+    one `bd show` (plus a `bd comments` fallback) per item. Measured 2026-10-25 on the
+    orchestrator tenant (bd-ib-tzbdd3): needs-attention issued 60 such shows at
+    1.6-4.6 s each. An item whose record carries no marker is simply absent, and
+    the caller falls back to the configured default factory as it always has.
+    """
+    client = make_beads_client(config=path)
+    factories: dict[str, str] = {}
+    for record in client.list_issues():
+        issue_id = record.get("id")
+        factory = dispatch_factory_from_record(record=record)
+        if isinstance(issue_id, str) and factory is not None:
+            factories[issue_id] = factory
+    return factories
 
 
 def dispatch_factory_from_record(*, record: BeadsRecord) -> str | None:

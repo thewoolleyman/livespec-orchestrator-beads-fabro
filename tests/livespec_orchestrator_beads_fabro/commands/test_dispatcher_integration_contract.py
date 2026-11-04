@@ -88,6 +88,7 @@ def test_the_contract_enumerates_every_ratified_integration_point() -> None:
         "core_repo_url",
         "core_pinned_ref",
         "prepare_toolchain_mise",
+        "prepare_toolchain_python_sync",
         "prepare_toolchain_lefthook",
         "conformance_hook_install",
         "conformance_verify_commit_refuse_hook",
@@ -148,6 +149,15 @@ def test_the_toolchain_no_op_arm_is_an_explicit_fleet_default_value() -> None:
         field=schema.PREPARE_TOOLCHAIN_LEFTHOOK_FIELD, declaration={}
     )
     assert lefthook.value == defaults.TOOLCHAIN_NO_OP
+    # The PYTHON-SYNC premise is named here beside its two neighbours rather
+    # than left to the closed-set case above, because the no-op arm is the one
+    # this premise exists for: it was a bare constant until bd-ib-xti6q, and a
+    # case naming only the other two could not return a hit for the arm that
+    # keeps a repository declaring nothing from running a sync at all.
+    python_sync = _resolver().resolve_integration_field(
+        field=schema.PREPARE_TOOLCHAIN_PYTHON_SYNC_FIELD, declaration={}
+    )
+    assert python_sync.value == defaults.TOOLCHAIN_NO_OP
 
 
 def _conformance(*, premise: str, value: object) -> dict[str, object]:

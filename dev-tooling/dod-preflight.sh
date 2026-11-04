@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+# The REPOSITORY PREFLIGHT taking of the Definition-of-Done judgement.
+#
+# `contracts.md`'s one-rubric-one-subject clause names three HOST TAKINGS — this
+# preflight, the Dispatcher's pre-admission judgement and its pre-dispatch
+# judgement — and binds all three to ONE rubric and ONE subject: the `dod_gate`
+# node's own prompt file, read from the plugin build that will execute the
+# dispatch, over the item's effective criteria, the body of each heading its
+# reference line names, and its operator riders. A taking other than the node may
+# append ONLY an ending contract stating the verdict form it must return.
+#
+# So this script composes NOTHING. It resolves the registered build, asks the
+# package for the prompt, and runs it on every candidate of the gate's chain.
+# Everything it used to assemble itself — a `Goal:` preamble built out of the
+# item's fields, a capability-source sentence, a paragraph about how to grade
+# proof-mode feasibility — was prose the node has never read. Measured on this
+# repository's own items between 2026-10-22 00:21Z and 08:13Z, four preflight
+# PASSes were followed by an in-run refusal on unchanged Definition-of-Done
+# bytes, and twice the same leg returned opposite verdicts on identical text.
+#
+# Usage, from the governed repository's root, under its credential wrapper:
+#   with-<project>-env.sh -- <orchestrator checkout>/dev-tooling/dod-preflight.sh <item-id> [<description-file>]
+# The optional description file replaces the item's description, so a candidate
+# edit can be checked before it is written to the ledger.
+#
+# Exit 0 and a last line of PASS: every candidate of the gate's chain passed, so
+# dispatch may proceed. Exit 1 and a failure JSON line from any candidate: do NOT
+# dispatch; apply the remedies. Exit 2: the judgement could not run, which is a
+# reason to fix the tool, not to skip the check.
+set -euo pipefail
+
+# Tenant credential wrappers deliberately replace PATH.  Both host-judge CLIs
+# are operator-installed user tools, so restore their conventional directory
+# before the package resolves the configured candidate chain.
+PATH="$HOME/.local/bin:$PATH"
+export PATH
+
+item="${1:?usage: dod-preflight.sh <item-id> [<description-file>]}"
+override="${2:-}"
+repo_root=$(git rev-parse --show-toplevel)
+
+# The orchestrator build THIS repository has registered, read from Claude Code's
+# install registry rather than hard-coded, so a release moves the rubric with it.
+install_root=$(python3 - "$repo_root" <<'PY'
+import json, os, sys
+repo = os.path.realpath(sys.argv[1])
+registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+installs = json.load(open(registry, encoding="utf-8"))["plugins"].get(
+    "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro", [])
+paths = [i["installPath"] for i in installs if os.path.realpath(i.get("projectPath", "")) == repo]
+if not paths:
+    sys.exit(f"dod-preflight: no livespec-orchestrator-beads-fabro install registered for {repo}")
+print(paths[0])
+PY
+) || exit 2
+
+# THE WHOLE PROMPT, composed by the PACKAGE rather than assembled here:
+# `judgement_prompt` over `judgement_rubric` and `judgement_subject`, which is
+# the one assembly every host taking uses. A second copy here is a second set of
+# rules, and the node reads neither of them.
+#
+# THE SPEC-STATED JUDGEMENT IS TAKEN HERE TOO, through the gate's own reader. The
+# pre-dispatch gate composes it into its verdict twice: its governing-heading
+# verdict rides in the subject the rubric grades, and `governing_heading_findings`
+# holds an item whose References line omits a heading it returned (check 6).
+# Without it this preflight PASSED items the gate then refused at exit 5 — three
+# measured on 2026-10-24, each costing a launch slot for the whole pre-launch
+# (bd-ib-tka3wb). The verdict and any check 6 findings go to a side file, because
+# stdout here is the prompt.
+judgement_input=$(mktemp)
+trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings"' EXIT
+python3 - "$install_root" "$repo_root" "$item" "$override" "$judgement_input" > "$judgement_input" <<'PROMPT_PY'
+import sys
+from dataclasses import replace
+from pathlib import Path
+
+sys.path.insert(0, f"{sys.argv[1]}/scripts")
+sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
+    definition_of_done_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    judgement_subject,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    governing_heading_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    host_governing_heading_reader,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
+    judgement_prompt,
+    judgement_rubric,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+
+install_root, repo_root, item_id, override, side = sys.argv[1:6]
+repo = Path(repo_root)
+config = store_config(repo=repo)
+items = materialize_work_items(records=read_work_items(path=config))
+if item_id not in items:
+    sys.exit(f"dod-preflight: {item_id} is not a work-item of this repository's tenant")
+item = items[item_id]
+# The optional description file is substituted into the ITEM rather than into a
+# rendered subject, so the same ratified parse reads the candidate edit.
+if override:
+    item = replace(item, description=Path(override).read_text(encoding="utf-8"))
+# The Dispatcher refuses malformed section structure before it asks either
+# judgement.  Take that same pure reading before even the governing-heading
+# host taking, so a malformed candidate spends no model legs here either.
+section_findings = definition_of_done_findings(item=item, cwd=repo)
+if section_findings:
+    Path(f"{side}.section_findings").write_text(
+        "".join(f"{finding}\n" for finding in section_findings), encoding="utf-8"
+    )
+    raise SystemExit(0)
+Path(f"{side}.section_findings").write_text("", encoding="utf-8")
+comments = tuple(
+    comment.text for comment in read_work_item_comments(path=config, work_item_id=item_id)
+)
+rubric = judgement_rubric(payload_root=Path(install_root))
+if rubric is None:
+    sys.exit(f"dod-preflight: the registered build ships no readable rubric under {install_root}")
+# `None` means the judgement could not be taken, and it fails open exactly as it
+# does at the gate: no finding is raised on an outage no edit could clear.
+governing = host_governing_heading_reader(runner=ShellCommandRunner())(item=item, repo=repo)
+report = (
+    ["governing-heading-kind: unobserved"]
+    if governing is None
+    else [f"governing-heading-kind: {governing.kind}"]
+    + [f"governing-heading: {heading}" for heading in governing.stated_by]
+)
+Path(f"{side}.governing").write_text("\n".join(report) + "\n", encoding="utf-8")
+findings = governing_heading_findings(
+    item=item, section=definition_of_done(description=item.description), verdict=governing
+)
+# The omission HOLDS only when the reference line names none of the headings the
+# verdict returns, which is exactly when every one of them is omitted. Otherwise
+# each finding is advisory: printed with its remedy, holding nothing. Derived
+# from `governing_heading_findings` rather than `governing_heading_holds`, so
+# the script runs against a registered build that predates the latter.
+holds = governing is not None and bool(findings) and len(findings) == len(set(governing.stated_by))
+Path(f"{side}.findings").write_text(
+    "".join(f"finding: {finding}\n" for finding in findings) if holds else "", encoding="utf-8"
+)
+if not holds:
+    with Path(f"{side}.governing").open("a", encoding="utf-8") as advisory:
+        advisory.writelines(f"advisory: {finding}\n" for finding in findings)
+sys.stdout.write(
+    judgement_prompt(
+        gate_prompt=rubric,
+        subject=judgement_subject(item=item, cwd=repo, comments=comments, governing=governing),
+    )
+)
+PROMPT_PY
+if [ -s "$judgement_input.section_findings" ]; then
+  cat "$judgement_input.section_findings"
+  exit 1
+fi
+[ -s "$judgement_input" ] || exit 2
+[ -f "$judgement_input.governing" ] || exit 2
+cat "$judgement_input.governing"
+# A check 6 finding that HOLDS — the References line names no governing heading —
+# holds the item at the gate whatever the rubric says, so the candidate legs
+# would spend two model calls to change nothing. An advisory one was printed with
+# the verdict above and holds nothing.
+if [ -s "$judgement_input.findings" ]; then
+  cat "$judgement_input.findings"
+  echo "dod-preflight: FAILED — the References line names none of the governing headings the spec-stated judgement returned; add them verbatim and re-run"
+  exit 1
+fi
+
+# Run through the host's shared candidate chain rather than invoking bare CLIs
+# here.  Besides preserving the configured Codex-first order, this keeps the
+# governing-heading, Definition-of-Done and reflector model bindings in one
+# resolver.  The legacy string form predates candidate metadata, so bridge its
+# recognisable Claude adapter into that resolver until the configuration is
+# migrated.
+set +e
+python3 - "$install_root" "$repo_root" "$judgement_input" <<'JUDGE_PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, f"{sys.argv[1]}/scripts")
+sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import parse_adapter_string
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
+    dod_gate_candidates,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    parse_judgement_reply,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
+    run_candidate_chain,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+
+repo = Path(sys.argv[2])
+prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
+
+
+def candidates(*, cwd: Path) -> tuple[AcpCandidate, ...] | None:
+    resolved = dod_gate_candidates(cwd=cwd)
+    if resolved is not None:
+        return resolved
+    entry = (dispatcher_block(cwd=cwd).get("acp_nodes") or {}).get("dod_gate")
+    if not isinstance(entry, str):
+        return None
+    adapter = parse_adapter_string(text=entry)
+    if "claude-agent-acp" in adapter.command:
+        return (AcpCandidate(adapter=adapter, agent_id="claude-acp"),)
+    return None
+
+
+def is_verdict(*, text: str) -> bool:
+    return parse_judgement_reply(reply=text).outcome in {"admitted", "rests-at-needs-human"}
+
+
+chain = run_candidate_chain(
+    prompt=prompt,
+    cwd=repo,
+    runner=ShellCommandRunner(),
+    is_verdict=lambda text: is_verdict(text=text),
+    candidate_resolver=candidates,
+    caller="dod_preflight",
+    journal_spend=True,
+)
+if chain.reply is None:
+    print(f"DID-NOT-RUN {chain.cause}")
+    raise SystemExit(2)
+print(chain.reply)
+outcome = parse_judgement_reply(reply=chain.reply).outcome
+raise SystemExit(0 if outcome == "admitted" else 1)
+JUDGE_PY
+status=$?
+set -e
+
+case "$status" in
+  0) echo PASS ;;
+  1) exit 1 ;;
+  *) exit 2 ;;
+esac

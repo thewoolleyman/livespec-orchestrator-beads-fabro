@@ -265,6 +265,23 @@ def test_a_reasoned_marker_does_not_stand_down_a_second_offence_in_its_function(
     assert found == ["tests/test_x.py:7: waits in real time through time.sleep"]
 
 
+def test_a_marker_on_a_code_line_above_does_not_stand_down_the_next_offence() -> None:
+    """A second sleep directly beneath a marked one is its own occurrence."""
+    check = _load_check()
+    source = (
+        "import time\n"
+        "\n"
+        "\n"
+        "def test_x() -> None:\n"
+        "    time.sleep(0.25)  # real-time-required: the host clock is the subject\n"
+        "    time.sleep(0.25)\n"
+    )
+
+    assert check.file_findings(source=source, label="tests/test_x.py") == [
+        "tests/test_x.py:6: waits in real time through time.sleep"
+    ]
+
+
 def test_a_marker_further_above_does_not_reach_the_occurrence() -> None:
     """The binding region is bounded, so a marker cannot cover a whole block.
 

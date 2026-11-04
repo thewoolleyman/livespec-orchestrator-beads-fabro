@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,7 +21,7 @@ def _git(*, repo: Path, args: list[str]) -> str:
     return result.stdout.strip()
 
 
-def _ancestor_source(*, root: Path) -> tuple[Path, str, str]:
+def _ancestor_source(*, root: Path, unrelated_ref_count: int = 0) -> tuple[Path, str, str]:
     origin = root / "origin.git"
     repo = root / "source"
     _git(repo=root, args=["init", "--bare", str(origin)])
@@ -36,6 +37,13 @@ def _ancestor_source(*, root: Path) -> tuple[Path, str, str]:
     _git(repo=repo, args=["commit", "-am", "advance origin"])
     _git(repo=repo, args=["push", "origin", "master"])
     remote_head = _git(repo=repo, args=["rev-parse", "HEAD"])
+    for index in range(unrelated_ref_count):
+        _git(
+            repo=origin,
+            args=["update-ref", f"refs/heads/unrelated-{index:04d}", remote_head],
+        )
+    if unrelated_ref_count:
+        _git(repo=repo, args=["fetch", "--quiet", "origin"])
     _git(repo=repo, args=["reset", "--hard", head])
     (repo / "uncommitted.txt").write_text("retain primary state\n", encoding="utf-8")
     hook = repo / ".git" / "hooks" / "pre-push"
@@ -130,13 +138,65 @@ def test_staged_run_journals_source_head_and_its_containing_origin_ref(*, tmp_pa
     _assert_cleanup(repo=repo, checkout=checkout, head=head, remote_head=remote_head)
 
 
-def _assert_cleanup(*, repo: Path, checkout: Path, head: str, remote_head: str) -> None:
+def test_staged_run_keeps_a_bounded_origin_ref_inventory_summary(*, tmp_path: Path) -> None:
+    repo, head, remote_head = _ancestor_source(root=tmp_path, unrelated_ref_count=1_000)
+    engine = _EngineRunner()
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_source_staging"
+    )
+    journal = _Journal()
+    root = tmp_path / ".worktrees"
+    plan = build_plan(
+        repo=repo,
+        work_item_id="bd-ib-iimrhk",
+        workflow_toml=repo / "workflow.toml",
+        goal_file=repo / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor",
+        default_branch="master",
+    )
+    runner = module.SourceStagingRunner(
+        inner=engine, plan=plan, journal=journal, worktree_root=root
+    )
+
+    result = runner.run(argv=["fabro", "run"], cwd=repo, timeout_seconds=30)
+
+    assert result.exit_code == 0, result.stderr
+    preflight = next(
+        row for row in journal.records if row["stage"] == "source-checkout-origin-reachability"
+    )
+    staged = next(row for row in journal.records if row["stage"] == "source-checkout-stage")
+    assert staged["head"] == head
+    assert staged["default_branch_head"] == remote_head
+    assert staged["staged_at"] == remote_head
+    assert staged["origin_ref"] == "origin/master"
+    assert staged["origin_ref_inventory_count"] == 1_001
+    assert staged["origin_ref_inventory_sha256"] == preflight["origin_ref_inventory_sha256"]
+    assert "origin_refs" not in staged
+    assert len(json.dumps(staged, sort_keys=True)) < 1_000
+    _assert_cleanup(
+        repo=repo,
+        checkout=engine.launch_cwds[-1],
+        head=head,
+        remote_head=remote_head,
+        unrelated_ref_count=1_000,
+    )
+
+
+def _assert_cleanup(
+    *, repo: Path, checkout: Path, head: str, remote_head: str, unrelated_ref_count: int = 0
+) -> None:
     assert not checkout.exists()
     assert _git(repo=repo, args=["rev-parse", "HEAD"]) == head
     assert _git(repo=repo, args=["symbolic-ref", "--short", "HEAD"]) == "master"
     assert (repo / "uncommitted.txt").read_text(encoding="utf-8") == "retain primary state\n"
-    assert _git(repo=repo, args=["ls-remote", "--heads", "origin"]) == (
-        f"{remote_head}\trefs/heads/master"
+    assert _git(repo=repo, args=["ls-remote", "--heads", "origin"]) == "\n".join(
+        [f"{remote_head}\trefs/heads/master"]
+        + [
+            f"{remote_head}\trefs/heads/unrelated-{index:04d}"
+            for index in range(unrelated_ref_count)
+        ]
     )
     assert _git(repo=repo, args=["branch", "--format=%(refname:short)"]) == "master"
     assert _git(repo=repo, args=["worktree", "list", "--porcelain"]).count("worktree ") == 1

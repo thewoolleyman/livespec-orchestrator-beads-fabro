@@ -123,7 +123,6 @@ def _merged(*, merge_sha: str | None = _MERGE_SHA) -> PrView:
         auto_merge_armed=True,
         merge_state_status="CLEAN",
         merge_sha=merge_sha,
-        terminal_required_check_failures=(),
     )
 
 
@@ -137,6 +136,7 @@ def test_janitor_venue_module_owns_provisioning_and_old_privates_are_gone() -> N
         "JanitorVenue",
         "fleet_toolchain_is_the_host_janitor_premise",
         "provision_janitor_checkout",
+        "remove_janitor_core_checkout",
         "resolve_janitor_venue",
     }
 

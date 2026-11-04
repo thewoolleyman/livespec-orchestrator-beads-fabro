@@ -255,6 +255,11 @@ def test_a_disabled_floor_still_journals_the_reading_it_took(
             "five_hour_drain_percent_per_hour": None,
             "projection": None,
             "unverified_provider_reset_claim": None,
+            "seven_day": {
+                "utilization_percent": None,
+                "status": None,
+                "unobservable": headroom.ABSENT_SEVEN_DAY_READING,
+            },
         }
     ]
     assert record["node_selections"]["implement"]["headroom_skipped"] == []

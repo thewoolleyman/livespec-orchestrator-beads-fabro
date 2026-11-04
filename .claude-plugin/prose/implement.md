@@ -2,6 +2,31 @@
 
 Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime binding only maps its tools to it.
 
+## Plugin Package Imports
+
+Before running any Python snippet in this operation that imports
+`livespec_orchestrator_beads_fabro`, resolve the governed project's registered
+install. Use this bootstrap once in the Python process before those imports:
+
+```python
+import os
+import subprocess
+import sys
+
+_registered_plugin_root = subprocess.run(
+    [
+        "python3",
+        f"{os.environ['CLAUDE_PLUGIN_ROOT']}/scripts/bin/registered_plugin_root.py",
+        "--repo", os.getcwd(),
+    ],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.strip()
+sys.path.insert(0, f"{_registered_plugin_root}/scripts")
+sys.path.insert(0, f"{_registered_plugin_root}/scripts/_vendor")
+```
+
 ## What done looks like
 
 Done is closure with the Definition of Done proved, an administrative resolution, or rest in
@@ -78,7 +103,7 @@ from livespec_orchestrator_beads_fabro.store import materialize_work_items, read
 from pathlib import Path
 
 config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
-ix = materialize_work_items(read_work_items(path=config))
+ix = materialize_work_items(records=read_work_items(path=config))
 target = ix[work_item_id]
 ```
 

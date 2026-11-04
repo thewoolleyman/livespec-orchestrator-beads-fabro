@@ -11,6 +11,20 @@ seeded sandbox starts on — is rendered by `_dispatcher_goal_recovery` and hand
 in, for the cohesion reason that module's docstring gives: it is authored by the
 Dispatcher from the invocation's resume attributes rather than read off the item,
 so it shares neither input nor provenance with anything assembled here.
+
+WHICH COMMENTS ARE BRIEF, AND WHICH ARE RECEIPTS. Every ledger comment reaches
+the brief EXCEPT the Dispatcher's own Definition-of-Done judgement records, which
+`contracts.md`'s one-rubric-one-subject clause excludes from the node's rendered
+goal for the same reason it excludes them from the subject the host takings
+grade: a receipt is what the Dispatcher wrote ABOUT the brief, so a node that
+read one would grade a brief growing by a paragraph every time a verdict was
+recorded — and would meet, among its riders, a verdict about itself.
+
+The predicate is `_dispatcher_dod_judgement_markers.is_receipt_comment`, the
+same one the subject uses. One spelling of the marker is the whole point: two
+would make the subject and the goal disagree about which comments the item's
+brief consists of, which is the disagreement between host and in-run takings
+that the clause exists to close.
 """
 
 from __future__ import annotations
@@ -20,6 +34,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
+    is_receipt_comment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    recorded_governing_heading,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    spec_identity_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity_record import (
+    recorded_spec_identity,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import (
     InterruptedAttempt,
     interrupted_attempt_section,
@@ -30,7 +59,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_guard import (
     FACTORY_WORKFLOW_BOUNDARY_TEXT,
 )
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    governing_heading_block,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
+from livespec_orchestrator_beads_fabro.commands._spec_tier_attested_verdict import (
+    attested_governing_heading,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 if TYPE_CHECKING:
@@ -45,6 +80,11 @@ __all__: list[str] = [
 ]
 
 _MINIJINJA_OPEN_DELIMITER_RE = re.compile(r"\{\{|\{%|\{#")
+
+_DEFINITION_OF_DONE_BEGIN_MARK = (
+    "--- BEGIN ITEM DEFINITION OF DONE (the item's own section; ledger comments are outside it) ---"
+)
+_DEFINITION_OF_DONE_END_MARK = "--- END ITEM DEFINITION OF DONE ---"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -135,6 +175,17 @@ def render_goal(
     is not a recovery launch has no placement to narrate — and that default is
     also why the call site's own keyword is bound by a test: an omission here
     renders the plain brief and says nothing about the section it dropped.
+
+    THE GOVERNING-HEADING VERDICT IS READ OUT OF `comments`, not taken again.
+    The `dod_gate` node's check 6 reads it instead of searching the scenario
+    file from its own recollection, and the verdict it must read is the one the
+    pre-dispatch judgement already took and RECORDED — the same comments this
+    renderer is already filtering receipts out of. Taking it again here would
+    be a second model call over a prompt carrying the whole ratified tree, on
+    EVERY dispatch including a groom-variant one the judgement exempts, and a
+    second taking can disagree with the first, which would brief the node with
+    a verdict no host taking ever used. An item with no record renders the
+    block's explicit absence, and the node keeps its own search.
     """
     gap_line = f"Gap id: {item.gap_id}\n" if item.gap_id is not None else ""
     # PRESENCE IS THE WRONG QUESTION HERE, and this site is the one where
@@ -176,7 +227,7 @@ def render_goal(
         f"{FACTORY_WORKFLOW_BOUNDARY_TEXT}\n"
         "\n"
         "Description:\n"
-        f"{item.description}\n"
+        f"{_description_with_marked_definition_of_done(description=item.description)}\n"
         f"{acceptance_line}"
         f"{notes_line}"
     )
@@ -201,15 +252,75 @@ def render_goal(
     # lessons, comments, repo path) is neutralized in one place: the whole
     # rendered goal is what flows into fabro's MiniJinja-templated graph
     # `goal` attribute and prompts (work-item livespec-impl-beads-ajv).
-    if not comments:
-        return escape_minijinja_literal(text=body)
+    # The RIDERS, which is every comment but the Dispatcher's own judgement
+    # receipts. An item whose comments are ALL receipts renders no section at
+    # all, exactly as one with no comment does: a heading with nothing under it
+    # would tell the node riders exist.
+    riders = tuple(comment for comment in comments if not is_receipt_comment(body=comment.text))
+    # The governing-heading verdict rides AFTER the riders for the same reason
+    # the recovery placement rides before them: a rider is part of the brief the
+    # verdict was taken about, so a block standing ahead of them would describe
+    # assertions the node has not finished reading. It is rendered on every
+    # dispatch, absence included, because the `dod_gate` node's check 6 reads
+    # this block and must be able to tell a verdict of "nothing governs" from a
+    # judgement nobody took — the first forecloses its finding and the second
+    # leaves it its own search.
+    bodies = tuple(comment.text for comment in comments)
+    # A standing human attestation is the verdict when one exists: the `dod_gate`
+    # node "MUST use the attested `stated` verdict", and the receipt the pre-dispatch
+    # taking recorded may predate the attestation.
+    attested = attested_governing_heading(item=item, repo=repo, comments=bodies)
+    verdict_block = (
+        "\n"
+        + governing_heading_block(
+            verdict=recorded_governing_heading(comments=bodies) if attested is None else attested
+        )
+        + "\n"
+    )
+    # The SPEC IDENTITY the pre-dispatch taking used rides beside the verdict it
+    # was derived from, so the run's `dod_gate` node compares on the taking's own
+    # digest. A run whose item records none is supplied none and falls back on the
+    # whole-tree digest, so no block stands in for the absent identity.
+    supplied = recorded_spec_identity(comments=bodies)
+    if supplied is not None:
+        verdict_block += "\n" + spec_identity_block(identity=supplied) + "\n"
+    if not riders:
+        return escape_minijinja_literal(text=body + verdict_block)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
     ]
-    for index, comment in enumerate(comments, start=1):
+    # Numbered over the RIDERS rather than over the comments, so the brief
+    # carries no gap where a receipt was dropped — a gap reads as a comment the
+    # renderer lost rather than one it deliberately omitted.
+    for index, comment in enumerate(riders, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
-    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n")
+    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n" + verdict_block)
+
+
+def _description_with_marked_definition_of_done(*, description: str) -> str:
+    """The description, with its own Definition of Done section fenced by two marks.
+
+    A `dod_gate` refusal is recorded as a ledger comment quoting the reference
+    line as it stood, and the brief carries every comment, so a repaired item's
+    goal holds the corrected line in the description and the stale one in that
+    comment. The marks tell the node which text is the item's own section; the
+    section is the verbatim slice `definition_of_done_source` reads, so the marks
+    and the host-side grading agree on its extent. A description with no section
+    is returned unchanged.
+    """
+    section = definition_of_done_source(description=description)
+    if section == "":
+        return description
+    lines = description.splitlines(keepends=True)
+    extent = len(section.splitlines(keepends=True))
+    start = next(
+        index for index in range(len(lines)) if "".join(lines[index : index + extent]) == section
+    )
+    before = "".join(lines[:start])
+    after = "".join(lines[start + extent :])
+    marked = f"{_DEFINITION_OF_DONE_BEGIN_MARK}\n{section}\n{_DEFINITION_OF_DONE_END_MARK}\n"
+    return f"{before}{marked}{after}"
 
 
 def _comment_entry(*, comment: WorkItemComment) -> str:

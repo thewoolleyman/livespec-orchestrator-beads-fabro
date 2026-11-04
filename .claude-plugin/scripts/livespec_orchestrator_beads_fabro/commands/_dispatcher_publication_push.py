@@ -25,8 +25,12 @@ fails closed on its absence rather than falling back to an inline push.
 
 from __future__ import annotations
 
-import json
-
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -77,24 +81,25 @@ def publication_push_program_path_expansion() -> str:
 
 
 def publication_push_program_prepare_steps_block() -> str:
-    """A quoted-heredoc prepare step that installs the executable helper.
+    """A prepare step that installs the executable helper from its env payload.
 
-    The delimiter is QUOTED so the shell expands nothing inside the program:
-    its own body carries `$#`, `$1` and `${#expected}`, every one of which an
-    unquoted heredoc would substitute away before the file was written.
+    The program rides the step's `env`, and `printf %s` writes it so the shell
+    expands nothing inside it: its own body carries `$#`, `$1` and
+    `${#expected}`, every one of which an expanding write would substitute away
+    before the file was written.
     """
     root = sandbox_plugins_root_expansion()
     path = f"{root}/{PUBLICATION_PUSH_PROGRAM_FILENAME}"
-    script = (
-        f'set -eu\nmkdir -p "{root}"\n'
-        f"cat > \"{path}\" <<'LIVESPEC_PUBLICATION_PUSH_PROGRAM'\n"
-        f"{publication_push_program_source()}"
-        "LIVESPEC_PUBLICATION_PUSH_PROGRAM\n"
-        f'chmod 700 "{path}"'
+    step = PrepareStep(
+        script=(
+            f'set -eu\nmkdir -p "{root}"\n'
+            + payload_write_command(path_word=f'"{path}"')
+            + f'\nchmod 700 "{path}"'
+        ),
+        env={PAYLOAD_ENV_VAR: publication_push_program_source()},
     )
-    return (
+    header = (
         "\n# --- Dispatcher-materialized exact-object publication push: the ONE\n"
         "# --- rewriting capability the refresh stage is granted ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {json.dumps(script)}\n"
     )
+    return header + render_prepare_step(step=step)

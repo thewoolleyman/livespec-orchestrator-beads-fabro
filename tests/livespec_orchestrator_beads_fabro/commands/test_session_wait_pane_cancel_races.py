@@ -167,6 +167,12 @@ def test_cancelling_a_hung_observation_releases_its_worker(*, tmp_path: Path) ->
         # on a connection that genuinely happened, so an instrument that could
         # never return a hit fails here instead of certifying them.
         assert peer.opened_a_connection() is True
+        # A re-poll while the read is still in flight REUSES the running task
+        # rather than starting a second one. The peer never answers, so this
+        # poll is deterministically in flight, and a second connection could
+        # only come from a second task.
+        assert probe.poll(now=2.0) is None
+        assert probe.task is task
 
         probe.cancel(timeout_seconds=30.0)
 

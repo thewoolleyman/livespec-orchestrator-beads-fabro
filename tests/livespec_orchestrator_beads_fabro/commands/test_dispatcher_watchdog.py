@@ -37,7 +37,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_io_fabro_launcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_io_fabro_launcher,
+    _dispatcher_stale_item_reap,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
@@ -49,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+    LivenessState,
     liveness_sample,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
@@ -74,7 +78,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
 
-from tests.conftest import end_run_and_await_launcher_return
+from tests.conftest import ServerCancel, end_run_and_await_launcher_return
+
+pytestmark = pytest.mark.usefixtures("server_cancel")
 
 # ---------------------------------------------------------------------------
 # Shared fakes
@@ -85,6 +91,28 @@ from tests.conftest import end_run_and_await_launcher_return
 # return` joins to wait for the launcher's return rather than the fake
 # runner's.
 _WORK_ITEM_ID = "livespec-impl-beads-oyg"
+
+
+def test_end_run_finds_the_launcher_before_releasing_the_fake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_done = threading.Event()
+    enumerated_after_release: list[bool] = []
+    launcher = SimpleNamespace(
+        name=f"fabro-run-{_WORK_ITEM_ID}",
+        join=lambda **_kwargs: None,
+        is_alive=lambda: False,
+    )
+
+    def enumerate_threads() -> list[SimpleNamespace]:
+        enumerated_after_release.append(run_done.is_set())
+        return [launcher]
+
+    monkeypatch.setattr(threading, "enumerate", enumerate_threads)
+
+    end_run_and_await_launcher_return(run_done=run_done, work_item_id=_WORK_ITEM_ID)
+
+    assert enumerated_after_release == [False]
 
 
 def _plan(*, repo: Path, stall_seconds: float | None = None) -> DispatchPlan:
@@ -730,9 +758,8 @@ class _ScriptedFabroRunner:
     """A CommandRunner scripting fabro's run/ps/inspect/events/rm subprocesses.
 
     `fabro run` BLOCKS on `run_done` so the background thread stays alive
-    while the foreground watch loop runs (mirroring a real long run);
-    `fabro rm` sets `run_done` (fabro killing the run makes `fabro run`
-    return). `events_jsons` is the per-poll sequence of event-stream JSON
+    while the foreground watch loop runs (mirroring a real long run).
+    `events_jsons` is the per-poll sequence of event-stream JSON
     the watch loop reads — a frozen value across polls models a stall, an
     advancing value models progress. `ps_exit` / `events_exit` flip a
     probe to a non-zero error so the no-signal / probe-failure branches
@@ -762,7 +789,6 @@ class _ScriptedFabroRunner:
     return_gap_seconds: float = 0.0
     run_done: threading.Event = field(default_factory=threading.Event)
     run_returned: threading.Event = field(default_factory=threading.Event)
-    rm_calls: list[str] = field(default_factory=list)
     verbs: list[str] = field(default_factory=list)
     _poll: int = 0
 
@@ -775,7 +801,6 @@ class _ScriptedFabroRunner:
             "ps": self._ps,
             "inspect": self._inspect,
             "events": self._events,
-            "rm": lambda: self._rm(run_id=argv[-1]),
         }
         handler = dispatch.get(verb)
         if handler is None:
@@ -785,7 +810,7 @@ class _ScriptedFabroRunner:
     def _run(self) -> CommandResult:
         # Block until the watchdog cancels (or a healthy run completes —
         # the healthy-path tests set run_done during or before polling).
-        _ = self.run_done.wait(timeout=10.0)
+        self.run_done.wait()
         self.run_returned.set()
         # The gap this fake declares, held between its signal and its return.
         _ = threading.Event().wait(timeout=self.return_gap_seconds)
@@ -807,11 +832,6 @@ class _ScriptedFabroRunner:
         return CommandResult(
             exit_code=self.events_exit, stdout=self.events_jsons[index], stderr="x"
         )
-
-    def _rm(self, *, run_id: str) -> CommandResult:
-        self.rm_calls.append(run_id)
-        self.run_done.set()
-        return CommandResult(exit_code=0, stdout="", stderr="")
 
 
 def _advancing_clock() -> object:
@@ -858,6 +878,7 @@ def test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect(
         heartbeat_path=None,
         dispatch_id=None,
         observed_at=0.0,
+        state=LivenessState(),
     )
 
     assert sample.last_event_epoch is not None
@@ -865,7 +886,46 @@ def test_wall_clock_probe_reads_only_the_event_stream_never_fabro_inspect(
     assert "inspect_json" not in signature(parse_last_event_epoch).parameters
 
 
-def test_the_cancel_record_locates_the_run_before_the_rm_destroys_it(tmp_path: Path) -> None:
+def test_an_incremental_event_read_advances_the_established_progress_instant(
+    tmp_path: Path,
+) -> None:
+    runner = _ScriptedFabroRunner(
+        events_jsons=[
+            '[{"timestamp": "2026-06-13T08:00:00Z"}]',
+            '[{"timestamp": "2026-06-13T08:01:00Z"}]',
+        ]
+    )
+    plan = _plan(repo=tmp_path)
+    state = LivenessState()
+    port = fabro_port_for_plan(plan=plan, runner=runner)
+
+    first = liveness_sample(
+        plan=plan,
+        port=port,
+        run_id="01RUN",
+        heartbeat_path=None,
+        dispatch_id=None,
+        observed_at=0.0,
+        state=state,
+    )
+    later = liveness_sample(
+        plan=plan,
+        port=port,
+        run_id="01RUN",
+        heartbeat_path=None,
+        dispatch_id=None,
+        observed_at=1.0,
+        state=state,
+    )
+
+    assert first.last_event_epoch is not None
+    assert later.last_event_epoch is not None
+    assert later.last_event_epoch > first.last_event_epoch
+
+
+def test_the_cancel_record_locates_the_run_before_the_server_cancel(
+    *, tmp_path: Path, server_cancel: ServerCancel
+) -> None:
     """`bd-ib-nfbyot`: the production launcher journals the run's own half too.
 
     The two readings this adds — the executing stage and the publication — are
@@ -899,6 +959,7 @@ def test_the_cancel_record_locates_the_run_before_the_rm_destroys_it(tmp_path: P
         ]
     )
     runner = _ScriptedFabroRunner(events_jsons=[frozen])
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
 
@@ -920,30 +981,62 @@ def test_the_cancel_record_locates_the_run_before_the_rm_destroys_it(tmp_path: P
     assert cancels[0]["executing_stage"] == "proof_capture"
     assert cancels[0]["pull_request"] == 2612
     assert cancels[0]["published_head"] == head
-    # The reading precedes the destruction: `events` and `inspect` both appear
-    # before the `rm` that makes them unanswerable.
-    assert runner.verbs.index("rm") > runner.verbs.index("inspect")
+    # The lifecycle route leaves the run inspectable, so it never shells out to
+    # the destructive CLI verb.
+    assert "rm" not in runner.verbs
 
 
-def test_watched_launcher_cancels_a_confirmed_stall(tmp_path: Path) -> None:
+def test_watched_launcher_cancels_a_confirmed_stall(
+    *, tmp_path: Path, server_cancel: ServerCancel
+) -> None:
     # A frozen event timestamp across every poll -> the watch loop
-    # confirms a stall within the (tight, test-set) window and `fabro rm
-    # -f`-es the run. Injected clock advances 600s/sample; window 1000s.
+    # confirms a stall within the tight, test-set window and cancels the run
+    # through its factory server. Injected clock advances 600s/sample; window
+    # 1000s.
     frozen = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
     runner = _ScriptedFabroRunner(events_jsons=[frozen])
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
     result = launcher.launch(
         plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
     )
     assert result.stalled_run_id == "01RUN"
-    assert runner.rm_calls == ["01RUN"]
+    assert "rm" not in runner.verbs
     stages = [record.get("stage") for record in journal.records]
     assert "watchdog-stall-cancel" in stages
 
 
+def test_a_refused_server_cancel_is_not_reported_as_a_stall_and_polling_continues(
+    *, tmp_path: Path, server_cancel: ServerCancel
+) -> None:
+    """A cancel the server refused leaves a possibly live run, so the watch goes on.
+
+    The run only ends once the refused call has been made, which is what shows
+    the loop asked again rather than reporting a stall it never performed.
+    """
+    frozen = '[{"timestamp": "2026-06-13T08:00:00Z"}]'
+    runner = _ScriptedFabroRunner(events_jsons=[frozen])
+    server_cancel.succeeds = False
+    server_cancel.on_refusal = lambda: end_run_and_await_launcher_return(
+        run_done=runner.run_done, work_item_id=_WORK_ITEM_ID
+    )
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
+
+    result = launcher.launch(
+        plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
+    )
+
+    assert server_cancel.calls == 1
+    assert result.stalled_run_id is None
+    assert "rm" not in runner.verbs
+    stages = [record.get("stage") for record in journal.records]
+    assert "watchdog-stall-cancel" not in stages
+
+
 def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
-    tmp_path: Path,
+    *, tmp_path: Path, server_cancel: ServerCancel
 ) -> None:
     """The production shape of bd-ib-n44n4e, driven through the real watch loop.
 
@@ -963,6 +1056,7 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
         '[{"timestamp": "2026-06-13T08:10:00Z"}]',
     ]
     runner = _ScriptedFabroRunner(events_jsons=progress_then_silence)
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
     result = launcher.launch(
@@ -970,14 +1064,14 @@ def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
     )
 
     assert result.stalled_run_id == "01RUN"
-    assert runner.rm_calls == ["01RUN"]
+    assert "rm" not in runner.verbs
     cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
     assert [record.get("stall_seconds") for record in cancels] == [1000.0]
     assert [record.get("quiet_seconds") for record in cancels] == [1200.0]
 
 
 def test_a_stall_is_still_confirmed_while_the_bound_run_is_polled_by_id(
-    tmp_path: Path,
+    *, tmp_path: Path, server_cancel: ServerCancel
 ) -> None:
     """bd-ib-6pdigz: binding the run must not cost the watchdog its stall detection.
 
@@ -988,6 +1082,7 @@ def test_a_stall_is_still_confirmed_while_the_bound_run_is_polled_by_id(
     being removed.
     """
     runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
+    server_cancel.on_success = runner.run_done.set
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
 
     result = launcher.launch(
@@ -997,7 +1092,7 @@ def test_a_stall_is_still_confirmed_while_the_bound_run_is_polled_by_id(
     )
 
     assert result.stalled_run_id == "01RUN"
-    assert runner.rm_calls == ["01RUN"]
+    assert "rm" not in runner.verbs
     assert runner.verbs.count("ps") == 1
     assert runner.verbs.count("inspect") >= 1
 
@@ -1032,7 +1127,7 @@ def test_a_bound_run_that_goes_terminal_is_observed_and_never_stall_cancelled(
 
     bound = [r for r in journal.records if r.get("stage") == "watchdog-bound-poll"]
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
     assert len(bound) >= 2
     assert {record.get("reason") for record in bound} == {"status-kind-not-running"}
     assert {record.get("status_kind") for record in bound} == {"succeeded"}
@@ -1070,7 +1165,7 @@ def test_a_failed_per_run_read_leaves_a_record_and_cancels_nothing(
 
     bound = [r for r in journal.records if r.get("stage") == "watchdog-bound-poll"]
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
     assert len(bound) >= 2
     assert {record.get("matched") for record in bound} == {False}
     assert "run-not-held" not in {record.get("reason") for record in bound}
@@ -1107,12 +1202,12 @@ def test_watched_launcher_does_not_cancel_while_a_command_node_is_open(tmp_path:
         plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
     )
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
     assert runner.verbs.count("events") == 3
 
 
 def test_watched_launcher_cancels_once_the_open_command_node_has_completed(
-    tmp_path: Path,
+    *, tmp_path: Path, server_cancel: ServerCancel
 ) -> None:
     # The negative control for the test above. The same frozen stream, plus
     # the janitor's completion event: nothing is open, so the configured
@@ -1121,13 +1216,14 @@ def test_watched_launcher_cancels_once_the_open_command_node_has_completed(
     # mentioned a command node would satisfy the test above.
     frozen_and_completed = [f"[{_JANITOR_STARTED_EVENT}, {_JANITOR_COMPLETED_EVENT}]"]
     runner = _ScriptedFabroRunner(events_jsons=frozen_and_completed)
+    server_cancel.on_success = runner.run_done.set
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
     result = launcher.launch(
         plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
     )
     assert result.stalled_run_id == "01RUN"
-    assert runner.rm_calls == ["01RUN"]
+    assert "rm" not in runner.verbs
 
 
 def test_watched_launcher_lets_a_healthy_run_complete(tmp_path: Path) -> None:
@@ -1151,7 +1247,7 @@ def test_watched_launcher_lets_a_healthy_run_complete(tmp_path: Path) -> None:
     )
     assert result.stalled_run_id is None
     assert result.command.exit_code == 0
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
 
 
 def test_watched_launcher_takes_no_sample_once_the_fabro_run_call_has_returned(
@@ -1202,7 +1298,7 @@ def test_watched_launcher_takes_no_sample_once_the_fabro_run_call_has_returned(
         polls["n"] += 1
         if polls["n"] >= 3:
             runner.run_done.set()
-            assert target_returned.wait(timeout=5.0)
+            assert target_returned.wait(timeout=30.0)  # a hang guard, not a bound
 
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _lingering_thread)
     journal = _RecordingJournal()
@@ -1213,7 +1309,7 @@ def test_watched_launcher_takes_no_sample_once_the_fabro_run_call_has_returned(
 
     assert result.stalled_run_id is None
     assert result.command.exit_code == 0
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
     # Two polls sampled liveness; the third found the run returned and probed
     # nothing. A third sample would have reached 1200s of frozen stream against
     # the 1000s window this plan declares, which is the cancel being prevented.
@@ -1255,7 +1351,7 @@ def test_watched_launcher_does_not_cancel_when_events_advance(tmp_path: Path) ->
         plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
     )
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
 
 
 def test_watched_launcher_treats_probe_failure_as_no_signal_never_cancels(
@@ -1281,7 +1377,7 @@ def test_watched_launcher_treats_probe_failure_as_no_signal_never_cancels(
         plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
     )
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
 
 
 def test_watched_launcher_continues_when_discovered_run_item_is_absent(
@@ -1317,7 +1413,7 @@ def test_watched_launcher_continues_when_discovered_run_item_is_absent(
         if polls["n"] >= 3:
             end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
 
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "read_work_items", _no_items)
+    monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", _no_items)
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
     result = launcher.launch(
@@ -1325,7 +1421,7 @@ def test_watched_launcher_continues_when_discovered_run_item_is_absent(
     )
 
     assert result.abandoned_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs
 
 
 def test_watched_launcher_events_probe_error_is_no_signal_never_cancels(
@@ -1349,4 +1445,4 @@ def test_watched_launcher_events_probe_error_is_no_signal_never_cancels(
         plan=_plan(repo=tmp_path, stall_seconds=1000.0), runner=runner, journal=journal
     )
     assert result.stalled_run_id is None
-    assert runner.rm_calls == []
+    assert "rm" not in runner.verbs

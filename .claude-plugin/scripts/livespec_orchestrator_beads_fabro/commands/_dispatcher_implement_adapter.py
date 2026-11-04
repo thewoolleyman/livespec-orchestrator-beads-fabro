@@ -41,19 +41,25 @@ This module is PURE: no IO, no environment reads, and it never raises.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
     builtin_agent_catalog,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_agent_entry import AcpAgentEntry
+from livespec_orchestrator_beads_fabro.commands._acp_node_selection import (
+    ACP_NODE_SELECTION_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import ACP_NODES_STAGE
 
 __all__: list[str] = [
     "IMPLEMENT_NODE",
     "UNKNOWN_ADAPTER",
+    "ImplementAdapterSelection",
     "adapter_label_for",
     "implement_adapter_label",
+    "implement_adapter_selection",
 ]
 
 # The workflow node whose adapter writes the code, and therefore the one whose
@@ -70,6 +76,58 @@ _ACP_NODES_FIELD = "acp_nodes"
 _RENDERED_FIELD = "adapter"
 _COMMAND_FIELD = "command"
 _ARGS_FIELD = "args"
+_DISPATCH_ID_FIELD = "dispatch_id"
+_SELECTIONS_FIELD = "selections"
+_SELECTED_AGENT_ID_FIELD = "selected_agent_id"
+_SELECTED_INDEX_FIELD = "selected_index"
+
+
+@dataclass(frozen=True, kw_only=True)
+class ImplementAdapterSelection:
+    """The implement adapter actually selected for one dispatch.
+
+    A selection record is authoritative when it exists: a fallback candidate
+    names its own agent id, and an unavailable agent id stays absent rather
+    than being silently replaced with the chain primary. Without that record,
+    the resolved primary remains the established legacy reading.
+    """
+
+    adapter: str | None
+    selected_index: int | None
+
+
+def implement_adapter_selection(
+    *,
+    records: tuple[Mapping[str, object], ...],
+    work_item_id: str,
+    dispatch_id: str | None,
+) -> ImplementAdapterSelection:
+    """The selected implement agent and index, or the resolved primary fallback.
+
+    The per-node selection journal is keyed by the dispatch id, so a previous
+    dispatch of the same item cannot label this calibration record. A present
+    implement selection records the candidate agent id directly; configuration
+    is not resolved a second time. Only an absent selection falls back to the
+    `acp-nodes` primary classification.
+    """
+    selection = _implement_selection_entry(
+        records=records,
+        work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
+    )
+    if selection is None:
+        return ImplementAdapterSelection(
+            adapter=implement_adapter_label(records=records, work_item_id=work_item_id),
+            selected_index=None,
+        )
+    agent_id = selection.get(_SELECTED_AGENT_ID_FIELD)
+    selected_index = selection.get(_SELECTED_INDEX_FIELD)
+    return ImplementAdapterSelection(
+        adapter=agent_id if isinstance(agent_id, str) and agent_id else None,
+        selected_index=selected_index
+        if type(selected_index) is int and selected_index >= 0
+        else None,
+    )
 
 
 def implement_adapter_label(
@@ -116,6 +174,30 @@ def _implement_entry(
         if not isinstance(nodes, dict):
             continue
         entry = cast("dict[str, object]", nodes).get(IMPLEMENT_NODE)
+        if isinstance(entry, dict):
+            found = cast("dict[str, object]", entry)
+    return found
+
+
+def _implement_selection_entry(
+    *,
+    records: tuple[Mapping[str, object], ...],
+    work_item_id: str,
+    dispatch_id: str | None,
+) -> Mapping[str, object] | None:
+    """The dispatch's selected implement candidate record, or None."""
+    found: Mapping[str, object] | None = None
+    for record in records:
+        if (
+            record.get("stage") != ACP_NODE_SELECTION_STAGE
+            or record.get("work_item_id") != work_item_id
+            or record.get(_DISPATCH_ID_FIELD) != dispatch_id
+        ):
+            continue
+        selections = record.get(_SELECTIONS_FIELD)
+        if not isinstance(selections, dict):
+            continue
+        entry = cast("dict[str, object]", selections).get(IMPLEMENT_NODE)
         if isinstance(entry, dict):
             found = cast("dict[str, object]", entry)
     return found

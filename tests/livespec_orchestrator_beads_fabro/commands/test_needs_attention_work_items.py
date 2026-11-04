@@ -186,7 +186,7 @@ def test_host_only_items_fail_soft_when_journal_cannot_be_read(
         _ = kwargs
         raise OSError("unreadable")
 
-    monkeypatch.setattr(Path, "read_text", _raise)
+    monkeypatch.setattr(Path, "open", _raise)
 
     attention = host_only_items(project_root=tmp_path, repo="repo", items=[])
 

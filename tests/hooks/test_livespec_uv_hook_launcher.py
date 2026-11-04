@@ -165,6 +165,32 @@ def test_a_parseable_manifest_launches_the_wrapped_guard(
     assert invocations == [_GUARD_COMMAND], "the wrapped guard must run exactly as given"
 
 
+def test_a_parseable_manifest_execs_a_recognized_guard_on_the_project_virtualenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hot path replaces the launcher without starting mise or uv."""
+    launcher = _load_launcher()
+    _write_manifest(project=tmp_path, body=_PARSEABLE_MANIFEST)
+    virtualenv_python = tmp_path / ".venv" / "bin" / "python"
+    virtualenv_python.parent.mkdir(parents=True)
+    virtualenv_python.touch(mode=0o755)
+    invocations = _record_invocations(launcher=launcher, monkeypatch=monkeypatch)
+    exec_calls: list[tuple[str, list[str]]] = []
+
+    def _fake_execv(executable: str, args: list[str]) -> None:
+        exec_calls.append((executable, args))
+        raise SystemExit(0)
+
+    monkeypatch.setattr(launcher.os, "execv", _fake_execv)
+
+    with pytest.raises(SystemExit) as exited:
+        _ = _drive(launcher=launcher, project=tmp_path, monkeypatch=monkeypatch)
+
+    assert exited.value.code == 0
+    assert invocations == [], "the virtualenv path must not start mise or uv"
+    assert exec_calls == [(str(virtualenv_python), [str(virtualenv_python), "guard.py"])]
+
+
 def test_a_parseable_manifest_returns_the_wrapped_guards_own_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

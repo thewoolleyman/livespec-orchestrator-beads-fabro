@@ -33,12 +33,23 @@ from pathlib import Path
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
+from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import (
+    FactoryRunReader,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_confirmation import (
+    confirmation_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibility import (
     filter_eligible_candidates,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_slots import (
+    auto_approve_governing_settings,
+    budget_left,
+    ready_free_slots,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_capacity_deferred import (
     CapacitySnapshot,
@@ -65,6 +76,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission imp
     admit_rework,
     rework_pending_candidates,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
+    ScreenedVerdict,
+    reusable_verdict,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gate import (
     session_headroom_policy,
 )
@@ -82,6 +97,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "Admission",
+    "admission_acp_verdict",
     "admission_held_outcome",
     "admit_and_select",
 ]
@@ -124,7 +140,7 @@ class Admission:
     verdict: AcpPreflightVerdict | None = None
 
 
-def admit_and_select(
+def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the one routing layer the valve cannot read for itself.
     *,
     repo: Path,
     items: list[WorkItem],
@@ -132,6 +148,9 @@ def admit_and_select(
     journal: JournalFile,
     enforce_cap: bool,
     rework: ReworkPass | None = None,
+    explicit_factory: str | None = None,
+    resume_ids: frozenset[str] = frozenset(),
+    screened: ScreenedVerdict | None = None,
 ) -> Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
@@ -156,12 +175,33 @@ def admit_and_select(
     what makes "marked rows before any new `ready` item" a property of the
     valve rather than of one caller's ordering.
 
-    The pass's ACP candidate-chain verdict is resolved HERE, once, and is
-    deliberately not a parameter: a caller able to supply its own verdict is a
-    caller able to supply a stale one, and "both paths consume the same pure
-    preflight verdict" would then hold only by convention. It is RETURNED on the
-    result, because the dispatch of each admitted item has to select its per-node
+    The pass's ACP candidate-chain verdict is resolved HERE, once. The one thing
+    a caller may hand in is the pre-dispatch screen's own `ScreenedVerdict`, and
+    it is honoured only while it is younger than
+    `SCREENED_VERDICT_REUSE_SECONDS`: a caller able to supply any verdict is a
+    caller able to supply a stale one, so an older screen is ignored and the
+    assessment repeated before claim. The verdict is RETURNED on the result,
+    because the dispatch of each admitted item has to select its per-node
     candidate from this same evaluation.
+
+    `explicit_factory` IS a parameter, and for the opposite reason: it is the
+    `--factory` flag's name, which lives on the invocation's own command line
+    and on no surface this valve can reach. The pending claim stamp written
+    below is resolved under the whole factory precedence, and the flag is its
+    top layer — without it the stamp answers from the item's recorded pin while
+    the dispatch goes where the flag said, so the claim names a factory the run
+    never runs on. Every dispatch path reads the flag through
+    `explicit_dispatch_factory` and hands the name here.
+
+    `resume_ids` is the other half of that same precedence: the item's recorded
+    factory is a RESUME-only pin, so the stamp needs this item's assigned route,
+    which recovery routing decided before this valve ran. It is a SET because
+    the valve is handed a WAVE — "The classification is per item and per pass, so
+    one loop wave may carry a resume beside fresh dispatches" — and the empty
+    default is the FRESH answer for every item, which is what every dispatch is
+    unless routing says otherwise: a caller supplying nothing therefore stamps
+    the factory each item's dispatch will reach rather than one it used to run
+    on.
     """
     accounting = claimed_active_accounting(repo=repo, items=items, journal=journal)
     rework_pass = rework if rework is not None else ReworkPass()
@@ -172,6 +212,7 @@ def admit_and_select(
         journal=journal,
         accounting=accounting,
         rework=rework_pass,
+        screened=screened,
     )
     wip_cap = (
         # An unreadable `.livespec.jsonc` falls back to the documented cap,
@@ -189,11 +230,11 @@ def admit_and_select(
         wip_cap=wip_cap,
     )
     occupied = accounting.active_count + len(reworked.admitted)
-    free_slots = _ready_free_slots(
+    free_slots = ready_free_slots(
         admittable=admittable,
         occupied=occupied,
         wip_cap=wip_cap,
-        budget_left=_budget_left(rework=rework_pass, taken=len(reworked.admitted)),
+        budget_left=budget_left(rework=rework_pass, taken=len(reworked.admitted)),
     )
     plan = plan_admissions(
         ready_items=admittable,
@@ -212,7 +253,7 @@ def admit_and_select(
             record=auto_disposition_journal_record(
                 work_item_id=item.id,
                 disposition="auto-approve",
-                governing_settings=_auto_approve_governing_settings(item=item),
+                governing_settings=auto_approve_governing_settings(item=item),
             )
         )
     for item, assignee in plan.admitted:
@@ -223,7 +264,12 @@ def admit_and_select(
         # run id, which the factory now reports absent and a reconciler would
         # release. `_dispatcher_claim_stamp` carries the full reasoning.
         stamp_pending_claim(
-            repo=repo, work_item_id=item.id, dispatch_id=dispatch_id, journal=journal
+            repo=repo,
+            work_item_id=item.id,
+            dispatch_id=dispatch_id,
+            journal=journal,
+            resume=item.id in resume_ids,
+            explicit_factory=explicit_factory,
         )
         update_work_item_status(
             path=config, item_id=journal_item.id, status="active", assignee=assignee
@@ -262,7 +308,7 @@ def admit_and_select(
     )
 
 
-def _eligible_legs(
+def _eligible_legs(  # noqa: PLR0913 — kw-only; `screened` is the pre-dispatch screen's hand-over, not a variant of the candidate set.
     *,
     repo: Path,
     items: list[WorkItem],
@@ -270,6 +316,7 @@ def _eligible_legs(
     journal: JournalFile,
     accounting: ActiveClaimAccounting,
     rework: ReworkPass,
+    screened: ScreenedVerdict | None,
 ) -> tuple[AcpPreflightVerdict, list[WorkItem], list[WorkItem], list[DispatchOutcome]]:
     """Both legs' eligible rows, and every refusal, against ONE shared verdict.
 
@@ -298,27 +345,26 @@ def _eligible_legs(
     `dispatcher.py` accepts a `--journal` override and a second derivation
     cannot be proven to name the same file.
     """
-    now_iso = utc_now_iso()
-    journal_path = getattr(journal, "path", None)
-    verdict = resolve_acp_preflight(
-        repo=repo,
-        journal_path=journal_path,
-        now_iso=now_iso,
-        headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
+    reused = reusable_verdict(screened=screened)
+    rework_candidates = list(
+        rework_pending_candidates(
+            items=items,
+            accounting=accounting,
+            rework=rework,
+            # The same aging inputs the ready queue this pass drains was
+            # ordered by, resolved off the same repository root.
+            ready_aging=ready_aging_order(project_root=repo),
+        )
     )
+    verdict = reused
+    if verdict is None:
+        verdict = admission_acp_verdict(
+            repo=repo, journal=journal, evaluated=(*rework_candidates, *candidates)
+        )
     rework_admittable, refused = filter_eligible_candidates(
         repo=repo,
         preflight=verdict,
-        candidates=list(
-            rework_pending_candidates(
-                items=items,
-                accounting=accounting,
-                rework=rework,
-                # The same aging inputs the ready queue this pass drains was
-                # ordered by, resolved off the same repository root.
-                ready_aging=ready_aging_order(project_root=repo),
-            )
-        ),
+        candidates=rework_candidates,
         journal=journal,
     )
     admittable, ready_refused = filter_eligible_candidates(
@@ -331,35 +377,43 @@ def _eligible_legs(
     return verdict, rework_admittable, admittable, refused
 
 
-def _budget_left(*, rework: ReworkPass, taken: int) -> int | None:
-    """What is left of the pass's `--budget` after the rework leg took its share.
+def admission_acp_verdict(
+    *, repo: Path, journal: JournalFile, evaluated: tuple[WorkItem, ...] = ()
+) -> AcpPreflightVerdict:
+    """One admission evaluation's ACP verdict, session-headroom assessment included.
 
-    `None` means unbounded — the `dispatch --item` override carries no budget,
-    and the ready candidate list a `loop` hands in was already truncated to the
-    budget upstream, so this only ever REMOVES the slots rework already spent.
+    The policy is built here, once per call, which is what makes its memo the "one
+    assessment per distinct projected credential per admission evaluation"
+    guarantee. It shares the pass's own observation instant and the ONE journal
+    path the drain rate is measured from, which is the journal this pass actually
+    appends to rather than a re-derivation of it: `dispatcher.py` accepts a
+    `--journal` override, and a second derivation cannot be proven to name the
+    same file.
+
+    The pre-dispatch session-headroom screen calls this too, so the screen and the
+    valve resolve the verdict through ONE builder and cannot disagree about what
+    an evaluation assesses.
+
+    `evaluated` are the items this evaluation grades, and it is what turns the
+    confirmation seam ON: a candidate an expired hold leaves owing a confirmation
+    is then confirmed by a bounded factory run before the evaluation refuses it,
+    charged to the first of them. With none, no turn can be charged, so none is
+    run. Every admission entry point -- `dispatch --item`, `loop --item` and the
+    unattended drain -- reaches this builder with its items, and the screen MUST
+    supply them too, because the valve reuses the screen's verdict while it is
+    fresh and a verdict taken without the seam would be reused as the refusal the
+    seam exists to prevent.
     """
-    if rework.budget is None:
-        return None
-    return max(0, rework.budget - taken)
-
-
-def _ready_free_slots(
-    *,
-    admittable: list[WorkItem],
-    occupied: int,
-    wip_cap: int | None,
-    budget_left: int | None,
-) -> int:
-    slots = len(admittable) if wip_cap is None else max(0, wip_cap - occupied)
-    if budget_left is None:
-        return slots
-    return min(slots, budget_left)
-
-
-def _auto_approve_governing_settings(*, item: WorkItem) -> tuple[str, ...]:
-    if item.admission_policy == "auto":
-        return ("admission:auto",)
-    return ("auto_approve_ready",)
+    now_iso = utc_now_iso()
+    journal_path = getattr(journal, "path", None)
+    return resolve_acp_preflight(
+        repo=repo,
+        journal_path=journal_path,
+        now_iso=now_iso,
+        headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
+        factory_runs=FactoryRunReader(repo=repo, journal=journal),
+        confirmation=confirmation_for(journal=journal, evaluated=evaluated),
+    )
 
 
 def admission_held_outcome(*, item: WorkItem, reason: str) -> DispatchOutcome:

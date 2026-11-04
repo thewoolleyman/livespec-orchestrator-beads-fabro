@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
 __all__: list[str] = [
     "add_claude_cred_status_arguments",
     "add_codex_cred_refresh_arguments",
+    "add_drift_run_arguments",
     "add_janitor_check_arguments",
     "add_ledger_check_arguments",
     "add_ledger_normalize_arguments",
@@ -72,6 +73,14 @@ def add_claude_cred_status_arguments(*, parser: argparse.ArgumentParser) -> None
 
 def add_janitor_check_arguments(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--repo", dest="repo", default=None)
+    _ = parser.add_argument("--json", dest="as_json", action="store_true")
+
+
+def add_drift_run_arguments(*, parser: argparse.ArgumentParser) -> None:
+    """Attach the separate drift-job surface; no scheduler installs it."""
+    _ = parser.add_argument("--repo", dest="repo", default=None)
+    add_invoker_argument(parser=parser)
+    _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
 
 

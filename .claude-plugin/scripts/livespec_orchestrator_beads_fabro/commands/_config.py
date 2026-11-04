@@ -70,10 +70,26 @@ from livespec_orchestrator_beads_fabro.commands._fabro_bin import (
     configured_fabro_bin,
     default_fabro_bin,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_client_settings import (
+    effective_factory_client_settings,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_default import (
+    configured_factory_name,
+    fleet_selection,
+)
 from livespec_orchestrator_beads_fabro.commands._factory_environment import (
     NO_FACTORY_ENVIRONMENT,
     FactoryEnvironment,
-    factory_environment_from_entry,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
+    NO_FACTORY_GITHUB_APP,
+    FactoryGithubApp,
+    factory_github_app_from_entry,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_registry import (
+    NO_FACTORY_REGISTRY,
+    FactoryRegistryReading,
+    factory_registry_from_entry,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
@@ -93,22 +109,19 @@ __all__: list[str] = [
     "ConfigUnreadable",
     "FactoryTarget",
     "dispatcher_block",
-    "has_fabro_factories",
-    "has_fabro_factory",
-    "resolve_credential_wrapper",
     "resolve_fabro_bin",
     "resolve_fabro_factory",
     "resolve_fabro_sandbox_image",
     "resolve_node_timeouts",
     "resolve_store_config",
     "resolve_workflow_variant",
+    "root_mapping",
 ]
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _CONNECTION_KEY = "connection"
 _DISPATCHER_KEY = "dispatcher"
-_CREDENTIAL_WRAPPER_KEY = "credential_wrapper"
 
 _DEFAULT_SERVER_HOST = "127.0.0.1"
 _DEFAULT_SERVER_PORT = 3307
@@ -119,7 +132,6 @@ _ENV_BD_PATH = "LIVESPEC_BD_PATH"
 _ENV_FAKE = "LIVESPEC_BEADS_FAKE"
 _ENV_FABRO_BIN = "LIVESPEC_FABRO_BIN"
 _ENV_FABRO_FACTORY = "LIVESPEC_FABRO_FACTORY"
-_FACTORY_BIN_KEY = "bin"
 _FACTORY_DOCKER_HOST_KEY = "docker_host"
 _FABRO_DEV_AUTH_ENV_PREFIX = "FABRO_DEV_TOKEN__"
 _ENV_FABRO_SANDBOX_IMAGE = "LIVESPEC_FABRO_SANDBOX_IMAGE"
@@ -145,6 +157,9 @@ class FactoryTarget:
     # an absent key and an unusable value must stay distinguishable, and
     # `_dispatcher_factory_environment` owns the grade of the reading.
     environment: FactoryEnvironment = NO_FACTORY_ENVIRONMENT
+    # The per-run GitHub App secret names this factory declares.  It remains a
+    # structured reading until the pre-claim declaration grade has admitted it.
+    github_app: FactoryGithubApp = NO_FACTORY_GITHUB_APP
     # The Docker daemon that runs THIS factory's sandbox containers, from its
     # optional `docker_host` key, spelled as the Docker CLI spells one (e.g.
     # `ssh://<user>@<factory host>`). None means the entry declares none,
@@ -154,6 +169,22 @@ class FactoryTarget:
     # evidence of a daemon's whereabouts — a loopback url is as likely to be a
     # forwarded tunnel as a local engine.
     docker_host: str | None = None
+    # What the HOST factory registry said about this entry, when the entry is
+    # registry-backed, as READ. Like `environment` it is deliberately not an
+    # `_optional_str` projection: `_factory_registry` owns why an unresolvable
+    # registry must stay distinguishable from an entry that simply names no
+    # server — both leave `server` at None, and only one of them may dispatch —
+    # and `_dispatcher_factory_registry` owns the grade of the reading.
+    registry: FactoryRegistryReading = NO_FACTORY_REGISTRY
+    # Which client keys' effective values above came from the REGISTRY entry
+    # rather than from the committed one — `_factory_client_settings` decides
+    # it, by the same per-key rule and in the same place as the values. It is
+    # carried beside them because each key's grade refuses by naming a remedy
+    # and the remedy differs by source: a committed value is corrected by a
+    # commit, a registry-supplied one by the fleet's provisioning, and
+    # `registry.path` names the file. A grade cannot re-derive it — the merged
+    # value is on the same field either way, and that is the whole point.
+    registry_sourced_client_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -295,25 +326,9 @@ def resolve_fabro_factory(*, cwd: Path, factory: str | None = None) -> FactoryTa
     if env_value is not None and env_value != "":
         return _factory_target_for(name=env_value, block=block)
     return _factory_target_for(
-        name=_resolve_configured_factory_name(block=block),
+        name=configured_factory_name(block=block),
         block=block,
     )
-
-
-def has_fabro_factory(*, cwd: Path, factory: str) -> bool:
-    """Return whether the current dispatcher config defines a named factory."""
-    block = dispatcher_block(cwd=cwd)
-    factories_raw = block.get("factories")
-    if not isinstance(factories_raw, dict):
-        return False
-    return factory in cast("dict[str, Any]", factories_raw)
-
-
-def has_fabro_factories(*, cwd: Path) -> bool:
-    """Return whether dispatcher config constrains factory names."""
-    block = dispatcher_block(cwd=cwd)
-    factories_raw = block.get("factories")
-    return isinstance(factories_raw, dict)
 
 
 def resolve_fabro_sandbox_image(*, cwd: Path) -> IOResult[str | None, ConfigUnreadable]:
@@ -330,42 +345,20 @@ def resolve_fabro_sandbox_image(*, cwd: Path) -> IOResult[str | None, ConfigUnre
     return _read_dispatcher_block(cwd=cwd).map(lambda block: _configured_sandbox_image(block=block))
 
 
-def resolve_credential_wrapper(*, cwd: Path) -> IOResult[list[str], ConfigUnreadable]:
-    """The top-level `credential_wrapper` argv-prefix; `[]` when none is configured.
-
-    An ABSENT config file, an absent key, and a non-list value all yield `[]` on
-    the SUCCESS track — each is an ANSWER: this repo configures no wrapper. A file
-    that EXISTS and will not parse rides the FAILURE track instead.
-
-    ⛔ THE DISTINCTION IS LOAD-BEARING, and it used to be lost here. The sole
-    consumer is the pre-push `check-ledger-conformance-live` gate, which invokes
-    the ledger check UNDER this wrapper and SKIPS when there is none. Folding an
-    unreadable config into `[]` therefore let a stray comma SILENTLY TURN THE
-    PRE-PUSH GATE OFF, reported in the same words as a repo that never wanted one.
-
-    ⚠️ It stays fail-SOFT at the consumer by deliberate design — that recipe runs
-    on every push and a false-fail would brick them all — so this failure track
-    exists to be REPORTED, not to block. Returning it is what makes the two
-    outcomes tellable apart; deciding what to do about them is the caller's.
-    """
-    return _read_root_mapping(cwd=cwd).map(lambda root: _credential_wrapper_tokens(root=root))
-
-
-def _credential_wrapper_tokens(*, root: dict[str, Any]) -> list[str]:
-    """The `credential_wrapper` argv tokens in a root mapping, or [] when unset."""
-    raw = root.get(_CREDENTIAL_WRAPPER_KEY)
-    if not isinstance(raw, list):
-        return []
-    return [str(token) for token in cast("list[Any]", raw)]
-
-
-def _read_root_mapping(*, cwd: Path) -> IOResult[dict[str, Any], ConfigUnreadable]:
+def root_mapping(*, cwd: Path) -> IOResult[dict[str, Any], ConfigUnreadable]:
     """`.livespec.jsonc`'s root object; `{}` on the SUCCESS track when absent.
 
     An absent config file is an ANSWER — this repo runs on documented defaults
     without one — so it rides the success track as an empty mapping. A file
     that will not parse, and a root that is not an object, are failures: the
     file is there and says something the loader cannot use.
+
+    PUBLIC for the reason `dispatcher_block` beside it is: a concern whose key
+    sits at the ROOT rather than under the plugin block reads it from OUTSIDE
+    this module (`_config_credential_wrapper`), and importing a `_`-prefixed
+    name across a module boundary is exactly what pyright strict and the
+    `private_calls` check refuse. The reader is the interface rather than each
+    of its uses, so a second root-level key does not owe this file a seam.
     """
     config_path = cwd / _LIVESPEC_CONFIG
     if not config_path.is_file():
@@ -423,11 +416,11 @@ def _read_plugin_sub_block(*, cwd: Path, key: str) -> IOResult[dict[str, Any], C
 
     An ABSENT plugin block or sub-block yields `{}` on the success track, so
     each caller applies its own defaults; an UNREADABLE file propagates the
-    failure from `_read_root_mapping`. Shared by the connection and dispatcher
+    failure from `root_mapping`. Shared by the connection and dispatcher
     readers so the JSONC -> plugin-block -> sub-block traversal is
     single-sourced rather than duplicated per sub-block.
     """
-    return _read_root_mapping(cwd=cwd).map(lambda root: _sub_block(root=root, key=key))
+    return root_mapping(cwd=cwd).map(lambda root: _sub_block(root=root, key=key))
 
 
 def _sub_block(*, root: dict[str, Any], key: str) -> dict[str, Any]:
@@ -469,24 +462,39 @@ def _resolve_bd_path(*, block: dict[str, Any]) -> str:
     return _str_or(value=block.get("bd_path"), default=_DEFAULT_BD_PATH)
 
 
-def _resolve_configured_factory_name(*, block: dict[str, Any]) -> str:
-    factories_raw = block.get("factories")
-    default_name = _str_or(value=block.get("default_factory"), default="default")
-    if isinstance(factories_raw, dict):
-        factories = cast("dict[str, Any]", factories_raw)
-        if default_name in factories:
-            return default_name
-    return "default"
-
-
 def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
+    """One named factory, with a registry-backed entry's address already resolved.
+
+    A registry-backed entry's `server` comes from the REGISTRY rather than from
+    the committed entry, and it lands on the SAME field, which is the whole of
+    how every downstream surface gets the registry address without changing:
+    the dispatch argv, the resume, the claim stamp, the reconcile survey and the
+    liveness reads all read `FactoryTarget.server`, and none of them learns that
+    the address came from a file. An entry that is not registry-backed reads
+    exactly as it did before the key existed.
+
+    The CLIENT settings land on the same two fields for the same reason, with
+    the committed entry winning key by key over the registry's — a merge an
+    entry that is not registry-backed passes through unchanged, because its
+    registry side is the absent reading.
+    """
     entry = _factory_entry(block=block, name=name)
+    fleet = fleet_selection(block=block, name=name)
+    registry = factory_registry_from_entry(entry=entry, name=name, fleet=fleet)
+    client = effective_factory_client_settings(entry=entry, registry=registry.client)
     return FactoryTarget(
         name=name,
-        server=_optional_str(value=entry.get("server")),
-        fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
-        environment=factory_environment_from_entry(entry=entry),
-        docker_host=_optional_str(value=entry.get(_FACTORY_DOCKER_HOST_KEY)),
+        server=registry.server if registry.declared else _optional_str(value=entry.get("server")),
+        fabro_bin=client.fabro_bin,
+        environment=client.environment,
+        github_app=factory_github_app_from_entry(entry=entry),
+        docker_host=(
+            registry.docker_host
+            if registry.declared
+            else _optional_str(value=entry.get(_FACTORY_DOCKER_HOST_KEY))
+        ),
+        registry=registry,
+        registry_sourced_client_keys=client.registry_sourced,
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
     )
 

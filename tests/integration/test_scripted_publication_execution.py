@@ -115,6 +115,10 @@ _MERGE_SHA = "3333333333333333333333333333333333333333"
 # the head, establishes proof, then edits and readies before arming, so naming
 # a later subcommand moves the branch strictly BETWEEN the observation and the
 # arming. That is the window the exact-head requirement exists to close.
+#
+# `gh` renders a JSON null selected by its own `--jq` as zero output bytes. The
+# default therefore models the measured forge behavior; the explicit `null`
+# control ensures the workflow accepts either spelling of an absent request.
 _GH_STUB = r"""#!%(python)s
 import json, os, sys
 
@@ -157,7 +161,11 @@ if verb == "view":
         "state": state["state"],
         "headRefOid": state["head"],
         "isDraft": "true" if state["isDraft"] else "false",
-        "autoMergeRequest": "null" if state["autoMergeRequest"] is None else "{}",
+        "autoMergeRequest": (
+            state["absentAutoMergeRender"]
+            if state["autoMergeRequest"] is None
+            else json.dumps(state["autoMergeRequest"])
+        ),
         "mergeCommit": state["mergeCommit"] or "",
     }
     save(state)
@@ -270,6 +278,7 @@ def _sandbox(
     head: str = _HEAD,
     is_draft: bool = True,
     auto_merge: object = None,
+    absent_auto_merge_render: str = "",
     merge_commit: str | None = None,
     advance_head_on: str | None = None,
     advance_head_to: str = _MOVED_HEAD,
@@ -311,6 +320,7 @@ def _sandbox(
                 "head": head,
                 "isDraft": is_draft,
                 "autoMergeRequest": auto_merge,
+                "absentAutoMergeRender": absent_auto_merge_render,
                 "mergeCommit": merge_commit,
                 "comments": _proven(head=_HEAD) if comments is None else comments,
                 "advance_head_on": advance_head_on,
@@ -429,29 +439,48 @@ def test_a_head_moving_between_observation_and_arming_is_refused(tmp_path: Path)
 
 
 def test_a_merge_hold_readies_the_pull_request_and_arms_nothing(tmp_path: Path) -> None:
-    """A held item publishes a ready pull request and issues no merge at all."""
+    """A held item publishes a ready, unarmed pull request and issues no merge."""
     box = _sandbox(root=tmp_path)
 
     result = _run(box=box, merge_hold="true")
 
     assert result.returncode == 0, result.stderr
     assert "LIVESPEC_PR_HELD" in result.stderr
+    assert "LIVESPEC_PR_HOLD_ARMED" not in result.stderr
     assert "MERGE_HOLD=held" in result.stdout
     assert box.merge_argv() is None, "a held item must not reach the arming command"
     assert box.issued(verb="ready")
+    assert box.forge()["autoMergeRequest"] is None
+
+
+def test_a_merge_hold_reads_a_literal_null_rendering_as_unarmed_too(
+    tmp_path: Path,
+) -> None:
+    """An alternate literal rendering of an absent request is unarmed too."""
+    box = _sandbox(root=tmp_path, absent_auto_merge_render="null")
+
+    result = _run(box=box, merge_hold="true")
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PR_HELD" in result.stderr
+    assert "LIVESPEC_PR_HOLD_ARMED" not in result.stderr
+    assert box.merge_argv() is None
+    assert box.forge()["autoMergeRequest"] is None
 
 
 def test_a_hold_standing_over_an_already_armed_pull_request_fails_closed(
     tmp_path: Path,
 ) -> None:
     """A script must not disarm what something else armed; it stops for a human."""
-    box = _sandbox(root=tmp_path, auto_merge={"enabledAt": "earlier"})
+    armed = {"enabledAt": "earlier"}
+    box = _sandbox(root=tmp_path, auto_merge=armed)
 
     result = _run(box=box, merge_hold="true")
 
     assert result.returncode == 1, result.stdout
     assert "LIVESPEC_PR_HOLD_ARMED" in result.stderr
     assert box.merge_argv() is None
+    assert box.forge()["autoMergeRequest"] == armed
 
 
 def test_an_already_merged_pull_request_is_idempotent(tmp_path: Path) -> None:

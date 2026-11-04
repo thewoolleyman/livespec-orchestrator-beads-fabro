@@ -15,9 +15,9 @@ fail with an actionable diagnostic. This covers every bin/*.py CLI that calls
 self-heals instead of failing deep in the beads backend with a raw auth error.
 
 That re-exec runs through `sudo`, which rebuilds the environment from its own
-policy, so it is also the point where a non-secret session marker can be
+policy, so it is also the point where non-secret session markers can be
 silently DESTROYED — see `_marker_forwarded_argv`, which carries the
-unattended-plan-resume marker across it.
+unattended-plan-resume marker and publishing-identity session ids across it.
 """
 
 import atexit
@@ -64,6 +64,10 @@ _PAYLOAD_FAIL_EXIT = 3
 # the store layer importing cleanly; `tests/bin/
 # test_bootstrap_unattended_marker_forwarding.py` pins the two spellings equal.
 _PLAN_UNATTENDED_ENV_NAME = "LIVESPEC_PLAN_UNATTENDED"
+# The agent-session variables that establish a proof poster's identity. This
+# pre-package bootstrap cannot import `_dispatcher_proof_identity`, so the
+# tuple is re-declared here and forwards only values an invoking session set.
+_AGENT_SESSION_ENV_VARS = ("CODEX_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "PI_SESSION_ID")
 # `env` is the POSIX command that runs its own operand with NAME=value applied.
 _ENV_COMMAND = "env"
 
@@ -175,7 +179,7 @@ def _marker_forwarded_argv(
     credential_wrapper: Sequence[str],
     environ: Mapping[str, str],
 ) -> list[str]:
-    """Carry the unattended-resume marker across the credential re-exec.
+    """Carry session markers across the credential re-exec.
 
     The wrapper is a `sudo -n` escalation, and sudo rebuilds the environment
     from its own policy: the reference `with-livespec-env.sh` forwards
@@ -196,20 +200,25 @@ def _marker_forwarded_argv(
     `OPENV_PRESERVE_VARS` is applied AFTER the stage-0 escalation that already
     dropped the variable.
 
-    Only a NON-EMPTY marker is forwarded: the empty string is not truthy to
-    `is_unattended_session`, so forwarding it would add an operand that says
-    nothing. This never AUTHORS the marker — an attended session's argv is
-    returned unchanged, which is what keeps the overseer daemon its only
-    setter.
+    Only NON-EMPTY values are forwarded. The plan marker's empty string is not
+    truthy to `is_unattended_session`; the agent-session values are likewise
+    omitted so an invocation with no session identity remains eligible for the
+    forge-login fallback. This never AUTHORS a marker — an attended human
+    session's argv is returned unchanged, which keeps the overseer daemon its
+    only setter and leaves publishing identity computed by the child.
     """
-    marker_value = environ.get(_PLAN_UNATTENDED_ENV_NAME, "")
-    if not marker_value:
+    forwarded = [
+        f"{name}={value}"
+        for name in (_PLAN_UNATTENDED_ENV_NAME, *_AGENT_SESSION_ENV_VARS)
+        if (value := environ.get(name, ""))
+    ]
+    if not forwarded:
         return list(reexec_argv)
     separator_index = len(credential_wrapper)
     return [
         *reexec_argv[:separator_index],
         _ENV_COMMAND,
-        f"{_PLAN_UNATTENDED_ENV_NAME}={marker_value}",
+        *forwarded,
         *reexec_argv[separator_index:],
     ]
 

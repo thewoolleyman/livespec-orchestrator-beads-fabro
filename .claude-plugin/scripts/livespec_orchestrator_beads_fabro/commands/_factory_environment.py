@@ -43,12 +43,16 @@ from dataclasses import dataclass
 from typing import Any
 
 __all__: list[str] = [
+    "FACTORY_ENVIRONMENT_KEY",
     "NO_FACTORY_ENVIRONMENT",
     "FactoryEnvironment",
     "factory_environment_from_entry",
 ]
 
-_ENVIRONMENT_KEY = "environment"
+# PUBLIC because the key's own NAME is part of what a refusal says, and the
+# refusal is rendered two modules away: a surface spelling it for itself would
+# send an operator to a key that is one rename away from not existing.
+FACTORY_ENVIRONMENT_KEY = "environment"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -79,8 +83,8 @@ def factory_environment_from_entry(*, entry: dict[str, Any]) -> FactoryEnvironme
     `null` or `""` is something an operator WROTE, and reporting it as an
     absent key would hand it the conforming path.
     """
-    if _ENVIRONMENT_KEY not in entry:
+    if FACTORY_ENVIRONMENT_KEY not in entry:
         return NO_FACTORY_ENVIRONMENT
-    value = entry[_ENVIRONMENT_KEY]
+    value = entry[FACTORY_ENVIRONMENT_KEY]
     usable = isinstance(value, str) and value != ""
     return FactoryEnvironment(declared=True, environment_id=value if usable else None)

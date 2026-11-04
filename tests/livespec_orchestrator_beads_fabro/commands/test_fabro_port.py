@@ -269,6 +269,31 @@ def test_fabro_port_json_operations_parse_payloads_and_run_summaries(tmp_path: P
     ]
 
 
+def test_fabro_port_live_ps_omits_history_flag(tmp_path: Path) -> None:
+    """The watch discovery read asks the factory for live runs only."""
+    module = _port_module()
+    assert hasattr(module.FabroPort, "live_ps")
+    runner = _Runner(
+        results=[CommandResult(exit_code=0, stdout='{"runs": []}', stderr="")],
+        calls=[],
+    )
+    port = module.FabroPort(
+        fabro_bin="fabro",
+        target=module.FabroTarget(server_url="http://factory"),
+        runner=runner,
+        cwd=tmp_path,
+    )
+
+    assert port.live_ps(timeout_seconds=3.0).runs == ()
+    assert runner.calls[0].argv == [
+        "fabro",
+        "ps",
+        "--json",
+        "--server",
+        "http://factory",
+    ]
+
+
 def test_fabro_port_preflight_builds_livespec_run_configuration_argv(tmp_path: Path) -> None:
     module = _port_module()
     runner = _Runner(

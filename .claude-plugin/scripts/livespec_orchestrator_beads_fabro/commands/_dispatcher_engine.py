@@ -65,6 +65,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
     failed_outcome,
     journal_run_output_markers,
     journal_stage,
+    run_wall_budget_outcome,
     stalled_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
@@ -88,6 +89,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import (
+    merged_reconcile_from_text,
+    with_merged_reconcile,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import (
+    attach_node_timeout_cut,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
@@ -102,6 +110,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
     reconcile_terminal_publication,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause import (
+    worker_exit_engine_failure_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
@@ -211,24 +222,9 @@ def run_dispatch(
     launched = launcher.launch(plan=plan, runner=runner, journal=journal)
     fabro = launched.command
     journal_stage(journal=journal, plan=plan, stage="fabro-run", result=fabro)
-    if launched.abandoned_run_id is not None:
-        return DispatchOutcome(
-            work_item_id=plan.work_item_id,
-            status="failed",
-            stage="stale-run-reap",
-            pr_number=None,
-            merge_sha=None,
-            detail=(
-                f"run {launched.abandoned_run_id} abandoned because work-item "
-                f"{plan.work_item_id} status is {launched.abandoned_item_status}; "
-                "item is no longer dispatchable"
-            ),
-            fabro_run_id=launched.abandoned_run_id,
-        )
-    if launched.stalled_run_id is not None:
-        return stalled_outcome(
-            outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id
-        )
+    launcher_terminal = _launcher_terminal(plan=plan, launched=launched)
+    if launcher_terminal is not None:
+        return launcher_terminal
     run_id = launched.run_id
     inspect = inspect_after_run(
         plan=plan,
@@ -244,10 +240,9 @@ def run_dispatch(
     # hook-over-limit row is written there unconditionally of how the run ended
     # (see `journal_run_output_markers`). The event comes back so the terminal
     # outcome can carry it to the cause writer.
+    run_output = f"{fabro.stdout}\n{fabro.stderr}\n{inspect_stdout}\n{inspect_stderr}"
     hook_over_limit = journal_run_output_markers(
-        journal=journal,
-        work_item_id=plan.work_item_id,
-        text=f"{fabro.stdout}\n{fabro.stderr}\n{inspect_stdout}\n{inspect_stderr}",
+        journal=journal, work_item_id=plan.work_item_id, text=run_output
     )
     terminal = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
@@ -256,6 +251,20 @@ def run_dispatch(
         inspect=inspect,
         exit_code=fabro.exit_code,
         stderr=fabro.stderr,
+    )
+    # AND WHERE THE SAME CONCLUSION HID A FAILURE, THE ENGINE'S OWN VERDICT IS
+    # RECOVERED FROM THE RUN'S EXPORTED LOG. The worker-exit sentence names no
+    # fault, so a run that really did fail was reported as terminated with no
+    # cause while its log still carried the deterministic failure cycle the
+    # engine had decided. This passes every other ending straight through, and
+    # spends its export only on that one conclusion.
+    terminal = worker_exit_engine_failure_outcome(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        run_id=run_id,
+        inspect=inspect,
+        terminal=terminal,
     )
     # A STRUCTURED SUCCESSFUL CHECKPOINT OUTRANKS THE ENGINE'S OWN CONCLUSION,
     # and only for the one conclusion that admits it cannot answer: a worker
@@ -279,14 +288,28 @@ def run_dispatch(
         # which classifies the ENGINE's own record and has no business reading a
         # sandbox sentinel. The event is evidence the cause writer renders only
         # where the ending is attributed to it.
-        return replace(publication.refusal, hook_over_limit=hook_over_limit)
+        return attach_node_timeout_cut(
+            outcome=replace(publication.refusal, hook_over_limit=hook_over_limit),
+            node_timeouts=plan.node_timeouts,
+            text=run_output,
+            events_payload=None if inspect is None else inspect.events_payload,
+            journal=journal,
+        )
     hold, view = publication.hold, publication.view
+    if publication.pr_view_error is not None:
+        return failed_outcome(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            stage="pr-view",
+            detail=f"pull-request read unobservable: {publication.pr_view_error}",
+            fabro_run_id=run_id,
+        )
     if view is None:
         return failed_outcome(
             outcome_type=DispatchOutcome,
             plan=plan,
             stage="pr-view",
-            detail="no PR found for branch",
+            detail="no pull request exists for branch",
             fabro_run_id=run_id,
         )
     # The branch-versus-base size, recorded HERE and not at the terminal (plan
@@ -326,4 +349,58 @@ def run_dispatch(
     )
     if run_id is not None and outcome.fabro_run_id is None:
         outcome = replace(outcome, fabro_run_id=run_id)
-    return outcome
+    return with_merged_reconcile(outcome=outcome, event=merged_reconcile_from_text(text=run_output))
+
+
+def _launcher_terminal(
+    *,
+    plan: DispatchPlan,
+    launched: FabroRunResult,
+) -> DispatchOutcome | None:
+    """The terminal the LAUNCHER itself ended this run with, or None.
+
+    Three endings reach the engine already decided, because the launcher's own
+    watch loop took them: a reaped run whose work-item had stopped being
+    dispatchable, a run cancelled past its whole-run wall budget, and a run
+    cancelled as stalled. Each is final — the run has been `fabro rm -f`-ed —
+    so the engine short-circuits before any PR flow rather than inspecting a
+    run that no longer exists.
+
+    THE BUDGET ARM PRECEDES THE STALL ARM, which is the clause's own precedence:
+    "When a run's measured budget is exceeded and the run also meets the
+    stalled-no-progress rule, the budget takes precedence." A quiet run past its
+    budget satisfies both, and only the budget disposition rests it for a person
+    — so a stall arm reading first would release an item nothing automatic
+    should re-dispatch. The launcher applies the same precedence in its own
+    loop; this ordering is the second half of one guarantee rather than a
+    duplicate of it, because the two surfaces decide different things: the loop
+    decides which cancel to PERFORM and this decides which terminal to REPORT.
+
+    Grouped into one function rather than three returns in `run_dispatch`
+    because they are one question — "did the launcher already end this run?" —
+    and because reading them as a group is what makes the precedence above
+    visible at the point it applies.
+    """
+    if launched.abandoned_run_id is not None:
+        return DispatchOutcome(
+            work_item_id=plan.work_item_id,
+            status="failed",
+            stage="stale-run-reap",
+            pr_number=None,
+            merge_sha=None,
+            detail=(
+                f"run {launched.abandoned_run_id} abandoned because work-item "
+                f"{plan.work_item_id} status is {launched.abandoned_item_status}; "
+                "item is no longer dispatchable"
+            ),
+            fabro_run_id=launched.abandoned_run_id,
+        )
+    if launched.budget_exceeded_run_id is not None:
+        return run_wall_budget_outcome(
+            outcome_type=DispatchOutcome, plan=plan, run_id=launched.budget_exceeded_run_id
+        )
+    if launched.stalled_run_id is not None:
+        return stalled_outcome(
+            outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id
+        )
+    return None

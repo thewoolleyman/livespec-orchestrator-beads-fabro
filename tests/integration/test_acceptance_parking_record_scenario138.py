@@ -473,13 +473,17 @@ def test_a_needs_attention_park_records_its_verdict_every_leg_and_the_action(
         "- merged diff: OBSERVED — pull request diff read",
         "- effective criteria: OBSERVED — 0 assertion(s) reached a graded check",
         f"- proof of done record: NOT OBSERVED — pull request #{_PR_NUMBER} records read"
-        f" for run {_RUN_ID} or {_DISPATCH_ID}",
+        f" for run {_RUN_ID} or {_DISPATCH_ID}; the only factory record is the captured"
+        f" record {_RECORD_URL}, which carries no per-assertion verdict and grades nothing",
         "",
         "Pending, and the action that would move the item:",
         "",
-        f"- {pending_leg}: Publish a Proof of Done record whose first line names verified"
-        f" on pull request #{_PR_NUMBER}, listing this assertion as reproduced, then re-run"
-        " the acceptance pass with `dispatcher.py reconcile-merged --repo <repo> --item"
+        f"- {pending_leg}: UNOBSERVED: the only Proof of Done record for the merging"
+        f" dispatch is the captured record {_RECORD_URL}, which carries no per-assertion"
+        " `Reproduced:` verdict, so no record grades this assertion. Run the proof-only"
+        f" resume arm on pull request #{_PR_NUMBER} (`dispatcher.py resume --item {item.id}`),"
+        " which publishes a verified record graded per assertion, then re-run the"
+        " acceptance pass with `dispatcher.py reconcile-merged --repo <repo> --item"
         f" {item.id} --invoker <role:name>`.",
     ]
     written = _record(records=dispatched.records, stage="acceptance-parking-record")

@@ -397,6 +397,7 @@ def test_the_repeat_route_rests_the_item_and_names_both_runs(tmp_path: Path) -> 
     assert _stages(journal=journal) == ["stranded-claim-run-absent-repeated"]
     rested = next(iter(read_work_items(path=_config())))
     assert (rested.status, rested.blocked_reason) == ("blocked", "needs-human")
+    assert rested.admission_policy is None
     bodies = [
         str(entry.get("text", ""))
         for entry in make_beads_client(config=_config()).list_comments(issue_id=_ITEM_ID)

@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_ADAPTER_COMMAND,
     build_plan,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_port import (
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_failure_detail_from_payload,
 )
 

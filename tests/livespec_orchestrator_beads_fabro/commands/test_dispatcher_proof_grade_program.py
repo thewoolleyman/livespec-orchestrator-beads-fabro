@@ -16,6 +16,10 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
+    record_reader_fragment,
+)
+
 _COMMANDS = (
     Path(__file__).resolve().parents[3]
     / ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
@@ -130,3 +134,17 @@ def test_an_item_declaring_no_factory_assertion_grades_nothing(tmp_path: Path) -
 
     assert record is not None
     assert program.ungraded_assertions(record=record, assertions=[]) == []
+
+
+def test_the_grade_composes_the_shared_publish_head_reader_not_a_copy() -> None:
+    """The publish-head grammar the grade applies is the `pr` gate's own text.
+
+    `record_reader_fragment` is the one account of the publish-head label, the
+    fence rule and the full-sha rule; a grade carrying its own copy could accept
+    a record the `pr` proof-identity gate refuses, which is the misplaced refusal
+    the grade's head check exists to remove.
+    """
+    source = _module().proof_grade_program_source()
+
+    assert record_reader_fragment() in source
+    assert source.count("def published_head(") == 1

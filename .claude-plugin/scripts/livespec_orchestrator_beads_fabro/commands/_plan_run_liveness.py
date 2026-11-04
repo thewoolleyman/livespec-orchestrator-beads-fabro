@@ -29,6 +29,9 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import factory_fabro_bin
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
+    factory_registry_unobservable,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     NON_TERMINAL_STATUS_KINDS,
@@ -111,6 +114,22 @@ def _inspected(
         cwd=project_root,
         factory=dispatch_factory_from_record(record=record),
     )
+    # A REGISTRY-BACKED factory whose address did not resolve is answered BEFORE
+    # a port exists, because the port would be built on a `server` of None and a
+    # bare Fabro target asks whichever engine this host runs. That reading
+    # succeeds: it reports a run living on another machine as one the local
+    # engine has never heard of, which lands on the `not_live` verdict this
+    # module exists to withhold from an unmeasured answer.
+    unobservable = factory_registry_unobservable(factory=factory)
+    if unobservable is not None:
+        return RunLiveness(
+            verdict=LIVENESS_UNOBSERVABLE,
+            run_id=None,
+            detail=(
+                f"{unobservable}, so run {run_id} could not be inspected and the"
+                " reading is evidence of nothing about whether it is live"
+            ),
+        )
     port = FabroPort(
         fabro_bin=factory_fabro_bin(
             factory=factory,

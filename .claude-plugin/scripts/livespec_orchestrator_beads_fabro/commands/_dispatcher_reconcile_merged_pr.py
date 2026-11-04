@@ -7,8 +7,10 @@ belongs to this stranded work-item — and owns the two `gh` shapes and the
 parsing that answer needs.
 
 The answer is deliberately three-valued: a `PrView` when exactly one merged PR
-matches, a refusal STRING when several do (reconciling against the wrong merge
-is worse than not reconciling), and `None` when none does.
+matches, a refusal STRING when none does and the reason can be stated — several
+candidates, so reconciling would pick one (reconciling against the wrong merge
+is worse than not reconciling), or a factory branch carrying a pull request that
+is not a merge — and `None` when the forge said only that it found nothing.
 """
 
 from __future__ import annotations
@@ -33,12 +35,29 @@ __all__: list[str] = [
 ]
 
 _GH_TIMEOUT_SECONDS = 120.0
+# The resting statuses of an item built OUTSIDE the factory (v216; work-item
+# bd-ib-acxptq). Such an item never dispatched, so no factory branch carries it,
+# and a pull request that only MENTIONS it in its body is a follow-up or a
+# sibling, never its carrier: for these statuses the body tier is not consulted,
+# and a missing identifying match refuses as "no merged PR found". An `active`
+# item keeps the body tier for a hand-carried merge of a dispatched item.
+_LOCALLY_BUILT_ENTRY_STATUSES = frozenset({"pending-approval", "ready"})
 
 
 def resolve_merged_pr(
-    *, plan: DispatchPlan, item: WorkItem, runner: CommandRunner, journal: JournalFile
+    *,
+    plan: DispatchPlan,
+    item: WorkItem,
+    runner: CommandRunner,
+    journal: JournalFile,
+    produced_by_item_dispatch_only: bool = False,
 ) -> PrView | str | None:
-    """Resolve the merged PR for `item`: a view, a refusal string, or `None`."""
+    """Resolve the merged PR for `item`: a view, a refusal string, or `None`.
+
+    `produced_by_item_dispatch_only` drops the body-mention tier whatever the item's
+    status: a caller that publishes ONTO the pull request (the host-record primitive)
+    needs one an item's own dispatch produced, identified by head branch or title.
+    """
     viewed = run_stage(
         runner=runner,
         journal=journal,
@@ -46,8 +65,19 @@ def resolve_merged_pr(
         stage="reconcile-pr-view-branch",
         command=(_pr_view_branch_argv(plan=plan), plan.repo, _GH_TIMEOUT_SECONDS, None),
     )
+    # A branch read that resolves a MERGED pull request IS the answer; every other
+    # reading falls through to the item-id search below, including a successful read
+    # of a pull request that is open or closed. This arm used to be terminal
+    # whenever `gh` exited 0, which made the search unreachable for the one case it
+    # exists to serve: an item landed by a host route on a DIFFERENT branch, while
+    # its factory branch carries an unmerged pull request of its own. The merge was
+    # one search away and the valve reported that none existed.
+    unmerged_state: str | None = None
     if viewed.exit_code == 0:
-        return _merged_pr_view(stdout=viewed.stdout)
+        branch_reading = _branch_pr_view(stdout=viewed.stdout)
+        if isinstance(branch_reading, PrView):
+            return branch_reading
+        unmerged_state = branch_reading
     # The base branch is read off the plan's ONE resolved contract. Pinning the
     # search to a branch name this fleet happens to use searched an adopter's
     # forge for merges onto a branch they do not have -- a clean, plausible,
@@ -70,11 +100,18 @@ def resolve_merged_pr(
         item=item,
         branch=plan.branch,
         default_branch=default_branch,
+        include_body_mentions=(
+            not produced_by_item_dispatch_only and item.status not in _LOCALLY_BUILT_ENTRY_STATUSES
+        ),
     )
     if len(candidates) == 1:
         return candidates[0]
     if len(candidates) > 1:
         return _ambiguous_pr_detail(candidates=candidates)
+    if unmerged_state is not None:
+        return _unmerged_branch_detail(
+            item=item, branch=plan.branch, state=unmerged_state, default_branch=default_branch
+        )
     return None
 
 
@@ -104,42 +141,56 @@ def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:
 
 
 def parse_merged_pr_list(
-    *, stdout: str, item: WorkItem, branch: str, default_branch: str
+    *,
+    stdout: str,
+    item: WorkItem,
+    branch: str,
+    default_branch: str,
+    include_body_mentions: bool = True,
 ) -> tuple[PrView, ...]:
-    """Parse merged PR search results, tiering body mentions below identity matches.
+    """Parse merged PR search results by head-ref, title, then body tier.
 
     A candidate merged onto some OTHER base than `default_branch` is rejected,
     which is what stops a reconcile from disposing an item against a merge into
     someone's long-lived side branch. The branch it compares against is resolved
     for the same reason the search's own `--base` is.
 
-    The two tiers are NOT peers, and the ordering is the resolution rule rather
+    The three tiers are NOT peers, and the ordering is the resolution rule rather
     than a preference. `--search <id>` matches bodies server-side, so an ordinary
     merge that merely MENTIONS the item — a follow-up, a revert, a sibling slice
     naming its predecessor — comes back beside the pull request that carries it.
-    Counting both at once turns a clean title match into an ambiguity refusal:
-    measured over this repository's 400 most recent merges onto master, thirteen
-    ids fall through to this search and have exactly one title/head match plus at
-    least one body-only mention. So a body match is consulted ONLY when no
-    candidate identifies itself by the dispatch branch or by its title.
+    Counting all signals at once turns a clear head-ref or title match into an
+    ambiguity refusal, while treating head refs and titles as peers lets a title
+    mention veto the branch that carried the work. Each lower tier is consulted
+    ONLY when every higher tier is empty.
+
+    `include_body_mentions=False` drops the body tier entirely, for an item built
+    outside the factory (see `_LOCALLY_BUILT_ENTRY_STATUSES`).
     """
     parsed_raw = parse_json(text=stdout)
     if isinstance(parsed_raw, JsonParseFailure) or not isinstance(parsed_raw, list):
         return ()
-    identified: list[PrView] = []
-    mentioned: list[PrView] = []
+    head_matches: list[PrView] = []
+    title_matches: list[PrView] = []
+    body_matches: list[PrView] = []
     for entry_raw in cast("list[object]", parsed_raw):
         candidate = _pr_view_from_list_entry(
             entry_raw=entry_raw, item=item, branch=branch, default_branch=default_branch
         )
         if candidate is None:
             continue
-        view, body_only = candidate
-        if body_only:
-            mentioned.append(view)
+        view, tier = candidate
+        if tier == "head":
+            head_matches.append(view)
+        elif tier == "title":
+            title_matches.append(view)
         else:
-            identified.append(view)
-    return tuple(identified) if identified else tuple(mentioned)
+            body_matches.append(view)
+    if head_matches:
+        return tuple(head_matches)
+    if title_matches:
+        return tuple(title_matches)
+    return tuple(body_matches) if include_body_mentions else ()
 
 
 def _ambiguous_pr_detail(*, candidates: tuple[PrView, ...]) -> str:
@@ -158,17 +209,52 @@ def _pr_view_branch_argv(*, plan: DispatchPlan) -> list[str]:
     ]
 
 
-def _merged_pr_view(*, stdout: str) -> PrView | None:
+def _branch_pr_view(*, stdout: str) -> PrView | str:
+    """The branch read's merged pull request, or the STATE that is not one.
+
+    Every string arm is a REACHABLE reading rather than a defensive one -- a
+    factory branch routinely carries an open or closed pull request -- and the
+    whole set carried a single `no cover` pragma until `bd-ib-sz2eal`, which
+    labelled the live path as unreachable and hid the fall-through it now takes.
+
+    The four readings are NAMED rather than collapsed into one word, because the
+    refusal downstream is the only thing that tells an operator which situation
+    they are in and the four have different remedies. `gh` output nobody can
+    parse is a diagnostic about the forge CALL rather than about the pull
+    request, and a `MERGED` pull request carrying no merge commit is a reading no
+    acceptance may be keyed on -- so neither may read as a plain state word, and
+    neither may read as the other.
+    """
     view = parse_pr_view(stdout=stdout)
-    if view is None or view.state != "MERGED" or view.merge_sha is None:
-        return None  # pragma: no cover - defensive malformed gh JSON
+    if view is None:
+        return "unreadable JSON"
+    if view.state != "MERGED":
+        return view.state
+    if view.merge_sha is None:
+        return "MERGED with no merge commit"
     return view
+
+
+def _unmerged_branch_detail(*, item: WorkItem, branch: str, state: str, default_branch: str) -> str:
+    """Refuse an item whose branch pull request is not a merge and whose id matches none.
+
+    The SEARCH is named by the argv that was actually run rather than by a
+    sentence claiming one happened: an absence asserted over an unstated
+    population is a claim no reader can re-run, and this valve exists to
+    establish a merge from the forge rather than to be told about one.
+    """
+    searched = " ".join(merged_pr_list_argv(item=item, default_branch=default_branch))
+    return (
+        f"ERROR: no merged PR found for work-item {item.id}: the pull request on "
+        f"{branch} reads {state}, and the item-id search over merges onto "
+        f"{default_branch} named none. Searched: {searched}\n"
+    )
 
 
 def _pr_view_from_list_entry(
     *, entry_raw: object, item: WorkItem, branch: str, default_branch: str
-) -> tuple[PrView, bool] | None:
-    """Return one candidate view plus whether ONLY its body named the item."""
+) -> tuple[PrView, str] | None:
+    """Return one candidate view plus its strongest work-item naming tier."""
     if not isinstance(entry_raw, dict):
         return None
     entry = cast("dict[str, Any]", entry_raw)
@@ -179,8 +265,8 @@ def _pr_view_from_list_entry(
     base_raw: object = entry.get("baseRefName")
     if isinstance(base_raw, str) and base_raw != default_branch:
         return None
-    identified = _identifies_item(entry=entry, item=item, branch=branch)
-    if not identified and not _body_names_item(entry=entry, item=item):
+    tier = _candidate_tier(entry=entry, item=item, branch=branch)
+    if tier is None:
         return None
     merge_sha = _list_entry_merge_sha(entry=entry)
     if merge_sha is None:
@@ -192,18 +278,21 @@ def _pr_view_from_list_entry(
             auto_merge_armed=False,
             merge_state_status="UNKNOWN",
             merge_sha=merge_sha,
-            terminal_required_check_failures=(),
         ),
-        not identified,
+        tier,
     )
 
 
-def _identifies_item(*, entry: dict[str, Any], item: WorkItem, branch: str) -> bool:
-    """Whether the entry names the item where a dispatch or an author puts it."""
+def _candidate_tier(*, entry: dict[str, Any], item: WorkItem, branch: str) -> str | None:
+    """The strongest tier by which one merged PR names the work item."""
+    if entry.get("headRefName") == branch:
+        return "head"
     title_raw: object = entry.get("title")
-    return entry.get("headRefName") == branch or (
-        isinstance(title_raw, str) and item.id in title_raw
-    )
+    if isinstance(title_raw, str) and item.id in title_raw:
+        return "title"
+    if _body_names_item(entry=entry, item=item):
+        return "body"
+    return None
 
 
 def _body_names_item(*, entry: dict[str, Any], item: WorkItem) -> bool:

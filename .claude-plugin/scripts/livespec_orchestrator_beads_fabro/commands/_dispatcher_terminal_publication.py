@@ -9,8 +9,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold i
     CurrentMergeHold,
     read_current_merge_hold,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_confirm import confirm_pr_reading
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import confirm_pr
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
@@ -48,6 +48,7 @@ class TerminalPublication:
 
     hold: CurrentMergeHold
     view: PrView | None
+    pr_view_error: str | None
     refusal: DispatchOutcome | None
 
 
@@ -62,6 +63,7 @@ def reconcile_terminal_publication(
     """Confirm a PR only for a normally-green or checkpoint-qualified run."""
     hold: CurrentMergeHold = "unreadable"
     view = None
+    pr_view_error = None
     matches = False
     if terminal is None:
         # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary.
@@ -70,7 +72,9 @@ def reconcile_terminal_publication(
         # hours later, and a hold set during the run is visible in exactly one of
         # the two (`_dispatcher_current_merge_hold`).
         hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
-        view = confirm_pr(plan=plan, runner=runner, journal=journal, hold=hold)
+        reading = confirm_pr_reading(plan=plan, runner=runner, journal=journal, hold=hold)
+        view = reading.view
+        pr_view_error = reading.error
     elif evidence is not None:
         # BOTH EVIDENCE LEGS ARE AUTHENTICATED BEFORE ANY FORGE MUTATION. On this
         # arm the run FAILED, so the only thing that may move a pull request is
@@ -91,13 +95,15 @@ def reconcile_terminal_publication(
         )
         if authenticated and observed is not None:
             hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
-            view = confirm_pr(
+            reading = confirm_pr_reading(
                 plan=plan,
                 runner=runner,
                 journal=journal,
                 hold=hold,
                 expected_publication=observed,
             )
+            view = reading.view
+            pr_view_error = reading.error
             matches = view is not None
         if matches and view is not None:
             _journal_successful_classification(
@@ -107,7 +113,12 @@ def reconcile_terminal_publication(
                 publication=view,
             )
     refusal = terminal if terminal is not None and not matches else None
-    return TerminalPublication(hold=hold, view=view, refusal=refusal)
+    return TerminalPublication(
+        hold=hold,
+        view=view,
+        pr_view_error=pr_view_error,
+        refusal=refusal,
+    )
 
 
 def terminal_publication_view(

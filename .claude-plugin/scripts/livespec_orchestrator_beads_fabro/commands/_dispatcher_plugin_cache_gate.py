@@ -63,6 +63,23 @@ its SCRIPTED re-entry observes the mutation without trusting another agent turn
 to run the gate at all, which is strictly stronger than the prompt instruction
 it replaces.
 
+AND WHY THE REFRESH COMMAND STILL WAS NOT ENOUGH (bd-ib-3f79, the R497 rework).
+Every re-entry so far is a NODE boundary, and a node boundary is by construction
+outside an agent session — which is where the poisoning write happens. The
+implement stage's own in-run `just check` therefore has no re-entry in front of
+it at all, and console run 01M5FGRSA3GE4DYGHPQ0Q50Y7J met the identical
+condition there on orchestrator build `c6f61c5856ac`, a release that CONTAINS
+the declared-suite re-entry. No fourth node can cover it: measured in this
+repository's own sandbox on 2026-10-21, the last prepare step ran at 19:53:10,
+the four marketplace clones appeared at 19:53:14..19:53:19, and
+`installed_plugins.json` was written at 19:56:07 naming four cache directories
+under a `cache` root that did not exist. The write lands between the last
+prepare step and the agent's first action, so the only lever in that window is
+the harness's own hook surface — which is what
+`plugin_gate_session_hook_declaration` renders, for
+`_dispatcher_harness_shell_policy` to install in the `settings.local.json` that
+module already writes.
+
 THIS MODULE ALSO ASSEMBLES THE OTHER TWO MATERIALIZED HELPERS, and that is
 cohesion rather than accident: the publication-head reader and the exact-head
 push program land below the SAME plugins root, through the same prepare-step
@@ -73,8 +90,16 @@ place to read what the sandbox is handed.
 
 from __future__ import annotations
 
+import shlex
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_program import (
     carry_forward_program_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    PrepareStep,
+    payload_write_command,
+    render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
     proof_grade_program_prepare_steps_block,
@@ -85,6 +110,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     publication_push_program_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    record_file_merge_program_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    record_file_program_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
     sandbox_plugins_root_expansion,
@@ -94,10 +125,15 @@ __all__: list[str] = [
     "PLUGIN_BUILD_ADVANCED_MARKER",
     "PLUGIN_BUILD_PIN_FILENAME",
     "PLUGIN_CACHE_UNMATERIALIZED_MARKER",
+    "PLUGIN_GATE_HOOK_EVENT",
+    "PLUGIN_GATE_HOOK_MATCHER",
+    "PLUGIN_GATE_HOOK_TIMEOUT_SECONDS",
+    "PLUGIN_GATE_HOOK_UNREPAIRED_MARKER",
     "PLUGIN_GATE_PROGRAM_FILENAME",
     "SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR",
+    "plugin_cache_gate_prepare_step",
     "plugin_cache_gate_prepare_steps_block",
-    "plugin_cache_gate_script",
+    "plugin_gate_session_hook_declaration",
     "plugin_pin_gate_command",
 ]
 
@@ -134,6 +170,24 @@ PLUGIN_GATE_PROGRAM_FILENAME = "livespec-run-plugin-gate.py"
 # emission. A signature nobody can grep for is not a signature.
 PLUGIN_CACHE_UNMATERIALIZED_MARKER = "LIVESPEC_PLUGIN_CACHE_UNMATERIALIZED"
 PLUGIN_BUILD_ADVANCED_MARKER = "LIVESPEC_PLUGIN_BUILD_ADVANCED"
+
+# The harness hook event and matcher the in-session re-entry is declared under.
+# The engine reads these two words and nothing else decides whether the hook
+# fires, so they are named here beside the program they run rather than spelled
+# at the install site, which is in another module.
+PLUGIN_GATE_HOOK_EVENT = "PreToolUse"
+PLUGIN_GATE_HOOK_MATCHER = "Bash"
+
+# The hook's own ceiling, in seconds. The gate's re-entry pass reads three JSON
+# files and writes at most one, so this is orders of magnitude above what it
+# takes; it exists so a pathological filesystem cannot hold a tool call open.
+PLUGIN_GATE_HOOK_TIMEOUT_SECONDS = 60
+
+# The fourth named condition, and the only one no NODE can report: a gate the
+# hook could not run or that could not repair. A node fails closed on it; the
+# hook deliberately does not (see `plugin_gate_session_hook_declaration`), so
+# this marker is the whole of its surface.
+PLUGIN_GATE_HOOK_UNREPAIRED_MARKER = "LIVESPEC_PLUGIN_GATE_HOOK_UNREPAIRED"
 
 # The gate program, run as `python3 - <<'PY'` by the rendered prepare step. It
 # is deliberately stdlib-only and free of any livespec import: the sandbox clone
@@ -378,8 +432,12 @@ def _gate_program() -> str:
     return program.strip()
 
 
-def plugin_cache_gate_script() -> str:
-    """The bash prepare-step body: materialize the program, verify, then pin.
+def plugin_cache_gate_prepare_step() -> PrepareStep:
+    """The prepare step: materialize the program, verify, then pin.
+
+    The program rides the step's `env` and the script writes it with
+    `printf %s`, so the engine's compact preamble carries a few lines rather
+    than the whole gate on every agent request.
 
     `set -eu` plus the `exec` means the gate's own exit code IS the step's, so
     an incomplete cache that could not be repaired aborts the run in setup —
@@ -390,14 +448,17 @@ def plugin_cache_gate_script() -> str:
     because the refresh stage has to re-enter the same verification and a pipe
     leaves nothing behind to re-enter.
     """
-    return (
-        "set -eu\n"
-        f'root="{sandbox_plugins_root_expansion()}"\n'
-        'mkdir -p "$root"\n'
-        f"cat > \"$root/{PLUGIN_GATE_PROGRAM_FILENAME}\" <<'PY'\n"
-        f"{_gate_program()}\n"
-        "PY\n"
-        f'exec python3 "$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'
+    return PrepareStep(
+        script="\n".join(
+            [
+                "set -eu",
+                f'root="{sandbox_plugins_root_expansion()}"',
+                'mkdir -p "$root"',
+                payload_write_command(path_word=f'"$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'),
+                f'exec python3 "$root/{PLUGIN_GATE_PROGRAM_FILENAME}"',
+            ]
+        ),
+        env={PAYLOAD_ENV_VAR: f"{_gate_program()}\n"},
     )
 
 
@@ -412,6 +473,55 @@ def plugin_pin_gate_command() -> str:
     return f'python3 "{sandbox_plugins_root_expansion()}/{PLUGIN_GATE_PROGRAM_FILENAME}"'
 
 
+def plugin_gate_session_hook_declaration() -> dict[str, list[dict[str, object]]]:
+    """The harness hook that re-enters the gate before every in-session shell call.
+
+    `PreToolUse` on `Bash`, which is the ONE lever inside the window the module
+    docstring measures. A tool call is strictly later than session start on any
+    ordering, so it observes the sync's write without depending on how the
+    engine orders its own startup — and it is re-entrant per call, so a sync
+    that runs again mid-session cannot reopen the window: the repair is the last
+    thing that happens before the check command does. A `SessionStart` hook has
+    neither property established.
+
+    THE FAILURE IS COLLAPSED TO EXIT 1 RATHER THAN PASSED THROUGH, and that is
+    the one thing in this declaration that is not cosmetic. The engine reads a
+    `PreToolUse` hook's exit code 2 as a BLOCKING error and every other non-zero
+    status as non-blocking; `python3 <missing file>` exits 2. So the bare command
+    would turn a sandbox whose prepare pass never landed the gate program into a
+    turn whose EVERY shell call is refused — a provisioning fault converted into
+    a turn that can do nothing, not even report. Nothing weakens by the
+    collapse: the mechanical REFUSALS stay at `janitor` and `pr_refresh`, where a
+    node can fail closed without stranding a turn, and this leg is the REPAIR.
+    """
+    named = (
+        f"{PLUGIN_GATE_HOOK_UNREPAIRED_MARKER}: the sandbox plugin registry names"
+        " a build whose cache this run could not repair before an in-session"
+        " check, so a check resolving that plugin root may report the sandbox's"
+        " provisioning as the repository's own failure"
+    )
+    # Shell-quoted rather than wrapped in literal quotes, because the sentence
+    # carries apostrophes: two of them balance by accident, so a hand-quoted
+    # message is correct only until a word is added or removed -- and the failure
+    # mode is a hook command that is itself a syntax error, which exits 2, the one
+    # status the collapse above exists to make unreachable.
+    command = f"{plugin_pin_gate_command()} || {{ echo {shlex.quote(named)} >&2; exit 1; }}"
+    return {
+        PLUGIN_GATE_HOOK_EVENT: [
+            {
+                "matcher": PLUGIN_GATE_HOOK_MATCHER,
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": command,
+                        "timeout": PLUGIN_GATE_HOOK_TIMEOUT_SECONDS,
+                    }
+                ],
+            }
+        ]
+    }
+
+
 def plugin_cache_gate_prepare_steps_block() -> str:
     """Render the gate, and the three publication helpers, as prepare steps.
 
@@ -421,11 +531,12 @@ def plugin_cache_gate_prepare_steps_block() -> str:
     A sandbox with nothing registered yet reports exactly that and exits 0.
 
     The publication-head reader, the exact-head push program, the carry-forward
-    decision and the per-assertion proof grade ride the SAME block for the reason
-    the module docstring records: all five land below one root, and a sandbox
-    given a subset fails closed at a stage whose refusal would name the wrong
-    seam. They follow the gate rather than precede it so the cheapest refusal — an
-    unrepairable plugin cache — still aborts setup first.
+    decision, the per-assertion proof grade and the generated-record-file
+    resolution ride the SAME block for the reason the module docstring records:
+    all six land below one root, and a sandbox given a subset fails closed at a
+    stage whose refusal would name the wrong seam. They follow the gate rather
+    than precede it so the cheapest refusal — an unrepairable plugin cache —
+    still aborts setup first.
     """
     lines = [
         "",
@@ -433,14 +544,15 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         "# --- verify every registered build against its cache-manifest.json",
         "# --- required_paths, re-materialize an incomplete one, and pin the",
         "# --- build for the whole run (bd-ib-dbqb, bd-ib-bb41.9) ---",
-        "[[run.prepare.steps]]",
-        f"script = '''\n{plugin_cache_gate_script()}\n'''",
     ]
     return (
         "\n".join(lines)
         + "\n"
+        + render_prepare_step(step=plugin_cache_gate_prepare_step())
         + proof_head_program_prepare_steps_block()
         + publication_push_program_prepare_steps_block()
         + carry_forward_program_prepare_steps_block()
         + proof_grade_program_prepare_steps_block()
+        + record_file_program_prepare_steps_block()
+        + record_file_merge_program_prepare_steps_block()
     )

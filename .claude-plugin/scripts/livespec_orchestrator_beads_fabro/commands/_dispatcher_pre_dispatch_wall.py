@@ -8,7 +8,7 @@ what required every new refusal to be wired twice. It moved out when the Codex
 credential gate became the fourth refusal in each and pushed the single-dispatch
 command module past its file LLOC ceiling — the seam was already there.
 
-WHAT THE WALL IS. Five refusals sharing one POSITION and one guarantee: each runs
+WHAT THE WALL IS. A table of refusals sharing one POSITION and one guarantee: each runs
 after selection and BEFORE admission, so a refused item is never claimed, no
 `active` row is left behind, and no factory run exists to reap. Reading them as one
 decision is also what keeps each command entry point's return count honest — the
@@ -37,13 +37,17 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from returns.unsafe import unsafe_perform_io
-
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_override_wall import (
+    acp_node_override_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
     implementation_pr_override_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_app_reach_preflight import (
+    app_reach_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gate import (
     codex_credential_refusal_for_items,
@@ -52,35 +56,39 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import
     codex_routing_for_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
+    EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
     EXIT_UNGRADEABLE_CRITERIA,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
-    CredentialLifetimeRequirement,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
     WorkflowFaultDeferral,
-    effective_policy_inputs,
-    resolve_credential_lifetime_requirement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_selection import (
+    selection_credential_requirement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
     credential_wrapper_text,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    read_dispatch_labels,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_workflow import (
+    definition_of_done_workflow_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall import (
+    dod_judgement_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate import (
     fabro_currency_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_safety_screen import (
+    out_of_enum_factory_safety_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
-    effective_review_fix_cap,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
-    DEFAULT_REVIEW_FIX_CAP,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
+    PrelaunchCheckpoint,
+    ignore_prelaunch_checkpoint,
+    prelaunch_phase,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_gate import (
     proof_credentials_refusal_for_items,
@@ -91,10 +99,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
     reclaim_stale_publish_branches,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    ConnectionPrefixMissingError,
-    LivespecConfigUnreadableError,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_screen import (
+    session_headroom_screen_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
+    spec_change_tier_refusal,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -112,6 +121,7 @@ def pre_dispatch_wall_exit(
     repo: Path,
     items: Sequence[WorkItem],
     journal: JournalFile,
+    prelaunch_checkpoint: PrelaunchCheckpoint = ignore_prelaunch_checkpoint,
 ) -> int | None:
     """The whole wall, as ONE decision: an exit code, or None to proceed.
 
@@ -127,19 +137,79 @@ def pre_dispatch_wall_exit(
     publication is scripted. A groom selection stays eligible because its `pr`
     node still publishes a filing plan through ACP.
 
+    The ACP-NODE OVERRIDE check follows it, and it is free for the same reason: it
+    resolves this dispatch's own `--acp-node` arguments against the committed
+    configuration and asks no factory and no provider. It sits before the claim
+    because its refusal used to land at stage `acp-nodes`, after `ledger-admit`,
+    and each refused dispatch stranded an `active` claim with no run behind it.
+
+    The SESSION-HEADROOM screen follows it, ahead of every row that spends anything
+    (`bd-ib-tsrkqf`). The admission valve's headroom assessment used to be the
+    only place a dispatch learned the provider's five-hour window could not carry
+    it, which is AFTER the App reach probe, the Definition-of-Done judgement's
+    model call, the proof-asset store and the Codex credential gate had all been
+    paid for -- about 14 minutes per refused attempt, each holding a launcher in
+    the factory queue. The screen asks the same question first and refuses with
+    the valve's own journal rows. It is the one row here that exits `EXIT_FAILURE`
+    rather than a precondition code, because that is the code the valve's refusal
+    produced and a caller reading the exit must not see the move. A dispatch it
+    passes is unchanged: the valve reuses the reading while it is fresh and repeats it
+    otherwise.
+
+    The APP-REACH preflight follows, and it precedes the currency gate for a
+    RELEVANCE reason rather than a cost one — the two spend comparably. Its
+    answer is a property of the (serving App, target repository) PAIR, so like
+    the currency gate nothing about the selection has to be read before it can be
+    settled; and where the currency gate asks whether the serving ENGINE is
+    admissible, this asks whether that server can reach the target AT ALL. An
+    engine's currency is moot on a server whose App cannot see the repository, so
+    grading currency first pays a forge read and an engine read to answer a
+    question about a server that cannot serve this dispatch either way.
+
     The FABRO CURRENCY gate is next, and its position is load-bearing rather
-    than tidy. It is the only refusal here whose answer is a property of the
-    FACTORY rather than of the items, so nothing about the selection has to be
-    read before it can be settled; and the two refusals that would otherwise
-    precede it both SPEND something — the proof-assets gate creates a repository
-    prerelease, the Codex credential gate spends a bounded provider renewal — so
-    refusing an unadmissible ENGINE after either would pay for a dispatch that
-    could never run on it.
+    than tidy. It is a refusal whose answer is a property of the FACTORY rather
+    than of the items, so nothing about the selection has to be read before it
+    can be settled; and the two refusals that would otherwise precede it both
+    SPEND something — the proof-assets gate creates a repository prerelease, the
+    Codex credential gate spends a bounded provider renewal — so refusing an
+    unadmissible ENGINE after either would pay for a dispatch that could never
+    run on it.
 
     The criteria wall follows and is variant-aware: it is handed this dispatch's
     explicit `--workflow-name`, resolves which graph the selection would run, and
     exempts a groom-kind dispatch, whose acceptance is the human approval of the
     draft.
+
+    The Definition-of-Done JUDGEMENT follows it, which is the SEMANTIC half of
+    the same gate: the criteria wall above parses the section, and this asks
+    whether what it says is gradeable at all. It shares that wall's exit code,
+    because the clause ratifies one code for both. Its position is between the
+    two for the same cheap-first reason the rest of this table is ordered: it
+    spends a model call, so it must run after every free parse that could
+    already have refused the selection, and before the two rows that spend more
+    than it does — the proof-assets gate, which CREATES a repository
+    prerelease, and the Codex gate, which spends a bounded provider renewal.
+
+    The SPEC-CHANGE-TIER row follows. It refuses a held item with the same exit
+    code the two criteria rows carry, because the exit-code enumeration ratifies
+    one code for all three. Its position is cheap-first like the rest of this
+    table, and it is NOT a free read: the ratified "a read of the spec history
+    [that] needs no model" describes the HOLD, while the ROW additionally spends
+    the reuse-capped CLASSIFICATION the clause puts on every dispatch path — one
+    per item per specification version, plus the judgement beside it for a
+    non-exempt feature — because that classification is also what releases a
+    held item once its topic ratifies. So it spends what the Definition-of-Done
+    judgement above it spends, and sits for the same reason after every free
+    parse that could already have refused the selection and ahead of the two
+    rows that spend more than it does, which keeps a dispatch that can never run
+    from creating a repository prerelease or a bounded provider renewal first.
+    What makes it fail-closed is NOT that it reaches no provider, because on a
+    reuse miss it does: it is that `classify_and_hold`, having classified, then
+    re-reads the hold from the LEDGER rather than the classification's own
+    outcome, so a standing record keeps governing an item whose classification
+    could not run. Reading that fresh outcome instead stopped this very row
+    refusing an unratified topic, which `_spec_change_tier_wall` records as
+    measured while the row was wired.
 
     The proof-ASSETS gate follows (S5 / bd-ib-b4u6b7): an item carrying a
     `factory_captured` assertion needs this repository's standing proof-assets
@@ -178,12 +248,14 @@ def pre_dispatch_wall_exit(
     refusing = _refusing_sequence(
         args=args, repo=repo, items=items, journal=journal, work_item_ids=work_item_ids
     )
-    for ask, exit_code, newline in refusing:
-        refusal = ask()
+    for ask, exit_code, newline, phase in refusing:
+        with prelaunch_phase(checkpoint=prelaunch_checkpoint, name=phase):
+            refusal = ask()
         if refusal is not None:
             _ = write_stderr(text=f"{refusal}\n" if newline else refusal)
             return exit_code
-    requirement = selection_credential_requirement(args=args, repo=repo, items=items)
+    with prelaunch_phase(checkpoint=prelaunch_checkpoint, name="credential-requirement"):
+        requirement = selection_credential_requirement(args=args, repo=repo, items=items)
     # A WORKFLOW FAULT is not this wall's refusal to make, so the credential gate
     # is SKIPPED rather than answered. The derivation reads the selected
     # workflow's registry entry, run config, graph and node-timeout policy, so it
@@ -202,18 +274,19 @@ def pre_dispatch_wall_exit(
     # be established for a well-formed workflow is NOT deferred — it arrives here
     # as a refusal string and still refuses, which is what keeps Scenario 19.
     if not isinstance(requirement, WorkflowFaultDeferral):
-        codex_refusal = codex_credential_refusal_for_items(
-            work_item_ids=work_item_ids,
-            requirement=requirement,
-            # WHICH DISPATCHES THE GATE COVERS, resolved here because the wall
-            # is the surface both dispatch paths run and the routing is a
-            # property of the dispatch rather than of any item in it. Handed
-            # down as a THUNK so the drain's common idle pass — an empty
-            # selection, which the gate returns on before anything else — pays
-            # neither this resolution's reads nor the credential's.
-            codex_routing=lambda: codex_routing_for_dispatch(repo=repo),
-            journal=journal,
-        )
+        with prelaunch_phase(checkpoint=prelaunch_checkpoint, name="codex-credential-gate"):
+            codex_refusal = codex_credential_refusal_for_items(
+                work_item_ids=work_item_ids,
+                requirement=requirement,
+                # WHICH DISPATCHES THE GATE COVERS, resolved here because the wall
+                # is the surface both dispatch paths run and the routing is a
+                # property of the dispatch rather than of any item in it. Handed
+                # down as a THUNK so the drain's common idle pass — an empty
+                # selection, which the gate returns on before anything else — pays
+                # neither this resolution's reads nor the credential's.
+                codex_routing=lambda: codex_routing_for_dispatch(repo=repo),
+                journal=journal,
+            )
         if codex_refusal is not None:
             _ = write_stderr(text=f"{codex_refusal}\n")
             return EXIT_PRECONDITION_ERROR
@@ -262,7 +335,7 @@ def _refusing_sequence(
     items: Sequence[WorkItem],
     journal: JournalFile,
     work_item_ids: list[str],
-) -> tuple[tuple[Callable[[], str | None], int, bool], ...]:
+) -> tuple[tuple[Callable[[], str | None], int, bool, str], ...]:
     """Every refusal this wall makes before the credential gate, IN ORDER.
 
     A TABLE rather than a chain of early returns, and the reason is the one this
@@ -290,16 +363,44 @@ def _refusing_sequence(
     """
     return (
         (
+            lambda: out_of_enum_factory_safety_refusal(items=items),
+            EXIT_PRECONDITION_ERROR,
+            False,
+            "factory-safety-screen",
+        ),
+        (
             lambda: implementation_pr_override_refusal(
                 args=args, repo=repo, items=items, journal=journal
             ),
             EXIT_PRECONDITION_ERROR,
             True,
+            "implementation-pr-override",
+        ),
+        (
+            lambda: acp_node_override_refusal(args=args, repo=repo, items=items, journal=journal),
+            EXIT_PRECONDITION_ERROR,
+            True,
+            "acp-node-override",
+        ),
+        (
+            lambda: session_headroom_screen_refusal(
+                args=args, repo=repo, items=items, journal=journal
+            ),
+            EXIT_FAILURE,
+            True,
+            "session-headroom-screen",
+        ),
+        (
+            lambda: app_reach_refusal(repo=repo, items=items, journal=journal),
+            EXIT_PRECONDITION_ERROR,
+            False,
+            "app-reach",
         ),
         (
             lambda: fabro_currency_refusal(args=args, repo=repo, items=items, journal=journal),
             EXIT_PRECONDITION_ERROR,
             False,
+            "fabro-currency",
         ),
         (
             lambda: pre_dispatch_criteria_refusal(
@@ -307,6 +408,29 @@ def _refusing_sequence(
             ),
             EXIT_UNGRADEABLE_CRITERIA,
             False,
+            "pre-dispatch-criteria",
+        ),
+        (
+            lambda: dod_judgement_refusal(
+                repo=repo, items=items, workflow_name=args.workflow_name, journal=journal
+            ),
+            EXIT_UNGRADEABLE_CRITERIA,
+            False,
+            "dod-judgement",
+        ),
+        (
+            lambda: definition_of_done_workflow_refusal(args=args, repo=repo, items=items),
+            EXIT_PRECONDITION_ERROR,
+            False,
+            "definition-of-done-workflow",
+        ),
+        (
+            lambda: spec_change_tier_refusal(
+                repo=repo, items=items, workflow_name=args.workflow_name
+            ),
+            EXIT_UNGRADEABLE_CRITERIA,
+            False,
+            "spec-change-tier",
         ),
         (
             lambda: proof_assets_refusal_for_items(
@@ -314,6 +438,7 @@ def _refusing_sequence(
             ),
             EXIT_PRECONDITION_ERROR,
             False,
+            "proof-asset-store",
         ),
         (
             lambda: proof_credentials_refusal_for_items(
@@ -325,74 +450,6 @@ def _refusing_sequence(
             ),
             EXIT_PRECONDITION_ERROR,
             False,
+            "proof-credential-gate",
         ),
-    )
-
-
-def selection_credential_requirement(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    items: Sequence[WorkItem],
-) -> CredentialLifetimeRequirement | str | WorkflowFaultDeferral:
-    """The credential requirement covering EVERY item this pass would claim.
-
-    One host credential covers the whole wave, so the figure has to cover the
-    WIDEST review-fix loop in it: the widest loop is the longest execution the
-    credential may have to outlive, and sizing against a narrower item would
-    admit a credential the widest one cannot finish on. The cap is the item's
-    EFFECTIVE one, so a `review-fix-cap:<n>` label raises this selection's floor
-    exactly as it raises what the dispatch renders.
-
-    A ledger label read that FAILS degrades to the repository-level default,
-    which is the same degradation `_dispatcher_loop_plan` makes when it renders
-    the input (`.value_or(DEFAULT_REVIEW_FIX_CAP)`). That identity is the point:
-    the two surfaces are wrong together or right together, and a figure derived
-    here that the dispatch then contradicted would be worse than either.
-    """
-    return resolve_credential_lifetime_requirement(
-        repo=repo,
-        workflow_override=getattr(args, "workflow", None),
-        workflow_name=getattr(args, "workflow_name", None),
-        policy_inputs=effective_policy_inputs(
-            review_fix_cap=_widest_review_fix_cap(repo=repo, items=items)
-        ),
-    )
-
-
-def _widest_review_fix_cap(*, repo: Path, items: Sequence[WorkItem]) -> int:
-    """The largest effective review-fix cap across the selection.
-
-    An EMPTY selection takes the repository default. The credential gate returns
-    before grading anything on an empty selection, so this value is never used
-    there; it exists so this function is total rather than relying on a caller's
-    ordering to stay correct.
-    """
-    caps = [_review_fix_cap(repo=repo, item=item) for item in items]
-    return max(caps) if caps else DEFAULT_REVIEW_FIX_CAP
-
-
-def _review_fix_cap(*, repo: Path, item: WorkItem) -> int:
-    """One item's effective cap, degrading to the default on an unreadable read.
-
-    The label read is wrapped because it resolves the ledger CONNECTION before it
-    reaches the ledger, and that resolution raises on a repository whose
-    `connection.prefix` is unset or whose `.livespec.jsonc` is unreadable —
-    errors `read_dispatch_labels` does not route as data because its own
-    `exceptions` tuple covers only the beads calls past that point. Unwrapped,
-    those escaped the credential derivation as a traceback from inside the
-    pre-dispatch wall, which is a BUG-class escape on the path whose whole
-    purpose is rendering actionable refusals.
-    """
-    labels = attempt(
-        action=lambda: read_dispatch_labels(repo=repo, item=item),
-        exceptions=(ConnectionPrefixMissingError, LivespecConfigUnreadableError),
-    )
-    resolved = () if isinstance(labels, AttemptFailure | str) else labels
-    return unsafe_perform_io(
-        effective_review_fix_cap(
-            item=item,
-            cwd=repo,
-            raw_labels=resolved,
-        ).value_or(DEFAULT_REVIEW_FIX_CAP)
     )

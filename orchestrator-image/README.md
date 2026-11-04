@@ -65,7 +65,7 @@ payloads are cleaned up on exit.
 ## Tier-2 dispatch proof
 
 After Tier 1 is green, `tier2-dispatch-proof.sh` runs the next W7 proof: one
-explicit `dispatcher.py loop --mode shadow --item <id>` invocation from inside
+explicit `dispatcher.py loop --item <id>` invocation from inside
 the container. It uses the same entrypoint path as production, proves the inner
 Docker daemon is the only daemon available to Fabro, captures a redacted
 dispatcher journal tail, and leaves automatic item closure disabled with
@@ -272,6 +272,122 @@ grain than `config_name` could. Do not read the empty column as a telemetry
 defect, and do not "fix" it by widening the receiver's allowlist — `config_name`
 is already allowlisted, and was allowlisted throughout the window in which every
 value was empty.
+
+### `thewoolleyman/petri` `factory-integration` — the Petri carrier branch
+
+Fabro pulls Petri straight from `lithoscomputer/petri` `main` as a git dependency, so
+a Petri change the factory needs before upstream merges it cannot ride on the Fabro
+fork alone. It is carried the same way the Fabro fork carries its fixes:
+
+- **The fork.** `thewoolleyman/petri` is a GitHub fork of `lithoscomputer/petri`. Its
+  default branch is **`factory-integration`**: upstream `main` plus every carried Petri
+  patch, and never a subset.
+- **One topic branch per carried patch.** Each patch lives on its own topic branch
+  based on upstream `main`. It merges into `factory-integration` through a pull request
+  on the fork, with a merge commit, so the topic branch's commits survive unchanged and
+  can become the upstream pull request as they are. The fork has no CI on these pull
+  requests, so the local gate result is recorded on the pull request before it merges.
+- **How Fabro consumes it.** The Fabro carrier carries one carrier-only commit (topic
+  branch `petri-fork-integration` on `thewoolleyman/fabro`) that adds a Cargo
+  `[patch."https://github.com/lithoscomputer/petri.git"]` entry for every Petri crate,
+  pointing at `thewoolleyman/petri` `factory-integration`. `Cargo.lock` pins the exact
+  Petri commit. That commit is dropped once upstream Petri carries every row below and
+  Fabro's own lock has moved past it.
+
+**Carried Petri patches (measured 2026-10-19).** `factory-integration` is at `9028641`:
+upstream `main` `50809f9` plus the merge of the topic branch below.
+
+| Topic branch (fork PR) | What it is | Why the factory needs it | Upstream disposition | Owner |
+| --- | --- | --- | --- | --- |
+| `plugin-sandbox-backend` at `91b3c89` (thewoolleyman/petri#1) | `SandboxBackend::Plugin` with embedder-configured `SandboxOptions.plugin`, registered under the plugin's own kind in the router's provider registry; a generic `SandboxOptions.resources` applied to every Docker and plugin container sandbox; `PluginSettings::configured` and `with_launch` (arguments and inherited variables); the Fabro frontend lowering a well-formed third-party provider kind instead of refusing it | the Kubernetes sandbox backend (plan `kubernetes-sandbox-backend`, `bd-ib-n7zj4a`): without it a workflow naming a plugin provider is refused at validation, the engine cannot launch the plugin, and a plugin would receive default resources instead of the workflow's CPU and memory | superseded upstream (2026-10-20): `lithoscomputer/petri#122` (the Petri maintainers' registered external providers) does the plugin-backend half, and `lithoscomputer/petri#131` (issue `#130`), stacked on #122 from topic `plugin-resources-on-registered` `f342550`, carries the per-run resources. This topic stays in `factory-integration` until the next carrier moves to #122 + #131 (plan `kubernetes-sandbox-backend` research note 004) | plan `kubernetes-sandbox-backend` (`bd-ib-nmuyjc`) |
+
+**The serving Petri lineage (measured 2026-10-25).** The build gmktec serves, Fabro
+carrier `carrier-candidate-registered-20261023` at `9f6c38fab`, does NOT patch Petri to
+`factory-integration`. Its `Cargo.toml` `[patch]` points every Petri crate at
+`thewoolleyman/petri` branch **`fabro-integration-registered-20261023`**, and its
+`Cargo.lock` pins `e92b191`. So that branch is the one the next rebuild of the serving
+lineage picks up, and the table above (2026-10-19, `factory-integration` at `9028641`) no
+longer describes what gmktec runs. One patch is carried on it beyond `e92b191`:
+
+| Commit on `fabro-integration-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `565ac47` (thewoolleyman/petri#2) | `crates/attractor/steps/src/directive.rs`: `json_objects` resumes its scan one byte past an object still open when the response ends, so an unbalanced opening brace in prose costs only itself, and a trailing routing object is still found | an approved review whose prose quoted a lone opening brace had its `preferred_next_label` dropped and fell through `review`'s unmatched-outcome edge to `needs_human` (run `01M5K7XRYJ0SVDAK1GWCCRVRA4`; control `01M5KCE576P6`) | **NO.** Merged 2026-10-25; gmktec still runs `e92b191` until a rebuild refreshes the Petri lock and gitops redeploys it, which the maintainer's 2026-10-24 hold on further Fabro and Petri upgrades governs. Local gate against `9b8cd29`: fmt, `petri-attractor-steps` nextest 206/206 with the sandbox plugins, clippy `-D warnings` on the pinned 1.97.1 | `bd-ib-7smzwo` (plan `fabro-currency`) |
+
+The patch was based on the serving branch and rebase-merged into it, not cut as a topic
+branch on upstream `main` and merge-committed, as the convention above says. Before it is
+offered upstream, re-cut it as a topic branch on upstream `main`; the change is one file.
+
+**The fleet instance's build (2026-11-02).** Since 2026-11-02T15:04:02Z, gmktec's fleet
+instance `fabro-server` (`:32276`) serves `613add19c`. That is the next commit on the same
+Fabro carrier branch `carrier-candidate-registered-20261023`: `9f6c38fab` plus one
+fork-local carry. Its `Cargo.lock` still pins Petri `e92b191`, so `565ac47` above stays
+undeployed. `fabro-server-candidate` and `fabro-server-mi-homelab` keep `9f6c38fab`, by
+coordinator ruling. The build is `fabro 0.393.0-nightly.1 (613add1 2026-11-02)`, sha256
+`def1dc89890c0481f8e733016ab78481dd2f26d8cab9248eb6b4b1fec5f6a344`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-613add19c/` on
+vps. The pin is livespec-dev-tooling PR #3141 (`9657a61e`), and its rollback target is
+`v0393-9f6c38fab` (sha256 `e8ebf8ac…09d6`).
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `613add19c` (thewoolleyman/fabro#13) | per-run GitHub App selection: a run config's `[run.integrations.github.app]` names the App a run publishes as, in place of the server's global App | one shared main-Petri instance serves repositories owned by different GitHub organizations, and each run must publish as its target repository's own App (homelab's org App beside the fleet's) | **YES**, on `fabro-server` `:32276` only, since 2026-11-02 | `bd-ib-voozdp` (plan `fabro-currency`) |
+
+**The serving build (2026-11-04).** Since 2026-11-04 all three gmktec instances —
+`fabro-server` (`:32276`), `fabro-server-candidate` (`:32278`) and
+`fabro-server-mi-homelab` (`:32277`) — serve `8764f1de8`, the tip of the same carrier
+branch: `613add19c` plus the four rows below. Its `Cargo.lock` still pins Petri
+`e92b191`. The build is `fabro 0.393.0-nightly.1 (8764f1d 2026-11-04)`, sha256
+`bfc64b281771643833944b9a82cd1db2b9c84766a7bf00e267c4ecff4f8319d5`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-8764f1de8/` on
+vps. The pin is livespec-dev-tooling PR #3351 (`d798118b`); candidate and mi-homelab
+restarted at zero runs (~04:20Z) and main by cancel-and-redispatch (~04:52Z). Its
+rollback target is `v0393-95a2e5b80` (sha256 `996d4e23…b072`), named in `host_vars`.
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `84fb903b8` (thewoolleyman/fabro#14) | a Kubernetes sandbox pod's node name on each `run_turn` span | per-node attribution of factory turns in Honeycomb | **YES**, all three gmktec instances | `bd-ib-motuct` (plan `fabro-currency`) |
+| `95a2e5b80` (thewoolleyman/fabro#16) | the run store retries a locked SQLite write and deletes a run in short batches | a run DELETE on the 102 GB main store held the write lock past the 5 s busy timeout and failed concurrent runs' appends ("database is locked") | **YES**, all three gmktec instances | `bd-ib-h7kbco` (plan `fabro-currency`); twin PR #17 against `factory-integration` still open |
+| `d6affc34f` (thewoolleyman/fabro#15) | a sandbox provider transport failure is reported as `transient_infra` | a run killed by a provider connection failure was filed as a deterministic failure, so it was not retried | **YES**, all three gmktec instances | `bd-ib-6r3yax` (plan `fabro-currency`) |
+| `b4d9d6583` (thewoolleyman/fabro#18) | a run-store failure is reported as `transient_infra` | a run killed by the server's own store fault was charged to the work item | **YES**, all three gmktec instances | `bd-ib-bpucez` (plan `fabro-currency`) |
+| `8764f1de8` (thewoolleyman/fabro#19) | a run resumed onto a re-acquired sandbox re-runs its prepare steps | the resumed run lost the Dispatcher-made sandbox preparation | **YES**, all three gmktec instances; the live-server proof is still owed | `bd-ib-ljw2xg` (plan `fabro-currency`) |
+
+Deploying it exposed a role defect. The `fabro_server` role's restart-deferred apply
+renamed the new build over the binary of a running server. That server spawns each run's
+worker from its own executable path, so every new run failed to launch from 14:42:47Z
+until the 15:04:02Z restart. The fix is livespec-dev-tooling-udma. Until it ships, any
+apply that stages a Fabro binary MUST restart that instance in the same step.
+
+**The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
+`fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
+`thewoolleyman/fabro`. It is upstream `v0.389.0-nightly.0` (`5c90ad2e0`) plus the two
+topic branches below plus all six OTLP carries in the bundle table above
+(`707038a60982`, `b97025de17d1`, `db6a34da763e`, `231f9c7de138`, `c9a0c8b31f39`,
+`adeefec4cd4f`). `factory-integration` is `5b5abec3`, with the same tree. The build is
+`fabro 0.389.0-nightly.0 (bf5a2dc 2026-10-19)`, sha256
+`b70c2ec605985344d1fbc83d371b57673a2c391b0b5e8dd3413d3a3fa5ffb853`, at
+`~/.local/state/fabro-web-prod/v0389-bf5a2dc35/fabro` on vps. Plan
+`petri-factory-on-gmktec` rolls it to gmktec. The Kubernetes port branch `gate-port`
+(`80f54be79`) carried none of the six OTLP carries, and `fabro-currency` restored them at
+the cut. Any port onto a new base carries every row of BOTH tables, never only the rows
+its own plan added.
+
+| Topic branch | What it is | Upstream disposition |
+| --- | --- | --- |
+| `plugin-sandbox-providers` at `ec1d605cd` | an unbundled provider kind maps to Petri's plugin backend, launched from `[server.sandbox.providers.<kind>]` with `host_address`, `args` and `inherit_env`; the environment's resources reach every container backend, which also gives Docker sandboxes the environment's cpu, memory and disk as container limits; the run worker resolves only `server.sandbox` | superseded upstream (2026-10-20) by draft `fabro-sh/fabro#1048` for `#937`, from topic `plugin-registered-providers` `3022c9922` on upstream `main`, which registers the provider through #122's `register_plugin` and needs a `process_spec`. This topic stays in the carrier until the next carrier moves |
+| `petri-fork-integration` at `a1d991661` | the carrier-only Cargo `[patch]` described above | never upstream |
+
+**Gating a carrier on vps.** Run fmt, clippy AND nextest on the fork's pinned
+`nightly-2026-04-14`, and build `fabro-cli` in the same nextest invocation as
+`fabro-server`. The three server graph-render tests (`get_graph_returns_svg`,
+`render_graph_from_manifest_returns_svg`,
+`render_graph_from_manifest_accepts_fabro_dotted_attributes`) fail on the default stable
+toolchain and pass on the pin, on both `80f54be79` and `bf5a2dc35`, so a failure there
+names the toolchain, not the tree. Two Docker scenario tests
+(`scenario::petri::a_bundle_naming_a_catalog_environment_runs_on_docker_with_its_image`,
+`scenario::petri::the_server_attaches_to_the_container_petri_created`) fail identically on
+unmodified `v0.389.0-nightly.0` on vps (gate run `20261019T052542Z-2633639`). Under load,
+`fabro-petri`'s `a_large_output_round_trips_through_the_blob_table` takes 22 to 26 s on
+both the port and unmodified 0.389, past the crate's 20 s limit, and passes when given time.
 
 ### Dispatch Traps
 

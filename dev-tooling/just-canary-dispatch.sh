@@ -58,8 +58,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, ".claude-plugin/scripts")
-from livespec_orchestrator_beads_fabro.commands._config import (
-    dispatcher_block,
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._factory_presence import (
     has_fabro_factories,
     has_fabro_factory,
 )

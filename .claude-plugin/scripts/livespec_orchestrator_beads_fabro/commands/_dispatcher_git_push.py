@@ -12,6 +12,14 @@ __all__: list[str] = ["PUSH_ORIGIN_SOURCE"]
 PUSH_ORIGIN_SOURCE = r"""#!/usr/bin/env bash
 set +x
 set -eu
+case "${LIVESPEC_AGENT_STAGE:-}" in
+    ''|publish_draft|pr_refresh|pr) ;;
+    *)
+        printf 'LIVESPEC_AGENT_PUBLICATION_DENIED: stage=%s action=push_origin\n' \
+            "$LIVESPEC_AGENT_STAGE" >&2
+        exit 1
+        ;;
+esac
 url=$(git remote get-url --push origin)
 case "$url" in
     https://*|http://*) ;;

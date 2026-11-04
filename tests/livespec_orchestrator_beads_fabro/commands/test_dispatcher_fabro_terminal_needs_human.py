@@ -107,6 +107,49 @@ _LEGACY_NEEDS_HUMAN_PAYLOAD: list[dict[str, Any]] = [
     }
 ]
 
+# A lifecycle cancellation is terminal on the Petri-era server, but it does
+# not route through the workflow's needs-human node. The engine reports it as
+# a failed kind with this distinct reason.
+_PETRI_CANCELLED_PAYLOAD: list[dict[str, Any]] = [
+    {
+        "run_id": _PETRI_RUN_ID,
+        "status": {"kind": "failed", "reason": "cancelled"},
+        "conclusion": {
+            "status": "failed",
+            "timestamp": "2026-10-18T22:08:00Z",
+            "failure": {
+                "reason": "cancelled",
+                "detail": {
+                    "message": "Pipeline cancelled",
+                    "category": "deterministic",
+                },
+            },
+        },
+    }
+]
+
+# This is deliberately the same Petri terminal shape as the lifecycle cancel
+# above, except that the engine reason is an ordinary terminal failure.  It is
+# the control proving the cancelled-reason arm does not reclassify other
+# engine reasons.
+_PETRI_WORKFLOW_ERROR_PAYLOAD: list[dict[str, Any]] = [
+    {
+        "run_id": _PETRI_RUN_ID,
+        "status": {"kind": "failed", "reason": "workflow_error"},
+        "conclusion": {
+            "status": "failed",
+            "timestamp": "2026-10-18T22:08:00Z",
+            "failure": {
+                "reason": "workflow_error",
+                "detail": {
+                    "message": "Pipeline failed",
+                    "category": "deterministic",
+                },
+            },
+        },
+    }
+]
+
 
 @dataclass(kw_only=True)
 class _Runner:
@@ -204,3 +247,41 @@ def test_legacy_needs_human_marker_on_run_stderr_still_blocks_the_item(
     assert outcome.status == "blocked"
     assert outcome.fabro_run_id == _LEGACY_RUN_ID
     assert f"refs/heads/needs-human/{_LEGACY_RUN_ID}" in outcome.detail
+
+
+def test_petri_cancelled_reason_is_a_cancelled_fabro_run_outcome(tmp_path: Path) -> None:
+    """An external lifecycle cancel is not the generic deterministic failure."""
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect(tmp_path=tmp_path, payload=_PETRI_CANCELLED_PAYLOAD),
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "cancelled"
+    assert outcome.stage == "fabro-run"
+    assert outcome.fabro_run_id == _PETRI_RUN_ID
+    assert getattr(outcome, "fabro_factory_name", None) == "hp"
+
+
+def test_petri_non_cancelled_reason_keeps_the_generic_failure_outcome(tmp_path: Path) -> None:
+    """The cancelled-reason arm changes no other engine terminal class."""
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect(tmp_path=tmp_path, payload=_PETRI_WORKFLOW_ERROR_PAYLOAD),
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "failed"
+    assert outcome.stage == "fabro-run"
+    assert outcome.fabro_run_id == _PETRI_RUN_ID
+    assert outcome.fabro_factory_name is None
+    assert outcome.fabro_failure_cause == "Pipeline failed"
+    assert outcome.fabro_failure_category == "deterministic"

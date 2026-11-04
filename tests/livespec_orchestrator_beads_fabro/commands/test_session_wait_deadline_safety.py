@@ -49,22 +49,20 @@ _LONE_DEADLINE_SECONDS = 0.4
 _POLL_OVERSHOOT_SECONDS = 0.8
 # A FAILURE bound on joining a pane worker whose read budget has been allowed to
 # run out, never a timing assertion: the join's RETURN is the deterministic
-# event the settling sleeper waits on. Comfortably above the worker's own
-# `_LONE_DEADLINE_SECONDS + _READ_BUDGET_GRACE_SECONDS` budget.
+# event the settling sleeper waits on.
 _WORKER_SETTLE_SECONDS = 30.0
-# The instant every wait below is armed at, supplied through `WaitRequest` so
-# the deadline is an exact number this module can assert against instead of a
-# reading nobody controls.
+# The instant the wait below is armed at, supplied through `WaitRequest` so the
+# deadline is an exact number this module can assert against.
 _PINNED_START = 0.0
 # Repeated runs of ONE request, because the defect was an unstable label
 # rather than a wrong one: the same wait reported `target-ended` and then
 # `deadline` on two consecutive runs.
 _LONE_RUNS = 2
-# How long a cancelled worker is given to exit once its wait has returned. It
-# has to be well SHORT of what is left of that worker's own read budget, or a
-# worker released by its timeout rather than by the cancellation would satisfy
-# it too.
-_RELEASE_SECONDS = 0.3
+# A hang guard only: every wait bounded by it ends on its own event long before.
+_HANG_GUARD_SECONDS = 30.0
+# Far longer than any wait here, so a probe read still pending when the wait
+# cancels it cannot have been released by its own budget instead.
+_LONG_READ_BUDGET_SECONDS = 300.0
 
 
 def _hung_pane(*, socket_path: Path, terminal_id: str) -> PaneTarget:
@@ -86,15 +84,7 @@ def _hung_pane(*, socket_path: Path, terminal_id: str) -> PaneTarget:
 
 @dataclass(kw_only=True)
 class _InjectedClock:
-    """The monotonic clock a wait reads, advanced by this module and nobody else.
-
-    It advances only through the sleeper handed alongside it, by exactly the
-    seconds the wait asked to sleep — which is what the wait believes it slept
-    — so a reading taken afterwards IS the budget that wait spent. That is what
-    makes a budget assertion a statement about the poll loop rather than about
-    the host: a clock advancing per READING would instead encode how many times
-    the loop happens to look at it.
-    """
+    """The monotonic clock a wait reads, advanced only by the sleeper beside it."""
 
     now: float = _PINNED_START
 
@@ -110,30 +100,17 @@ def _settling_sleeper(
 ) -> Callable[..., None]:
     """Let every in-flight pane read FINISH, then advance the clock past expiry.
 
-    This is the deterministic replacement for a real sleep that overshot the
-    deadline, and it reproduces the measured race rather than approximating it.
-    Two things have to be true when the next round runs, and each now has its
-    own mechanism instead of both riding on one duration:
-
-    - The hung probe's own read must have ENDED, so a timeout diagnostic is
-      genuinely available for a defective loop to mis-read as a finished
-      target. That is the worker thread exiting, so the sleeper JOINS it — an
-      event, not an interval. Without it the diagnostic does not exist yet, the
-      defective loop finds nothing to mis-read, and the case passes against the
-      very implementation it exists to refuse.
-    - The deadline must have PASSED. That is arithmetic on the injected clock.
-
-    The earlier sleeper slept `seconds + 0.8` in real time and hoped both had
-    happened, which is why the label it graded was decided by microseconds.
+    The measured race turned on whether the round that observes expiry ALSO sees
+    the hung probe's timeout diagnostic. Two things must hold when that round
+    runs, and each has its own mechanism: the probe's worker has EXITED (the
+    sleeper joins it, an event rather than an interval), so a diagnostic exists
+    for a defective loop to mis-read as a finished target; and the deadline has
+    PASSED (arithmetic on the injected clock).
     """
 
     def sleeper(*, seconds: float) -> None:
         for probe in watcher.probes:
             task = probe.inner.task
-            # Asserted rather than branched on. Every probe here is mid-flight
-            # when the loop sleeps — the poll that preceded it started the
-            # worker and answered None — so a missing task is a changed adapter
-            # to be reported, not a case to be skipped past silently.
             assert task is not None, "the probe started no observation"
             assert task.thread is not None, "the observation started no worker"
             task.thread.join(timeout=_WORKER_SETTLE_SECONDS)
@@ -142,23 +119,31 @@ def _settling_sleeper(
     return sleeper
 
 
-def _reaching_sleeper(*, clock: _InjectedClock, reached: threading.Event) -> Callable[..., None]:
-    """Wait until the probe's request has REACHED its peer, then expire the clock.
+@dataclass(kw_only=True)
+class _DeadlineAfterPaneReadClock:
+    """A wait clock that reaches expiry only after its pane read is in flight.
 
-    A cancellation case has a precondition that an injected clock makes visible
-    rather than creates: there is nothing to interrupt until the observation is
-    genuinely blocked in `recv`, and under a real clock that was merely hoped
-    for — the loop slept the deadline and the worker usually got there first.
-    Here the peer's OWN receipt is the event, so the case either establishes its
-    precondition or fails saying it could not, and the clock expires only once
-    it holds.
+    Registration and launcher work may take longer than a short wait budget on
+    a loaded host. Holding this clock at zero makes that scheduling irrelevant:
+    the first poll starts the real pane worker, and the sleeper advances to the
+    deadline only after the controlled peer has received its request. That
+    receipt proves the worker reached the socket read this wait cancels.
     """
 
-    def sleeper(*, seconds: float) -> None:
-        assert reached.wait(timeout=_WORKER_SETTLE_SECONDS), "the probe never reached its peer"
-        clock.sleep(seconds=seconds)
+    read_started: threading.Event
+    deadline: float
+    now: float = 0.0
+    read_started_before_deadline: bool = field(default=False, init=False)
 
-    return sleeper
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, *, seconds: float) -> None:
+        assert self.read_started.wait(
+            timeout=_HANG_GUARD_SECONDS
+        ), "the pane read did not start inside the hang guard"
+        self.read_started_before_deadline = self.now < self.deadline
+        self.now += seconds
 
 
 @dataclass(kw_only=True)
@@ -174,6 +159,11 @@ class _WatchedPaneProbe:
 
     inner: HerdrPaneProbe
     tasks: list[_PaneTask | None] = field(default_factory=list)
+    # Whether each cancellation found its observation's read still PENDING —
+    # worker alive, nothing landed. That is the ordering every bound below
+    # rests on: a wait that waited out a probe's budget would find the read
+    # already over.
+    pending_at_cancel: list[bool] = field(default_factory=list)
 
     def poll(self, *, now: float) -> GateObservation | None:
         observation = self.inner.poll(now=now)
@@ -181,18 +171,32 @@ class _WatchedPaneProbe:
         return observation
 
     def cancel(self, *, timeout_seconds: float) -> None:
+        task = self.inner.task
+        self.pending_at_cancel.append(
+            task is not None
+            and task.thread is not None
+            and task.thread.is_alive()
+            and task.result is None
+        )
         self.inner.cancel(timeout_seconds=timeout_seconds)
 
 
 @dataclass(kw_only=True)
 class _WatchingPaneLauncher:
-    """The real pane launcher, keeping every probe it hands a wait."""
+    """The real pane launcher, keeping every probe it hands a wait.
+
+    `read_budget_seconds`, when set, replaces the budget the wait asks for, so a
+    case can give a hung read a budget no wait in this module lasts. It is a
+    floor: a wait asking for more still gets what it asked for.
+    """
 
     probes: list[_WatchedPaneProbe] = field(default_factory=list)
+    read_budget_seconds: float = 0.0
 
     def launch(self, *, target: PaneTarget, timeout_seconds: float) -> _WatchedPaneProbe:
+        budget = max(timeout_seconds, self.read_budget_seconds)
         probe = _WatchedPaneProbe(
-            inner=HerdrPaneLauncher().launch(target=target, timeout_seconds=timeout_seconds),
+            inner=HerdrPaneLauncher().launch(target=target, timeout_seconds=budget),
         )
         self.probes.append(probe)
         return probe
@@ -295,6 +299,7 @@ def test_a_hung_pane_probe_lets_a_finished_gate_return_first(*, tmp_path: Path) 
             pane_id="w1:p1",
             terminal_id="term_hung",
         )
+        watcher = _WatchingPaneLauncher()
         result = run_wait(
             request=WaitRequest(
                 wait_id="hung-pane-first",
@@ -307,23 +312,21 @@ def test_a_hung_pane_probe_lets_a_finished_gate_return_first(*, tmp_path: Path) 
                 gate=GateStatusLauncher(
                     repository=tmp_path,
                 ),
-                pane=HerdrPaneLauncher(),
+                pane=watcher,
             ),
             wait_store_root=wait_store_root,
         )
 
     # The finished gate is what woke the wait, carrying its OWN exit code.
-    # These four lines ARE the discriminator, and an elapsed bound that used to
-    # sit beside them has been removed as corroboration that measured the host.
-    # The measured defect did not return LATE with the right answer — it
-    # returned the hung pane's `UNAVAILABLE` diagnostic as the trigger and
-    # reported the already-finished gate as unfinished, so a serializing
-    # adapter fails on the trigger identity, the outcome label and the exit
-    # code, every run, whatever the host was doing.
     assert result.trigger_target == gate.identity
     assert result.command_outcome == "target-ended"
     assert result.trigger_exit_code == _FINISHED_GATE_EXIT_CODE
     assert pane.identity in result.unfinished_targets
+    # Returned while the hung pane's read was still PENDING. A wait that polled
+    # the hung pane on its own thread could only return once that probe's
+    # budget expired, which is the entire deadline, and would find the read
+    # already over. An ordering, so a loaded host cannot flip it.
+    assert watcher.probes[0].pending_at_cancel[:1] == [True]
     # The hung target was READ and never written to, so the probe work that got
     # cancelled was this wait's own and nothing belonging to the pane.
     assert received, "the wait never reached the hung peer at all"
@@ -349,13 +352,6 @@ def test_a_lone_hung_pane_wait_returns_the_deadline_outcome_on_every_run(
     The timing was correct on both of those runs, so what is asserted here is
     the LABEL, the unfinished-target listing and the staleness of the reported
     observation, over repeated runs of one request.
-
-    EVERY WAIT HERE RUNS ON AN INJECTED CLOCK, armed at a pinned instant. That
-    is what turns the reported timestamp from "at or after some reading nobody
-    controls" into the exact deadline the wait was given, and it is what makes
-    the overshoot a decision rather than a hope — `_settling_sleeper` carries
-    the reasoning, including why it must still let the probe's real read FINISH
-    for the defective loop to have anything to mis-read.
     """
     wait_store_root = tmp_path / "session-waits"
     wait_store_root.mkdir()
@@ -393,8 +389,8 @@ def test_a_lone_hung_pane_wait_returns_the_deadline_outcome_on_every_run(
 
     assert endings == [("deadline", None, (pane.identity,))] * _LONE_RUNS
     # What an unfinished target owes: `UNAVAILABLE` says this wait measured no
-    # state at all, `fresh=False` says the reading is not a current one, and the
-    # timestamp is the expiry the wait returned at — asserted as that EXACT
+    # state at all, `fresh=False` says the reading is not a current one, and
+    # the timestamp is the expiry the wait returned at, asserted as that EXACT
     # instant, which the pinned arming instant and the injected clock make
     # knowable rather than merely bounded.
     expiry = _PINNED_START + _LONE_DEADLINE_SECONDS
@@ -419,25 +415,26 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
     the probe's own socket timeout` with nothing to assert: there was no
     interval between the two to return inside of.
 
-    The budget is therefore read off the wait's OWN probe and asserted to
-    outlast the deadline — THAT comparison is the discriminator, and it is pure
-    arithmetic on two declared numbers: a probe whose read budget still WAS the
-    remaining deadline fails it on every host. The return landing inside that
-    budget is then read off the INJECTED clock, which advances only by what the
-    wait asked to sleep, so the reading is the budget that wait spent rather
-    than a verdict on the scheduler. The worker is asserted to exit on a bound
-    far shorter than what remained of its real read budget, which is what tells
-    a worker released by the cancellation apart from one released by the
-    timeout it was supposed to pre-empt.
+    The probe's read is given a budget far longer than this case's own
+    patience, the way the cancel-race cases do, and the budget is read off the
+    wait's OWN probe and asserted to outlast the deadline. The cancellation is
+    then asserted to find that read still pending, and the worker to exit
+    inside a hang guard that is a small fraction of the budget. Both are
+    orderings rather than stopwatch readings, which is what tells a worker
+    released by the cancellation apart from one released by the timeout it was
+    supposed to pre-empt on a loaded host as well as an idle one.
     """
     wait_store_root = tmp_path / "session-waits"
     wait_store_root.mkdir()
     socket_path = tmp_path / "budget-hung.sock"
-    watcher = _WatchingPaneLauncher()
-    clock = _InjectedClock()
-    reached = threading.Event()
+    watcher = _WatchingPaneLauncher(read_budget_seconds=_LONG_READ_BUDGET_SECONDS)
+    read_started = threading.Event()
+    clock = _DeadlineAfterPaneReadClock(
+        read_started=read_started,
+        deadline=_LONE_DEADLINE_SECONDS,
+    )
 
-    with _hung_peer(socket_path=socket_path, on_receive=reached.set) as received:
+    with _hung_peer(socket_path=socket_path, on_receive=read_started.set) as received:
         pane = _hung_pane(socket_path=socket_path, terminal_id="term_budget")
         result = run_wait(
             request=WaitRequest(
@@ -446,17 +443,16 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
                 repository=tmp_path,
                 deadline_seconds=_LONE_DEADLINE_SECONDS,
                 targets=(pane,),
-                started_at=_PINNED_START,
             ),
             launcher=RoutingLauncher(
                 gate=GateStatusLauncher(repository=tmp_path),
                 pane=watcher,
             ),
             wait_store_root=wait_store_root,
-            monotonic=clock.read,
-            sleeper=_reaching_sleeper(clock=clock, reached=reached),
+            monotonic=clock.monotonic,
+            sleeper=clock.sleep,
         )
-        spent = clock.read() - _PINNED_START
+        assert clock.read_started_before_deadline is True
         task = watcher.probes[0].tasks[0]
         assert task is not None
         read_budget = task.channel.timeout_seconds
@@ -464,13 +460,17 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
             f"a {read_budget}s read budget cannot outlast a " f"{_LONE_DEADLINE_SECONDS}s deadline"
         )
         assert result.command_outcome == "deadline"
-        assert spent < read_budget, f"the wait waited out its probe's budget in {spent}s"
+        # The wait cancelled the read while it was still PENDING, so it did not
+        # wait out the probe's budget: a read that had run to its own timeout
+        # would already be over.
+        assert watcher.probes[0].pending_at_cancel == [True]
         # The probe was CANCELLED, and its worker is GONE rather than merely
         # unreported: a thread that has exited cannot still be holding the
-        # socket, and a thread cannot exit this soon on its own budget.
+        # socket, and a thread cannot exit inside this hang guard on a budget
+        # ten times longer than it.
         assert task.cancel_requested is True
         assert task.thread is not None
-        task.thread.join(timeout=_RELEASE_SECONDS)
+        task.thread.join(timeout=_HANG_GUARD_SECONDS)
         assert task.thread.is_alive() is False, "the hung observation outlived its cancellation"
         # A cancelled read measured nothing, so whatever it returned is not an
         # observation of the pane and is discarded rather than reported.
@@ -485,8 +485,8 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
 def test_registration_lock_is_inside_the_original_deadline(*, tmp_path: Path) -> None:
     wait_store_root = tmp_path / "session-waits"
     wait_store_root.mkdir()
+    returned = threading.Event()
     result_outcomes: list[str] = []
-    clock = _InjectedClock()
 
     def invoke_wait() -> None:
         result = run_wait(
@@ -499,22 +499,24 @@ def test_registration_lock_is_inside_the_original_deadline(*, tmp_path: Path) ->
             ),
             launcher=cast("ProbeLauncher", object()),
             wait_store_root=wait_store_root,
-            monotonic=clock.read,
-            sleeper=clock.sleep,
         )
         result_outcomes.append(result.command_outcome)
+        returned.set()
 
     lock_path = wait_store_root / ".inventory.lock"
     with lock_path.open("a", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         worker = threading.Thread(target=invoke_wait)
         worker.start()
-        # The worker advances its injected budget while this lock remains held,
-        # then exits at that exact deadline. Joining it is the condition this
-        # case needs; a host-time wait would only guess when that occurs.
-        worker.join()
+        # Waited on WHILE the lock is still held: a registration that queued
+        # behind the lock rather than honouring the deadline could only return
+        # after the unlock below, so the ordering is the bound. The timeout is
+        # a hang guard, never the verdict.
+        returned_by_bound = returned.wait(timeout=_HANG_GUARD_SECONDS)
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    worker.join(timeout=_HANG_GUARD_SECONDS)
 
+    assert returned_by_bound is True
     assert result_outcomes == ["deadline"]
     assert worker.is_alive() is False
 
@@ -526,9 +528,8 @@ def test_cancelling_gate_observer_leaves_gate_untouched(*, tmp_path: Path) -> No
     (run_dir / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
     target = GateTarget.freeze(gate_store_root=run_dir.parent, run_id=run_dir.name)
     probe = GateStatusLauncher(repository=tmp_path).launch(target=target, timeout_seconds=1.0)
-    # Fixed observation instants. The gate adapter records whatever instant it
-    # is handed and nothing here grades WHEN it was observed, so reading the
-    # host clock for these would only make the recorded value unpredictable.
+    # Fixed observation instants: the gate adapter records whatever instant it
+    # is handed and nothing here grades WHEN it was observed.
     assert probe.poll(now=_PINNED_START).state == "RUNNING"
     before = {path.name: path.read_bytes() for path in run_dir.iterdir()}
     probe.cancel(timeout_seconds=0.0)

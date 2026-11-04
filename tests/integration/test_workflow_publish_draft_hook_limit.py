@@ -40,6 +40,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     HOOK_OVER_LIMIT_SENTINEL,
     hook_over_limit_from_text,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
@@ -54,11 +58,20 @@ _PUBLISH_BRANCH = "feat/bd-ib-xi63mq"
 _NODE = re.compile(r"^\s*publish_draft\s*\[(?P<body>.*?)^\s*\]", re.DOTALL | re.MULTILINE)
 _SCRIPT = re.compile(r'script="(?P<value>(?:[^"\\]|\\.)*)"')
 
-# A limit whose reserve leaves a one-second bound, so the over-limit arm is
-# reached in about a second instead of in about an hour. The figure goes through
-# the SAME arithmetic the Dispatcher uses, so the test cannot pass against a
-# bound the production path would never compute.
-_TEST_LIMIT_SECONDS = 121
+# A limit whose reserve leaves a fifteen-second bound, so the over-limit arm is
+# reached in seconds instead of in about an hour. The figure goes through the
+# SAME arithmetic the Dispatcher uses, so the test cannot pass against a bound
+# the production path would never compute.
+#
+# FIFTEEN, NOT ONE: the bound starts when the publish script starts `git push`,
+# and the observer can only name a hook that is RUNNING when it ends. A
+# one-second bound measured git's own startup as much as the hook. On a
+# saturated host (load 45 on 18 cores, 2026-10-25) the bound fired before git
+# had launched the pre-push hook, so the observer correctly reported that no
+# hook was running and the test failed for a reason that had nothing to do with
+# the behaviour under test. The hook below still sleeps 90 seconds, six times
+# this bound, so it outlives it by a wide margin and the assertion is unchanged.
+_TEST_LIMIT_SECONDS = 135
 
 
 def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
@@ -70,7 +83,12 @@ def _publish_script() -> str:
     assert block is not None
     attr = _SCRIPT.search(block.group("body"))
     assert attr is not None
-    return attr.group("value").replace(r"\"", '"').replace("{{ inputs.default_branch }}", "master")
+    return (
+        attr.group("value")
+        .replace(r"\"", '"')
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", "true")
+    )
 
 
 def _run_clone(*, tmp_path: Path) -> tuple[Path, Path]:
@@ -129,6 +147,9 @@ def _sandbox_helpers(*, tmp_path: Path, limit_seconds: int | None) -> Path:
     root.mkdir()
     _ = (root / HOOK_LIMIT_PROGRAM_FILENAME).write_text(
         hook_limit_program_source(), encoding="utf-8"
+    )
+    _ = (root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
     )
     if limit_seconds is not None:
         budget = push_observation_budget_seconds(limit_seconds=limit_seconds)

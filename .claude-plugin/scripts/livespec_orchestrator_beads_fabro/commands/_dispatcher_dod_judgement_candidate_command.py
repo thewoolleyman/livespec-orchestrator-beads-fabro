@@ -1,0 +1,162 @@
+"""The direct host command and identity of one resolved `dod_gate` candidate.
+
+Split out of `_dispatcher_dod_judgement_candidates` by cohesion: the chain decides
+the ORDER candidates run in and what each result amounts to, while this owns only
+how one catalog-resolved candidate becomes a command line and what it is called.
+The label and the model are read from the same place the command is built from, so
+a record naming a candidate names what the host actually invoked.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
+    CLAUDE_OAUTH_TOKEN_ENV,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt import (
+    judgement_argv,
+    resolve_judge_path,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    select_factory_credential,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate import (
+    resolve_codex_path,
+)
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+
+__all__: list[str] = [
+    "candidate_command",
+    "candidate_label",
+    "candidate_model",
+    "is_codex_candidate",
+]
+
+_CODEX_AGENT = "codex-acp"
+_CODEX_SANDBOX_SETTINGS = frozenset({"sandbox_mode", "approval_policy"})
+_CLAUDE_AGENT = "claude-acp"
+_CODEX_ISOLATION_SETTINGS = (
+    "project_doc_max_bytes=0",
+    "features.skills=false",
+    "features.multi_agent=false",
+    "features.shell_tool=false",
+)
+
+
+def candidate_command(
+    *,
+    candidate: AcpCandidate,
+    environ: dict[str, str],
+    bound_input: bool,
+    journal_spend: bool,
+    journal_name: str,
+    allowed_directory: Path,
+) -> tuple[list[str], dict[str, str]]:
+    """The direct host command for one catalog-resolved ACP candidate.
+
+    The host runs the one-shot CLIs, never the ACP adapter command itself: an
+    adapter is a JSON-RPC stdio server that does not grade a prompt on standard
+    input, and the Codex adapter path is baked into the factory sandbox image.
+    What the candidate resolved still reaches the CLI: its adapter environment
+    (effort, endpoint and auth overrides) and, for Codex, every string
+    `CODEX_CONFIG` setting as a `-c` override. The factory's sandbox and
+    approval settings do not carry over. Codex's shell tool is disabled, and
+    Claude receives an empty available-tool set, because the complete subject
+    is in the prompt rather than in either host filesystem.
+
+    Each CLI is resolved from the invoking environment and declines the
+    interactive setup the invoking profile would load (project instructions,
+    skills, settings, MCP servers, slash commands, session persistence). The
+    governed repository is readable only through `allowed_directory`, which the
+    caller's scratch working directory does not contain. Codex's shell tool is
+    disabled because the prompt already carries the item and every referenced
+    clause it must judge, so recursive discovery of the repository or
+    `/etc/livespec` is neither needed nor permitted.
+
+    Under `bound_input` each CLI is also asked for its usage-reporting output
+    form, because a candidate that reports no usage can be neither measured nor
+    ended by the bound.
+    """
+    judge_environ = {**environ, **candidate.adapter.env}
+    if candidate.agent_id == _CODEX_AGENT:
+        settings = codex_settings(candidate=candidate)
+        model = settings.pop("model", "")
+        argv = [resolve_codex_path(environ=environ), "exec", "-m", model]
+        if bound_input:
+            argv.append("--json")
+        for key, value in settings.items():
+            argv.extend(("-c", f"{key}={json.dumps(value)}"))
+        for setting in _CODEX_ISOLATION_SETTINGS:
+            argv.extend(("-c", setting))
+        argv.extend(("--add-dir", str(allowed_directory), "-s", "read-only"))
+        argv.append("--skip-git-repo-check")
+        return argv, judge_environ
+    if candidate.agent_id == _CLAUDE_AGENT:
+        model = candidate.adapter.env.get("ANTHROPIC_MODEL", "")
+        credential = select_factory_credential(
+            environ=environ,
+            home=Path(environ.get("HOME", str(Path.home()))),
+            warn=lambda message: sys.stderr.write(f"{message}\n"),
+        )
+        judge_environ[CLAUDE_OAUTH_TOKEN_ENV] = environ.get(credential.env_name, "")
+        argv = judgement_argv(
+            judge_path=resolve_judge_path(environ=environ),
+            model=model,
+            name=journal_name,
+            allowed_directory=allowed_directory,
+            # The spend journal records Claude's assistant stream even when
+            # this caller does not apply the Definition-of-Done input bound.
+            stream_usage=bound_input or journal_spend,
+        )
+        return argv, judge_environ
+    return [candidate.adapter.command, *candidate.adapter.args], judge_environ
+
+
+def is_codex_candidate(*, candidate: AcpCandidate) -> bool:
+    """Whether the candidate runs the Codex CLI, which takes a private config home."""
+    return candidate.agent_id == _CODEX_AGENT
+
+
+def candidate_label(*, candidate: AcpCandidate) -> str:
+    """Render a durable candidate identity without host-local paths."""
+    if candidate.agent_id == _CODEX_AGENT:
+        model = codex_settings(candidate=candidate).get("model")
+        return f"{candidate.agent_id}:{model if model is not None else ''}"
+    if candidate.agent_id == _CLAUDE_AGENT:
+        return f"{candidate.agent_id}:{candidate.adapter.env.get('ANTHROPIC_MODEL', '')}"
+    return candidate.agent_id or ""
+
+
+def candidate_model(*, candidate: AcpCandidate) -> str:
+    """The model one candidate resolved to, read where its CLI is told it."""
+    if candidate.agent_id == _CODEX_AGENT:
+        return codex_settings(candidate=candidate).get("model", "")
+    return candidate.adapter.env.get("ANTHROPIC_MODEL", "")
+
+
+def codex_settings(*, candidate: AcpCandidate) -> dict[str, str]:
+    """The string settings rendered into this candidate's catalog adapter.
+
+    Only a string is carried, so a malformed value is dropped rather than
+    rendered, and the sandbox and approval settings belong to the factory
+    sandbox, so they are not carried either.
+    """
+    raw = candidate.adapter.env.get("CODEX_CONFIG", "")
+    try:
+        decoded: object = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    payload = cast("dict[str, object]", decoded)
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in _CODEX_SANDBOX_SETTINGS and isinstance(value, str)
+    }

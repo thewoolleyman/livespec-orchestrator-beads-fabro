@@ -22,6 +22,9 @@ from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_acp_chain_attachment as chain_attachment,
+)
+from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_acp_nodes as acp_nodes,
 )
 from livespec_orchestrator_beads_fabro.commands import (
@@ -418,7 +421,7 @@ def test_prepare_routes_catalog_and_chain_refusals(
         == "catalog refusal"
     )
     monkeypatch.setattr(acp_nodes, "resolve_acp_catalogs", lambda **_: builtin_catalogs())
-    monkeypatch.setattr(acp_nodes, "repository_acp_chains", lambda **_: "chain refusal")
+    monkeypatch.setattr(chain_attachment, "repository_acp_chains", lambda **_: "chain refusal")
     assert (
         prepare_acp_nodes(
             repo=tmp_path,
@@ -436,8 +439,8 @@ def test_prepare_routes_chain_attachment_refusal(
 ) -> None:
     committed = _write_workflow(tmp_path=tmp_path)
     journal = _RecordingJournal()
-    monkeypatch.setattr(acp_nodes, "repository_acp_chains", lambda **_: {})
-    monkeypatch.setattr(acp_nodes, "attach_acp_chains", lambda **_: "attachment refusal")
+    monkeypatch.setattr(chain_attachment, "repository_acp_chains", lambda **_: {})
+    monkeypatch.setattr(chain_attachment, "attach_acp_chains", lambda **_: "attachment refusal")
     refusal = prepare_acp_nodes(
         repo=tmp_path,
         committed=committed,

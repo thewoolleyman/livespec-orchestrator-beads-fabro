@@ -43,6 +43,7 @@ dev = [
     "pyright==1.1.391",
     "pytest==8.3.4",
     "pytest-cov==6.0.0",
+    "pytest-rerunfailures==14.0",
     "pytest-icdiff==0.9",
     "pytest-xdist==3.8.0",
     "hypothesis==6.122.3",
@@ -65,8 +66,8 @@ dev = [
 # module uses its types module for the canonical cross-repo manifest shape.
 # Pin matches livespec's pin (>=0.2.0; ~/livespec).
 [tool.uv.sources]
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.118.3" }
-livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.27.0" }
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.168.0" }
+livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.29.1" }
 
 # ---------------------------------------------------------------------------
 # Ruff — sole linter, formatter, import-sorter, complexity checker.
@@ -165,6 +166,19 @@ ban-relative-imports = "all"
 # constants, and `git` must resolve through the mise-managed PATH rather than
 # an absolute path. No other diagnostic is waived for this file.
 ".claude/hooks/livespec_tdd_order_guard.py" = ["S603", "S607"]
+# The launcher deliberately replaces itself with the project virtualenv's
+# interpreter after accepting only the fixed `mise exec -- uv run --no-sync
+# python` command shape.  That replacement is the measured hot-path behavior;
+# starting a child through subprocess would retain the launcher and defeat it.
+# S606 cannot infer that the executable is constrained to `.venv/bin/python`.
+".claude/hooks/livespec_uv_hook_launcher.py" = ["S606"]
+# The Stop hook runs the plugin's own `session_wait.py check` through ONE
+# subprocess whose argv is the interpreter, a fixed script path under the
+# plugin root and constant subcommand tokens. Only S603 is waived.
+".claude-plugin/hooks/session_wait_stop.py" = ["S603"]
+# This SessionStart hook invokes one bundled command through the active plugin
+# root with fixed tokens, so Bandit cannot infer the trusted plugin boundary.
+".claude-plugin/hooks/registered_plugin_currency_warning.py" = ["S603"]
 # Shebang-wrapper contract: shebang → docstring → `from _bootstrap import
 # bootstrap` → `bootstrap()` → `from <pkg>.<...> import main` →
 # `raise SystemExit(main())`. The post-bootstrap() import structurally
@@ -192,6 +206,9 @@ ban-relative-imports = "all"
 # invocation contract. S603/S607/S404 are over-strict for this
 # documented pattern; S105 covers TRAILER-token constants.
 "dev-tooling/checks/*.py" = ["S603", "S607", "S404", "S105"]
+# fleet-launch/ holds provisional operator CLI scripts: they shell out to git, gh,
+# bd and fabro by design and report on stdout, as dev-tooling/checks/*.py does.
+"fleet-launch/*.py" = ["S603", "S607", "S404", "T201"]
 
 # ---------------------------------------------------------------------------
 # Pyright — strict + seven strict-plus diagnostics. Per
@@ -251,6 +268,11 @@ omit = [
     "*/_vendor/*",
     "*/.venv/*",
     "*/site-packages/*",
+    # livespec_runtime is a dependency, never this repo's source. A fleet clone's
+    # git credential helper runs the sibling livespec-runtime checkout, and a
+    # suite test's https git call inherits subprocess coverage, so without this
+    # entry the helper's files fail per-file coverage on that host only.
+    "*/livespec_runtime/*",
     "*/__pycache__/*",
     "/usr/local/bin/*",
     "tests/e2e/*",
@@ -352,17 +374,24 @@ exclude_also = [
 # a laptop, the gate pod itself) keeps the local aggregate and SAYS so, rather
 # than failing closed on a cluster it cannot reach.
 #
-# NO `gate_check_suite` IS DECLARED, deliberately. The client's own
-# fall-through is the shared pre-push sequence this repository's local gate
-# already runs (install-worktree-pack, install-commit-refuse-hooks,
-# check-pre-push), and it has already passed on the cluster for this repository
-# — gate Job gate-livespec-orchestrator-beads-fabro-1c5e8de33c1f, 92 targets.
-# A declaration here would gate the tree on recipes chosen in this file instead,
-# which is how a consumer's gate goes red on a tree whose CI is green.
+# `gate_check_suite` spells out the established pre-push fall-through exactly:
+# install-worktree-pack, install-commit-refuse-hooks, then check-pre-push.
+# Making that sequence explicit preserves the existing delegated pre-push
+# behavior. The released pre-commit client replaces only its final member with
+# `check-pre-commit-gated-tree` for the staged-tree Job.
 #
 # MUST stay above the [[...mirror_pairings]] array-of-tables below, for the same
 # reason `file_lloc_hard_gate` must.
 delegated_gate = true
+# The dev host delegates a hand commit's aggregate when it can submit a gates
+# Job; sandbox and credentialless hosts retain the local pre-commit gate. The
+# delegate reports the remote Job and staged-tree hash when it reaches a verdict.
+delegated_pre_commit = true
+gate_check_suite = [
+    "install-worktree-pack",
+    "install-commit-refuse-hooks",
+    "check-pre-push",
+]
 # Phase-2 file_lloc FLIP (fleet-check-coverage epic). With this key true, the
 # `file_lloc` check hard-gates this repo's WHOLE git-derived first-party-.py
 # universe (>250 LLOC => error/exit 1), superseding the hardcoded legacy-tree
@@ -423,10 +452,16 @@ supervisor_entry_files = [
     # cannot be parsed, which is the same hook-protocol contract the guards own.
     ".claude/hooks/livespec_uv_hook_launcher.py",
     ".claude-plugin/hooks/codex_yolo_reapply.py",
+    ".claude-plugin/hooks/registered_plugin_currency_warning.py",
+    ".claude-plugin/hooks/session_wait_stop.py",
     # Exact research entry points: the runner emits its evidence receipt and
     # the fake agent owns ACP JSON-RPC stdout. No tree-wide exemption.
     "plan/fabro-currency/research/004-acp-spend-limit-repro.py",
     "plan/fabro-currency/research/004-fake-acp-agent.py",
+    # fleet-launch/: provisional operator scripts run directly by a seat (see fleet-launch/README.md).
+    "fleet-launch/ready-set-check.py",
+    "fleet-launch/host-capture-payload.py",
+    "fleet-launch/_capture_evidence.py",
     # The Enemy Unit Test copy of that fake agent: it owns ACP JSON-RPC stdout
     # inside the sandbox for the tier 1 ACP-launch test.
     "fabro-enemy-unit-tests/_fake_acp_agent.py",
@@ -584,6 +619,26 @@ destructive_cli_allowlist = [
 #   rewritten. No in-process call can stand in, because the head under decision
 #   does not exist until the shipped shell has produced it. It scrubs the child
 #   env exactly as an allowlisted spawn must, by passing an explicit `env`.
+# - test_sandbox_commit_runner_scenario179.py runs the MATERIALIZED sandbox
+#   commit runner, for the reason `test_dispatcher_publication_head.py` gives
+#   and one of its own: the runner starts the commit in a detached session of
+#   its own and answers later waits from records that process writes, so what
+#   the scenario claims -- a hook outlasting one call, a signal death reading as
+#   no verdict, a second start refused while one is live -- exists only across
+#   separate invocations of a real program over a real repository and a real
+#   hook. An in-process call would drive neither the detachment nor the
+#   process-group liveness reading. It scrubs the child env exactly as an
+#   allowlisted spawn must, dropping every GIT_ and COV_CORE_ variable and
+#   COVERAGE_PROCESS_START.
+# - test_needs_human_node_timeout_cut_scenario192.py runs the MATERIALIZED sandbox
+#   commit runner and the committed `needs_human` body against real processes,
+#   for the reason the sibling above gives and one of its own: what the scenario
+#   claims -- a commit run left running when a node timeout cut the turn, a hook
+#   run still executing, and the order in which the node stops them against its
+#   preservation commit -- is a property of the processes alive at that instant,
+#   and a doubled process table cannot tell a stopped hook from one never
+#   started. It scrubs the child env exactly as an allowlisted spawn must,
+#   dropping every GIT_ and COV_CORE_ variable and COVERAGE_PROCESS_START.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -612,6 +667,8 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_scripted_refresh_execution.py",
     "tests/integration/test_pr_refresh_carry_forward_scenario178.py",
     "tests/integration/test_empty_checkpoint_commits_dropped.py",
+    "tests/integration/test_sandbox_commit_runner_scenario179.py",
+    "tests/integration/test_needs_human_node_timeout_cut_scenario192.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

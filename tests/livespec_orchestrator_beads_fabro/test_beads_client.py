@@ -14,7 +14,9 @@ Covers, hermetically:
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -234,16 +236,42 @@ def test_shell_close_without_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen[0] == ["close", "li-a"]
 
 
-def test_shell_add_comment_builds_comment_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shell_add_comment_passes_the_body_through_a_file_not_the_argv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A comment body never travels as a command-line argument.
+
+    Linux caps ONE argument at 131071 bytes (MAX_ARG_STRLEN), so a body
+    passed as an argv element fails with `Argument list too long` before `bd`
+    runs — measured 2026-10-28, when pre-dispatch verdict comments past that
+    size stopped every orchestrator dispatch (bd-ib-jiwoij). The body is
+    larger than both that ceiling and the 196608-byte proof budget, and it
+    must reach `bd` byte-identical through `--file`, with the file gone after.
+    """
     client = ShellBeadsClient(config=_config())
+    body = "line with \u00e9 accent\n" * 10_000
+    assert len(body.encode()) > 196_608
     seen: list[list[str]] = []
-    monkeypatch.setattr(
-        client,
-        "_run_void",
-        lambda *, verb_args: seen.append(verb_args),
-    )
-    client.add_comment(issue_id="li-a", body="recurrence note")
-    assert seen[0] == ["comment", "li-a", "recurrence note"]
+    delivered: list[bytes] = []
+
+    def _run_void(*, verb_args: list[str]) -> None:
+        seen.append(verb_args)
+        # The old argv form ends in the body itself, which is not a readable
+        # path; that read fails and is suppressed, and the argv assertions below
+        # report the defect.
+        with suppress(OSError):
+            delivered.append(Path(verb_args[-1]).read_bytes())
+
+    monkeypatch.setattr(client, "_run_void", _run_void)
+    client.add_comment(issue_id="li-a", body=body)
+
+    assert [len(argument.encode()) for argument in seen[0]][:2] == [8, 3]
+    assert seen[0][:2] == ["comments", "add"]
+    assert max(len(argument.encode()) for argument in seen[0]) < 131_072
+    assert [hashlib.sha256(payload).hexdigest() for payload in delivered] == [
+        hashlib.sha256(body.encode()).hexdigest()
+    ]
+    assert not Path(seen[0][seen[0].index("--file") + 1]).exists()
 
 
 def test_shell_create_returns_id(monkeypatch: pytest.MonkeyPatch) -> None:

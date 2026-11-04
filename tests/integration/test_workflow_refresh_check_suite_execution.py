@@ -50,7 +50,7 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
-    plugin_cache_gate_script,
+    plugin_cache_gate_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
@@ -60,9 +60,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
+    RECORD_FILE_PROGRAM_FILENAME,
+    record_file_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
+
+from tests.prepare_step_support import runnable_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
@@ -298,6 +304,14 @@ def _world(*, root: Path) -> _World:
     )
     plugins_root = root / "plugins"
     plugins_root.mkdir()
+    # The generated-record-file resolution rides the SAME prepare block as the
+    # push program (bd-ib-ze7xxj), and a refreshing stage that cannot resolve it
+    # fails closed before the repository-declared gate -- so a harness omitting
+    # it would exercise that refusal on every case rather than the route under
+    # test.
+    _ = (plugins_root / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
     push_program = plugins_root / PUBLICATION_PUSH_PROGRAM_FILENAME
     _ = push_program.write_text(publication_push_program_source(), encoding="utf-8")
     push_program.chmod(0o700)
@@ -337,7 +351,9 @@ def _published(*, world: _World, root: Path) -> str:
     world.state_dir().mkdir(parents=True, exist_ok=True)
     _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(world.head(), encoding="utf-8")
     gate_script = root / "install-plugin-gate.sh"
-    _ = gate_script.write_text(plugin_cache_gate_script(), encoding="utf-8")
+    _ = gate_script.write_text(
+        runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8"
+    )
     _ = subprocess.run(
         ["bash", str(gate_script)],
         check=True,

@@ -29,12 +29,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     prepare,
     ready_items,
+    run_id,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import PrelaunchCpuProfile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
     not_ready_requested_items_error,
 )
@@ -66,20 +69,39 @@ class _DispatchStart:
 
 
 def run_dispatch_command(*, args: argparse.Namespace) -> int:
+    with pass_snapshot():
+        return _dispatch_in_pass(args=args)
+
+
+def _dispatch_in_pass(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
-    started = _start_dispatch(args=args, repo=repo)
+    # Started before anything else the drive does, so that every phase from its
+    # launch to the Fabro submission is closed into a row of its own. The rows
+    # wait inside the profile until the target is selected and named.
+    profile = PrelaunchCpuProfile.for_drive_launch(dispatch_id=run_id())
+    started = _start_dispatch(args=args, repo=repo, profile=profile)
     if isinstance(started, int):
         return started
     janitor = started.janitor
     items = started.items
     journal = started.journal
-    selected = _target_item(args=args, repo=repo, items=items, journal=journal)
+    selected = profile.phase(
+        name="target-selection",
+        action=lambda: _target_item(args=args, repo=repo, items=items, journal=journal),
+    )
     if selected is None:
         return EXIT_PRECONDITION_ERROR
     target, marked = selected
+    profile.bind(journal=journal, work_item_id=target.id)
     # Every refusal that must land after selection and before the claim, as one
     # decision. The SAME wall the drain runs, handed a one-item selection.
-    wall_exit = pre_dispatch_wall_exit(args=args, repo=repo, items=[target], journal=journal)
+    wall_exit = pre_dispatch_wall_exit(
+        args=args,
+        repo=repo,
+        items=[target],
+        journal=journal,
+        prelaunch_checkpoint=profile.checkpoint,
+    )
     if wall_exit is not None:
         return wall_exit
     # RECOVERY ROUTING, which the clause places after the pre-dispatch wall and
@@ -87,7 +109,10 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     # reads only; a target with no earlier dispatch that released it is routed
     # `fresh` without any remote measurement, so an ordinary dispatch pays
     # nothing for it.
-    routing = route_recovery(args=args, repo=repo, candidates=[target], journal=journal)
+    routing = profile.phase(
+        name="recovery-routing",
+        action=lambda: route_recovery(args=args, repo=repo, candidates=[target], journal=journal),
+    )
     held = routing.held_report(work_item_id=target.id)
     if held is not None:
         # The drain reports a hold as a deferred outcome; `dispatch --item` names
@@ -106,6 +131,7 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
         janitor=janitor,
         marked=marked,
         routing=routing,
+        prelaunch_profile=profile,
     )
     # Every post-verdict stage, as ONE sequence. The SAME tail the resume runs,
     # which is what makes "both paths journal the same" a property of one
@@ -113,23 +139,29 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     return dispatch_tail_exit(args=args, repo=repo, outcome=outcome, journal=journal)
 
 
-def _start_dispatch(*, args: argparse.Namespace, repo: Path) -> _DispatchStart | int:
+def _start_dispatch(
+    *, args: argparse.Namespace, repo: Path, profile: PrelaunchCpuProfile
+) -> _DispatchStart | int:
     """Run every repository-wide and size precondition before selection."""
-    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
+    with profile.during(name="dispatch-preamble"):
+        janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
     if preamble_exit is not None:
         return preamble_exit
-    arm_otel_egress(args=args, repo=repo)
-    prepared = prepare(args=args, repo=repo)
+    with profile.during(name="otel-egress"):
+        arm_otel_egress(args=args, repo=repo)
+    with profile.during(name="ledger-prepare"):
+        prepared = prepare(args=args, repo=repo)
     if prepared is None:
         return EXIT_PRECONDITION_ERROR
     items, journal = prepared
     raw_target = next((item for item in items if item.id == args.item), None)
-    size_result = apply_factory_size_dispatch_entry(
-        cwd=repo,
-        path_factory=lambda: store_config(repo=repo),
-        items=() if raw_target is None else (raw_target,),
-        journal=journal,
-    )
+    with profile.during(name="factory-size-check"):
+        size_result = apply_factory_size_dispatch_entry(
+            cwd=repo,
+            path_factory=lambda: store_config(repo=repo),
+            items=() if raw_target is None else (raw_target,),
+            journal=journal,
+        )
     if not is_successful(size_result):
         failure = unsafe_perform_io(size_result.failure())
         outcome = failed_dispatch_outcome(
@@ -147,11 +179,13 @@ def _start_dispatch(*, args: argparse.Namespace, repo: Path) -> _DispatchStart |
             outcome=size_refusals[0],
             journal=journal,
         )
-    if not args.skip_ledger_check and ledger_blocked_after_normalization(
-        items=items,
-        config=store_config(repo=repo),
-        journal=journal,
-    ):
+    with profile.during(name="ledger-check"):
+        ledger_blocked = not args.skip_ledger_check and ledger_blocked_after_normalization(
+            items=items,
+            config=store_config(repo=repo),
+            journal=journal,
+        )
+    if ledger_blocked:
         return EXIT_FAILURE
     return _DispatchStart(janitor=janitor, items=items, journal=journal)
 

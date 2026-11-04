@@ -34,6 +34,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
+    MERGE_POLL_BUDGET_EXHAUSTED,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     is_identifier_shaped,
 )
@@ -53,11 +56,14 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "BASE_ADVANCED_MARKER",
+    "MERGE_POLL_BUDGET_EXHAUSTED_MARKER",
     "base_advanced_comment_body",
+    "merge_poll_budget_exhausted_comment_body",
     "record_base_advanced_after_arming",
 ]
 
 BASE_ADVANCED_MARKER = "livespec-base-advanced-after-arming"
+MERGE_POLL_BUDGET_EXHAUSTED_MARKER = "livespec-merge-poll-budget-exhausted"
 
 _LEDGER_WRITE_ERRORS = (
     WorkItemNotFoundError,
@@ -94,7 +100,13 @@ def record_base_advanced_after_arming(
     measured = outcome.base_advanced
     if measured is None:
         return
-    body = base_advanced_comment_body(
+    cause = measured.cause
+    render = (
+        merge_poll_budget_exhausted_comment_body
+        if cause == MERGE_POLL_BUDGET_EXHAUSTED
+        else base_advanced_comment_body
+    )
+    body = render(
         work_item_id=outcome.work_item_id,
         run_id=outcome.fabro_run_id,
         factory=measured.factory,
@@ -106,7 +118,7 @@ def record_base_advanced_after_arming(
     if refusal is not None:
         journal.append(
             record={
-                "stage": "base-advanced-after-arming-refused",
+                "stage": f"{cause}-refused",
                 "work_item_id": item.id,
                 "reason": refusal,
             }
@@ -123,7 +135,7 @@ def record_base_advanced_after_arming(
     if isinstance(written, AttemptFailure):
         journal.append(
             record={
-                "stage": "base-advanced-after-arming-error",
+                "stage": f"{cause}-error",
                 "work_item_id": item.id,
                 "reason": type(written.error).__name__,
             }
@@ -131,7 +143,7 @@ def record_base_advanced_after_arming(
         return
     journal.append(
         record={
-            "stage": "base-advanced-after-arming-record",
+            "stage": f"{cause}-record",
             "work_item_id": item.id,
             "pr_number": outcome.pr_number,
         }
@@ -147,7 +159,44 @@ def base_advanced_comment_body(
     pr_head: str | None,
     default_branch_tip: str | None,
 ) -> str:
-    """Render the record. PURE, so every claim it makes is testable in isolation.
+    """Render the overtaken-arming record. PURE, so each claim is testable in isolation."""
+    return _comment_body(
+        marker=BASE_ADVANCED_MARKER,
+        decision=_DECISION,
+        work_item_id=work_item_id,
+        pr_number=pr_number,
+        names=(run_id, factory, pr_head, default_branch_tip),
+    )
+
+
+def merge_poll_budget_exhausted_comment_body(
+    *,
+    work_item_id: str,
+    run_id: str | None,
+    factory: str,
+    pr_number: int | None,
+    pr_head: str | None,
+    default_branch_tip: str | None,
+) -> str:
+    """Render the exhausted-budget record: the same facts under its own marker and decision."""
+    return _comment_body(
+        marker=MERGE_POLL_BUDGET_EXHAUSTED_MARKER,
+        decision=_EXHAUSTED_DECISION,
+        work_item_id=work_item_id,
+        pr_number=pr_number,
+        names=(run_id, factory, pr_head, default_branch_tip),
+    )
+
+
+def _comment_body(
+    *,
+    marker: str,
+    decision: str,
+    work_item_id: str,
+    pr_number: int | None,
+    names: tuple[str | None, str, str | None, str | None],
+) -> str:
+    """The record both endings share; only the marker line and the decision differ.
 
     EACH NAME IS GRADED THREE WAYS, not two. A name present and
     identifier-shaped is rendered; one present but NOT identifier-shaped is
@@ -160,12 +209,7 @@ def base_advanced_comment_body(
     """
     rendered: list[str] = []
     left_out = 0
-    for label, value in (
-        ("run id", run_id),
-        ("factory", factory),
-        ("pull request head", pr_head),
-        ("default branch tip", default_branch_tip),
-    ):
+    for label, value in zip(_NAME_LABELS, names, strict=True):
         if value is None:
             rendered.append(f"{label}: {_UNREPORTED}")
             continue
@@ -174,7 +218,7 @@ def base_advanced_comment_body(
             continue
         rendered.append(f"{label}: {value}")
     lines = [
-        BASE_ADVANCED_MARKER,
+        marker,
         "",
         f"work-item: {work_item_id}",
         f"pull request: {_pr_number_line(pr_number=pr_number)}",
@@ -182,9 +226,12 @@ def base_advanced_comment_body(
         "",
         f"{left_out} names were left out for not being identifier-shaped.",
         "",
-        _DECISION,
+        decision,
     ]
     return "\n".join(lines)
+
+
+_NAME_LABELS = ("run id", "factory", "pull request head", "default branch tip")
 
 
 # The one thing a reader has to DO, and the one thing they must not. The
@@ -197,6 +244,18 @@ _DECISION = (
     "NOT disarm, close or rebase it by hand; the resumed run's pr_refresh disarms it before "
     "refreshing. Release the item with `resolve-blocked:<work-item>:ready`, then `resume "
     "--item <work-item>`, substituting the work-item named above."
+)
+
+
+# The exhausted-budget ending's reading of the same two steps: the run succeeded
+# and the pull request is intact, it has only not merged yet, so nothing is
+# wrong with the head a proof record names and the resume enters from it.
+_EXHAUSTED_DECISION = (
+    "decision: the merge wait's poll budget ended while the forge still reported the pull "
+    "request open and not in conflict, and no agent asked anything, so no answer is owed. The "
+    "pull request is left as it stands — do NOT close or rebase it by hand. Release the item "
+    "with `resolve-blocked:<work-item>:ready`, then `resume --item <work-item>`, substituting "
+    "the work-item named above."
 )
 
 

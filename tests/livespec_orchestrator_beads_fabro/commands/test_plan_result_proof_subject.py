@@ -39,11 +39,16 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
+from livespec_orchestrator_beads_fabro._beads_client import (
+    BeadsRecord,
+    IssueDraft,
+    make_beads_client,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     RELEASE_TAG_LABEL,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import (
     ProofPointer,
     description_with_pointer,
@@ -174,6 +179,48 @@ def _repo(*, tmp_path: Path) -> ResultRepository:
         encoding="utf-8",
     )
     return ResultRepository(name="repo", clone=clone)
+
+
+def test_a_verified_plan_record_on_an_epic_satisfies_the_typed_proof_target(
+    tmp_path: Path,
+) -> None:
+    """A plan epic reads its own ledger record, not a work-item pull-request pointer."""
+    repository = _repo(tmp_path=tmp_path)
+    client = make_beads_client(config=store_config(repo=repository.clone))
+    _ = client.create_issue(
+        draft=IssueDraft(
+            issue_id=_SUBJECT_ID,
+            issue_type="epic",
+            title="plan epic",
+            description="## Definition of Done\n\n- Something.\n",
+            assignee=None,
+            created_at="2026-10-08T00:00:00Z",
+        )
+    )
+    client.add_comment(
+        issue_id=_SUBJECT_ID,
+        body=(
+            "Plan Proof of Done — verified — session plan-replay — 2026-10-08T08:01:00Z\n"
+            "\n"
+            "## Build identity\n"
+            "\n"
+            f"- {RELEASE_TAG_LABEL}: {_BUILD}\n"
+            "\n"
+            f"## Assertion 1 — {_ASSERTION}\n"
+            "Reproduced: yes.\n"
+        ),
+    )
+
+    observation = observe_verified_proof(
+        repository=repository,
+        target=VerifiedProofTarget(subject_id=_SUBJECT_ID, build=_BUILD, assertions=(_ASSERTION,)),
+        runner=_Runner(bodies=()),
+        now=_NOW,
+    )
+
+    assert observation.status == OBSERVATION_SATISFIED
+    assert observation.source == SOURCE_LEDGER
+    assert observation.evidence == f"ledger comment position 1 on {_SUBJECT_ID}"
 
 
 @pytest.mark.parametrize(

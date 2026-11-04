@@ -36,7 +36,7 @@ rather than pattern-matching:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from returns.io import IOResult, IOSuccess
 
@@ -48,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_ANSWER_DISPOSITION,
     DEFAULT_GROOM_CUT_APPROVAL,
     PolicySettingUnreadable,
+    read_dispatcher_config_value,
     resolve_acceptance_mode,
     resolve_acceptance_rework_cap,
     resolve_answer_disposition,
@@ -57,7 +58,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     resolve_merge_on_review_cap,
     resolve_review_fix_cap,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -107,11 +107,47 @@ def review_fix_visit_cap_for(*, review_fix_cap: int) -> int:
 def effective_admission_policy(
     *, item: WorkItem, cwd: Path
 ) -> IOResult[str, PolicySettingUnreadable]:
-    """The item's effective admission policy with per-item-over-global precedence."""
-    if _is_spec_change_tier(item=item):
-        return IOSuccess(DEFAULT_ADMISSION_POLICY)
-    if item.admission_policy is not None:
-        return IOSuccess(item.admission_policy)
+    """The item's effective admission policy with committed-setting precedence.
+
+    IT NO LONGER PINS A HINT-CARRYING ITEM TO `manual`, and that removal is the
+    repair rather than a relaxation. `spec.md` says a spec-change-tier item "is
+    never auto-approved WHILE IT IS HELD for its linked proposal's
+    ratification", and the plan-child-disposition clause of
+    `SPECIFICATION/constraints.md` says of the two fields that they "are
+    near-opposites": a non-null `spec_commitment_hint` marks an implementation
+    FOLLOW-UP to an ALREADY-RATIFIED change, which is ordinary dispatchable
+    work. So the pin this function used to apply held exactly the set it should
+    admit, and admitted every unratified feature — wrong "in both directions",
+    which is the clause's own phrase for it.
+
+    THE HOLD IS NOW APPLIED WHERE THE RECORDED CLASSIFICATION CAN BE READ, which
+    is a ledger read this pure policy resolution cannot take: `intake_dor`'s
+    filing route and the pre-dispatch wall's own row both consult
+    `_spec_change_tier_wall.classify_and_hold`, and both withhold `ready` from a
+    held item. Scenario 10 is unaffected, because its subject is an item whose
+    effective `admission_policy` is `manual` — which this function still rests
+    at `pending-approval` when no repository setting is committed.
+
+    A committed `dispatcher.auto_approve_ready` is the exception to the
+    ordinary per-item-over-global rule: its value governs every item, so a
+    stale admission label cannot countermand the repository's committed policy.
+    """
+    return cast(
+        "IOResult[str, PolicySettingUnreadable]",
+        read_dispatcher_config_value(cwd=cwd, key="auto_approve_ready").bind_ioresult(
+            lambda configured: _admission_policy_from_config(
+                configured=configured, item=item, cwd=cwd
+            )
+        ),
+    )
+
+
+def _admission_policy_from_config(
+    *, configured: object, item: WorkItem, cwd: Path
+) -> IOResult[str, PolicySettingUnreadable]:
+    """Resolve a committed admission value, or use the label when it is absent."""
+    if configured is None:
+        return IOSuccess(item.admission_policy or DEFAULT_ADMISSION_POLICY)
     return resolve_auto_approve_ready(cwd=cwd).map(
         lambda auto: _AUTO_ADMISSION if auto else DEFAULT_ADMISSION_POLICY
     )
@@ -231,11 +267,3 @@ def _positive_int_label_value(*, value: str | None) -> int | None:
     if parsed > 0:
         return parsed
     return None
-
-
-def _is_spec_change_tier(*, item: WorkItem) -> bool:
-    # A plan ANCHOR MARKER shares `spec_commitment_hint` with a genuine
-    # commitment to ratified spec text, so presence is not the question: a
-    # plan-anchored item pinned to the manual admission floor here is a
-    # misrouting, not a gate.
-    return is_spec_commitment(spec_id=item.spec_commitment_hint)

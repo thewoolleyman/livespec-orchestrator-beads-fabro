@@ -58,10 +58,13 @@ missing clone it is.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
+    read_dispatch_target_credential_wrapper,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._session_wait_gate import (
@@ -77,6 +80,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "ResultRepository",
+    "project_repository_identity",
     "resolve_result_repository",
     "result_store_config",
 ]
@@ -90,6 +94,7 @@ _CONFIG_ERRORS: tuple[type[Exception], ...] = (
     ConnectionPrefixMissingError,
     BeadsCredentialMissingError,
 )
+_OWNER_REPOSITORY_PARTS = 2
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -109,9 +114,12 @@ def resolve_result_repository(*, project_root: Path, name: str) -> ResultReposit
     name must be a key in the project's configured `cross_repo_targets` block AND
     resolve to a directory that exists on this host.
     """
-    if name in (project_root.name, resolve_primary_repository(repository=project_root).name):
+    primary = resolve_primary_repository(repository=project_root)
+    if name in (project_root.name, primary.name):
         return ResultRepository(name=name, clone=project_root)
-    if name == _origin_repository_name(project_root=project_root):
+    if _is_self_repository_path(name=name, project_root=project_root, primary=primary):
+        return ResultRepository(name=name, clone=project_root)
+    if name in _origin_repository_identities(project_root=project_root):
         return ResultRepository(name=name, clone=project_root)
     target = load_manifest(project_root=project_root).targets.get(name)
     if target is None:
@@ -120,6 +128,41 @@ def resolve_result_repository(*, project_root: Path, name: str) -> ResultReposit
     if not clone.is_dir():
         return None
     return ResultRepository(name=name, clone=clone)
+
+
+def project_repository_identity(*, config: StoreConfig) -> str:
+    """The canonical identity by which this project NAMES its own repository.
+
+    `resolve_result_repository` answers the reading question — whether a recorded
+    name resolves to this checkout — and this answers the WRITING one: which of
+    the identities that resolve a pointer this project authors should carry. The
+    two belong in one module because they are two directions of one identity, and
+    a writer that chose its own spelling is how a pointer comes to name something
+    no later observation of it can resolve (`_plan_next_action_admission`).
+
+    THE ORIGIN REMOTE'S REPOSITORY NAME LEADS, because a recorded pointer outlives
+    the checkout that wrote it. The directory name is the identity a worktree
+    cannot carry — such a directory is named after its BRANCH — and a sandbox
+    clone carries no `livespec.primaryPath`, so a pointer written under either
+    name becomes unresolvable the moment another checkout reads it. The origin
+    name is the one identity every checkout of one repository agrees on, and it is
+    read from LOCAL git configuration, so it costs no network and no credential.
+
+    The fallback is the primary checkout's basename, which `resolve_primary_repository`
+    collapses to this checkout's own directory name where no primary is recorded —
+    so a project with no origin remote at all still names an identity that
+    resolves, rather than naming nothing. Both arms are resolvable BY
+    CONSTRUCTION: each is one of the identities the resolver already matches.
+
+    The CONFIG is the argument rather than a project root, because every caller is
+    a pointer writer or reader holding one, and the root fallback is the same two
+    readings they would each otherwise repeat.
+    """
+    project_root = config.repo_root if config.repo_root is not None else Path.cwd()
+    origin = _origin_repository_identities(project_root=project_root)
+    if origin:
+        return origin[0]
+    return resolve_primary_repository(repository=project_root).name
 
 
 def result_store_config(*, repository: ResultRepository) -> StoreConfig | None:
@@ -135,10 +178,22 @@ def result_store_config(*, repository: ResultRepository) -> StoreConfig | None:
     )
     if isinstance(resolved, AttemptFailure):
         return None
-    return resolved
+    return replace(
+        resolved,
+        credential_wrapper=read_dispatch_target_credential_wrapper(repo=repository.clone),
+    )
 
 
-def _origin_repository_name(*, project_root: Path) -> str | None:
+def _is_self_repository_path(*, name: str, project_root: Path, primary: Path) -> bool:
+    """Whether an absolute legacy identity names this checkout or its primary."""
+    candidate = Path(name)
+    return candidate.is_absolute() and candidate.resolve() in (
+        project_root.resolve(),
+        primary.resolve(),
+    )
+
+
+def _origin_repository_identities(*, project_root: Path) -> tuple[str, ...]:
     """The repository name this checkout's origin remote URL carries, when it has one.
 
     Taken from the URL's last path segment with any `.git` suffix removed, which
@@ -155,8 +210,16 @@ def _origin_repository_name(*, project_root: Path) -> str | None:
         timeout_seconds=5.0,
     )
     if result.exit_code != 0:
-        return None
-    return result.stdout.strip().rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") or None
+        return ()
+    url = result.stdout.strip().rstrip("/").removesuffix(".git")
+    bare = url.rsplit("/", 1)[-1]
+    if not bare:
+        return ()
+    path = url.partition("://")[2].partition("/")[2]
+    if not path and ":" in url and not url.startswith("/"):
+        path = url.rsplit(":", 1)[-1]
+    owner_and_repository = path if len(path.split("/")) == _OWNER_REPOSITORY_PARTS else ""
+    return tuple(identity for identity in (bare, owner_and_repository) if identity)
 
 
 def _clone(*, project_root: Path, name: str, local_clone: Path | None) -> Path:

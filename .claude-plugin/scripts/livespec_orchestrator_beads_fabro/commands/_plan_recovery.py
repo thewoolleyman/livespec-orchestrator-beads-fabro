@@ -1,13 +1,14 @@
-"""Typed causal recovery: the one way an expired plan obligation reopens.
+"""Typed causal recovery: an OPTIONAL record of a changed approach on an unmet obligation.
 
 PURE. `contracts.md` section "Required result, budget and progress epoch" fixes
-what an attempt must carry: "A changed approach MUST be a typed causal recovery
-event naming the unresolved obligation, previous epoch, measured failure
-evidence, cause classification, executable authorized next operation, stable
-unique attempt id and bounded attempt deadline. Its attempt budget MUST NOT
-replace or postpone the original obligation deadline. A prose `approach:` line,
-acknowledgment, repair-child milestone or cosmetic pointer rewrite MUST NOT
-qualify."
+what an attempt must carry: "A changed approach MAY be recorded as a typed
+causal recovery event naming the unresolved obligation, previous epoch, measured
+failure evidence, cause classification, executable authorized next operation,
+stable unique attempt id and bounded attempt deadline; no write requires one.
+Its attempt budget MUST NOT replace or postpone the original obligation
+deadline." No write needs one since the expiry rule was deleted on 2026-11-03,
+but one that IS carried is still graded here, because the independent consumer
+executes the operation it names.
 
 TWO INDEPENDENT GATES DECIDE THE NEXT OPERATION, and both are required. The
 operation must be in `EXECUTABLE_OPERATIONS` — a CLOSED grammar of operations

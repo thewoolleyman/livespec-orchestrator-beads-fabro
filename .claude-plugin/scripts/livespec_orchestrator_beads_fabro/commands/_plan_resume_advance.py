@@ -8,6 +8,24 @@ stale pointer standing, so the next resume re-observes the same satisfied result
 and re-derives the same step for ever, and nothing downstream of this session can
 see where the plan now stands.
 
+WHY A PLAN-LEVEL LEG IS GATED ON THE EPIC'S CARRIER MAP AND NOT ONLY ON ITS
+CHILDREN. The plan Definition-of-Done clause records which child, or which
+plan-level proof, carries each plan assertion ONLY in the epic's carrier-map
+scope event, and a plan's Proof of Done cannot be true while a work-item carrier
+of one of its assertions is still open. The child check alone cannot see such a
+carrier: a carrier filed in a sibling tenant under the cross-tenant execution
+mirror is no child of this epic by either linkage mechanism, so the check comes
+back empty and the plan-level leg is derived against work nobody has done.
+Measured 2026-10-22 on plan epic `bd-ib-fyozyd`, every carrier of which is
+cross-tenant: nine carriers of ordinal 6 sat open across five sibling tenants
+while the resume advanced to `proof:capture:bd-ib-fyozyd`.
+
+AND WHY THE DERIVATION IS WHERE THAT GATE BELONGS, rather than a correction
+applied afterwards. A falsely derived plan-level obligation can be re-aimed by an
+ordinary replacement write, but a pointer that should never have been written
+still sends the next resume to a step nobody can honestly take, so the gate runs
+before the pointer is written.
+
 WHY THE PLAN-LEVEL LEG IS DERIVED FROM THE SATISFIED POINTER'S OWN KIND. Once
 every child is disposed the ledger's only record of how far the plan has come is
 the pointer the plan last wrote: a satisfied `proof` pointer means the proof leg
@@ -30,9 +48,9 @@ advancing to a new result and budget", so the obligation is new — fresh epoch,
 handoff count back to zero. The wall clock is NOT new: the plan's recorded
 deadline is the only deadline evidence the ledger holds, and minting a longer one
 here would let each satisfied step silently postpone a deadline the maintainer
-set, which every neighbouring clause forbids. If that deadline has already
-passed, the next resume reports expiry — which is the correct reading of a plan
-that has run out of time, not a fault in this advance.
+set. If that deadline has already passed, the next resume reports the new
+obligation overdue and still takes its step: the budget is a reporting datum
+only, so an overdue plan is reported, never stopped.
 """
 
 from __future__ import annotations
@@ -40,17 +58,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._store_ready_dwell import utc_now_iso
-from livespec_orchestrator_beads_fabro.commands._plan_child_edges import (
-    plan_child_ids_from_dependencies,
-    plan_child_ids_from_id_hierarchy,
+from livespec_orchestrator_beads_fabro.commands._plan_carrier_gate import (
+    OpenCarrier,
+    carrier_status_target,
+    first_open_carrier,
+    unplaceable_carrier_ids,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence import (
     PLAN_COMPLETENESS_REVIEW_PREFIX,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     ARCHIVE_KIND,
+    AWAIT_KIND,
+    HUMAN_KIND,
     IMPL_KIND,
     PLAN_RESUME_ACTOR,
     PROOF_KIND,
@@ -63,8 +84,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
 from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PLAN_PROOF_RECORD_TITLE,
 )
-from livespec_orchestrator_beads_fabro.commands.next import rank_candidates
-from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+from livespec_orchestrator_beads_fabro.commands._plan_ready_child import next_ready_child_id
+from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
+    project_repository_identity,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
@@ -85,8 +108,8 @@ _MAX_HANDOFFS_FIELD = "max_handoffs"
 class _Carried:
     """What every derived pointer carries forward from the satisfied one.
 
-    The repository identity and the plan's own `deadline`/`max_handoffs` are
-    read ONCE and threaded through, so no derived leg can resolve a different
+    The plan's own repository identity and its `deadline`/`max_handoffs` are read
+    ONCE and threaded through, so no derived leg can resolve a different
     repository or a different wall clock from its siblings.
     """
 
@@ -176,9 +199,19 @@ def _terminal(*, request: AdvanceRequest, reason: str) -> ResumeDirective:
 
 
 def _derived_action(*, request: AdvanceRequest) -> NextAction | None:
-    """The next step this plan owes, as a complete five-key pointer."""
+    """The next step this plan owes, as a complete five-key pointer.
+
+    THE CARRIER GATE SITS BETWEEN THE CHILD CHECK AND THE PLAN-LEVEL LEG, and
+    that position is the whole of its correctness. The epic's own ready children
+    are the work the plan tracks DIRECTLY, so a ready child is the next step
+    whatever the carrier map says; and the plan-level legs each assert something
+    about the whole Definition of Done, so none of them may be derived while a
+    carrier of one of its assertions is still open. Asking the gate FIRST would
+    hold a plan's own ready child behind a sibling tenant's carrier, and asking
+    it after the plan-level leg had been chosen would be asking it too late.
+    """
     carried = _carried(request=request)
-    child = _next_ready_child_id(config=request.config, epic_id=request.epic_id)
+    child = next_ready_child_id(config=request.config, epic_id=request.epic_id)
     if child is not None:
         return _pointer(
             kind=IMPL_KIND,
@@ -187,7 +220,83 @@ def _derived_action(*, request: AdvanceRequest) -> NextAction | None:
             result={"item_status": {"item_id": child, "status": "closed"}},
             carried=carried,
         )
-    return _plan_level_action(action=request.action, carried=carried)
+    plan_level = _plan_level_action(action=request.action, carried=carried)
+    if plan_level is None:
+        return None
+    return _carrier_gated(request=request, carried=carried, plan_level=plan_level)
+
+
+def _carrier_gated(
+    *,
+    request: AdvanceRequest,
+    carried: _Carried,
+    plan_level: NextAction,
+) -> NextAction:
+    """Wait on an open carrier, or let the derived plan-level step stand.
+
+    The TERMINAL state is deliberately settled before this is reached: a
+    satisfied `archive` pointer derives no successor at all, so a plan whose
+    archive has landed is not held open by a carrier map nobody will restate.
+
+    THE WAIT IS THE ONE DERIVED STEP WHOSE OBLIGATION DOES NOT NAME THE PLAN'S
+    OWN REPOSITORY, and the exception is the same fact that makes every other leg
+    name it: an obligation names the repository its own TARGET lives in, and this
+    target is a work-item in the carrier's tenant rather than the plan epic.
+    Stamping the plan's repository here would make the obligation unobservable on
+    the very next resume, which is the state `_plan_result_plan_owned` records
+    the cost of.
+    """
+    carrier: OpenCarrier | None = first_open_carrier(config=request.config, epic_id=request.epic_id)
+    if carrier is None:
+        return _unplaceable_gated(request=request, plan_level=plan_level)
+    return _pointer(
+        kind=AWAIT_KIND,
+        ref=f"item:{carrier.item_id}",
+        text=f"Wait for plan carrier {carrier.item_id} to close in {carrier.repo}.",
+        result=carrier_status_target(carrier=carrier),
+        carried=carried,
+        repo=carrier.repo,
+    )
+
+
+def _unplaceable_gated(*, request: AdvanceRequest, plan_level: NextAction) -> NextAction:
+    """Rest the plan on a human when no open carrier can be placed at all.
+
+    THE SECOND HALF OF THE SAME GATE, and it is owed because the first half
+    PASSES OVER a carrier whose repository nothing resolves. Such a carrier has
+    a status nobody measured, so it cannot be waited on — an obligation naming
+    an unresolvable repository is refused at the write and unobservable at every
+    read — and it cannot be treated as closed either, because the carrier map
+    names it as carrying one of this plan's own assertions. Deriving the
+    plan-level step anyway would record a step asserting the whole Definition of
+    Done on evidence nothing supports.
+
+    SO THE REST STATE IS A `human` POINTER, which the clause already reserves for
+    a genuine needed decision: configuring the sibling, re-assigning the
+    assertion, or recording that the carrier is done are all decisions, and none
+    of them is one an unattended resume may take. Its tracking fields are
+    explicit nulls, so the unmet obligation stays in the progress history rather
+    than being discharged by pointing elsewhere.
+
+    THE POINTER NAMES THE CARRIERS rather than the configuration behind them,
+    because what the maintainer decides is per-carrier and the ids are the only
+    thing that says which carriers are in question.
+    """
+    unplaceable = unplaceable_carrier_ids(config=request.config, epic_id=request.epic_id)
+    if not unplaceable:
+        return plan_level
+    named = ", ".join(unplaceable)
+    return NextAction(
+        kind=HUMAN_KIND,
+        ref=request.epic_id,
+        text=(
+            f"Decide how plan {request.epic_id} reaches its carriers {named}:"
+            " no configured repository resolves the tenant that minted them, so"
+            " neither their status nor the plan's own proof can be established."
+        ),
+        required_result=None,
+        budget=None,
+    )
 
 
 def _plan_level_action(*, action: NextAction, carried: _Carried) -> NextAction | None:
@@ -232,18 +341,25 @@ def _pointer(
     text: str,
     result: dict[str, object],
     carried: _Carried,
+    repo: str | None = None,
 ) -> NextAction:
     """One derived pointer, with a FRESH obligation on the plan's own deadline.
 
     The epoch is derived deterministically from the epic and the step it names,
     so a retried advance recovers the same obligation identity rather than
     minting a second one for the same step.
+
+    `repo` OVERRIDES the plan's own repository and defaults to not overriding it,
+    because exactly one derived step targets something outside the plan's tenant:
+    the carrier wait. Defaulting the other way would make every leg state its own
+    repository, and the one that stated it wrongly would be the one that locks a
+    plan (`_plan_result_plan_owned`).
     """
     return NextAction(
         kind=kind,
         ref=ref,
         text=text,
-        required_result={"repo": carried.repo, **result},
+        required_result={"repo": carried.repo if repo is None else repo, **result},
         budget={
             **carried.budget,
             "epoch": f"{carried.epic_id}:{kind}:{ref}",
@@ -255,10 +371,22 @@ def _pointer(
 def _carried(*, request: AdvanceRequest) -> _Carried:
     """What the derived pointer carries forward, read ONCE for every leg.
 
-    The repository comes from the OBSERVATION rather than from the pointer's own
-    `required_result`: the reader has already resolved it, and re-deriving it
-    here would be a second reading of one identity that cannot be shown to agree
-    with the reading the satisfaction was established under.
+    THE REPOSITORY IS THE PLAN'S OWN AND NEVER THE SATISFIED OBLIGATION'S. Every
+    step derivable here is a step against the PLAN: the proof, review and archive
+    legs each target the plan epic, and the `impl` leg targets a child read out of
+    the plan's own tenant. The satisfied obligation's repository is a fact about
+    the leg that just LANDED — legitimately a sibling tenant, where a carrier
+    child was filed under the cross-tenant execution mirror — so carrying it
+    forward stamps a repository the derived step's own target does not live in.
+
+    That mis-stamping is terminal rather than cosmetic, which is why it is read
+    from this project rather than from the observation the reader already
+    resolved. The next resume reads the derived obligation against the wrong
+    tenant and reports it UNOBSERVABLE; dispatch is withheld while a required
+    result is unobservable, and replacing an unobservable obligation is refused by
+    design — so the plan locks behind the pointer for its whole budget, with no
+    sanctioned write able to correct it. Measured 2026-10-20 on plan epic
+    `bd-ib-fyozyd`, whose satisfied `await` named a `livespec-dev-tooling` item.
 
     The two budget fields are carried through AS FOUND, not validated, and a
     recorded budget that is not an object at all yields both as absent. A
@@ -272,34 +400,9 @@ def _carried(*, request: AdvanceRequest) -> _Carried:
     typed: dict[str, Any] = cast("dict[str, Any]", recorded) if isinstance(recorded, dict) else {}
     return _Carried(
         epic_id=request.epic_id,
-        repo=request.observation.repo,
+        repo=project_repository_identity(config=request.config),
         budget={
             _DEADLINE_FIELD: typed.get(_DEADLINE_FIELD),
             _MAX_HANDOFFS_FIELD: typed.get(_MAX_HANDOFFS_FIELD),
         },
     )
-
-
-def _next_ready_child_id(*, config: StoreConfig, epic_id: str) -> str | None:
-    """Return this plan's first canonically-ranked ready child, if one exists.
-
-    The child set is the UNION of both linkage mechanisms, because neither is
-    complete alone: an explicit `parent-child` edge populates `parent` while the
-    implicit dotted-id hierarchy does not, so either filter returns a plausible
-    non-empty set while silently omitting the children linked the other way.
-    """
-    records = make_beads_client(config=config).list_issues()
-    child_ids = plan_child_ids_from_dependencies(records=records, epic_id=epic_id) | (
-        plan_child_ids_from_id_hierarchy(records=records, epic_id=epic_id)
-    )
-    items = list(
-        materialize_work_items(records=read_work_items(path=config.work_items_path)).values()
-    )
-    ranked_positions = {
-        candidate["work_item_ref"]: position
-        for position, candidate in enumerate(rank_candidates(items=items))
-    }
-    ready_children = child_ids & ranked_positions.keys()
-    if not ready_children:
-        return None
-    return min(ready_children, key=ranked_positions.__getitem__)

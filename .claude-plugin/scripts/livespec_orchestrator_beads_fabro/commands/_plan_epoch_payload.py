@@ -63,6 +63,7 @@ _ORIGINAL_DEADLINE = "original_deadline"
 _MAX_HANDOFFS = "max_handoffs"
 _CONSUMED_HANDOFFS = "consumed_handoffs"
 _LAST_RECOVERY_ATTEMPT = "last_recovery_attempt"
+_REPLACED_RESULT = "replaced_result"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -110,6 +111,7 @@ class TransitionPayload:
     next_token_id: str
     event_kind: str
     authority: AuthorityState
+    replaced_result: str | None = None
 
 
 def with_receipt(*, state: AuthorityState, receipt: OperationReceipt) -> AuthorityState:
@@ -174,6 +176,7 @@ def parse_payload(*, text: str) -> TransitionPayload | None:
     event_kind = fields.get(_EVENT_KIND)
     epochs = _parse_epochs(fields=fields)
     authority = _parse_authority(value=fields.get(_AUTHORITY))
+    replaced_result = fields.get(_REPLACED_RESULT)
     if (
         not isinstance(operation_id, str)
         or not isinstance(prior_token_id, str)
@@ -181,6 +184,8 @@ def parse_payload(*, text: str) -> TransitionPayload | None:
         or not isinstance(event_kind, str)
         or epochs is None
         or authority is None
+        or not isinstance(replaced_result, str | None)
+        or (replaced_result is not None and replaced_result.strip() == "")
     ):
         return None
     prior_epoch, new_epoch = epochs
@@ -192,6 +197,7 @@ def parse_payload(*, text: str) -> TransitionPayload | None:
         next_token_id=next_token_id,
         event_kind=event_kind,
         authority=authority,
+        replaced_result=replaced_result,
     )
 
 
@@ -204,6 +210,7 @@ def _payload_object(*, payload: TransitionPayload) -> dict[str, Any]:
         _PRIOR_TOKEN_ID: payload.prior_token_id,
         _NEXT_TOKEN_ID: payload.next_token_id,
         _EVENT_KIND: payload.event_kind,
+        _REPLACED_RESULT: payload.replaced_result,
         _AUTHORITY: {
             _REQUIRED_RESULT: state.required_result,
             _ORIGINAL_DEADLINE: state.original_deadline,

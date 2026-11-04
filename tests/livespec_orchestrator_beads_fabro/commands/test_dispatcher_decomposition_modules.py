@@ -11,6 +11,7 @@ untouched by the move.
 
 from __future__ import annotations
 
+import ast
 import importlib
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_credential_env,
     _dispatcher_credential_wrapper,
     _dispatcher_credentials,
+    _dispatcher_item_ledger_reads,
     _dispatcher_ledger_close,
     _dispatcher_plan,
     dispatcher,
@@ -113,10 +115,23 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
     credential_public_names = {
         "fetch_fleet_manifest_text",
         "materialize_overlay",
-        "read_dispatch_comments",
-        "read_dispatch_labels",
         "resolve_sibling_clones",
     }
+    # The ITEM's own ledger readings, split out by cohesion the way the
+    # credential-wrapper reader below was: this cluster PROJECTS credentials and
+    # sibling clones into a sandbox overlay, while those two read the dispatched
+    # work-item's ledger record — the operator riders its brief must carry, and
+    # the raw beads labels its per-item policy overrides ride on. Pinned here,
+    # and pinned as GONE from the module they left, so the move cannot regress
+    # into a re-export shim.
+    item_ledger_read_public_names = {
+        "read_dispatch_comments",
+        "read_dispatch_labels",
+    }
+    assert set(_dispatcher_item_ledger_reads.__all__) == item_ledger_read_public_names
+    for name in item_ledger_read_public_names:
+        assert hasattr(_dispatcher_item_ledger_reads, name)
+        assert not hasattr(_dispatcher_credentials, name)
     # The HOST-ENVIRONMENT half, split out by cohesion: these ask whether the
     # machine running the Dispatcher holds a usable credential, while the
     # cluster above PROJECTS one into a sandbox overlay. The typed assessment is
@@ -310,7 +325,9 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
         "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection"
     )
     selection_public_names = {
-        "candidates",
+        # `candidates` moved to `_dispatcher_loop_candidates` when the
+        # pre-dispatch Definition-of-Done judgement gave the enumeration a
+        # second filter; the readiness predicates stay here.
         "is_dispatch_candidate",
         "janitor_core_ref",
         "post_run_dispositions",
@@ -336,7 +353,12 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
     assert hasattr(dispatch_loop_selection, "MERGE_HELD_STAGE")
     assert hasattr(dispatch_loop_selection, "record_groom_draft")
     assert dispatcher.dispatch_one is dispatch_loop.dispatch_one
-    assert dispatcher.candidates is dispatch_loop_selection.candidates
+    assert (
+        dispatcher.candidates
+        is importlib.import_module(
+            "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates"
+        ).candidates
+    )
     assert dispatcher.is_dispatch_candidate is dispatch_loop_selection.is_dispatch_candidate
     assert dispatcher.janitor_core_ref is dispatch_loop_selection.janitor_core_ref
     assert dispatcher.post_run_dispositions is dispatch_loop_selection.post_run_dispositions
@@ -409,12 +431,17 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
         Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
         / "_dispatcher_run_checks.py"
     )
+    # `run_ledger_normalize` moved OUT of this module by cohesion once the
+    # overflow-selection refusal needed room under the file's LLOC ceiling: the
+    # preflight and a mutating operator command share nothing but the repository
+    # root. The negative below is what proves the move left no re-export shim,
+    # which `AGENTS.md` section "Refactoring for size" bans.
+    normalize_path = module_path.with_name("_dispatcher_ledger_normalize.py")
     run_checks_public_names = {
         "dispatch_preamble",
         "requested_items_preflight_error",
         "run_janitor_check",
         "run_ledger_check",
-        "run_ledger_normalize",
         "run_spec_check",
     }
     old_private_names = {
@@ -427,18 +454,33 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
         "_run_ledger_check",
         "_run_spec_check",
     }
+    # The two emitters that moved WITH `run_ledger_normalize`, because they were
+    # used by it alone. Asserted against the SOURCE module rather than against
+    # `dispatcher`, which never carried them: the preflight keeping a copy is
+    # what a half-finished move looks like, and both copies would pass.
+    moved_private_names = {"_emit_normalize_summary", "_emit_normalize_text"}
 
     assert module_path.is_file()
+    assert normalize_path.is_file()
     run_checks = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks"
     )
+    normalize = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_normalize"
+    )
     assert set(run_checks.__all__) == run_checks_public_names
+    assert set(normalize.__all__) == {"run_ledger_normalize"}
     for name in run_checks_public_names:
         assert hasattr(run_checks, name)
+    assert not hasattr(run_checks, "run_ledger_normalize")
     assert dispatcher.dispatch_preamble is run_checks.dispatch_preamble
     assert dispatcher.requested_items_preflight_error is run_checks.requested_items_preflight_error
+    assert dispatcher.run_ledger_normalize is normalize.run_ledger_normalize
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
+    for name in moved_private_names:
+        assert not hasattr(run_checks, name)
+        assert hasattr(normalize, name)
 
 
 def test_run_commands_cluster_importable_from_new_module_and_private_names_removed() -> None:
@@ -656,3 +698,59 @@ def test_loop_overlay_leg_is_its_own_module_rather_than_packed_call_sites() -> N
         assert hasattr(loop_overlay, name)
     assert dispatch_loop.__all__ == ["dispatch_one"]
     assert hasattr(dispatch_loop, "run_dispatch")
+
+
+def test_journal_file_importable_from_its_leaf_and_re_exported_from_dispatcher_io() -> None:
+    """The append-only journal moved to a LEAF, and `_dispatcher_io` re-exports it.
+
+    The move is what breaks an import cycle rather than a tidying: `_dispatcher_io`'s
+    own closure reaches the watched Fabro launcher, which reaches the factory-ledger
+    resolution — so the overflow-selection record, which both writes the journal and
+    resolves a dispatch factory, cannot import the aggregate. `_dispatcher_shell_runner`
+    exists for exactly the same reason, which is why the leaf is asserted to be
+    IMPORTABLE WITHOUT the aggregate in the first place.
+
+    The re-export is asserted as the SAME object, not merely as a present name: a
+    second `JournalFile` class would give two append layers, each with its own
+    stamped-once refusal, and a record written through one would satisfy every
+    assertion made about the other.
+    """
+    leaf_path = (
+        Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+        / "_dispatcher_journal_file.py"
+    )
+    leaf_public_names = {"JournalFile", "utc_now_iso"}
+
+    assert leaf_path.is_file()
+    leaf = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file"
+    )
+    aggregate = importlib.import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_io")
+
+    assert set(leaf.__all__) == leaf_public_names
+    for name in leaf_public_names:
+        assert getattr(aggregate, name) is getattr(leaf, name)
+    # The stamp constant moved WITH the append that applies it; a copy left
+    # behind would be a second authority on which fields no writer may supply.
+    assert not hasattr(aggregate, "_STAMPED_INVOKER_FIELDS")
+    assert hasattr(leaf, "_STAMPED_INVOKER_FIELDS")
+    # The leaf must not IMPORT the aggregate, which is the half of the cycle this
+    # side controls. Read off the import statements rather than the whole text,
+    # because the leaf's docstring names the aggregate it was split out of — a
+    # substring probe would fail on the explanation instead of on an import.
+    assert "_dispatcher_io" not in _imported_modules(path=leaf_path)
+
+
+def _imported_modules(*, path: Path) -> set[str]:
+    """Every module name one module's own import statements name."""
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        match node:
+            case ast.Import(names=aliases):
+                names.update(alias.name for alias in aliases)
+            case ast.ImportFrom(module=str() as module):
+                names.add(module)
+                names.update(f"{module}.{alias.name}" for alias in node.names)
+            case _:
+                pass
+    return {part for name in names for part in name.split(".")}

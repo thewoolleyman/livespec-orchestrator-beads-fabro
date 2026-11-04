@@ -63,13 +63,15 @@ default branch while the journal recorded a resume.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import admit_and_select
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
+    admit_and_select,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
 )
@@ -82,6 +84,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_tail import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
+    explicit_dispatch_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     apply_factory_size_dispatch_entry,
@@ -94,27 +97,36 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import prepare
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import DispatchLaunchContext
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import prepare, run_id
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import ResumeAnchor
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
-    RESUME_ENTRY_NODE_ARG,
-    RESUME_HEAD_ARG,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
+    PrelaunchCpuProfile,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_args import resumed_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resume_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
-    ResumeGather,
     gather_resume,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_prelaunch import (
+    prepare_resume_prelaunch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_reporting import (
+    resume_refusal_report,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import dispatch_preamble
+from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
+    screened_verdict_of,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -155,35 +167,35 @@ def add_resume_arguments(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--item", dest="item", required=True)
 
 
-def resume_refusal_report(*, work_item_id: str, refusals: Sequence[str]) -> str:
-    """Every applicable refusal as one operator-facing message, in the clause's order.
-
-    EVERY line, never `refusals[0]`: "a refusal that names only the first does not
-    satisfy this clause". An item `active` under a live claim is refused on the
-    status bullet AND the live-run bullet, and an operator told only "not ready"
-    runs `resolve-blocked` and drives the resume straight into the live run it was
-    never told about.
-    """
-    lines = "".join(f"  - {refusal}\n" for refusal in refusals)
-    return f"ERROR: resume refused for {work_item_id}:\n{lines}"
-
-
 def run_resume_command(*, args: argparse.Namespace) -> int:
     """Measure, grade, journal, and dispatch one resume; or refuse naming every mismatch."""
+    with pass_snapshot():
+        return _resume_in_pass(args=args)
+
+
+def _resume_in_pass(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
-    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
-    if preamble_exit is not None:
-        return preamble_exit
-    arm_otel_egress(args=args, repo=repo)
-    prepared = prepare(args=args, repo=repo)
-    if prepared is None:
-        return EXIT_PRECONDITION_ERROR
-    items, journal = prepared
-    target = _resume_target_or_exit(
-        args=args,
-        repo=repo,
-        items=items,
-        journal=journal,
+    # The profile starts at resume entry and remains held until the common
+    # launch boundary can attribute each phase to the resumed item.
+    profile = PrelaunchCpuProfile.for_drive_launch(dispatch_id=run_id())
+    started = prepare_resume_prelaunch(
+        profile=profile,
+        preamble=lambda: dispatch_preamble(args=args, repo=repo),
+        arm_otel=lambda: arm_otel_egress(args=args, repo=repo),
+        prepare=lambda: prepare(args=args, repo=repo),
+        precondition_exit=EXIT_PRECONDITION_ERROR,
+    )
+    if isinstance(started, int):
+        return started
+    janitor, items, journal = started.janitor, started.items, started.journal
+    target = profile.phase(
+        name="target-selection",
+        action=lambda: _resume_target_or_exit(
+            args=args,
+            repo=repo,
+            items=items,
+            journal=journal,
+        ),
     )
     if isinstance(target, int):
         return target
@@ -192,12 +204,15 @@ def run_resume_command(*, args: argparse.Namespace) -> int:
     # by id across EVERY row rather than through `ready_items`: a non-`ready`
     # item has to reach the ladder to be refused by name, with the remedy its own
     # status calls for.
-    gather = gather_resume(
-        args=args,
-        repo=repo,
-        item=item,
-        journal_path=journal_path(args=args, repo=repo),
-        runner=ShellCommandRunner(),
+    gather = profile.phase(
+        name="resume-gather",
+        action=lambda: gather_resume(
+            args=args,
+            repo=repo,
+            item=item,
+            journal_path=journal_path(args=args, repo=repo),
+            runner=ShellCommandRunner(),
+        ),
     )
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
@@ -219,22 +234,31 @@ def run_resume_command(*, args: argparse.Namespace) -> int:
         repo=repo,
         items=[item],
         journal=journal,
+        prelaunch_checkpoint=profile.checkpoint,
     )
     if wall_exit is not None:
         return wall_exit
-    journal.append(
-        record=resume_journal_record(
-            work_item_id=item.id,
-            earlier_run_ids=gather.earlier_run_ids,
-            pull_request=pull_request,
-            head=anchor.head,
-            resumed_at=anchor.resumed_at,
-            source=anchor.source,
-        )
+    _ = profile.phase(
+        name="resume-journal",
+        action=lambda: journal.append(
+            record=resume_journal_record(
+                work_item_id=item.id,
+                earlier_run_ids=gather.earlier_run_ids,
+                pull_request=pull_request,
+                head=anchor.head,
+                resumed_at=anchor.resumed_at,
+                source=anchor.source,
+            )
+        ),
     )
-    resumed = _resumed_args(args=args, gather=gather, anchor=anchor)
+    resumed = resumed_args(args=args, gather=gather, anchor=anchor)
     outcome = _admit_and_dispatch_resume(
-        args=resumed, repo=repo, items=items, item=item, journal=journal, janitor=janitor
+        args=resumed,
+        repo=repo,
+        items=items,
+        item=item,
+        journal=journal,
+        launch=DispatchLaunchContext(janitor=janitor, prelaunch_profile=profile),
     )
     # The SAME post-verdict tail the single dispatch runs, so the resume journals
     # exactly as a dispatch does and its outcome maps to the same exit codes.
@@ -284,29 +308,6 @@ def _resume_target_or_exit(
     return item
 
 
-def _resumed_args(
-    *, args: argparse.Namespace, gather: ResumeGather, anchor: ResumeAnchor
-) -> argparse.Namespace:
-    """An args clone carrying the resumed-at node, the published head, and the workflow.
-
-    The two resume attributes are read DEFENSIVELY downstream -- only this entry
-    point ever sets them -- so a clone that failed to set them dispatches as an
-    ordinary run, from `start`, with nothing in the output to say so.
-    """
-    cloned = argparse.Namespace(**vars(args))
-    setattr(cloned, RESUME_ENTRY_NODE_ARG, anchor.resumed_at)
-    setattr(cloned, RESUME_HEAD_ARG, anchor.head)
-    # The earlier run's recorded name WINS over an explicit `--workflow-name`,
-    # because the clause makes it the requirement rather than a default: the
-    # resumed run "MUST run the workflow the earlier run's dispatch record
-    # names". When the journal holds none -- a dispatch written by a build
-    # predating the field -- whatever the invocation asked for stands, and an
-    # absent name leaves the ordinary variant precedence to resolve the item's
-    # own recorded pin, which is the same graph.
-    cloned.workflow_name = gather.workflow_name or getattr(args, "workflow_name", None)
-    return cloned
-
-
 def _admit_and_dispatch_resume(
     *,
     args: argparse.Namespace,
@@ -314,7 +315,7 @@ def _admit_and_dispatch_resume(
     items: list[WorkItem],
     item: WorkItem,
     journal: JournalFile,
-    janitor: tuple[str, ...] | None,
+    launch: DispatchLaunchContext,
 ) -> DispatchOutcome:
     """Admit the one item through the ordinary valve and launch the resumed run.
 
@@ -327,27 +328,48 @@ def _admit_and_dispatch_resume(
     factory as `dispatch --item` does" -- while the workflow pin deliberately is
     not: `_resumed_args` has already set the name the earlier run's dispatch
     record carries, and the workflow-pinning helper would write it to the ledger.
+
+    Applying it "as `dispatch --item` does" now includes telling it WHICH ROUTE
+    this is, because the item's recorded factory is a resume-only layer of that
+    one precedence. This path states `resume=True` rather than deriving it: a
+    `resume --item` invocation IS the clause's first resume leg, and the resume
+    attributes `_resumed_args` set are not a usable discriminator — a `seeded`
+    route sets the same head on a dispatch the clause calls fresh.
     """
-    admission = admit_and_select(
-        repo=repo,
-        items=items,
-        candidates=[item],
-        journal=journal,
-        enforce_cap=True,
-        rework=_NO_REWORK,
+    profile = cast(PrelaunchCpuProfile, launch.prelaunch_profile)
+    admission = profile.phase(
+        name="admission",
+        action=lambda: admit_and_select(
+            repo=repo,
+            items=items,
+            candidates=[item],
+            journal=journal,
+            enforce_cap=True,
+            rework=_NO_REWORK,
+            # This invocation's `--factory`, which the valve cannot read for itself:
+            # a resume resolves its factory as `dispatch --item` does, so it passes
+            # the same top layer of that precedence to the pending claim stamp.
+            explicit_factory=explicit_dispatch_factory(args=args),
+            # The pre-dispatch session-headroom screen's reading, reused while fresh.
+            screened=screened_verdict_of(args=args),
+            # THIS path's route, stated rather than measured: every dispatch it
+            # admits is a resume by construction, and the clause makes the item's
+            # recorded factory a pin for exactly that route. Nothing here consults
+            # recovery routing — that is the OTHER resume leg — so without this the
+            # stamp would name the repository's default for every `resume --item`.
+            resume_ids=frozenset({item.id}),
+        ),
     )
     dispatched = [
         dispatch_one(
-            args=args_with_dispatch_factory_target(args=args, repo=repo, work_item_id=admitted.id),
+            args=args_with_dispatch_factory_target(
+                args=args, repo=repo, work_item_id=admitted.id, resume=True
+            ),
             repo=repo,
             item=admitted,
             journal=journal,
-            janitor=janitor,
-            # The valve's own ACP evaluation. A resume is subject to the
-            # ordinary admission rules, so it is subject to this one too: the
-            # resumed run selects its per-node candidates from the read that
-            # re-admitted the item, never from one of its own.
             verdict=admission.verdict,
+            launch=launch,
         )
         for admitted in admission.admitted
     ]

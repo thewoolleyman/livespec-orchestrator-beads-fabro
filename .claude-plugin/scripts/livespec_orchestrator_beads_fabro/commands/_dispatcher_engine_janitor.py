@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_lock import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_venue import (
     provision_janitor_checkout,
+    remove_janitor_core_checkout,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CORE_PLUGIN_ROOT_ENV_VAR,
@@ -222,6 +223,7 @@ def _check_suite_red(
         # this one stage.
         journal_options=StageJournalOptions(
             retention=plan.janitor_retention,
+            janitor_failure_diagnostics=True,
             removed_env_vars=janitor_removed_env_vars(),
             extra_fields=janitor_check_row_fields(
                 on_the_cluster=on_the_cluster,
@@ -283,6 +285,7 @@ def _post_merge_locked(
             merge_sha=merged.merge_sha,
             detail=red,
         )
+    remove_janitor_core_checkout(plan=plan)
     cleanup = run_stage(
         runner=runner,
         journal=journal,

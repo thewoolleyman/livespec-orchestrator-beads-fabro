@@ -33,12 +33,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro._store_label_mutations import (
     FACTORY_SAFETY_REASONS,
+    clear_work_item_factory_safety,
     update_work_item_factory_safety,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
     valve_success,
@@ -46,13 +48,18 @@ from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
+    "CLEAR_FACTORY_SAFETY_ACTION",
+    "CLEAR_FACTORY_SAFETY_STAGE",
     "FACTORY_SAFETY_ACTION",
     "FACTORY_SAFETY_STAGE",
+    "clear_factory_safety",
     "set_factory_safety",
 ]
 
 FACTORY_SAFETY_ACTION = "set-factory-safety"
 FACTORY_SAFETY_STAGE = "human-valve-set-factory-safety"
+CLEAR_FACTORY_SAFETY_ACTION = "clear-factory-safety"
+CLEAR_FACTORY_SAFETY_STAGE = "human-valve-clear-factory-safety"
 
 # The same journal the Dispatcher and the other journaled drive door append to,
 # so an opt-out and the host-route it causes are readable from one file in one
@@ -86,7 +93,12 @@ def set_factory_safety(
                 f"reason; expected one of {', '.join(FACTORY_SAFETY_REASONS)}."
             ),
         )
-    update_work_item_factory_safety(path=config, item_id=item.id, reason=value)
+    update_work_item_factory_safety(
+        path=config,
+        item_id=item.id,
+        reason=value,
+        recorded_at=utc_now_iso(),
+    )
     record = _journal_opt_out(repo=repo, identity=identity, item=item, reason=value)
     return valve_success(
         aid=aid,
@@ -99,6 +111,58 @@ def set_factory_safety(
             "The admission valve now host-routes it; driver-dispatch is the "
             "applicable door."
         ),
+    ) | {"journal": record}
+
+
+def clear_factory_safety(
+    *,
+    repo: Path,
+    config: StoreConfig,
+    item: WorkItem,
+    aid: str,
+    rationale: str,
+    identity: InvokerIdentity,
+) -> dict[str, Any]:
+    """Journal an explained factory-safety clear before removing its label."""
+    if rationale.strip() == "":
+        return valve_refusal(
+            aid=aid,
+            wid=item.id,
+            err="missing-factory-safety-rationale",
+            msg=f"{CLEAR_FACTORY_SAFETY_ACTION} refused: missing rationale.",
+        )
+    removed_reason = item.factory_safety
+    if removed_reason is None:
+        return valve_refusal(
+            aid=aid,
+            wid=item.id,
+            err="factory-safety-hold-not-set",
+            msg=f"{CLEAR_FACTORY_SAFETY_ACTION} refused: no hold is set for {item.id}.",
+        )
+    append_work_item_comment(
+        path=config,
+        work_item_id=item.id,
+        body=(
+            f"{CLEAR_FACTORY_SAFETY_ACTION}: {rationale}\n\n"
+            f"invoker: {identity.invoker}\n"
+            f"removed factory-safety reason: {removed_reason}"
+        ),
+    )
+    record = _journal_clear(
+        repo=repo,
+        identity=identity,
+        item=item,
+        rationale=rationale,
+        removed_reason=removed_reason,
+    )
+    clear_work_item_factory_safety(path=config, item_id=item.id, reason=removed_reason)
+    return valve_success(
+        aid=aid,
+        wid=item.id,
+        stage=CLEAR_FACTORY_SAFETY_STAGE,
+        status=item.status,
+        assignee=item.assignee,
+        msg=f"Cleared {item.id}: factory_safety {removed_reason}; status unchanged.",
     ) | {"journal": record}
 
 
@@ -117,6 +181,26 @@ def _journal_opt_out(
         "stage": FACTORY_SAFETY_STAGE,
         "work_item_id": item.id,
         "factory_safety": reason,
+    }
+    JournalFile(path=repo / _JOURNAL_RELATIVE_PATH, identity=identity).append(record=record)
+    return record
+
+
+def _journal_clear(
+    *,
+    repo: Path,
+    identity: InvokerIdentity,
+    item: WorkItem,
+    rationale: str,
+    removed_reason: str,
+) -> dict[str, object]:
+    """Append the clear record before the label mutation and return it."""
+    record: dict[str, object] = {
+        "actor": "operator",
+        "stage": CLEAR_FACTORY_SAFETY_STAGE,
+        "work_item_id": item.id,
+        "rationale": rationale,
+        "removed_factory_safety": removed_reason,
     }
     JournalFile(path=repo / _JOURNAL_RELATIVE_PATH, identity=identity).append(record=record)
     return record

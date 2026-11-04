@@ -40,6 +40,7 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -48,6 +49,11 @@ import pytest
 from hypothesis import settings
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
+    FabroHttpPort,
+    FabroHttpResult,
+)
 
 # Hypothesis's per-example WALL-CLOCK deadline, turned off suite-wide.
 #
@@ -80,6 +86,64 @@ settings.load_profile("livespec")
 
 
 @pytest.fixture(autouse=True)
+def _integration_dump_doubles_serve_run_state(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """Adapt the integration suite's old dump-only doubles to the state API."""
+    if request.module is None or request.module.__name__.rsplit(".", 1)[-1] not in {
+        "test_reconcile_runs_ledger_gate_scenarios",
+        "test_run_wall_budget_scenario175",
+    }:
+        return
+
+    class _Api:
+        def __init__(self, *, fallback: FabroHttpPort) -> None:
+            self._fallback = fallback
+
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={
+                    "stages": {
+                        "implement@1": {
+                            "first_event_seq": 2,
+                            "diff": "diff --git a/app.py b/app.py\n+print('kept')\n",
+                        }
+                    }
+                },
+                succeeded=True,
+            )
+
+        def bearer_token(self) -> str | None:
+            return self._fallback.bearer_token()
+
+        def questions(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            return self._fallback.questions(run_id=run_id, timeout_seconds=timeout_seconds)
+
+        def answer_question(
+            self, *, run_id: str, question_id: str, option_key: str, timeout_seconds: float
+        ) -> FabroHttpResult:
+            return self._fallback.answer_question(
+                run_id=run_id,
+                question_id=question_id,
+                option_key=option_key,
+                timeout_seconds=timeout_seconds,
+            )
+
+        def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            return self._fallback.cancel(run_id=run_id, timeout_seconds=timeout_seconds)
+
+    monkeypatch.setattr(
+        FabroPort,
+        "server_api",
+        lambda port: _Api(fallback=FabroHttpPort(target=port.target, transport=port.http)),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
         ClaudeCredentialStatus,
@@ -108,6 +172,149 @@ def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
         "livespec_orchestrator_beads_fabro.commands."
         "_dispatcher_claude_credential_command.probe_claude_credential",
         successful_probe,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_sandbox_plugins_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Keep every graph-node script this suite runs off the host's real sandbox helpers.
+
+    The shipped nodes resolve the Dispatcher-materialized helpers through
+    `LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT`, falling back to `$HOME/.claude/plugins`. Inside
+    a factory sandbox that fallback holds the REAL commit runner, so a test executing the
+    `needs_human` body without naming a root ran the real program: its `cut-settle` pass
+    scans the host process table, and the commit hook that was running this very suite is
+    exactly a git commit with a hook run under it. Measured as a design hazard when the
+    pass was written (work-item bd-ib-ptnxyg), before any case could end a real commit; the
+    pass is also scoped to its own working directory, and this fixture is the second wall.
+
+    An empty root is the whole fixture: a node finds no helper and takes its documented
+    absent-helper arm, which is byte for byte what it does on CI. Tests that need helpers
+    materialize their own root and name it, and their own value wins.
+    """
+    monkeypatch.setenv(
+        "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT",
+        str(tmp_path_factory.mktemp("sandbox-plugins-root")),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_dod_judgement_judge(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Keep the pre-admission Definition-of-Done judgement off every host's judge.
+
+    `run_dod_judgement` defaults to a real `ShellCommandRunner` when no runner
+    is injected, and `resolve_judge_path` resolves the documented override, then
+    `PATH`, then the conventional `~/.local/bin/claude` install. So on a host
+    that carries a `claude` executable — the vps operator host does — every
+    filing this suite performs takes a LIVE model judgement and spends real
+    tokens, while continuous integration, the delegated cluster gate and every
+    factory sandbox carry none and stay green. Measured on vps at master
+    f7ce3eea: `test_factory_size_justification_gate_scenario153.py` filed its
+    fixture item at `pending-approval` rather than `ready`, because the live
+    judge declined its placeholder assertions — so a red `just check` blocked
+    every local commit staging a `.py` there (work-item bd-ib-7xkeko).
+
+    Pointing the OVERRIDE at a path that does not exist is the whole fixture.
+    The runner then fails to exec it and maps that to exit 127, which the
+    judgement reports as `no-eligible-model` — byte for byte what it reports
+    where no judge exists at all, so no case's expected routing changes. The
+    override is also the only layer a test process can occupy without
+    repointing `PATH` or `HOME`, each of which would change answers this defect
+    has nothing to do with.
+
+    Tests that exercise the judge name their own executable through this same
+    override after this fixture runs, which is the precedent the two Scenario
+    174 modules and `test_groom_variant_dod_judgement.py` already set; tests of
+    the resolver itself hand it an explicit `environ` and are untouched.
+    """
+    monkeypatch.setenv(
+        "LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH",
+        str(tmp_path_factory.mktemp("dod-judgement") / "no-such-judge"),
+    )
+
+
+@pytest.fixture(scope="session")
+def _codex_free_shims(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    """Each inherited `PATH` entry holding `codex`, mapped to a shim without it.
+
+    Each shim links every other name in its entry, so tools sharing the
+    directory (`herdr` in `~/.local/bin`) stay resolvable.
+    """
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    hidden = sorted(
+        {entry for entry in entries if entry and os.access(Path(entry) / "codex", os.X_OK)}
+    )
+    shims = {entry: tmp_path_factory.mktemp("path-without-codex") for entry in hidden}
+    # Expressions rather than statements, so the fixture has no branch that only
+    # one kind of host takes and per-file coverage reads the same everywhere.
+    _ = [
+        (shim / program.name).symlink_to(program)
+        for entry, shim in shims.items()
+        for program in Path(entry).iterdir()
+        if program.name != "codex"
+    ]
+    return {entry: str(shim) for entry, shim in shims.items()}
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_host_codex_resolution(
+    monkeypatch: pytest.MonkeyPatch, _codex_free_shims: dict[str, str]
+) -> None:
+    """Hide a host-installed `codex` from the inherited `PATH`, as on CI.
+
+    `resolve_codex_path` resolves the Codex judge on the invoking `PATH` before
+    isolation, so a host judgement still starts when `codex` is a wrapper under
+    the user's home (bd-ib-a3aqie). Tests that build a candidate from the real
+    process environment then expect the bare name `codex`, which is what CI,
+    the delegated cluster gate and every factory sandbox resolve, because none
+    of them installs Codex. On a host that does — this repository's own
+    development hosts, with `~/.local/bin/codex` — the same tests received the
+    absolute path and eleven of them failed, so `just check` refused every local
+    commit that ran the full aggregate. Measured 2026-10-30 at master cd02e38f5.
+
+    Unlike the Claude judge above, the Codex leg has no override variable, so
+    this fixture rewrites the CURRENT `PATH` entry by entry, replacing each
+    codex-holding entry with its shim and keeping every other entry, including
+    any a sibling fixture prepended for this test. Two narrower forms were
+    measured to break other tests: dropping the whole entry hid `herdr`, and
+    restoring a session-captured `PATH` discarded the per-test `gh` stub that
+    hundreds of dispatch tests depend on. Tests of the resolver itself hand it
+    an explicit `environ` carrying their own `PATH` and are untouched.
+    """
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join(_codex_free_shims.get(entry, entry) for entry in entries)
+    )
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_definition_of_done_workflow_shape(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """Keep unrelated dispatch tests focused on their own intentionally small graphs.
+
+    Most established dispatch fixtures predate the Definition-of-Done graph
+    wall and use a one-node workflow solely to reach the seam they exercise.
+    Their graph shape is not their subject, so let them model an already-checked
+    workflow just as the judgement fixture above models an already-judged item.
+    The dedicated wall module is explicitly left unmocked: it is the suite's
+    assertion that malformed target-local and bundled graphs are refused before
+    claim.
+    """
+    if request.node.path.name == "test_dispatcher_definition_of_done_workflow.py":
+        return
+
+    def admitted_fixture_workflow(*, args: object, repo: Path, items: object) -> None:
+        _ = (args, repo, items)
+
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands."
+        "_dispatcher_pre_dispatch_wall.definition_of_done_workflow_refusal",
+        admitted_fixture_workflow,
     )
 
 
@@ -246,6 +453,77 @@ def _hermetic_operator_attribution_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_agent_stage_publication_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the running agent stage's publication guard out of the test process.
+
+    Every factory agent stage runs under `LIVESPEC_AGENT_STAGE=<stage>`, and the
+    projected `gh` wrapper and `push_origin` helper refuse publication when it
+    names anything but a publication stage. The commit hook that verifies an
+    implement turn's Green amend runs this suite INSIDE that stage, so the guard
+    leaked into every case that publishes through those helpers and 35 of them
+    failed with LIVESPEC_AGENT_PUBLICATION_DENIED on a tree that passes on a
+    developer host and in continuous integration, where the variable is absent.
+    Measured 2026-10-28 in a factory sandbox: 35 failed with it ambient, all
+    passed with it removed. The cases that exercise the guard set the variable
+    explicitly in their own child environment.
+    """
+    monkeypatch.delenv("LIVESPEC_AGENT_STAGE", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_plan_unattended_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the overseer's unattended-resume marker out of the test process.
+
+    The overseer daemon sets `LIVESPEC_PLAN_UNATTENDED=1` on the plan session it
+    restarts, and every commit that session makes runs this suite under that
+    environment. Ambient, it makes `record_scope_event` refuse a continuation
+    ruling as "an unattended plan session cannot record a continuation ruling",
+    so cases that record one fail on a tree that passes on a developer host and
+    in continuous integration, where the marker is absent. Measured 2026-11-01:
+    three Scenario 147 continuation-ruling cases failed with it ambient. The
+    cases that exercise the marker set it explicitly through `monkeypatch` or in
+    their own child environment.
+    """
+    monkeypatch.delenv("LIVESPEC_PLAN_UNATTENDED", raising=False)
+
+
+_SERVING_APP_ENV = (
+    "GITHUB_APP_ID",
+    "GITHUB_PRIVATE_KEY",
+    "GITHUB_APP_INSTALLATION_ID",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_serving_app_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the SERVING GitHub App's own identity out of the test process.
+
+    This is the same ambient-host-dependency class as the two fixtures above and
+    it has the same asymmetry, which is what makes it expensive. The App
+    environment is what the dispatch credential wrapper injects, so continuous
+    integration carries NONE of it while a session that DISPATCHES carries all
+    three — and `just check` runs inside that session on every pre-push and
+    inside the post-merge janitor.
+
+    What reads it is the app-reach preflight, whose evaluated arm issues two
+    `gh` calls against the real forge. With the identity ambient, every test
+    driving the pre-dispatch wall reached the network and journaled a reading of
+    it; with it absent, every one of them takes the preflight's UNEVALUATED arm,
+    which reads nothing and records nothing. Measured in this factory sandbox,
+    whose PID 1 carries `GITHUB_APP_ID`: five Scenario 174 cases failed inside
+    the wall on a journal append the ambient identity made reachable, on a tree
+    whose preflight is byte-identical to the one continuous integration passes.
+
+    Scrubbing the three names is the whole fixture. A case that exercises the
+    evaluated arm sets the identity it needs explicitly after this fixture runs
+    — the precedent `test_adopter_dispatch_app_reach_scenario32.py` follows —
+    and `monkeypatch` restores every one of them at teardown either way.
+    """
+    for name in _SERVING_APP_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     """Scrub the wrapper-injected per-profile credential slots for every test.
 
@@ -283,6 +561,29 @@ def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for name in [name for name in os.environ if name.startswith(_FACTORY_CREDENTIAL_SLOT_PREFIX)]:
         monkeypatch.delenv(name, raising=False)
+    # The unnumbered token too: the availability confirmation turn projects whatever
+    # `select_factory_credential` names into the factory's environment, so an
+    # AMBIENT one (this suite runs under the credential wrapper in the post-merge
+    # janitor) would change which launch a probe test reaches. A test that needs a
+    # token sets it itself.
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_admission_slot_chooser() -> Iterator[None]:
+    """Clear the process-wide admission slot chooser around every test.
+
+    `session_headroom_policy` registers the slot its pass chose so every credential
+    consumer follows it; left installed, one test's admission choice would decide
+    which slot the next test's `select_factory_credential` returns.
+    """
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+        register_admission_slot_chooser,
+    )
+
+    register_admission_slot_chooser(chooser=None)
+    yield
+    register_admission_slot_chooser(chooser=None)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -416,8 +717,17 @@ def _hermetic_session_headroom_reading(monkeypatch: pytest.MonkeyPatch) -> None:
     patching the builder in its own module would also wrap it for those -- one
     of which binds the builder at import time and one of which asserts its
     signature.
+
+    THE CODEX READ IS STUBBED THE SAME WAY, and for the same reason: a Codex
+    candidate in a fixture chain would otherwise read the host `auth.json` and
+    reach the provider, or grade unobservable and be skipped. Untouched too, so
+    no fixture changes answer.
     """
     from livespec_orchestrator_beads_fabro.commands import _dispatcher_admission
+    from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom import (
+        CodexHeadroomReading,
+        codex_headroom_reading,
+    )
     from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
         SessionHeadroomPolicy,
         SessionHeadroomReading,
@@ -435,8 +745,24 @@ def _hermetic_session_headroom_reading(monkeypatch: pytest.MonkeyPatch) -> None:
             utilization=0,
         )
 
+    def untouched_codex_window(*, auth_json: str | None, observed_at: str) -> CodexHeadroomReading:
+        _ = auth_json
+        return codex_headroom_reading(
+            credential_identity="hermetic-codex-session-headroom",
+            observed_at=observed_at,
+            response={
+                "rate_limit": {
+                    "allowed": True,
+                    "limit_reached": False,
+                    "primary_window": {"used_percent": 0, "limit_window_seconds": 18000},
+                    "secondary_window": None,
+                }
+            },
+        )
+
     def hermetic_policy(**kwargs: Any) -> SessionHeadroomPolicy:
         _ = kwargs.setdefault("read", untouched_window)
+        _ = kwargs.setdefault("codex_read", untouched_codex_window)
         return session_headroom_policy(**kwargs)
 
     monkeypatch.setattr(_dispatcher_admission, "session_headroom_policy", hermetic_policy)
@@ -744,13 +1070,57 @@ def end_run_and_await_launcher_return(*, run_done: threading.Event, work_item_id
     caller back the early wait it is replacing, and report it as the
     launcher-side one.
     """
-    run_done.set()
     name = f"{_LAUNCHER_RUN_THREAD_PREFIX}{work_item_id}"
     launcher_threads = [thread for thread in threading.enumerate() if thread.name == name]
     assert launcher_threads, f"no launcher run thread named {name} is alive"
+    run_done.set()
     for thread in launcher_threads:
         thread.join(timeout=_LAUNCHER_RETURN_TIMEOUT_SECONDS)
         assert not thread.is_alive(), f"{name} did not return within its wait"
+
+
+# ---------------------------------------------------------------------------
+# The factory server's cancel route, for launcher fixtures that stall-cancel
+# ---------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class ServerCancel:
+    """What a fixture's factory server answers to `POST /runs/{id}/cancel`.
+
+    A launcher fixture has no `server_url`, so the real cancel route reports
+    `succeeded=False` and the watchdog correctly declines to record a cancel
+    the server never performed. A case that needs the cancel to LAND uses this
+    fixture's default; a case about the refusal sets `succeeds` False and may
+    hang `on_refusal` on the refused call.
+    """
+
+    succeeds: bool = True
+    calls: int = 0
+    on_success: Callable[[], None] = lambda: None
+    on_refusal: Callable[[], None] = lambda: None
+
+
+@pytest.fixture
+def server_cancel(monkeypatch: pytest.MonkeyPatch) -> ServerCancel:
+    state = ServerCancel()
+
+    class _Api:
+        def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            state.calls += 1
+            if state.succeeds:
+                state.on_success()
+                return FabroHttpResult(
+                    status=200, body="", error=None, payload=None, succeeded=True
+                )
+            state.on_refusal()
+            return FabroHttpResult(
+                status=503, body="", error="HTTPError: 503", payload=None, succeeded=False
+            )
+
+    monkeypatch.setattr(FabroPort, "server_api", lambda _self: _Api())
+    return state
 
 
 # ---------------------------------------------------------------------------

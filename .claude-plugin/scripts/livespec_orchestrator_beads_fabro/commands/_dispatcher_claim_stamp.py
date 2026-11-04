@@ -105,23 +105,46 @@ def stamp_pending_claim(
     work_item_id: str,
     dispatch_id: str,
     journal: JournalWriter,
+    resume: bool = False,
+    explicit_factory: str | None = None,
 ) -> None:
     """Replace this item's claim stamp with one naming THIS dispatch and no run.
 
-    The factory is resolved under the dispatch precedence MINUS the explicit
-    `--factory` flag, which admission does not carry: the item's own recorded
-    pin, else `LIVESPEC_FABRO_FACTORY`, else the configured default. A targeted
-    dispatch naming a different factory on the command line therefore stamps
-    the pin's factory here and the run stamp corrects it seconds later — which
-    cannot change any grading, because every DECLARED factory grades a run-less
-    stamp `attribution-pending` and holds it. What the field must not be is
-    ABSENT: a stamp naming no factory grades `claim-unattributable`, whose
-    remedy is "this factory is no longer declared" rather than the move valve
-    this state actually needs.
+    The factory is resolved under the WHOLE dispatch precedence, so the name
+    this stamp carries is the name the dispatch is routed to. The ORDER of its
+    layers is the resolution's own and is not restated here — a second order
+    would stamp the row with a factory the run never runs on, which the
+    reconcile pass then holds the claim against while reporting the stamp
+    faithfully.
+
+    `resume` is this item's assigned ROUTE, which the clause makes an input of
+    the stamp rather than of the dispatch alone: "The admission claim stamp MUST
+    apply the same order, using the route recovery routing assigned before the
+    admission valve, so a fresh dispatch is stamped with the factory it will
+    reach and a resume with the factory selected by that same order." It is what
+    decides whether the item's recorded factory is a layer at all, and it
+    defaults to the FRESH answer, which is what every dispatch is unless routing
+    says otherwise.
+
+    `explicit_factory` is the TOP layer, the `--factory` flag's name, and it
+    arrives as an argument because admission holds no `argparse.Namespace` to
+    read it out of. It is the one layer the environment variable cannot stand
+    in for: an operator who types the flag has routed THIS dispatch and nothing
+    in the item's own history says so. `None` means this invocation named no
+    factory, which is the ordinary case and is not a default standing in for an
+    unread flag — every dispatch path reads the flag and passes what it found.
+
+    What the field must not be is ABSENT: a stamp naming no factory grades
+    `claim-unattributable`, whose remedy is "this factory is no longer
+    declared" rather than the move valve this state actually needs.
     """
     detail = _attempted(
         action=lambda: _write_pending_stamp(
-            repo=repo, work_item_id=work_item_id, dispatch_id=dispatch_id
+            repo=repo,
+            work_item_id=work_item_id,
+            dispatch_id=dispatch_id,
+            resume=resume,
+            explicit_factory=explicit_factory,
         )
     )
     journal.append(
@@ -170,9 +193,18 @@ def stamp_run_claim(
     )
 
 
-def _write_pending_stamp(*, repo: Path, work_item_id: str, dispatch_id: str) -> None:
+def _write_pending_stamp(
+    *,
+    repo: Path,
+    work_item_id: str,
+    dispatch_id: str,
+    resume: bool,
+    explicit_factory: str | None,
+) -> None:
     """The admission-moment write. Reads no prior stamp: it replaces one wholesale."""
-    target = unrecorded_dispatch_factory_target(repo=repo, work_item_id=work_item_id)
+    target = unrecorded_dispatch_factory_target(
+        repo=repo, work_item_id=work_item_id, resume=resume, explicit=explicit_factory
+    )
     record_claim_stamp(
         path=store_config(repo=repo),
         work_item_id=work_item_id,

@@ -48,8 +48,9 @@ __all__: list[str] = [
 ]
 
 _HUMAN = (
-    "Effective answer disposition human: only a human operator may answer this "
-    "item, so an automated disposition's press is refused."
+    "Effective answer disposition human: only a human operator, or a delegate "
+    "pressing under a committed maintainer delegation, may answer this item, so "
+    "an automated disposition's press is refused."
 )
 _CONSENSUS = (
     "Effective answer disposition consensus: the ratified consensus tier may "

@@ -21,19 +21,37 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_fabro_factory_auth_login,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+    LivenessState,
     liveness_sample,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
+    release_pass_snapshot,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
+    PrelaunchCheckpoint,
+    ignore_prelaunch_checkpoint,
+    prelaunch_phase,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import stamped_attribution
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_preserve import (
+    run_wall_ledger,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_watch import (
+    RunWallBudgetWatch,
+    RunWallVerdict,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
     FABRO_RM_TIMEOUT_SECONDS,
     cancel_stalled_run,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watch_poll import (
+    WatchPollBinding,
+    observe_watch_poll,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     LivenessSample,
@@ -41,16 +59,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     decide_stall,
     quiet_window_seconds,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation import (
-    observed_run,
-)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
     fabro_port_for_plan,
 )
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
-from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsConnectionError
-from livespec_orchestrator_beads_fabro.store import read_work_items
 
 __all__: list[str] = ["WatchedFabroLauncher"]
 
@@ -64,12 +77,13 @@ __all__: list[str] = ["WatchedFabroLauncher"]
 # own run thread against the same number — the thread is waiting for the
 # `fabro run` that `rm` is what ends, so two different budgets would let the
 # join outlive or undercut the cancel it is waiting on.
-_WATCHDOG_POLL_INTERVAL_SECONDS = 30.0
+_WATCHDOG_POLL_INTERVAL_SECONDS = 60.0
 
 
 @dataclass(frozen=True, kw_only=True)
 class _WatchResult:
     stalled_run_id: str | None = None
+    budget_exceeded_run_id: str | None = None
     abandoned_run_id: str | None = None
     abandoned_item_status: str | None = None
 
@@ -80,6 +94,13 @@ class WatchedFabroLauncher:
 
     sleep: Callable[[float], None] = time.sleep
     clock: Callable[[], float] = time.monotonic
+    # The WALL clock the whole-run wall budget is measured on, separate from
+    # `clock` above because the two answer different questions. The liveness
+    # samples compare spans WITHIN one process, which is what `monotonic` is
+    # for; the budget's start instant can come from the FACTORY'S OWN RECORD of
+    # when the run began running, which is a wall-clock instant, so the two
+    # cannot be measured against one reading.
+    wall_clock: Callable[[], float] = time.time
     heartbeat_path: Path | None = None
     # The dispatch id this launch was minted under — the id
     # `cc_otel_overlay_env` projects into the sandbox and therefore the id
@@ -95,6 +116,9 @@ class WatchedFabroLauncher:
     on_worker_running: Callable[[], None] | None = None
     # A run-only source venue; watchdog and auth commands retain the ordinary runner.
     run_runner: CommandRunner | None = None
+    # Receives the name of each launch-side phase as it ends, so the drive's
+    # pre-launch CPU profile covers the phases that run inside the launch too.
+    prelaunch_checkpoint: PrelaunchCheckpoint = ignore_prelaunch_checkpoint
 
     def launch(
         self,
@@ -103,8 +127,12 @@ class WatchedFabroLauncher:
         runner: CommandRunner,
         journal: JournalWriter,
     ) -> FabroRunResult:
-        run_fabro_factory_auth_login(plan=plan, runner=runner)
-        port = fabro_port_for_plan(plan=plan, runner=runner)
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="launch-factory-auth"):
+            run_fabro_factory_auth_login(plan=plan, runner=runner)
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="fabro-port"):
+            port = fabro_port_for_plan(plan=plan, runner=runner)
+        with prelaunch_phase(checkpoint=self.prelaunch_checkpoint, name="release-pass-snapshot"):
+            release_pass_snapshot()
         holder: dict[str, CommandResult] = {}
         run_id_holder: dict[str, str | None] = {}
         # Set once this dispatch's `fabro run` call has RETURNED, which is
@@ -173,6 +201,17 @@ class WatchedFabroLauncher:
                 abandoned_run_id=watched.abandoned_run_id,
                 abandoned_item_status=watched.abandoned_item_status,
             )
+        if watched.budget_exceeded_run_id is not None:
+            thread.join(timeout=FABRO_RM_TIMEOUT_SECONDS)
+            return FabroRunResult(
+                command=holder.get(
+                    "result",
+                    CommandResult(
+                        exit_code=124, stdout="", stderr="cancelled on the whole-run wall budget"
+                    ),
+                ),
+                budget_exceeded_run_id=watched.budget_exceeded_run_id,
+            )
         if watched.stalled_run_id is not None:
             thread.join(timeout=FABRO_RM_TIMEOUT_SECONDS)
             return FabroRunResult(
@@ -203,6 +242,7 @@ class WatchedFabroLauncher:
         # the same number.
         stall_seconds = plan.stall_window.seconds
         samples: list[LivenessSample] = []
+        liveness_state = LivenessState()
         known_run_id: str | None = None
         # The run this watch loop has BOUND, and so the one every poll after
         # the first match reads BY ID rather than hunting for in a listing.
@@ -212,6 +252,10 @@ class WatchedFabroLauncher:
         # cancel.
         bound_run_id: str | None = None
         worker_running_notified = False
+        # This run's budget clock and the ledger its export writes through. It
+        # holds the clock rather than this loop, so the fix-it-once rule has
+        # exactly one home; see `RunWallBudgetWatch`.
+        budget = RunWallBudgetWatch(ledger=run_wall_ledger(repo=plan.repo))
         stamp = RunAttribution()
         # The run's own RETURN ends the watch. The thread's death is consulted
         # beside it only because `port.run` can RAISE: no signal arrives on
@@ -227,35 +271,29 @@ class WatchedFabroLauncher:
                 # returned, and whose liveness stays flat for the full stall
                 # window, is still cancelled as stalled-no-progress below.
                 return _WatchResult()
-            run = observed_run(
-                work_item_id=plan.work_item_id,
-                port=port,
+            poll = observe_watch_poll(
+                plan=plan,
+                runner=runner,
                 journal=journal,
-                attribution=stamp,
-                bound_run_id=bound_run_id,
+                port=port,
+                binding=WatchPollBinding(
+                    attribution=stamp,
+                    bound_run_id=bound_run_id,
+                    dispatch_id=self.dispatch_id,
+                ),
             )
-            stamp = stamped_attribution(plan=plan, journal=journal, run=run, attribution=stamp)
-            run_id = run.run_id if run is not None and run.status_kind == "running" else None
+            stamp = poll.attribution
+            run, run_id = poll.run, poll.running_run_id
             known_run_id = run_id if run_id is not None else known_run_id
+            bound_run_id = run.run_id if run is not None else bound_run_id
+            if poll.abandoned_item_status is not None and run is not None:
+                return _WatchResult(
+                    abandoned_run_id=run.run_id,
+                    abandoned_item_status=poll.abandoned_item_status,
+                )
             if run_id is not None and not worker_running_notified:
-                if self.on_worker_running is not None:
-                    self.on_worker_running()
+                self._notify_worker_running()
                 worker_running_notified = True
-            if run is not None:
-                bound_run_id = run.run_id
-                item_status = _work_item_status(repo=plan.repo, work_item_id=plan.work_item_id)
-                if item_status is not None and item_status != "active":
-                    self._reap_stale_run(
-                        plan=plan,
-                        runner=runner,
-                        journal=journal,
-                        run_id=run.run_id,
-                        item_status=item_status,
-                    )
-                    return _WatchResult(
-                        abandoned_run_id=run.run_id,
-                        abandoned_item_status=item_status,
-                    )
             samples.append(
                 liveness_sample(
                     plan=plan,
@@ -264,57 +302,54 @@ class WatchedFabroLauncher:
                     heartbeat_path=self.heartbeat_path,
                     dispatch_id=self.dispatch_id,
                     observed_at=self.clock(),
+                    state=liveness_state,
                 )
             )
             if known_run_id is None or run is None or run.status_kind != "running":
                 continue
+            # BEFORE the stall decision, which is the clause's own precedence:
+            # a quiet run past its budget satisfies both rules, and only the
+            # budget disposition rests it for a person.
+            verdict = budget.verdict(
+                dispatch_id=self.dispatch_id,
+                plan=plan,
+                port=port,
+                runner=runner,
+                journal=journal,
+                run_id=known_run_id,
+                recorded_epoch=poll.recorded_running_epoch,
+                now_epoch=self.wall_clock(),
+            )
+            if verdict == RunWallVerdict.CANCELLED:
+                return _WatchResult(budget_exceeded_run_id=known_run_id)
+            if verdict == RunWallVerdict.HELD:
+                # A HELD verdict is NOT a fall-through: the clause requires that
+                # a run whose budget export is pending its read-back "is not
+                # cancelled as stalled-no-progress" either, and a quiet run past
+                # its budget satisfies the stall rule too.
+                continue
             window = tuple(samples)
-            if decide_stall(samples=window, stall_seconds=stall_seconds) == StallVerdict.STALLED:
-                cancel_stalled_run(
-                    dispatch_id=self.dispatch_id,
-                    plan=plan,
-                    port=port,
-                    journal=journal,
-                    run_id=known_run_id,
-                    quiet_seconds=quiet_window_seconds(samples=window),
-                )
+            # A cancel the server refused falls through: the run may still be
+            # live, so the watch keeps polling and asks again.
+            if decide_stall(
+                samples=window, stall_seconds=stall_seconds
+            ) == StallVerdict.STALLED and cancel_stalled_run(
+                dispatch_id=self.dispatch_id,
+                plan=plan,
+                port=port,
+                journal=journal,
+                run_id=known_run_id,
+                quiet_seconds=quiet_window_seconds(samples=window),
+            ):
                 return _WatchResult(stalled_run_id=known_run_id)
         return _WatchResult()
 
-    def _reap_stale_run(
-        self,
-        *,
-        plan: DispatchPlan,
-        runner: CommandRunner,
-        journal: JournalWriter,
-        run_id: str,
-        item_status: str,
-    ) -> None:
-        rm = fabro_port_for_plan(plan=plan, runner=runner).rm(
-            run_id=run_id,
-            timeout_seconds=FABRO_RM_TIMEOUT_SECONDS,
-        )
-        journal.append(
-            record={
-                "work_item_id": plan.work_item_id,
-                "stage": "stale-run-reap",
-                "run_id": run_id,
-                "item_status": item_status,
-                "rm_exit_code": rm.command.exit_code,
-            }
-        )
+    def _notify_worker_running(self) -> None:
+        """Release the native-secret launch transaction, if one is wired.
 
-
-def _work_item_status(*, repo: Path, work_item_id: str) -> str | None:
-    config = store_config(repo=repo) if (repo / ".livespec.jsonc").is_file() else None
-    if config is None:
-        return None
-    try:
-        # The ledger read runs during iteration, not generator creation.
-        items = list(read_work_items(path=config))
-    except (BeadsCommandError, BeadsConnectionError):
-        return None
-    for item in items:
-        if item.id == work_item_id:
-            return item.status
-    return None
+        A method rather than a nested branch in the loop for the reason the
+        stale-item reap moved out: the loop's job is to decide, and a caller
+        with no transaction to release is not a decision.
+        """
+        if self.on_worker_running is not None:
+            self.on_worker_running()

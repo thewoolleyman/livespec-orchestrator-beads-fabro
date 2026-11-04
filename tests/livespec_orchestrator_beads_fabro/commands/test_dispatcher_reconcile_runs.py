@@ -101,6 +101,7 @@ class _Runner:
 
     ps_by_server: dict[str, str] = field(default_factory=dict)
     inspect_by_run: dict[str, str] = field(default_factory=dict)
+    dump_exit_code: int = 0
     failing_servers: frozenset[str] = frozenset()
     calls: list[list[str]] = field(default_factory=list)
     docker_calls: list[list[str]] = field(default_factory=list)
@@ -294,7 +295,6 @@ def test_every_cli_call_for_one_orphan_runs_that_factorys_declared_client(
     # reaching the candidate's server.
     assert [(call[0], call[1]) for call in runner.calls] == [
         (_CANDIDATE_BIN, "ps"),
-        (_CANDIDATE_BIN, "dump"),
     ]
 
 
@@ -614,6 +614,37 @@ def test_an_unverified_export_leaves_the_run_untouched(
     assert [record["stage"] for record in journal.written] == ["orphan-run-reconcile-error"]
 
 
+def test_a_failed_dump_leaves_an_orphan_run_untouched(tmp_path: Path) -> None:
+    """A failed run export cannot authorize the orphan termination route."""
+    runner = _Runner(
+        ps_by_server={_HP.server or "": _ps(run_id="01ORPHAN", kind="blocked")},
+        dump_exit_code=124,
+    )
+    transport = _Transport()
+    journal = _Journal()
+    ledger = _Ledger()
+
+    summary = reconcile.reconcile_runs(
+        inputs=_inputs(
+            tmp_path=tmp_path,
+            runner=runner,
+            transport=transport,
+            journal=journal,
+            ledger=ledger,
+            items=[_item(id="bd-ib-orphan", status="closed")],
+        ),
+        factories=[_HP],
+    )
+
+    assert summary.reconciled == ()
+    assert [error.reason for error in summary.errors] == ["export-not-verified"]
+    assert "selective stage-diff read failed" in summary.errors[0].detail
+    assert transport.calls == []
+    assert ledger.verbs == []
+    assert [call[1] for call in runner.calls] == ["ps"]
+    assert [record["stage"] for record in journal.written] == ["orphan-run-reconcile-error"]
+
+
 def test_the_ledger_attribution_reaches_the_join_and_spares_a_stamped_run(tmp_path: Path) -> None:
     """`ReconcileInputs.attribution` is threaded to the join, not merely stored.
 
@@ -851,7 +882,7 @@ def test_a_zero_grace_inspects_nothing_and_holds_nothing(tmp_path: Path) -> None
     # With the arm off, the moot-question reading stands and terminates at once.
     assert [run.orphan_reason for run in summary.reconciled] == ["item-not-active"]
     # No `inspect` was spent: a disabled arm measures nothing.
-    assert [call[1] for call in runner.calls] == ["ps", "dump"]
+    assert [call[1] for call in runner.calls] == ["ps"]
 
 
 def _inputs(

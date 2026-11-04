@@ -120,6 +120,18 @@ the update, read this project's entry in `~/.claude/plugins/installed_plugins.js
 and confirm its build id equals the release you expect. Arm the reload only after
 that; then confirm the rebind by lease, as below.
 
+A second failure shape: the registered id matches the release, but the cache
+copy is TRUNCATED. Measured 2026-10-16 on v0.201.8 (build `be31d5181296`):
+`skills/` held 2 of 14 directories and there was no `cache-manifest.json`,
+while `scripts/` was complete; the likely cause was many sessions reloading at
+once around 07:54Z. After a reload onto such a copy the session's skill list
+shrinks (38 to 26 in that instance). So before reloading, also compare the
+cache's `skills/` with `git ls-tree <tag> .claude-plugin/skills` and check
+that `cache-manifest.json` is present. During a fleet-wide rollout, rebind one
+session at a time, at least 30 seconds apart, after the release owner has
+verified the build (freeze-driver ruling R39). Migrated from an auto-memory
+note on 2026-10-18.
+
 ## The trap: a stale lease file is not evidence of current binding
 
 **The old lease file under the previous build is NOT removed on rebind.**

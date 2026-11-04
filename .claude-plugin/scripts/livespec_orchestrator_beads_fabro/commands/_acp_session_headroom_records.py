@@ -44,10 +44,15 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import 
     NodePreflight,
     SkippedCandidate,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_codex_headroom_records import (
+    codex_headroom_skip_fields,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    FIVE_HOUR_WINDOW_ABSENT,
     SessionHeadroomProjection,
     SessionHeadroomReading,
+    SevenDayReading,
 )
 
 __all__: list[str] = [
@@ -58,6 +63,7 @@ __all__: list[str] = [
     "session_headroom_reading_fields",
     "session_headroom_selection_fields",
     "session_headroom_skip_fields",
+    "seven_day_reading_fields",
 ]
 
 # The journal stage one admission evaluation's headroom readings are recorded
@@ -139,6 +145,8 @@ def session_headroom_skip_fields(*, skip: SkippedCandidate) -> dict[str, object]
     because a projection that read the repository would report the configuration
     as it stands at WRITE time against a skip taken at READ time.
     """
+    if skip.codex_headroom is not None:
+        return codex_headroom_skip_fields(skip=skip, reading=skip.codex_headroom)
     return {
         "availability_key": skip.availability_key,
         "candidate_key": skip.candidate_key,
@@ -154,7 +162,7 @@ def session_headroom_skip_fields(*, skip: SkippedCandidate) -> dict[str, object]
 
 
 def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[str, object]:
-    """One reading's six journaled facts, with nulls written rather than omitted.
+    """One reading's journaled facts, with nulls written rather than omitted.
 
     THE LAST KEY IS A RATE AND NOT A LEVEL, and that is why it is here at all.
     The five-hour REMAINING figure the floor decides on cannot see how fast the
@@ -178,8 +186,13 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
     it from changing the projection skip; nothing reads it, and a key spelled
     `resets_at` would sit beside a measured drain rate with nothing to tell a
     reader which of the two anybody checked.
+
+    THE LAST KEY IS THE OTHER WINDOW THE SAME RESPONSE REPORTED, and the clause
+    asks for it "beside the five-hour figures" -- so it is one block in this
+    entry rather than a record of its own, which is what lets a reader see both
+    windows of one credential at one instant without a join.
     """
-    return {
+    fields: dict[str, object] = {
         "credential_identity": reading.credential_identity,
         "utilization_percent": reading.utilization_percent,
         "remaining_percent": reading.remaining_percent,
@@ -188,6 +201,44 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         "five_hour_drain_percent_per_hour": reading.five_hour_drain_percent_per_hour,
         "projection": session_headroom_projection_fields(projection=reading.projection),
         "unverified_provider_reset_claim": reading.provider_reset_claim,
+        "seven_day": seven_day_reading_fields(reading=reading.seven_day),
+    }
+    if reading.five_hour_window_absent:
+        # Named only where it applies, so every record of a reported or failed
+        # window keeps its existing key set (contracts v263: the absent window is
+        # journaled as `five-hour-window-absent`, never as unobservable or a figure).
+        fields["five_hour_window"] = FIVE_HOUR_WINDOW_ABSENT
+    if reading.slot is not None:
+        fields["slot"] = {
+            "name": reading.slot.slot,
+            "skip_kind": reading.slot.skip_kind,
+            "chosen": reading.slot.chosen,
+            "not_chosen_reason": reading.slot.not_chosen_reason,
+        }
+    return fields
+
+
+def seven_day_reading_fields(*, reading: SevenDayReading) -> dict[str, object]:
+    """The weekly window's three journaled facts, or its explicit absence.
+
+    NESTED RATHER THAN FLATTENED, and never `None`. A reading always carries a
+    weekly result -- the figures, or the explicit unobservable one -- so the
+    block is always written, which is what keeps "the provider reported no
+    weekly window" apart from "this record was never asked". That second state
+    is what a record from a build predating this clause looks like, and it is
+    the one an absent key would be indistinguishable from.
+
+    THE FIGURE AND THE STATUS ARE BOTH WRITTEN even where one of them decides
+    nothing. The status is the only field the skip reads, so the utilization is
+    carried for the reader rather than for the filter: an operator asking why
+    an account was refused its week wants the figure the provider reported
+    beside the refusal, and a record naming only the refusal cannot be checked
+    against the account at all.
+    """
+    return {
+        "utilization_percent": reading.utilization_percent,
+        "status": reading.status,
+        "unobservable": reading.unobservable,
     }
 
 

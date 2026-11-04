@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
     REDACTION_MARKER,
     attr,
     is_allowed_attr,
+    measured_attr,
     scrub,
 )
 
@@ -206,3 +207,19 @@ def test_factory_sccache_and_registry_cache_attrs_are_allowlisted() -> None:
     # Still an allowlist, never a `build.cache.sccache.*` prefix match.
     assert "build.cache.sccache.unknown" not in ATTRIBUTE_ALLOWLIST
     assert is_allowed_attr(key="build.cache.sccache.unknown") is False
+
+
+def test_measured_attr_keeps_a_float_a_number_and_a_sequence_an_array() -> None:
+    assert attr(key="k", value=1.5) == {"key": "k", "value": {"stringValue": "1.5"}}
+    assert measured_attr(key="k", value=1.5) == {"key": "k", "value": {"doubleValue": 1.5}}
+    assert measured_attr(key="k", value=float("inf")) == {
+        "key": "k",
+        "value": {"stringValue": "inf"},
+    }
+    assert measured_attr(key="k", value=7) == {"key": "k", "value": {"intValue": "7"}}
+    assert measured_attr(key="k", value=["a", "https://u:s@h/x"]) == {
+        "key": "k",
+        "value": {
+            "arrayValue": {"values": [{"stringValue": "a"}, {"stringValue": REDACTION_MARKER}]}
+        },
+    }

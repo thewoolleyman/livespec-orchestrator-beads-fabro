@@ -147,7 +147,7 @@ def guarded_adapter_commands(*, run_inputs: Sequence[str]) -> Mapping[str, str]:
 
 
 def render_acp_commands(
-    *, graph_text: str, adapters: Mapping[str, str]
+    *, graph_text: str, adapters: Mapping[str, str], stages: Mapping[str, str] | None = None
 ) -> RenderedAcpCommands | str:
     """Rewrite every ACP node's `acp.command` to its resolved literal command.
 
@@ -163,7 +163,12 @@ def render_acp_commands(
         name = match.group("name")
         body = match.group("body")
         if name != _GRAPH_BLOCK_NAME:
-            rendered = _rendered_node(node=name, body=body, adapters=adapters)
+            rendered = _rendered_node(
+                node=name,
+                body=body,
+                adapters=adapters,
+                stage=(stages or {}).get(name),
+            )
             if isinstance(rendered, str):
                 return rendered
             if rendered is not None:
@@ -177,7 +182,7 @@ def render_acp_commands(
 
 
 def _rendered_node(
-    *, node: str, body: str, adapters: Mapping[str, str]
+    *, node: str, body: str, adapters: Mapping[str, str], stage: str | None
 ) -> _NodeRender | str | None:
     """This node's rewritten body, a refusal, or None when it is not an ACP node."""
     declared = _ACP_COMMAND_RE.search(body)
@@ -192,6 +197,8 @@ def _rendered_node(
     command = _resolved_command(node=node, declared=declared.group("value"), adapters=adapters)
     if isinstance(command, str):
         return command
+    if stage is not None:
+        command = _agent_stage_command(command=command, stage=stage)
     rewritten = f'{body[: declared.start()]}acp.command="{command.written}"{body[declared.end() :]}'
     if _OPENER_RE.search(rewritten) is not None:
         return (
@@ -200,6 +207,17 @@ def _rendered_node(
             f"reach the engine un-expanded"
         )
     return _NodeRender(body=rewritten, command=command.value)
+
+
+def _agent_stage_command(*, command: _Command, stage: str) -> _Command:
+    """Prefix a graph-resolved agent command with its workflow-owned stage.
+
+    The graph renderer, rather than a caller-supplied adapter string, knows which
+    node it is materializing. The wrapper therefore receives a stage selected by
+    the workflow node and cannot receive an agent's replacement value.
+    """
+    value = f"LIVESPEC_AGENT_STAGE={stage} {command.value}"
+    return _Command(value=value, written=_dot_escaped(value=value))
 
 
 @dataclass(frozen=True, kw_only=True)

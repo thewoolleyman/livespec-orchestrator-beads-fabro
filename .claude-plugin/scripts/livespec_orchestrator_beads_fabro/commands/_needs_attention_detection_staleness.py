@@ -1,13 +1,21 @@
 """Detection-staleness attention lanes derived from completed coverage points.
 
-Two facts, both COMPUTED from the completed coverage records on the anchor and
-never from a remembered "last run" timestamp:
+Three facts, the first two COMPUTED from the completed coverage records on the
+anchor and never from a remembered "last run" timestamp:
 
 - **Gap-capture staleness**, when the newest ratified spec revision is newer
   than the last completed gap-capture coverage point.
 - **Drift staleness**, when default-branch merges since the last completed
-  drift coverage point stand at or past the effective
-  `dispatcher.drift_capture_merge_threshold`.
+  drift coverage point — the merges after the recorded FRONTIER — stand at or
+  past the effective `dispatcher.drift_capture_merge_threshold`. It exists so
+  that an unrun or FAILING drift pass is visible: the reconcile pass is what
+  runs the drift pass over those merges, and this fact runs nothing.
+- **Held drift findings**, from the anchor's held-finding records, composed by
+  `_needs_attention_held_drift_findings`. It is composed HERE rather than in
+  `needs_attention` because all three facts are readings of the one committed
+  anchor, which this function already resolves: a third resolution of the same
+  key one venue over is how two surfaces come to disagree about which row they
+  are reading.
 
 ⛔ NEITHER FACT RUNS A DETECTOR, AND THAT IS A CONTRACT, NOT AN OPTIMISATION.
 Both `capture-impl-gaps` and `capture-spec-drift` are consent-gated attended
@@ -29,6 +37,16 @@ repository's rebase-merge discipline, where a landed pull request appears as
 its rebased series rather than as one merge commit: a reader who assumed
 "merges" meant merge commits would otherwise read a correct number as the
 wrong quantity.
+
+WHICH REF AND WHICH RANGE ARE NOT THIS MODULE'S TO DECIDE. Both now come from
+`_drift_run_merges`, which the drift run of the reconcile pass reads the same
+two answers out of. The contract requires this fact to name "the merges after
+the frontier" and that run to enumerate "every default-branch merge after the
+recorded frontier": two private copies of the ref resolution or the range
+expression would let the fact report a population the run never acted on, and
+both numbers would look perfectly healthy. Only the READINGS differ — a count
+here, a list there — because this lane renders one integer inside an
+interactive inbox and has no use for the listing.
 
 Both lanes fail SOFT on an unreadable input — an unresolvable default branch,
 a git invocation that does not answer — rather than guessing a count. An
@@ -58,8 +76,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD,
     resolve_drift_capture_merge_threshold,
 )
+from livespec_orchestrator_beads_fabro.commands._drift_run_merges import (
+    GIT_TIMEOUT_SECONDS,
+    default_branch_ref,
+    merge_range,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_held_drift_findings import (
+    held_drift_finding_items,
 )
 from livespec_orchestrator_beads_fabro.spec_reader import current_specification_version
 
@@ -75,7 +101,6 @@ __all__: list[str] = [
 ]
 
 _SPEC_DIRNAME = "SPECIFICATION"
-_GIT_TIMEOUT_SECONDS = 30.0
 _MERGE_COUNTING_NOTE = (
     "Merge counting is every commit on the default branch since that point, "
     "with no class of commit excluded."
@@ -99,12 +124,20 @@ def detection_staleness_items(
     config: StoreConfig,
     seams: DetectionStalenessSeams = DEFAULT_DETECTION_STALENESS_SEAMS,
 ) -> list[AttentionItem]:
-    """Compose the gap-capture and drift staleness facts for this repository."""
+    """Compose this repository's three detection-coverage facts."""
     anchor = detection_coverage_anchor(cwd=project_root)
-    return _gap_items(
-        project_root=project_root, repo=repo, config=config, anchor=anchor
-    ) + _drift_items(
-        project_root=project_root, repo=repo, config=config, anchor=anchor, seams=seams
+    return (
+        _gap_items(project_root=project_root, repo=repo, config=config, anchor=anchor)
+        + _drift_items(
+            project_root=project_root, repo=repo, config=config, anchor=anchor, seams=seams
+        )
+        + held_drift_finding_items(
+            project_root=project_root,
+            spec_root=project_root / _SPEC_DIRNAME,
+            repo=repo,
+            config=config,
+            anchor=anchor,
+        )
     )
 
 
@@ -160,8 +193,10 @@ def _drift_items(
     summary = (
         f"Drift coverage is stale for {repo}: {merges} default-branch merge(s) since the "
         f"last completed drift coverage point ({recorded or 'none on record'}), at or past "
-        f"the effective drift_capture_merge_threshold of {threshold}. Run capture-spec-drift; "
-        f"the consent-gated dialogue stays the only way the detector runs. {_MERGE_COUNTING_NOTE}"
+        f"the effective drift_capture_merge_threshold of {threshold}. Those are the merges "
+        f"after the recorded frontier. This fact invokes no detector: the reconcile pass is "
+        f"what runs the drift pass over them, and an attended capture-spec-drift survey is "
+        f"the operator's own owned trigger. {_MERGE_COUNTING_NOTE}"
     )
     return [
         _item(
@@ -183,34 +218,12 @@ def _version_number(*, point: str | None) -> int:
     return int(digits) if digits.isdecimal() else 0
 
 
-def _default_branch_ref(*, project_root: Path, runner: CommandRunner) -> str | None:
-    """The local `origin/<default>` ref, resolved WITHOUT touching the forge.
-
-    Deliberately not `resolve_default_branch`, whose second route shells out to
-    `gh repo view`. That route is right for a dispatch preflight, which is
-    already talking to the forge and can afford a network round trip; it is
-    wrong HERE. This lane runs inside every `needs-attention` composition — an
-    interactive operator surface — so a forge call would put an unbounded
-    network wait in front of an inbox render, on behalf of one fact. A clone
-    whose `refs/remotes/origin/HEAD` is unset simply yields no drift fact.
-    """
-    result = runner.run(
-        argv=["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-        cwd=project_root,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    resolved = result.stdout.strip()
-    if result.exit_code != 0 or resolved == "":
-        return None
-    return resolved
-
-
 def _merge_count(*, project_root: Path, runner: CommandRunner, since: str | None) -> int | None:
-    ref = _default_branch_ref(project_root=project_root, runner=runner)
+    ref = default_branch_ref(project_root=project_root, runner=runner)
     if ref is None:
         return None
-    argv = ["git", "rev-list", "--count", f"{since}..{ref}" if since else ref]
-    result = runner.run(argv=argv, cwd=project_root, timeout_seconds=_GIT_TIMEOUT_SECONDS)
+    argv = ["git", "rev-list", "--count", merge_range(since=since, ref=ref)]
+    result = runner.run(argv=argv, cwd=project_root, timeout_seconds=GIT_TIMEOUT_SECONDS)
     counted = result.stdout.strip()
     if result.exit_code != 0 or not counted.isdecimal():
         return None

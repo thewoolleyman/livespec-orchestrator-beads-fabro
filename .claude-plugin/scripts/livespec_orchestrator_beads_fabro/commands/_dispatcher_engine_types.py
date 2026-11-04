@@ -11,8 +11,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
     BaseAdvancedAfterArming,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
+from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import HookVerdict
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import MergedReconcile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import NodeTimeoutCut
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     ProviderLimitRelease,
+    ReclassifiedTurn,
 )
 
 if TYPE_CHECKING:
@@ -54,11 +58,18 @@ class FabroRunResult:
     fail-safe, a flaky probe is NOT a stall).
     `abandoned_run_id` is set when the launcher reaped a queued/running run
     whose work-item is already no longer dispatchable.
+    `budget_exceeded_run_id` is set ONLY when the run held a factory slot past
+    its resolved whole-run wall budget, its record was exported and read back,
+    and the run was then `fabro rm -f`-ed. It is kept APART from
+    `stalled_run_id` because the two cancels carry opposite dispositions — a
+    first stall cancel releases the item to `ready` while a budget cancel rests
+    it for a person — so one field for both would route half of them wrongly.
     """
 
     command: CommandResult
     run_id: str | None = None
     stalled_run_id: str | None = None
+    budget_exceeded_run_id: str | None = None
     abandoned_run_id: str | None = None
     abandoned_item_status: str | None = None
 
@@ -156,6 +167,7 @@ class DispatchOutcome:
     missing_integration_point: str | None = None
     remedy: str | None = None
     fabro_run_id: str | None = None
+    fabro_factory_name: str | None = None
     fabro_failure_cause: str | None = None
     fabro_failure_category: str | None = None
     fabro_failure_signature: str | None = None
@@ -167,6 +179,17 @@ class DispatchOutcome:
     needs_human_reason: str | None = None
     needs_human_preservation: str | None = None
     hook_over_limit: HookOverLimit | None = None
+    # The node-timeout cut this needs-human ending is, with the commit runs the cut
+    # turn had started and their states when preservation began (Scenario 192,
+    # bd-ib-ptnxyg). Carried for the reason `hook_over_limit` beside it is: the
+    # durable cause is written from the outcome alone, long after the sandbox is gone.
+    node_timeout_cut: NodeTimeoutCut | None = None
+    # The recorded verdict of the failing stage's latest hook-running commit
+    # attempt, carried in its OWN field so the journal's outcome row states the
+    # hook's exit status and failed targets beside — never inside — the agent's
+    # failure text (contracts.md "The recorded hook verdict outranks the agent's
+    # account of it", bd-ib-k3nmbi).
+    hook_verdict: HookVerdict | None = None
     base_advanced: BaseAdvancedAfterArming | None = None
     # The provider-limit release this terminal owes, decided ONCE by the
     # terminal mapper and read from here by the disposition that performs it.
@@ -175,6 +198,16 @@ class DispatchOutcome:
     # candidate identity, neither of which the post-run disposition holds, so a
     # second derivation there could only re-read the rendered detail prose.
     provider_limit_release: ProviderLimitRelease | None = None
+    # The succeeded agent turns of this run that ended with a measured provider
+    # refusal and so count as failed attempts of their candidates, whether or not
+    # one of them ended the run. `None` rather than empty when none matched, so
+    # the journal payload drops it with every other unset observation.
+    reclassified_turns: tuple[ReclassifiedTurn, ...] | None = None
+    # The merged-reconcile ending this run took, if it took one. Carried on the
+    # outcome because the sandbox that printed it is gone by the time the
+    # acceptance pass needs the merged head, and a record of what the ending
+    # proved cannot be recovered from the pull request alone.
+    merged_reconcile: MergedReconcile | None = None
 
 
 SleepFn = Callable[[float], None]

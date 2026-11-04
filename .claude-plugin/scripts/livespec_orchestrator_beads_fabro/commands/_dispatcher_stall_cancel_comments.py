@@ -41,6 +41,7 @@ __all__: list[str] = [
 # unnamed run and a run whose cancel row could not be read support different
 # conclusions and a blank reads as the first.
 UNREAD_CANCEL_ROW = "not recorded (this dispatch journalled no cancel row for the item)"
+_UNRECORDED_EXECUTING_STAGE = "not recorded (the run's own record named no stage)"
 
 
 def needs_human_comment(
@@ -133,6 +134,8 @@ def release_comment(*, item_id: str, row: Mapping[str, object] | None) -> str:
 
 def _executing_line(*, row: Mapping[str, object] | None) -> str:
     """The release comment's stage line, which is too long to render inline."""
+    if row is not None and not isinstance(row.get("executing_stage"), str):
+        return f"stage the run was executing: {_UNRECORDED_EXECUTING_STAGE}"
     stage = cancel_row_field(row=row, key="executing_stage")
     return f"stage the run was executing: {stage}"
 

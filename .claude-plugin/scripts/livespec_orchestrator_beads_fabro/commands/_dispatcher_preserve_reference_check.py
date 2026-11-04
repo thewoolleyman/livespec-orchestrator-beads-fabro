@@ -29,21 +29,28 @@ from __future__ import annotations
 
 import hashlib
 import string
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_dump_timeout import (
+    FABRO_DUMP_TIMEOUT_SECONDS,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     DIGEST_UNAVAILABLE_PREFIX,
     PRESERVE_POINTER_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
+from livespec_orchestrator_beads_fabro.commands._fabro_stage_diffs import (
+    StageDiff,
+    stage_diffs_from_run_state,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 
 __all__: list[str] = [
+    "FABRO_DUMP_TIMEOUT_SECONDS",
     "POINTER_DANGLING",
     "POINTER_INTACT",
     "POINTER_UNVERIFIABLE",
@@ -58,13 +65,13 @@ POINTER_INTACT = "intact"
 POINTER_DANGLING = "dangling"
 POINTER_UNVERIFIABLE = "unverifiable"
 
-_DUMP_TIMEOUT_SECONDS = 300.0
 _RUN_ID_PREFIX = "run id: "
 _SERVER_URL_PREFIX = "factory server url: "
 _ARTIFACT_PATH_PREFIX = "stage artifact path: "
 _DIGEST_PREFIX = "sha256: "
 _SHA256_LENGTH = 64
 _HEX_CHARS = frozenset(string.hexdigits)
+_STAGE_DIFF_READ_TIMEOUT_SECONDS = 30.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -138,7 +145,7 @@ def check_preserved_pointer(
     fabro_bin: str,
     runner: CommandRunner,
 ) -> PointerCheck:
-    """Re-export the pointer's run and report whether it still resolves.
+    """Re-read the pointer's stage diffs and report whether they still resolve.
 
     The re-export goes through a `FabroPort` built from the pointer's OWN
     recorded server url, which is what makes this a check of the promise the
@@ -150,42 +157,45 @@ def check_preserved_pointer(
         runner=runner,
         cwd=repo,
     )
-    with tempfile.TemporaryDirectory(prefix=f"fabro-pointer-check-{pointer.run_id}-") as raw_dir:
-        export_dir = Path(raw_dir)
-        dumped = port.dump(
-            run_id=pointer.run_id,
-            output_dir=export_dir,
-            timeout_seconds=_DUMP_TIMEOUT_SECONDS,
-        ).command
-        if dumped.exit_code != 0:
-            return PointerCheck(
-                state=POINTER_DANGLING,
-                detail=(
-                    f"run {pointer.run_id} no longer exports from {pointer.server_url} "
-                    f"(fabro dump exit {dumped.exit_code})"
-                ),
-            )
-        if not pointer.artifacts:
-            return PointerCheck(
-                state=POINTER_UNVERIFIABLE,
-                detail=(
-                    f"run {pointer.run_id} still exports, but the pointer recorded no "
-                    f"digest to verify it against: "
-                    f"{pointer.digest_unavailable_reason or 'no reason recorded'}"
-                ),
-            )
-        return _verify_recorded_digests(pointer=pointer, export_dir=export_dir)
+    run_state = port.server_api().run_state(
+        run_id=pointer.run_id,
+        timeout_seconds=_STAGE_DIFF_READ_TIMEOUT_SECONDS,
+    )
+    if not run_state.succeeded:
+        return PointerCheck(
+            state=POINTER_DANGLING,
+            detail=(
+                f"run {pointer.run_id} no longer serves stage diffs from {pointer.server_url} "
+                f"(HTTP status {run_state.status})"
+            ),
+        )
+    stage_diffs = stage_diffs_from_run_state(run_state=run_state.payload)
+    if not pointer.artifacts:
+        return PointerCheck(
+            state=POINTER_UNVERIFIABLE,
+            detail=(
+                f"run {pointer.run_id} still serves stage diffs, but the pointer recorded no "
+                f"digest to verify it against: "
+                f"{pointer.digest_unavailable_reason or 'no reason recorded'}"
+            ),
+        )
+    return _verify_recorded_digests(pointer=pointer, stage_diffs=stage_diffs)
 
 
-def _verify_recorded_digests(*, pointer: PreservedPointer, export_dir: Path) -> PointerCheck:
+def _verify_recorded_digests(
+    *, pointer: PreservedPointer, stage_diffs: tuple[StageDiff, ...]
+) -> PointerCheck:
+    diffs_by_path = {
+        stage_diff.path.as_posix(): stage_diff.payload.encode("utf-8") for stage_diff in stage_diffs
+    }
     for artifact in pointer.artifacts:
-        path = export_dir / artifact.path
-        if not path.is_file():
+        payload = diffs_by_path.get(artifact.path)
+        if payload is None:
             return PointerCheck(
                 state=POINTER_DANGLING,
                 detail=f"run {pointer.run_id} exports, but no longer contains {artifact.path}",
             )
-        if hashlib.sha256(path.read_bytes()).hexdigest() != artifact.digest:
+        if hashlib.sha256(payload).hexdigest() != artifact.digest:
             return PointerCheck(
                 state=POINTER_DANGLING,
                 detail=(

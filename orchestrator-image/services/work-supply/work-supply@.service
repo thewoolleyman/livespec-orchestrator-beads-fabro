@@ -1,0 +1,83 @@
+# livespec `work-supply` — host timer unit TEMPLATE, one instance per tenant.
+#
+# The factory's drain is an ENGINE somebody has to run. Measured 2026-10-13 on
+# hp: the fleet Fabro server (cap 10) received no new run between about 18:27Z
+# and 22:56Z while 0 runs were in flight, the Claude credential probe reported
+# `usable`, and dispatch-ready work existed — because no session happened to be
+# running `dispatcher.py loop`. Dispatch resumed only when some session started
+# an engine again. Supply of work to the factory is therefore a clock question,
+# exactly as run inventory is (see the `reconcile-runs` sibling), and not a
+# question of who is logged in.
+#
+# The launcher path and the per-instance environment directory below are
+# placeholder tokens that `install.sh` in this directory substitutes. Do NOT
+# install this file verbatim.
+#
+# This is a systemd INSTANCE template: `%i` is the tenant instance name, and
+# `install.sh` writes one `<instance>.env` per tenant into that environment
+# directory, carrying that tenant's checkout path, drain budget, credential
+# wrapper, and the OPERATOR IDENTITY AND HOME the pass runs under. A firing
+# whose env file is incomplete therefore reads an EMPTY value and the launcher
+# refuses, naming the variable, rather than draining some other repository or
+# resolving some other account's plugin build.
+#
+# THREE THINGS THIS UNIT DELIBERATELY DOES NOT DO.
+#
+# It does not name a plugin build. `reconcile-runs` substitutes a plugin root
+# at install time, which pins that unit to one cache build for ever: after a
+# release the timer keeps executing the build the operator has already
+# replaced, with no warning of its own — the stale-build trap AGENTS.md records
+# against long-lived sessions, arriving through a unit file instead. The
+# launcher resolves the tenant's REGISTERED install at each firing, and refuses
+# rather than guessing when the tenant has none.
+#
+# It does not go through the credential wrapper. The wrapper is invoked once,
+# by the detached pass itself. A wrapped launcher would make the pass's own
+# wrapper call a NESTED one, and a nested call is what poisons the wrapper's
+# 300-second credential cache for every other caller on the host (AGENTS.md,
+# §"Beads runtime prerequisites"). The launcher needs no credential: it reads a
+# JSON registry and starts a unit.
+#
+# It does not declare `User=`, and that omission is a DECISION rather than an
+# oversight — identity and detachment are one question here, not two. The
+# launcher's whole job is to hand the pass to a system-scope transient unit,
+# and a non-root caller of `systemd-run --unit` needs polkit authorization it
+# cannot obtain from a timer with no seat and no agent. So the FIRING runs as
+# root and the PASS drops: the launcher passes the operator identity and home
+# the instance environment file names (`--uid`, `--setenv HOME=`) to
+# `systemd-run`, so the drain executes as the operator even though the firing
+# that started it did not.
+#
+# The cost of that decision, paid here: systemd sets `$HOME` only for a unit
+# declaring `User=` (systemd.exec(5)), so this unit's own environment carries
+# NONE. Every `$HOME`-derived path a firing needs is therefore named in the
+# instance environment file rather than inferred — the Claude Code plugin
+# registry the launcher reads to resolve the build, and the `$HOME` the pass
+# itself resolves `fabro` under. A launcher that fell back to an unset `$HOME`
+# would compose `/.claude/plugins/installed_plugins.json`, refuse on every
+# firing of every instance, and read as a tenant with no registered install;
+# it refuses by NAMING the unresolvable variable instead.
+#
+# `Type=oneshot` is correct ONLY because ExecStart is the launcher rather than
+# the drain. systemd never starts a oneshot that is still active, and a drain
+# pass blocks until its wave's post-verdict stages finish — hours, for one
+# wave. An ExecStart that ran the drain would therefore make the timer skip
+# every firing for the length of the pass, which is the opposite of the
+# guarantee this unit exists to provide.
+
+[Unit]
+Description=livespec work supply — one unattended drain pass for tenant %i
+Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=@INSTANCE_ENV_DIR@/%i.env
+ExecStart=@LAUNCHER@ --instance %i
+# The launcher reads one JSON file and starts one transient unit; it never
+# waits on the pass. A minute is generous and bounds a wedged registry read.
+TimeoutStartSec=60
+# A failed firing is not an incident: the next tick asks the same question
+# again, and a restart storm against an unreadable registry would be noise.
+Restart=no

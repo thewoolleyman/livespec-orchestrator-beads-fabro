@@ -23,7 +23,6 @@ in production the root IS inside the run's worktree.
 """
 
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -32,6 +31,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     SANDBOX_GH_REFRESH_ROOT_ENV_VAR,
     refreshing_gh_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
+
+from tests.prepare_step_support import runnable_script, steps_in
 
 _BUNDLE_DIRNAME = ".livespec-gh-refresh"
 _DEFAULT_BRANCH = "master"
@@ -211,6 +213,277 @@ def test_the_installed_gh_wrapper_still_runs_the_bundles_mint_helper(
     ]
 
 
+@pytest.mark.parametrize(
+    ("command", "action"),
+    [
+        (("pr", "create"), "gh_pr_create"),
+        (("pr", "ready"), "gh_pr_ready"),
+        (("pr", "merge"), "gh_pr_merge"),
+        (("pr", "edit"), "gh_pr_edit"),
+    ],
+)
+def test_an_agent_stage_cannot_reach_gh_pull_request_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, str],
+    action: str,
+) -> None:
+    """The wrapper rejects direct PR publication before minting a token."""
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    capture = tmp_path / "gh-calls.txt"
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=capture)
+    _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+
+    result = subprocess.run(
+        ["gh", *command],
+        cwd=repo,
+        env={
+            **_chain_env(bin_dir=bin_dir, capture=capture, mint_log=tmp_path / "mint-args.txt"),
+            "LIVESPEC_AGENT_STAGE": "proof_verify",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert f"LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action={action}" in result.stderr
+    assert not capture.exists()
+
+
+@pytest.mark.parametrize(
+    ("command", "action"),
+    [
+        (("api", "repos/acme/widget/pulls", "--method", "POST"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls/4", "--method", "PATCH"), "gh_api_edit"),
+        (("api", "repos/acme/widget/pulls/4/merge", "--method", "PUT"), "gh_api_merge"),
+        (
+            (
+                "api",
+                "graphql",
+                "-f",
+                "query=mutation { markPullRequestReadyForReview(input: {}) { pullRequest { id } } }",
+            ),
+            "gh_api_graphql_ready",
+        ),
+        (
+            (
+                "api",
+                "graphql",
+                "-f",
+                "query=mutation { enablePullRequestAutoMerge(input: {}) { pullRequest { id } } }",
+            ),
+            "gh_api_graphql_auto_merge",
+        ),
+        (
+            (
+                "api",
+                "repos/acme/widget/pulls",
+                "-f",
+                "title=t",
+                "-f",
+                "head=b",
+                "-f",
+                "base=master",
+            ),
+            "gh_api_create",
+        ),
+        (("api", "repos/acme/widget/pulls", "-F", "draft=true"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--field", "title=t"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--raw-field=title=t"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "-ftitle=t"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--input", "body.json"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls", "--input=body.json"), "gh_api_create"),
+        (("api", "repos/acme/widget/pulls/4", "-f", "state=closed"), "gh_api_edit"),
+        (("api", "graphql", "-F", "query=@q.graphql"), "gh_api_graphql_unreadable"),
+        (("api", "graphql", "--field", "query=@q.graphql"), "gh_api_graphql_unreadable"),
+        (("api", "graphql", "--input", "-"), "gh_api_graphql_unreadable"),
+        (("api", "graphql", "--input=q.json"), "gh_api_graphql_unreadable"),
+    ],
+)
+def test_an_agent_stage_cannot_reach_gh_api_pull_request_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, ...],
+    action: str,
+) -> None:
+    """REST and GraphQL PR mutations stop before token minting or the forge."""
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    capture = tmp_path / "gh-calls.txt"
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=capture)
+    _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+
+    result = subprocess.run(
+        ["gh", *command],
+        cwd=repo,
+        env={
+            **_chain_env(bin_dir=bin_dir, capture=capture, mint_log=tmp_path / "mint-args.txt"),
+            "LIVESPEC_AGENT_STAGE": "proof_verify",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert f"LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action={action}" in result.stderr
+    assert not capture.exists()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ("pr", "view", "4"),
+        ("pr", "list"),
+        ("api", "repos/acme/widget/pulls/4"),
+        ("api", "repos/acme/widget/pulls", "--method", "GET"),
+        ("api", "graphql", "-f", "query=query { viewer { login } }"),
+        ("api", "graphql", "-F", "owner=acme", "-f", "query=query { viewer { login } }"),
+        ("api", "repos/acme/widget/pulls", "-X", "GET", "-f", "state=open"),
+        ("api", "repos/acme/widget/pulls", "--method=GET", "-F", "per_page=5"),
+    ],
+)
+def test_an_agent_stage_can_still_read_the_forge_through_gh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: tuple[str, ...],
+) -> None:
+    """A forge read is not publication, so the guard lets it reach `gh`."""
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    capture = tmp_path / "gh-calls.txt"
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=capture)
+    _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+    _write_executable(
+        path=bin_dir / "python3",
+        source="#!/usr/bin/env bash\nset -eu\nprintf minted-token\n",
+    )
+
+    result = subprocess.run(
+        ["gh", *command],
+        cwd=repo,
+        env={
+            **_chain_env(bin_dir=bin_dir, capture=capture, mint_log=tmp_path / "mint-args.txt"),
+            "LIVESPEC_AGENT_STAGE": "proof_verify",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_AGENT_PUBLICATION_DENIED" not in result.stderr
+    assert capture.read_text(encoding="utf-8").splitlines()[0] == "args=" + " ".join(command)
+
+
+@pytest.mark.parametrize("stage", [("publish_draft",), ("pr_refresh",), ("pr",)])
+def test_scripted_publication_stages_can_still_use_the_gh_wrapper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: tuple[str],
+) -> None:
+    """Publication stages mint a token and reach `gh`; agent stages cannot."""
+    repo = _git_repo(root=tmp_path / "clone")
+    bundle_root = repo / _BUNDLE_DIRNAME
+    scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
+    capture = tmp_path / "gh-calls.txt"
+    bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=capture)
+    _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
+    _write_executable(
+        path=bin_dir / "python3",
+        source="#!/usr/bin/env bash\nset -eu\nprintf minted-token\n",
+    )
+
+    result = subprocess.run(
+        ["gh", "pr", "create"],
+        cwd=repo,
+        env={
+            **_chain_env(bin_dir=bin_dir, capture=capture, mint_log=tmp_path / "mint-args.txt"),
+            "LIVESPEC_AGENT_STAGE": stage[0],
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text(encoding="utf-8").splitlines() == [
+        "args=pr create",
+        "GH_TOKEN=minted-token",
+        "GITHUB_TOKEN=minted-token",
+    ]
+
+
+def test_an_agent_stage_cannot_push_any_ref_to_origin(tmp_path: Path) -> None:
+    """The push helper refuses before even reading the origin remote."""
+    helper = tmp_path / "push_origin"
+    _write_executable(path=helper, source=PUSH_ORIGIN_SOURCE)
+
+    result = subprocess.run(
+        [str(helper), "git", "push", "origin", "HEAD:feature"],
+        env={**os.environ, "LIVESPEC_AGENT_STAGE": "proof_verify"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "LIVESPEC_AGENT_PUBLICATION_DENIED: stage=proof_verify action=push_origin" in result.stderr
+    )
+
+
+@pytest.mark.parametrize("stage", [("publish_draft",), ("pr_refresh",), ("pr",)])
+def test_scripted_publication_stages_can_still_push_origin(
+    tmp_path: Path, stage: tuple[str]
+) -> None:
+    """The push helper reaches the requested origin push only in publication stages."""
+    helper = tmp_path / "push_origin"
+    capture = tmp_path / "git-calls.txt"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_executable(path=helper, source=PUSH_ORIGIN_SOURCE)
+    _write_executable(
+        path=tmp_path / "mint_app_token.py",
+        source="#!/usr/bin/env bash\nset -eu\nprintf minted-token\n",
+    )
+    _write_executable(
+        path=bin_dir / "python3",
+        source="#!/usr/bin/env bash\nset -eu\nprintf minted-token\n",
+    )
+    _write_executable(
+        path=bin_dir / "git",
+        source="#!/usr/bin/env bash\n"
+        "set -eu\n"
+        'if test "$1 $2 $3" = "remote get-url --push"; then\n'
+        "  printf 'https://github.com/acme/widget.git\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        'printf "%s\\n" "$*" >> "$GIT_CAPTURE"\n',
+    )
+
+    result = subprocess.run(
+        [str(helper), "git", "push", "origin", "HEAD:feature"],
+        env={
+            **os.environ,
+            "GIT_CAPTURE": str(capture),
+            "LIVESPEC_AGENT_STAGE": stage[0],
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text(encoding="utf-8").splitlines() == ["push origin HEAD:feature"]
+
+
 def _rendered_prepare_scripts(
     *,
     monkeypatch: pytest.MonkeyPatch,
@@ -220,13 +493,11 @@ def _rendered_prepare_scripts(
     monkeypatch.setenv("GITHUB_APP_ID", "42")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
     monkeypatch.setenv(SANDBOX_GH_REFRESH_ROOT_ENV_VAR, str(bundle_root))
-    found = re.findall(
-        r"script = '''\n(.*?)\n'''",
-        refreshing_gh_prepare_steps_block(),
-        re.DOTALL,
-    )
+    found = [
+        runnable_script(step=step) for step in steps_in(block=refreshing_gh_prepare_steps_block())
+    ]
     assert found
-    return list(found)
+    return found
 
 
 def _git_repo(*, root: Path) -> Path:

@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands import _fabro_client as client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import DispatchCorrelation
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
+    forget_inspection,
+    memoized_inspection,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_auth import fabro_auth_login
+from livespec_orchestrator_beads_fabro.commands._fabro_port_factory import fabro_port_for_plan
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
     UrllibFabroHttpTransport,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_inspection import fabro_inspect_result
 from livespec_orchestrator_beads_fabro.commands._fabro_port_payload import (
     fabro_events_payload,
     fabro_json_payload,
@@ -20,14 +26,12 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_payload import (
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroFailureDetail,
     FabroRunSummary,
-    fabro_failure_detail_from_payload,
-    fabro_run_summaries_from_payload,
     fabro_run_summaries_from_stdout,
-    fabro_status_kind_from_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_run_launch import (
+    fabro_ps_result,
     launch_fabro_run,
-    server_env,
+    version_probe_env,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroCommand,
@@ -41,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroTarget,
     FabroVersionResult,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_workflow import fabro_preflight
 
 __all__: list[str] = [
     "FabroCommand",
@@ -121,21 +126,13 @@ class FabroPort:
         )
 
     def auth_login(self, *, timeout_seconds: float) -> FabroCommandResult | None:
-        if self.target.server_url is None or self.target.dev_token is None:
-            return None
-        command = self._run(
-            argv=[
-                self.fabro_bin,
-                "auth",
-                "login",
-                "--dev-token",
-                self.target.dev_token,
-                "--server",
-                self.target.server_url,
-            ],
+        return fabro_auth_login(
+            fabro_bin=self.fabro_bin,
+            runner=self.runner,
+            cwd=self.cwd,
+            target=self.target,
             timeout_seconds=timeout_seconds,
         )
-        return FabroCommandResult(command=command)
 
     def secret_set(self, *, secret_name: str, stdin: int, timeout_seconds: float) -> FabroCommand:
         """Store one named secret while its value travels only on stdin."""
@@ -154,21 +151,24 @@ class FabroPort:
         )
 
     def inspect(self, *, run_id: str, timeout_seconds: float) -> FabroInspectResult:
-        command = self._run(
-            argv=[self.fabro_bin, "inspect", run_id, "--json", *self._server_suffix()],
-            timeout_seconds=timeout_seconds,
-        )
-        payload = fabro_json_payload(command=command)
-        return FabroInspectResult(
-            command=command,
-            payload=payload,
-            status_kind=fabro_status_kind_from_payload(payload=payload),
-            failure=fabro_failure_detail_from_payload(payload=payload),
+        return memoized_inspection(
+            factory=self.target.server_url or "",
+            run_id=run_id,
+            read=lambda: fabro_inspect_result(
+                command=self._run(
+                    argv=[self.fabro_bin, "inspect", run_id, "--json", *self._server_suffix()],
+                    timeout_seconds=timeout_seconds,
+                )
+            ),
         )
 
-    def events(self, *, run_id: str, timeout_seconds: float) -> FabroEventsResult:
+    def events(
+        self, *, run_id: str, timeout_seconds: float, since: str | None = None
+    ) -> FabroEventsResult:
+        """Read one run's events, optionally after an already-observed instant."""
+        since_args = [] if since is None else ["--since", since]
         command = self._run(
-            argv=[self.fabro_bin, "events", run_id, "--json", *self._server_suffix()],
+            argv=[self.fabro_bin, "events", run_id, "--json", *since_args, *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
         return FabroEventsResult(command=command, payload=fabro_events_payload(command=command))
@@ -188,17 +188,38 @@ class FabroPort:
         )
         return FabroCommandResult(command=command)
 
+    def _ps(self, *, timeout_seconds: float, include_history: bool) -> FabroPsResult:
+        return fabro_ps_result(
+            fabro_bin=self.fabro_bin,
+            runner=self.runner,
+            cwd=self.cwd,
+            server_suffix=self._server_suffix(),
+            timeout_seconds=timeout_seconds,
+            include_history=include_history,
+        )
+
     def ps(self, *, timeout_seconds: float) -> FabroPsResult:
+        return self._ps(timeout_seconds=timeout_seconds, include_history=True)
+
+    def live_ps(self, *, timeout_seconds: float) -> FabroPsResult:
+        """Read statuses for the factory's live runs without terminal history."""
+        return self._ps(timeout_seconds=timeout_seconds, include_history=False)
+
+    def settings(self, *, timeout_seconds: float) -> FabroJsonResult:
+        """`fabro settings --json` — the EFFECTIVE settings of this port's server.
+
+        Read for one figure the facade carried no other route to: the server's
+        own `scheduler.max_concurrent_runs`, which overflow selection compares a
+        candidate's non-terminal run count against. The whole payload is handed
+        back rather than that one number, because the shape differs between
+        builds and `_fabro_port_records` is where this family's readings of a
+        payload live.
+        """
         command = self._run(
-            argv=[self.fabro_bin, "ps", "-a", "--json", *self._server_suffix()],
+            argv=[self.fabro_bin, "settings", "--json", *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
-        payload = fabro_json_payload(command=command)
-        return FabroPsResult(
-            command=command,
-            payload=payload,
-            runs=fabro_run_summaries_from_payload(payload=payload),
-        )
+        return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
 
     def preflight(
         self,
@@ -208,26 +229,22 @@ class FabroPort:
         inputs: tuple[str, ...],
         timeout_seconds: float,
     ) -> FabroJsonResult:
-        command = self._run(
-            argv=[
-                self.fabro_bin,
-                "preflight",
-                str(workflow_toml),
-                "--goal-file",
-                str(goal_file),
-                *client.fabro_input_args(inputs=inputs),
-                "--no-upgrade-check",
-                "--json",
-                *self._server_suffix(),
-            ],
+        return fabro_preflight(
+            fabro_bin=self.fabro_bin,
+            runner=self.runner,
+            cwd=self.cwd,
+            server_url=self.target.server_url,
+            workflow_toml=workflow_toml,
+            goal_file=goal_file,
+            inputs=inputs,
             timeout_seconds=timeout_seconds,
-            env=self._server_env(),
         )
-        return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
 
-    def rm(self, *, run_id: str, timeout_seconds: float) -> FabroCommandResult:
+    def rm(self, *, run_id: str, timeout_seconds: float, force: bool = True) -> FabroCommandResult:
+        forget_inspection(factory=self.target.server_url or "", run_id=run_id)
+        force_flag = ["-f"] if force else []
         command = self._run(
-            argv=[self.fabro_bin, "rm", "-f", run_id, *self._server_suffix()],
+            argv=[self.fabro_bin, "rm", *force_flag, run_id, *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
         return FabroCommandResult(command=command)
@@ -276,11 +293,15 @@ class FabroPort:
         reads whichever server the host's ambient configuration names, which on a
         two-factory host is a fleet-global surrogate for a per-target question —
         and the currency predicate is required to be target-aware.
+
+        AND IT AUTHENTICATES AS THE SELECTED FACTORY'S OWN CLIENT, which is why
+        that environment is a SCRUB and not merely a binding:
+        `version_probe_env` carries the measurement.
         """
         command = self._run(
             argv=[self.fabro_bin, "version", "--json"],
             timeout_seconds=timeout_seconds,
-            env=self._server_env(),
+            env=version_probe_env(server_url=self.target.server_url),
         )
         return FabroVersionResult(command=command, text=command.stdout)
 
@@ -302,7 +323,7 @@ class FabroPort:
         *,
         argv: list[str],
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
     ) -> FabroCommand:
         if env is None:
             return self.runner.run(argv=argv, cwd=self.cwd, timeout_seconds=timeout_seconds)
@@ -319,21 +340,3 @@ class FabroPort:
         if self.target.server_url is None:
             return []
         return ["--server", self.target.server_url]
-
-    def _server_env(self) -> dict[str, str] | None:
-        return server_env(server_url=self.target.server_url)
-
-
-def fabro_port_for_plan(*, plan: Any, runner: FabroRunner) -> FabroPort:
-    """Construct the Fabro CLI port from a dispatch plan."""
-    return FabroPort(
-        fabro_bin=plan.fabro_bin,
-        target=FabroTarget(
-            server_url=plan.fabro_factory_server,
-            dev_token=plan.fabro_factory_dev_token,
-            environment=plan.fabro_factory_environment,
-        ),
-        runner=runner,
-        cwd=plan.repo,
-        fabro_version=getattr(plan, "fabro_version", None),
-    )

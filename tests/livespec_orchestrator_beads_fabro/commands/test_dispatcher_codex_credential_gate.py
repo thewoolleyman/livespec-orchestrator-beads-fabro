@@ -72,7 +72,11 @@ _REQUIRED_REMAINING = 18_000
 # marker rather than a copy of the production sentence: no assertion in this
 # module reads it, and a transcribed copy would quietly rot against the real one.
 _REQUIREMENT = CredentialLifetimeRequirement(
-    allowance_seconds=_REQUIRED_REMAINING - CODEX_FRESHNESS_MARGIN_SECONDS,
+    execution_allowance_seconds=_REQUIRED_REMAINING - CODEX_FRESHNESS_MARGIN_SECONDS,
+    # Deliberately wider than the allowance, so the EXECUTION ALLOWANCE governs
+    # and these cases keep grading the one figure they were written against.
+    credential_use_window_seconds=_REQUIRED_REMAINING * 10,
+    credential_queue_allowance_seconds=86_400,
     margin_seconds=CODEX_FRESHNESS_MARGIN_SECONDS,
     detail="test-resolved requirement",
 )

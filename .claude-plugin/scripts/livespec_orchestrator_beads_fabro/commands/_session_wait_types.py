@@ -17,6 +17,7 @@ __all__: list[str] = [
     "PaneTarget",
     "Probe",
     "ProbeLauncher",
+    "WaitPublisher",
     "WaitRequest",
     "WaitResult",
     "WaitTarget",
@@ -187,6 +188,10 @@ class WaitRequest:
     # deadline from that instant rather than restarting it, so the caller's
     # own observations and the wait spend ONE budget. None starts it at arming.
     started_at: float | None = None
+    # The sink for the wait's telemetry, or None for a wait that publishes
+    # nothing. It only RECEIVES facts the wait already computed; it is never
+    # consulted for a decision, so no implementation can change a result.
+    publisher: WaitPublisher | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -196,6 +201,32 @@ class WaitResult:
     trigger_exit_code: int | None
     observations: dict[str, GateObservation]
     unfinished_targets: tuple[str, ...] = ()
+
+
+class WaitPublisher(Protocol):
+    def armed(self, *, request: WaitRequest, armed_at: float) -> None: ...
+
+    def observed(
+        self,
+        *,
+        request: WaitRequest,
+        observation: GateObservation,
+        at: float,
+        elapsed_seconds: float,
+        age_seconds: float,
+    ) -> None: ...
+
+    def returned(
+        self,
+        *,
+        request: WaitRequest,
+        result: WaitResult,
+        at: float,
+        elapsed_seconds: float,
+        remaining_seconds: float,
+    ) -> None: ...
+
+    def associations_record(self) -> dict[str, str]: ...
 
 
 class Probe(Protocol):

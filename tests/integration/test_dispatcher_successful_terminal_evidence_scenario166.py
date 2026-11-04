@@ -50,10 +50,23 @@ _NATIVE_INSPECT = _REPO_ROOT / "tests/fixtures/fabro_native_inspect/background.j
 _SUCCESSFUL_NODES = (
     "start",
     "dod_gate",
+    # The post-turn mutation guard (bd-ib-al54tl) sits on `dod_gate`'s
+    # fallthrough, so every green run passes through it.
+    "dod_gate_mutation_guard",
     "implement",
+    # The commit-run settle (bd-ib-xj3qqb) sits on `implement`'s fallthrough
+    # ahead of the completion gate, so every green run passes through it.
+    "implement_commit_settle",
+    # The implement stage's completion gate (v165, Scenario 204;
+    # bd-ib-ahxcjx). It is on the success route because it sits on
+    # `implement`'s single fallthrough: a green run reached the diff breaker
+    # THROUGH it, having stated its Definition of Done complete.
+    "implement_completion",
     "implementation_diff",
+    "janitor_admission",
     "janitor",
     "publish_draft",
+    "publish_merged_reconcile_route",
     "proof_capture",
     "review",
     "proof_verify",
@@ -64,6 +77,7 @@ _SUCCESSFUL_NODES = (
     "proof_grade",
     "pr",
     "pr_route",
+    "pr_refresh_merged_reconcile_route",
     "pr_refresh_head",
     "pr_refresh",
     "verify_pr",
@@ -465,7 +479,7 @@ def test_scenario_166_authenticates_terminal_success_and_preserves_non_green_con
     failed_required = _successful_checkpoint()
     failed_required["node_outcomes"] = {
         **{node: {"status": "succeeded"} for node in _SUCCESSFUL_NODES},
-        "review": {"status": "failed"},
+        "janitor": {"status": "failed"},
     }
     needs_human = _successful_checkpoint()
     needs_human.update(current_node="needs_human", next_node_id=None)

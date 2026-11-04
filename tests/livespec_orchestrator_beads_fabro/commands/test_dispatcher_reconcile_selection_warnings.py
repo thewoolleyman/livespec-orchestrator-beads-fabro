@@ -1,0 +1,1086 @@
+"""The selection-to-execution replay one reconciliation pass performs.
+
+Binds the half of `SPECIFICATION/contracts.md` — cited at FILE level, because a
+heading-level citation rots the moment the heading is reworded — that v127 left
+undischarged: fallback observation is taken from "the Dispatcher's own
+decisions", and reconciliation "replay[s] selection-to-execution observation
+idempotently using factory, run, node attempt and selection identity".
+
+EVERY CASE DRIVES `reconcile_runs`, never the pure reading underneath it, and
+that is the whole point of this module. The pure reading was already correct and
+already covered when this was filed; what was absent was any caller, so
+`ingest_model_fallback_warning` had no production reader at all and the lane
+reported a repository where no fallback had ever run. A case built on a
+hand-written outcome map cannot fail for that reason — it passes against a
+dispatcher that never looks at a run — so the outcome maps here are produced by
+the real port out of real `fabro inspect` stdout.
+
+THE OUTCOME KEYS ARE VISIT-QUALIFIED, which is the second thing a hand-built
+map hides. Petri records its stage map as `<node>@<visit>` and the port returns
+the keys as the engine wrote them, while a selection record names the CONFIGURED
+node; comparing the two directly matches nothing, and matching nothing is
+silent. So the `inspect` fixtures here spell `implement@1` rather than
+`implement`, and a fixture that spelled the bare node would pass against the
+build this module was written to red.
+
+TWO NODES ARE SELECTED AND ONLY ONE IS EXECUTED throughout, because "the run
+executed it" is a condition that cannot fail on a one-node fixture: a build that
+minted a warning for every selected node would satisfy every assertion about the
+executed one. The unexecuted node is the clause's own "an unexecuted preflight
+selection for a node never reached emits no fallback warning" arriving as a
+control rather than as a separate case.
+
+EVERY RETIREMENT CASE SITS BESIDE THE NEAR-MISS IT MUST REFUSE, because each one
+has a plausible wrong answer that looks exactly like the right one. A primary
+run that STARTED BEFORE the warning, and one that executed but did not succeed,
+both produce a well-formed executed primary attempt; a fallback-only chain edit
+produces a live warning whose full-chain digest no longer matches anything the
+repository declares. A build that cleared or superseded on any of the three
+would report the lane clean while the primary was still falling over.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any
+
+import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _acp_fallback_warning_ledger as warning_ledger,
+)
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_reconcile_acp_selection as selection_lane,
+)
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_runs as reconcile
+from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
+    journaled_runs,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
+    ReconcileInputs,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback import (
+    model_fallback_warning_items,
+)
+
+_HP = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=None)
+# A SECOND configured factory, which is what makes "the stamp names the factory
+# that ran it" a condition that can fail: a replay addressing every factory with
+# every run reads the same run twice and would mint from whichever answered.
+_VPS = FactoryTarget(name="vps", server="https://vps.example:32276", dev_token=None)
+
+_ITEM = "bd-ib-augqc2"
+_NODE = "implement"
+# The node the selection also rendered a fallback for and the run never reached.
+_UNREACHED_NODE = "review"
+_FALLBACK_RUN = "01SELECTED"
+_PRIMARY_RUN = "01PRIMARY"
+_WARNING_STAGE = "acp-model-fallback-observed"
+_CLEARED_STAGE = "acp-model-fallback-cleared"
+_SUPERSEDED_STAGE = "acp-model-fallback-superseded"
+_UNAVAILABLE_STAGE = "acp-selection-outcomes-unavailable"
+_READ_STAGE = "acp-selection-outcomes-read"
+_SECOND_RUN = "01SECOND"
+_FACT_ID = f"hygiene:model-fallback:target:{_NODE}"
+
+_WARNED_AT = "2026-10-22T08:00:00Z"
+_BEFORE_WARNING = "2026-10-22T07:00:00Z"
+_AFTER_WARNING = "2026-10-22T09:00:00Z"
+_GENERATION = "primary-1"
+# A stamp from years before the newest one, which is outside any bound this lane
+# could reasonably carry. It is deliberately not expressed as the window
+# constant: a case reading that constant passes for whatever the constant says,
+# including a window so wide that the set it bounds is still the whole journal.
+_LONG_PAST = "2024-01-01T00:00:00Z"
+# A stamp time that is a non-empty string and still not an instant, which is the
+# other way a journaled `at` fails to read -- the first being no string at all.
+_UNDATEABLE = "not-an-instant"
+# How many passes the bounded-retry case drives. It must exceed whatever ceiling
+# the lane carries, because the claim is that the appends STOP; a count equal to
+# the ceiling cannot tell a bound from an unbounded retry.
+_BOUNDED_RETRY_PASSES = 40
+_STALE_RUN = "01STALE"
+# How many stamped runs the concurrency case launches. It must EXCEED the lane's
+# worker-count constant, because the claim is that in-flight inspects reach that
+# bound and stop there; a run count at or below it cannot tell a bound from
+# unbounded fan-out.
+_CONCURRENT_RUNS = 24
+# How long a held inspect waits for company before giving up, in seconds.
+_HOLD_SECONDS = 0.3
+
+
+@dataclass(kw_only=True)
+class _Runner:
+    """One fake `fabro` CLI, recording every subcommand it was asked to run.
+
+    `inspect_by_run` answers the engine record VERBATIM, so the outcome map the
+    replay reads is produced by the real port rather than supplied to it; a run
+    it does not name answers the non-zero exit an unreachable factory gives.
+    Every other subcommand — the inventory this survey opens with — answers the
+    empty listing, because no case here needs an orphan and the `ps` arm is
+    exactly what makes "no inspect was spent" observable.
+    """
+
+    inspect_by_run: dict[str, str] = field(default_factory=dict)
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        self.calls.append(argv)
+        if argv[1] != "inspect":
+            return CommandResult(exit_code=0, stdout="[]", stderr="")
+        answered = self.inspect_by_run.get(argv[2])
+        if answered is None:
+            return CommandResult(exit_code=7, stdout="", stderr="no such run")
+        return CommandResult(exit_code=0, stdout=answered, stderr="")
+
+
+@dataclass(kw_only=True)
+class _Ledger:
+    """A ledger fake that CAN record a write, so "no write" is a real finding.
+
+    The replay lane writes the dispatch journal and nothing else, so every
+    assertion that it touched no work-item rests on this fake being able to
+    record one; `test_the_ledger_fake_records_a_write` is that control.
+    """
+
+    verbs: list[str] = field(default_factory=list)
+
+    def list_comments(self, *, issue_id: str) -> list[dict[str, Any]]:
+        self.verbs.append(f"list_comments:{issue_id}")
+        return []
+
+    def add_comment(self, *, issue_id: str, body: str) -> None:
+        _ = body
+        self.verbs.append(f"add_comment:{issue_id}")
+
+
+def _selection(
+    *,
+    at: str,
+    dispatch_id: str,
+    index: int,
+    generation: str = _GENERATION,
+    identity: str = "selection-1",
+) -> dict[str, Any]:
+    """One dispatch's per-node selection, as `append_acp_node_selection` writes it."""
+    choice: dict[str, Any] = {
+        "selection_identity": identity,
+        "selected_index": index,
+        "selected_candidate_key": "glm-acp-agent/zai/glm-5.1",
+        "selected_availability_key": "zai",
+        "primary_generation_digest": generation,
+        "full_chain_digest": "chain-1",
+    }
+    return {
+        "at": at,
+        "stage": "acp-node-selection",
+        "work_item_id": _ITEM,
+        "dispatch_id": dispatch_id,
+        "selections": {_NODE: choice, _UNREACHED_NODE: dict(choice)},
+    }
+
+
+def _run_stamp(
+    *, dispatch_id: str, run_id: str, factory: FactoryTarget = _HP, at: str = _WARNED_AT
+) -> dict[str, Any]:
+    """The launch stamp that joins one selection to the run and factory it got."""
+    return {
+        "at": at,
+        "stage": "dispatch-run-stamp",
+        "work_item_id": _ITEM,
+        "dispatch_id": dispatch_id,
+        "run_id": run_id,
+        "dispatch_factory": factory.name,
+        "dispatch_factory_server": factory.server,
+        "stamped": True,
+    }
+
+
+def _standing_warning(
+    *, generation: str = _GENERATION, full_chain: str = "chain-1"
+) -> dict[str, Any]:
+    """One warning already on the journal, as an earlier pass appended it."""
+    return {
+        "at": _WARNED_AT,
+        "stage": _WARNING_STAGE,
+        "schema_version": 1,
+        "warning_id": "acpwarn-standing",
+        "node": _NODE,
+        "occurred_at": _WARNED_AT,
+        "candidate_display_name": "GLM 5.1",
+        "candidate_key": "glm-acp-agent/zai/glm-5.1",
+        "candidate_index": 1,
+        "availability_key": "zai",
+        "hold_key": "zai",
+        "cause": "dispatcher-selection",
+        "scope": "node",
+        "primary_generation": generation,
+        "full_chain": full_chain,
+        "event_id": "selection:01EARLIER:selection-0",
+        "work_item_id": _ITEM,
+    }
+
+
+def _unavailable(*, run_id: str, at: str = _WARNED_AT) -> dict[str, Any]:
+    """One earlier pass's unavailable record, as `_replay_one_run` appended it."""
+    return {
+        "at": at,
+        "stage": _UNAVAILABLE_STAGE,
+        "work_item_id": _ITEM,
+        "run_id": run_id,
+        "factory_name": _HP.name,
+        "factory_server_url": _HP.server,
+    }
+
+
+def _stages(*, state: str = "succeeded") -> str:
+    """One `fabro inspect` record whose stage map is keyed `<node>@<visit>`."""
+    return json.dumps([{"run_id": _FALLBACK_RUN, "stages": {f"{_NODE}@1": {"state": state}}}])
+
+
+def _inspected(*, status: object, run_id: str = _FALLBACK_RUN) -> str:
+    """One Petri-shaped `fabro inspect` record that also carries the run's own status."""
+    return json.dumps(
+        [{"run_id": run_id, "status": status, "stages": {f"{_NODE}@1": {"state": "succeeded"}}}]
+    )
+
+
+def _inspect_count(*, runner: _Runner) -> int:
+    return [call[1] for call in runner.calls].count("inspect")
+
+
+def _checkpoint_outcomes(*, status: str = "succeeded") -> str:
+    """One pinned-engine record, whose `node_outcomes` carry no visit suffix.
+
+    The other shape the port resolves, and the one a visit-stripping reading
+    must leave alone: a key carrying no `@` is already a node id, so the same
+    division has to be a no-op here while it is load-bearing on Petri.
+    """
+    return json.dumps(
+        [
+            {
+                "run_id": _FALLBACK_RUN,
+                "checkpoints": [{"checkpoint": {"node_outcomes": {_NODE: {"status": status}}}}],
+            }
+        ]
+    )
+
+
+def _price(*, model: str, multiplier: float) -> dict[str, Any]:
+    """A complete per-model price table, so the declared chain resolves at all."""
+    return {
+        "model": model,
+        "input_usd_per_million": 1.0 * multiplier,
+        "output_usd_per_million": 2.0 * multiplier,
+        "cache_write_usd_per_million": 0.5 * multiplier,
+        "cache_read_usd_per_million": 0.1 * multiplier,
+    }
+
+
+def _configured_repo(*, tmp_path: Path) -> Path:
+    """A dispatch target whose `implement` chain the supersede pass can resolve.
+
+    The supersede pass compares each live warning against the repository's
+    CURRENT primary, so a repository declaring no chain at all retires nothing —
+    which is the right answer there and no answer at all here. Every other case
+    in this module therefore uses a bare `tmp_path`, so nothing it mints can be
+    retired by a configuration it never meant to exercise.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir(exist_ok=True)
+    block: dict[str, Any] = {
+        "default_factory": _HP.name,
+        "factories": {_HP.name: {"server": _HP.server}},
+        "model_catalog": {
+            f"zai/{model}": {"display_name": model, "pricing": _price(model=model, multiplier=1.0)}
+            for model in ("glm-5.1", "glm-5.2")
+        },
+        "acp_nodes": {
+            _NODE: {
+                "agent": "glm-acp-agent",
+                "model": "glm-5.2",
+                "fallbacks": [{"agent": "glm-acp-agent", "model": "glm-5.1"}],
+            }
+        },
+    }
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": block}}), encoding="utf-8"
+    )
+    return repo
+
+
+def _resolved_generation(*, repo: Path) -> str:
+    """This repository's CURRENT `implement` primary generation, read not transcribed.
+
+    Computed through the production resolver so a configuration change that
+    moved the digest makes the fallback-only control stop matching, rather than
+    leaving it agreeing with a constant nobody rechecks.
+    """
+    # Imported lazily, exactly as the integration tier that reads this does:
+    # `_dispatcher_acp_preflight` sits on a module-level cycle through
+    # `_dispatcher_engine`, so it must not be the first `_dispatcher_*` module a
+    # fresh interpreter imports.
+    from livespec_orchestrator_beads_fabro.commands import (
+        _dispatcher_acp_preflight as preflight,
+    )
+
+    return preflight.resolve_acp_primary_generations(repo=repo)[_NODE]
+
+
+def _journal_at(*, tmp_path: Path, records: tuple[dict[str, Any], ...]) -> Path:
+    path = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records), encoding="utf-8"
+    )
+    return path
+
+
+def _inputs(
+    *, repo: Path, journal_path: Path, runner: _Runner, ledger: _Ledger | None = None
+) -> ReconcileInputs:
+    """A pass whose journal WRITER and journal READING are one file, as production's are.
+
+    No HTTP transport is supplied, which is a claim rather than an omission: the
+    routes a reconciliation pass sends are an orphan's own, and no case here
+    produces one, so a transport double would be a seam nothing reaches.
+    """
+    return ReconcileInputs(
+        repo=repo,
+        fabro_bin="fabro",
+        id_prefix="bd-ib",
+        items=[],
+        journaled=journaled_runs(
+            text=journal_path.read_text(encoding="utf-8"), source_path=journal_path
+        ),
+        runner=runner,
+        journal=JournalFile(path=journal_path),
+        ledger=_Ledger() if ledger is None else ledger,
+    )
+
+
+def _stages_written(*, journal_path: Path) -> list[str]:
+    return [
+        str(json.loads(line)["stage"])
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def _fact_ids(*, repo: Path, journal_path: Path) -> list[str]:
+    return [
+        item.id
+        for item in model_fallback_warning_items(
+            project_root=repo, repo="target", journal_path=journal_path
+        )
+    ]
+
+
+def test_the_replay_mints_one_idempotent_warning_from_a_visit_qualified_outcome(
+    tmp_path: Path,
+) -> None:
+    """The one node the run executed earns a warning, and a re-run appends none."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP, _VPS])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP, _VPS])
+
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+    assert _stages_written(journal_path=journal_path).count(_WARNING_STAGE) == 1
+    assert [call[1] for call in runner.calls].count("inspect") == 2
+
+
+def test_unreadable_outcomes_are_recorded_unavailable_and_leave_the_warning_standing(
+    tmp_path: Path,
+) -> None:
+    """A read nobody could take retires nothing, and the next pass asks again."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert written.count(_UNAVAILABLE_STAGE) == 2
+    assert written.count(_WARNING_STAGE) == 1
+    assert [call[1] for call in runner.calls].count("inspect") == 2
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_a_later_primary_run_that_succeeded_clears_the_warning(tmp_path: Path) -> None:
+    """The clause's one clearance: same generation, started after, succeeded."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_AFTER_WARNING, dispatch_id="dispatch-2", index=0),
+            _run_stamp(dispatch_id="dispatch-2", run_id=_PRIMARY_RUN, at=_AFTER_WARNING),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_PRIMARY_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _stages_written(journal_path=journal_path).count(_CLEARED_STAGE) == 1
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == []
+
+
+def test_a_primary_run_that_began_before_the_warning_does_not_clear_it(tmp_path: Path) -> None:
+    """An older concurrent attempt is evidence about a moment already past."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_BEFORE_WARNING, dispatch_id="dispatch-0", index=0),
+            _run_stamp(dispatch_id="dispatch-0", run_id=_PRIMARY_RUN, at=_BEFORE_WARNING),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_PRIMARY_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _CLEARED_STAGE not in _stages_written(journal_path=journal_path)
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_a_primary_run_that_did_not_succeed_does_not_clear_the_warning(tmp_path: Path) -> None:
+    """A primary that fell over is the reason the warning exists."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_AFTER_WARNING, dispatch_id="dispatch-2", index=0),
+            _run_stamp(dispatch_id="dispatch-2", run_id=_PRIMARY_RUN, at=_AFTER_WARNING),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_PRIMARY_RUN: _stages(state="failed")})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _CLEARED_STAGE not in _stages_written(journal_path=journal_path)
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_a_stamp_naming_another_factory_is_not_replayed_through_this_one(tmp_path: Path) -> None:
+    """A replay that addressed every factory would read one run on all of them."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN, factory=_VPS),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == []
+
+
+def test_a_pinned_engine_outcome_map_mints_the_same_warning(tmp_path: Path) -> None:
+    """The visit division is a no-op on a key that carries no visit."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _checkpoint_outcomes()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_a_stamp_missing_its_dispatch_identity_is_not_replayed(tmp_path: Path) -> None:
+    """A run nothing joins to a selection cannot be evidence about one."""
+    stamp = _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN)
+    del stamp["dispatch_id"]
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(_selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1), stamp),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == []
+
+
+def test_a_targeted_pass_replays_only_the_item_it_names(tmp_path: Path) -> None:
+    """A lifecycle-write hook narrows the pass, and the replay is narrowed with it."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages()})
+    base = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+    inputs = replace(base, only_work_item_id="bd-ib-elsewhere")
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == []
+
+
+def test_a_dry_run_replays_nothing_and_writes_nothing(tmp_path: Path) -> None:
+    """A pass asked only to report must not append a warning it would have minted."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP], dry_run=True)
+
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == []
+
+
+def test_an_empty_journal_replays_nothing(tmp_path: Path) -> None:
+    """A pass with no recorded history reads no run and names no selection.
+
+    The container lane of the same pass still journals its own sweep, so the
+    claim is about the stages this replay owns rather than about an empty file:
+    an emptiness assertion would red on a sibling lane's record and say nothing
+    about this one.
+    """
+    journal_path = _journal_at(tmp_path=tmp_path, records=())
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert [stage for stage in written if stage.startswith("acp-")] == []
+    assert _UNAVAILABLE_STAGE not in written
+
+
+def test_an_unreadable_inspect_payload_is_unavailable_rather_than_an_empty_run(
+    tmp_path: Path,
+) -> None:
+    """A payload carrying no run record is a read that could not be taken.
+
+    The other half of the unavailable arm, and the one a non-zero exit cannot
+    reach: the engine ANSWERED, so an implementation keyed on the exit code
+    alone reads the empty payload as a run that executed no node and mints
+    nothing -- silently, and for exactly as long as the factory keeps answering.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: "[]"})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert written.count(_UNAVAILABLE_STAGE) == 1
+    assert _WARNING_STAGE not in written
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == []
+
+
+def test_the_replay_writes_the_journal_and_never_the_work_item_ledger(tmp_path: Path) -> None:
+    """The lane's one output is a journal append; a work-item is a human's."""
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    ledger = _Ledger()
+    inputs = _inputs(
+        repo=tmp_path,
+        journal_path=journal_path,
+        runner=_Runner(inspect_by_run={_FALLBACK_RUN: _stages()}),
+        ledger=ledger,
+    )
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+    assert ledger.verbs == []
+
+
+def test_the_ledger_fake_records_a_write() -> None:
+    """The control for the claim above: an inert fake would satisfy it too."""
+    ledger = _Ledger()
+
+    ledger.add_comment(issue_id=_ITEM, body="a write the reconciler must not make")
+
+    assert ledger.list_comments(issue_id=_ITEM) == []
+    assert ledger.verbs == [f"add_comment:{_ITEM}", f"list_comments:{_ITEM}"]
+
+
+def test_a_replaced_primary_retires_its_warning_as_superseded(tmp_path: Path) -> None:
+    """A warning about a primary nobody runs any more is a row nobody can act on."""
+    repo = _configured_repo(tmp_path=tmp_path)
+    journal_path = _journal_at(tmp_path=tmp_path, records=(_standing_warning(),))
+    inputs = _inputs(repo=repo, journal_path=journal_path, runner=_Runner())
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _stages_written(journal_path=journal_path).count(_SUPERSEDED_STAGE) == 1
+    assert _fact_ids(repo=repo, journal_path=journal_path) == []
+
+
+def test_a_stamp_older_than_the_replay_window_is_not_replayed(tmp_path: Path) -> None:
+    """The replay set is bounded by the stamp's own journal time.
+
+    Every output of this lane is a journal append and the journal is the file
+    the lane re-reads on every pass, so a set that grew with the repository's
+    LIFETIME dispatch count would spend one `fabro inspect` per historical run
+    for ever and feed its own growth. The stale run here is given a readable
+    engine record and a non-primary selection, so a build that still replayed
+    it would mint a SECOND warning rather than merely spending a read: the
+    wrong answer is observable at the attention lane and not only at the port.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_LONG_PAST, dispatch_id="dispatch-old", index=1, identity="selection-0"),
+            _run_stamp(dispatch_id="dispatch-old", run_id=_STALE_RUN, at=_LONG_PAST),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages(), _STALE_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert [call[2] for call in runner.calls if call[1] == "inspect"] == [_FALLBACK_RUN]
+    written = _stages_written(journal_path=journal_path)
+    assert written.count(_WARNING_STAGE) == 1
+    assert _UNAVAILABLE_STAGE not in written
+
+
+def test_a_stamp_whose_journal_time_cannot_be_read_is_not_replayed(tmp_path: Path) -> None:
+    """A stamp the window cannot PLACE is passed over, not carried for ever.
+
+    Both ways a journaled `at` fails to read are here, because they reach the
+    pass-over through different arms and each one alone leaves the other able to
+    carry a record no bound can measure. Neither run is asked for, so the
+    absence is observable at the port as well as at the warning the readable
+    engine record would otherwise have minted.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            {**_run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN), "at": None},
+            {**_run_stamp(dispatch_id="dispatch-2", run_id=_STALE_RUN), "at": _UNDATEABLE},
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _stages(), _STALE_RUN: _stages()})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert _WARNING_STAGE not in written
+    assert _UNAVAILABLE_STAGE not in written
+
+
+def test_the_unavailable_retry_is_bounded_rather_than_asked_for_ever(tmp_path: Path) -> None:
+    """A run nothing can read is retried, and then stops being asked.
+
+    Factory run storage is pruned, so every historical run eventually becomes
+    PERMANENTLY unreadable; the clause requires the unavailable reading to be
+    retried, and a retry with no ceiling appends one record per run per pass for
+    the rest of the journal's life. The assertions are two-sided on purpose: the
+    appends must stop, and they must not stop at one, because "ask once" would
+    satisfy a ceiling assertion while retiring the retry the clause ratifies.
+    The pass count is read off no constant, so the case fails for an unbounded
+    retry whatever ceiling the lane later chooses.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    for _ in range(_BOUNDED_RETRY_PASSES):
+        _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    unavailable = _stages_written(journal_path=journal_path).count(_UNAVAILABLE_STAGE)
+    assert 1 < unavailable < _BOUNDED_RETRY_PASSES
+    assert [call[1] for call in runner.calls].count("inspect") == unavailable
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_the_retry_ceiling_is_read_from_this_lane_s_own_journaled_records(
+    tmp_path: Path,
+) -> None:
+    """The prior attempts are the JOURNAL's, not a counter this process accumulated.
+
+    The case above drives many passes through ONE `ReconcileInputs`, so a lane
+    holding a per-process tally would satisfy it exactly as a lane reading the
+    journal does — and a per-process tally is no bound at all, because the timer
+    starts a fresh process every ten minutes. Here the attempts are already ON
+    the journal and this process takes its FIRST pass, so nothing but a read of
+    those records can produce the pass-over.
+
+    The seeded count is the other case's pass count, which is what keeps the two
+    consistent: a ceiling above it would red them both rather than leaving this
+    one quietly agreeing with a number nobody rechecks.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            *(_unavailable(run_id=_FALLBACK_RUN) for _ in range(_BOUNDED_RETRY_PASSES)),
+        ),
+    )
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert "inspect" not in [call[1] for call in runner.calls]
+    assert written.count(_UNAVAILABLE_STAGE) == _BOUNDED_RETRY_PASSES
+    assert _fact_ids(repo=tmp_path, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_a_fallback_only_edit_leaves_the_warning_standing(tmp_path: Path) -> None:
+    """Only the full-chain digest moves, so the warning it was raised about stands."""
+    repo = _configured_repo(tmp_path=tmp_path)
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _standing_warning(
+                generation=_resolved_generation(repo=repo), full_chain="chain-before-the-edit"
+            ),
+        ),
+    )
+    inputs = _inputs(repo=repo, journal_path=journal_path, runner=_Runner())
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _SUPERSEDED_STAGE not in _stages_written(journal_path=journal_path)
+    assert _fact_ids(repo=repo, journal_path=journal_path) == [_FACT_ID]
+
+
+def test_the_pass_folds_the_warning_ledger_from_the_journal_at_most_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-6bbcda: one pass reads the journal for its warning ledger at most once.
+
+    The host profile of 2026-10-24 put 98% of a pre-launch dispatcher's CPU in
+    re-reading a 307 MB journal once per minted warning and once per primary
+    attempt. Three runs here mint warnings and evidence a primary attempt, so a
+    per-warning or per-attempt read is counted more than once. The second pass
+    is the control on correctness: an in-memory ledger that forgot what this
+    pass appended would mint the same warnings again.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-2", index=1, identity="selection-2"),
+            _run_stamp(dispatch_id="dispatch-2", run_id="01SECOND"),
+            _selection(
+                at=_AFTER_WARNING, dispatch_id="dispatch-3", index=0, identity="selection-3"
+            ),
+            _run_stamp(dispatch_id="dispatch-3", run_id=_PRIMARY_RUN, at=_AFTER_WARNING),
+        ),
+    )
+    runner = _Runner(
+        inspect_by_run={_FALLBACK_RUN: _stages(), "01SECOND": _stages(), _PRIMARY_RUN: _stages()}
+    )
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+    reads: list[object] = []
+
+    def counting(
+        original: Callable[..., tuple[Mapping[str, Any], ...]],
+    ) -> Callable[..., tuple[Mapping[str, Any], ...]]:
+        def wrapped(*, journal_path: Path | None) -> tuple[Mapping[str, Any], ...]:
+            reads.append(journal_path)
+            return original(journal_path=journal_path)
+
+        return wrapped
+
+    # Both readers the lane can reach, counted together: the pass's own
+    # snapshot read and the warning-ledger fold.
+    monkeypatch.setattr(warning_ledger, "journal_records", counting(warning_ledger.journal_records))
+    monkeypatch.setattr(
+        selection_lane, "read_journal_records", counting(selection_lane.read_journal_records)
+    )
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    first = _stages_written(journal_path=journal_path)
+    assert len(reads) <= 1
+    reads.clear()
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert len(reads) <= 1
+    assert first.count(_WARNING_STAGE) >= 1
+    assert _stages_written(journal_path=journal_path).count(_WARNING_STAGE) == first.count(
+        _WARNING_STAGE
+    )
+
+
+def test_a_terminal_run_s_outcomes_are_read_once_and_not_again_on_a_later_pass(
+    tmp_path: Path,
+) -> None:
+    """Both terminal spellings are read on the first pass and never inspected again.
+
+    A terminal run's node outcomes cannot change, so re-reading them every ten
+    minutes for the whole replay window is the waste this case ends. The two
+    runs spell their status the two ways the engine does (a bare string and a
+    `kind` object), so a build recognising only one still spends a read on the
+    other. The third pass is the control that the skip survives repeated passes
+    and that the warning the first read minted is neither lost nor minted again.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-2", index=1, identity="selection-2"),
+            _run_stamp(dispatch_id="dispatch-2", run_id=_SECOND_RUN),
+        ),
+    )
+    runner = _Runner(
+        inspect_by_run={
+            _FALLBACK_RUN: _inspected(status="succeeded"),
+            _SECOND_RUN: _inspected(status={"kind": "failed"}, run_id=_SECOND_RUN),
+        }
+    )
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    for _ in range(3):
+        _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert _inspect_count(runner=runner) == 2
+    assert written.count(_READ_STAGE) == 2
+    assert written.count(_WARNING_STAGE) == 2
+
+
+def test_the_read_record_on_the_journal_not_a_process_tally_ends_the_re_read(
+    tmp_path: Path,
+) -> None:
+    """The read is remembered on the journal, so a fresh process spends no inspect.
+
+    The timer starts a new process every ten minutes, so a tally held in memory
+    would satisfy the multi-pass case above and bound nothing. Here the record
+    is already ON the journal and this process takes its first pass.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+            {
+                "at": _WARNED_AT,
+                "stage": _READ_STAGE,
+                "work_item_id": _ITEM,
+                "run_id": _FALLBACK_RUN,
+                "factory_name": _HP.name,
+                "factory_server_url": _HP.server,
+            },
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _inspected(status="succeeded")})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _inspect_count(runner=runner) == 0
+    assert _WARNING_STAGE not in _stages_written(journal_path=journal_path)
+
+
+@pytest.mark.parametrize("status", ["running", {"kind": "blocked"}, None, "an-unrecognised-kind"])
+def test_a_run_that_was_not_terminal_when_read_is_read_again(
+    tmp_path: Path, status: object
+) -> None:
+    """A run still moving, or whose status cannot be recognised as terminal, is re-read.
+
+    Its outcomes can still change, so recording the read would freeze a partial
+    reading. A missing or unrecognised status is treated as not terminal for the
+    same reason: the conservative direction is the extra read, never a skipped
+    run. No read record is written for it.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner(inspect_by_run={_FALLBACK_RUN: _inspected(status=status)})
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert _inspect_count(runner=runner) == 2
+    assert _READ_STAGE not in _stages_written(journal_path=journal_path)
+
+
+def test_a_run_unreadable_on_an_earlier_pass_is_read_until_it_is_readable(
+    tmp_path: Path,
+) -> None:
+    """An unreadable pass records no read, so the retry continues until a read lands.
+
+    The first two passes find no record and journal the run unavailable; the
+    factory then answers with a terminal record. That pass reads it and records
+    the read, and the pass after it spends nothing.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=(
+            _selection(at=_WARNED_AT, dispatch_id="dispatch-1", index=1),
+            _run_stamp(dispatch_id="dispatch-1", run_id=_FALLBACK_RUN),
+        ),
+    )
+    runner = _Runner()
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    assert _READ_STAGE not in _stages_written(journal_path=journal_path)
+    runner.inspect_by_run[_FALLBACK_RUN] = _inspected(status="failed")
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    written = _stages_written(journal_path=journal_path)
+    assert written.count(_UNAVAILABLE_STAGE) == 2
+    assert written.count(_READ_STAGE) == 1
+    assert _inspect_count(runner=runner) == 3
+
+
+@dataclass(kw_only=True)
+class _HeldRunner(_Runner):
+    """A fake `fabro` CLI that holds each `inspect` open until its peers have joined it.
+
+    A call returns once `hold_for` inspects are in flight together, or once every
+    run has started, or after `_HOLD_SECONDS`. One serial caller therefore never
+    sees a peer and waits the whole hold on every call, while a concurrent caller
+    releases at once, and `peak` records the most inspects ever in flight at the
+    same instant -- the quantity the worker-count bound is about.
+    """
+
+    total: int
+    hold_for: int
+    condition: threading.Condition = field(default_factory=threading.Condition)
+    started: int = 0
+    in_flight: int = 0
+    peak: int = 0
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        if argv[1] != "inspect":
+            return CommandResult(exit_code=0, stdout="[]", stderr="")
+        with self.condition:
+            self.started += 1
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            self.condition.notify_all()
+            _ = self.condition.wait_for(
+                lambda: self.in_flight >= self.hold_for or self.started >= self.total,
+                timeout=_HOLD_SECONDS,
+            )
+            self.in_flight -= 1
+            self.condition.notify_all()
+        return CommandResult(exit_code=0, stdout=_inspected(status="running"), stderr="")
+
+
+def test_the_remaining_inspects_of_one_pass_run_concurrently_up_to_the_worker_bound(
+    tmp_path: Path,
+) -> None:
+    """Many runs to read are inspected side by side, and never more than the bound at once.
+
+    The pass this item measured spent about nine seconds per inspect, one after
+    another. The runner here holds every call open until `_CONCURRENT_RUNS` of
+    them are in flight together, which no bound can allow, so the peak it records
+    is exactly the most the lane ever ran at once: more than one proves the calls
+    overlap, and equality with the named constant proves the fan-out is capped at
+    that constant rather than at the number of runs.
+    """
+    journal_path = _journal_at(
+        tmp_path=tmp_path,
+        records=tuple(
+            _run_stamp(dispatch_id=f"dispatch-{index}", run_id=f"01RUN{index:02d}")
+            for index in range(_CONCURRENT_RUNS)
+        ),
+    )
+    runner = _HeldRunner(total=_CONCURRENT_RUNS, hold_for=_CONCURRENT_RUNS)
+    inputs = _inputs(repo=tmp_path, journal_path=journal_path, runner=runner)
+
+    _ = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert runner.started == _CONCURRENT_RUNS
+    assert runner.peak >= 2
+    assert runner.peak == selection_lane.SELECTION_INSPECT_WORKERS

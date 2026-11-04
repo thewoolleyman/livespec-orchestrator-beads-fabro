@@ -40,6 +40,7 @@ _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_arg
 _PUBLIC_NAMES = (
     "add_claude_cred_status_arguments",
     "add_codex_cred_refresh_arguments",
+    "add_drift_run_arguments",
     "add_janitor_check_arguments",
     "add_ledger_check_arguments",
     "add_ledger_normalize_arguments",
@@ -129,6 +130,16 @@ def test_the_router_no_longer_declares_any_of_them() -> None:
             "add_janitor_check_arguments",
             ["--repo", "/repo"],
             {"repo": "/repo", "as_json": False},
+        ),
+        (
+            "add_drift_run_arguments",
+            ["--repo", "/repo", "--invoker", "operator:drift", "--dry-run", "--json"],
+            {
+                "repo": "/repo",
+                "invoker": "operator:drift",
+                "dry_run": True,
+                "as_json": True,
+            },
         ),
         (
             "add_reconcile_runs_arguments",

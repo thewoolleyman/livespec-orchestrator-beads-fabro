@@ -45,6 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
+    DEFAULT_RUN_WALL_BUDGET,
+    RunWallBudget,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     sandbox_image_source,
 )
@@ -93,8 +97,9 @@ def overlay_file_path(*, work_item_id: str) -> Path:
 
 
 def workflow_payload_dir(*, work_item_id: str) -> Path:
-    """The per-dispatch workflow payload (rendered graph plus its prompts)."""
-    return Path(tempfile.gettempdir()) / f"fabro-workflow-{work_item_id}"
+    """The per-dispatch workflow payload with a Fabro-safe, injective name."""
+    encoded_id = work_item_id.encode("utf-8").hex()
+    return Path(tempfile.gettempdir()) / f"fabro-workflow-{encoded_id}"
 
 
 def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each field is an independent caller input.
@@ -105,6 +110,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
     janitor: tuple[str, ...] | None,
     raw_labels: tuple[str, ...],
     timeouts: NodeTimeouts,
+    run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
     runner: CommandRunner,
     committed_workflow: Path,
     acp_nodes: AcpNodeResolution | None = None,
@@ -128,6 +134,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         fabro_factory_server=factory_target.server,
         fabro_factory_dev_token=factory_target.dev_token,
         fabro_factory_environment=factory_environment_id(factory=factory_target),
+        fabro_factory_github_app=factory_target.github_app,
         # WHERE this dispatch's sandbox image comes from, decided ONCE here and
         # projected to both consumers off the plan: the launch overlay renders
         # from it and the dispatch record names it. An unreadable
@@ -182,6 +189,12 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         # the file, so the bound the watchdog applies is the value the
         # rendered graph gave the node.
         node_timeouts=timeouts,
+        # And the WHOLE-RUN WALL BUDGET from the same read, which the
+        # pre-dispatch admission already graded against those node timeouts.
+        # Projected off the materialized payload rather than re-resolved, so
+        # the figure the watchdog cancels against is the figure the refusal
+        # passed and the dispatch record names.
+        run_wall_budget=run_wall_budget,
         # Already resolved and journaled by the caller, so the run renders the
         # adapters the dispatch record names rather than a re-derivation.
         acp_nodes=acp_nodes,

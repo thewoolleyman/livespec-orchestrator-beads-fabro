@@ -47,6 +47,23 @@ this default calls remote while it is in fact local; it declares
 `dispatcher_receiver` and is then read correctly, which is the whole point of
 having the key decide.
 
+A REGISTRY-BACKED ENTRY NAMES A SERVER, and the host-factory-registry clause
+says so in as many words: every surface whose behaviour depends on whether a
+factory is remote must treat one as naming a server. Such an entry carries no
+`server` key at all — its address is host state the fleet's provisioning
+renders — so a reading that asked for the literal key resolved it as the
+implicit single-factory target and reported the factory's sandbox as running on
+THIS machine. The guard then asserted that this host's own `run_turn` sink
+should carry that factory's spans, and a genuinely healthy remote pipeline read
+as an absence.
+
+The test is a DECLARATION question and deliberately not a filesystem one: no
+registry is read here, and none needs to be. A registry-backed entry names
+another machine whether or not this host can currently resolve which one, so an
+unresolvable registry is still remote — and an unresolvable registry is exactly
+the moment this gauge must not start claiming that the local sink should hold
+that factory's spans.
+
 AN UNRECOGNISED DECLARATION READS AS UNOBSERVABLE RATHER THAN REFUSING. The
 guard is a non-blocking post-verdict assertion, so a refusal here would fail an
 already-merged dispatch over a telemetry gauge; and the opposite fallback would
@@ -80,6 +97,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._factory_registry import REGISTRY_KEY
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
 
@@ -187,5 +205,19 @@ def _declared_export(*, block: Mapping[str, object], factory: str) -> object:
 
 
 def _names_a_server(*, block: Mapping[str, object], factory: str) -> bool:
-    server = _factory_entry(block=block, factory=factory).get(_SERVER_KEY)
+    """Whether this entry names a machine other than the one this host runs on.
+
+    A REGISTRY-BACKED entry does, and it is tested FIRST because it carries no
+    `server` key for the second test to find — see the module docstring for what
+    reading it as the implicit local target cost. `REGISTRY_KEY` is imported from
+    the reading rather than respelled here, so a reader spelling the key its
+    writer does not cannot silently resolve every registry-backed factory as
+    local; and it is tested for `True` exactly as the reading tests it, because
+    the clause ratifies one way of declaring the decision and any other spelling
+    is an entry that is not registry-backed.
+    """
+    entry = _factory_entry(block=block, factory=factory)
+    if entry.get(REGISTRY_KEY) is True:
+        return True
+    server = entry.get(_SERVER_KEY)
     return isinstance(server, str) and server.strip() != ""

@@ -35,7 +35,9 @@ is the one surface that could quietly make the tree disagree with both.
 - Do NOT edit, add or delete any file in the repository.
 - Do NOT commit, and do NOT push.
 - Write every capture artifact to a scratch directory OUTSIDE the clone —
-  use `"${TMPDIR:-/tmp}/proof-capture"` and create it if needed.
+  use `"${TMPDIR:-/tmp}/proof-capture"`. Before the first reproduction step,
+  run `mkdir -p "${TMPDIR:-/tmp}/proof-capture"`; the idempotent precondition
+  lets the replay start on either a clean sandbox or the capture's prior leavings.
 - Before you post, confirm `git status --porcelain` is EMPTY. If it is
   not, something you ran wrote into the tree: clean it up (`git checkout
   -- .` plus removing the untracked files you created) and re-confirm.
@@ -45,6 +47,62 @@ behaviour is missing, a command the assertion names does not exist, a
 surface the assertion names is broken — that is an IMPLEMENTATION DEFECT,
 not your problem to fix. Do not fix it. Report it: see "A capture that
 needs a code change" below.
+
+## Step 0 — were you re-entered because a review REJECTED the last record?
+
+This node runs once per green janitor, so you may be capturing for the first
+time or re-capturing after `review` found the previous record defective. A
+re-capture that does not know WHY the record was rejected produces the same
+kind of record and is rejected again, which is exactly the loop this step
+exists to end: two runs on 2026-10-20 died on the review-fix firing budget
+with green code because nothing carried the reviewer's findings back here.
+
+So, BEFORE anything else, establish whether findings are owed and read them.
+They arrive by **two routes, and you must try both**:
+
+1. **The engine preamble of preceding stage output**, above this prompt. A
+   recapture entry is preceded by a `recapture_route` stage whose output
+   begins `LIVESPEC_RECAPTURE:`, and the review's own response carries the
+   finding lines. A fix round reaches you several stages later instead, with
+   the review further back in the same preamble.
+2. **The review record on the pull request.** `review` posts one comment per
+   blocking round whose first line begins `Review findings — run `. **Read it
+   whenever the preamble carries no finding** — and reading it is cheap, so
+   read it whenever you are not certain you have the complete list:
+
+       gh pr list --head <publish branch> --state open --json number
+       gh pr view <number> --json comments
+
+   Take the LATEST `Review findings` comment, not the first.
+
+**A recapture entry from `proof_verify`** reaches you the same two ways, and
+its issuing record is a different one. When the `recapture_route` output in
+the preamble is preceded by the `proof_verify` stage rather than by `review`,
+the independent replay found the record's reproduction steps to differ from
+your capture only in FIDELITY: the behavioural result was identical and only
+the record's rendering differed (stream interleaving, ordering, whitespace or
+formatting). The durable second route is then the LATEST comment whose first
+line opens `Proof of Done — not_reproduced — run `, not a `Review findings`
+comment. Each assertion section of it carries a `Difference: fidelity` line
+and says what rendered differently. Address each one in the record you are
+about to post: make the proof independent of the rendering that moved — for
+example, capture each stream to its own file, or flush the buffered stream
+explicitly in the step — and publish a new CURRENT record, never an edit of an
+earlier one. The tree is correct and stays unmodified.
+
+Every `[BLOCKING]` line tagged `(proof-record)` is a defect in the record you
+must fix in the one you are about to post. The four kinds are: a record that
+is not current for the publish head, a behavioural assertion proved by
+test-suite output alone, a step running a program the record does not contain,
+and an assertion whose proof prints its own conclusion. Address **each** of
+them — name them in your final reply and say what you changed — and publish a
+record that is CURRENT for the publish head, per the head declaration in Step
+5. A `(tree)` finding is not yours: a code defect is the fix stage's work and
+you must still not modify the tree.
+
+If findings were owed and you can find none by either route, say so
+explicitly in your final reply and capture afresh and completely rather than
+re-posting the previous record's shape.
 
 ## Step 1 — read the Definition of Done and classify every assertion
 
@@ -109,19 +167,33 @@ concrete, copy-pasteable action or command. The steps must be:
   asset ordinal it produces, e.g. "produces proof 01". The replay leg
   compares its `verify` asset to the `capture` asset of the SAME ordinal,
   so a step that names no ordinal makes its own proof uncomparable.
-- **Self-contained in its PROGRAM TEXT.** When a step runs a program rather
-  than a bare command — a heredoc into an interpreter (`python -`, `sh -s`),
-  a script you authored in the scratch directory, a `-c` one-liner, a patch
-  or a mutation applied to a file — the record MUST publish that program's
-  COMPLETE SOURCE in a fenced block, as part of the step or beside its
-  proof. Publishing only the invocation line and the program's OUTPUT does
-  not satisfy this: the replayer is a stranger who may not reconstruct a
-  program from its stdout, and may not infer one from the surrounding prose,
-  so a step whose program is absent is UNREPLAYABLE and the assertion it
-  carries is graded `not_reproduced` however correct the implementation is.
-  A phrase such as "with the program shown in the capture" is a PROMISE this
-  bullet makes binding — before you publish, re-read each such step and
-  confirm the source it points at is really there.
+- **Self-contained in its PROGRAM TEXT.** Every program a step executes that
+  is NEITHER tracked in the repository at the commit this record names NOR an
+  installed tool invoked by its name MUST be written into the record itself —
+  its COMPLETE SOURCE in a fenced block, as part of the step or beside its
+  proof — or into a proof asset the record names through the proof asset
+  store. The test is replayability from three things alone: this record, that
+  commit, and the sandbox's installed tools.
+  - **These two are exempt, and naming them is enough.** A program the
+    repository TRACKS at that commit may be invoked by its path, and an
+    INSTALLED tool may be invoked by its name; neither has to be copied into
+    the record, because the replayer has both.
+  - **Everything else is not.** A heredoc into an interpreter (`python -`,
+    `sh -s`), a script you authored in the scratch directory — anything under
+    `"${TMPDIR:-/tmp}/proof-capture"` is untracked by construction — a `-c`
+    one-liner, a patch or a mutation applied to a file: publish the source.
+    Publishing only the invocation line and the program's OUTPUT does not
+    satisfy this: the replayer is a stranger who may not reconstruct a program
+    from its stdout, and may not infer one from the surrounding prose, so a
+    step whose program is absent is UNREPLAYABLE, it is a blocking
+    proof-record finding at review, and the assertion it carries is graded
+    `not_reproduced` however correct the implementation is. Measured
+    2026-10-20: records whose steps ran untracked `/tmp/proof-capture/*.py`
+    programs the record never contained were rejected round after round until
+    the run died on its firing budget.
+  - A phrase such as "with the program shown in the capture" is a PROMISE this
+    bullet makes binding — before you publish, re-read each such step and
+    confirm the source it points at is really there.
 
 ## Step 3 — execute the steps verbatim
 
@@ -147,6 +219,11 @@ For such an assertion you MUST **exercise the behaviour through the surface
 the assertion names**, driving the delivered artifact **as a user or operator
 would**.
 
+For example, when the assertion concerns code that accepts a fixture, exercise
+it by **running the code under test on a fixture** and **showing its output and
+exit status**. The fixture is the input to the delivered artifact, not a test
+double standing in for its behaviour.
+
 The output of this repository's own test suite **MUST NOT be the proof of a
 behavioural assertion** — not alone, and not as the assertion's only step. It
 MAY appear only as **supporting evidence beside a real exercise**. A suite
@@ -160,6 +237,32 @@ entry point, invoke that entry point the way an operator invokes it. Where it
 names a file and the text it carries, read that file out of the delivered
 tree. Reaching for `pytest` because it is nearer to hand is the failure this
 paragraph exists to stop.
+
+### Pre-publication proof refusal
+
+Before posting the record, audit each `factory_captured` assertion's proposed
+proof. If an assertion is evidenced by **test-suite output alone** — including
+a pass count or test-runner output — **DO NOT publish the record**. Name the
+assertion, then capture behaviour evidence for it: directly exercise the
+surface the assertion names and retain the delivered artifact's output and exit
+status. A suite run may accompany that evidence afterwards; it cannot replace
+it.
+
+If **every assertion carries behaviour evidence**, the audit is complete:
+**continue to Step 5 exactly as written**. Do not add or substitute another
+publication path; the audit changes only the suite-only refusal case.
+
+### Show the observation, never print the conclusion
+
+A proof must SHOW what was observed. A step whose output is the claim itself
+— an `echo` of the assertion, a `print("verified")`, a program whose only
+output is a line stating that the thing works — proves nothing, and it is a
+blocking proof-record finding at review even when the assertion is perfectly
+true. The published capture has to carry the artifact's OWN output, exactly
+as the artifact emitted it, so a stranger replaying the step can compare
+their observation against yours. Where a step must reduce a large output to
+a verdict, publish the raw observation too, or publish the exact comparison
+that produced the verdict — never the verdict alone.
 
 ### What to capture, per assertion
 
@@ -176,11 +279,11 @@ Write each image into the scratch directory under this EXACT name:
 where `NN` is the two-digit ordinal of the proof within THIS record
 (`01`, `02`, …) and `slug` is a short lowercase-kebab description of what
 the image shows. The run id is part of the name so that no run can ever
-overwrite another run's asset. Resolve it in this order and use the first
-that answers: `$FABRO_RUN_ID`, else `git config --get
-livespec.factoryRunId` (the dispatch id the sandbox's own prepare step
-declared, which is equally unique per dispatch). If neither answers, STOP
-and end with the needs-human protocol rather than inventing one.
+overwrite another run's asset. Read it from `git config --get
+livespec.factoryRunId` — the dispatch id the sandbox's own prepare step
+declared, unique per dispatch, and the ONLY run-id source a shell in this
+sandbox can read. If it answers nothing, STOP and end with the needs-human
+protocol rather than inventing one.
 
 Upload each image to the repository's standing proof-assets prerelease —
 the Dispatcher created it before this dispatch — and keep the URL it
@@ -272,7 +375,7 @@ reads `Body is too long (maximum is 65536 characters)`, and that message is
 wrong in BOTH its number and its unit — the enforced ceiling is four times
 it, and it counts bytes. The figures above were measured against live
 GitHub; the measurement and its controls are in
-`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`.
+`plan/archive/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`.
 
 Measure in BYTES. `wc -c` counts bytes; `wc -m` counts characters, and on
 multibyte proof — box-drawing tables, `git log --graph` glyphs, em dashes —
@@ -351,7 +454,29 @@ The comment's FIRST LINE must be exactly:
 
     Proof of Done — captured — run <run-id> — <UTC timestamp>
 
-using the run id you resolved in Step 4 and an ISO-8601 UTC timestamp.
+**Write that line with its run id resolved IN THE SAME COMMAND**, so no step
+between resolving the id and writing the header can leave it empty:
+
+    run_id="$(git config --get livespec.factoryRunId || true)"
+    test -n "$run_id" || { echo 'LIVESPEC_PROOF_CAPTURE_NO_RUN_ID' >&2; exit 1; }
+    stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'Proof of Done — captured — run %s — %s\n' "$run_id" "$stamp" > <file>
+
+If that resolution answers nothing, **never post a header with an empty run
+id**: say what you measured and end with the needs-human protocol instead. A
+record comment MUST NOT be edited after posting, so an empty run id cannot be
+repaired within the run.
+
+Do NOT reach for `$FABRO_RUN_ID` here. It is exported to HOOKS only and is
+unset in this shell, so `printf '... run %s ...' "$FABRO_RUN_ID"` writes the
+bare word `run` as the header's publishing identity. The record reader then
+treats the WHOLE comment as no record at all: the replay still runs and still
+publishes `verified`, review still approves, and the run fails two stages
+later at publication with no route back, because a resume restarts at the
+failed stage and never re-enters this one. Measured on
+`livespec-dev-tooling-r6kagr`, run 01M5E8H65Z04. Report the id you wrote by
+quoting the resolved value, never the source you believe it came from — the
+run above reported `$FABRO_RUN_ID` as its source after writing nothing.
 
 The SECOND line must declare, exactly once, the publish-branch head these
 steps ran on:
@@ -520,7 +645,19 @@ deletion of one. Its FIRST LINE must be exactly:
 
     Proof of Done — not_captured — run <run-id> — <UTC timestamp>
 
-using the run id you resolved in Step 4 and an ISO-8601 UTC timestamp.
+written with its run id resolved in the SAME command, exactly as Step 5 writes
+the captured header:
+
+    run_id="$(git config --get livespec.factoryRunId || true)"
+    test -n "$run_id" || { echo 'LIVESPEC_PROOF_CAPTURE_NO_RUN_ID' >&2; exit 1; }
+    stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'Proof of Done — not_captured — run %s — %s\n' "$run_id" "$stamp" > <file>
+
+The same rule binds here and for the same reason: never post a header with an
+empty run id, and end with the needs-human protocol instead if the resolution
+answers nothing. This record is the `fix` stage's only durable account of the
+finding once the preamble is gone, so a header that parses as no record loses
+the work order as surely as a non-record capture loses the proof.
 
 The body then carries, per assertion in Definition of Done order:
 

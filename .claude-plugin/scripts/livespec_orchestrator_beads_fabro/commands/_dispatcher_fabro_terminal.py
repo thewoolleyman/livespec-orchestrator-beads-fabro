@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import replace
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     dead_implementer_condition_from_text,
@@ -17,37 +18,40 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach impor
     inspect_run,
     unobservable_run_outcome,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
-    needs_human_terminal_detail,
-    needs_human_terminal_preservation,
-    needs_human_terminal_reason,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_terminal import (
+    needs_human_terminal_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    NEEDS_HUMAN_MARKER,
+    RECAPTURE_EXHAUSTED_MARKER,
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outcome import (
     provider_limit_release_outcome,
+    reclassified_turns,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted import (
+    recapture_exhausted_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
-    routing_stage_failure,
     terminal_event_output,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
     FabroEscalation,
     fabro_escalation_from_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
-    FabroFailureDetail,
     FabroInspectResult,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_terminal_evidence import terminal_evidence
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+    fabro_inspect_record,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
         DispatchOutcome,
     )
+
+NON_CONVERGED_NODE = "non_converged"
 
 __all__: list[str] = [
     "fabro_run_terminal_outcome",
@@ -64,7 +68,37 @@ def fabro_run_terminal_outcome(
     exit_code: int,
     stderr: str,
 ) -> DispatchOutcome | None:
-    """Return a non-green run observation, or None for ordinary PR reconciliation."""
+    """Return a non-green run observation, or None for ordinary PR reconciliation.
+
+    EVERY non-green ending carries the run's reclassified turns, whichever
+    mapping below produced it: a refusal booked as a successful turn mints its
+    candidate hold even when a later failure kept its own route, so the evidence
+    rides the outcome the disposition reads instead of being re-derived there.
+    """
+    outcome = _terminal_outcome(
+        outcome_type=outcome_type,
+        plan=plan,
+        run_id=run_id,
+        inspect=inspect,
+        exit_code=exit_code,
+        stderr=stderr,
+    )
+    if outcome is None:
+        return None
+    turns = reclassified_turns(plan=plan, inspect=inspect, run_id=run_id)
+    return replace(outcome, reclassified_turns=turns) if turns else outcome
+
+
+def _terminal_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    run_id: str | None,
+    inspect: FabroInspectResult | None,
+    exit_code: int,
+    stderr: str,
+) -> DispatchOutcome | None:
+    """The terminal mapping itself, before the reclassified turns are attached."""
     # FIRST, because the clause releases a provider-limit failure "through any
     # terminal, the workflow's `needs_human` terminal included" -- so it has to
     # outrank BOTH mappings below that would otherwise rest the item at
@@ -87,10 +121,14 @@ def fabro_run_terminal_outcome(
     )
     if blocked is not None:
         return blocked
-    if exit_code == 0 or (
-        inspect is not None
-        and inspect.command.exit_code == 0
-        and inspect.status_kind == "succeeded"
+    cancelled = _engine_cancelled(inspect=inspect)
+    if not cancelled and (
+        exit_code == 0
+        or (
+            inspect is not None
+            and inspect.command.exit_code == 0
+            and inspect.status_kind == "succeeded"
+        )
     ):
         return None
     failure = None if inspect is None else inspect.failure
@@ -110,7 +148,7 @@ def fabro_run_terminal_outcome(
     )
     if unobservable is not None:
         return unobservable
-    terminated = _needs_human_terminal_outcome(
+    terminated = needs_human_terminal_outcome(
         outcome_type=outcome_type,
         plan=plan,
         run_id=run_id,
@@ -118,16 +156,33 @@ def fabro_run_terminal_outcome(
         failure=failure,
         text=client_text,
     )
+    # AFTER the needs-human terminal and BEFORE the generic failure, because the
+    # `non_converged` terminal also ends a recapture-cap run and the generic arm
+    # would hand its detail to the non-convergence bounce.
+    if terminated is None:
+        terminated = recapture_exhausted_outcome(
+            outcome_type=outcome_type,
+            plan=plan,
+            run_id=run_id,
+            failure=failure,
+            emitted=terminal_event_output(
+                payload=None if inspect is None else inspect.events_payload,
+                node=NON_CONVERGED_NODE,
+                marker=RECAPTURE_EXHAUSTED_MARKER,
+            ),
+            client_text=client_text,
+        )
     if terminated is not None:
         return terminated
     return outcome_type(
         work_item_id=plan.work_item_id,
-        status="failed",
+        status="cancelled" if cancelled else "failed",
         stage="fabro-run",
         pr_number=None,
         merge_sha=None,
         detail=detail,
         fabro_run_id=run_id,
+        fabro_factory_name=plan.fabro_factory_name if cancelled else None,
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,
         fabro_failure_signature=None if failure is None else failure.signature,
@@ -144,113 +199,18 @@ def fabro_run_terminal_outcome(
     )
 
 
-def _needs_human_terminal_outcome(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    run_id: str | None,
-    inspect: FabroInspectResult | None,
-    failure: FabroFailureDetail | None,
-    text: str,
-) -> DispatchOutcome | None:
-    """Map the `needs_human` terminal's sentinel onto the `blocked` outcome.
-
-    The workflow's needs-human path no longer parks the run (plan
-    ledger-is-the-only-gate; contracts.md "A factory run never awaits a
-    human", v093): the terminal node preserves the tree on a run-scoped ref,
-    prints `NEEDS_HUMAN_MARKER` and exits non-green. What the Dispatcher owes
-    the ledger is unchanged — the item rests at `blocked / needs-human` and
-    the dispatch reports exit code 4 — so the sentinel produces the very same
-    `blocked` outcome the gate did, with a detail that names the preserved
-    ref and the ledger valve instead of a `fabro attach` that would find no
-    run to attach to. The terminal's stage event supplies its emitted output;
-    client stderr and structured detail remain fallbacks for legacy records.
-    Neither fallback is guaranteed to carry a node's own output.
-
-    EVERY STRUCTURED FAILURE FIELD IS CARRIED, exactly as the sibling `failed`
-    outcome below carries them. Passing none of them is what made the
-    engine-escalation rendering of `bd-ib-bg2zz5` unreachable for every v093
-    terminal ending, which since v093 is every needs-human ending: the one line
-    a triager needs — the causal stage, its category and its innermost cause —
-    survived only in the run export. The ledger STATUS is deliberately
-    unchanged (`bg2zz5`'s own ruling: a presentation defect over accurate state
-    is fixed in the presentation), so the item still rests at `blocked /
-    needs-human` and only what the outcome REPORTS grows.
-
-    THE TWO PROVIDER FIELDS ARE LOAD-BEARING RATHER THAN DECORATIVE, which is
-    why they are listed beside the three taxonomy fields and not left for a
-    consumer to recover from `detail` prose. `record_provider_exhaustion_if_
-    observed` keys on `provider_usage_limit_provider` alone, so dropping it here
-    meant a ceiling observed at a needs-human ending wrote NO dispatcher-owned
-    hold — and the next dispatch burned the same exhausted credential.
-
-    THE TERMINAL'S OWN REASON IS PARSED ONCE AND CARRIED, for the same reason
-    and from the same text the detail is rendered from. The durable ledger
-    record is appended long after this mapper, from the outcome alone, so a
-    reason left only inside `detail` would reach it only as prose to re-match —
-    and for a stage that TIMED OUT that line is the sole account of what the
-    half-finished turn left behind (work-item bd-ib-qhv7qs).
-
-    THE CAUSAL VERDICT IS COMPUTED ONCE AND CARRIED, rather than rendered into
-    the detail and recovered downstream. The escalation that writes this
-    ending's operator guidance to stderr needs the same three-way verdict the
-    detail is rendered from, and it runs long after this mapper with no access
-    to the inspect payload — so a second derivation there could only read the
-    rendered prose back, which is the coupling every typed field above exists
-    to avoid. One verdict, two surfaces, no reparse.
-
-    AND ON AN ENGINE-ROUTED ENDING THE CAUSE IS RE-READ FROM THE STAGE THAT
-    ROUTED IT. The observed failure comes from the run CONCLUSION, which on
-    exactly these endings describes the terminal's own deliberate exit — so
-    `_head` above names the routing stage while `_attribution` quoted a
-    sentence about the graph's shape beside it, and the two read as one
-    account. The re-read is gated on the causal verdict having named a stage,
-    because that verdict is the only thing that establishes an engine-routed
-    ending; an agent-request ending has no predecessor to ask, and an
-    unestablished one has nothing to ask it with. What the re-read may not
-    retract is the provider ceiling, which `_dispatcher_terminal_events`
-    records in full.
-    """
-    emitted = terminal_event_output(payload=None if inspect is None else inspect.events_payload)
-    text = f"{emitted}\n{text}"
-    if NEEDS_HUMAN_MARKER not in text:
-        return None
-    causal = causal_stage_failure(
-        evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
-    )
-    if inspect is not None and causal.stages:
-        failure = routing_stage_failure(
-            observed=failure,
-            inspect_payload=inspect.payload,
-            events_payload=inspect.events_payload,
-            stage=causal.stages[-1],
-        )
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="blocked",
-        stage="fabro-run",
-        pr_number=None,
-        merge_sha=None,
-        detail=needs_human_terminal_detail(
-            work_item_id=plan.work_item_id,
-            run_id=run_id,
-            text=text,
-            causal=causal,
-            failure=failure,
-        ),
-        needs_human_kind=causal.kind,
-        needs_human_stages=causal.stages,
-        needs_human_reason=needs_human_terminal_reason(text=text),
-        needs_human_preservation=needs_human_terminal_preservation(text=text),
-        fabro_run_id=run_id,
-        fabro_failure_cause=None if failure is None else failure.cause,
-        fabro_failure_category=None if failure is None else failure.category,
-        fabro_failure_signature=None if failure is None else failure.signature,
-        provider_usage_limit=False if failure is None else failure.provider_usage_limit,
-        provider_usage_limit_provider=(
-            None if failure is None else failure.provider_usage_limit_provider
-        ),
-    )
+def _engine_cancelled(*, inspect: FabroInspectResult | None) -> bool:
+    """Whether the engine, rather than the Dispatcher watchdog, cancelled the run."""
+    if inspect is None:
+        return False
+    record = fabro_inspect_record(payload=inspect.payload)
+    if record is None:
+        return False
+    status: object = record.get("status")
+    if not isinstance(status, dict):
+        return False
+    reason: object = cast("dict[str, object]", status).get("reason")
+    return reason == "cancelled"
 
 
 def _blocked_detail(

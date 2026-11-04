@@ -31,6 +31,9 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._store_rework_mutations import (
+    update_work_item_rework_pending,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     RELEASE_TAG_LABEL,
@@ -113,6 +116,9 @@ class _Runner:
     comment_exit: int = 0
     comments_exit: int = 0
     merged: bool = True
+    # A merged pull request that only MENTIONS the item in its body: neither its head
+    # branch nor its title names the item, so no dispatch of the item produced it.
+    body_mention_only: bool = False
     # The proof-asset store's upload leg. Defaults to SUCCEEDING, so a test that is
     # not about the store does not have to stub one; the failure arm is what the
     # upload-refusal case sets.
@@ -156,6 +162,20 @@ class _Runner:
         """The merge search's payload: the item's merged pull request, or none at all."""
         if not self.merged:
             return "[]"
+        if self.body_mention_only:
+            return json.dumps(
+                [
+                    {
+                        "number": _PR_NUMBER,
+                        "title": "chore: register the project-scoped plugins",
+                        "body": f"Unrelated change that mentions {_ITEM_ID} in passing.",
+                        "headRefName": "chore-plugin-registration",
+                        "baseRefName": "master",
+                        "state": "MERGED",
+                        "mergeCommit": {"oid": _MERGE_SHA},
+                    }
+                ]
+            )
         return json.dumps(
             [
                 {
@@ -174,13 +194,20 @@ def _comments(*, records: tuple[dict[str, str], ...] = ()) -> str:
     return json.dumps({"comments": list(records)})
 
 
-def _capture_comment(*, identity: str) -> dict[str, str]:
+def _capture_comment(
+    *, identity: str, governing_scenario: str | None = None, proof: str | None = None
+) -> dict[str, str]:
+    scenario = (
+        f"Governing scenario: {governing_scenario}\n\n" if governing_scenario is not None else ""
+    )
+    rendered_proof = f"Proof:\n\n```\n{proof}\n```\n" if proof is not None else ""
     return {
         "url": f"https://example.test/c/{identity}",
         "body": (
             f"Proof of Done — {VERDICT_HOST_RECORDED} — session {identity} — t\n\n"
             f"- {RELEASE_TAG_LABEL}: {_RELEASE_TAG}\n\n"
             f"## Assertion 1 — {_HOST_ASSERTION}\n"
+            f"{scenario}{rendered_proof}"
         ),
     }
 
@@ -394,6 +421,64 @@ def test_the_capture_record_claims_no_reproduction_and_the_replay_claims_one(
     )
 
 
+def test_a_verified_replay_renders_the_governing_scenario_of_its_capture(
+    tmp_path: Path,
+) -> None:
+    """A replay inherits the capture's scenario when its own payload omits it."""
+    _file_item(repo=tmp_path)
+    scenario = "## Scenario 132 — A factory-captured proof is replayed before publication"
+    runner = _Runner(
+        comments=_comments(
+            records=(_capture_comment(identity=_OTHER_SESSION, governing_scenario=scenario),)
+        )
+    )
+
+    exit_code, _ = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_VERIFIED,
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        reproduced=True,
+    )
+
+    assert exit_code == 0
+    posted = next(call for call in runner.calls if call[:3] == ["gh", "pr", "comment"])
+    body = Path(posted[-1]).read_text(encoding="utf-8")
+    assert f"Governing scenario: {scenario}" in body
+
+
+def test_a_verified_replay_ignores_a_scenario_line_printed_by_the_capture_proof(
+    tmp_path: Path,
+) -> None:
+    """Only the host-recorded record's prose may govern a replayed assertion."""
+    _file_item(repo=tmp_path)
+    printed_scenario = "## Scenario 999 — Printed by proof output only"
+    runner = _Runner(
+        comments=_comments(
+            records=(
+                _capture_comment(
+                    identity=_OTHER_SESSION,
+                    proof=f"~~~\nGoverning scenario: {printed_scenario}\n~~~",
+                ),
+            )
+        )
+    )
+
+    exit_code, _ = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_VERIFIED,
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        reproduced=True,
+    )
+
+    assert exit_code == 0
+    posted = next(call for call in runner.calls if call[:3] == ["gh", "pr", "comment"])
+    body = Path(posted[-1]).read_text(encoding="utf-8")
+    assert "Governing scenario: no scenario governs this assertion" in body
+    assert printed_scenario not in body
+
+
 def test_a_replay_from_the_recording_identity_is_refused_before_anything_is_posted(
     tmp_path: Path,
 ) -> None:
@@ -422,6 +507,47 @@ def test_a_replay_from_the_recording_identity_is_refused_before_anything_is_post
     assert _SESSION in emitted
     assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
     assert reconciled.driven == []
+
+
+def test_a_nested_codex_replay_uses_its_own_identity_before_the_parent_can_refuse_it(
+    tmp_path: Path,
+) -> None:
+    """A nested verifier replays as Codex, while the inherited-only replay is refused.
+
+    The host-leg guard must run against an actual host-captured assertion.  That keeps
+    this regression test on the same refusal path an operator's replay reaches instead
+    of stopping at the earlier "no host_captured assertion" fixture guard.
+    """
+    _file_item(repo=tmp_path)
+    capture = _capture_comment(identity=_SESSION)
+
+    nested_runner = _Runner(comments=_comments(records=(capture,)))
+    nested_exit, nested_emitted = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_VERIFIED,
+        runner=nested_runner,
+        env={
+            "CODEX_SESSION_ID": _OTHER_SESSION,
+            "CLAUDE_CODE_SESSION_ID": _SESSION,
+        },
+        reproduced=True,
+    )
+
+    inherited_runner = _Runner(comments=_comments(records=(capture,)))
+    inherited_exit, inherited_emitted = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_NOT_REPRODUCED,
+        runner=inherited_runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        reproduced=False,
+    )
+
+    assert nested_exit == 0
+    assert SELF_REPLAY_REFUSAL not in nested_emitted
+    assert [call for call in nested_runner.calls if call[:3] == ["gh", "pr", "comment"]]
+    assert inherited_exit != 0
+    assert SELF_REPLAY_REFUSAL in inherited_emitted
+    assert [call for call in inherited_runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
 
 
 def test_a_not_reproduced_replay_from_the_recording_identity_is_refused_too(
@@ -692,6 +818,32 @@ def test_an_item_with_no_merged_pull_request_is_refused(tmp_path: Path) -> None:
     assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
 
 
+def test_a_merged_pull_request_that_only_mentions_the_item_is_not_a_target(
+    tmp_path: Path,
+) -> None:
+    """A body-only mention is not a pull request any dispatch of the item produced.
+
+    The merge search matches bodies server-side, so an unrelated merge that merely names
+    the item comes back as the lone candidate. Publishing onto it puts a record on a pull
+    request the acceptance pass would then grade as the item's own, so the primitive
+    refuses before posting and names the item and what was missing.
+    """
+    _file_item(repo=tmp_path)
+    runner = _Runner(comments=_comments(), body_mention_only=True)
+
+    exit_code, emitted = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_RECORDED,
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+    )
+
+    assert exit_code != 0
+    assert _ITEM_ID in emitted
+    assert "no merged pull request produced by the item's own dispatches" in emitted
+    assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
+
+
 def test_a_replay_against_an_unreadable_pull_request_is_refused(tmp_path: Path) -> None:
     """An unread pull request cannot establish the identity the replay must differ from.
 
@@ -902,6 +1054,53 @@ def test_the_bound_reconcile_carries_the_invocations_repository_to_the_valve(
     )
 
     assert drive(work_item_id="bd-ib-unfiled") != 0
+
+
+def _drive_capturing_valve_args(
+    *, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[argparse.Namespace]:
+    """Drive the bound reconcile for the filed item, capturing what the valve was given."""
+    import livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli as cli
+
+    seen: list[argparse.Namespace] = []
+
+    def fake_valve(*, args: argparse.Namespace) -> int:
+        seen.append(args)
+        return 0
+
+    monkeypatch.setattr(cli, "reconcile_merged_for_item", fake_valve)
+    drive = reconcile_for(repo=repo, args=argparse.Namespace(journal=None, invoker="human:test"))
+    assert drive(work_item_id=_ITEM_ID) == 0
+    return seen
+
+
+def test_a_replay_post_on_a_rework_pending_item_drives_the_regrade_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a not-reproduced verdict left `rework:pending`, the post regrades the merge.
+
+    The plain valve refuses a marked item with exit 3, so a verified post that drove it
+    would leave the item parked until an operator re-ran the valve with `--regrade` by hand.
+    """
+    _file_item(repo=tmp_path)
+    update_work_item_rework_pending(path=_config(), item_id=_ITEM_ID, value=True)
+
+    seen = _drive_capturing_valve_args(repo=tmp_path, monkeypatch=monkeypatch)
+
+    assert [one.regrade for one in seen] == [True]
+    assert [one.item for one in seen] == [_ITEM_ID]
+
+
+def test_a_replay_post_on_an_unmarked_item_drives_the_plain_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An item with no `rework:pending` label closes through the plain valve, as before."""
+    _file_item(repo=tmp_path)
+
+    seen = _drive_capturing_valve_args(repo=tmp_path, monkeypatch=monkeypatch)
+
+    assert [one.regrade for one in seen] == [False]
+    assert [one.item for one in seen] == [_ITEM_ID]
 
 
 _RECORD_FILE_KEYS = (

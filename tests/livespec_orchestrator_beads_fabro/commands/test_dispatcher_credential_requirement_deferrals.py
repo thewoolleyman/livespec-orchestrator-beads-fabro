@@ -204,6 +204,50 @@ def test_an_invalid_node_timeout_defers_to_its_own_validator(tmp_path: Path) -> 
     assert "node_timeouts" in deferral.message
 
 
+def test_an_invalid_credential_queue_allowance_defers_to_its_own_validator(
+    tmp_path: Path,
+) -> None:
+    """`dispatcher.credential_queue_allowance_seconds` is the admission stage's key.
+
+    The derivation reads it to compose the bounded credential-use window, so it
+    is the first thing to notice a malformed value -- and routing that as a
+    credential refusal is the same defect the node-timeout case above records:
+    the dispatch-admission stage owns the key, refuses it with its own
+    diagnostic before any run exists, and a credential wall answering first
+    leaves that stage silent.
+    """
+    assert _REQUIREMENT_PATH.is_file(), "the credential-requirement module is not written yet"
+    module = importlib.import_module(_REQUIREMENT_MODULE)
+
+    deferral = _resolve(
+        repo=_write_repo(tmp_path=tmp_path, block={"credential_queue_allowance_seconds": 0})
+    )
+
+    assert isinstance(deferral, module.WorkflowFaultDeferral), deferral
+    assert "dispatcher.credential_queue_allowance_seconds" in deferral.message
+
+
+def test_an_invalid_whole_run_wall_budget_defers_to_its_own_validator(
+    tmp_path: Path,
+) -> None:
+    """The window's OTHER addend, deferred for the same reason and by the same owner.
+
+    Paired with the case above rather than folded into it: the two keys are
+    summed into one figure, so a build that validated either one alone would
+    satisfy a single case while admitting a window composed from an unread
+    value.
+    """
+    assert _REQUIREMENT_PATH.is_file(), "the credential-requirement module is not written yet"
+    module = importlib.import_module(_REQUIREMENT_MODULE)
+
+    deferral = _resolve(
+        repo=_write_repo(tmp_path=tmp_path, block={"run_wall_budget_seconds": "bad"})
+    )
+
+    assert isinstance(deferral, module.WorkflowFaultDeferral), deferral
+    assert "dispatcher.run_wall_budget_seconds" in deferral.message
+
+
 def test_a_refusal_string_passes_through_the_refusal_text_reader_unchanged(
     tmp_path: Path,
 ) -> None:

@@ -52,11 +52,14 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom import (
+    FIVE_HOUR_WINDOW_ABSENT,
     NOT_PROJECTED_RESULT,
     PROJECTED_RESULT,
     UNAVAILABLE_RESULT,
     SessionHeadroomProjection,
     SessionHeadroomReading,
+    headroom_skips_candidate,
+    seven_day_skips_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain import (
     SessionHeadroomBaseline,
@@ -67,10 +70,14 @@ from livespec_orchestrator_beads_fabro.commands._acp_session_headroom_drain impo
 __all__: list[str] = [
     "FLOOR_DISABLED_REASON",
     "FLOOR_SKIPPED_READING_REASON",
+    "FLOOR_SKIP_KIND",
     "NO_BASELINE_REASON",
+    "PROJECTION_SKIP_KIND",
+    "SEVEN_DAY_SKIP_KIND",
     "UNOBSERVABLE_READING_REASON",
     "UNREADABLE_OBSERVATION_REASON",
     "UTILIZATION_NOT_HIGHER_REASON",
+    "headroom_skip_kind",
     "projection_skips_candidate",
     "reading_with_projection",
     "session_headroom_projection",
@@ -104,6 +111,35 @@ _INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 _FLOOR_DISABLED_PERCENT = 0
 _HORIZON_DISABLED_MINUTES = 0
+
+# WHICH of the two headroom shortfalls decided one `HEADROOM_SKIP`. They are a
+# second field rather than a second skip reason because the clause gives a
+# projection skip "exactly the semantics of a floor skip" -- every surface
+# keying on the reason must treat them alike -- while also requiring the
+# records to "name a projection skip as a projection skip, distinct from a
+# floor skip". A reason-level split would have satisfied the second at the cost
+# of the first.
+FLOOR_SKIP_KIND = "floor"
+PROJECTION_SKIP_KIND = "projection"
+SEVEN_DAY_SKIP_KIND = "seven-day"
+
+
+def headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -> str | None:
+    """Which headroom shortfall stops this candidate, or `None` for none of them.
+
+    The floor is tested first, followed by a provider-rejected weekly allowance,
+    then this dispatcher's five-hour projection. A provider rejection is more
+    authoritative than an extrapolation, while the floor remains the operator
+    dial that governs every shortfall. A zero floor disables the weekly arm via
+    `seven_day_skips_candidate`.
+    """
+    if headroom_skips_candidate(reading=reading, floor_percent=floor_percent):
+        return FLOOR_SKIP_KIND
+    if seven_day_skips_candidate(reading=reading, floor_percent=floor_percent):
+        return SEVEN_DAY_SKIP_KIND
+    if projection_skips_candidate(reading=reading):
+        return PROJECTION_SKIP_KIND
+    return None
 
 
 def session_headroom_projection(
@@ -159,6 +195,8 @@ def _not_attempted_reason(*, reading: SessionHeadroomReading, floor_percent: int
     """
     if floor_percent <= _FLOOR_DISABLED_PERCENT:
         return FLOOR_DISABLED_REASON
+    if reading.five_hour_window_absent:
+        return FIVE_HOUR_WINDOW_ABSENT
     if not reading.observable:
         return UNOBSERVABLE_READING_REASON
     return FLOOR_SKIPPED_READING_REASON

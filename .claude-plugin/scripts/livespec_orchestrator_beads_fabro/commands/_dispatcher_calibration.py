@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import 
     PR_OPEN_DIFF_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
+    IMPLEMENT_SELECTED_INDEX_KEY,
     UNOBSERVED_TDD_SIGNALS,
     TddSignals,
     tdd_signal_fields,
@@ -386,4 +387,5 @@ def calibration_journal_record(*, record: CalibrationRecord) -> dict[str, object
         "fabro.failure.signature": record.fabro_failure_signature,
         **record.bounce_cap.as_record(),
         **tdd_signal_fields(signals=record.tdd),
+        IMPLEMENT_SELECTED_INDEX_KEY: record.tdd.selected_index,
     }

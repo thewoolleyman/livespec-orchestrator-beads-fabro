@@ -66,6 +66,14 @@ _PUBLICATION_STAGES_ADDED = {"pr_refresh", "pr_refresh_head"}
 _PUBLICATION_STAGES = _PUBLICATION_STAGES_ADDED | {"pr", "verify_pr"}
 _REFRESH_LOOP = _PUBLICATION_STAGES_ADDED | {"proof_capture", "review", "proof_verify"}
 
+# The landed-publication routes (v226) are deliberately outside the refresh
+# loop: each only decides whether a stage takes its ordinary successor or the
+# final verification ending, and closes no cycle of its own.
+_MERGED_RECONCILE_ROUTES_ADDED = {
+    "publish_merged_reconcile_route",
+    "pr_refresh_merged_reconcile_route",
+}
+
 # The refresh-repair classifier (v134), kept as its own constant rather than
 # folded into the port-era set above. The subject of this module is the PORT, so
 # "which nodes the port added" has to stay the port's own answer; a later
@@ -90,6 +98,63 @@ _PR_ROUTE_ADDED = {"pr_route"}
 # reaches `pr_refresh` through it and its retry route closes a cycle back into
 # the replay.
 _PROOF_GRADE_ADDED = {"proof_grade", "proof_grade_route"}
+
+# The implement stage's completion gate (v165, Scenario 204; work-item
+# bd-ib-ahxcjx), kept as its own constant for the reason every set above gives.
+# It moves NO other node's count: it sits on `implement`'s single fallthrough,
+# closes no cycle, and is reached once per attempt of the turn it guards — which
+# is why it appears here and not in the moved-node allowance below.
+_IMPLEMENT_COMPLETION_ADDED = {"implement_completion"}
+
+# The recapture route (v175, Scenario 137; work-item bd-ib-j56cur), kept as its
+# own constant for the reason every set above gives. It closes a NEW cycle --
+# `review -> recapture_route -> proof_capture -> review` -- so the nodes it moves
+# are that cycle's members plus the replay and grade below them, which every
+# returned review visit re-earns.
+_RECAPTURE_ADDED = {"recapture_route"}
+_RECAPTURE_LOOP = _RECAPTURE_ADDED | {
+    "proof_capture",
+    "review",
+    "proof_verify",
+    "proof_grade",
+}
+# The hook-refusal route (v208, Scenario 204; work-item bd-ib-y7372n), kept as
+# its own constant for the same reason. It closes a NEW cycle --
+# `implement -> implement_completion -> implement_hook_route -> implement` --
+# so the nodes it moves are that cycle's members plus the diff breaker the
+# second visit's completion re-earns; everything below the breaker is already
+# attributed to a loop above.
+_HOOK_ROUTE_ADDED = {"implement_hook_route"}
+_HOOK_ROUTE_LOOP = _HOOK_ROUTE_ADDED | {
+    "implement",
+    "implement_completion",
+    "implementation_diff",
+}
+# The commit-run settles (bd-ib-xj3qqb), kept as their own constant for the same
+# reason. `implement_commit_settle` sits on `implement`'s fallthrough, and the
+# settled-commit re-entry it informs raises the hook-route cycle from two visits
+# to three (so `_HOOK_ROUTE_LOOP` is the set it moves); `review_fix_commit_settle`
+# sits on `review_fix`'s fallthrough and closes no cycle of its own.
+_COMMIT_SETTLE_ADDED = {
+    "implement_commit_settle",
+    "fix_commit_settle",
+    "review_fix_commit_settle",
+}
+_JANITOR_ADMISSION_ADDED = {"janitor_admission"}
+# This command node sits before `disposition`, preserving its three-visit
+# review-fix budget while converting a fourth request into a named terminal
+# route instead of the engine's unroutable entry abort.
+_REVIEW_FIX_ADMISSION_ADDED = {"review_fix_admission"}
+_IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
+# The `dod_gate` post-turn mutation guard (work-item bd-ib-al54tl), kept as its
+# own constant for the reason every set above gives. It sits on `dod_gate`'s
+# single fallthrough, closes no cycle and is reached once, so it moves no other
+# node's count.
+_DOD_GATE_GUARD_ADDED = {"dod_gate_mutation_guard"}
+_IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
+    "implement",
+    "implement_completion",
+}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -532,21 +597,52 @@ def test_the_janitor_fix_loop_routes_on_outcome_and_is_bounded_by_max_visits() -
     conditions = _conditions(text=text)
     assert conditions["janitor", "fix"] == "outcome!=succeeded"
     assert conditions["janitor", "publish_draft"] == "outcome=succeeded"
-    assert ("fix", "janitor") in {
+    assert ("fix", "fix_commit_settle") in {
         (edge.group("src"), edge.group("dst")) for edge in _EDGE_RE.finditer(text)
     }
     assert "max_visits=" in _node_bodies(text=text)["fix"]
 
 
 def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_visits() -> None:
-    """The three review-cap conditions are gone; the loop's bound is on its nodes."""
+    """The admission gate routes the label; disposition retains the three-round bound."""
     text = _graph_text()
     conditions = _conditions(text=text)
-    assert conditions["review", "disposition"] == "preferred_label=fix"
+    assert conditions["review", "review_fix_admission"] == "preferred_label=fix"
     assert conditions["review", "proof_verify"] == "preferred_label=approve"
     bodies = _node_bodies(text=text)
     assert "max_visits=" in bodies["review_fix"]
     assert "max_visits=" in bodies["disposition"]
+
+
+def test_review_fix_bound_routes_before_the_spent_disposition_node() -> None:
+    """A fourth review-fix request ends at `non_converged`, not workflow_error.
+
+    `disposition.max_visits=3` is an engine abort at entry, so the fourth
+    `fix` verdict must first pass through a script admission node.  Its git-state
+    counter admits exactly three rounds, then lets the terminal itself emit the
+    named non-convergence cause.  That keeps the final failure detail about the
+    exhausted review-fix bound rather than replaying an earlier stage's output.
+    """
+    text = _graph_text()
+    conditions = _conditions(text=text)
+    bodies = _node_bodies(text=text)
+
+    assert conditions["review", "review_fix_admission"] == "preferred_label=fix"
+    assert conditions["review_fix_admission", "non_converged"] == "outcome=failed"
+    assert "review -> disposition" not in {
+        (edge.group("src"), edge.group("dst")) for edge in _EDGE_RE.finditer(text)
+    }
+
+    admission = bodies["review_fix_admission"]
+    assert "max_visits=4" in admission
+    assert "livespec-review-fix-admission-count" in admission
+    assert '\\"$count\\" -ge 3' in admission
+    assert "LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED" in admission
+
+    terminal = bodies["non_converged"]
+    assert "livespec-review-fix-bound-exhausted" in terminal
+    assert "LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED" in terminal
+    assert "LIVESPEC_NON_CONVERGED" in terminal
 
 
 def test_the_needs_human_script_reads_the_run_id_from_the_engine_context() -> None:
@@ -602,6 +698,13 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     node whose visit or attempt count moved is either a publication stage or a
     member of the refresh loop. An unrelated node's budget moving still fails,
     which is the regression this case exists to catch.
+
+    THE SAME THING HAPPENED AGAIN AT v175 (the recapture route, work-item
+    bd-ib-j56cur): `review -> recapture_route -> proof_capture -> review` is a
+    THIRD cycle through the proof loop, so the allowance grows again and the
+    attribution set gains `_RECAPTURE_ADDED` / `_RECAPTURE_LOOP`. Keeping each
+    addition in its own constant is what lets a future port regression stay
+    distinguishable from these routes.
     """
     toml = (_PAYLOAD / "workflow.toml").read_text(encoding="utf-8")
     timeouts = resolve_node_timeouts(cwd=_REPO_ROOT)
@@ -629,12 +732,25 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     pre_port = budget(text=_ROLLBACK.read_text(encoding="utf-8"))
 
     # The two new stages, the v134 refresh-repair classifier, the v145 refresh
-    # route and the v156 per-assertion grade are the ONLY nodes added, and nothing
-    # was dropped: a node the ported graph lost would be an executable path
-    # missing from a figure still presented as an allowance.
-    assert (
-        set(ported.node_visits) - set(pre_port.node_visits)
-        == _PUBLICATION_STAGES_ADDED | _REFRESH_REPAIR_ADDED | _PR_ROUTE_ADDED | _PROOF_GRADE_ADDED
+    # route, the v156 per-assertion grade, the v165 completion gate, the v175
+    # recapture route and the v208 hook-refusal route are the ONLY nodes added,
+    # and nothing was dropped: a node
+    # the ported graph lost would be an executable path missing from a figure
+    # still presented as an allowance.
+    assert set(ported.node_visits) - set(pre_port.node_visits) == (
+        _PUBLICATION_STAGES_ADDED
+        | _MERGED_RECONCILE_ROUTES_ADDED
+        | _REFRESH_REPAIR_ADDED
+        | _PR_ROUTE_ADDED
+        | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
+        | _RECAPTURE_ADDED
+        | _HOOK_ROUTE_ADDED
+        | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
+        | _COMMIT_SETTLE_ADDED
+        | _JANITOR_ADMISSION_ADDED
+        | _REVIEW_FIX_ADMISSION_ADDED
+        | _DOD_GATE_GUARD_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -650,10 +766,19 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     }
     reachable = (
         _PUBLICATION_STAGES
+        | _MERGED_RECONCILE_ROUTES_ADDED
         | _REFRESH_LOOP
         | _REFRESH_REPAIR_LOOP
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
+        | _RECAPTURE_LOOP
+        | _HOOK_ROUTE_LOOP
+        | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
+        | _COMMIT_SETTLE_ADDED
+        | _JANITOR_ADMISSION_ADDED
+        | _REVIEW_FIX_ADMISSION_ADDED
+        | _DOD_GATE_GUARD_ADDED
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.
