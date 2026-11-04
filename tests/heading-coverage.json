@@ -2719,6 +2719,14 @@
     "work_item": "bd-ib-pys5lt"
   },
   {
+    "heading": "## Scenario 304 \u2014 The check aggregate refuses a test that sleeps in real time or judges a wall-clock bound, unless an exemption marker states why",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-ke5wkf replaces the remaining real-sleep and wall-clock timing assertions under tests/ with injected clocks or deterministic events and adds the refusing real-time-test check to the just check aggregate, with tests exercising its file-and-line refusal and its reasoned per-line exemption marker.",
+    "work_item": "bd-ib-ke5wkf"
+  },
+  {
     "heading": "## Dispatch pre-launch step attribution and concurrency",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
