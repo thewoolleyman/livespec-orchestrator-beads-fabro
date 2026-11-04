@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -42,7 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_builds
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images import BuildRoot
 
+from tests.livespec_orchestrator_beads_fabro.commands import _dispatcher_sandbox_image_readiness
 from tests.livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_readiness import (
+    start_dispatcher_process,
     wait_for_dispatcher_exec,
 )
 
@@ -63,28 +64,6 @@ def _lease(*, build: Path, pid: int) -> None:
 
 def _sleeper() -> subprocess.Popen[bytes]:
     return subprocess.Popen(["sleep", _SLEEP_SECONDS])
-
-
-def _dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
-    """A real live process whose own argv names `<build>/scripts/bin/dispatcher.py`.
-
-    That argv IS what identifies a running Dispatcher — every invocation of it
-    goes through that one entry point — so the fixture only has to be a real
-    process carrying it, and deliberately is NOT a Python child:
-    `check-tests-no-subprocess-spawn` asks tests not to spawn one, and a real
-    Dispatcher would need a factory and a tenant to get past its first argument.
-    """
-    entry = build / "scripts" / "bin" / "dispatcher.py"
-    entry.parent.mkdir(parents=True, exist_ok=True)
-    _ = entry.write_text("", encoding="utf-8")
-    process = subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
-    try:
-        wait_for_dispatcher_exec(process=process, entry=entry)
-    except BaseException:
-        process.kill()
-        _ = process.wait()
-        raise
-    return process
 
 
 def _reaped_pid() -> int:
@@ -114,7 +93,7 @@ def test_executing_builds_are_the_host_wide_deduplicated_union(tmp_path: Path) -
     for build in (registered, leased, executed, abandoned):
         build.mkdir(parents=True)
     live = _sleeper()
-    payloads = (_dispatcher_process(build=executed), _dispatcher_process(build=leased))
+    payloads = (start_dispatcher_process(build=executed), start_dispatcher_process(build=leased))
     try:
         _lease(build=registered, pid=_reaped_pid())
         _lease(build=leased, pid=live.pid)
@@ -139,10 +118,23 @@ def test_dispatcher_fixture_reaps_a_child_when_readiness_fails(
     def _fail_readiness(**_: object) -> None:
         raise AssertionError("fixture never became ready")
 
-    monkeypatch.setattr(sys.modules[__name__], "wait_for_dispatcher_exec", _fail_readiness)
+    monkeypatch.setattr(
+        _dispatcher_sandbox_image_readiness, "wait_for_dispatcher_exec", _fail_readiness
+    )
 
     with pytest.raises(AssertionError, match="fixture never became ready"):
-        _dispatcher_process(build=tmp_path / "build")
+        start_dispatcher_process(build=tmp_path / "build")
+
+
+def test_only_the_shared_readiness_helper_spawns_the_dispatcher_argv_fixture() -> None:
+    """A second `tail` fixture copy would skip the exec rendezvous, so none may exist."""
+    needle = '"tail", "-f", ' + '"/dev/null"'
+    tests_root = Path(__file__).resolve().parents[2]
+    holders = sorted(
+        path.name for path in tests_root.rglob("*.py") if needle in path.read_text(encoding="utf-8")
+    )
+
+    assert holders == ["_dispatcher_sandbox_image_readiness.py"]
 
 
 def test_dispatcher_fixture_readiness_times_out_when_cmdline_is_unreadable(tmp_path: Path) -> None:
