@@ -250,7 +250,10 @@ def test_the_workflow_emits_the_dispatcher_sentinel_only_after_an_unchanged_tree
     assert "already_satisfied [" in workflow
     assert "LIVESPEC_ALREADY_SATISFIED: base=$(git rev-parse" in workflow
     assert "implementation_diff -> already_satisfied" in workflow
-    assert "already_satisfied ->" not in workflow
+    assert (
+        'already_satisfied -> dead_implementer [label="incomplete or unprovable", condition="outcome=failed"]'
+        in workflow
+    )
 
 
 def test_an_ordinary_run_is_not_the_ending(tmp_path: Path) -> None:

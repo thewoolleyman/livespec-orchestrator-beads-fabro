@@ -144,7 +144,13 @@ def test_dead_implementer_routes_unchanged_work_away_from_review() -> None:
         )
         is not None
     )
-    assert re.search(r"already_satisfied\s*->", text) is None
+    assert (
+        re.search(
+            r'already_satisfied\s*->\s*dead_implementer\b[^\n]*condition="outcome=failed"',
+            text,
+        )
+        is not None
+    )
     assert (
         re.search(
             r'implementation_diff\s*->\s*janitor_admission\b[^\n]*condition="outcome=succeeded"',

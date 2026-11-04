@@ -728,7 +728,10 @@ def test_scenario61_the_dispatched_workflow_truncates_an_unchanged_tree(
         r"\bimplementation_diff\s*->\s*already_satisfied\b(?![^\n]*condition=)",
         graph,
     )
-    assert re.search(r"\balready_satisfied\s*->", graph) is None
+    assert re.search(
+        r'\balready_satisfied\s*->\s*dead_implementer\b[^\n]*condition="outcome=failed"',
+        graph,
+    )
     breaker = re.search(r"\bdead_implementer\s*\[(?P<body>[^\]]*)\]", graph, re.DOTALL)
     assert breaker is not None
     assert _DEAD_IMPLEMENTER_MARKER in breaker.group("body")

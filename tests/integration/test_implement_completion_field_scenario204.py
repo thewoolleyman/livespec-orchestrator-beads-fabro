@@ -127,7 +127,7 @@ def _gate_script() -> str:
     """
     parsed = parse_dot_graph(text=_graph_text())
     assert not isinstance(parsed, str), parsed
-    return parsed.nodes[_GATE]["script"]
+    return parsed.nodes[_GATE]["script"].replace("{{ inputs.default_branch }}", "master")
 
 
 def _clone(*, tmp_path: Path) -> Path:
