@@ -35,6 +35,15 @@
 # (bd-ib-xoh477). Keep it equal to dispatcher.factories.petri.bin.
 : "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro}"
 
+# The shared factory-board snapshot (board-snapshot.sh). Every launcher on the host reads a factory's
+# board through one snapshot file per factory, so the factory server receives at most one run listing
+# per FLEET_LAUNCH_BOARD_TTL_S from them however many launchers are queued. 0 turns the sharing off.
+# A launcher waits at most FLEET_LAUNCH_BOARD_REFRESH_WAIT_S for another launcher's refresh to finish
+# (one listing costs the petri server 25-40 s) before it reads the board as unknown.
+: "${FLEET_LAUNCH_BOARD_SNAPSHOT_DIR:=/run/user/1000/fleet-board-snapshot.d}"
+: "${FLEET_LAUNCH_BOARD_TTL_S:=60}"
+: "${FLEET_LAUNCH_BOARD_REFRESH_WAIT_S:=180}"
+
 # Cross-seat coordination directories (shared by every seat on this host).
 : "${FLEET_LAUNCH_INFLIGHT_DIR:=/run/user/1000/fleet-inflight.d}"
 : "${FLEET_LAUNCH_GMK_QUEUE_DIR:=/run/user/1000/gmktec-launch-queue.d}"
