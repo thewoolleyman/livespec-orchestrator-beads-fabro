@@ -22,6 +22,7 @@ SEAT=$FLEET_LAUNCH_SEAT
 OUT=$FLEET_LAUNCH_STATE_DIR
 FABRO=$FLEET_LAUNCH_FABRO
 GMK=$FLEET_LAUNCH_GMK_SERVER
+GMK_CANDIDATE=$FLEET_LAUNCH_GMK_CANDIDATE_SERVER
 HL=$FLEET_LAUNCH_HL_SERVER
 INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 QUEUE=$FLEET_LAUNCH_GMK_QUEUE_DIR
@@ -33,7 +34,10 @@ lock=""
 marker=""
 FLEET_CAP=0
 gmk_live=U
+candidate_live=U
 hl_live=U
+target=petri
+tserver=$GMK
 markers=U
 fleet=U
 
@@ -99,16 +103,21 @@ EOF_SNAPSHOT
 # read_boards [direct]: the boards come from the shared snapshot (board-snapshot.sh) unless "direct" asks for the
 # factory itself, which is how the binding count under the mutex reads them.
 read_boards() {
-  local gmk_rows hl_rows snapshot reader=board_rows
+  local gmk_rows candidate_rows hl_rows snapshot reader=board_rows
   [ "${1:-}" = direct ] && reader=board_rows_direct
   snapshot=$(marker_snapshot)
   gmk_rows=$("$reader" "$FABRO" "$GMK")
+  candidate_rows=$("$reader" "$FABRO" "$GMK_CANDIDATE")
   hl_rows=$("$reader" "$FABRO" "$HL")
   gmk_live=$(rows_count "$gmk_rows")
+  candidate_live=$(rows_count "$candidate_rows")
   hl_live=$(rows_count "$hl_rows")
-  if [ "$gmk_live" = U ] || [ "$hl_live" = U ]; then markers=U; fleet=U; return; fi
-  markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
-  if [ "$markers" = U ]; then fleet=U; else fleet=$((gmk_live + hl_live + markers)); fi
+  if [ "$gmk_live" = U ] || [ "$candidate_live" = U ] || [ "$hl_live" = U ]; then markers=U; fleet=U; return; fi
+  markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n%s\n' "$gmk_rows" "$candidate_rows" "$hl_rows")")
+  if [ "$markers" = U ]; then fleet=U; else fleet=$((gmk_live + candidate_live + hl_live + markers)); fi
+}
+gmk_target() {
+  [ -r "$FLEET_LAUNCH_GMK_TARGET_FILE" ] && [ "$(tr -d '[:space:]' < "$FLEET_LAUNCH_GMK_TARGET_FILE")" = candidate ] && echo candidate || echo petri
 }
 oldest_live_ticket() {
   local f pid
@@ -129,12 +138,12 @@ take_mutex() {
 }
 write_marker() {
   marker="$INFLIGHT/$(date +%s%N)-$SEAT-$ITEM"
-  echo "owner=$SEAT pid=$$ item=$ITEM factory=petri at=$(date -u +%FT%TZ)" > "$marker" || { marker=""; return 1; }
+  echo "owner=$SEAT pid=$$ item=$ITEM factory=$target at=$(date -u +%FT%TZ)" > "$marker" || { marker=""; return 1; }
 }
 wait_for_listing() {
   local rows listing_deadline=""
   while :; do
-    rows=$(board_rows "$FABRO" "$GMK")
+    rows=$(board_rows "$FABRO" "$tserver")
     if [ "$rows" != U ] && printf '%s\n' "$rows" | awk -v it="$ITEM" '$4==it {found=1} END{exit !found}'; then
       rm -f "$marker"
       marker=""
@@ -186,6 +195,18 @@ while :; do
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
+  target=$(gmk_target)
+  if [ "$target" = candidate ]; then
+    if [ "$candidate_live" -ge "${FLEET_LAUNCH_GMK_CANDIDATE_CAP:-0}" ]; then
+      echo "$(date -u +%FT%TZ) gmktec candidate not green under mutex: live=$candidate_live cap=${FLEET_LAUNCH_GMK_CANDIDATE_CAP:-0}; keep FIFO ticket"
+      release_lock
+      sleep "$FLEET_LAUNCH_POLL_S"
+      continue
+    fi
+    tserver=$GMK_CANDIDATE
+  else
+    tserver=$GMK
+  fi
   if ! write_marker; then
     echo "$(date -u +%FT%TZ) could not write resume in-flight marker; keep FIFO ticket"
     release_lock
@@ -194,6 +215,9 @@ while :; do
   fi
   drop_ticket
   release_lock
+  FABRO_DEV_TOKEN__petri=$(ssh -o BatchMode=yes "$FLEET_LAUNCH_GMK_SSH" cat "$FLEET_LAUNCH_GMK_SERVER_ENV" | sed -n 's/^FABRO_DEV_TOKEN=//p' | tail -n 1)
+  export FABRO_DEV_TOKEN__petri
+  export LIVESPEC_FABRO_FACTORY=$target
   echo "$(date -u +%FT%TZ) resume marker written and mutex released: item=$ITEM"
   "$FLEET_LAUNCH_RESUME_WRAPPER" -- "$FLEET_LAUNCH_RESUME_COMMAND" --item "$ITEM" > "$OUT/$ITEM-resume.out" 2> "$OUT/$ITEM-resume.err" &
   resume_pid=$!
