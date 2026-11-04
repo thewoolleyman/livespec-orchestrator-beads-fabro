@@ -99,6 +99,8 @@ def test_questions_answer_cancel_and_run_state_hit_the_documented_routes() -> No
     )
     _ = port.cancel(run_id="01RUN", timeout_seconds=5.0)
     state = port.run_state(run_id="01RUN", timeout_seconds=5.0)
+    stream = port.stream(run_id="01RUN", after=7, timeout_seconds=5.0)
+    initial_stream = port.stream(run_id="01RUN", after=None, timeout_seconds=5.0)
 
     assert listed.payload == {"data": [], "meta": {"has_more": False}}
     assert [(call["method"], call["url"]) for call in transport.calls] == [
@@ -106,6 +108,8 @@ def test_questions_answer_cancel_and_run_state_hit_the_documented_routes() -> No
         ("POST", "https://hp.example:32276/api/v1/runs/01RUN/questions/q1/answer"),
         ("POST", "https://hp.example:32276/api/v1/runs/01RUN/cancel"),
         ("GET", "https://hp.example:32276/api/v1/runs/01RUN/state"),
+        ("GET", "https://hp.example:32276/api/v1/runs/01RUN/stream?after=7"),
+        ("GET", "https://hp.example:32276/api/v1/runs/01RUN/stream"),
     ]
     assert transport.calls[0]["headers"] == {
         "Accept": "application/json",
@@ -120,6 +124,8 @@ def test_questions_answer_cancel_and_run_state_hit_the_documented_routes() -> No
         "Authorization": f"Bearer {_DEV_TOKEN_VALUE}",
     }
     assert state.payload == {"data": [], "meta": {"has_more": False}}
+    assert stream.payload == {"data": [], "meta": {"has_more": False}}
+    assert initial_stream.payload == {"data": [], "meta": {"has_more": False}}
 
 
 def test_the_auth_file_token_rides_as_the_bearer_when_no_env_token_is_set(
