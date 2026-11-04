@@ -55,7 +55,14 @@ _REPO_VIEW = (
 _IS_WORKTREE = ("git", "rev-parse", "--is-inside-work-tree")
 _ORIGIN_REFS = ("git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin")
 _SOURCE_HEAD = ("git", "rev-parse", "HEAD")
-_HEAD_ANCESTOR = ("git", "merge-base", "--is-ancestor", "abc1234", f"origin/{_DEFAULT_BRANCH}")
+_HEAD_ANCESTOR = (
+    "git",
+    "for-each-ref",
+    "--contains",
+    "abc1234",
+    "--format=%(refname:short)",
+    "refs/remotes/origin",
+)
 
 
 class _MasterCiRefusal(Protocol):
@@ -235,7 +242,7 @@ def _results(
         _IS_WORKTREE: _result(stdout="true\n"),
         _ORIGIN_REFS: _result(stdout=f"origin/{_DEFAULT_BRANCH}\n"),
         _SOURCE_HEAD: _result(stdout="abc1234\n"),
-        _HEAD_ANCESTOR: _result(),
+        _HEAD_ANCESTOR: _result(stdout=f"origin/{_DEFAULT_BRANCH}\n"),
         _ORIGIN_HEAD: (
             origin_head
             if origin_head is not None

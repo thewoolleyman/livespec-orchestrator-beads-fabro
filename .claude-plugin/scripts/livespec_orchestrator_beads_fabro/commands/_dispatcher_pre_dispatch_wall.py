@@ -78,6 +78,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate import (
     fabro_currency_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_safety_screen import (
+    out_of_enum_factory_safety_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
@@ -359,6 +362,12 @@ def _refusing_sequence(
     would change the bytes an operator reads from one group or the other.
     """
     return (
+        (
+            lambda: out_of_enum_factory_safety_refusal(items=items),
+            EXIT_PRECONDITION_ERROR,
+            False,
+            "factory-safety-screen",
+        ),
         (
             lambda: implementation_pr_override_refusal(
                 args=args, repo=repo, items=items, journal=journal
