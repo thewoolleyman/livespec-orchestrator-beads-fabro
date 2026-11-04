@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
@@ -59,6 +59,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
     EXIT_UNGRADEABLE_CRITERIA,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_concurrent_steps import (
+    RefusalRow,
+    first_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
     WorkflowFaultDeferral,
@@ -248,12 +252,11 @@ def pre_dispatch_wall_exit(
     refusing = _refusing_sequence(
         args=args, repo=repo, items=items, journal=journal, work_item_ids=work_item_ids
     )
-    for ask, exit_code, newline, phase in refusing:
-        with prelaunch_phase(checkpoint=prelaunch_checkpoint, name=phase):
-            refusal = ask()
-        if refusal is not None:
-            _ = write_stderr(text=f"{refusal}\n" if newline else refusal)
-            return exit_code
+    hit = first_refusal(rows=refusing, checkpoint=prelaunch_checkpoint)
+    if hit is not None:
+        row, refusal = hit
+        _ = write_stderr(text=f"{refusal}\n" if row[2] else refusal)
+        return row[1]
     with prelaunch_phase(checkpoint=prelaunch_checkpoint, name="credential-requirement"):
         requirement = selection_credential_requirement(args=args, repo=repo, items=items)
     # A WORKFLOW FAULT is not this wall's refusal to make, so the credential gate
@@ -335,7 +338,7 @@ def _refusing_sequence(
     items: Sequence[WorkItem],
     journal: JournalFile,
     work_item_ids: list[str],
-) -> tuple[tuple[Callable[[], str | None], int, bool, str], ...]:
+) -> tuple[RefusalRow, ...]:
     """Every refusal this wall makes before the credential gate, IN ORDER.
 
     A TABLE rather than a chain of early returns, and the reason is the one this
@@ -357,6 +360,33 @@ def _refusing_sequence(
     which is that the cheapest refusal able to decide the selection decides it
     and nothing further is spent.
 
+    The fifth element says whether the row belongs to a CONCURRENT group. The wall
+    runs each contiguous run of rows sharing that flag as one group: a sequential
+    one row by row, stopping at the first refusal, and a concurrent one with every
+    row started together.
+
+    WHAT IS CONCURRENT AND WHAT IS NOT, AND WHY. The first three rows stay ahead
+    and alone: the two free override walls cost nothing, and the session-headroom
+    screen exists (`bd-ib-tsrkqf`) so that a dispatch it refuses pays for none of
+    the rows below it. The next three, the App reach probe, the Fabro currency
+    gate and the acceptance-criteria parse, read the dispatch's own arguments, the
+    selection and the forge or engine, write nothing to the ledger, and none
+    consumes another's result, so they start together. Every row after them stays
+    one after another because each WRITES or SPENDS: the Definition-of-Done
+    judgement and the spec-change-tier classification record a ledger comment and
+    take a model call, the proof-asset store CREATES a repository prerelease, and
+    the Codex credential gate (which follows in `pre_dispatch_wall_exit`) spends a
+    bounded provider renewal. Running them beside a row that may still refuse the
+    selection would leave a comment, a call, a prerelease or a renewal behind for
+    a dispatch that never runs, which is the harm this table's order exists to
+    prevent. A group boundary is a position in the table, so a refusal in the
+    concurrent group still decides before any later row runs.
+
+    A concurrent group applies the refusal rule of the sequence it replaces: the
+    answer is the refusal of the lowest-ordered row that refused, never the first
+    to finish, and the wall returns only once every row of the group has completed
+    (see `_dispatcher_concurrent_steps`).
+
     The third element says whether the refusal's own text ends in a newline. Two
     of these surfaces return one and the rest do not, and normalizing that here
     would change the bytes an operator reads from one group or the other.
@@ -375,12 +405,14 @@ def _refusing_sequence(
             EXIT_PRECONDITION_ERROR,
             True,
             "implementation-pr-override",
+            False,
         ),
         (
             lambda: acp_node_override_refusal(args=args, repo=repo, items=items, journal=journal),
             EXIT_PRECONDITION_ERROR,
             True,
             "acp-node-override",
+            False,
         ),
         (
             lambda: session_headroom_screen_refusal(
@@ -389,18 +421,21 @@ def _refusing_sequence(
             EXIT_FAILURE,
             True,
             "session-headroom-screen",
+            False,
         ),
         (
             lambda: app_reach_refusal(repo=repo, items=items, journal=journal),
             EXIT_PRECONDITION_ERROR,
             False,
             "app-reach",
+            True,
         ),
         (
             lambda: fabro_currency_refusal(args=args, repo=repo, items=items, journal=journal),
             EXIT_PRECONDITION_ERROR,
             False,
             "fabro-currency",
+            True,
         ),
         (
             lambda: pre_dispatch_criteria_refusal(
@@ -409,6 +444,7 @@ def _refusing_sequence(
             EXIT_UNGRADEABLE_CRITERIA,
             False,
             "pre-dispatch-criteria",
+            True,
         ),
         (
             lambda: dod_judgement_refusal(
@@ -417,12 +453,14 @@ def _refusing_sequence(
             EXIT_UNGRADEABLE_CRITERIA,
             False,
             "dod-judgement",
+            False,
         ),
         (
             lambda: definition_of_done_workflow_refusal(args=args, repo=repo, items=items),
             EXIT_PRECONDITION_ERROR,
             False,
             "definition-of-done-workflow",
+            False,
         ),
         (
             lambda: spec_change_tier_refusal(
@@ -431,6 +469,7 @@ def _refusing_sequence(
             EXIT_UNGRADEABLE_CRITERIA,
             False,
             "spec-change-tier",
+            False,
         ),
         (
             lambda: proof_assets_refusal_for_items(
@@ -439,6 +478,7 @@ def _refusing_sequence(
             EXIT_PRECONDITION_ERROR,
             False,
             "proof-asset-store",
+            False,
         ),
         (
             lambda: proof_credentials_refusal_for_items(
@@ -451,5 +491,6 @@ def _refusing_sequence(
             EXIT_PRECONDITION_ERROR,
             False,
             "proof-credential-gate",
+            False,
         ),
     )
