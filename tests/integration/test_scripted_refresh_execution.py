@@ -1394,7 +1394,7 @@ def test_a_forge_server_error_retries_the_leased_push_while_origin_is_unchanged(
     _ = helper.write_text(
         "#!/bin/sh\n"
         f"printf x >> {attempts}\n"
-        "printf '%s\\n' 'remote: Internal Server Error' >&2\n"
+        "printf '%s\\n' 'remote: HTTP 502 Bad Gateway' >&2\n"
         "printf '%s\\n' 'remote: GitHub Request ID: TEST-REQUEST-ID' >&2\n"
         "exit 1\n",
         encoding="utf-8",
@@ -1410,7 +1410,7 @@ def test_a_forge_server_error_retries_the_leased_push_while_origin_is_unchanged(
     assert result.returncode == 1, result.stdout
     assert attempts.read_text(encoding="utf-8") == "xxx"
     assert "LIVESPEC_PR_REFRESH_FORGE_ERROR" in result.stderr
-    assert "Internal Server Error" in result.stderr
+    assert "HTTP 502 Bad Gateway" in result.stderr
     assert "TEST-REQUEST-ID" in result.stderr
     assert "LIVESPEC_PR_REFRESH_LEASE_FAILED" not in result.stderr
     assert box.remote_head(ref=_BRANCH) == before
