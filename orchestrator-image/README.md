@@ -351,6 +351,25 @@ rollback target is `v0393-95a2e5b80` (sha256 `996d4e23…b072`), named in `host_
 | `b4d9d6583` (thewoolleyman/fabro#18) | a run-store failure is reported as `transient_infra` | a run killed by the server's own store fault was charged to the work item | **YES**, all three gmktec instances | `bd-ib-bpucez` (plan `fabro-currency`) |
 | `8764f1de8` (thewoolleyman/fabro#19) | a run resumed onto a re-acquired sandbox re-runs its prepare steps | the resumed run lost the Dispatcher-made sandbox preparation | **YES**, all three gmktec instances; the live-server proof is still owed | `bd-ib-ljw2xg` (plan `fabro-currency`) |
 
+**The serving build (2026-11-04, later).** Since 2026-11-04 ~10:12Z all three gmktec
+instances serve `c39bdbded`, the carrier tip after `8764f1de8`, with the four rows below.
+Its `Cargo.lock` pins Petri `d25a6c15` (`thewoolleyman/petri#3`), which also carries
+`565ac47`, so `565ac47` is now deployed. The build is
+`fabro 0.393.0-nightly.1 (c39bdbd 2026-11-04)`, sha256
+`e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-c39bdbded/` on vps.
+The pin is livespec-dev-tooling PR #3369 (`ebbba70a`). Candidate and mi-homelab restarted
+at zero runs; main restarted by cancel-and-redispatch on a coordinator stop-the-line for
+slow board reads. Its rollback target is `v0393-8764f1de8`, named in `host_vars`. The
+factory client moved to the same build in this repository's PR #4363 (`828a53225`).
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `cc9a4e011` (thewoolleyman/fabro#20) | the Petri resume tests wait on the interrupted run's teardown, not on a task count | test-only: the resume tests raced the run's teardown | **YES**, all three gmktec instances (no runtime change) | `bd-ib-q3xszn` (plan `fabro-currency`) |
+| `ad393441b` (thewoolleyman/fabro#21) | the client requests gzip/brotli board reads, and plain `fabro ps` asks the server for only the active board columns | a board read moved about 7.2 MB uncompressed over the vps-gmktec link, and plain `ps` downloaded every run to show the live ones | **YES**, all three gmktec instances and the pinned factory client | `bd-ib-xoh477` (plan `fabro-currency`) |
+| `fcb4dc073` (thewoolleyman/fabro#22) | the stall watchdog takes an injectable clock, and the model-streaming stall test runs on it | the stall test's verdict depended on host load | **YES**, all three gmktec instances | `bd-ib-gmuxd4` (plan `fabro-currency`) |
+| `c39bdbded` (thewoolleyman/fabro#23) | a run-list entry carries a goal preview of at most 1 KiB; the single-run read keeps the full goal | 87% of the list body was goal text; on `:32276` the `-a` body went from 1,911,454 to 80,913 bytes and `fabro ps -a` from 26-38 s to about 1 s | **YES**, all three gmktec instances | `bd-ib-xoh477` (plan `fabro-currency`) |
+
 Deploying it exposed a role defect. The `fabro_server` role's restart-deferred apply
 renamed the new build over the binary of a running server. That server spawns each run's
 worker from its own executable path, so every new run failed to launch from 14:42:47Z
