@@ -1,0 +1,68 @@
+{
+    "id": "byh8SSQRjFe",
+    "name": "CI runner host: Kueue webhook no ready endpoints \u2014 poweredge-xubuntu ci_kueue.webhook_ready_endpoints < 1",
+    "description": "Fires when MAX(livespec.ci_kueue.webhook_ready_endpoints) for host.name=poweredge-xubuntu over the trailing 5 min is below 1 \u2014 the Kueue admission webhook (kueue-webhook-service, ns kueue-system) has ZERO ready endpoints, so the apiserver's mpod.kb.io call fails ('no endpoints available') and NO runner pod is admitted. Single-node/no-HA: any restart/eviction of the webhook backend is a FULL admission outage for every ARC scale set at once, otherwise surfacing only as a misleading red content-check on an unrelated PR. One-probe-interval (5 min) window on purpose: the emitter fails-closed, so every emitted 0 is a TRUE zero-endpoints reading and a single transient 0 is worth catching. Distinct from the 'Kueue controller unavailable' trigger: endpoints can hit 0 while the Deployment still reports available. Runbook: ssh poweredge-xubuntu; sudo kubectl -n kueue-system get endpoints kueue-webhook-service -o wide. Emitter: livespec-dev-tooling ci-runner/observability/ci-kueue-webhook-probe.sh. livespec-s43svm.46.",
+    "disabled": false,
+    "query": {
+        "calculations": [
+            {
+                "column": "livespec.ci_kueue.webhook_ready_endpoints",
+                "op": "MAX"
+            }
+        ],
+        "filters": [
+            {
+                "column": "host.name",
+                "op": "=",
+                "value": "poweredge-xubuntu",
+                "join_column": ""
+            }
+        ],
+        "time_range": 300,
+        "granularity": 60
+    },
+    "query_id": "Dv4t81CErLe",
+    "alert_type": "on_change",
+    "threshold": {
+        "value": 1,
+        "op": "<",
+        "exceeded_limit": 1
+    },
+    "recipients": [
+        {
+            "type": "email",
+            "target": "thewoolleyman@gmail.com",
+            "id": "jKw2EyfLJ3W"
+        },
+        {
+            "type": "email",
+            "target": "anthropic-api-1@thewoolleyweb.com",
+            "id": "fort2EXXuVy"
+        }
+    ],
+    "frequency": 300,
+    "triggered": false,
+    "evaluation_schedule_type": "frequency",
+    "auto_investigate": false,
+    "created_at": "2026-08-29T03:46:55Z",
+    "updated_at": "2026-08-29T03:46:55Z",
+    "tags": [
+        {
+            "key": "host",
+            "value": "poweredge-xubuntu"
+        },
+        {
+            "key": "service",
+            "value": "ci-runner-liveness"
+        },
+        {
+            "key": "kind",
+            "value": "value"
+        },
+        {
+            "key": "component",
+            "value": "kueue-webhook"
+        }
+    ],
+    "dataset_slug": "Metrics"
+}
