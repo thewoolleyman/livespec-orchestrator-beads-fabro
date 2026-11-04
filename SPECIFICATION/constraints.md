@@ -781,6 +781,19 @@ deficient record to be cured rather than a decision to be taken.
   dangerous value, MUST NOT auto-dispose a truly-unresolvable decision, MUST
   NOT create net-new work-items, and MUST bound every rework loop by its
   configured cap; every auto-disposition MUST be journaled.
+- No real-time sleeps or wall-clock verdicts in tests. A test under
+  `tests/` MUST NOT wait for a condition by sleeping in real time
+  (`time.sleep`), and MUST NOT decide pass or fail on a real wall-clock
+  elapsed reading (a difference of `time.monotonic`, `time.perf_counter`
+  or `time.time` values, or thread-start timing). It MUST instead advance
+  an injected clock or wait on a deterministic event (a joined thread, a
+  set `threading.Event`, a written file, a child's exit). A wall-clock
+  wait that remains MAY exist only as a liveness guard against a hang,
+  never as the condition that decides the verdict. A check in the
+  `just check` aggregate MUST refuse a test file that violates this rule,
+  naming each offending file and line, and MUST honour an explicit
+  per-line exemption marker that carries a written reason, for a test
+  whose subject is real time itself.
 
 ## Governed-repository integration constraints
 

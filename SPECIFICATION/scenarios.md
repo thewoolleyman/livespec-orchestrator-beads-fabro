@@ -11837,6 +11837,22 @@ Feature: The committed launch-time preflight needs no launcher-local copy
     And each judge runs on the model the repository's committed judge configuration names
 ```
 
+## Scenario 304 — The check aggregate refuses a test that sleeps in real time or judges a wall-clock bound, unless an exemption marker states why
+
+```gherkin
+Feature: Tests order by injected clocks and deterministic events, not real time
+  Scenario: A real-time sleep and a wall-clock verdict are refused, and a reasoned exemption marker is honoured
+    Given a test file under tests/ that calls time.sleep to wait for a condition
+    And another test file under tests/ that asserts on a difference of two time.monotonic readings
+    When the just check aggregate runs
+    Then the real-time-test check fails
+    And its refusal names each offending file and line
+    When the time.sleep line is given the per-line exemption marker with a written reason
+    And the just check aggregate runs again
+    Then the check does not refuse that line
+    And the same marker with an empty reason is still refused
+```
+
 ## Scenario: an incident keeps one item with explicit current operation ownership
 
 ```gherkin
