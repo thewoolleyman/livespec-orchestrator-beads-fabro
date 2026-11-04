@@ -1,4 +1,4 @@
-work_item=bd-ib-xevgsx
-reason=Ship the producer's canonical per-file verdict (.coverage-gates/per-file.{status,log}) as a second artifact beside .coverage, and download it in the check-coverage consumer, in ci.yml and ci-root-uid.yml. Since 704a96ded the consumer re-runs the whole suite when that verdict is absent: 405 jobs x 19.2 min = 130.6 k3s job-hours per 24 h. Two added steps per file; nothing deleted or modified. approval:workflow-edit-additive set under legacy-coordinator-agent's delegation.
+work_item=bd-ib-oy643z
+reason=Export MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml in check-metadata-batch's batched step so the mise node shim resolves a version from the check's temp dir on a GitHub-hosted runner (HOME=/github/home); reproduced locally in python-v1.168.0. Four added lines; nothing deleted or modified. approval:workflow-edit-additive set under legacy-coordinator-agent's delegation.
 change=additive
 ci_runtime=no-significant-increase

@@ -863,6 +863,10 @@ jobs:
           # check-no-shadow-ledger-body-typechecks fails. Put the image's mise
           # shims first on PATH, exactly as the nonroot legs do.
           export PATH="/root/.local/share/mise/shims:$PATH"
+          # bd-ib-oy643z: the shims resolve node from mise's GLOBAL config, which
+          # lives under /root while a hosted container's HOME is /github/home, so
+          # from the check's temp dir the node shim fails "No version is set".
+          export MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml
           just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
           just check-handoff-dispatch-routing || failed="$failed check-handoff-dispatch-routing"
           just check-heading-coverage-debt-register || failed="$failed check-heading-coverage-debt-register"
