@@ -141,7 +141,7 @@ the record and the tree stay in lockstep; a record describing a different
 tree means the proof the replay is about to reproduce describes code nobody
 shipped.
 
-### A malformed captured comment is `[BLOCKING]` — parse its header first
+**A malformed captured comment is `[BLOCKING]` — parse its header first.**
 
 The newest captured Proof of Done comment does not parse as a record when its
 header cannot identify the capture, such as when its header carries an empty
