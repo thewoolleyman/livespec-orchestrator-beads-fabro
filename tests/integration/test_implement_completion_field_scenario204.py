@@ -68,6 +68,7 @@ _RECORD_GIT_PATH = "livespec-implement-completion"
 # The stage-cause pair the `needs_human` terminal renders as the recorded
 # question, written by the same convention `pr_refresh` writes it with.
 _STAGE_CAUSE_GIT_PATH = "livespec-stage-cause"
+_DECISION_GIT_PATH = "livespec-implement-completion-decision"
 
 _PARTIAL_PROGRESS = "LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS"
 _COMPLETE_SENTINEL = "LIVESPEC_IMPLEMENT_COMPLETE"
@@ -163,6 +164,31 @@ def _graded(*, repo: Path, response: str | None = None) -> subprocess.CompletedP
 
 def _stage_cause(*, repo: Path) -> str:
     return (repo / ".git" / _STAGE_CAUSE_GIT_PATH).read_text(encoding="utf-8")
+
+
+def _mark_dispatch_base(*, repo: Path) -> None:
+    """Make the clone's current empty tree the projected default-branch base."""
+    _ = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "--allow-empty",
+            "--quiet",
+            "-m",
+            "base",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    _ = subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/master", "HEAD"],
+        cwd=repo,
+        check=True,
+    )
 
 
 def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_spend() -> None:
@@ -293,6 +319,21 @@ def test_a_turn_whose_field_reports_the_work_incomplete_fails_the_stage(tmp_path
     assert _PARTIAL_PROGRESS in result.stderr
     assert _stage_cause(repo=repo).startswith(f"stage: {_IMPLEMENT}\n")
     assert _PARTIAL_PROGRESS in _stage_cause(repo=repo)
+
+
+def test_an_incomplete_turn_with_an_unchanged_tree_reaches_the_no_diff_breaker(
+    tmp_path: Path,
+) -> None:
+    """Scenario 266 keeps the incomplete no-op on the dead-implementer path."""
+    repo = _clone(tmp_path=tmp_path)
+    _mark_dispatch_base(repo=repo)
+    _recorded(repo=repo, field='{"definition_of_done_complete": false}')
+
+    result = _graded(repo=repo)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_IMPLEMENT_INCOMPLETE_UNCHANGED" in result.stderr
+    assert (repo / ".git" / _DECISION_GIT_PATH).read_text(encoding="utf-8") == "incomplete\n"
 
 
 def test_a_turn_that_states_no_completion_field_is_treated_as_incomplete(tmp_path: Path) -> None:
