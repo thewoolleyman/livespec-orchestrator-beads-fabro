@@ -208,6 +208,10 @@ class DispatchOutcome:
     # acceptance pass needs the merged head, and a record of what the ending
     # proved cannot be recovered from the pull request alone.
     merged_reconcile: MergedReconcile | None = None
+    # The dispatch base a no-op implement turn proved already satisfies the
+    # Definition of Done.  Its presence identifies this ending without asking a
+    # later disposition to parse the operator-facing detail again.
+    already_satisfied_base: str | None = None
 
 
 SleepFn = Callable[[float], None]
