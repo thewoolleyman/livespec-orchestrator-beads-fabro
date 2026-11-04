@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -108,3 +109,67 @@ def test_refusal_has_named_code_nonzero_exit_and_no_normal_fallback(
     assert response["result"]["code"] == "incident-authority-unavailable"
     assert response["authorizes_current_effects"] is False
     assert response["normal_factory_proof"] is False
+
+
+@pytest.mark.parametrize("action", ["read-current", "read-history"])
+def test_read_commands_reject_transition_payloads(action: str, tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        command.main(argv=[*_argv(action=action, root=tmp_path), "--successor-json", "{}"])
+
+
+@pytest.mark.parametrize("encoding", ["indented", "duplicate-key"])
+def test_writer_rejects_noncanonical_successor_before_commit(
+    encoding: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    attempt = IncidentAttempt(
+        repository="owner/repo",
+        item_id="item-1",
+        attempt_id="attempt-1",
+        phase="repair",
+        operation_id="operation-1",
+        generation=1,
+        owner="operator:alice",
+        base="a" * 40,
+        head="b" * 40,
+        pr_number=7,
+        landed_commits=(),
+        landed_trees=(),
+        original_paths=("app.py",),
+        deferred_work=("normal-factory-proof",),
+        repayment_required=True,
+    )
+    reading = IncidentReading(
+        attempt=attempt,
+        committed_token_id=attempt.item_id,
+        current_token_id=attempt.attempt_id,
+        is_current=True,
+    )
+    monkeypatch.setattr(command, "store_config", lambda **_kwargs: None)
+    monkeypatch.setattr(command, "make_beads_client", lambda **_kwargs: "client")
+    monkeypatch.setattr(command, "read_incident_authority", lambda **_kwargs: reading)
+    calls: list[object] = []
+    monkeypatch.setattr(
+        command, "commit_incident_transition", lambda **kwargs: calls.append(kwargs)
+    )
+    value = asdict(attempt) | dict(generation=2, operation_id="operation-2")
+    raw = (
+        json.dumps(value, sort_keys=True, indent=2)
+        if encoding == "indented"
+        else json.dumps(value, sort_keys=True, separators=(",", ":")).replace(
+            '"generation":2', '"generation":2,"generation":2'
+        )
+    )
+    assert (
+        command.main(
+            argv=[*_argv(action="commit-transition", root=tmp_path), "--successor-json", raw]
+        )
+        == 78
+    )
+    assert (
+        json.loads(capsys.readouterr().out)["result"]["code"]
+        == "incident-transition-invalid-successor"
+    )
+    assert calls == []

@@ -41,3 +41,23 @@ Consumers must revalidate current authority immediately before an effect. A read
 does not lock arbitrary later effects: a canonical writer must commit its own
 server conditional transition. Historical records remain provenance after labels,
 environment, owner, or phase have changed, and never become normal factory proof.
+
+An authenticated installed controller can commit an existing chain through the
+same process entrance using `commit-transition`, the complete prior identity
+arguments above, and `--successor-json`. The successor is the full immutable
+attempt encoded as canonical JSON with sorted keys and compact separators. The
+command uses the canonical decoder and server conditional-close writer; it does
+not accept comments or mutable metadata as a substitute. Malformed, duplicate-key
+or noncanonical payloads, wrong prior identities, stale observations and reused
+operations with changed contents return named refusals before a new transition.
+An exact retry recovers the original committed receipt without another token.
+
+The writer authenticates the prior identity through retained history so a caller
+can recover a lost reply after its first successful transition. The canonical
+writer still checks current ownership before any new close. A writer response is
+a recording receipt and always carries `authorizes_current_effects: false`;
+consumers must separately read current authority before effects. The command
+preserves the existing authenticated tenant credential boundary. It does not
+bootstrap a chain, authorize phase eligibility, update the item's lifecycle state,
+cancel factory work, or provision writer credentials. An absent chain remains
+`incident-authority-missing`, and a tenant outage remains unavailable.
