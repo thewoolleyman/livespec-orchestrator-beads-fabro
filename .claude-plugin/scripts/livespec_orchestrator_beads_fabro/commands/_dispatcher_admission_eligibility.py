@@ -14,7 +14,7 @@ per-row ladder: an unreadable `dispatcher.adopted_assertion_count_ceiling` is
 a fact about the repository that refuses every candidate identically, so
 resolving it per row would re-read one file once per candidate to reach the
 same answer. The dispatch's RENDERED ACP CANDIDATES are resolved there for
-the same reason. The FIVE per-row refusals then run in this order:
+the same reason. The per-row refusals then run in this order:
 
 1. An unexpired LEGACY provider-exhaustion record COVERING a candidate this
    dispatch's resolved ACP nodes render. A vendor ceiling this dispatch would
@@ -36,6 +36,8 @@ the same reason. The FIVE per-row refusals then run in this order:
    dispatch is retried while a row moved to `backlog` has to be regroomed.
 4. The item's own ledger labels.
 5. The host-only routing refusal, which needs those labels.
+6. The across-dispatch no-progress refusal, last because it reads each earlier
+   run from the factory it was recorded on and may consume a recovery.
 
 Putting either factory-wide condition after the label read would report a
 provider outage as "this item's labels could not be read" whenever both were
@@ -74,6 +76,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     provider_exhaustion_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_redispatch_gate import (
+    redispatch_progress_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gate import (
     journal_session_headroom,
@@ -183,7 +188,7 @@ def _refusal_for(  # noqa: PLR0913 -- one kw-only condition ladder; every input 
     now_iso: str,
     wait: AvailabilityWait | None,
 ) -> DispatchOutcome | None:
-    """The first condition this row fails, or `None` when it passes all five."""
+    """The first condition this row fails, or `None` when it passes every one."""
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,
@@ -215,4 +220,10 @@ def _refusal_for(  # noqa: PLR0913 -- one kw-only condition ladder; every input 
             stage="ledger-labels",
             detail=raw_labels,
         )
-    return host_only_refusal(repo=repo, item=item, journal=journal, raw_labels=raw_labels)
+    host_refusal = host_only_refusal(repo=repo, item=item, journal=journal, raw_labels=raw_labels)
+    if host_refusal is not None:
+        return host_refusal
+    # LAST, deliberately: it reads remote factories, and consuming a recovery
+    # authorization is a write, so neither may happen for a row another
+    # condition was about to refuse.
+    return redispatch_progress_refusal(repo=repo, item=item, journal=journal)
