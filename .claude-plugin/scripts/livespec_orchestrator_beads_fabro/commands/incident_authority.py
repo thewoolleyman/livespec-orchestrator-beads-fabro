@@ -12,6 +12,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._incident_authority_payload import decode_attempt
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands.incident_local_gate_receipt import (
+    record_local_gates,
+)
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.incident_authority import (
     AuthorityRefusal,
@@ -27,8 +30,12 @@ __all__: list[str] = ["main"]
 def main(*, argv: Sequence[str] | None = None) -> int:
     """Print one schema-1 reply; an unverifiable identity exits 78, not normal mode."""
     parser = argparse.ArgumentParser(prog="incident-authority")
-    _ = parser.add_argument("action", choices=("read-current", "read-history", "commit-transition"))
+    _ = parser.add_argument(
+        "action",
+        choices=("read-current", "read-history", "commit-transition", "record-local-gates"),
+    )
     _ = parser.add_argument("--successor-json")
+    _ = parser.add_argument("--receipt-json")
     _ = parser.add_argument("--repo", required=True, type=Path)
     for name in ("repository", "item", "attempt", "phase", "operation", "owner"):
         _ = parser.add_argument(f"--{name}", required=True)
@@ -38,6 +45,8 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         parser.error("commit-transition requires --successor-json")
     if args.action != "commit-transition" and args.successor_json is not None:
         parser.error("--successor-json is only valid for commit-transition")
+    if (args.action == "record-local-gates") != (args.receipt_json is not None):
+        parser.error("record-local-gates alone requires --receipt-json")
     client = make_beads_client(config=store_config(repo=args.repo))
     result = read_incident_authority(
         client=client,
@@ -50,7 +59,7 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             "generation": args.generation,
             "owner": args.owner,
         },
-        historical=args.action != "read-current",
+        historical=args.action in {"read-history", "commit-transition"},
     )
     if args.action == "commit-transition" and isinstance(result, IncidentReading):
         successor = decode_attempt(value=parse_json(text=args.successor_json))
@@ -61,6 +70,8 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             == json.dumps(asdict(successor), sort_keys=True, separators=(",", ":"))
             else AuthorityRefusal(code="incident-transition-invalid-successor", detail=args.item)
         )
+    if args.action == "record-local-gates" and isinstance(result, IncidentReading):
+        result = record_local_gates(client=client, observed=result, text=args.receipt_json)
     response: dict[str, object] = {
         "schema": 1,
         "status": "refused" if isinstance(result, AuthorityRefusal) else "verified",

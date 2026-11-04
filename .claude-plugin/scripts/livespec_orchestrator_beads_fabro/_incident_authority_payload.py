@@ -96,7 +96,18 @@ def _valid_identity(*, row: dict[str, Any]) -> bool:
         and row["phase"] in _PHASES
         and _sha(value=row["base"])
         and _sha(value=row["head"])
-        and all(type(row[k]) is int and row[k] > 0 for k in ("generation", "pr_number"))
+        and type(row["generation"]) is int
+        and row["generation"] > 0
+        and type(row["pr_number"]) is int
+        and (
+            row["pr_number"] > 0
+            or (
+                row["pr_number"] == 0
+                and row["phase"] == "repair"
+                and row["landed_commits"] == []
+                and row["landed_trees"] == []
+            )
+        )
         and type(row["repayment_required"]) is bool
     )
 

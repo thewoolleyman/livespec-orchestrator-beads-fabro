@@ -31,8 +31,8 @@ This slice provides the reader, process protocol, and conditional transition wri
 for an already established chain. Exact retries recover their original immutable
 receipt; losers delete only their own unlinked candidate, while an unreadable
 winning close retains its candidate for later recovery. It does not initialize live
-authority, grant writer capability, fence a factory, change lifecycle state, write
-partial receipts, or enable production incident entrances. Those remain on the
+authority, grant writer capability, fence a factory, change lifecycle state, or
+enable production incident entrances. Those remain on the
 existing carriers. Unarmed items refuse with `incident-authority-missing`; mutable
 metadata, labels, flags and caller JSON supply no fallback. During a tenant outage,
 only the separately trusted controller recovery boundary can authorize recovery.
@@ -61,3 +61,29 @@ preserves the existing authenticated tenant credential boundary. It does not
 bootstrap a chain, authorize phase eligibility, update the item's lifecycle state,
 cancel factory work, or provision writer credentials. An absent chain remains
 `incident-authority-missing`, and a tenant outage remains unavailable.
+
+`record-local-gates` accepts the same exact current-identity query plus
+`--receipt-json`. This records evidence on that incident item without changing
+its authority generation or lifecycle state. A pre-PR snapshot may carry
+`pr_number: 0` only during repair and only with no landed commit/tree pairs.
+Other phases still require an identified PR. This permits pre-commit evidence
+on a previously provisioned chain; it does not create the chain.
+
+The canonical JSON receipt contains `receipt_id`, `hook` (`pre-commit`,
+`commit-msg`, or `pre-push`), the exact Git `tree`, `mode`,
+`evidence_kind: expedited-local-partial`, `exit_status`, and a nonempty `results`
+array. Every gate result names its status, reason, actual return code or null,
+elapsed seconds and captured output. Passed work must finish below sixty seconds;
+an actual failure remains recorded failure even when cleanup crosses the budget.
+Deferred work has no passing code, and a timeout has no completed verdict.
+An empty inventory must explicitly record a no-applicable-work disposition.
+
+The producer appends `livespec-incident-local-gates-v1` plus canonical JSON
+binding the full immutable attempt, committed/current token ids and receipt.
+Exact retries return the same checksum. Reusing a receipt id with different
+contents refuses without replacing earlier evidence; concurrent identical
+appends represent one logical receipt. The producer verifies readback and reads
+current authority again after appending. If ownership changed, the partial
+record survives but the command refuses. A receipt reply always has
+`authorizes_current_effects: false` and `normal_factory_proof: false`.
+It cannot satisfy normal validation or supply current authorization by itself.
