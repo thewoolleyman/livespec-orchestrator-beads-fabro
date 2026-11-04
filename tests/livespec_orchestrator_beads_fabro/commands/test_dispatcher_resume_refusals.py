@@ -193,6 +193,18 @@ def test_a_merged_pull_request_is_refused_naming_reconcile_merged() -> None:
     assert "reconcile-merged" in refusals[0]
 
 
+def test_a_measured_acceptance_proof_leg_may_resume_its_merged_pull_request() -> None:
+    """Only an affirmative proof-leg measurement releases the merged-proof arm."""
+    module = _refusals_module()
+    observation = _observation(
+        status="acceptance",
+        pull_request_state=module.PR_STATE_MERGED,
+    )
+    object.__setattr__(observation, "proof_only_resume", True)
+
+    assert module.resume_refusals(observation=observation) == ()
+
+
 def test_a_third_resume_is_refused_naming_both_earlier_resumes() -> None:
     """The per-run proof-loop caps are bounded on the host by this refusal."""
     module = _refusals_module()
