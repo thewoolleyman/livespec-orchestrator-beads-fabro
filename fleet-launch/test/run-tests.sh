@@ -88,6 +88,10 @@ case $server in
     "$STUB_SERVER_HL") board=$STUB_BOARD_HL ;;
     *) echo "stub fabro: no board fixture for server '$server'" >&2; exit 1 ;;
 esac
+# Every listing request is recorded, one server per line, so a case can count what the
+# factory would have been asked; STUB_PS_DELAY_S makes a listing slow, as the petri server's is.
+if [ -n "${STUB_PS_LOG:-}" ]; then printf '%s\n' "$server" >> "$STUB_PS_LOG"; fi
+if [ -n "${STUB_PS_DELAY_S:-}" ]; then sleep "$STUB_PS_DELAY_S"; fi
 # An absent fixture is the unreadable board: non-zero exit, nothing on stdout.
 if [ ! -f "$board" ]; then
     echo "stub fabro: board unreadable" >&2
@@ -294,6 +298,8 @@ DRIVE_MUTEX_LOG=""
 PREFLIGHT_LOG=""
 RESUME_LOG=""
 RESUME_OBSERVATION_LOG=""
+PS_LOG=""
+SNAPSHOT_DIR=""
 BOARD_GMK=""
 BOARD_HL=""
 CAP_FILE=""
@@ -316,6 +322,9 @@ new_case() {
     : > "$RESUME_LOG"
     RESUME_OBSERVATION_LOG="$CASE_DIR/resume-observation-log"
     : > "$RESUME_OBSERVATION_LOG"
+    PS_LOG="$CASE_DIR/ps-log"
+    : > "$PS_LOG"
+    SNAPSHOT_DIR="$CASE_DIR/board-snapshot"
     BOARD_GMK="$CASE_DIR/boards/gmktec"
     BOARD_HL="$CASE_DIR/boards/mi-homelab"
     CAP_FILE="$CASE_DIR/state/fleet-cap"
@@ -333,6 +342,8 @@ new_case() {
     export STUB_PREFLIGHT_LOG="$PREFLIGHT_LOG"
     export STUB_RESUME_LOG="$RESUME_LOG"
     export STUB_RESUME_OBSERVATION_LOG="$RESUME_OBSERVATION_LOG"
+    export STUB_PS_LOG="$PS_LOG"
+    unset STUB_PS_DELAY_S
     export STUB_READY_EXIT=0
     export STUB_PREFLIGHT_EXIT=0
     unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM
@@ -376,6 +387,11 @@ new_case() {
     export FLEET_LAUNCH_MUTEX_POLL_S=1
     export FLEET_LAUNCH_LISTING_POLL_S=1
     export FLEET_LAUNCH_PREFLIGHT_REUSE_S=600
+    # A TTL of zero keeps every board read live, so a case that changes a board fixture sees it on
+    # the next poll; the snapshot cases below raise it.
+    export FLEET_LAUNCH_BOARD_SNAPSHOT_DIR="$SNAPSHOT_DIR"
+    export FLEET_LAUNCH_BOARD_TTL_S=0
+    export FLEET_LAUNCH_BOARD_REFRESH_WAIT_S=60
     export FLEET_LAUNCH_MUTEX_HOLD_S=60
     export FLEET_LAUNCH_LISTING_WAIT_S=60
     unset STUB_RESUME_UNLISTED
@@ -390,6 +406,7 @@ run_launcher() {
 }
 
 log_has() { grep -qF -- "$2" "$1"; }
+ps_count() { grep -cxF -- "$1" "$PS_LOG" 2>/dev/null || true; }
 drive_log_items() { tr '\n' ' ' < "$DRIVE_LOG" | sed 's/ *$//'; }
 preflight_count() { grep -c " $1$" "$PREFLIGHT_LOG" 2>/dev/null || true; }
 
@@ -908,6 +925,130 @@ if [ ! -s "$DRIVE_LOG" ] && grep -q 'fleet not green: gmktec=7 hl=0 markers=1 fl
 else
     fail "the impl launcher undercounted a launch that listed mid-read (rc=$impl_rc drives=$(tr '\n' ' ' < "$DRIVE_LOG"))"
     tail -6 "$IMPL_CASE_LOG" >&2
+fi
+
+# --- 14. queued launchers share one board snapshot --------------------------
+# Six launchers poll one at-cap fleet at once, against a petri-sized slow listing. Each polls
+# for the whole wait window, yet the factory server is asked for ONE listing per factory:
+# the first launcher refreshes the snapshot and the others read it, instead of each sending the
+# server a listing of its own on every poll (bd-ib-busjvz).
+echo "--- 14. queued launchers read one shared board snapshot"
+new_case snapshot-shared
+export FLEET_LAUNCH_MAX_WAIT_S=4
+export FLEET_LAUNCH_BOARD_TTL_S=300
+export STUB_PS_DELAY_S=1
+write_board "$BOARD_GMK" 3 gmk
+write_board "$BOARD_HL" 1 hl
+printf '4\n' > "$CAP_FILE"
+snapshot_pids=""
+for index in 1 2 3 4 5 6; do
+    "$LAUNCHER" "bd-ib-shared-$index" > "$CASE_DIR/launcher-$index.log" 2>&1 &
+    snapshot_pids="$snapshot_pids $!"
+done
+snapshot_bad=0
+for snapshot_pid in $snapshot_pids; do
+    wait "$snapshot_pid"; [ "$?" = 75 ] || snapshot_bad=$((snapshot_bad + 1))
+done
+if [ "$(ps_count "$GMK_URL")" = 1 ] && [ "$(ps_count "$HL_URL")" = 1 ]; then
+    pass "six polling launchers sent each factory server one listing"
+else
+    fail "the factory servers were asked for gmktec=$(ps_count "$GMK_URL") mi-homelab=$(ps_count "$HL_URL") listings, not one each"
+fi
+if [ "$snapshot_bad" = 0 ] && [ -z "$(cat "$DRIVE_LOG")" ] \
+    && [ "$(grep -lF 'gmktec=3 hl=1 markers=0 fleet=4' "$CASE_DIR"/launcher-*.log | wc -l)" = 6 ]; then
+    pass "every launcher read the same fleet of four from the snapshot and held at the cap"
+else
+    fail "a launcher read a different fleet or launched (unexpected exits: $snapshot_bad)"
+    tail -3 "$CASE_DIR/launcher-1.log" >&2
+fi
+
+# --- 15. an old snapshot is refreshed, a young one is not -------------------
+echo "--- 15. a snapshot older than the TTL is refreshed before the count"
+new_case snapshot-ttl
+export FLEET_LAUNCH_BOARD_TTL_S=300
+write_board "$BOARD_GMK" 3 gmk
+write_board "$BOARD_HL" 1 hl
+printf '4\n' > "$CAP_FILE"
+run_launcher bd-ib-ttl-seed
+write_board "$BOARD_GMK" 1 gmk
+run_launcher bd-ib-ttl-young "$CASE_DIR/young.log"
+if log_has "$CASE_DIR/young.log" "gmktec=3 hl=1 markers=0 fleet=4" && [ "$(ps_count "$GMK_URL")" = 1 ] && [ ! -s "$DRIVE_LOG" ]; then
+    pass "a snapshot younger than the TTL is read without asking the server again"
+else
+    fail "a young snapshot was not shared (gmktec listings: $(ps_count "$GMK_URL"))"
+    tail -3 "$CASE_DIR/young.log" >&2
+fi
+find "$SNAPSHOT_DIR" -name '*.ps' -exec touch -d '2 hours ago' {} +
+run_launcher bd-ib-ttl-old "$CASE_DIR/old.log"
+if [ "$(ps_count "$GMK_URL")" -ge 2 ] && [ "$(drive_log_items)" = "bd-ib-ttl-old" ] && [ "$RC" = 0 ]; then
+    pass "control: a snapshot older than the TTL is refreshed and the launcher counts the new board"
+else
+    fail "an old snapshot was not refreshed (gmktec listings: $(ps_count "$GMK_URL") rc=$RC dispatches: $(drive_log_items))"
+    tail -4 "$CASE_DIR/old.log" >&2
+fi
+
+# --- 16. a refresh that cannot read the board is unknown, not zero ----------
+echo "--- 16. an unreadable refresh leaves the fleet count unknown"
+new_case snapshot-unreadable
+export FLEET_LAUNCH_BOARD_TTL_S=300
+write_board "$BOARD_GMK" 0 gmk
+: > "$BOARD_HL"
+run_launcher bd-ib-unreadable-seed
+find "$SNAPSHOT_DIR" -name '*.ps' -exec touch -d '2 hours ago' {} +
+rm -f "$BOARD_GMK"
+printf '8\n' > "$CAP_FILE"
+run_launcher bd-ib-unreadable "$CASE_DIR/unreadable.log"
+if log_has "$CASE_DIR/unreadable.log" "fleet not green: gmktec=U" && [ ! -s "$DRIVE_LOG" ]; then
+    pass "the stale snapshot's empty board was not used: the count was unknown and nothing launched"
+else
+    fail "an unreadable refresh fell back to the stale snapshot (rc=$RC dispatches: $(drive_log_items))"
+    tail -4 "$CASE_DIR/unreadable.log" >&2
+fi
+
+# --- 17. the binding count reads the factory directly -----------------------
+# The snapshot says one run is live, the factory has seven. The green check reads the snapshot and
+# passes; the binding count under the mutex must read the factory and refuse. Then the same
+# launcher, once the factory agrees with the snapshot, launches (the positive control).
+echo "--- 17. the binding count reads the board directly, not the snapshot"
+new_case snapshot-binding
+export FLEET_LAUNCH_BOARD_TTL_S=300
+export FLEET_LAUNCH_MAX_WAIT_S=6
+write_board "$BOARD_GMK" 1 gmk
+: > "$BOARD_HL"
+printf '9\n' > "$CAP_FILE"
+FLEET_LAUNCH_GMK_CAP=1 run_launcher bd-ib-seed-binding "$CASE_DIR/seed.log"
+write_board "$BOARD_GMK" 9 gmk
+FLEET_LAUNCH_GMK_CAP=20 run_launcher bd-ib-binding "$CASE_DIR/binding.log"
+if log_has "$CASE_DIR/binding.log" "binding count with our marker: fleet=10 cap=9" && [ ! -s "$DRIVE_LOG" ]; then
+    pass "the binding count saw the factory's nine runs that the snapshot did not list"
+else
+    fail "the binding count did not read the board directly (rc=$RC dispatches: $(drive_log_items))"
+    tail -4 "$CASE_DIR/binding.log" >&2
+fi
+write_board "$BOARD_GMK" 1 gmk
+run_launcher bd-ib-binding-control "$CASE_DIR/control.log"
+if [ "$(drive_log_items)" = "bd-ib-binding-control" ] && [ "$RC" = 0 ]; then
+    pass "control: with the factory agreeing with the snapshot the same launcher launches"
+else
+    fail "control: the launcher did not launch (rc=$RC dispatches: $(drive_log_items))"
+    tail -4 "$CASE_DIR/control.log" >&2
+fi
+
+# --- 18. launcher lines carry a UTC date-time -------------------------------
+echo "--- 18. launcher log lines are stamped with an ISO-8601 UTC date-time"
+new_case iso-stamp
+write_board "$BOARD_GMK" 2 gmk
+write_board "$BOARD_HL" 1 hl
+run_launcher bd-ib-stamp "$CASE_DIR/impl-stamp.log"
+printf '3\n' > "$CAP_FILE"
+"$RESUME_LAUNCHER" bd-ib-stamp-resume > "$CASE_DIR/resume-stamp.log" 2>&1
+stamp_pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z '
+if grep -qE "$stamp_pattern" "$CASE_DIR/impl-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/impl-stamp.log" | grep -q . \
+    && grep -qE "$stamp_pattern" "$CASE_DIR/resume-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/resume-stamp.log" | grep -q .; then
+    pass "both launchers stamp every line with a date, not a time of day alone"
+else
+    fail "a launcher line carried a time of day without its date"
+    head -4 "$CASE_DIR/impl-stamp.log" "$CASE_DIR/resume-stamp.log" >&2
 fi
 
 fi
