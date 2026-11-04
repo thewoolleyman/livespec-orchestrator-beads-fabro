@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.283.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.282.0...v0.283.0) (2026-11-04)
+
+
+### Features
+
+* **fleet-launch:** cap resume launches ([8f4ab8e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f4ab8ec9cca5de66ba7b7d577f2c4680d03fc03))
+* profile every phase from drive launch to Fabro submission (bd-ib-5d5aue) ([d27f109](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d27f10902890f03f6f7578a97bcb5b20526aed3f))
+* profile pre-admission dispatch phases (bd-ib-5d5aue) ([933dbd1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/933dbd125466db7745c39e4846e0493a772b1b40))
+* relink held spec-tier proposals ([f41f6c8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f41f6c8286a21ad730403ec8e400f5f3f12eb037))
+
+
+### Bug Fixes
+
+* batch source checkout containment ([a9d2d4e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a9d2d4e647525968cd4704819974fd9d2c167ba2))
+* bound the publish_draft push by the time the stage has left and record the over-limit cause ([cf8d048](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cf8d04854fe3dcc07d5c7a7408b6d2e522b02e68))
+* **ci:** put the mise shims on PATH for the metadata batch on hosted runners (bd-ib-xghjzh) ([c6600c8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6600c864c40827840e234255f847618f6151da2))
+* **dod:** omit filing-time tier records and mechanical findings from the judgement subject and goal ([3cb6900](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3cb6900d73d2343d1c55a1ce175d6bc7f4b76fb8))
+* **fleet-launch:** count in-flight markers before the board so a launch listed mid-read is not undercounted (bd-ib-uhcn36) ([218c1e4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/218c1e4be1dc64304f758a0abae65b5fadd30911))
+* **fleet-launch:** keep the resume in-flight marker counted until the board lists the run ([69f0ba3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/69f0ba3b8ac75bdda4db8db3dd6072577bdc166c))
+* **fleet-launch:** treat an unreadable in-flight directory as at the cap in the resume launcher ([b47c718](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b47c718153e1d7e55d583d3ba163f2cb34838315))
+* give every dispatched item its own pre-admission CPU rows (bd-ib-5d5aue) ([16c69f7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/16c69f743a4142926328efeb849aa20fb116ecb1))
+* hold invalid factory safety labels at intake ([f493061](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f493061f65c5265d4fe12b9810f71f0f88e5227c))
+* name the failing target and a bounded excerpt in an exhausted implement hook refusal cause ([823afb3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/823afb38c027d1716bb015da6d5358ed561f0de9))
+* profile resume pre-launch work (bd-ib-5d5aue) ([eeaa2ac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/eeaa2acbffcbb2873ff9a0f531c9418ea6288f71))
+* **prompts:** fix turn leaves a still-running runner commit for fix_commit_settle (bd-ib-oueyxf) ([2ce1d4a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2ce1d4a60d7ca9cb1d7f62d63071f4512a42db5b))
+* withhold a slash-leading credential value from the hook-refusal cause excerpt ([86acde3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86acde3e1c146a779f3c754ddbbd76a72906e043))
+
 ## [0.282.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.281.3...v0.282.0) (2026-11-03)
 
 
