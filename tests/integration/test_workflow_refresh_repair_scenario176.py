@@ -1658,3 +1658,183 @@ def test_the_fix_node_instructions_forbid_the_fix_turn_from_rewriting_any_ref() 
 
     assert "and rewrite no ref at all" in prose
     assert "rewrite no ref other than" not in prose
+
+
+_HOOK_TARGETS = ("check-refresh-hook", "check-refresh-record")
+
+
+def _install_refusing_hook(*, world: _World, name: str, structured: bool) -> None:
+    """Install a hook that refuses with the structured failed-target summary, or bare.
+
+    The structured form is the repository's own summary shape (a `Failed targets
+    (N):` header and one `  - <target>` line per target); the bare form refuses
+    with a message and exit status only, which is what every non-hook failure of
+    a refresh looks like to the stage.
+    """
+    lines = ["#!/bin/sh"]
+    if structured:
+        lines.append(f"printf 'Failed targets ({len(_HOOK_TARGETS)}):\\n' >&2")
+        lines.extend(f"printf '  - {target}\\n' >&2" for target in _HOOK_TARGETS)
+        lines.append(
+            "n=1; while test $n -le 100; do printf 'hook line %s\\n' $n >&2; n=$((n+1)); done"
+        )
+        lines.append("printf 'hook-tail-marker\\n' >&2")
+    else:
+        lines.append("printf 'something refused the refresh\\n' >&2")
+    lines.append("exit 1")
+    hook = world.clone / ".git" / "hooks" / name
+    _ = hook.write_text("\n".join((*lines, "")), encoding="utf-8")
+    hook.chmod(0o755)
+
+
+def _merge_refresh_world(*, root: Path, structured: bool) -> tuple[_World, str, str]:
+    """A remote-ancestry merge refresh whose merge commit a hook refuses, nothing conflicted."""
+    world = _world(root=root)
+    published = _commit(
+        cwd=world.clone, path=_SHARED_FILE, text="published work\n", subject="feat: publish work"
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    janitor_head = _commit(
+        cwd=world.clone, path=_OWNED_FILE, text="later work\n", subject="feat: add run work"
+    )
+    assert (
+        _git("merge-base", "--is-ancestor", published, janitor_head, cwd=world.clone).returncode
+        == 0
+    )
+    advanced = _advance_default(world=world, path="default-only.txt", text="advanced default\n")
+    _install_refusing_hook(world=world, name="pre-merge-commit", structured=structured)
+    return world, janitor_head, advanced
+
+
+def test_a_hook_refused_merge_refresh_is_restored_and_routed_to_fix(tmp_path: Path) -> None:
+    """A refresh commit the commit hook refuses, with no path conflicted, takes the repair route.
+
+    Measured 2026-11-01: two fully green runs ended `LIVESPEC_REFRESH_REPAIR_ABSENT`
+    at `needs_human` after `publish_draft`'s `git merge --no-edit` was refused by the
+    commit hook. Every instrument is a real artifact of the real stage: the head,
+    the in-progress merge, the brief, the counter and the classifier's own verdict.
+
+    The brief's tail is the HOOK's output only. Git appends its own diagnostics
+    (`Not committing merge; ...`) after the hook, and those would displace the
+    hook's last lines from an 80-line window, so the section is asserted to end on
+    the hook's last line and to hold exactly 80 lines.
+    """
+    world, janitor_head, advanced = _merge_refresh_world(root=tmp_path, structured=True)
+
+    result = _run_publish_draft(world=world)
+    fields = _brief_fields(world=world)
+    classifier = _run_refresh_repair(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "MERGE_HEAD").exists()
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert fields.get("stage") == "publish_draft"
+    assert fields.get("pre-refresh-head") == janitor_head
+    assert fields.get("refresh-target") == advanced
+    assert fields.get("failed-hook-targets") == " ".join(_HOOK_TARGETS)
+    brief = world.state(name=_BRIEF_FILENAME)
+    assert brief is not None
+    tail = brief.split("hook-output-last-80-lines:\n", 1)[1].splitlines()
+    assert len(tail) == 80
+    assert tail[-1] == "hook-tail-marker"
+    assert "Not committing merge" not in brief
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+    assert world.remote_head(ref=_BRANCH) != janitor_head
+    assert classifier.returncode == 0, classifier.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
+    assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
+    assert _routed(source="publish_draft", condition="outcome=failed") == _REPAIR_NODE
+
+
+def test_a_refusal_naming_no_hook_target_keeps_its_fail_closed_ending(tmp_path: Path) -> None:
+    """The route is a POSITIVE reading: only a hook's failed targets send a refresh to repair.
+
+    The same world with a refusal that names no target restores the head exactly
+    as before, records no brief and spends no repair round, so it still reaches a
+    human with its own account instead of a repair turn that cannot fix it.
+    """
+    world, janitor_head, _advanced = _merge_refresh_world(root=tmp_path, structured=False)
+
+    result = _run_publish_draft(world=world)
+    classifier = _run_refresh_repair(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED" in result.stderr
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "MERGE_HEAD").exists()
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) is None
+    assert classifier.returncode != 0
+    assert "LIVESPEC_REFRESH_REPAIR_ABSENT" in classifier.stderr
+
+
+def _run_pr_refresh(*, world: _World) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", "-c", _pr_refresh_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{_unarmed_forge_bin(world=world)}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+    )
+
+
+def _pr_refresh_hook_world(*, root: Path, structured: bool) -> tuple[_World, str, str]:
+    """A published run whose clean refresh onto an advanced default is refused by a hook."""
+    world = _world(root=root)
+    published = _commit(
+        cwd=world.clone, path=_OWNED_FILE, text="this run's edit\n", subject="feat: add run work"
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    advanced = _advance_default(world=world, path="default-only.txt", text="advanced default\n")
+    _install_refusing_hook(world=world, name="pre-rebase", structured=structured)
+    return world, published, advanced
+
+
+def test_a_hook_refused_pr_refresh_takes_the_same_repair_route(tmp_path: Path) -> None:
+    """`pr_refresh` restores its published head and routes a hook refusal to `fix` too."""
+    world, published, advanced = _pr_refresh_hook_world(root=tmp_path, structured=True)
+
+    result = _run_pr_refresh(world=world)
+    fields = _brief_fields(world=world)
+    classifier = _run_refresh_repair(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert world.head() == published
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert fields.get("stage") == "pr_refresh"
+    assert fields.get("pre-refresh-head") == published
+    assert fields.get("refresh-target") == advanced
+    assert fields.get("failed-hook-targets") == " ".join(_HOOK_TARGETS)
+    brief = world.state(name=_BRIEF_FILENAME)
+    assert brief is not None
+    assert "hook-tail-marker" in brief
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+    assert world.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+    assert world.remote_head(ref=_BRANCH) == published
+    assert classifier.returncode == 0, classifier.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
+    assert _routed(source="pr_refresh", condition="outcome=failed") == _REPAIR_NODE
+    assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
+
+
+def test_a_pr_refresh_refusal_naming_no_hook_target_records_no_brief(tmp_path: Path) -> None:
+    """A refusal without failed targets keeps `pr_refresh`'s fail-closed cause."""
+    world, published, _advanced = _pr_refresh_hook_world(root=tmp_path, structured=False)
+
+    result = _run_pr_refresh(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PR_REFRESH_CONFLICT" in result.stderr
+    assert world.head() == published
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) is None
