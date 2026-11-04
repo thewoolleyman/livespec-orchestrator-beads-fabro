@@ -30,8 +30,10 @@
 # Minimum gmktec idle CPU percentage before a launch.
 : "${FLEET_LAUNCH_GMK_MIN_IDLE:=25}"
 
-# The Fabro client that reads the boards.
-: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro}"
+# The Fabro client that reads the boards: the build gmktec serves, c39bdbded,
+# which requests compressed board reads and filters plain `ps` on the server
+# (bd-ib-xoh477). Keep it equal to dispatcher.factories.petri.bin.
+: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro}"
 
 # Cross-seat coordination directories (shared by every seat on this host).
 : "${FLEET_LAUNCH_INFLIGHT_DIR:=/run/user/1000/fleet-inflight.d}"
