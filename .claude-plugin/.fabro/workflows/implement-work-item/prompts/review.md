@@ -141,6 +141,18 @@ the record and the tree stay in lockstep; a record describing a different
 tree means the proof the replay is about to reproduce describes code nobody
 shipped.
 
+**A malformed captured comment is `[BLOCKING]` — parse its header first.**
+
+The newest captured Proof of Done comment does not parse as a record when its
+header cannot identify the capture, such as when its header carries an empty
+run id. This is not the same as no capture having been posted: the comment is
+there, but it cannot establish which run produced it. Treat it as a
+`[BLOCKING]` proof-record finding. Name the comment and state that its header
+carries no run id, then post that finding in the review record before emitting
+the `recapture` verdict. The recapture sends `proof_capture` back to publish a
+new, parseable record current for the publish head; it does not send a malformed
+comment to `review_fix`.
+
 A record is **CURRENT** for the head you are reviewing when **the TREE of the
 commit the record names equals the TREE of that head**. Read the sha off the
 record's own second line — `Publish-branch head: <40-character sha>` — and
@@ -176,7 +188,7 @@ anchors the proof.
 ### Classify every blocking finding: is its subject the RECORD or the TREE?
 
 A finding whose subject is the latest captured RECORD rather than the tree is
-a **PROOF-RECORD finding**. Exactly these four are proof-record findings:
+a **PROOF-RECORD finding**. Exactly these five are proof-record findings:
 
 1. The record is **not current** for the head under review, per the tree
    comparison above — or there is no record at all.
@@ -189,6 +201,9 @@ a **PROOF-RECORD finding**. Exactly these four are proof-record findings:
    invoked by its path and an installed tool invoked by its name are NOT.
 4. An assertion whose proof **prints the claimed conclusion** instead of
    showing the observed output of the behaviour.
+5. A newest captured Proof of Done comment that does not parse as a record,
+   such as one whose header carries an empty run id. Name the comment and state
+   that its header carries no run id in the review record.
 
 Everything else blocking — a bug in the diff, a security defect, detector
 evasion, a design defect, a missing test, an incomplete factory proof
