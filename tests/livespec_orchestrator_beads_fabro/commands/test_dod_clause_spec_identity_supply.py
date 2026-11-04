@@ -231,16 +231,16 @@ class _Journal:
         self.rows.append(record)
 
 
-@pytest.mark.parametrize("journaled", [True, False])
-def test_the_wall_journals_the_identity_of_every_taking_that_produced_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, journaled: bool
+@pytest.mark.parametrize("has_identity", [True, False])
+def test_the_wall_journals_every_taking_even_without_an_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, has_identity: bool
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
     decision = DodJudgementDecision(
         work_item_id="bd-ib-onrjh3",
         outcome=JUDGEMENT_ADMITTED,
         reused=True,
-        spec_identity=_IDENTITY if journaled else None,
+        spec_identity=_IDENTITY if has_identity else None,
     )
     monkeypatch.setattr(wall, "judge_item_definition_of_done", lambda **_kwargs: decision)
     journal = _Journal()
@@ -250,9 +250,7 @@ def test_the_wall_journals_the_identity_of_every_taking_that_produced_one(
 
     assert refusal is None
     assert absent is None
-    assert [row["stage"] for row in journal.rows] == (
-        [SPEC_IDENTITY_JOURNAL_STAGE] if journaled else []
-    )
+    assert [row["stage"] for row in journal.rows] == [SPEC_IDENTITY_JOURNAL_STAGE]
 
 
 def test_a_clause_moved_between_files_is_still_the_clause_a_verdict_was_judged_against() -> None:

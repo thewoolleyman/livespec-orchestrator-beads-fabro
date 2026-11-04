@@ -26,18 +26,12 @@ __all__: list[str] = [
 def journal_dod_taking(
     *, journal: object | None, work_item_id: str, stage: str, decision: object
 ) -> None:
-    """Append the row for one taking that decided or ended at the input bound.
-
-    A taking that reached neither a spec identity nor the input bound has no
-    evidence to state, so it appends nothing.
-    """
+    """Append one dispatch-journal row for every host Definition-of-Done taking."""
     append = getattr(journal, "append", None)
     if append is None:
         return
     identity = getattr(decision, "spec_identity", None)
     bound_ended = tuple(getattr(decision, "bound_ended_candidates", ()))
-    if identity is None and not bound_ended:
-        return
     append(
         record=spec_identity_journal_record(
             work_item_id=work_item_id,

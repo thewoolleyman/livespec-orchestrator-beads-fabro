@@ -29,7 +29,7 @@ def _ended() -> SimpleNamespace:
     )
 
 
-def test_a_taking_with_neither_identity_nor_bound_evidence_appends_nothing() -> None:
+def test_every_taking_without_candidate_evidence_still_appends_its_stage_and_input_total() -> None:
     journal = _Journal()
 
     journal_dod_taking(
@@ -39,7 +39,14 @@ def test_a_taking_with_neither_identity_nor_bound_evidence_appends_nothing() -> 
         decision=SimpleNamespace(holds=False),
     )
 
-    assert journal.rows == []
+    assert journal.rows == [
+        {
+            "stage": "dod-judgement-spec-identity",
+            "work_item_id": "bd-ib-x",
+            "judgement_stage": "pre-dispatch",
+            "total_input_tokens": None,
+        }
+    ]
 
 
 def test_a_caller_with_no_journal_appends_nothing() -> None:
