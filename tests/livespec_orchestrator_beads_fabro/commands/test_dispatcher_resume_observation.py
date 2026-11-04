@@ -404,6 +404,12 @@ def test_an_acceptance_park_on_the_proof_evidence_leg_marks_a_merged_resume_proo
     )
 
     assert gather.observation.proof_only_resume is True
+    assert gather.anchor is not None
+    assert gather.anchor.record is None
+    assert gather.anchor.run_id is None
+    assert gather.anchor.head == _HEAD
+    assert gather.anchor.resumed_at == "proof_capture"
+    assert gather.anchor.source == "merged-pull-request-parking-record"
 
 
 def test_the_items_own_status_and_blocked_reason_are_carried(repo: Path) -> None:

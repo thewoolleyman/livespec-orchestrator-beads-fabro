@@ -97,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     ResumeAnchor,
+    merged_proof_anchor,
     resume_anchor,
     resume_anchor_from_cancel,
 )
@@ -206,10 +207,15 @@ def gather_resume(
         earlier_run_id=_earlier_run_id(cancel=cancel, provisional=provisional),
         runner=runner,
     )
-    anchor = (
+    ordinary_anchor = (
         resume_anchor(records=records or (), executing_node=factory.executing_node)
         if cancel is None
         else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
+    )
+    anchor = (
+        merged_proof_anchor(head=None if pull_request is None else pull_request.head)
+        if proof_only
+        else ordinary_anchor
     )
     return ResumeGather(
         observation=ResumeObservation(
@@ -326,7 +332,7 @@ def _earlier_run_ids(
     can attribute", and a record published by a different stage of the same run may
     carry the dispatch id instead.
     """
-    named = [] if anchor is None else [anchor.run_id]
+    named = [] if anchor is None or anchor.run_id is None else [anchor.run_id]
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
     return tuple(dict.fromkeys(named))
