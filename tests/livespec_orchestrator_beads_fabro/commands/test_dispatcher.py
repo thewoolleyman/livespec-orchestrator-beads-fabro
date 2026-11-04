@@ -4375,6 +4375,10 @@ def test_dispatch_green_closes_item_and_journals(
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     records = [json.loads(line) for line in journal_text.splitlines()]
     stages = [record["stage"] for record in records]
+    prelaunch_phases = [
+        record["phase"] for record in records if record["stage"] == "pre-launch-cpu"
+    ]
+    stages = [stage for stage in stages if stage != "pre-launch-cpu"]
     # The master-CI preflight records its PASS first, before anything is admitted:
     # a pre-dispatch step has exactly three sanctioned outcomes and a pass is a
     # journaled one, so the evidence the step ran precedes the first state write.
@@ -4477,13 +4481,6 @@ def test_dispatch_green_closes_item_and_journals(
         "node-timeouts",
         "conformance-premise-undeclared",
         "dispatch-id",
-        "pre-launch-cpu",
-        "pre-launch-cpu",
-        "pre-launch-cpu",
-        "pre-launch-cpu",
-        "pre-launch-cpu",
-        "pre-launch-cpu",
-        "pre-launch-cpu",
         "ledger-complete",
         "acceptance-ai-pass",
         # The pointer write runs on every disposition; this fake pass carries no
@@ -4498,7 +4495,31 @@ def test_dispatch_green_closes_item_and_journals(
         "run-turn-telemetry-check",
         "reflection",
     ]
-    assert [record["phase"] for record in records if record["stage"] == "pre-launch-cpu"] == [
+    assert prelaunch_phases == [
+        "drive-startup",
+        "dispatch-preamble",
+        "otel-egress",
+        "ledger-prepare",
+        "factory-size-check",
+        "ledger-check",
+        "target-selection",
+        "implementation-pr-override",
+        "acp-node-override",
+        "session-headroom-screen",
+        "app-reach",
+        "fabro-currency",
+        "pre-dispatch-criteria",
+        "dod-judgement",
+        "definition-of-done-workflow",
+        "spec-change-tier",
+        "proof-asset-store",
+        "proof-credential-gate",
+        "credential-requirement",
+        "codex-credential-gate",
+        "recovery-routing",
+        "admission",
+        "publish-branch-reclaim",
+        "recovery-route",
         "record-dispatch",
         "github-app-auth",
         "goal-minijinja-preflight",
@@ -4560,7 +4581,7 @@ def test_dispatch_id_journal_records_resolved_factory_without_rewriting_existing
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.status == "green"
@@ -4616,7 +4637,7 @@ def test_dispatch_threads_its_dispatch_id_into_the_watchdog_launcher(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.status == "green"
@@ -4731,7 +4752,7 @@ def test_dispatch_id_journal_omits_factory_when_target_was_not_resolved(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.status == "green"
@@ -4767,7 +4788,7 @@ def test_dispatch_pre_run_failure_releases_admitted_claim(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage, outcome.fabro_run_id) == (
@@ -4847,7 +4868,7 @@ def test_dispatch_hands_the_journaled_proof_rendering_to_the_overlay(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage) == ("failed", "run-config-overlay")
@@ -4908,7 +4929,7 @@ def test_dispatch_tells_the_overlay_which_client_build_it_resolved(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage) == ("failed", "run-config-overlay")
@@ -4971,7 +4992,7 @@ def test_dispatch_fabro_run_failure_without_run_id_releases_admitted_claim(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert (outcome.status, outcome.stage, outcome.fabro_run_id) == ("failed", "fabro-run", None)
@@ -5096,7 +5117,7 @@ def test_dispatch_does_not_release_claim_after_fabro_run_exists(
         repo=repo,
         item=item,
         journal=journal,
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
 
     assert outcome.fabro_run_id == "01RUNEXISTS"
