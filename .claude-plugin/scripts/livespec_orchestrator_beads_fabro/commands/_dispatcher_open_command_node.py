@@ -78,6 +78,7 @@ COMMAND_NODES: tuple[str, ...] = (
     "implementation_diff",
     "janitor",
     "janitor_admission",
+    "janitor_refresh_route",
     "needs_human",
     "non_converged",
     "pr",

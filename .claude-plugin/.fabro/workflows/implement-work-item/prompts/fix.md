@@ -76,6 +76,11 @@ referenced response artifact). Do not choose an older green proof record
 over that stage's current finding. When several rounds are visible, use
 the incoming stage's latest response, not an earlier round's disposition.
 
+When the most recent incoming stage is `janitor_refresh_route`, it is only the
+router a red janitor passes through: its own response is a routing label. The
+failure to repair is the `janitor` response immediately before it, so read the
+janitor failure output there.
+
 ## Which proof record is your work order
 
 When you were entered on a proof finding, take as your work order the record
