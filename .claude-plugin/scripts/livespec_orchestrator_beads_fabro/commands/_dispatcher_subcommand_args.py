@@ -123,4 +123,14 @@ def add_reconcile_merged_arguments(*, parser: argparse.ArgumentParser) -> None:
             "default branch, and leaves the item untouched on any non-PASS verdict"
         ),
     )
+    _ = parser.add_argument(
+        "--pr",
+        dest="pr",
+        type=int,
+        default=None,
+        help=(
+            "reconcile against this one merged pull request of the item instead of "
+            "ranking the merged pull requests that name it"
+        ),
+    )
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
