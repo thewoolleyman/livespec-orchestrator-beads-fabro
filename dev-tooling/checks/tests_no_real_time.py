@@ -96,16 +96,12 @@ _UNREASONED_FINDING = "carries an exemption marker with no written reason"
 def _exemption(*, lines: Sequence[str], first: int, last: int) -> tuple[bool, bool]:
     """Whether a marker binds to this occurrence, and whether it carries a reason.
 
-    The binding region is the offending expression's own lines PLUS the one line
-    immediately above it. The lead-in line is not laxity: a reason worth reading
-    rarely fits after `time.sleep(_SETTLE_SECONDS)` inside this repository's
-    100-column limit, and the alternative authors reach for is a reason trimmed
-    until it says nothing. One line of lead-in keeps the marker bound to the
-    single occurrence it stands down, which a file-level pragma would not.
+    The binding region is the offending expression's own lines and nothing
+    else, so every occurrence carries its own written reason.
     """
     reasons = [
         line.partition(EXEMPTION_MARKER)[2].strip()
-        for line in lines[max(0, first - 2) : last]
+        for line in lines[first - 1 : last]
         if EXEMPTION_MARKER in line
     ]
     return (bool(reasons), any(reasons))

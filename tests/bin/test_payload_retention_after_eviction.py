@@ -153,8 +153,9 @@ def _wait_for(*, path: Path, timeout: float, process: subprocess.Popen[str]) -> 
             raise AssertionError(message)
         if time.monotonic() > deadline:
             raise AssertionError(f"timed out after {timeout}s waiting for {path}")
-        # real-time-required: an out-of-process write has no in-process event to join
-        time.sleep(_POLL_SECONDS)
+        time.sleep(
+            _POLL_SECONDS  # real-time-required: an out-of-process write has no event to join
+        )
 
 
 def test_deferred_work_runs_from_the_retained_payload_after_the_install_is_removed(

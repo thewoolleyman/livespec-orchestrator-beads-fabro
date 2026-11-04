@@ -283,8 +283,9 @@ def _wait_for_group_exit(*, pgid: int) -> None:
             if len(fields := line.split()) == 2
         ):
             return
-        # real-time-required: kernel process-table reaping, observed only through ps
-        time.sleep(0.01)
+        time.sleep(
+            0.01  # real-time-required: kernel process-table reaping, observed only through ps
+        )
     raise AssertionError(f"Picker process group {pgid} still has live writers")
 
 
@@ -335,8 +336,9 @@ def test_picker_cleanup_stops_writers_after_the_parent_exits(*, tmp_path: Path) 
         assert proc.wait(timeout=5) == 0
         deadline = time.monotonic() + 5.0
         while not witness.exists() and time.monotonic() < deadline:
-            # real-time-required: a detached shell writes the witness out of process
-            time.sleep(0.01)
+            time.sleep(
+                0.01  # real-time-required: a detached shell writes the witness out of process
+            )
         assert witness.exists()
         child_pid = int(child_pid_file.read_text(encoding="utf-8"))
         _stop_codex(proc=proc, fd=os.open(os.devnull, os.O_WRONLY))

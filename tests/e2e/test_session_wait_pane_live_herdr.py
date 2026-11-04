@@ -231,8 +231,9 @@ class _HerdrServer:
         deadline = time.monotonic() + 30.0
         while observed != state and time.monotonic() < deadline:
             observed = self.agent_status(pane_id=pane_id)
-            # real-time-required: a live external server offers no injectable clock
-            time.sleep(0.05)
+            time.sleep(
+                0.05  # real-time-required: a live external server offers no injectable clock
+            )
         assert observed == state, f"pane {pane_id} settled at {observed!r}, not {state!r}"
 
     def session_is_live(self) -> bool:
@@ -329,8 +330,9 @@ def _isolated_herdr_server(*, directory: Path):
         deadline = time.monotonic() + 90.0
         while not live and time.monotonic() < deadline:
             live = socket_path.exists() and server.session_is_live()
-            # real-time-required: readiness of a real server process, polled over its socket
-            time.sleep(0.02)
+            time.sleep(
+                0.02  # real-time-required: readiness of a real server, polled over its socket
+            )
         assert live, _readiness_diagnostic(
             socket_path=socket_path,
             process=process,

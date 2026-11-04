@@ -388,8 +388,7 @@ def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
     elapsed = time.monotonic() - started
     # Pre-fix this is the grandchild's own lifetime (~3s); post-fix it is the
     # deadline (~0.5s), because killing the group closes the inherited pipe.
-    # real-time-required: a blocking readline on a pipe a real grandchild holds
-    assert (
+    assert (  # real-time-required: a blocking readline on a pipe a real grandchild holds
         elapsed < _BOUNDED_CEILING_SECONDS
     ), f"renewal outlived its {_DEADLINE_SECONDS}s deadline: {elapsed:.2f}s"
     assert result.exit_code == UNSPENDABLE_EXIT_CODE

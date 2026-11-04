@@ -124,8 +124,9 @@ def _await_no_guard_process(*, guard: Path, budget_seconds: float) -> list[int]:
     deadline = time.monotonic() + budget_seconds
     remaining = _processes_naming(guard=guard)
     while remaining and time.monotonic() < deadline:
-        # real-time-required: a detached reaper's exit is visible only in /proc
-        time.sleep(_POLL_SECONDS)
+        time.sleep(
+            _POLL_SECONDS  # real-time-required: a detached reaper's exit is visible only in /proc
+        )
         remaining = _processes_naming(guard=guard)
     return remaining
 

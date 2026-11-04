@@ -33,5 +33,6 @@ def wait_for_dispatcher_exec(
     while not _has_execd(cmdline=cmdline, entry=entry):
         if time.monotonic() >= deadline:
             raise AssertionError(f"dispatcher fixture process {process.pid} did not exec {entry}")
-        # real-time-required: this helper observes a separately-exec'd fixture process through /proc.
-        time.sleep(poll_seconds)
+        time.sleep(
+            poll_seconds  # real-time-required: a separately-exec'd process is observed via /proc
+        )

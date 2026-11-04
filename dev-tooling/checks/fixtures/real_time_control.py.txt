@@ -31,14 +31,8 @@ def test_a_real_sleep_may_be_stood_down_with_a_reason() -> None:
     time.sleep(0.05)  # EXPECT-OFFENCE real-time-required: the subject is the host clock
 
 
-def test_a_marker_on_the_line_above_also_stands_an_occurrence_down() -> None:
-    # real-time-required: a reason rarely fits after the call it explains
-    time.sleep(0.05)  # EXPECT-OFFENCE
-
-
-def test_a_marker_two_lines_above_does_not_reach_the_occurrence() -> None:
-    # real-time-required: too far above to bind
-    _ = len("one line of lead-in, and no more")
+def test_a_marker_on_the_line_above_does_not_stand_an_occurrence_down() -> None:
+    # real-time-required: a marker binds only to the offending lines themselves
     time.sleep(0.05)  # EXPECT-OFFENCE EXPECT-REPORTED
 
 

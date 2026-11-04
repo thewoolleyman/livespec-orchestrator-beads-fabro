@@ -228,11 +228,12 @@ def test_an_occurrence_is_stood_down_by_a_marker_carrying_a_reason() -> None:
     assert check.file_findings(source=source, label="tests/test_x.py") == []
 
 
-def test_a_marker_on_the_line_above_binds_to_the_occurrence() -> None:
-    """One line of lead-in, because a reason worth reading rarely fits after.
+def test_a_marker_on_the_line_above_does_not_bind_to_the_occurrence() -> None:
+    """The exemption is per LINE: only the offending expression's own lines bind.
 
-    The alternative authors reach for is a reason trimmed until it says
-    nothing, which is the opposite of what a written reason is for.
+    A marker on the preceding line would stand an occurrence down without the
+    occurrence carrying its own written reason, which is the looser scope the
+    Definition of Done does not allow.
     """
     check = _load_check()
     source = (
@@ -244,30 +245,9 @@ def test_a_marker_on_the_line_above_binds_to_the_occurrence() -> None:
         "    time.sleep(0.25)\n"
     )
 
-    assert check.file_findings(source=source, label="tests/test_x.py") == []
-
-
-def test_a_marker_further_above_does_not_reach_the_occurrence() -> None:
-    """The binding region is bounded, so a marker cannot cover a whole block.
-
-    Without this the lead-in line would degrade into a file-level pragma by
-    accident: one marker near the top would quietly stand down everything
-    under it, which is precisely what a per-occurrence exemption is not.
-    """
-    check = _load_check()
-    source = (
-        "import time\n"
-        "\n"
-        "\n"
-        "def test_x() -> None:\n"
-        "    # real-time-required: too far above to bind\n"
-        "    _ = len('one line of lead-in, and no more')\n"
-        "    time.sleep(0.25)\n"
-    )
-
     found = check.file_findings(source=source, label="tests/test_x.py")
 
-    assert found == ["tests/test_x.py:7: waits in real time through time.sleep"]
+    assert found == ["tests/test_x.py:6: waits in real time through time.sleep"]
 
 
 def test_a_marker_with_no_reason_is_itself_the_finding() -> None:

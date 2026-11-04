@@ -289,8 +289,9 @@ def test_scenario228_a_coding_agent_still_running_at_the_deadline_is_stopped() -
 
     assert completed.returncode != 0, completed.stdout
     # BY the deadline, not after it: the grace is spent inside the allowance.
-    # real-time-required: this shipped POSIX guard is intentionally judged against its absolute epoch.
-    assert time.monotonic() - started <= _GUARD_DEADLINE_SECONDS + _GUARD_SLACK_SECONDS
+    assert (  # real-time-required: the shipped POSIX guard is judged against its absolute epoch
+        time.monotonic() - started <= _GUARD_DEADLINE_SECONDS + _GUARD_SLACK_SECONDS
+    )
     assert int(time.time()) >= deadline - _GUARD_SLACK_SECONDS
 
 
@@ -314,8 +315,9 @@ def test_scenario228_the_start_check_grades_the_credential_with_budget_remaining
     )
     now = int(time.time())
     deadline = now + _CREDENTIAL_USE_WINDOW_SECONDS
-    # real-time-required: this assertion confirms an epoch-derived credential budget.
-    assert deadline - now >= _RUN_WALL_BUDGET_SECONDS, "the budget premise does not hold"
+    assert (  # real-time-required: this assertion confirms an epoch-derived credential budget.
+        deadline - now >= _RUN_WALL_BUDGET_SECONDS
+    ), "the budget premise does not hold"
 
     with tempfile.TemporaryDirectory() as directory:
         guard = Path(directory) / "guard.sh"
