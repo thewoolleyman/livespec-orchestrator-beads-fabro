@@ -15,6 +15,9 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   its preflight before the older ticket binds, preserves FIFO bind order,
   reuses fresh passes, renews stale passes at the head, releases the mutex
   before drive, and drops a failed queued ticket without taking that mutex.
+  It runs the `scenario297` slice, which skips the shellcheck pass the aggregate
+  target keeps, and its subprocess timeout is a hang guard longer than the sum of
+  the harness's own per-wait liveness ceilings, never the pass/fail condition.
 
 - `test_merge_poll_budget_exhausted_scenario220.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 220": an exhausted merge-poll budget

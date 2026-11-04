@@ -10,14 +10,20 @@ _CHECK_DRIVER = _REPO_ROOT / "dev-tooling" / "just-check-fleet-launch.sh"
 _TARGET_EXTRACTOR = _REPO_ROOT / "dev-tooling" / "aggregate-targets.sh"
 
 
-def _run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
+# A hang guard, not a pass/fail condition: it must outlast the sum of the harness's
+# own per-wait liveness ceilings on the scenario297 slice (cases 6-8: 160 + 160 + 70
+# seconds), so a slow but correct run on a loaded host still reaches its verdict.
+_HANG_GUARD_SECONDS = 600
+
+
+def _run(*, argv: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         argv,
         cwd=_REPO_ROOT,
         capture_output=True,
         check=False,
         text=True,
-        timeout=60,
+        timeout=timeout,
     )
 
 
@@ -27,9 +33,10 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
     assert targets.returncode == 0, targets.stderr
     assert "check-fleet-launch" in targets.stdout.split()
 
-    checked = _run(argv=["bash", str(_CHECK_DRIVER), "scenario297"])
+    checked = _run(argv=["bash", str(_CHECK_DRIVER), "scenario297"], timeout=_HANG_GUARD_SECONDS)
     combined = checked.stdout + checked.stderr
     assert checked.returncode == 0, combined
+    assert "shellcheck" not in combined.lower(), combined
     for assertion in (
         "the younger queued launcher starts its preflight before the older binds",
         "queued launchers bind in FIFO ticket order after their preflights",
