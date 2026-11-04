@@ -11,6 +11,8 @@ set -u
 FLEET_LAUNCH_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=fleet-launch/config.sh
 . "$FLEET_LAUNCH_DIR/config.sh"
+# shellcheck source=fleet-launch/board-snapshot.sh
+. "$FLEET_LAUNCH_DIR/board-snapshot.sh"
 
 ITEM=${1:?usage: resume-capped.sh <item-id>}
 SEAT=$FLEET_LAUNCH_SEAT
@@ -49,13 +51,6 @@ read_fleet_cap() {
   FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/dev/null)
   FLEET_CAP=${FLEET_CAP:-0}
 }
-board_rows() {
-  local out
-  out=$("$FABRO" ps -a --server "$1" 2>/dev/null) || { echo U; return; }
-  [ -z "$out" ] && return 0
-  printf '%s\n' "$out" | head -1 | grep -q '^RUN ID' || { echo U; return; }
-  printf '%s\n' "$out" | awk 'NR>1 && length($1)==12 && $1 ~ /^[0-9A-Z]+$/ && $3 !~ /^(succeeded|failed|cancelled|canceled|timeout|timed_out|aborted|removed|dead|completed)$/ {print $1, $3, $5, $NF}'
-}
 rows_count() { if [ "$1" = U ]; then echo U; else printf '%s' "$1" | grep -c .; fi; }
 # Snapshot the live in-flight markers as "<item>" lines, or U when the
 # directory cannot be read.  Taken BEFORE the boards are read: a launcher drops
@@ -91,11 +86,14 @@ $snapshot
 EOF_SNAPSHOT
   echo "$count"
 }
+# read_boards [direct]: the boards come from the shared snapshot (board-snapshot.sh) unless "direct" asks for the
+# factory itself, which is how the binding count under the mutex reads them.
 read_boards() {
-  local gmk_rows hl_rows snapshot
+  local gmk_rows hl_rows snapshot reader=board_rows
+  [ "${1:-}" = direct ] && reader=board_rows_direct
   snapshot=$(marker_snapshot)
-  gmk_rows=$(board_rows "$GMK")
-  hl_rows=$(board_rows "$HL")
+  gmk_rows=$("$reader" "$FABRO" "$GMK")
+  hl_rows=$("$reader" "$FABRO" "$HL")
   gmk_live=$(rows_count "$gmk_rows")
   hl_live=$(rows_count "$hl_rows")
   if [ "$gmk_live" = U ] || [ "$hl_live" = U ]; then markers=U; fleet=U; return; fi
@@ -123,7 +121,7 @@ write_marker() {
 wait_for_listing() {
   local rows listing_deadline=""
   while :; do
-    rows=$(board_rows "$GMK")
+    rows=$(board_rows "$FABRO" "$GMK")
     if [ "$rows" != U ] && printf '%s\n' "$rows" | awk -v it="$ITEM" '$4==it {found=1} END{exit !found}'; then
       rm -f "$marker"
       marker=""
@@ -132,7 +130,7 @@ wait_for_listing() {
     if ! kill -0 "$1" 2>/dev/null; then
       [ -n "$listing_deadline" ] || listing_deadline=$(( $(date +%s) + FLEET_LAUNCH_LISTING_WAIT_S ))
       if [ "$(date +%s)" -ge "$listing_deadline" ]; then
-        echo "$(date -u +%T) resume client ended and the board never listed item=$ITEM within ${FLEET_LAUNCH_LISTING_WAIT_S}s; releasing marker"
+        echo "$(date -u +%FT%TZ) resume client ended and the board never listed item=$ITEM within ${FLEET_LAUNCH_LISTING_WAIT_S}s; releasing marker"
         return
       fi
     fi
@@ -142,39 +140,39 @@ wait_for_listing() {
 
 ticket="$QUEUE/$(date +%s%N)-$SEAT"
 echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
-echo "$(date -u +%T) gmktec FIFO ticket taken at start: ${ticket##*/}"
+echo "$(date -u +%FT%TZ) gmktec FIFO ticket taken at start: ${ticket##*/}"
 
 while :; do
   [ "$(date +%s)" -lt "$deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit 75; }
   ahead=$(oldest_live_ticket)
   if [ "$ahead" != "$ticket" ]; then
-    echo "$(date -u +%T) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"
+    echo "$(date -u +%FT%TZ) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
   if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
-    echo "$(date -u +%T) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"
+    echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
   if ! take_mutex; then sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
   read_fleet_cap
-  read_boards
+  read_boards direct
   if [ "$fleet" = U ] || [ "$FLEET_CAP" -le 0 ] || [ "$fleet" -ge "$FLEET_CAP" ]; then
-    echo "$(date -u +%T) fleet at cap under mutex: fleet=$fleet cap=$FLEET_CAP; keep FIFO ticket"
+    echo "$(date -u +%FT%TZ) fleet at cap under mutex: fleet=$fleet cap=$FLEET_CAP; keep FIFO ticket"
     release_lock
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
   if ! write_marker; then
-    echo "$(date -u +%T) could not write resume in-flight marker; keep FIFO ticket"
+    echo "$(date -u +%FT%TZ) could not write resume in-flight marker; keep FIFO ticket"
     release_lock
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
   drop_ticket
   release_lock
-  echo "$(date -u +%T) resume marker written and mutex released: item=$ITEM"
+  echo "$(date -u +%FT%TZ) resume marker written and mutex released: item=$ITEM"
   "$FLEET_LAUNCH_RESUME_WRAPPER" -- "$FLEET_LAUNCH_RESUME_COMMAND" --item "$ITEM" > "$OUT/$ITEM-resume.out" 2> "$OUT/$ITEM-resume.err" &
   resume_pid=$!
   wait_for_listing "$resume_pid"

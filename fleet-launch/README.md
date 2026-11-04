@@ -31,6 +31,7 @@ for the Dispatcher's own admission conditions.
 | File | What it does |
 | --- | --- |
 | `config.sh` | The one place a host-specific value is set: factory server URLs, the fabro client path, the fleet-cap and hold files, the queue, lock and in-flight directories, the plugin registry and cache, the wrappers and the timings. Every value can be overridden from the environment. |
+| `board-snapshot.sh` | The shared factory-board reader both launchers source. Every launcher on the host reads a factory's board through one snapshot file refreshed at most once per `FLEET_LAUNCH_BOARD_TTL_S`, because one run listing costs the petri server 25-40 s; an unreadable refresh is an unknown count, never zero, and the binding count under the launch mutex reads the factory directly. |
 | `dispatch-dual.sh` | Launches one work-item. Gates, in order: the Dispatcher's ready set, the shared fleet cap, the launch-time Definition-of-Done preflight, the hold file, gmktec's own ceiling and idle CPU, a per-factory FIFO ticket and mutex, a binding re-count including this launch's in-flight marker, and a usable-credential probe. |
 | `ready-set-check.py` | Asks the installed plugin build's own `ready_items()` whether an item is dispatchable, so the answer cannot diverge from the Dispatcher's selection. |
 | `release-hold-on-caam-rotation.sh` | Keeps the hold file in place until caam's active Claude profile changes, then removes it. |
