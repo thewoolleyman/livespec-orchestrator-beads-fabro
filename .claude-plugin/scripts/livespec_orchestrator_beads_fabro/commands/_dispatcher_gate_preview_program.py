@@ -61,16 +61,22 @@ def latest_red_test(handoff):
     return latest
 
 
+def changed_paths(root):
+    tracked = git("diff", "--name-only", "--no-renames", "HEAD", cwd=root).stdout.splitlines()
+    untracked = git("ls-files", "--others", "--exclude-standard", cwd=root).stdout.splitlines()
+    return sorted(set(tracked + untracked))
+
+
 def selected_paths(stage, root):
     if stage == "red":
         handoff_path = git(
             "rev-parse", "--git-path", "livespec-implement-handoff.md", cwd=root
         ).stdout.strip()
         handoff = Path(handoff_path)
-        return [latest_red_test(handoff)] if handoff.is_file() and latest_red_test(handoff) else []
-    tracked = git("diff", "--name-only", "--no-renames", "HEAD", cwd=root).stdout.splitlines()
-    untracked = git("ls-files", "--others", "--exclude-standard", cwd=root).stdout.splitlines()
-    return sorted(set(tracked + untracked))
+        red_test = latest_red_test(handoff) if handoff.is_file() else ""
+        if red_test:
+            return [red_test]
+    return changed_paths(root)
 
 
 def copy_path(path, root, preview):
