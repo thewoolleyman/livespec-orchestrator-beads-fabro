@@ -37,6 +37,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
+    janitor_succeeded,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
@@ -114,6 +115,10 @@ _PETRI_CANCELLED_PAYLOAD: list[dict[str, Any]] = [
     {
         "run_id": _PETRI_RUN_ID,
         "status": {"kind": "failed", "reason": "cancelled"},
+        "stages": {
+            "implement@1": {"handler": "agent", "state": "succeeded"},
+            "janitor@1": {"handler": "command", "state": "succeeded"},
+        },
         "conclusion": {
             "status": "failed",
             "timestamp": "2026-10-18T22:08:00Z",
@@ -265,6 +270,28 @@ def test_petri_cancelled_reason_is_a_cancelled_fabro_run_outcome(tmp_path: Path)
     assert outcome.stage == "fabro-run"
     assert outcome.fabro_run_id == _PETRI_RUN_ID
     assert getattr(outcome, "fabro_factory_name", None) == "hp"
+    assert outcome.janitor_green is True
+
+
+def test_unreadable_or_incomplete_stage_records_are_not_janitor_green(tmp_path: Path) -> None:
+    """Only a successful janitor entry establishes preservation eligibility."""
+    assert janitor_succeeded(inspect=None) is False
+    assert janitor_succeeded(inspect=_inspect(tmp_path=tmp_path, payload=[])) is False
+    assert (
+        janitor_succeeded(
+            inspect=_inspect(tmp_path=tmp_path, payload=[{"status": {"reason": "cancelled"}}])
+        )
+        is False
+    )
+    assert (
+        janitor_succeeded(
+            inspect=_inspect(
+                tmp_path=tmp_path,
+                payload=[{"stages": {"janitor@1": {"state": "failed"}}}],
+            )
+        )
+        is False
+    )
 
 
 def test_petri_non_cancelled_reason_keeps_the_generic_failure_outcome(tmp_path: Path) -> None:
