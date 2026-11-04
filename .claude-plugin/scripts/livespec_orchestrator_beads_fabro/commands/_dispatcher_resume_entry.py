@@ -183,11 +183,15 @@ class ResumeCheckout:
     branch is the one the reclaim deletes before that run starts — so a fetch of
     the branch would ask origin for a ref that is already gone, and the step would
     fail the run rather than place it anywhere.
+
+    `read_only` marks the proof-only arm's checkout: the merged pull request's head
+    commit at merge, on which nothing may be pushed.
     """
 
     branch: str
     head: str
     fetch_ref: str | None = None
+    read_only: bool = False
 
 
 def graph_entered_at(*, graph_text: str, node: str) -> str | None:
@@ -387,13 +391,20 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
     if checkout is None:
         return pyright_cache_prepare_steps_block()
     ref = checkout.fetch_ref or f"refs/heads/{checkout.branch}"
-    script = " && ".join(
-        (
-            "set -e",
-            f"git fetch --no-tags origin {shlex.quote(ref)}",
-            f"git checkout --detach {shlex.quote(checkout.head)}",
-        )
-    )
+    head = shlex.quote(checkout.head)
+    commands = [
+        "set -e",
+        f"git fetch --no-tags origin {shlex.quote(ref)}",
+        f"git checkout --detach {head}",
+    ]
+    if checkout.read_only:
+        # The head the sandbox lands on must be exactly the one asked for (never
+        # the default-branch merge commit), and the clone must have nowhere to push.
+        commands += [
+            f'test "$(git rev-parse HEAD)" = {head}',
+            "git remote set-url --push origin no-push-proof-only-arm",
+        ]
+    script = " && ".join(commands)
     resume_step = (
         "\n# --- Dispatcher-materialized recovery checkout: the ref the recorded\n"
         "# --- head lives on, at that head ---\n"
@@ -428,6 +439,7 @@ def resume_checkout_for(*, args: argparse.Namespace, branch: str) -> ResumeCheck
         branch=branch,
         head=head,
         fetch_ref=fetch_ref if isinstance(fetch_ref, str) and fetch_ref else None,
+        read_only=getattr(args, RESUME_PROOF_ONLY_ARG, False) is True,
     )
 
 
