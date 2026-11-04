@@ -1,0 +1,77 @@
+{
+    "id": "2K4wKhXN2SL",
+    "name": "k8s node CPU saturation \u2014 a cluster node under 10% idle for 15 min",
+    "description": "Fires, per host.name, when AVG(system.cpu.utilization) for state=idle across the node's CPUs over the trailing 15 min is below 0.10 \u2014 the node has been at least 90% busy for 15 minutes. Busy is read as 1 - idle from hostmetrics, not from load average (.ai/ci-node-capacity-reads.md). Grouped by host.name over the three k3s nodes. Emitter: the per-node host collector (thewoolleyman/otel-collector), converged by ansible/ci-pool.yml. Runbook: open the 'Kubernetes node load' board; ssh <node>; mpstat 5 3; free -g; kubectl describe node <node>; kubectl get pods -A -o wide --field-selector spec.nodeName=<node>. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-uftb4o.",
+    "disabled": false,
+    "query": {
+        "breakdowns": [
+            "host.name"
+        ],
+        "calculations": [
+            {
+                "column": "system.cpu.utilization",
+                "op": "AVG"
+            }
+        ],
+        "filters": [
+            {
+                "column": "host.name",
+                "op": "in",
+                "value": [
+                    "poweredge-xubuntu",
+                    "gmktec-xubuntu",
+                    "hp-xubuntu"
+                ],
+                "join_column": ""
+            },
+            {
+                "column": "state",
+                "op": "=",
+                "value": "idle",
+                "join_column": ""
+            }
+        ],
+        "time_range": 900,
+        "granularity": 60
+    },
+    "query_id": "9FZKhMX7zpA",
+    "alert_type": "on_change",
+    "threshold": {
+        "value": 0.1,
+        "op": "<",
+        "exceeded_limit": 1
+    },
+    "recipients": [
+        {
+            "type": "email",
+            "target": "thewoolleyman@gmail.com",
+            "id": "jKw2EyfLJ3W"
+        },
+        {
+            "type": "email",
+            "target": "anthropic-api-1@thewoolleyweb.com",
+            "id": "fort2EXXuVy"
+        }
+    ],
+    "frequency": 300,
+    "triggered": true,
+    "evaluation_schedule_type": "frequency",
+    "auto_investigate": false,
+    "created_at": "2026-10-24T03:36:08Z",
+    "updated_at": "2026-10-24T03:36:08Z",
+    "tags": [
+        {
+            "key": "kind",
+            "value": "value"
+        },
+        {
+            "key": "component",
+            "value": "node-load"
+        },
+        {
+            "key": "service",
+            "value": "k8s-nodes"
+        }
+    ],
+    "dataset_slug": "Metrics"
+}
