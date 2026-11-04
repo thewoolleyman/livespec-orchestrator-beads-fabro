@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import select
 import signal
 import subprocess
 import time
@@ -141,7 +142,9 @@ def _run(
     )
 
 
-def _heartbeat_argv(*, beat_file: Path, pid_file: Path) -> list[str]:
+def _heartbeat_argv(
+    *, beat_file: Path, pid_file: Path, ready_fifo: Path | None = None
+) -> list[str]:
     """A harmless child that stamps the clock continuously while it executes.
 
     The heartbeat is the instrument that separates EXECUTING from merely
@@ -149,11 +152,18 @@ def _heartbeat_argv(*, beat_file: Path, pid_file: Path) -> list[str]:
     timestamp in this file is the last moment the child actually ran. Asking
     only whether a pid exists cannot tell a zombie from a live agent, and a
     zombie holds no credential.
+
+    With `ready_fifo`, the child writes one line to that FIFO after its first
+    beat, which is a deterministic readiness event the caller can wait on.
     """
+    announce = (
+        "" if ready_fifo is None else f"date +%s.%N >> {beat_file}; echo ready > {ready_fifo}; "
+    )
     return [
         "/bin/sh",
         "-c",
-        f"echo $$ > {pid_file}; while : ; do date +%s.%N >> {beat_file}; sleep 0.2; done",
+        f"echo $$ > {pid_file}; {announce}"
+        f"while : ; do date +%s.%N >> {beat_file}; sleep 0.2; done",
     ]
 
 
@@ -521,6 +531,9 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
     """
     beat_file = tmp_path / "beats"
     pid_file = tmp_path / "pid"
+    ready_fifo = tmp_path / "ready"
+    os.mkfifo(ready_fifo)
+    ready_fd = os.open(ready_fifo, os.O_RDONLY | os.O_NONBLOCK)
     deadline = int(time.time()) + _SOON_SECONDS
     env = _hermetic_env()
     env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
@@ -530,15 +543,17 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
             "/bin/sh",
             str(_guard(tmp_path=tmp_path)),
             "--",
-            *_heartbeat_argv(beat_file=beat_file, pid_file=pid_file),
+            *_heartbeat_argv(beat_file=beat_file, pid_file=pid_file, ready_fifo=ready_fifo),
         ],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    settle = time.time() + 10
-    while time.time() < settle and not beat_file.exists():
-        time.sleep(0.1)  # real-time-required: a /bin/sh child stamps the beat file out of process
+    try:
+        readable, _, _ = select.select([ready_fd], [], [], _SETTLE_SECONDS)
+        assert readable, "the child never announced its first beat, so the waiter cannot be killed"
+    finally:
+        os.close(ready_fd)
 
     guarded.send_signal(signal.SIGKILL)
     _ = guarded.wait(timeout=10)
