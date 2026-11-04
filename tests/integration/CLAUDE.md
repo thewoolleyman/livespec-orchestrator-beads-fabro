@@ -18,6 +18,8 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   It runs the `scenario297` slice, which skips the shellcheck pass the aggregate
   target keeps, and its subprocess timeout is a hang guard longer than the sum of
   the harness's own per-wait liveness ceilings, never the pass/fail condition.
+  The harness declares that sum (`run-tests.sh liveness-ceiling`) and the test
+  takes its guard from it, so the two cannot drift apart.
 
 - `test_merge_poll_budget_exhausted_scenario220.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 220": an exhausted merge-poll budget

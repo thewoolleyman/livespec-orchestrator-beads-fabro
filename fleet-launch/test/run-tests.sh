@@ -41,11 +41,20 @@ if [ ! -f "$LAUNCHER" ] || [ ! -f "$RESUME_LAUNCHER" ]; then
     exit 1
 fi
 
+# The sum of every per-wait liveness ceiling the scenario297 slice carries (cases
+# 6-10). A caller that bounds the slice from outside takes its hang guard from
+# this figure, so the guard cannot drift below the waits it must outlast.
+SCENARIO297_LIVENESS_CEILING_SECONDS=663
+
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
     all|scenario297) ;;
+    liveness-ceiling)
+        echo "$SCENARIO297_LIVENESS_CEILING_SECONDS"
+        exit 0
+        ;;
     *)
-        echo "usage: run-tests.sh [scenario297]" >&2
+        echo "usage: run-tests.sh [scenario297|liveness-ceiling]" >&2
         exit 2
         ;;
 esac
