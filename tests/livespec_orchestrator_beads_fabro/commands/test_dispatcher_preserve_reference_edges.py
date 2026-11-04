@@ -310,6 +310,74 @@ def test_post_run_dispositions_continue_after_preserve_failure(
     assert calls == ["preserve", "needs-human", "non-convergence"]
 
 
+def test_post_run_dispositions_preserves_an_externally_cancelled_janitor_green_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The observed janitor result reaches preservation before the cancel rests."""
+    journal = _RecordingJournal()
+    calls: list[str] = []
+
+    def _green_tree(**kwargs: object) -> None:
+        _ = kwargs
+        calls.append("green-tree")
+
+    def _ordinary_tree(**kwargs: object) -> None:
+        _ = kwargs
+        calls.append("ordinary-tree")
+
+    monkeypatch.setattr(
+        _dispatcher_loop_selection, "preserve_cancelled_janitor_green_tree", _green_tree
+    )
+    monkeypatch.setattr(_dispatcher_loop_selection, "preserve_terminated_run_work", _ordinary_tree)
+    for name in (
+        "record_provider_exhaustion_if_observed",
+        "record_dead_implementer_truncation_if_observed",
+        "record_base_advanced_after_arming",
+        "escalate_needs_human_block",
+        "record_needs_human_cause",
+        "dispose_terminal_routing",
+        "emit_calibration",
+    ):
+        monkeypatch.setattr(_dispatcher_loop_selection, name, lambda **_: None)
+    monkeypatch.setattr(_dispatcher_loop_selection, "record_groom_draft", lambda **_: False)
+
+    _dispatcher_loop_selection.post_run_dispositions(
+        args=_args(),
+        repo=tmp_path,
+        item=_item(),
+        outcome=DispatchOutcome(
+            work_item_id=_item().id,
+            status="cancelled",
+            stage="fabro-run",
+            pr_number=None,
+            merge_sha=None,
+            detail="",
+            fabro_run_id="01JANITORGREEN",
+            janitor_green=True,
+        ),
+        journal=journal,
+        wall_clock_seconds=1.0,
+        dispatch_context_size=1,
+        token_supplier=lambda: "token",
+    )
+
+    assert calls == ["green-tree", "ordinary-tree"]
+
+
+def test_cancelled_janitor_green_preservation_declines_non_cancelled_outcomes(
+    tmp_path: Path,
+) -> None:
+    """The special tree leg cannot duplicate an ordinary terminal preservation."""
+    terminal_preservation.preserve_cancelled_janitor_green_tree(
+        args=_args(),
+        repo=tmp_path,
+        item=_item(),
+        outcome=_outcome(),
+        journal=_RecordingJournal(),
+    )
+
+
 def test_configured_repo_store_config_is_used_for_resolvable_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
