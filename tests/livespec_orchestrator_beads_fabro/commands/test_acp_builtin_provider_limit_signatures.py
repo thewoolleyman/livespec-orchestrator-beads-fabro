@@ -42,6 +42,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import (
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_signatures import (
     AcpAvailabilitySignature,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_structured import (
+    parse_structured_candidate,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     DOMAIN_SCOPE,
     AcpAvailabilityFailure,
@@ -185,6 +189,40 @@ def test_the_measured_claude_model_unsupported_message_is_candidate_scoped() -> 
     assert verdict.scope == "candidate"
     assert verdict.hold_key == ANTHROPIC_DOMAIN
     assert verdict.candidate_key == "builtin-anthropic-0000000000000000"
+
+
+def test_a_structured_claude_candidate_carries_the_measured_unsupported_model_signature() -> None:
+    """The shipped Claude catalog reaches the release classifier without byte matching.
+
+    Structured candidates derive a catalog identity, rather than the manual
+    built-in adapter's byte-matched identity.  The stable adapter diagnostic
+    must therefore travel on the catalog model into the rendered candidate;
+    otherwise the provider-limit path sees an ordinary failure and never
+    releases the item for its ordered fallback.
+    """
+    catalogs = resolve_acp_catalogs(block={})
+    assert not isinstance(catalogs, str), catalogs
+    candidate = parse_structured_candidate(
+        entry={"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"},
+        key="dispatcher.acp_nodes.implement",
+        catalogs=catalogs,
+    )
+    assert isinstance(candidate, AcpCandidate), candidate
+
+    verdict = classify_acp_failure(
+        signal=AcpFailureSignal(
+            original_identity="acp-protocol-error",
+            protocol_message=_CLAUDE_MODEL_UNSUPPORTED_MESSAGE,
+            turn_started=True,
+        ),
+        candidate=candidate,
+    )
+
+    assert isinstance(verdict, AcpAvailabilityFailure)
+    assert verdict.cause == "model_unsupported"
+    assert verdict.scope == "candidate"
+    assert verdict.hold_key == ANTHROPIC_DOMAIN
+    assert verdict.candidate_key == "claude-acp/anthropic/claude-opus-5"
 
 
 def test_every_builtin_quota_signature_is_scoped_to_its_availability_domain() -> None:
