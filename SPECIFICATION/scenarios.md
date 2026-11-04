@@ -6478,34 +6478,34 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
 ## Scenario 176 — A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human
 
 ```gherkin
-Feature: A janitor-green run survives a default branch that moved under it
+Feature: A green run survives a default branch that moved under it
   As the maintainer of a repository dispatched to the factory
   I want a refresh conflict or a post-refresh gate failure repaired inside the run
   So that hours of finished, green work are not discarded at publication
 
-  Scenario: A conflicted publish_draft refresh routes to a repair turn
-    Given a run whose janitor stage succeeded at head H
+  Scenario: A conflicted pre-aggregate janitor refresh routes to a repair turn
+    Given a run whose implement stage left head H
     And origin's default branch has advanced with a commit that conflicts with the run's work
-    When publish_draft refreshes the run onto the default branch
-    Then publish_draft aborts the rebase and the run's working branch is at H
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch
+    Then the janitor aborts the rebase and the run's working branch is at H
     And a refresh-repair brief names H, the conflicted paths and the run commit being applied
     And the run enters the fix node rather than needs_human
     And after the fix turn the run re-enters janitor, then publish_draft, then proof_capture
 
   Scenario: A refreshed head that fails the gate is restored and repaired
-    Given a run whose janitor stage succeeded at head H
-    And the refresh onto the advanced default branch completes without conflict
-    And the repository-declared gate rejects the refreshed head
-    When publish_draft publishes
+    Given a run whose implement stage left head H
+    And the janitor's pre-aggregate refresh onto the advanced default branch completes without conflict and changes the tree
+    And the janitor's full check aggregate rejects the refreshed head
+    When the janitor finishes its aggregate
     Then the run's working branch is reset to H
     And the run enters the fix node with a brief naming each failed gate target
     And the run does not end at needs_human
 
   Scenario: A refresh commit refused by the commit hook is restored and repaired
-    Given a run whose janitor stage succeeded at head H
-    And the refresh onto the advanced default branch conflicts on no path
+    Given a run whose implement stage left head H
+    And the janitor's pre-aggregate refresh onto the advanced default branch conflicts on no path
     And the repository's commit hook refuses the commit the refresh makes
-    When publish_draft refreshes the run onto the default branch
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch
     Then the run's working branch is reset to H with no merge or rebase in progress
     And a refresh-repair brief names H, the targeted default-branch commit and each target the hook named as failed
     And the run enters the fix node rather than needs_human
@@ -6539,7 +6539,7 @@ Feature: A janitor-green run survives a default branch that moved under it
 
   Scenario: A repair round leaves the review-fix budget untouched
     Given a run that has used one review-fix round
-    When a publish_draft refresh conflict routes the run to a refresh-repair round
+    When a conflict in the janitor's pre-aggregate refresh routes the run to a refresh-repair round
     Then the run still has the same number of review-fix rounds remaining as before the repair
 
   Scenario: Only conflicting or gate-failing refreshes count toward the non-convergence bound
@@ -6555,7 +6555,7 @@ Feature: A janitor-green run survives a default branch that moved under it
     And pr arms auto-merge for the head the latest verified or carried_forward record names, and the run does not end pr-refresh-non-converged
 
   Scenario: The repair budget is bounded
-    Given a run that has already taken two refresh-repair rounds across publish_draft and pr_refresh
+    Given a run that has already taken two refresh-repair rounds across the janitor's pre-aggregate refresh and pr_refresh
     When its next refresh conflicts again
     Then the stage fails closed to needs_human with the cause refresh-repair-exhausted
     And the recovery artifact pointer names that stage's pre-refresh head
@@ -7874,7 +7874,7 @@ Feature: Concurrent additions to shared record files do not cost a run a repair 
   Scenario: Insertions by both sides at the same place in a declared Markdown record keep both
     Given a repository that declares tests/integration/CLAUDE.md with format markdown-insertions
     And the default branch and the run each inserted a section at the same position in that file
-    When publish_draft or pr_refresh refreshes the run and the refresh conflicts only in that file
+    When the janitor's pre-aggregate refresh or pr_refresh refreshes the run and the refresh conflicts only in that file
     Then the merged file holds the default branch's inserted lines followed by the run's inserted lines
     And the stage proceeds as after a refresh that did not conflict
 
@@ -7965,7 +7965,7 @@ Feature: An agent stage does not act on instructions its stage prompt never gave
   Scenario: A spec change that arrived through the default branch is not refused
     Given an implement-kind run whose own commits change no spec-root path
     And the default branch gained a ratified spec revision after the run started
-    When publish_draft refreshes the run onto the default branch and prepares to publish
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch and publish_draft prepares to publish
     Then no spec-root refusal applies
 
   Scenario: Spec-root and workflow refusals are reported separately
@@ -10509,7 +10509,7 @@ Feature: A push of a tree the aggregate just passed does not run the aggregate a
 
   Scenario: A push of a different tree runs the full gate
     Given the just check aggregate passed on a tree
-    When publish_draft refreshes onto a moved default branch and pushes a commit whose tree differs
+    When pr_refresh refreshes onto a moved default branch and pushes a commit whose tree differs
     Then the pre-push gate runs the full pre-push gate
 
   Scenario: No flag or variable reaches the verdict skip
@@ -10587,7 +10587,7 @@ Feature: publish_draft tells a landed publication from a failure
   Scenario: publish_draft finds the item's change already merged
     Given a run whose head adds no change to the default branch's tip
     And an earlier dispatch of the item has a pull request that the forge reports MERGED into the default branch with merge commit M contained in the tip
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft does not push or open a pull request
     And the run takes the merged-reconcile ending and records the pull request, merge commit M and the merged head
 
@@ -10601,19 +10601,19 @@ Feature: publish_draft tells a landed publication from a failure
   Scenario: A run that adds a change has not landed
     Given a run whose head adds a change to the default branch's tip
     And an earlier dispatch of the item has a MERGED pull request
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft pushes and opens a pull request as before
 
   Scenario: A reused branch name does not make a publication landed
     Given a run whose head adds no change to the default branch's tip
     And a MERGED pull request on the same branch name that no dispatch of this item produced
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
 
   Scenario: A merge into another base does not make a publication landed
     Given a run whose head adds no change to the default branch's tip
     And a pull request of an earlier dispatch of the item MERGED into a branch other than the default branch
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
 ```
 
@@ -11851,6 +11851,39 @@ Feature: Tests order by injected clocks and deterministic events, not real time
     And the just check aggregate runs again
     Then the check does not refuse that line
     And the same marker with an empty reason is still refused
+```
+
+## Scenario 305 — The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate
+
+```gherkin
+Feature: A green run pays the full check aggregate once, on the tree it pushes
+  As the operator of a factory whose default branch moves during long runs
+  I want the refresh onto the default branch to happen before the janitor
+  So that publish_draft's push reuses the janitor's green verdict instead of re-running the aggregate
+
+  Scenario: A moved default branch is integrated before the aggregate runs
+    Given a run whose implement stage committed green on a base the default branch has since advanced past
+    When the janitor visit that precedes publish_draft runs
+    Then it refreshes the run's working branch onto the default branch's current tip before it runs the full check aggregate
+    And the aggregate's green verdict is recorded for the refreshed tree
+
+  Scenario: publish_draft pushes the janitor-passed head without refreshing
+    Given a janitor visit passed the full check aggregate on a refreshed head
+    And the default branch has advanced again since that refresh
+    When publish_draft runs
+    Then it pushes exactly the janitor-passed head without refreshing
+    And the pre-push gate honours the recorded green verdict and does not run the tree-pure members again
+
+  Scenario: A conflicting pre-aggregate refresh takes the refresh-repair route
+    Given the default branch advanced with a change that conflicts with the run's commits
+    When the janitor's pre-aggregate refresh conflicts
+    Then the janitor restores the head the preceding agent stage left, records a refresh-repair brief naming the conflicted paths, and routes to fix
+    And the run does not end at needs_human with LIVESPEC_REFRESH_REPAIR_ABSENT
+
+  Scenario: An aggregate failure on a changed refreshed head takes the refresh-repair route
+    Given the janitor's pre-aggregate refresh changed the tree
+    When the full check aggregate fails on the refreshed head
+    Then the janitor restores the pre-refresh head and records a refresh-repair brief naming each failed target
 ```
 
 ## Scenario: an incident keeps one item with explicit current operation ownership
