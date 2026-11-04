@@ -158,7 +158,8 @@ commit; `failed` is the hook's refusal, with its exit status and output, and
 `no-verdict` means the commit's process ended without a verdict, so neither is
 a commit. The detached commit run and its bounded waits are the one exception
 to the rule against backgrounding a tool call, and every commit run you start
-must be terminal before your final message.
+must be terminal before your final message. The one exception is the commit run
+that the commit-hook section below tells you to leave for `fix_commit_settle`.
 
 ## What to do
 
@@ -258,11 +259,20 @@ So, for every commit in this stage:
 - DO NOT START ANOTHER `git commit` WHILE ONE IS STILL LIVE. Two hook runs
   must never execute at once in this sandbox, and a second attempt cannot
   overtake the one already running.
-- DO NOT END YOUR TURN WHILE A COMMIT HOOK YOU STARTED IS STILL RUNNING. The
-  turn-end rule below forbids LEAVING a tool call running in the background;
-  a commit hook is waited out in the FOREGROUND until it exits, and only then
-  is the final message written. Stopping while it runs abandons work that was
-  about to pass and reports it as partial progress.
+- DO NOT END YOUR TURN WHILE A COMMIT HOOK IS STILL RUNNING INSIDE YOUR OWN
+  FOREGROUND `git commit` TOOL CALL. That commit is waited out in the
+  FOREGROUND until it exits, and only then is the final message written.
+  Stopping while it runs abandons work that was about to pass and reports it
+  as partial progress.
+- A COMMIT RUN THAT YOU STARTED THROUGH THE COMMIT RUNNER AND THAT THE RUNNER
+  STILL REPORTS AS RUNNING IS LEFT FOR `fix_commit_settle`. When the only work
+  this turn has left is such a commit, end the turn as SUCCEEDED, not failed,
+  and name that commit run's id in your final message. Do not keep calling
+  `wait` until the turn's time limit: a turn cut at its limit, or one that
+  ends failed, takes `fix -> needs_human`, `fix_commit_settle` never runs, and
+  the commit's verdict is lost. The graph's `fix_commit_settle` node waits that
+  commit run out and hands the janitor its verdict. This commit run is the
+  exception to the turn-end rule below; do not stop it.
 
 ## When the failure is not auto-resolvable (needs-human protocol)
 
