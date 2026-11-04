@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.286.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.285.0...v0.286.0) (2026-11-04)
+
+
+### Features
+
+* guide review-fix away from duplicate aggregates ([a37a410](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a37a4103f43cfd46cbffa6545fa95ce8b136385b))
+
+
+### Bug Fixes
+
+* **fix-prompt:** pin refresh repair to rebase and commit-runner integration ([3dcd8b1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3dcd8b19ea2fb80d8b9d3bdc8a88a0bb4af38643))
+
 ## [0.285.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.284.0...v0.285.0) (2026-11-04)
 
 
