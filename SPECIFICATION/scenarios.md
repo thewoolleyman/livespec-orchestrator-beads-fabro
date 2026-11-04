@@ -12038,3 +12038,57 @@ Feature: A factory restart does not cost a run's finished work
     When the item is dispatched again
     Then the dispatch brief names that preservation ref as the tree to start from
 ```
+
+## Scenario 307 — The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet-launch launchers enforce the interim launcher's gates
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A red-master repository hold yields the FIFO head and keeps the ticket
+    Given an impl launcher for repository A holding the oldest gmktec FIFO ticket and an impl launcher for repository B behind it
+    And the repository hold file for repository A exists
+    When the launchers run
+    Then the repository B launcher binds and launches
+    And the repository A launcher keeps its ticket and launches nothing into repository A
+    When the repository hold file for repository A is removed
+    Then the repository A launcher takes its FIFO place back in the order of the ticket it kept
+
+  Scenario: A repository at its WIP cap yields the FIFO head without running the preflight
+    Given an impl launcher whose target repository's counted-claims count, read through the capacity projection, equals its configured wip_cap
+    When the launcher runs
+    Then it keeps its FIFO ticket and yields the FIFO head
+    And it does not run its launch-time preflight
+    When the counted-claims count drops below the cap
+    Then it takes its FIFO place back and runs its preflight
+
+  Scenario: Only a listed item passes the WIP gate one above the cap
+    Given a repository whose counted-claims count equals its configured wip_cap
+    And the committed breakage-exception list names work item bd-x and not work item bd-y
+    When impl launchers for bd-x and bd-y run
+    Then the WIP gate does not hold bd-x
+    And the WIP gate holds bd-y
+
+  Scenario: A drive that exits before its run lists re-takes a FIFO ticket
+    Given an impl launcher whose drive exits non-zero before its run lists on the factory board
+    When the launcher handles the exit
+    Then it re-takes a FIFO ticket for the same work item rather than dropping it
+
+  Scenario: The gmktec factory hold file holds every gmktec launch
+    Given the gmktec factory hold file at the path the launcher assigns exists
+    When a gmktec launcher reaches the head of the FIFO
+    Then it launches nothing onto any gmktec factory instance until the hold file is removed
+
+  Scenario: The gmktec target setting selects the candidate only below its cap
+    Given the gmktec target setting names the candidate instance
+    And the candidate cap is 2
+    When the candidate instance's board lists 2 live runs
+    Then the launcher holds the launch
+    When the candidate instance's board lists 1 live run
+    Then the launcher launches onto the candidate instance
+    When the gmktec target setting is absent
+    Then the launcher launches onto the default instance
+```
