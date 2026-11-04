@@ -227,6 +227,34 @@ def test_a_value_shorter_than_eight_characters_does_not_withhold_the_line(
     assert "first error line: error: short abc1234 appears" in _cause(repo=repo)
 
 
+def test_a_credential_value_starting_with_a_slash_is_withheld_by_key_name(
+    tmp_path: Path,
+) -> None:
+    secret = "/leading-slash-secret-0123456789"
+    body = f"error: assertion repr printed {secret}\n{_targets_block(targets=('check-tests',))}"
+    repo = _clone(tmp_path=tmp_path, hook=_hook_script(body=body, status=1))
+
+    result = _route(repo=repo, extra_env={"LIVESPEC_TEST_TOKEN": secret})
+
+    cause = _cause(repo=repo)
+    for text in (cause, result.stderr):
+        assert secret not in text
+    assert (
+        "an excerpt line was withheld because it contained the value of LIVESPEC_TEST_TOKEN"
+        in cause
+    )
+
+
+def test_a_path_variable_value_does_not_withhold_the_line(tmp_path: Path) -> None:
+    home = "/home/livespec-test-user"
+    body = f"error: cannot open {home}/file\n{_targets_block(targets=('check-tests',))}"
+    repo = _clone(tmp_path=tmp_path, hook=_hook_script(body=body, status=1))
+
+    _ = _route(repo=repo, extra_env={"HOME": home})
+
+    assert f"first error line: error: cannot open {home}/file" in _cause(repo=repo)
+
+
 def test_a_commit_run_refusal_is_attributed_from_its_recorded_brief(tmp_path: Path) -> None:
     repo = _clone(tmp_path=tmp_path, hook="#!/bin/sh\nexit 0\n")
     brief = (
