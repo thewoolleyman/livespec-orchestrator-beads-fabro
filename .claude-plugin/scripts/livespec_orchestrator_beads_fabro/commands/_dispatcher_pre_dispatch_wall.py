@@ -249,8 +249,10 @@ def pre_dispatch_wall_exit(
         args=args, repo=repo, items=items, journal=journal, work_item_ids=work_item_ids
     )
     for ask, exit_code, newline, phase in refusing:
-        with prelaunch_phase(checkpoint=prelaunch_checkpoint, name=phase):
+        with prelaunch_phase(checkpoint=prelaunch_checkpoint, name=phase) as step:
             refusal = ask()
+            if refusal is not None:
+                step.outcome = "refused"
         if refusal is not None:
             _ = write_stderr(text=f"{refusal}\n" if newline else refusal)
             return exit_code
@@ -274,7 +276,9 @@ def pre_dispatch_wall_exit(
     # be established for a well-formed workflow is NOT deferred — it arrives here
     # as a refusal string and still refuses, which is what keeps Scenario 19.
     if not isinstance(requirement, WorkflowFaultDeferral):
-        with prelaunch_phase(checkpoint=prelaunch_checkpoint, name="codex-credential-gate"):
+        with prelaunch_phase(
+            checkpoint=prelaunch_checkpoint, name="codex-credential-gate"
+        ) as gate_step:
             codex_refusal = codex_credential_refusal_for_items(
                 work_item_ids=work_item_ids,
                 requirement=requirement,
@@ -287,6 +291,8 @@ def pre_dispatch_wall_exit(
                 codex_routing=lambda: codex_routing_for_dispatch(repo=repo),
                 journal=journal,
             )
+            if codex_refusal is not None:
+                gate_step.outcome = "refused"
         if codex_refusal is not None:
             _ = write_stderr(text=f"{codex_refusal}\n")
             return EXIT_PRECONDITION_ERROR
