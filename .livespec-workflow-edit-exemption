@@ -1,4 +1,2 @@
-work_item=bd-ib-xghjzh
-reason=Put the image's mise shims on PATH in check-metadata-batch's batched step so pyright finds node on a GitHub-hosted runner instead of falling back to a nodeenv download (hosted-only failure of check-no-shadow-ledger-body-typechecks, run 41764018111). Six added lines (five comments, one export); nothing deleted or modified. approval:workflow-edit-additive set under legacy-coordinator-agent's delegation (R301).
-change=additive
-ci_runtime=no-significant-increase
+work_item=bd-ib-uxv5al
+reason=Route check-per-file-coverage and check-coverage (ci.yml and ci-root-uid.yml) through their own CI_COVERAGE_RUNNER_LABELS variable, falling back to CI_RUNNER_LABELS, so the coverage pair can stay on k3s while the other jobs move to hosted runners (hybrid ruled by legacy-coordinator-agent after the 2026-11-04 hosted cutover measured 55+ min coverage on hosted). Unset, nothing moves. approval:workflow-edit set by legacy-coordinator-agent under the maintainer's standing ruling.
