@@ -71,6 +71,9 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._store_merge_hold import merge_hold_from_labels
 from livespec_orchestrator_beads_fabro._store_rework_mutations import LABEL_REWORK_PENDING
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_parking_record import (
+    PARKING_RECORD_TITLE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     live_dispatch_lock,
 )
@@ -79,6 +82,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_comments,
     read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
@@ -93,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     ResumeAnchor,
+    merged_proof_anchor,
     resume_anchor,
     resume_anchor_from_cancel,
 )
@@ -115,12 +120,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_ids_for
 from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
+from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "ResumeGather",
     "earlier_workflow_name",
     "gather_resume",
+    "proof_only_resume",
     "unproved_assertions",
 ]
 
@@ -129,6 +136,9 @@ _ACTIVE_STATUS = "active"
 _LABELS_UNREADABLE = "labels-unreadable"
 _MERGE_HOLD = "merge-hold"
 _WHITESPACE = re.compile(r"\s+")
+_MERGED_STATE = "MERGED"
+_NEEDS_ATTENTION_PARK = f"{PARKING_RECORD_TITLE} — NEEDS_ATTENTION — pending: "
+_PROOF_EVIDENCE_LEG = "proof of done record for "
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -160,6 +170,18 @@ def gather_resume(
     branch = publish_branch_for(work_item_id=item.id)
     forge = branch_pull_request(repo=repo, branch=branch, runner=runner)
     pull_request = forge.pull_request
+    parking_comments = (
+        read_dispatch_comments(repo=repo, item=item)
+        if item.status == "acceptance"
+        and pull_request is not None
+        and pull_request.state == _MERGED_STATE
+        else ()
+    )
+    proof_only = proof_only_resume(
+        item=item,
+        pull_request_state=None if pull_request is None else pull_request.state,
+        comments=parking_comments,
+    )
     records = (
         read_pull_request_records(repo=repo, pr_number=pull_request.number, runner=runner)
         if pull_request is not None
@@ -185,10 +207,15 @@ def gather_resume(
         earlier_run_id=_earlier_run_id(cancel=cancel, provisional=provisional),
         runner=runner,
     )
-    anchor = (
+    ordinary_anchor = (
         resume_anchor(records=records or (), executing_node=factory.executing_node)
         if cancel is None
         else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
+    )
+    anchor = (
+        merged_proof_anchor(head=None if pull_request is None else pull_request.head)
+        if proof_only
+        else ordinary_anchor
     )
     return ResumeGather(
         observation=ResumeObservation(
@@ -219,6 +246,7 @@ def gather_resume(
             ),
             earlier_run_succeeded=factory.earlier_run_succeeded,
             own_route=_own_route(repo=repo, item=item),
+            proof_only_resume=proof_only,
         ),
         anchor=anchor,
         branch=branch,
@@ -304,10 +332,34 @@ def _earlier_run_ids(
     can attribute", and a record published by a different stage of the same run may
     carry the dispatch id instead.
     """
-    named = [] if anchor is None else [anchor.run_id]
+    named = [] if anchor is None or anchor.run_id is None else [anchor.run_id]
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
     return tuple(dict.fromkeys(named))
+
+
+def proof_only_resume(
+    *,
+    item: WorkItem,
+    pull_request_state: str | None,
+    comments: tuple[WorkItemComment, ...] | str,
+) -> bool:
+    """Whether the latest acceptance park authorizes the merged proof-only arm."""
+    if item.status != "acceptance" or pull_request_state != _MERGED_STATE:
+        return False
+    if not isinstance(comments, tuple):
+        return False
+    current = next(
+        (
+            comment.text
+            for comment in reversed(comments)
+            if comment.text.startswith(PARKING_RECORD_TITLE)
+        ),
+        None,
+    )
+    return isinstance(current, str) and current.startswith(
+        _NEEDS_ATTENTION_PARK + _PROOF_EVIDENCE_LEG
+    )
 
 
 def _own_route(*, repo: Path, item: WorkItem) -> str | None:

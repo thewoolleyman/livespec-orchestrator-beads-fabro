@@ -92,12 +92,15 @@ __all__: list[str] = [
     "SOURCE_FACTORY_RUN",
     "SOURCE_LATEST_RECORD",
     "ResumeAnchor",
+    "merged_proof_anchor",
     "normalized_entry_node",
     "published_head",
     "resume_anchor",
     "resume_anchor_from_cancel",
     "resumed_at_for_verdict",
 ]
+
+_MERGED_PARKING_SOURCE = "merged-pull-request-parking-record"
 
 # The label a factory record declares its publish-branch head under. Spelled once
 # here and rendered by the two capture prompts from this same wording, so the
@@ -208,10 +211,23 @@ class ResumeAnchor:
     """
 
     record: ProofRecord | None
-    run_id: str
+    run_id: str | None
     head: str
     resumed_at: str
     source: str
+
+
+def merged_proof_anchor(*, head: str | None) -> ResumeAnchor | None:
+    """Anchor proof-only recovery on the merged pull request's head."""
+    if not isinstance(head, str) or not head:
+        return None
+    return ResumeAnchor(
+        record=None,
+        run_id=None,
+        head=head,
+        resumed_at=RESUMED_AT_PROOF_CAPTURE,
+        source=_MERGED_PARKING_SOURCE,
+    )
 
 
 def published_head(*, body: str) -> str | None:

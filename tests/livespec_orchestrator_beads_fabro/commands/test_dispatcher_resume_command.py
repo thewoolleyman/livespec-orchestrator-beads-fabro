@@ -299,6 +299,60 @@ def test_a_clean_resume_claims_launches_and_carries_the_entry_node_head_and_cpu_
     assert log.dispatched_launches[0].prelaunch_profile is not None
 
 
+def test_a_proof_only_resume_carries_its_arm_selector_to_materialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The affirmative admission result must select the proof-only graph downstream."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    journal = _RecordingJournal()
+    log = _Log()
+    observation = _observation()
+    object.__setattr__(observation, "proof_only_resume", True)
+    _stub_resume(
+        module=module,
+        monkeypatch=monkeypatch,
+        journal=journal,
+        item=_item(),
+        log=log,
+        anchor=_anchor(),
+        observation=observation,
+        refusals=(),
+    )
+
+    assert module.run_resume_command(args=_args(repo=tmp_path)) == 0
+    assert log.dispatched_args[0].resume_proof_only is True
+
+
+def test_a_parked_merged_proof_resume_launches_without_an_earlier_proof_record_or_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 257: the merged parking record, not an earlier run, anchors the arm."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    journal = _RecordingJournal()
+    log = _Log()
+    observation = _observation(status="acceptance")
+    object.__setattr__(observation, "pull_request_state", "MERGED")
+    object.__setattr__(observation, "anchor_head", None)
+    object.__setattr__(observation, "proof_only_resume", True)
+    _stub_resume(
+        module=module,
+        monkeypatch=monkeypatch,
+        journal=journal,
+        item=_item(status="acceptance"),
+        log=log,
+        anchor=None,
+        observation=observation,
+        refusals=(),
+    )
+
+    assert module.run_resume_command(args=_args(repo=tmp_path)) == 0
+    assert log.events == ["wall", "launch", "tail"]
+    assert log.dispatched_args[0].resume_proof_only is True
+    assert journal.records[0]["earlier_run_ids"] == []
+
+
 def test_a_clean_resume_journals_its_record_before_the_claim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

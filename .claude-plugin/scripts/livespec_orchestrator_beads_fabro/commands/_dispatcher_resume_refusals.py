@@ -174,6 +174,7 @@ class ResumeObservation:
     unanchoring_cancel_stage: str | None = None
     earlier_run_succeeded: bool = False
     own_route: str | None = None
+    proof_only_resume: bool | None = None
 
 
 def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
@@ -206,7 +207,7 @@ def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     (`_active_refusal`). Naming a remedy for the wrong situation sends the operator
     to a valve that will refuse or change nothing.
     """
-    if observation.status == _READY_STATUS:
+    if observation.status == _READY_STATUS or _is_proof_only_resume(observation=observation):
         return ()
     if observation.status == _ACTIVE_STATUS:
         return (_active_refusal(observation=observation),)
@@ -217,6 +218,15 @@ def _status_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
         f" `resolve-blocked:{observation.work_item_id}:ready` first"
     )
     return (parked,)
+
+
+def _is_proof_only_resume(*, observation: ResumeObservation) -> bool:
+    """Whether affirmative parking evidence releases the merged proof-only arm."""
+    return (
+        observation.status == "acceptance"
+        and observation.pull_request_state == PR_STATE_MERGED
+        and observation.proof_only_resume is True
+    )
 
 
 def _active_refusal(*, observation: ResumeObservation) -> str:
@@ -459,6 +469,8 @@ def pull_request_state_refusals(*, observation: ResumeObservation) -> tuple[str,
     if observation.pull_request is None or observation.pull_request_state is None:
         return ()
     if observation.pull_request_state == PR_STATE_MERGED:
+        if _is_proof_only_resume(observation=observation):
+            return ()
         merged = (
             f"pull request #{observation.pull_request} is already merged, so there is"
             " no unmerged publication left to finish; close the item out with"
