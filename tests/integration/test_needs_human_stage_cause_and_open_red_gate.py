@@ -49,6 +49,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
@@ -109,6 +110,29 @@ _PR_REFRESH_CAUSE = (
     "the authoritative default branch nor the remote publish head can be observed; "
     "holding rather than proceeding blinded"
 )
+
+
+@pytest.fixture(autouse=True)
+def inherited_git_config_uses_non_default_abbreviation(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> object:
+    """Make every case inherit the CI condition that exposed the flaky assertion."""
+    home = tmp_path / "inherited-home"
+    home.mkdir()
+    _ = (home / ".gitconfig").write_text("[core]\n\tabbrev = 12\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    return object()
+
+
+def _terminal_env(*, clone: Path) -> dict[str, str]:
+    """The exact Git environment the shipped terminal receives in one world."""
+    return {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(clone.parent / "home"),
+        "LIVESPEC_GIT_AUTHOR_NAME": _OPERATOR_NAME,
+        "LIVESPEC_GIT_AUTHOR_EMAIL": _OPERATOR_EMAIL,
+        "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(clone.parent / "no-gh-refresh"),
+    }
 
 
 def _graph_text() -> str:
@@ -197,7 +221,7 @@ def _world(*, root: Path, changed: dict[str, str], message: str) -> _World:
         target.parent.mkdir(parents=True, exist_ok=True)
         _ = target.write_text(text, encoding="utf-8")
         _ = _git("add", path, cwd=clone)
-    subprocess.run(
+    _ = subprocess.run(
         ["git", "commit", "--quiet", "-F", "-"],
         cwd=str(clone),
         check=True,
@@ -206,10 +230,18 @@ def _world(*, root: Path, changed: dict[str, str], message: str) -> _World:
         input=message,
         env=_fixture_env(),
     )
+    terminal_head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=clone,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_terminal_env(clone=clone),
+    ).stdout.strip()
     return _World(
         origin=origin,
         clone=clone,
-        head=_git("rev-parse", "--short", "HEAD", cwd=clone).stdout.strip(),
+        head=terminal_head,
     )
 
 
@@ -223,13 +255,7 @@ def _run_terminal(*, world: _World) -> str:
     completed = subprocess.run(
         ["sh", "-c", _terminal_script()],
         cwd=str(world.clone),
-        env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": str(world.clone.parent / "home"),
-            "LIVESPEC_GIT_AUTHOR_NAME": _OPERATOR_NAME,
-            "LIVESPEC_GIT_AUTHOR_EMAIL": _OPERATOR_EMAIL,
-            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
-        },
+        env=_terminal_env(clone=world.clone),
         check=False,
         text=True,
         capture_output=True,
@@ -237,6 +263,11 @@ def _run_terminal(*, world: _World) -> str:
     )
     assert completed.returncode == 1, completed.stderr
     return completed.stderr
+
+
+def _assert_open_red_head(*, stderr: str, world: _World) -> None:
+    """Assert that the terminal's open-Red report names this clone's head."""
+    assert f"{_OPEN_RED_CLAUSE} {world.head}" in stderr
 
 
 def _record_stage_cause(*, world: _World, stage: str, cause: str) -> None:
@@ -275,7 +306,7 @@ def test_a_recorded_stage_cause_outranks_the_open_red_commit_reason(tmp_path: Pa
     assert f"stage {_PR_REFRESH_STAGE} failed: {_PR_REFRESH_CAUSE}" in stderr
     assert _OPEN_RED_CLAUSE not in stderr
     assert _GENERIC_REASON not in stderr
-    assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
+    _assert_open_red_head(stderr=control_stderr, world=control)
     assert _HALF_PAIR_CLAUSE in control_stderr
 
 
@@ -372,7 +403,7 @@ def test_a_failed_pr_refresh_carries_its_own_cause_through_the_classifier_to_the
     assert f"stage {_PR_REFRESH_STAGE} failed: LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE" in stderr
     assert _OPEN_RED_CLAUSE not in stderr
     assert control_refresh.returncode != 0, control_refresh.stdout
-    assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
+    _assert_open_red_head(stderr=control_stderr, world=control)
 
 
 def test_an_open_red_reason_requires_a_py_path_in_the_head_commit(tmp_path: Path) -> None:
@@ -408,7 +439,7 @@ def test_an_open_red_reason_requires_a_py_path_in_the_head_commit(tmp_path: Path
     assert _OPEN_RED_CLAUSE not in stderr
     assert _HALF_PAIR_CLAUSE not in stderr
     assert _GENERIC_REASON in stderr
-    assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
+    _assert_open_red_head(stderr=control_stderr, world=control)
     assert _HALF_PAIR_CLAUSE in control_stderr
 
 
@@ -447,5 +478,22 @@ def test_a_non_py_implementation_beside_its_test_claims_no_open_red(tmp_path: Pa
     assert _OPEN_RED_CLAUSE not in stderr
     assert _HALF_PAIR_CLAUSE not in stderr
     assert _GENERIC_REASON in stderr
-    assert f"{_OPEN_RED_CLAUSE} {control.head}" in control_stderr
+    _assert_open_red_head(stderr=control_stderr, world=control)
     assert _HALF_PAIR_CLAUSE in control_stderr
+
+
+def test_an_open_red_assertion_rejects_a_terminal_report_for_another_commit(tmp_path: Path) -> None:
+    """The abbreviated head check remains a control for a wrong terminal report."""
+    world = _world(
+        root=tmp_path / "world",
+        changed={_PRODUCT_IMPL_PATH: "the half-authored product edit\n"},
+        message=_OPEN_RED_MESSAGE,
+    )
+    stderr = _run_terminal(world=world)
+    other_head = "0" * len(world.head)
+    misreported_stderr = stderr.replace(world.head, other_head)
+
+    _assert_open_red_head(stderr=stderr, world=world)
+    assert f"{_OPEN_RED_CLAUSE} {other_head}" in misreported_stderr
+    with pytest.raises(AssertionError):
+        _assert_open_red_head(stderr=misreported_stderr, world=world)
