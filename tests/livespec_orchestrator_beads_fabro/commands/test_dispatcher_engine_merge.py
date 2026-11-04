@@ -217,6 +217,56 @@ def test_await_merge_fails_fast_when_ci_green_failed_and_rollup_has_no_required_
     assert "resume --item x-1" in outcome.detail
 
 
+def test_await_merge_reruns_a_teardown_only_required_workflow(tmp_path: Path) -> None:
+    failure = {
+        **_REAL_CI_GREEN_FAILURE,
+        "detailsUrl": "https://github.com/acme/repo/actions/runs/42/job/12",
+    }
+    runner = Runner(
+        queue=[
+            _ok(stdout=_pr_json(merge_state="BLOCKED", checks=[failure])),
+            _ok(stdout=_required_checks_graphql(required=["ci-green"])),
+            _ok(
+                stdout=json.dumps(
+                    {
+                        "jobs": [
+                            {
+                                "databaseId": 12,
+                                "name": "ci-green",
+                                "conclusion": "failure",
+                                "steps": [
+                                    {"name": "Run checks", "conclusion": "success"},
+                                    {"name": "Post Checkout", "conclusion": "failure"},
+                                ],
+                            }
+                        ]
+                    }
+                )
+            ),
+            _ok(stdout="Executing the custom container implementation failed"),
+            _ok(stdout=""),
+            _ok(),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe06")),
+        ]
+    )
+    journal = Journal()
+
+    merged = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=journal,
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=2, interval_seconds=0.5),
+    )
+
+    assert not isinstance(merged, DispatchOutcome)
+    assert merged is not None
+    assert merged.merge_sha == "cafe06"
+    assert ["gh", "run", "rerun", "42", "--failed"] in [call[0] for call in runner.calls]
+    assert any(record["stage"] == "merge-poll-failed-jobs-rerun" for record in journal.records)
+
+
 def test_await_merge_reads_required_checks_from_the_forge_not_the_rollup(
     tmp_path: Path,
 ) -> None:
