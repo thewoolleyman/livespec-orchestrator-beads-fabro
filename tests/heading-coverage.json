@@ -2725,5 +2725,69 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-bpkqan journals start and end records for every pre-launch step, runs independent pre-launch steps concurrently, computes per-loop-pass facts once, and tests the default branch's ref first in the source-checkout preflight, with the test exercising those dispatcher behaviours.",
     "work_item": "bd-ib-bpkqan"
+  },
+  {
+    "heading": "## Expedited incident lifecycle",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-dzbwaq owns implementation and proof.",
+    "work_item": "bd-ib-dzbwaq"
+  },
+  {
+    "heading": "## Scenario: an incident keeps one item with explicit current operation ownership",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-dzbwaq owns implementation and proof.",
+    "work_item": "bd-ib-dzbwaq"
+  },
+  {
+    "heading": "## Scenario: incident entry defers slow admission without creating another identity",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-dzbwaq owns implementation and proof.",
+    "work_item": "bd-ib-dzbwaq"
+  },
+  {
+    "heading": "## Scenario: incident provenance exceptions remain exact and repayable",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-y7ryj3 owns implementation and proof.",
+    "work_item": "bd-ib-y7ryj3"
+  },
+  {
+    "heading": "## Scenario: a successful incident merge reenters normal factory on the same item",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-riguvj owns implementation and proof.",
+    "work_item": "bd-ib-riguvj"
+  },
+  {
+    "heading": "## Scenario: a deferred-proof-only finding is repaired without reverting healthy master",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-riguvj owns implementation and proof.",
+    "work_item": "bd-ib-riguvj"
+  },
+  {
+    "heading": "## Scenario: incident completion requires final normal proof rather than an old repair merge",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-mnny4v owns implementation and proof.",
+    "work_item": "bd-ib-mnny4v"
+  },
+  {
+    "heading": "## Scenario: an attributable regression fences repayment and reopens the same incident",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-k5teti owns implementation and proof.",
+    "work_item": "bd-ib-k5teti"
   }
 ]
