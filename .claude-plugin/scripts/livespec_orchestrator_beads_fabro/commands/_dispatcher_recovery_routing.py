@@ -50,6 +50,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_comment import (
+    comment_seed,
+    comment_tree_for_item,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     MEASUREMENT_PRESERVED_WORK,
     unobservable_measurements,
@@ -82,6 +86,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryMeasurement,
     RecoveryResume,
     RecoveryRoute,
+    RecoverySeed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
@@ -223,7 +228,24 @@ def route_recovery(
     runner = ShellCommandRunner()
     routes: list[RecoveryRoute] = []
     for item in candidates:
-        if not released_for_recovery(records=journaled, work_item_id=item.id):
+        comment_tree = comment_tree_for_item(repo=repo, item=item)
+        if comment_tree is not None:
+            routes.append(
+                _preserved_route(
+                    item=item,
+                    journal=journal,
+                    preserved=comment_seed(
+                        runner=runner,
+                        repo=repo,
+                        item=item,
+                        journal_records=journaled,
+                        comment_tree=comment_tree,
+                    ),
+                )
+            )
+            continue
+        released = released_for_recovery(records=journaled, work_item_id=item.id)
+        if not released and comment_tree is None:
             routes.append(RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH))
             continue
         routes.append(
@@ -239,6 +261,7 @@ def route_recovery(
                 repo=repo,
                 runner=runner,
                 journal=journal,
+                comment_tree=comment_tree,
             )
         )
     return RecoveryRouting(routes=tuple(routes))
@@ -268,6 +291,7 @@ def _released_route(
     repo: Path,
     runner: CommandRunner,
     journal: JournalFile,
+    comment_tree: tuple[str, str, str] | None,
 ) -> RecoveryRoute:
     """The route one RELEASED candidate takes, from the resume's own measurement.
 
@@ -314,7 +338,14 @@ def _released_route(
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
-        return _fallback_route(gather=gather, item=item, repo=repo, runner=runner, journal=journal)
+        return _fallback_route(
+            gather=gather,
+            item=item,
+            repo=repo,
+            runner=runner,
+            journal=journal,
+            comment_tree=comment_tree,
+        )
     return RecoveryRoute(
         work_item_id=item.id,
         route=ROUTE_RESUME,
@@ -336,6 +367,7 @@ def _fallback_route(
     repo: Path,
     runner: CommandRunner,
     journal: JournalFile,
+    comment_tree: tuple[str, str, str] | None,
 ) -> RecoveryRoute:
     """The route a refused resume falls back to: `seeded`, `fresh`, or `held`.
 
@@ -355,7 +387,18 @@ def _fallback_route(
         work_item_id=item.id,
         earlier_run_ids=gather.earlier_run_ids,
         journal_records=read_journal_records(journal_path=journal.path),
+        comment_tree=comment_tree,
     )
+    return _preserved_route(item=item, journal=journal, preserved=preserved)
+
+
+def _preserved_route(
+    *,
+    item: WorkItem,
+    journal: JournalFile,
+    preserved: RecoverySeed | PreservedWorkUnobservable | PreservedWorkAbsent,
+) -> RecoveryRoute:
+    """Route the verified-preservation result shared by both recovery sources."""
     if isinstance(preserved, PreservedWorkUnobservable):
         return _held_route(
             item=item,

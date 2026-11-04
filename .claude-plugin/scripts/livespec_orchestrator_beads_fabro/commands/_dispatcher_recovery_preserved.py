@@ -52,11 +52,13 @@ preparation rather than running against whatever the clone happens to carry.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_record import (
+    PRESERVED_TREE_MARKER,
     PRESERVED_TREE_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
@@ -78,6 +80,7 @@ __all__: list[str] = [
     "SEED_REMOTE",
     "PreservedWorkAbsent",
     "PreservedWorkUnobservable",
+    "preserved_tree_comment",
     "verified_preserved_seed",
 ]
 
@@ -166,6 +169,7 @@ def verified_preserved_seed(
     work_item_id: str,
     earlier_run_ids: tuple[str, ...],
     journal_records: tuple[dict[str, object], ...],
+    comment_tree: tuple[str, str, str] | None = None,
 ) -> RecoverySeed | PreservedWorkUnobservable | PreservedWorkAbsent:
     """The seed the failed run's preserved work supports: one, unaskable, or absent.
 
@@ -195,7 +199,9 @@ def verified_preserved_seed(
     # The published tree is named by this item's OWN journal, so with no row
     # naming one there is no ref that source could stand at and the round trip
     # would ask origin about nothing.
-    published_tree = _newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
+    published_tree = comment_tree or _newest_preserved_tree_row(
+        records=journal_records, work_item_id=work_item_id
+    )
     if published_tree is not None:
         asked.append(PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE)
         tree = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
@@ -216,6 +222,33 @@ def verified_preserved_seed(
     return PreservedWorkAbsent(
         source_run_id=_leading(identifiers=earlier_run_ids), sources_asked=tuple(asked)
     )
+
+
+def preserved_tree_comment(
+    *, comments: Sequence[str], work_item_id: str
+) -> tuple[str, str, str] | None:
+    """Return the newest complete preserved-tree comment for this work item.
+
+    The dispatch journal is host-local, while this append-only comment follows
+    the item to a later Dispatcher host. It supplies the preservation ref, base
+    commit and source run the existing recovery seed needs. Origin still verifies
+    the ref before any sandbox uses it.
+    """
+    for comment in reversed(comments):
+        lines = comment.splitlines()
+        fields = {line.partition(": ")[0]: line.partition(": ")[2] for line in lines}
+        values = (
+            fields.get("preservation ref", "").strip(),
+            fields.get("base commit", "").strip(),
+            fields.get("run id", "").strip(),
+        )
+        if (
+            lines[:1] == [PRESERVED_TREE_MARKER]
+            and fields.get("work-item") == work_item_id
+            and all(values)
+        ):
+            return values
+    return None
 
 
 def _needs_human_seed(

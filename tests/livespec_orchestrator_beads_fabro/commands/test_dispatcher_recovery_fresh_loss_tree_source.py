@@ -37,11 +37,15 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+from livespec_orchestrator_beads_fabro._store_comments import WorkItemComment
 
 # Import order is load-bearing; see `test_dispatcher_recovery_routing_resume.py`
 # for the cycle this leading import breaks.
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission as _admission,
+)
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_recovery_comment as recovery_comment,
 )
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_recovery_launch as launch,
@@ -57,7 +61,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_record import (
     PRESERVED_TREE_STAGE,
 )
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import ROUTE_SEEDED
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _ = _admission
 
@@ -288,3 +293,69 @@ def test_an_item_naming_no_published_tree_records_no_round_trip_for_that_source(
     )
     assert row["route"] == _ROUTE_FRESH
     assert row["preservation_sources_asked"] == list(_asked())
+
+
+def test_a_later_dispatch_seeds_from_the_preservation_ref_named_by_its_ledger_comment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A preserved-tree comment survives the earlier host's journal."""
+    comment = WorkItemComment(
+        text="\n".join(
+            (
+                "livespec-preserved-tree",
+                f"work-item: {_ITEM_ID}",
+                f"run id: {_RUN}",
+                f"preservation ref: {_TREE_REF}",
+                f"base commit: {_BASE_COMMIT}",
+            )
+        ),
+        author=None,
+        created_at=None,
+    )
+    journal = _journal(tmp_path=tmp_path, records=())
+    _Shell.answers = {
+        _TREE_REF: CommandResult(
+            exit_code=0,
+            stdout=f"{'c' * 40}\t{_TREE_REF}\n",
+            stderr="",
+        )
+    }
+    _Shell.calls = []
+    monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
+    monkeypatch.setattr(recovery_comment, "read_work_item_comments", lambda **_: (comment,))
+    monkeypatch.setattr(
+        recovery_comment,
+        "store_config",
+        lambda **_: StoreConfig(
+            tenant="test",
+            prefix="test",
+            server_user="test",
+            database="test",
+            bd_path="bd",
+            fake=True,
+        ),
+    )
+
+    routed = routing.route_recovery(
+        args=_args(repo=tmp_path, journal=journal),
+        repo=tmp_path,
+        candidates=[_work_item()],
+        journal=journal,
+    )
+    route = routed.route_for(work_item_id=_ITEM_ID)
+
+    assert route is not None
+    assert route.route == ROUTE_SEEDED
+    assert route.seed is not None
+    seeded_args = launch.recovery_launch_args(
+        args=_args(repo=tmp_path, journal=journal),
+        repo=tmp_path,
+        work_item_id=_ITEM_ID,
+        route=route,
+        pins=launch.LaunchPins(
+            factory=lambda **kwargs: kwargs["args"],
+            workflow=lambda **kwargs: kwargs["args"],
+        ),
+    )
+    assert seeded_args.resume_head == _BASE_COMMIT
+    assert seeded_args.resume_fetch_ref == _TREE_REF
