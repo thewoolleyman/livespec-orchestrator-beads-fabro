@@ -72,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate impor
     apply_dispatcher_staleness_gate,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_preservation import (
+    preserve_cancelled_janitor_green_tree,
     preserve_terminated_run_work,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
@@ -291,6 +292,10 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     # transition", because that comment is the only durable pointer at the
     # preservation ref. Both legs are fail-soft, so neither can cost the item
     # its rest state or change this dispatch's exit code.
+    if outcome.janitor_green:
+        preserve_cancelled_janitor_green_tree(
+            args=args, repo=repo, item=item, outcome=outcome, journal=journal
+        )
     preserve_terminated_run_work(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
     # BESIDE the pointer, by the ratified groom-cut clause's own word: a
     # groom-pinned run that terminated needs-human carries the drafted

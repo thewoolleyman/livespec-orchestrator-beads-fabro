@@ -331,6 +331,10 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # its ledger disposition can name where the operator cancelled the run.
     # A null here would falsely imply that every other outcome read a factory.
     "fabro_factory_name",
+    # Janitor success is a cancellation-specific preservation signal, not an
+    # ordinary outcome field.  As with the factory identity, its presence
+    # establishes the special cancellation shape.
+    "janitor_green",
     "fabro_failure_cause",
     "fabro_failure_category",
     "fabro_failure_signature",
