@@ -36,13 +36,8 @@ _CODEX_EXECUTABLE = "codex"
 _PROMPT_FILE_PREFIX = "livespec-dod-gate-"
 _SCRATCH_PARENT_NAMES = ("tmp", "var/tmp")
 _NO_SCRATCH_DIRECTORY = "no non-repository scratch directory is available for host judgement"
-_PROFILE_ENVIRONMENT = (
-    "BASH_ENV",
-    "ENV",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-    "XDG_STATE_HOME",
-)
+_PROFILE_ENVIRONMENT = ("BASH_ENV", "ENV")
+_PROFILE_ENVIRONMENT_PREFIX = "XDG_"
 
 
 def resolve_codex_path(*, environ: dict[str, str]) -> str:
@@ -138,8 +133,9 @@ def _isolated_environ(
     private_home = scratch / "home"
     private_home.mkdir()
     isolated["ZDOTDIR"] = str(private_home)
-    for name in _PROFILE_ENVIRONMENT:
-        _ = isolated.pop(name, None)
+    for name in tuple(isolated):
+        if name in _PROFILE_ENVIRONMENT or name.startswith(_PROFILE_ENVIRONMENT_PREFIX):
+            del isolated[name]
     if is_codex:
         isolated["HOME"] = ambient_environ.get("HOME", str(Path.home()))
         codex_home = scratch / "codex-home"
