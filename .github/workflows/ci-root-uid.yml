@@ -35,23 +35,13 @@ env:
   MISE_HTTP_RETRIES: "5"
   # Lane-selected uv fetch bounds — the same form ci.yml carries, required of
   # every workflow that routes through CI_RUNNER_LABELS (self_hosted_uv_lane).
-  UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
-  UV_HTTP_TIMEOUT: ${{ contains(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+  UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+  UV_HTTP_TIMEOUT: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
 
 on:
   schedule:
     - cron: "17 */3 * * *"
-  workflow_dispatch:
-    inputs:
-      runner_labels:
-        description: >-
-          JSON runner-label array for every root job of this dispatch, for
-          example ["livespec-orchestrator-k3s"]. Empty (the default) keeps
-          CI_RUNNER_LABELS / CI_COVERAGE_RUNNER_LABELS, so a scheduled run and a
-          plain dispatch route exactly as before.
-        required: false
-        default: ""
-        type: string
+  workflow_dispatch: {}
 
 concurrency:
   group: ci-root-uid
@@ -98,7 +88,7 @@ jobs:
     name: ${{ matrix.target }} (${{ matrix.uid }})
     needs: [decide]
     if: needs.decide.outputs.run == 'true'
-    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.172.0
     env:
@@ -166,13 +156,13 @@ jobs:
     # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
     # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
-    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.172.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
-      UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
-      UV_HTTP_TIMEOUT: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -247,13 +237,13 @@ jobs:
     # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
     # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
-    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.172.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
-      UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
-      UV_HTTP_TIMEOUT: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -314,7 +304,7 @@ jobs:
     name: check-python-batch (${{ matrix.uid }})
     needs: [decide]
     if: needs.decide.outputs.run == 'true'
-    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.172.0
     env:

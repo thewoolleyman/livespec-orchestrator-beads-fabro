@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
@@ -15,6 +16,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_confirm import confirm_pr
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_failed_jobs_rerun import (
+    attempt_failed_jobs_rerun,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_pr_association import (
     pr_view_for_merge_sha,
 )
@@ -43,6 +47,14 @@ if TYPE_CHECKING:
 __all__: list[str] = ["await_merge", "confirm_pr", "outcome_after_await"]
 
 
+@dataclass(kw_only=True)
+class _RerunPollState:
+    """One poll's permission and history for bounded failed-jobs recovery."""
+
+    workflow_ids: set[str]
+    may_keep_polling: bool
+
+
 def await_merge(
     *,
     outcome_type: type[DispatchOutcome],
@@ -58,6 +70,7 @@ def await_merge(
     # `_dispatcher_base_advance`'s own rule that an absent reading is not a
     # report in either direction.
     conflicting_reports = 0
+    rerun_workflow_ids: set[str] = set()
     for attempt in range(poll.attempts):
         reading = view_pr(
             plan=plan,
@@ -113,6 +126,10 @@ def await_merge(
                 plan=plan,
                 runner=runner,
                 journal=journal,
+                rerun_state=_RerunPollState(
+                    workflow_ids=rerun_workflow_ids,
+                    may_keep_polling=attempt + 1 < poll.attempts,
+                ),
             )
         ) is not None:
             return failure
@@ -222,6 +239,7 @@ def _required_check_failure(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
+    rerun_state: _RerunPollState,
 ) -> DispatchOutcome | None:
     """The terminal outcome when a check the forge reports as required has failed for good.
 
@@ -240,6 +258,17 @@ def _required_check_failure(
         return None
     failed = [name for name in view.terminal_check_failures if name in required]
     if not failed:
+        return None
+    rerun = attempt_failed_jobs_rerun(
+        failed_check_names=failed,
+        failures=view.terminal_check_failure_details,
+        plan=plan,
+        pr_number=view.number,
+        runner=runner,
+        journal=journal,
+    ) if rerun_state.may_keep_polling else None
+    if rerun is not None and rerun not in rerun_state.workflow_ids:
+        rerun_state.workflow_ids.add(rerun)
         return None
     return outcome_type(
         work_item_id=plan.work_item_id,
