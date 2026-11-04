@@ -287,7 +287,11 @@
       // maintainer's direction to max out factory capacity: at each lower cap the
       // orchestrator's own active items filled it and further tickets were
       // capacity-deferred. Read on each admission pass; no restart needed.
-      "wip_cap": 16,
+      // Raised from 16 to 20 on 2026-11-04 (coordinator R301, reversible): the
+      // factory-runs quota went to 84 CPU / 42 pods and the fleet cap to 20, and
+      // at 21:00Z the launchers yielded on "repo WIP full (17/16)" with fleet
+      // slots free. To be replaced by the single Fabro limit (bd-ib-rtzhfc).
+      "wip_cap": 20,
       "acceptance_mode": "ai-only",
       // Committed maintainer delegations of the human valves (contracts.md,
       // journal invoker attribution, "Delegated valve authority"). A press
