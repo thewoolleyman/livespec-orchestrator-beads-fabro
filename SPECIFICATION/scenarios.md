@@ -12153,3 +12153,44 @@ Feature: merge-poll re-runs an infrastructure failure once, never a touched test
     Then the job's class is unattributed and no re-run is requested
     And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
 ```
+
+## Scenario 309 — Fleet-launch launchers share one WIP claim-count read per repository per time-to-live
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet-launch launchers share the repository WIP claim-count read
+  Background:
+    Given fleet-launch/config.sh values overridden to a throwaway claim-count cache directory, a throwaway in-flight directory and a stub capacity projection that records each read
+
+  Scenario: Launchers polling within one time-to-live run the projection read once
+    Given five impl launchers for repository A at the WIP gate
+    And no claim-count cache file for repository A
+    When all five pass the WIP gate within one cache time-to-live
+    Then the stub capacity projection records exactly one read for repository A
+    And every launcher takes its count from that read
+
+  Scenario: A stale cached read is recomputed
+    Given a claim-count cache file for repository A older than the cache time-to-live
+    When an impl launcher for repository A passes the WIP gate
+    Then the stub capacity projection records a new read for repository A
+
+  Scenario: A launcher does not count its own in-flight marker
+    Given repository A's projection reports 2 counted claims and repository A's wip_cap is 3
+    And fleet in-flight markers with running launchers for not-yet-active work items bd-x and bd-y in repository A
+    When the impl launcher for bd-x passes the WIP gate
+    Then its in-flight addition is 1
+    And it holds, because 2 counted claims plus 1 in flight reaches the cap of 3
+
+  Scenario: A failed recomputation does not hold the launch
+    Given no claim-count cache file for repository A
+    And the stub capacity projection fails every read for repository A
+    When an impl launcher for repository A passes the WIP gate
+    Then the launcher does not hold on the unreadable count
+    And no claim-count cache file for repository A is written
+
+  Scenario: The cached sum equals the uncached sum
+    Given one ledger state and one set of in-flight markers for repository A
+    When the WIP gate sum is taken once with the cache and once with a cache time-to-live of 0
+    Then both sums are equal
+```
