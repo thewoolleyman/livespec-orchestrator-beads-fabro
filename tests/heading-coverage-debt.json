@@ -1003,13 +1003,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 305 — The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate",
-    "work_item": "bd-ib-fvgkw4",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 306 — A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref",
     "work_item": "bd-ib-vraou4",
     "first_seen": "2026-11-04"
