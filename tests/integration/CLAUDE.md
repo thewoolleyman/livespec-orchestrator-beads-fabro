@@ -1411,7 +1411,9 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   single cause line must carry the hook's exit status, every failed target, one
   excerpt of at most 200 characters (marked truncated), an unknown-target statement
   naming absent, unreadable or target-free output, and never an environment value
-  (verbatim or JSON-escaped, 8 characters or longer). Each excerpt case sits beside a
+  (verbatim or JSON-escaped, 8 characters or longer). The one exemption is a value that
+  is an existing filesystem path (`PWD`, `INIT_CWD`), so a credential that merely begins
+  with a slash is still withheld. Each excerpt case sits beside a
   sibling that would pass for a cause naming only the exit status.
 
 - `test_implement_completion_field_scenario204.py` — binds

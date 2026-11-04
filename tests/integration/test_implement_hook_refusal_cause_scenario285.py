@@ -216,6 +216,44 @@ def test_an_excerpt_line_quoting_a_sandbox_credential_is_withheld_by_key_name(
         )
 
 
+def test_an_excerpt_line_quoting_a_credential_that_starts_with_a_slash_is_withheld(
+    tmp_path: Path,
+) -> None:
+    for index, slash_secret in enumerate(
+        ("/Zm9vYmFyYmF6cXV4MDEyMzQ1Njc4OQ+abc/def==", "/Zm9vYmFyYmF6cXV4MDEyMzQ1Njc4OQabcdef")
+    ):
+        body = "\n".join(
+            [
+                f"error: assertion repr printed {slash_secret}",
+                _targets_block(targets=("check-tests",)),
+            ]
+        )
+        repo = _clone(tmp_path=tmp_path / str(index), hook=_hook_script(body=body, status=1))
+
+        result = _route(repo=repo, extra_env={"LIVESPEC_SLASH_CREDENTIAL": slash_secret})
+
+        cause = _cause(repo=repo)
+        for text in (cause, result.stderr):
+            assert slash_secret not in text
+        assert (
+            "an excerpt line was withheld because it contained the value of "
+            "LIVESPEC_SLASH_CREDENTIAL"
+        ) in cause
+
+
+def test_a_line_naming_an_existing_directory_held_by_a_variable_is_not_withheld(
+    tmp_path: Path,
+) -> None:
+    workdir = tmp_path / "deep" / "directory"
+    workdir.mkdir(parents=True)
+    body = f"error: failure under {workdir}/module.py\n{_targets_block(targets=('check-tests',))}"
+    repo = _clone(tmp_path=tmp_path / "clone-root", hook=_hook_script(body=body, status=1))
+
+    _ = _route(repo=repo, extra_env={"LIVESPEC_WORK_DIR": str(workdir)})
+
+    assert f"first error line: error: failure under {workdir}/module.py" in _cause(repo=repo)
+
+
 def test_a_value_shorter_than_eight_characters_does_not_withhold_the_line(
     tmp_path: Path,
 ) -> None:
