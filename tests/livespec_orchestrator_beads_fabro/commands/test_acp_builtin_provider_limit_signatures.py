@@ -83,6 +83,10 @@ _CODEX_MESSAGES: tuple[str, ...] = (
     "the agent answered `session/prompt` with an error: usage limit exceeded",
 )
 _ORDINARY_MESSAGE = "the agent answered `session/prompt` with an error: stream ended early"
+_CLAUDE_MODEL_UNSUPPORTED_MESSAGE = (
+    "the agent answered `session/prompt` with an error: Internal error: API Error: 400 "
+    "Claude Code 2.1.170 does not support this model; version 2.1.280 or newer is required"
+)
 
 
 def _signatures_for(
@@ -148,6 +152,39 @@ def test_both_codex_structured_spellings_are_builtin_machine_code_signatures() -
         assert matches[0].cause == _QUOTA, code
         assert matches[0].scope == DOMAIN_SCOPE, code
         assert matches[0].all_literals == (), code
+
+
+def test_the_measured_claude_model_unsupported_message_is_candidate_scoped() -> None:
+    """An unsupported Claude model releases only the candidate that requested it."""
+    matches = _signatures_for(
+        availability_key=ANTHROPIC_DOMAIN,
+        source=_MESSAGE_SOURCE,
+        discriminator=frozenset(
+            {
+                "claude code",
+                "does not support this model",
+                "or newer is required",
+            }
+        ),
+    )
+
+    assert len(matches) == 1
+    assert matches[0].cause == "model_unsupported"
+    assert matches[0].scope == "candidate"
+    verdict = classify_acp_failure(
+        signal=AcpFailureSignal(
+            original_identity="acp-protocol-error",
+            protocol_message=_CLAUDE_MODEL_UNSUPPORTED_MESSAGE,
+            turn_started=True,
+        ),
+        candidate=_candidate(availability_key=ANTHROPIC_DOMAIN),
+        builtin=True,
+    )
+    assert isinstance(verdict, AcpAvailabilityFailure)
+    assert verdict.cause == "model_unsupported"
+    assert verdict.scope == "candidate"
+    assert verdict.hold_key == ANTHROPIC_DOMAIN
+    assert verdict.candidate_key == "builtin-anthropic-0000000000000000"
 
 
 def test_every_builtin_quota_signature_is_scoped_to_its_availability_domain() -> None:
