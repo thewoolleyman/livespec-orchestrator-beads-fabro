@@ -29,17 +29,22 @@ waits on every refusal, which would hang a misconfigured wrapper rather than
 report it. The discriminator is the journal — refusal records present in one
 leg, absent in the other — because both legs are otherwise identical.
 
-THE CADENCE IS OBSERVED, NOT ASSUMED. The fixture commits
-`credential_reprobe_interval_seconds: 1` and the wait sleeps for real, so the
-elapsed time of the invocation is evidence the committed dial was the one read.
-A stubbed sleep would prove only that some number reached some stand-in.
+THE CADENCE IS OBSERVED, NOT ASSUMED — THROUGH THE JOURNAL, NOT THE CLOCK. The
+fixture commits `credential_reprobe_interval_seconds: 1`, and the refusal
+record this invocation appends carries `reprobe_interval_seconds`, so the
+committed dial is evidence read off production's own output. An elapsed bound
+on the invocation was the earlier instrument here and has been retired: it
+rendered a verdict on how long the HOST took, which a loaded factory satisfies
+for the wrong reason, and the thing it was reaching for — that the wait slept
+exactly the committed interval, once per refused round — is asserted directly
+against the injected sleeper at the unit tier, where the argument is a value
+rather than a duration.
 """
 
 from __future__ import annotations
 
 import json
 import tempfile
-import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -272,11 +277,9 @@ def test_the_loop_reprobes_and_resumes_on_the_first_usable_result(
     _ = _seed_item()
     repo = _repo(tmp_path=tmp_path)
 
-    started = time.monotonic()
     exit_code, calls = _loop(
         repo=repo, monkeypatch=monkeypatch, observations=[_RATE_LIMITED, _USABLE]
     )
-    elapsed = time.monotonic() - started
 
     # The invocation did not exit on the refusal: it went on to admit the item
     # and create a run for it.
@@ -288,9 +291,14 @@ def test_the_loop_reprobes_and_resumes_on_the_first_usable_result(
     assert len(refused) == 1
     assert refused[0]["condition"] == "exhausted"
     assert refused[0]["http_status"] == 429
+    # The committed cadence is the number the wait was holding, read off the
+    # record the operator reads. What the wait DID with it — one sleep of
+    # exactly that many seconds, per refused round — is asserted on the
+    # injected sleeper at the unit tier (`test_dispatcher_credential_reprobe`),
+    # where the argument is observable; an elapsed bound here could only
+    # establish that the host spent at least that long, which a slow fixture
+    # satisfies just as well.
     assert refused[0]["reprobe_interval_seconds"] == _CADENCE_SECONDS
-    # The committed cadence is what the wait actually slept.
-    assert elapsed >= _CADENCE_SECONDS
 
 
 def test_a_refusal_the_wait_does_not_govern_is_reported_rather_than_waited_on(
