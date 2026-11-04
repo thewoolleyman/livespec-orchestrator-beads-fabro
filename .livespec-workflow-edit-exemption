@@ -1,4 +1,4 @@
-work_item=bd-ib-43abuz
-reason=Coalesce releases into a four-hour window, adopting livespec core v235's release window: release-please opens or updates its release PR only on a schedule (every 4 h) or workflow_dispatch, and a push runs it only to tag a just-merged release PR (skip-github-pull-request). Release mechanics were 34% of fleet k3s CI time over 7 days (plan ci-runtime-and-cost). legacy-coordinator-agent ruling 2026-11-03 ~20:20Z under the maintainer's 15:00:49Z 'I approve all workflow edits'.
+work_item=bd-ib-xghjzh
+reason=Put the image's mise shims on PATH in check-metadata-batch's batched step so pyright finds node on a GitHub-hosted runner instead of falling back to a nodeenv download (hosted-only failure of check-no-shadow-ledger-body-typechecks, run 41764018111). Six added lines (five comments, one export); nothing deleted or modified. approval:workflow-edit-additive set under legacy-coordinator-agent's delegation (R301).
 change=additive
 ci_runtime=no-significant-increase
