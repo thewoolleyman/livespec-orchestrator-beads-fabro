@@ -223,7 +223,11 @@ for argument in "$@"; do
             if [ -d "$STUB_LOCK_DIR" ]; then lock_state=held; fi
             printf '%s marker=%s mutex=%s\n' "$item" "$marker_state" "$lock_state" >> "$STUB_RESUME_OBSERVATION_LOG"
             if [ -z "${STUB_RESUME_UNLISTED:-}" ]; then
-                printf '%s %s\n' "$STUB_SERVER_GMK" "$item" > "$STUB_RESUMED_DIR/$item"
+                case ${LIVESPEC_FABRO_FACTORY:-} in
+                    candidate) resumed_server=$STUB_SERVER_GMK_CANDIDATE ;;
+                    *) resumed_server=$STUB_SERVER_GMK ;;
+                esac
+                printf '%s %s\n' "$resumed_server" "$item" > "$STUB_RESUMED_DIR/$item"
             fi
             exit 0
             ;;
@@ -1139,6 +1143,37 @@ if [ "$RC" = 0 ] && grep -q bd-ib-candidate "$DRIVE_LOG"; then
     pass "the selected candidate launches below its cap"
 else
     fail "the selected candidate did not launch below its cap"
+fi
+
+# The resume launcher reads the same target setting, so a resume under the
+# candidate target holds while the candidate board is at its cap and otherwise
+# resumes onto the candidate instance.
+write_board "$BOARD_GMK_CANDIDATE" 2 candidate
+printf 'candidate\n' > "$FLEET_LAUNCH_GMK_TARGET_FILE"
+FLEET_LAUNCH_MAX_WAIT_S=3 "$RESUME_LAUNCHER" bd-ib-resume-candidate-held > "$CASE_DIR/resume-candidate-held.log" 2>&1
+RC=$?
+if [ "$RC" = 75 ] && ! [ -s "$RESUME_LOG" ] && log_has "$CASE_DIR/resume-candidate-held.log" "gmktec candidate not green under mutex"; then
+    pass "the candidate cap holds a resume under the candidate target"
+else
+    fail "the candidate cap did not hold the resume (rc=$RC)"
+fi
+write_board "$BOARD_GMK_CANDIDATE" 1 candidate
+"$RESUME_LAUNCHER" bd-ib-resume-candidate > "$CASE_DIR/resume-candidate.log" 2>&1
+RC=$?
+if [ "$RC" = 0 ] && [ "$(cat "$RESUME_LOG")" = bd-ib-resume-candidate ] \
+    && [ "$(cat "$CASE_DIR/resumed/bd-ib-resume-candidate")" = "$GMK_CANDIDATE_URL bd-ib-resume-candidate" ]; then
+    pass "a resume under the candidate target goes to the candidate instance below its cap"
+else
+    fail "the resume did not go to the candidate instance (rc=$RC)"
+fi
+: > "$RESUME_LOG"
+rm -f "$FLEET_LAUNCH_GMK_TARGET_FILE"
+"$RESUME_LAUNCHER" bd-ib-resume-default > "$CASE_DIR/resume-default.log" 2>&1
+RC=$?
+if [ "$RC" = 0 ] && [ "$(cat "$CASE_DIR/resumed/bd-ib-resume-default")" = "$GMK_URL bd-ib-resume-default" ]; then
+    pass "a resume with no candidate target goes to the default gmktec instance"
+else
+    fail "the default-target resume did not go to the default instance (rc=$RC)"
 fi
 
 # A non-zero drive before its board row lists runs the same item again through
