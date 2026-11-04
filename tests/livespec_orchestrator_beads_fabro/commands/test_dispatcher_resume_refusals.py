@@ -205,6 +205,19 @@ def test_a_measured_acceptance_proof_leg_may_resume_its_merged_pull_request() ->
     assert module.resume_refusals(observation=observation) == ()
 
 
+def test_a_measured_acceptance_proof_leg_may_resume_without_a_proof_record() -> None:
+    """A proof-only re-run captures the missing record on the merged pull request."""
+    module = _refusals_module()
+    observation = _observation(
+        status="acceptance",
+        anchor_head=None,
+        pull_request_state=module.PR_STATE_MERGED,
+    )
+    object.__setattr__(observation, "proof_only_resume", True)
+
+    assert module.resume_refusals(observation=observation) == ()
+
+
 def test_a_third_resume_is_refused_naming_both_earlier_resumes() -> None:
     """The per-run proof-loop caps are bounded on the host by this refusal."""
     module = _refusals_module()

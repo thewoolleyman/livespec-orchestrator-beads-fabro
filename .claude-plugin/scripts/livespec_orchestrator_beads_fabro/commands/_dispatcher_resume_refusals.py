@@ -331,6 +331,11 @@ def anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
         )
         return (unread,)
     if observation.anchor_head is None:
+        if _is_proof_only_resume(observation=observation):
+            # The proof-only arm exists to capture the missing evidence on its
+            # already-merged pull request.  It may bypass a measured absence,
+            # but never an unread forge or record-list measurement above.
+            return ()
         return (_headless_refusal(observation=observation),)
     return ()
 
