@@ -18,6 +18,9 @@ from typing import cast
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import stalled_outcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comments import (
+    release_comment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_telemetry import (
     STALL_CAUSE_ZERO_OUTPUT,
     STALL_STATUS,
@@ -130,3 +133,13 @@ def test_stall_attributes_carry_the_run_id_and_cause_through_the_allowlist() -> 
         "livespec.stall.cause": STALL_CAUSE_ZERO_OUTPUT,
     }
     assert set(attributes) <= ATTRIBUTE_ALLOWLIST
+
+
+def test_stall_outputs_name_the_server_cancel_route_and_retained_record() -> None:
+    detail = _watchdog_cancelled().detail
+    comment = release_comment(item_id="bd-a", row={"run_id": "01RUN", "factory": "petri"})
+
+    assert "factory server's cancel route" in detail
+    assert "record on the factory" in detail
+    assert "factory server's cancel route" in comment
+    assert "record is retained on the factory" in comment
