@@ -43,7 +43,13 @@ def test_resumed_args_carry_the_anchor_and_prefer_the_recorded_workflow(
     """The published workflow wins; absent history preserves the request."""
     module = _module()
     original = argparse.Namespace(workflow_name=requested_workflow, untouched="value")
-    gather = cast(ResumeGather, SimpleNamespace(workflow_name=recorded_workflow))
+    gather = cast(
+        ResumeGather,
+        SimpleNamespace(
+            workflow_name=recorded_workflow,
+            observation=SimpleNamespace(proof_only_resume=False),
+        ),
+    )
     anchor = cast(ResumeAnchor, SimpleNamespace(resumed_at="review", head="a" * 40))
 
     resumed = module.resumed_args(args=original, gather=gather, anchor=anchor)
@@ -51,5 +57,6 @@ def test_resumed_args_carry_the_anchor_and_prefer_the_recorded_workflow(
     assert resumed is not original
     assert resumed.resume_entry_node == "review"
     assert resumed.resume_head == "a" * 40
+    assert resumed.resume_proof_only is False
     assert resumed.workflow_name == expected_workflow
     assert resumed.untouched == "value"

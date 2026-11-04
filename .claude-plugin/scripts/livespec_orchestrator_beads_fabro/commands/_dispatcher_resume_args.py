@@ -15,6 +15,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     RESUME_ENTRY_NODE_ARG,
     RESUME_HEAD_ARG,
+    RESUME_PROOF_ONLY_ARG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import ResumeGather
 
@@ -30,5 +31,6 @@ def resumed_args(
     cloned = argparse.Namespace(**vars(args))
     setattr(cloned, RESUME_ENTRY_NODE_ARG, anchor.resumed_at)
     setattr(cloned, RESUME_HEAD_ARG, anchor.head)
+    setattr(cloned, RESUME_PROOF_ONLY_ARG, gather.observation.proof_only_resume is True)
     cloned.workflow_name = gather.workflow_name or getattr(args, "workflow_name", None)
     return cloned
