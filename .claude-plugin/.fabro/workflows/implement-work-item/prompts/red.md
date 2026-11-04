@@ -37,7 +37,15 @@ Never run `git push` and never publish a branch or pull request.
    `green` turn. A product file is a path that the repository's product-path
    classification counts as product. `commit_red` refuses a tree where any
    product file differs from the dispatch base.
-5. Append, never rewrite an earlier section, using a `## red` section that names the Test file, the Definition of Done assertion it proves, the command that ran the test with its failure output, what the test verifies and does not verify, and the code locations for the change.
+5. Before ending, run
+
+       "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-implement-gate-preview.py" red <path of the test file you wrote>
+
+   to preview the checks `commit_red` will run over its staged test, naming
+   that one test file explicitly. Fix every failed target the preview names
+   that is within this turn's scope, then run the preview again after each fix.
+   The preview does not decide whether a commit succeeds.
+6. Append, never rewrite an earlier section, using a `## red` section that names the Test file, the Definition of Done assertion it proves, the command that ran the test with its failure output, what the test verifies and does not verify, the code locations for the change, and the exit status and failed target names of the last gate preview run. If no preview ran, state that and why.
 
 The handoff is append-only: append your new section to the resolved file and
 never rewrite an earlier section.
