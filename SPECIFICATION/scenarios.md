@@ -11410,6 +11410,15 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     Then the preview passes and the turn's handoff section records that last preview run
     And no re-entry budget was spent on either preview run
 
+  Scenario: A gate preview inherits a check-skip variable and still reports the skipped check's failure
+    Given a green turn whose environment carries LIVESPEC_CHECK_SKIP naming check-keyword-only-args
+    And a change that fails the repository's check-keyword-only-args target
+    When the turn runs the gate preview before ending
+    Then the preview runs check-keyword-only-args and names it as failed
+    And the preview's report names LIVESPEC_CHECK_SKIP as a variable it unset for its run
+    And the turn's environment still carries LIVESPEC_CHECK_SKIP after the preview ends
+    And no commit was created and no re-entry budget was spent
+
   Scenario: A purely mechanical Green refusal re-enters green without spending its ordinary re-entry
     Given a repository that declares check-lint and check-per-file-coverage as mechanical targets
     And commit_green's hook refuses naming only check-per-file-coverage
