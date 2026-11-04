@@ -12092,3 +12092,64 @@ Feature: The committed fleet-launch launchers enforce the interim launcher's gat
     When the gmktec target setting is absent
     Then the launcher launches onto the default instance
 ```
+
+## Scenario 308 — A required check that fails terminally on infrastructure is re-run once and files a flake item
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch", the paragraph **A required check that fails terminally on infrastructure is re-run once.**
+
+```gherkin
+Feature: merge-poll re-runs an infrastructure failure once, never a touched test
+  As an operator
+  I want a pull request that failed CI on a runner fault re-run once without me
+  So that a sound factory run is not parked for a human, and every re-run still owes a root fix
+
+  Scenario: a teardown-only failure is re-run once and a flake item is filed
+    Given a factory run's pull request whose required check failed terminally
+    And the only failed job of that workflow run failed only in teardown steps while every other step succeeded
+    When the merge wait classifies the failure
+    Then the job's class is runner-teardown
+    And the Dispatcher requests exactly one re-run of the failed jobs as the factory App identity
+    And it journals a merge-poll-failed-jobs-rerun row naming the workflow run, the job, the class and the evidence
+    And it files one flake work item naming the same
+    And the merge wait continues within its existing poll budget and judges only the re-run attempt
+
+  Scenario: an OOM kill that interrupts a pytest session is re-run
+    Given a required check failed terminally because its job was killed for exceeding its memory limit during a pytest session
+    And the job's log names no failing test in a file the pull request changed
+    When the merge wait classifies the failure
+    Then the job's class is oom-kill
+    And the Dispatcher requests exactly one re-run of the failed jobs
+
+  Scenario: a failure of the re-run attempt ends blocked as before
+    Given the Dispatcher has already re-run the failed jobs once for the pull request's head
+    When a required check of the re-run attempt fails terminally
+    Then no second re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: a re-run request the forge rejects ends blocked as before
+    Given a required check failed terminally and every failed required job classifies as runner-teardown
+    When the forge rejects the Dispatcher's re-run failed jobs request
+    Then the Dispatcher journals a merge-poll-failed-jobs-rerun row naming the rejection
+    And no further re-run is requested for that head
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: an OOM kill after a failing test the pull request touched is never re-run
+    Given a required check failed terminally because its job was killed for exceeding its memory limit
+    And before the kill the job's log names a failing test in a file the pull request changed
+    When the merge wait classifies the failure
+    Then no re-run is requested and no flake work item is filed
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: any unattributed failed required job prevents the re-run
+    Given a workflow run with two failed jobs backing required checks
+    And one job's class is runner-teardown and the other's is unattributed
+    When the merge wait classifies the failures
+    Then no re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: a pytest test failure is never re-run
+    Given a required check failed terminally because pytest reported a test failure and no kill or timeout evidence matched
+    When the merge wait classifies the failure
+    Then the job's class is unattributed and no re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+```
