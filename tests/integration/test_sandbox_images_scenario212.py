@@ -53,6 +53,10 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands import dispatcher
 
+from tests.livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_readiness import (
+    start_dispatcher_process,
+)
+
 _FACTORY = "hp"
 _PLUGIN_KEY = "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
 _OTHER_PLUGIN_KEY = "some-other-plugin@its-own-marketplace"
@@ -90,14 +94,6 @@ def _lease(*, build: Path, pid: int) -> None:
 
 def _sleeper() -> subprocess.Popen[bytes]:
     return subprocess.Popen(["sleep", _SLEEP_SECONDS])
-
-
-def _dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
-    """A real live process whose own argv names `<build>/scripts/bin/dispatcher.py`."""
-    entry = build / "scripts" / "bin" / "dispatcher.py"
-    entry.parent.mkdir(parents=True, exist_ok=True)
-    _ = entry.write_text("", encoding="utf-8")
-    return subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
 
 
 def _reaped_pid() -> int:
@@ -202,7 +198,7 @@ def test_scenario212_sandbox_images_enumerates_every_source_and_changes_nothing(
     monkeypatch.delenv("LIVESPEC_FABRO_SANDBOX_IMAGE", raising=False)
 
     live = _sleeper()
-    payloads = (_dispatcher_process(build=executed), _dispatcher_process(build=leased))
+    payloads = (start_dispatcher_process(build=executed), start_dispatcher_process(build=leased))
     try:
         _lease(build=leased, pid=live.pid)
         _lease(build=abandoned, pid=_reaped_pid())

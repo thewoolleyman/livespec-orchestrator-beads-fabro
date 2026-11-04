@@ -1,4 +1,4 @@
-"""Test support for waiting until a fixture payload has exec'd."""
+"""Test support for starting a dispatcher-argv fixture and waiting until it has exec'd."""
 
 from __future__ import annotations
 
@@ -34,3 +34,27 @@ def wait_for_dispatcher_exec(
         if time.monotonic() >= deadline:
             raise AssertionError(f"dispatcher fixture process {process.pid} did not exec {entry}")
         time.sleep(poll_seconds)
+
+
+def start_dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
+    """A real live process whose own argv names `<build>/scripts/bin/dispatcher.py`.
+
+    That argv IS what identifies a running Dispatcher — every invocation of it
+    goes through that one entry point — so the fixture only has to be a real
+    process carrying it, and deliberately is NOT a Python child:
+    `check-tests-no-subprocess-spawn` asks tests not to spawn one, and a real
+    Dispatcher would need a factory and a tenant to get past its first argument.
+    Returns only once `/proc` exposes that argv, so a scan of `/proc` never runs
+    against a child that has forked but not yet exec'd.
+    """
+    entry = build / "scripts" / "bin" / "dispatcher.py"
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    _ = entry.write_text("", encoding="utf-8")
+    process = subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
+    try:
+        wait_for_dispatcher_exec(process=process, entry=entry)
+    except BaseException:
+        process.kill()
+        _ = process.wait()
+        raise
+    return process
