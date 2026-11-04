@@ -78,11 +78,16 @@ def test_proof_only_materialization_ships_the_three_proof_stages_and_nothing_els
     graph = parse_dot_graph(text=payload.graph.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     assert set(graph.nodes) == {"start", "exit", "proof_capture", "proof_verify", "proof_grade"}
-    assert [(edge.source, edge.destination) for edge in graph.edges] == [
-        ("start", "proof_capture"),
-        ("proof_capture", "proof_verify"),
-        ("proof_verify", "proof_grade"),
-        ("proof_grade", "exit"),
+    assert [
+        (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
+    ] == [
+        ("start", "proof_capture", None),
+        ("proof_capture", "exit", "outcome=failed"),
+        ("proof_capture", "exit", "preferred_label=fix"),
+        ("proof_capture", "proof_verify", None),
+        ("proof_verify", "proof_grade", "preferred_label=approve"),
+        ("proof_verify", "exit", None),
+        ("proof_grade", "exit", None),
     ]
 
 

@@ -154,16 +154,23 @@ _NODE_NAME = re.compile(r"^\w+$")
 # not a question the derivation has.
 _START_NODE = "start"
 
-# The terminal `exit` is engine structure rather than a stage.  The proof-only
-# arm retains it solely so the successful grade has an explicit terminal route;
-# every capture or verification outcome that does not match its one outgoing
-# edge ends the run without visiting another stage.
+# The terminal `exit` is engine structure rather than a stage: the arm's graph may
+# carry an edge to it, which is how a run ends, and to no other stage outside the
+# three proof stages.  Each route is `(source, destination, condition)`; the engine
+# selects a matching condition first and otherwise the one bare edge, so the bare
+# edge of `proof_capture` carries the successful capture to `proof_verify` while
+# its conditional edges end a failed or `fix` capture; the bare edge of
+# `proof_verify` ends every outcome except the `approve` one, which is the only
+# route to `proof_grade`; and `proof_grade` ends the run whatever it returns.
 _PROOF_ONLY_NODES = frozenset({"start", "exit", "proof_capture", "proof_verify", "proof_grade"})
-_PROOF_ONLY_EDGES = (
-    ("start", "proof_capture"),
-    ("proof_capture", "proof_verify"),
-    ("proof_verify", "proof_grade"),
-    ("proof_grade", "exit"),
+_PROOF_ONLY_EDGES: tuple[tuple[str, str, str | None], ...] = (
+    ("start", "proof_capture", None),
+    ("proof_capture", "exit", "outcome=failed"),
+    ("proof_capture", "exit", "preferred_label=fix"),
+    ("proof_capture", "proof_verify", None),
+    ("proof_verify", "proof_grade", "preferred_label=approve"),
+    ("proof_verify", "exit", None),
+    ("proof_grade", "exit", None),
 )
 
 
@@ -230,18 +237,16 @@ def proof_only_graph(*, graph_text: str) -> str | None:
     The committed workflow remains the authority for every retained node's
     attributes, including the proof-stage prompts and commands.  This derived
     graph replaces every edge because keeping the ordinary workflow's failure
-    routes would enter `fix`, `review`, publication, or a human gate.  An
-    unmatched capture or verification result therefore ends the run, while the
-    one successful path is capture, verification, grade, then the engine's
-    terminal `exit` node.
+    routes would enter `fix`, `review`, publication, or a human gate.  Its
+    condition-bearing edges to `exit` end a failed or `fix` capture and every
+    verification that is not `approve`; the one successful path is capture,
+    verification, grade, then the engine's terminal `exit` node.
     """
     graph = parse_dot_graph(text=graph_text)
     if isinstance(graph, str) or frozenset(graph.nodes) < _PROOF_ONLY_NODES:
         return None
     removed_nodes = frozenset(graph.nodes) - _PROOF_ONLY_NODES
-    proof_edges = "".join(
-        f"    {source} -> {destination}\n" for source, destination in _PROOF_ONLY_EDGES
-    )
+    proof_edges = "".join(_proof_only_edge_line(route=route) for route in _PROOF_ONLY_EDGES)
     derived = _spliced(
         text=graph_text,
         edits=[
@@ -346,12 +351,21 @@ def _validated(*, text: str, declared: frozenset[str], entry: str) -> str | None
     return text
 
 
+def _proof_only_edge_line(*, route: tuple[str, str, str | None]) -> str:
+    """One edge statement of the arm's graph, carrying its condition when it has one."""
+    source, destination, condition = route
+    attributes = "" if condition is None else f' [condition="{condition}"]'
+    return f"    {source} -> {destination}{attributes}\n"
+
+
 def _proof_only_validated(*, text: str) -> str | None:
     """Return a proof-only graph only when its nodes and routes are exact."""
     graph = parse_dot_graph(text=text)
     if isinstance(graph, str) or frozenset(graph.nodes) != _PROOF_ONLY_NODES:
         return None
-    routes = tuple((edge.source, edge.destination) for edge in graph.edges)
+    routes = tuple(
+        (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
+    )
     if routes != _PROOF_ONLY_EDGES:
         return None
     return text
