@@ -725,13 +725,13 @@ else
 fi
 stop_capture
 
-# 9.4 exit-code fidelity with telemetry ON. Real bd = /bin/false (exits 1); the
+# 9.4 exit-code fidelity with telemetry ON. Real bd = false(1) (exits 1); the
 #     wrapper must still exit 1, and the emitted span must reflect exit_code=1 +
 #     error status. Capture-backed so we prove the emit rides along, not just
 #     that bd's code is preserved. (Dead-safe: capture, never a real collector.)
 start_capture "$TCAP" "$TPORT"
 if [ -n "$CAP_PORT" ]; then
-    LIVESPEC_BD_REAL=/bin/false \
+    LIVESPEC_BD_REAL="$(type -P false)" \
     LIVESPEC_BD_GUARD_OTLP=on \
     LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:${CAP_PORT}/v1/traces" \
         "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
