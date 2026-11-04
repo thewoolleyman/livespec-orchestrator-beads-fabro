@@ -350,3 +350,8 @@ def test_an_incremental_stream_updates_an_established_command_node() -> None:
         )
         is None
     )
+
+
+def test_the_green_completion_gate_is_a_command_node() -> None:
+    """The gate between Green and its commit emits no events while it runs."""
+    assert "implement_completion" in COMMAND_NODES

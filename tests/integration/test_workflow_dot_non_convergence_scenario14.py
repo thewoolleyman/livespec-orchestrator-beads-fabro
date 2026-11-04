@@ -119,24 +119,7 @@ def test_dead_implementer_routes_unchanged_work_away_from_review() -> None:
     """
     text = _dot_text()
 
-    assert (
-        re.search(r"implement\s*->\s*implement_commit_settle\b(?![^\n]*condition=)", text)
-        is not None
-    )
-    assert (
-        re.search(
-            r"implement_commit_settle\s*->\s*implement_completion\b(?![^\n]*condition=)",
-            text,
-        )
-        is not None
-    )
-    assert (
-        re.search(
-            r"implement_completion\s*->\s*implementation_diff\b(?![^\n]*condition=)",
-            text,
-        )
-        is not None
-    )
+    assert re.search(r"commit_green\s*->\s*implementation_diff\b(?![^\n]*condition=)", text)
     assert (
         re.search(
             r"implementation_diff\s*->\s*dead_implementer\b(?![^\n]*condition=)",
