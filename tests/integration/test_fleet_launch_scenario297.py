@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -52,7 +53,7 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
                 (
                     "Scenario 297 harness HUNG (it did not finish) after ",
                     f"_HARNESS_HANG_GUARD_SECONDS={_HARNESS_HANG_GUARD_SECONDS}; ",
-                    f"last output:\n{_last_output(error)}",
+                    f"harness last output:\n{_last_output(error)}",
                 )
             )
         )
@@ -70,3 +71,37 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
         assert assertion in combined, combined
     assert "--- 1. reads a stub factory board" not in combined, combined
     assert "0 failed" in combined, combined
+
+
+def test_scenario297_timeout_reports_a_hung_harness_with_its_last_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guard reports a hang and diagnostics; it is never a speed verdict."""
+    results: list[subprocess.CompletedProcess[str] | subprocess.TimeoutExpired] = [
+        subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="check-fleet-launch\n", stderr=""
+        ),
+        subprocess.TimeoutExpired(
+            cmd="scenario297",
+            timeout=_HARNESS_HANG_GUARD_SECONDS,
+            output="queued preflight still running",
+            stderr=b"last harness stderr",
+        ),
+    ]
+
+    def timed_run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
+        del argv
+        result = results.pop(0)
+        if isinstance(result, subprocess.TimeoutExpired):
+            raise result
+        return result
+
+    monkeypatch.setattr(sys.modules[__name__], "_run", timed_run)
+
+    with pytest.raises(pytest.fail.Exception) as failure:
+        test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate()
+
+    message = str(failure.value)
+    assert "Scenario 297 harness HUNG (it did not finish)" in message
+    assert f"_HARNESS_HANG_GUARD_SECONDS={_HARNESS_HANG_GUARD_SECONDS}" in message
+    assert "harness last output:\nqueued preflight still running\nlast harness stderr" in message

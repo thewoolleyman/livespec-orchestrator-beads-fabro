@@ -8,8 +8,9 @@ if [ "$#" -gt 1 ]; then
     exit 2
 fi
 
-# The Scenario 297 slice runs the harness cases alone; the aggregate target
-# continues to lint every fleet-launch script before it runs the full harness.
+# The Scenario 297 slice runs the harness cases alone, so its verdict reflects
+# harness behaviour rather than time spent linting. The aggregate target still
+# lints every fleet-launch script before it runs the full harness.
 if [ "$#" -eq 0 ]; then
     mapfile -t shell_scripts < <(git ls-files -z 'fleet-launch/*.sh' 'fleet-launch/**/*.sh' | tr '\0' '\n')
 
