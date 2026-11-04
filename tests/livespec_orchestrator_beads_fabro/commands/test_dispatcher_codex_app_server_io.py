@@ -18,9 +18,10 @@ exactly as the real server behaves.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
-import time
+import threading
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal 
     codex_early_renewal_request_lines,
     request_early_codex_renewal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 
 _ACCOUNT_STATE_NOTIFICATION = json.dumps(
     {"jsonrpc": "2.0", "method": "account/updated", "params": {"plan": "pro"}}
@@ -332,23 +334,23 @@ def test_a_lingering_session_is_killed_during_the_reap(
 # delivered to the launcher alone never reaches the process actually holding the
 # stdout pipe.
 #
-# Every lifetime here is FINITE and short on purpose. The pre-fix runner only
-# returns when the grandchild exits, so an unbounded sleep would make each
-# failing Red/replay run hang for that whole sleep and could leave children
-# behind on interruption. Three seconds is the measured reproduction's own
-# figure: it is far above the deadline below and far below the assertion
-# ceiling, so pre-fix fails promptly and nothing can outlive the case.
-_GRANDCHILD_LIFETIME_SECONDS = 3
+# Both processes BLOCK reading a FIFO the test itself holds a writer on, so
+# neither has a lifetime of its own: they are released by the test closing that
+# writer and by nothing else. The pre-fix runner only returns when the
+# grandchild exits, so the unfixed tree leaves `run` blocked until the test
+# releases them.
 _LAUNCHER_WITH_INHERITING_GRANDCHILD = (
-    "import subprocess, sys, time\n"
-    f"subprocess.Popen([sys.executable, '-c', 'import time; time.sleep({_GRANDCHILD_LIFETIME_SECONDS})'])\n"
-    f"time.sleep({_GRANDCHILD_LIFETIME_SECONDS})\n"
+    "import subprocess, sys\n"
+    "subprocess.Popen([sys.executable, '-c', "
+    "'import sys; open(sys.argv[1], \"rb\").read()', sys.argv[1]])\n"
+    "open(sys.argv[1], 'rb').read()\n"
 )
 
 _DEADLINE_SECONDS = 0.5
-# Comfortably below the 3s grandchild and well above the 0.5s deadline, so the
-# two outcomes cannot be confused by ordinary scheduling noise.
-_BOUNDED_CEILING_SECONDS = 2.0
+# The longest the test blocks for `run` to return. It is a failure bound, never
+# a reading: the case asserts WHETHER `run` returned before the holders were
+# released, not how long that took.
+_RETURN_BOUND_SECONDS = 60.0
 
 
 def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
@@ -364,34 +366,41 @@ def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
 
     This spawns real processes deliberately: the defect lives in signal
     delivery across a process tree, which no in-process fake can exhibit. No
-    credential, no network and no `codex` binary is involved, and both spawned
-    processes self-terminate within `_GRANDCHILD_LIFETIME_SECONDS` whatever
-    this assertion does.
+    credential, no network and no `codex` binary is involved.
 
-    `check-tests-no-real-time` is stood down for the bound below rather than
-    satisfied. What separates the two behaviours IS a real duration: the
-    blocking `readline` returns when the last holder of the inherited pipe goes
-    away, and that is the kernel's accounting, not this process's. There is no
-    clock to inject into it, and the two outcomes are separated by 4x in both
-    directions — the defect measured 3.11s against a 0.5s deadline — so the
-    bound cannot be closed by host load.
+    THE ASSERTION IS AN ORDERING, not a duration. The launcher and its
+    grandchild are held by a FIFO this test keeps a writer on, so the only thing
+    that can make `run` return while the test still holds it is the deadline
+    kill reaching the whole group and closing the inherited pipe. `run` goes on a
+    worker thread so the unfixed tree fails this assertion instead of hanging the
+    suite, and the join bound is a failure bound whose value decides nothing.
     """
-    started = time.monotonic()
+    hold_path = tmp_path / "hold"
+    os.mkfifo(hold_path)
+    hold = os.open(hold_path, os.O_RDWR)
+    outcome: list[CommandResult] = []
 
-    result = ShellCodexAppServerRunner().run(
-        argv=[sys.executable, "-c", _LAUNCHER_WITH_INHERITING_GRANDCHILD],
-        cwd=tmp_path,
-        request_lines=codex_early_renewal_request_lines(),
-        timeout_seconds=_DEADLINE_SECONDS,
-    )
+    def _run() -> None:
+        outcome.append(
+            ShellCodexAppServerRunner().run(
+                argv=[sys.executable, "-c", _LAUNCHER_WITH_INHERITING_GRANDCHILD, str(hold_path)],
+                cwd=tmp_path,
+                request_lines=codex_early_renewal_request_lines(),
+                timeout_seconds=_DEADLINE_SECONDS,
+            )
+        )
 
-    elapsed = time.monotonic() - started
-    # Pre-fix this is the grandchild's own lifetime (~3s); post-fix it is the
-    # deadline (~0.5s), because killing the group closes the inherited pipe.
-    assert (  # real-time-required: a blocking readline on a pipe a real grandchild holds
-        elapsed < _BOUNDED_CEILING_SECONDS
-    ), f"renewal outlived its {_DEADLINE_SECONDS}s deadline: {elapsed:.2f}s"
-    assert result.exit_code == UNSPENDABLE_EXIT_CODE
+    worker = threading.Thread(target=_run, daemon=True)
+    try:
+        worker.start()
+        worker.join(timeout=_RETURN_BOUND_SECONDS)
+        returned_while_held = not worker.is_alive()
+    finally:
+        os.close(hold)
+        worker.join(timeout=_RETURN_BOUND_SECONDS)
+
+    assert returned_while_held, "renewal did not return while the grandchild still held stdout"
+    assert [result.exit_code for result in outcome] == [UNSPENDABLE_EXIT_CODE]
 
 
 def test_the_runner_starts_its_own_session_so_the_tree_is_owned(

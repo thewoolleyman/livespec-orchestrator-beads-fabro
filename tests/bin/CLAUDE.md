@@ -75,9 +75,14 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   drive and Dispatcher routes, read a packaged asset and spawn a
   `scripts/bin/` helper. No in-process `main()` can stand in: the
   question is what a second process sees after its own source tree is
-  gone. Listed in `subprocess_spawn_allowlist`. Its bytes are FROZEN
+  gone. Listed in `subprocess_spawn_allowlist`. Its bytes were FROZEN
   across its Red->Green pair — cover anything it leaves unexercised in
-  the harness file below rather than editing it.
+  the harness file below rather than editing it. The pair has long since
+  merged; `bd-ib-ke5wkf` later replaced its file-polling handshake with a
+  pair of pipes (the child writes a byte, the parent blocks in `select`,
+  and a dead child reads as EOF) so the file holds no real-time wait, which
+  is why the archived provenance audit's byte pin of this file no longer
+  matches.
 - `test_payload_retention_harness.py` — coverage for the frozen
   regression's own scaffolding, which this repo measures like any other
   `tests/` file: `_wait_for`'s early-child-exit and bounded-timeout
