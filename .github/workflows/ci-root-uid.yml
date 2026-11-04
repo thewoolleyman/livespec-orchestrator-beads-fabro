@@ -134,6 +134,16 @@ jobs:
           mise install
           uv sync --all-groups
 
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
+
       - name: just ${{ matrix.target }} (root)
         if: matrix.uid == 'root'
         run: just ${{ matrix.target }}
@@ -178,6 +188,16 @@ jobs:
           mise trust
           mise install
           uv sync --all-groups
+
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
 
       - name: just check-per-file-coverage (root)
         if: matrix.uid == 'root'
@@ -266,6 +286,16 @@ jobs:
           name: coverage-gates-${{ matrix.uid }}
           path: .coverage-gates
 
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
+
       - name: just ${{ matrix.target }} (root)
         if: matrix.uid == 'root'
         run: just ${{ matrix.target }}
@@ -301,6 +331,16 @@ jobs:
           mise trust
           mise install
           uv sync --all-groups
+
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
 
       - name: Run the batched python checks (root)
         if: matrix.uid == 'root'
