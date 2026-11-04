@@ -106,6 +106,7 @@ __all__: list[str] = [
     "HOOK_LIMIT_LIMITS_FILENAME",
     "HOOK_LIMIT_PROGRAM_FILENAME",
     "NEEDS_HUMAN_NODE",
+    "PR_REFRESH_NODE",
     "PUBLISH_DRAFT_NODE",
     "PUSH_OBSERVATION_RESERVE_SECONDS",
     "hook_limit_graph_prepare_steps_block",
@@ -114,9 +115,11 @@ __all__: list[str] = [
     "hook_limit_program_path_expansion",
     "hook_limit_program_source",
     "node_limit_from_graph",
+    "pr_refresh_limit_from_graph",
     "publish_draft_limit_from_graph",
     "push_observation_budget_seconds",
     "resolve_needs_human_limit",
+    "resolve_pr_refresh_limit",
     "resolve_publish_draft_limit",
 ]
 
@@ -129,6 +132,7 @@ HOOK_LIMIT_LIMITS_FILENAME = "livespec-hook-limits.env"
 # same budget, but its push republishes an already-published head, so the
 # work-item scopes the observation to `publish_draft`'s first push.
 PUBLISH_DRAFT_NODE = "publish_draft"
+PR_REFRESH_NODE = "pr_refresh"
 
 # The terminal node whose own timeout bounds the wait it spends on a cut turn's commit
 # runs, so the wait ends while enough of that timeout remains to preserve the tree.
@@ -184,6 +188,11 @@ def publish_draft_limit_from_graph(*, graph: Path) -> int | None:
     return node_limit_from_graph(graph=graph, node=PUBLISH_DRAFT_NODE)
 
 
+def pr_refresh_limit_from_graph(*, graph: Path) -> int | None:
+    """`pr_refresh`'s own rendered limit; see `node_limit_from_graph` for the fail-soft rule."""
+    return node_limit_from_graph(graph=graph, node=PR_REFRESH_NODE)
+
+
 def resolve_publish_draft_limit(
     *,
     graph_artifact: Path | None,
@@ -229,6 +238,14 @@ def resolve_publish_draft_limit(
         )
         _ = warn(message)
     return limit_seconds
+
+
+def resolve_pr_refresh_limit(*, graph_artifact: Path | None, written_graph: Path) -> int | None:
+    """The `pr_refresh` limit from the artifact the command node will execute."""
+    candidate = written_graph if graph_artifact is None else graph_artifact
+    if not candidate.is_absolute():
+        return None
+    return pr_refresh_limit_from_graph(graph=candidate)
 
 
 def resolve_needs_human_limit(*, graph_artifact: Path | None, written_graph: Path) -> int | None:
@@ -437,7 +454,10 @@ def hook_limit_program_source() -> str:
 
 
 def hook_limit_prepare_steps_block(
-    *, limit_seconds: int | None, needs_human_limit_seconds: int | None = None
+    *,
+    limit_seconds: int | None,
+    needs_human_limit_seconds: int | None = None,
+    pr_refresh_limit_seconds: int | None = None,
 ) -> str:
     """Land the observer and this dispatch's resolved figures in the sandbox.
 
@@ -471,6 +491,10 @@ def hook_limit_prepare_steps_block(
         lines.append(f"LIVESPEC_PUBLISH_DRAFT_LIMIT_SECONDS={limit_seconds}")
         budget = push_observation_budget_seconds(limit_seconds=limit_seconds)
         lines.append(f"LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS={budget}")
+    if pr_refresh_limit_seconds is not None:
+        lines.append(f"LIVESPEC_PR_REFRESH_LIMIT_SECONDS={pr_refresh_limit_seconds}")
+        budget = push_observation_budget_seconds(limit_seconds=pr_refresh_limit_seconds)
+        lines.append(f"LIVESPEC_PR_REFRESH_GATE_BUDGET_SECONDS={budget}")
     if needs_human_limit_seconds is not None:
         lines.append(f"LIVESPEC_NEEDS_HUMAN_LIMIT_SECONDS={needs_human_limit_seconds}")
     quoted = " ".join(f"'{line}'" for line in lines)
@@ -505,6 +529,9 @@ def hook_limit_graph_prepare_steps_block(
             graph_artifact=graph_artifact, written_graph=written_graph, warn=warn
         ),
         needs_human_limit_seconds=resolve_needs_human_limit(
+            graph_artifact=graph_artifact, written_graph=written_graph
+        ),
+        pr_refresh_limit_seconds=resolve_pr_refresh_limit(
             graph_artifact=graph_artifact, written_graph=written_graph
         ),
     )

@@ -209,6 +209,21 @@ def _check_suite(*, root: Path, record: Path, status: int) -> Path:
     return path
 
 
+def _slow_check_suite(*, root: Path, record: Path) -> Path:
+    """A gate which names one completed target before it outlives its budget."""
+    quoted_record = shlex.quote(str(record))
+    lines = (
+        "#!/usr/bin/env bash",
+        f'printf "%s\\n" check-unit > {quoted_record}',
+        "sleep 2",
+        "",
+    )
+    path = root / "slow-declared-check-suite"
+    _ = path.write_text("\n".join(lines), encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def _declared_command_line(*, suite: Path) -> str:
     """The workflow-input value the Dispatcher would project for this declaration.
 
@@ -526,3 +541,25 @@ def test_a_failing_pr_refresh_suite_puts_its_own_output_in_the_repair_brief(
     assert _STDOUT_MARKER in targets[0]
     assert _STDERR_MARKER in targets[0]
     assert _COMMAND_NOT_FOUND not in targets[0]
+
+
+def test_pr_refresh_bounds_its_post_rebase_gate_below_its_node_timeout(*, tmp_path: Path) -> None:
+    """A slow gate returns through the stage rather than consuming its whole node timeout."""
+    world = _world(root=tmp_path)
+    _ = _published(world=world, root=tmp_path)
+    _ = _advance_default(world=world)
+    suite = _slow_check_suite(root=tmp_path, record=tmp_path / "gate-record")
+    _ = (world.plugins_root / "livespec-hook-limits.env").write_text(
+        "LIVESPEC_PR_REFRESH_LIMIT_SECONDS=2\n" "LIVESPEC_PR_REFRESH_GATE_BUDGET_SECONDS=1\n",
+        encoding="utf-8",
+    )
+
+    result = _run(
+        node="pr_refresh",
+        world=world,
+        check_suite=str(suite),
+        shell_quoted_input=False,
+    )
+
+    assert result.returncode == 1, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr

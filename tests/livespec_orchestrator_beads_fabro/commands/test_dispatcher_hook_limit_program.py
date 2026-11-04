@@ -30,11 +30,13 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     HOOK_LIMIT_LIMITS_FILENAME,
     HOOK_LIMIT_PROGRAM_FILENAME,
+    PR_REFRESH_NODE,
     PUSH_OBSERVATION_RESERVE_SECONDS,
     hook_limit_limits_path_expansion,
     hook_limit_prepare_steps_block,
     hook_limit_program_path_expansion,
     hook_limit_program_source,
+    pr_refresh_limit_from_graph,
     publish_draft_limit_from_graph,
     push_observation_budget_seconds,
 )
@@ -331,8 +333,11 @@ def test_the_limit_is_read_off_the_graph_and_withheld_when_it_cannot_be(
 ) -> None:
     """The figure comes from the artifact the run executes, or from nothing."""
     assert publish_draft_limit_from_graph(graph=_GRAPH) == 1800
+    assert pr_refresh_limit_from_graph(graph=_GRAPH) == 1800
+    assert PR_REFRESH_NODE == "pr_refresh"
 
     assert publish_draft_limit_from_graph(graph=tmp_path / "absent.fabro") is None
+    assert pr_refresh_limit_from_graph(graph=tmp_path / "absent.fabro") is None
 
     no_node = tmp_path / "no-node.fabro"
     _ = no_node.write_text('digraph g {\n  other [\n timeout="900s"\n ]\n}\n', encoding="utf-8")
@@ -370,6 +375,13 @@ def test_the_prepare_step_lands_the_program_and_withholds_unknown_figures() -> N
     assert HOOK_LIMIT_PROGRAM_FILENAME in withheld
     assert HOOK_LIMIT_LIMITS_FILENAME not in withheld
     assert "LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS" not in withheld
+
+    refresh_known = hook_limit_prepare_steps_block(
+        limit_seconds=None, pr_refresh_limit_seconds=3600
+    )
+
+    assert "LIVESPEC_PR_REFRESH_LIMIT_SECONDS=3600" in refresh_known
+    assert "LIVESPEC_PR_REFRESH_GATE_BUDGET_SECONDS=3480" in refresh_known
 
 
 def test_the_node_and_the_prepare_step_resolve_one_root() -> None:
