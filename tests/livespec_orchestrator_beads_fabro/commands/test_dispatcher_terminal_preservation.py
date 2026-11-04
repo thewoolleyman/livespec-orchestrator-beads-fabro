@@ -124,6 +124,40 @@ def test_both_preservations_run_and_the_pointer_goes_first(
     assert called == ["pointer", "tree"]
 
 
+def test_an_externally_cancelled_janitor_green_run_uses_the_tree_preservation_leg(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A green run cancelled by an operator still has its committed tree saved."""
+    called: list[str] = []
+
+    def _tree(**kwargs: object) -> None:
+        _ = kwargs
+        called.append("tree")
+
+    monkeypatch.setattr(preservation, "preserve_checkpoint_failed_tree", _tree)
+    outcome = DispatchOutcome(
+        work_item_id=_ITEM,
+        status="cancelled",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail="",
+        fabro_run_id=_RUN,
+        fabro_factory_name="hp",
+    )
+
+    assert hasattr(preservation, "preserve_cancelled_janitor_green_tree")
+    preservation.preserve_cancelled_janitor_green_tree(
+        args=_args(),
+        repo=tmp_path,
+        item=_item(),
+        outcome=outcome,
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+    )
+
+    assert called == ["tree"]
+
+
 def test_a_refused_pointer_is_journaled_and_still_leaves_the_tree_preserved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
