@@ -812,6 +812,12 @@ jobs:
           LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST: "true"
         run: |
           failed=""
+          # bd-ib-xghjzh: on a GitHub-hosted runner this root container step has no
+          # node on PATH (the k3s runner hook supplies the baked mise shims), so
+          # pyright's PyPI wrapper falls back to a nodeenv download and
+          # check-no-shadow-ledger-body-typechecks fails. Put the image's mise
+          # shims first on PATH, exactly as the nonroot legs do.
+          export PATH="/root/.local/share/mise/shims:$PATH"
           just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
           just check-handoff-dispatch-routing || failed="$failed check-handoff-dispatch-routing"
           just check-heading-coverage-debt-register || failed="$failed check-heading-coverage-debt-register"

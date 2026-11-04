@@ -10,10 +10,10 @@ for the per-item cap overrides.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast, get_args
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
-from livespec_orchestrator_beads_fabro.types import FactorySafety
+from livespec_orchestrator_beads_fabro.factory_safety import FACTORY_SAFETY_REASONS
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -32,13 +32,6 @@ _LABEL_ACCEPTANCE = "acceptance:"
 _LABEL_FACTORY_SAFETY = "factory-safety:"
 _LABEL_WORKFLOW_SCOPE_OVERRIDE = "workflow-scope-override:"
 _LABEL_AWAITS_SCOPE_OVERRIDE = "awaits-scope-override"
-
-# The closed host-only reason vocabulary, read off the `FactorySafety` alias
-# rather than restated, so the label writer and the operator valve that grades a
-# typed reason can never disagree with the field's own enum. A tuple, not a set:
-# the refusal message enumerates the reasons, and the declaration order is the
-# order contracts.md names them in.
-FACTORY_SAFETY_REASONS: tuple[str, ...] = get_args(FactorySafety)
 
 
 def update_work_item_policy(

@@ -741,6 +741,11 @@ touch "$STUB_PREFLIGHT_RELEASE"
 kill -TERM "$older_pid" 2>/dev/null
 wait "$older_pid" || true
 
+# Cases 9-13 cover the resume launcher and the in-flight marker count, not
+# Scenario 297's queued preflight, so the scenario297 slice skips them: that
+# slice runs under a 60 s bound in tests/integration/test_fleet_launch_scenario297.py
+# and the full set took it to about 73 s, turning master red on every CI run.
+if [ "$HARNESS_SLICE" = all ]; then
 # --- 9. a resume shares FIFO and waits for fleet headroom -------------------
 # The older impl ticket reaches the head first, but the fleet begins at the
 # shared cap.  Once the board drops by one the impl binds, restoring the cap
@@ -903,6 +908,8 @@ if [ ! -s "$DRIVE_LOG" ] && grep -q 'fleet not green: gmktec=7 hl=0 markers=1 fl
 else
     fail "the impl launcher undercounted a launch that listed mid-read (rc=$impl_rc drives=$(tr '\n' ' ' < "$DRIVE_LOG"))"
     tail -6 "$IMPL_CASE_LOG" >&2
+fi
+
 fi
 
 echo

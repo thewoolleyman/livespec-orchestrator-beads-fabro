@@ -86,7 +86,7 @@ def _description(*, assertion: str, references: str) -> str:
     return f"## Definition of Done\n\n- {assertion}\n\nReferences: {references}\n"
 
 
-def _seed_issue(*, issue_id: str, description: str) -> None:
+def _seed_issue(*, issue_id: str, description: str, labels: list[str] | None = None) -> None:
     client = make_beads_client(config=_config())
     _ = client.create_issue(
         draft=IssueDraft(
@@ -97,7 +97,7 @@ def _seed_issue(*, issue_id: str, description: str) -> None:
             priority=2,
             assignee=None,
             created_at="2026-10-04T00:00:00Z",
-            labels=["admission:auto"],
+            labels=["admission:auto"] if labels is None else labels,
             metadata={},
             spec_id=None,
             parent_id=None,
@@ -146,6 +146,33 @@ def _finding_comments(*, issue_id: str) -> tuple[str, ...]:
         for body in _comments(issue_id=issue_id)
         if body.startswith("definition-of-done finding")
     )
+
+
+def test_intake_holds_an_out_of_enum_factory_safety_label_with_a_named_finding(
+    tmp_path: Path,
+) -> None:
+    """A legacy raw label cannot be routed through auto-admission to ready."""
+    issue_id = "bd-legacy-factory-safety"
+    legacy_value = "cross-repo-dev-tooling"
+    _seed_issue(
+        issue_id=issue_id,
+        description=_description(
+            assertion="The item is autonomously verifiable.",
+            references=_RESOLVABLE_HEADING,
+        ),
+        labels=["admission:auto", f"factory-safety:{legacy_value}"],
+    )
+
+    verdict = _route(issue_id=issue_id, repo=_repo(tmp_path=tmp_path))
+
+    assert verdict == "pending-approval"
+    assert _status(issue_id=issue_id) == "pending-approval"
+    finding = "\n".join(_finding_comments(issue_id=issue_id))
+    assert legacy_value in finding
+    assert "needs-host-secrets" in finding
+    assert "mutates-host-machinery" in finding
+    assert "needs-privileged-host" in finding
+    assert "needs-host-only-input" in finding
 
 
 def test_evaluate_routes_epic_to_backlog() -> None:

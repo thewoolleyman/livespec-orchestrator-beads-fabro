@@ -4503,6 +4503,7 @@ def test_dispatch_green_closes_item_and_journals(
         "factory-size-check",
         "ledger-check",
         "target-selection",
+        "factory-safety-screen",
         "implementation-pr-override",
         "acp-node-override",
         "session-headroom-screen",
