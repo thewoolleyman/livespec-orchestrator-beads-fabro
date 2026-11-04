@@ -302,7 +302,7 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor", _CAPTURE, _VERIFY, "refresh_repair"}
+    assert producers == {"janitor_refresh_route", _CAPTURE, _VERIFY, "refresh_repair"}
     backstop = re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node="fix") or "")
     assert backstop is not None
     # AT LEAST two entries per agent-finding producer, not strictly more: the
@@ -429,12 +429,14 @@ def test_a_red_janitor_still_reaches_fix_with_its_failure_output() -> None:
     depends on it: compact mode omits agent responses, so a janitor failure would
     arrive stripped of the output step 1 of the prompt tells the stage to read.
     """
-    red = _edge(source="janitor", target="fix")
+    red = _edge(source="janitor", target="janitor_refresh_route")
+    ordinary = _edge(source="janitor_refresh_route", target="fix")
     prompt = _prompt(name="fix.md")
 
     assert _condition_of(edge=red) == "outcome!=succeeded"
     assert _VISIT_COUNT not in red
     assert "preferred_label" not in red
+    assert "condition=" not in ordinary
     assert 'fidelity="summary:high"' in (_node_body(text=_dot(), node="fix") or "")
     assert "janitor failure output" in prompt
     assert "red gate" in prompt

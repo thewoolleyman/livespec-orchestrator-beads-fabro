@@ -509,7 +509,7 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor", "proof_capture", _VERIFY, "refresh_repair"}
+    assert producers == {"janitor_refresh_route", "proof_capture", _VERIFY, "refresh_repair"}
     budgets = {
         node: re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node=node) or "")
         for node in ("fix", "disposition", "review_fix")

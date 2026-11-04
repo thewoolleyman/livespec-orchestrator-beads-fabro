@@ -13,7 +13,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse
 _BUNDLE = Path(".claude-plugin/.fabro/workflows/implement-work-item")
 
 
-@pytest.mark.parametrize("source", ["proof_capture", "proof_verify", "janitor"])
+@pytest.mark.parametrize("source", ["proof_capture", "proof_verify", "janitor_refresh_route"])
 def test_every_fix_entry_preserves_source_response(source: str) -> None:
     text = (_BUNDLE / "workflow.fabro").read_text()
     graph = parse_workflow_graph(text=text)
@@ -36,6 +36,7 @@ def test_fix_prompt_consumes_semantic_findings_and_fails_closed() -> None:
     assert "missing or unreadable" in prompt
     assert '"outcome": "failed"' in prompt
     assert "janitor failure output" in prompt
+    assert "`janitor_refresh_route`" in prompt
     assert "reproduction" in prompt
 
 
