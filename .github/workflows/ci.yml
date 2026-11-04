@@ -233,7 +233,11 @@ jobs:
           # is lost. Verified in the image: `sh -e -c 'false; echo X'` exits 1
           # without printing.
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           # HOME deliberately NOT under /tmp: that would put the venue inside
           # the `/tmp/*` coverage omit glob (pyproject.toml) and trip
           # livespec-impl-beads-1l6's regression guard.
@@ -340,7 +344,11 @@ jobs:
         if: matrix.uid == 'nonroot'
         run: |
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
@@ -436,7 +444,11 @@ jobs:
         if: matrix.uid == 'nonroot'
         run: |
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
@@ -508,7 +520,11 @@ jobs:
         if: matrix.uid == 'nonroot'
         run: |
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \

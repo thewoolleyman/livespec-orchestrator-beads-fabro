@@ -1,2 +1,2 @@
-work_item=bd-ib-uxv5al
-reason=Route check-per-file-coverage and check-coverage (ci.yml and ci-root-uid.yml) through their own CI_COVERAGE_RUNNER_LABELS variable, falling back to CI_RUNNER_LABELS, so the coverage pair can stay on k3s while the other jobs move to hosted runners (hybrid ruled by legacy-coordinator-agent after the 2026-11-04 hosted cutover measured 55+ min coverage on hosted). Unset, nothing moves. approval:workflow-edit set by legacy-coordinator-agent under the maintainer's standing ruling.
+work_item=bd-ib-uuatg4
+reason=In the 4 nonroot 'Prepare non-root leg' steps of ci.yml, replace `chmod -R a+rX /root/.config /root/.local` with a find that chmods only entries lacking o+r (or o+x on directories). Same end state, same checks; removes the overlayfs copy-up of the image's 462 MB toolchain that cost ~2 min per nonroot job. approval:workflow-edit set; logically additive per legacy-coordinator-agent (coordinator-duties §12).
