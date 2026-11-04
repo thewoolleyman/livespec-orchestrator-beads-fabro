@@ -290,3 +290,31 @@ def test_scenario305_a_janitor_visit_drops_the_previous_janitor_brief_only(
     _ = brief.write_text("LIVESPEC_REFRESH_REPAIR_BRIEF\nstage: janitor\n", encoding="utf-8")
     _ = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
     assert not brief.exists()
+
+
+def test_scenario305_an_empty_checkpoint_after_the_janitor_still_takes_the_skip(
+    *, tmp_path: Path
+) -> None:
+    run, default = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+    janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+    assert janitor.returncode == 0, janitor.stderr
+    green_tree = _git("rev-parse", "HEAD^{tree}", cwd=run).stdout.strip()
+    _ = _git("commit", "--allow-empty", "-m", "fabro: checkpoint", cwd=run)
+    _ = _commit(cwd=default, path="later.txt", text="later\n", subject="feat: later default move")
+    _ = _git("push", "origin", _DEFAULT_BRANCH, cwd=default)
+
+    pushed = _run(node="publish_draft", cwd=run, plugins=plugins, check_suite="false")
+
+    assert pushed.returncode == 0, pushed.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REFRESH_SKIPPED" in pushed.stderr
+    assert _git("rev-parse", "HEAD^{tree}", cwd=run).stdout.strip() == green_tree
+    remote = _git("ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}", cwd=run)
+    pushed_head = remote.stdout.split()[0]
+    assert _git("rev-parse", f"{pushed_head}^{{tree}}", cwd=run).stdout.strip() == green_tree
+    empties = _git(
+        "rev-list", "--no-merges", "--max-count=1", "--min-parents=1", pushed_head, cwd=run
+    )
+    assert _git(
+        "diff-tree", "--no-commit-id", "--name-only", "-r", empties.stdout.strip(), cwd=run
+    ).stdout.strip()
