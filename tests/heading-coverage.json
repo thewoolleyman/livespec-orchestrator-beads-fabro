@@ -2730,8 +2730,8 @@
     "heading": "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: refresh-before-janitor was ratified 2026-11-04 and the owning work-item bd-ib-fvgkw4 moves the run's refresh to the start of the janitor visit that precedes publish_draft and adds the test exercising the janitor's pre-aggregate refresh, its refresh-repair route, and publish_draft pushing the janitor-passed head without a second aggregate.",
+    "test": "tests.integration.test_workflow_refresh_before_janitor_scenario305",
+    "reason": "Integration-tier execution against a real throwaway origin: the janitor refreshes before its declared aggregate and records the exact passed head; publish_draft then pushes that head unchanged after a further default-branch move; conflict and aggregate-red refreshes restore the agent head and record their refresh-repair brief for the existing fix route.",
     "work_item": "bd-ib-fvgkw4"
   },
   {
