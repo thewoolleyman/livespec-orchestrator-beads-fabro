@@ -221,3 +221,72 @@ def test_scenario305_red_refreshed_aggregate_restores_and_briefs_for_fix(*, tmp_
     assert f"pre-refresh-head: {before}" in brief
     assert "failed-gate-targets: red-target" in brief
     assert "LIVESPEC_REFRESH_REPAIR" in janitor.stderr
+
+
+_ROUTE = "janitor_refresh_route"
+
+
+def _edges(*, source: str) -> list[tuple[str, dict[str, str]]]:
+    graph = parse_dot_graph(text=_WORKFLOW.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    return [
+        (edge.destination, dict(edge.attributes)) for edge in graph.edges if edge.source == source
+    ]
+
+
+def test_scenario305_a_red_janitor_reaches_refresh_repair_through_the_brief_route() -> None:
+    red = [
+        destination
+        for destination, attributes in _edges(source="janitor")
+        if attributes.get("condition") == "outcome!=succeeded"
+    ]
+    assert red == [_ROUTE]
+    arms = {
+        attributes.get("condition", ""): destination
+        for destination, attributes in _edges(source=_ROUTE)
+    }
+    assert arms["preferred_label=refresh_repair"] == "refresh_repair"
+    assert arms[""] == "fix"
+
+
+def _route_label(*, run: Path, plugins: Path) -> str:
+    done = _run(node=_ROUTE, cwd=run, plugins=plugins, check_suite="true")
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip()
+
+
+def test_scenario305_the_route_sends_only_a_janitor_brief_to_refresh_repair(
+    *, tmp_path: Path
+) -> None:
+    run, _ = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+    state = run / _STATE_DIRECTORY
+    state.mkdir(parents=True)
+    brief = state / "livespec-refresh-repair-brief"
+
+    assert '"preferred_next_label":"fix"' in _route_label(run=run, plugins=plugins)
+
+    _ = brief.write_text("LIVESPEC_REFRESH_REPAIR_BRIEF\nstage: publish_draft\n", encoding="utf-8")
+    assert '"preferred_next_label":"fix"' in _route_label(run=run, plugins=plugins)
+
+    _ = brief.write_text("LIVESPEC_REFRESH_REPAIR_BRIEF\nstage: janitor\n", encoding="utf-8")
+    assert '"preferred_next_label":"refresh_repair"' in _route_label(run=run, plugins=plugins)
+
+
+def test_scenario305_a_janitor_visit_drops_the_previous_janitor_brief_only(
+    *, tmp_path: Path
+) -> None:
+    run, _ = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+    state = run / _STATE_DIRECTORY
+    state.mkdir(parents=True)
+    brief = state / "livespec-refresh-repair-brief"
+
+    _ = brief.write_text("LIVESPEC_REFRESH_REPAIR_BRIEF\nstage: publish_draft\n", encoding="utf-8")
+    _ = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+    assert "stage: publish_draft" in brief.read_text(encoding="utf-8")
+
+    _ = _git("reset", "--hard", "HEAD", cwd=run)
+    _ = brief.write_text("LIVESPEC_REFRESH_REPAIR_BRIEF\nstage: janitor\n", encoding="utf-8")
+    _ = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+    assert not brief.exists()
