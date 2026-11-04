@@ -32,6 +32,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     dod_gate_prompt_path,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_unavailable_record import (
+    did_not_run_comment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     unjudged_governing_heading,
@@ -48,6 +51,7 @@ def test_candidate_execution_and_unavailable_recording_are_cohesive_modules() ->
     commands = (
         "_dod_judgement_execution",
         "_dispatcher_dod_judgement_unavailable",
+        "_dispatcher_dod_judgement_unavailable_record",
     )
     root = Path(__file__).parents[3] / ".claude-plugin" / "scripts"
 
@@ -55,6 +59,23 @@ def test_candidate_execution_and_unavailable_recording_are_cohesive_modules() ->
         module_path = root / "livespec_orchestrator_beads_fabro" / "commands" / f"{command}.py"
         assert module_path.is_file()
         assert importlib.import_module(f"livespec_orchestrator_beads_fabro.commands.{command}")
+
+
+def test_the_extracted_unavailable_record_preserves_the_input_limit_measurement() -> None:
+    """The extracted renderer keeps the bound-ended record actionable."""
+    body = did_not_run_comment(
+        item_id="bd-ib-tfu2gj",
+        stage=STAGE_PRE_DISPATCH,
+        digest="subject",
+        rubric_digest="rubric",
+        cause="input-limit-reached",
+        bound_ended_candidates=("claude-acp:claude-sonnet-5-5",),
+        bound_ended_input_tokens=(100_321,),
+        total_input=(100_321, "complete"),
+    )
+
+    assert "total-input-tokens: 100321" in body.splitlines()
+    assert "host-judgement-input-limit: 100000" in body.splitlines()
 
 
 @dataclass
