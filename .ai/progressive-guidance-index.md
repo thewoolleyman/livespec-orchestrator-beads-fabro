@@ -122,6 +122,11 @@ references passes with its guidance orphaned.
   scripting with `ls`, `cat` or `grep` — this checkout runs ON vps, hp
   accepts only `root` or `cwoolley`, and the shell aliases corrupt command
   substitution.
+- Read `.ai/launcher-kills-and-the-gmktec-mutex.md` BEFORE killing or
+  restarting a dispatch launcher, or when a head ticket sits "queued for the
+  gmktec mutex" on a green fleet — a SIGKILL of a launcher that holds the
+  mutex strands a dead holder that blocks every launch for 900 s; check the
+  holder file first and prefer SIGTERM.
 - Read `.ai/fabro-dispatch-diagnosis.md` BEFORE reading a factory run with the
   host PATH `fabro` — it cannot decode a Petri-era factory's runs, and a
   failed read there is not missing data; `dispatcher.py inspect --factory
