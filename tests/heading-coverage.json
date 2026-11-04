@@ -2837,5 +2837,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-zwtfbq carries the shared per-repository WIP claim-count cache into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising one projection read per time-to-live, stale recomputation, own-marker exclusion, failed-recomputation no-hold and cached-uncached equality.",
     "work_item": "bd-ib-zwtfbq"
+  },
+  {
+    "heading": "## Scenario 310 \u2014 A terminal dispatch span carries its run class, execution target and sandbox cost",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-faprof adds the four terminal-span cost attributes (run class, execution target, sandbox CPU-seconds and peak memory) and their allowlist entries, with cases for a pod sandbox on gmktec-xubuntu and for an unreadable sandbox control group.",
+    "work_item": "bd-ib-faprof"
+  },
+  {
+    "heading": "## Scenario 311 \u2014 Dropping an attribute the scheduler requires fails the check",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-atmome adds the emitted-attribute vocabulary and the just-check member that reads livespec-dev-tooling's required_columns.json from the pinned package, with cases for a renamed vocabulary key and a dropped allowlist key.",
+    "work_item": "bd-ib-atmome"
   }
 ]
