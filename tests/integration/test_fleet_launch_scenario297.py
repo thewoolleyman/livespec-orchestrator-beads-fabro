@@ -5,9 +5,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CHECK_DRIVER = _REPO_ROOT / "dev-tooling" / "just-check-fleet-launch.sh"
 _TARGET_EXTRACTOR = _REPO_ROOT / "dev-tooling" / "aggregate-targets.sh"
+
+# A liveness guard against a hung harness, never a duration budget for its verdict.
+_HARNESS_HANG_GUARD_SECONDS = 600
 
 
 def _run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -17,7 +22,19 @@ def _run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
         text=True,
-        timeout=60,
+        timeout=_HARNESS_HANG_GUARD_SECONDS,
+    )
+
+
+def _last_output(error: subprocess.TimeoutExpired) -> str:
+    """Return all output captured before a subprocess stopped making progress."""
+    output = (error.stdout, error.stderr)
+    return (
+        "\n".join(
+            chunk.decode(errors="replace") if isinstance(chunk, bytes) else (chunk or "")
+            for chunk in output
+        ).strip()
+        or "<no output captured>"
     )
 
 
@@ -27,9 +44,21 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
     assert targets.returncode == 0, targets.stderr
     assert "check-fleet-launch" in targets.stdout.split()
 
-    checked = _run(argv=["bash", str(_CHECK_DRIVER), "scenario297"])
+    try:
+        checked = _run(argv=["bash", str(_CHECK_DRIVER), "scenario297"])
+    except subprocess.TimeoutExpired as error:
+        pytest.fail(
+            "".join(
+                (
+                    "Scenario 297 harness HUNG (it did not finish) after ",
+                    f"_HARNESS_HANG_GUARD_SECONDS={_HARNESS_HANG_GUARD_SECONDS}; ",
+                    f"last output:\n{_last_output(error)}",
+                )
+            )
+        )
     combined = checked.stdout + checked.stderr
     assert checked.returncode == 0, combined
+    assert "shellcheck" not in combined.lower(), combined
     for assertion in (
         "the younger queued launcher starts its preflight before the older binds",
         "queued launchers bind in FIFO ticket order after their preflights",
