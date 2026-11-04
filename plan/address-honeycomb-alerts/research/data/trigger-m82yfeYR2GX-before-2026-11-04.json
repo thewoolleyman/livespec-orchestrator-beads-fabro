@@ -1,0 +1,36 @@
+{
+    "id": "m82yfeYR2GX",
+    "name": "CI runner fleet dead \u2014 livespec.ci_runners.active stayed 0 for 20 min",
+    "description": "Disabled 2026-08-03: provider spec v041 moved merge-gating CI to GitHub-hosted runners and forbids reliance on the shared factory host. This historical self-hosted-fleet dead-man is retained for restoration if the local lane returns. While hosted-only, the codex-acp privileged receiver remains fail-closed/parked per v041; do not re-enable this trigger unless the runner lane and heartbeat timer are intentionally restored.",
+    "disabled": true,
+    "query": {
+        "calculations": [
+            {
+                "column": "livespec.ci_runners.active",
+                "op": "MAX"
+            }
+        ],
+        "time_range": 1200
+    },
+    "query_id": "FSUDNSbio7Y",
+    "alert_type": "on_change",
+    "threshold": {
+        "value": 1,
+        "op": "<",
+        "exceeded_limit": 1
+    },
+    "recipients": [
+        {
+            "type": "email",
+            "target": "thewoolleyman@gmail.com",
+            "id": "jKw2EyfLJ3W"
+        }
+    ],
+    "frequency": 600,
+    "triggered": true,
+    "evaluation_schedule_type": "frequency",
+    "auto_investigate": false,
+    "created_at": "2026-07-24T00:26:32Z",
+    "updated_at": "2026-08-03T02:49:41Z",
+    "dataset_slug": "livespec-host-metrics"
+}
