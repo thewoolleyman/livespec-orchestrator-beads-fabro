@@ -31,6 +31,7 @@ import base64
 import importlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -66,6 +67,24 @@ _FRESH_CREDENTIAL_LIFETIME_SECONDS = 864_000
 # below that grace would assert nothing about the ordering.
 _GUARD_DEADLINE_SECONDS = 8
 _GUARD_SLACK_SECONDS = 20
+
+
+def _credential_fixture_repo(*, tmp_path: Path) -> Path:
+    """Provide the scenario with an explicit, test-owned dispatcher policy."""
+    workflow = tmp_path / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
+    source = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
+    _ = shutil.copytree(source, workflow)
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "dispatcher": {"node_timeouts": {"publish_draft": 3600, "pr_refresh": 3600}}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
 
 
 def test_scenario228_the_bounded_window_governs_when_it_is_smaller() -> None:
@@ -141,7 +160,7 @@ def test_scenario228_the_queue_allowance_defaults_to_one_day() -> None:
     assert resolved.seconds == queue_module.DEFAULT_CREDENTIAL_QUEUE_ALLOWANCE_SECONDS
 
 
-def test_scenario228_the_resolved_requirement_is_bounded_by_the_window() -> None:
+def test_scenario228_the_resolved_requirement_is_bounded_by_the_window(tmp_path: Path) -> None:
     """THIS repository's own shipped graph resolves 111600, not its raw allowance.
 
     The subject is the repository's own committed workflow and `.livespec.jsonc`
@@ -154,7 +173,7 @@ def test_scenario228_the_resolved_requirement_is_bounded_by_the_window() -> None
     """
     requirement = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement"
-    ).resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
+    ).resolve_credential_lifetime_requirement(repo=_credential_fixture_repo(tmp_path=tmp_path))
 
     assert hasattr(requirement, "governing_figure"), (
         "the resolved requirement names no governing figure, so the freshness "

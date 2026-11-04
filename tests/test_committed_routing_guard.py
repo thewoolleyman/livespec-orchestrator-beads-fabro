@@ -45,6 +45,15 @@ def test_a_fixture_routing_reads_normally(tmp_path: Path) -> None:
     assert dispatcher_block(cwd=tmp_path)["acp_nodes"] == fixture
 
 
+def test_reading_the_committed_capacity_or_timeout_fails_the_test() -> None:
+    block = dispatcher_block(cwd=_REPO_ROOT)
+
+    with pytest.raises(_TRIPPED, match="COMMITTED dispatcher capacity or timeout"):
+        _ = block["wip_cap"] == 16
+    with pytest.raises(_TRIPPED, match="COMMITTED dispatcher capacity or timeout"):
+        _ = block["node_timeouts"]["dod_gate"] == 600
+
+
 @pytest.mark.committed_routing_lint
 def test_a_marked_lint_reads_the_real_committed_table() -> None:
     table = dispatcher_block(cwd=_REPO_ROOT)["acp_nodes"]

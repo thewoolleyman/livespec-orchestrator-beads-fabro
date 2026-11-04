@@ -24,6 +24,7 @@ reads that byte.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_node_timeouts
@@ -80,9 +81,21 @@ def test_publish_draft_takes_the_unconfigured_default_duration() -> None:
     assert f'timeout="{DEFAULT_NODE_TIMEOUT_SECONDS}s"' in body
 
 
-def test_this_repository_budgets_both_publication_stages_for_one_hour() -> None:
-    """Scenario 177: this repository's own node_timeouts raise both stages."""
-    timeouts = resolve_node_timeouts(cwd=_REPO_ROOT)
+def test_a_fixture_budgets_both_publication_stages_for_one_hour(tmp_path: Path) -> None:
+    """Scenario 177: a test-owned node-timeout fixture raises both stages."""
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "dispatcher": {
+                        "node_timeouts": {node: _PUBLICATION_SECONDS for node in _PUBLICATION_NODES}
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    timeouts = resolve_node_timeouts(cwd=tmp_path)
     assert isinstance(timeouts, NodeTimeouts), timeouts
     rendered = _rendered(timeouts=timeouts)
 

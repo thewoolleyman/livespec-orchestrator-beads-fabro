@@ -42,6 +42,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 
 _NOW = 1_000_000
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
 
@@ -166,8 +167,8 @@ def test_the_refresher_carries_no_sandbox_bypass_and_consults_no_gate() -> None:
     bypass flag reachable on any other branch would still be a full-access
     code path in the refresher.
     """
-    source = Path(
-        ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
+    source = (
+        _REPO_ROOT / ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
         "_dispatcher_codex_cred_refresh_command.py"
     ).read_text(encoding="utf-8")
 
