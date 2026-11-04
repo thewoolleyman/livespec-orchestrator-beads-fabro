@@ -920,8 +920,13 @@ def test_watched_launcher_polls_its_bound_run_by_id_without_listing_the_factory(
         # Learning the run writes the CLAIM stamp too, right after the run
         # stamp and before the bound polls begin.
         "dispatch-claim-stamp-run",
+        # The fixture has no reachable server stream, so each liveness read is
+        # journaled as unobservable rather than counted as quiet time.
+        "watchdog-stream-poll",
         "watchdog-bound-poll",
+        "watchdog-stream-poll",
         "watchdog-bound-poll",
+        "watchdog-stream-poll",
     ]
 
 

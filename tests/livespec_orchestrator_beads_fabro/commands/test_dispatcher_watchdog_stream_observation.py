@@ -190,3 +190,36 @@ def test_a_non_newer_or_unreadable_stage_record_keeps_a_failed_stream_unobservab
         )
         is None
     )
+
+
+def test_launcher_path_observe_run_facts_survive_the_sample_call() -> None:
+    api = _Api(
+        responses=[
+            _response(body=json.dumps([{"stream_seq": 7, "recorded_at": 10_000}])),
+            _response(body="", succeeded=False),
+        ]
+    )
+    state = LivenessState()
+    journal = _Journal()
+    plan = cast("DispatchPlan", SimpleNamespace(node_timeouts={}))
+    port = cast("FabroPort", _Port(api=api))
+
+    def poll(*, record: object | None) -> float | None:
+        state.observe_run(record=record, journal=journal)
+        return liveness_sample(
+            plan=plan,
+            port=port,
+            run_id="01RUN",
+            heartbeat_path=None,
+            dispatch_id=None,
+            observed_at=100.0,
+            state=state,
+        ).last_event_epoch
+
+    assert poll(record=None) == 10.0
+    progressed = poll(record={"stages": {"implement@1": {"started_at_epoch": 15.0}}})
+
+    assert progressed == 15.0
+    assert [(record["stage"], record["observable"]) for record in journal.records] == [
+        (STREAM_POLL_JOURNAL_STAGE, False),
+    ]

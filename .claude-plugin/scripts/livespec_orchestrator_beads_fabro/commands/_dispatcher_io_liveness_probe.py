@@ -174,8 +174,10 @@ def liveness_sample(  # noqa: PLR0913 — each poll input names an independent d
         run_id=run_id,
         state=state,
     )
-    state.run_record = run_record
-    state.journal = journal
+    if run_record is not None:
+        state.run_record = run_record
+    if journal is not None:
+        state.journal = journal
     if heartbeat_path is None:
         return wall_clock.sample(observed_at=observed_at)
     heartbeat = HeartbeatLivenessProbe(
