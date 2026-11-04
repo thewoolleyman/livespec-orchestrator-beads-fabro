@@ -4380,7 +4380,8 @@ def test_dispatch_green_closes_item_and_journals(
     prelaunch_phases = [
         record["phase"] for record in records if record["stage"] == "pre-launch-cpu"
     ]
-    stages = [stage for stage in stages if stage != "pre-launch-cpu"]
+    steps = [record for record in records if record["stage"] == "pre-launch-step"]
+    stages = [stage for stage in stages if stage not in ("pre-launch-cpu", "pre-launch-step")]
     # The master-CI preflight records its PASS first, before anything is admitted:
     # a pre-dispatch step has exactly three sanctioned outcomes and a pass is a
     # journaled one, so the evidence the step ran precedes the first state write.
@@ -4496,6 +4497,9 @@ def test_dispatch_green_closes_item_and_journals(
         "self-update-skipped",
         "run-turn-telemetry-check",
         "reflection",
+    ]
+    assert [(step["event"], step["step"]) for step in steps] == [
+        (event, phase) for phase in prelaunch_phases for event in ("start", "end")
     ]
     assert prelaunch_phases == [
         "drive-startup",
