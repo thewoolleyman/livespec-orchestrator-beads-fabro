@@ -31,8 +31,11 @@ the foreground. A `running` report is not a failed commit. Only `passed` is a
 commit; `failed` is the hook's refusal, with its exit status and output, and
 `no-verdict` means the commit's process ended without a verdict, so neither is
 a commit. The detached commit run and its bounded waits are the one exception
-to the rule against backgrounding a tool call, and every commit run you start
-must be terminal before your final message.
+to the rule against backgrounding a tool call. Ordinarily, every commit run you
+start must be terminal before your final message. But when the only remaining
+work is a commit you started through the sandbox commit runner and that runner
+still reports it as `running`, end the turn as succeeded, name that commit run's id in your final message, and leave it for `review_fix_commit_settle` to wait out. This exception takes precedence over the generic turn-ending rule below;
+every other commit run you start must be terminal before your final message.
 
 ## Red and Green commit discipline
 
@@ -81,8 +84,10 @@ A change to a stage prompt file or `_dispatcher_overlay.py` must update the test
    Green); commit trailer `Co-Authored-By: Claude Fable 5
    <noreply@anthropic.com>`; never create or switch branches, never touch
    `.beads/` or `core.bare`.
-6. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`) yourself until it is green — the
-   janitor re-validates this clone after this stage.
+6. Run only the tests your change touches; the commit hook runs the affected-tests gate.
+   Leave the one full check aggregate to the following janitor visit. Do not start
+   `{{ inputs.sandbox_check_suite }}` yourself: the janitor re-validates this clone
+   after this stage.
 7. In your final reply, summarize each ACCEPTED finding as
    `FIXED — <what you changed>`. Mention rejected findings only to say
    they were intentionally left untouched per the disposition record.
