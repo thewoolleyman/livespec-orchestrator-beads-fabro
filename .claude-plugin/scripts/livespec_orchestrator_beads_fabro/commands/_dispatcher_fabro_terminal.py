@@ -56,6 +56,7 @@ NON_CONVERGED_NODE = "non_converged"
 __all__: list[str] = [
     "fabro_run_terminal_outcome",
     "inspect_run",
+    "janitor_succeeded",
 ]
 
 
@@ -183,6 +184,7 @@ def _terminal_outcome(
         detail=detail,
         fabro_run_id=run_id,
         fabro_factory_name=plan.fabro_factory_name if cancelled else None,
+        janitor_green=janitor_succeeded(inspect=inspect) if cancelled else None,
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,
         fabro_failure_signature=None if failure is None else failure.signature,
@@ -211,6 +213,24 @@ def _engine_cancelled(*, inspect: FabroInspectResult | None) -> bool:
         return False
     reason: object = cast("dict[str, object]", status).get("reason")
     return reason == "cancelled"
+
+
+def janitor_succeeded(*, inspect: FabroInspectResult | None) -> bool:
+    """Whether the run record proves that a janitor visit succeeded."""
+    if inspect is None:
+        return False
+    record = fabro_inspect_record(payload=inspect.payload)
+    if record is None:
+        return False
+    stages = record.get("stages")
+    if not isinstance(stages, dict):
+        return False
+    for name, value in cast("dict[str, object]", stages).items():
+        if name.split("@", maxsplit=1)[0] != "janitor":
+            continue
+        if isinstance(value, dict) and cast("dict[str, object]", value).get("state") == "succeeded":
+            return True
+    return False
 
 
 def _blocked_detail(

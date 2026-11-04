@@ -34,6 +34,7 @@ exactly what it was asked to.
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
@@ -54,6 +55,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 __all__: list[str] = [
     "PRESERVED_TREE_ERROR_STAGE",
     "PRESERVE_BY_REFERENCE_ERROR_STAGE",
+    "preserve_cancelled_janitor_green_tree",
     "preserve_terminated_run_work",
 ]
 
@@ -76,6 +78,32 @@ def preserve_terminated_run_work(
     """Preserve this terminated run's work by pointer, then by tree."""
     _preserve_pointer(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
     _preserve_tree(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
+
+
+def preserve_cancelled_janitor_green_tree(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+) -> None:
+    """Preserve a known janitor-green cancellation through the normal tree leg.
+
+    The caller establishes janitor success from the run record before calling
+    this function.  Reusing the existing publication leg keeps the Git Data
+    API-only publication and fail-soft ledger record identical to checkpoint
+    recovery.
+    """
+    if outcome.status != "cancelled" or outcome.stage != "fabro-run":
+        return
+    _preserve_tree(
+        args=args,
+        repo=repo,
+        item=item,
+        outcome=replace(outcome, status="blocked", fabro_failure_cause="checkpoint.failed"),
+        journal=journal,
+    )
 
 
 def _preserve_pointer(

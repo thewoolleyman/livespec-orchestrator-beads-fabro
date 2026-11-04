@@ -168,6 +168,10 @@ class DispatchOutcome:
     remedy: str | None = None
     fabro_run_id: str | None = None
     fabro_factory_name: str | None = None
+    # A lifecycle-cancelled run can have completed the janitor before the
+    # Dispatcher next observes it.  Carry that measured fact from the inspect
+    # record so preservation does not re-read a factory record that may vanish.
+    janitor_green: bool | None = None
     fabro_failure_cause: str | None = None
     fabro_failure_category: str | None = None
     fabro_failure_signature: str | None = None
