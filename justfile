@@ -327,7 +327,7 @@ factory-bypass-audit *args:
 # ---------------------------------------------------------------
 # Aggregate check — canonical full-set stamped at copier-copy time.
 #
-# The `targets=(...)` array below is Jinja-rendered from the committed
+# The aggregate target list below is Jinja-rendered from the committed
 # copier-template DATA file `canonical-slugs.yml`, which is a
 # release-time projection of
 # `livespec_dev_tooling.canonical_checks.canonical_check_slugs()` (the
@@ -471,6 +471,7 @@ check:
         check-no-workflow-edits
         check-fresh-clone-setup
         check-doctor-static
+        check-tests-no-real-time
         check-acp-preflight-config
     )
     LIVESPEC_AGGREGATE_TARGETS
@@ -917,6 +918,11 @@ install-ci-fabro:
 # heals the track; on a clean tree it never fires.
 check-doctor-static:
     bash dev-tooling/just-check-doctor-static.sh
+
+# Refuse test waits and timing verdicts that depend on the host clock. Tests
+# whose subject is real time itself require a reasoned occurrence marker.
+check-tests-no-real-time:
+    uv run python dev-tooling/checks/tests_no_real_time.py
 
 # `check-acp-preflight-config` — evaluates the committed `.livespec.jsonc`
 # through the Dispatcher's own `resolve_acp_preflight` and fails, printing the

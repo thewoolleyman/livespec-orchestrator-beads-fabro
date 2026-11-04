@@ -1,36 +1,40 @@
-"""Test support for waiting until a fixture payload has exec'd."""
+"""Test support for starting a fixture process that names a dispatcher entry."""
 
 from __future__ import annotations
 
 import subprocess
-import time
 from pathlib import Path
 
-_PROC = Path("/proc")
-_EXEC_TIMEOUT_SECONDS = 30.0
-_POLL_SECONDS = 0.01
+_READY_LINE = b"ready\n"
+# `$0` is the entry path, so the shell's own argv names it for as long as the
+# shell lives; it announces itself, then blocks reading stdin until killed.
+_FIXTURE_SCRIPT = 'printf "ready\\n"; read _'
 
 
-def _has_execd(*, cmdline: Path, entry: Path) -> bool:
-    """Report whether `/proc/<pid>/cmdline` already names the payload entry."""
+def await_dispatcher_ready(*, process: subprocess.Popen[bytes], entry: Path) -> None:
+    """Block until the fixture shell has announced itself, or fail if it died first.
+
+    The announcement is a line on the fixture's stdout, so this is a blocking
+    read of an event the fixture produces once it is running with the entry in
+    its argv. Nothing is polled, and a fixture that exits first closes the pipe,
+    which reads as EOF here.
+    """
+    assert process.stdout is not None
+    if process.stdout.readline() != _READY_LINE:
+        raise AssertionError(f"dispatcher fixture process {process.pid} never announced {entry}")
+
+
+def start_dispatcher_fixture(*, entry: Path) -> subprocess.Popen[bytes]:
+    """A live shell whose own argv names `entry`, returned only once it is running."""
+    process = subprocess.Popen(
+        ["sh", "-c", _FIXTURE_SCRIPT, str(entry)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
     try:
-        return str(entry).encode() in cmdline.read_bytes().split(b"\0")
-    except OSError:
-        return False
-
-
-def wait_for_dispatcher_exec(
-    *,
-    process: subprocess.Popen[bytes],
-    entry: Path,
-    proc: Path = _PROC,
-    timeout_seconds: float = _EXEC_TIMEOUT_SECONDS,
-    poll_seconds: float = _POLL_SECONDS,
-) -> None:
-    """Wait, within a fixed budget, for `/proc` to expose the payload argv."""
-    deadline = time.monotonic() + timeout_seconds
-    cmdline = proc / str(process.pid) / "cmdline"
-    while not _has_execd(cmdline=cmdline, entry=entry):
-        if time.monotonic() >= deadline:
-            raise AssertionError(f"dispatcher fixture process {process.pid} did not exec {entry}")
-        time.sleep(poll_seconds)
+        await_dispatcher_ready(process=process, entry=entry)
+    except BaseException:
+        process.kill()
+        _ = process.communicate()
+        raise
+    return process

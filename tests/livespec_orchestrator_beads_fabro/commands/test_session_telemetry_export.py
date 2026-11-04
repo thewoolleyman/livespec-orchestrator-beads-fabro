@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import socket
 import threading
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -345,11 +344,14 @@ def test_queue_saturation_drops_without_blocking_and_the_count_rides_later_event
     entered = threading.Event()
     release = threading.Event()
     returned = threading.Event()
+    three_posts = threading.Event()
     bodies: list[bytes] = []
 
     def gated_post(*, url: str, body: bytes, timeout_seconds: float) -> PostOutcome:
         del url, timeout_seconds
         bodies.append(body)
+        if len(bodies) >= 3:
+            three_posts.set()
         entered.set()
         _ = release.wait(timeout=_HANG_GUARD_SECONDS)
         returned.set()
@@ -369,9 +371,7 @@ def test_queue_saturation_drops_without_blocking_and_the_count_rides_later_event
     # blocked on the full queue: a blocking put could only return after the post.
     assert not returned.is_set()
     release.set()
-    deadline = time.monotonic() + _HANG_GUARD_SECONDS
-    while len(bodies) < 3 and time.monotonic() < deadline:
-        time.sleep(0.01)
+    assert three_posts.wait(timeout=_HANG_GUARD_SECONDS)
     telemetry.emit(event=_event(name="session.wait.returned"))
     report = telemetry.close()
 

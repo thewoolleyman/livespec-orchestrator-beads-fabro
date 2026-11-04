@@ -14,7 +14,6 @@ one that lost a raised reading, gets wrong while returning a plausible result.
 from __future__ import annotations
 
 import threading
-import time
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
     memoized_inspection,
@@ -101,6 +100,7 @@ def test_a_reading_that_raised_is_taken_again_by_the_reader_waiting_on_it() -> N
     errors: list[str] = []
     results: list[str] = []
     entered = threading.Event()
+    follower_started = threading.Event()
     fail = threading.Event()
 
     def failing() -> str:
@@ -116,15 +116,17 @@ def test_a_reading_that_raised_is_taken_again_by_the_reader_waiting_on_it() -> N
 
     with pass_snapshot():
         leader = threading.Thread(target=catching)
+
         follower = threading.Thread(
-            target=lambda: results.append(
+            target=lambda: follower_started.set()
+            or results.append(
                 memoized_inspection(factory=_HP, run_id="run-1", read=lambda: "fresh")
             )
         )
         leader.start()
         assert entered.wait(timeout=_WAIT_SECONDS)
         follower.start()
-        time.sleep(0.3)
+        assert follower_started.wait(timeout=_WAIT_SECONDS)
         fail.set()
         leader.join()
         follower.join()

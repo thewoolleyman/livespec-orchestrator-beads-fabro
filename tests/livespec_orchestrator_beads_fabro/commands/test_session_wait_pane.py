@@ -48,6 +48,20 @@ _PANE_STATES = frozenset({"working", "idle", "done", "blocked", "unknown"})
 # `sizeof(sun_path)` is 108 bytes including the terminator on Linux.
 _SUN_PATH_LIMIT = 107
 
+# The observation instant handed to every poll below. A fixed value, because
+# nothing here grades WHEN an observation was taken: a probe records the instant
+# it was given, so reading the host clock for it would only make the recorded
+# value unpredictable without making any assertion stronger.
+_FIXED_OBSERVED_AT = 1.0
+# A failure bound on joining a worker that has already been asked to finish,
+# never a timing assertion: the join's own return is what the wait is for, and
+# the `is_alive` check after it is what reports a worker that did not.
+_WORKER_JOIN_SECONDS = 30.0
+# The read budget granted to the probe whose peer never answers. Small, because
+# the case waits out that budget on purpose and the adapter adds a fixed grace
+# of its own on top; what matters is only that the read cannot complete early.
+_HANGING_BUDGET_SECONDS = 0.05
+
 
 def _module(*, name: str) -> object:
     """One session-wait module, imported inside the test body.
@@ -59,6 +73,36 @@ def _module(*, name: str) -> object:
     behaviour is unimplemented.
     """
     return importlib.import_module(f"{_COMMANDS}.{name}")
+
+
+@contextmanager
+def _hanging_peer(*, name: str):
+    """A BOUND socket with no accept loop, so a probe's read genuinely hangs.
+
+    This exists to make an in-flight observation a FACT rather than a race. A
+    unix `connect` completes against the kernel's listen backlog without
+    anybody accepting it, and the request then sits in the socket buffer
+    unanswered, so the probe's read blocks for its whole budget — which is what
+    lets a case assert that the first poll has no answer yet and then wait on
+    the worker's own exit.
+
+    It owns a SHORT root for the same `sun_path` reason `_controlled_peer`
+    does, and asserts the bound for the same reason: a future rename that
+    lengthens the name fails loudly and once instead of flaking per worker.
+    """
+    with _short_root() as directory:
+        socket_path = directory / name
+        assert len(str(socket_path)) <= _SUN_PATH_LIMIT, (
+            f"{socket_path} is {len(str(socket_path))} bytes, over the"
+            f" {_SUN_PATH_LIMIT}-byte sun_path limit"
+        )
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(socket_path))
+        listener.listen(8)
+        try:
+            yield socket_path
+        finally:
+            listener.close()
 
 
 @contextmanager
@@ -172,13 +216,30 @@ def _cli_seams(*, repository: Path):
     )
 
 
-def _poll_until_observed(*, probe: object):
-    """One observation from a probe, however it schedules its own work."""
-    observation = None
-    deadline = time.monotonic() + 30.0
-    while observation is None and time.monotonic() < deadline:
-        observation = probe.poll(now=time.monotonic())
-        time.sleep(0.01)
+def _observed_through_its_own_worker(*, probe: object):
+    """One observation from a probe, waited for by JOINING its own worker.
+
+    The pane adapter runs each observation on a thread of its own and answers
+    `None` while that work is in flight, so the deterministic event this waits
+    on is the WORKER EXITING: the first poll starts it, the join is the signal
+    that it finished, and the second poll reads the landed result. A poll loop
+    sampling the host clock answers the same question by guessing how long the
+    thread needs, which is the shape that fails under load.
+
+    The caller OWES a target whose observation cannot complete promptly, which
+    is why `_hanging_peer` exists. Against a socket path that does not exist
+    the worker can finish between `Thread.start()` returning and the first poll
+    reading its result, so the first `None` would be a race rather than a fact
+    — and a case that branches on which way that race fell is waiting on
+    scheduling with extra steps.
+    """
+    assert probe.poll(now=_FIXED_OBSERVED_AT) is None, "the observation was not in flight"
+    task = probe.task
+    assert task is not None, "the probe started no observation"
+    assert task.thread is not None, "the observation started no worker"
+    task.thread.join(timeout=_WORKER_JOIN_SECONDS)
+    assert task.thread.is_alive() is False, "the pane worker never finished"
+    observation = probe.poll(now=_FIXED_OBSERVED_AT)
     assert observation is not None, "the probe never produced an observation"
     return observation
 
@@ -255,16 +316,33 @@ def test_routing_sends_each_target_kind_to_its_own_adapter(*, tmp_path: Path) ->
         run_id="run-route",
         generation="gen-route",
     )
-    pane_probe = launcher.launch(target=pane_target, timeout_seconds=1.0)
     gate_probe = launcher.launch(target=gate_target, timeout_seconds=1.0)
-    assert isinstance(pane_probe, pane_module.HerdrPaneProbe)
     assert isinstance(gate_probe, gate_module.GateStatusProbe)
-    # The pane's socket does not exist, so this observation is a diagnostic —
-    # the point here is that the probe answers at all, through whatever
-    # scheduling it uses, rather than what the answer says.
-    assert _poll_until_observed(probe=pane_probe).state not in _PANE_STATES
-    pane_probe.cancel(timeout_seconds=5.0)
     gate_probe.cancel(timeout_seconds=5.0)
+    # The pane probe answers on its OWN worker, so the point here is that it
+    # answers at all through whatever scheduling it uses, rather than what the
+    # answer says — and a read that never completes is what makes the wait for
+    # it the worker's own exit instead of a guess. The peer is bound and never
+    # accepts, so the read blocks for its whole budget; see `_hanging_peer`.
+    herdr_module = _module(name="_session_wait_herdr")
+    with _hanging_peer(name="routing-probe.sock") as hanging_socket:
+        hanging_pane = types_module.PaneTarget(
+            backend="herdr",
+            socket_path=hanging_socket,
+            server_generation=str(herdr_module.herdr_socket_generation(socket_path=hanging_socket)),
+            pane_id="w1:p1",
+            terminal_id="term_route_hanging",
+        )
+        pane_probe = launcher.launch(
+            target=hanging_pane,
+            timeout_seconds=_HANGING_BUDGET_SECONDS,
+        )
+        assert isinstance(pane_probe, pane_module.HerdrPaneProbe)
+        observed = _observed_through_its_own_worker(probe=pane_probe)
+        # The read timed out, so the probe reports a DIAGNOSTIC: nothing about
+        # the pane was measured, and naming a state would be a claim nobody made.
+        assert observed.state not in _PANE_STATES
+    pane_probe.cancel(timeout_seconds=5.0)
     # The default observer routes the same way, through each kind's own
     # adapter. The pane's socket does not exist and the gate store holds no
     # `started_at`, so both answers are diagnostics rather than states.

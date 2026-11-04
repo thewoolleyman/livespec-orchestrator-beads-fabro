@@ -42,7 +42,9 @@ it can never reach an unrelated process.
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import os
+import select
 import signal
 import subprocess
 import time
@@ -62,17 +64,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
 # every process identifier it holds.
 _WEEK_SECONDS = 7 * 24 * 60 * 60
 
-# How long the reaper may take to NOTICE a finished group. It polls, so disarming
-# is not instantaneous; this bounds the poll interval rather than granting the
-# reaper a grace. It must stay far below the deadline above, or the case could
-# pass against a reaper that merely slept.
-_DISARM_SETTLE_SECONDS = 20.0
+# The failure bound on waiting for the reaper to NOTICE a finished group. It
+# polls, so disarming is not instantaneous, and the wait ends on the reaper's
+# exit rather than on this number; the number only keeps a reaper that never
+# disarms from hanging the suite. It must stay far below the deadline above, or
+# the case could pass against a reaper that merely slept.
+_DISARM_SETTLE_SECONDS = 60.0
 
-# How long a descendant must be observed still holding the group open. Short on
-# purpose: the question is whether the reaper is resident at all, not how long.
-_ARMED_OBSERVATION_SECONDS = 3.0
+# Where the holder pipe's write end is placed. The guard shell uses descriptor 3
+# for its own stdin duplicate, so the inherited descriptor must not collide.
+_HOLDER_FD_FLOOR = 100
 
-_POLL_SECONDS = 0.2
 _LAUNCH_TIMEOUT_SECONDS = 60
 
 
@@ -113,14 +115,64 @@ def _processes_naming(*, guard: Path) -> list[int]:
     return found
 
 
-def _await_no_guard_process(*, guard: Path, budget_seconds: float) -> list[int]:
-    """Poll until no process names the guard, returning whatever still does."""
-    deadline = time.monotonic() + budget_seconds
-    remaining = _processes_naming(guard=guard)
-    while remaining and time.monotonic() < deadline:
-        time.sleep(_POLL_SECONDS)
-        remaining = _processes_naming(guard=guard)
-    return remaining
+class _HolderPipe:
+    """A pipe whose write end every process the guard launches inherits.
+
+    The guard shell, the adapter, any descendant and the DETACHED reaper all
+    hold a copy of the write end, because none of them closes descriptors it
+    did not open. Once this side has sealed its own copy, the read end reaches
+    EOF exactly when the last of them has exited. That is the event the reaper's
+    disarm is observed through: it is not this interpreter's child, so there is
+    no handle to wait on and no clock to inject, but it cannot leave the process
+    table without releasing its copy.
+    """
+
+    def __init__(self) -> None:
+        self.read_fd, write_fd = os.pipe()
+        self.write_fd: int | None = fcntl.fcntl(write_fd, fcntl.F_DUPFD, _HOLDER_FD_FLOOR)
+        os.close(write_fd)
+
+    def seal(self) -> None:
+        """Drop this side's own copy of the write end, once the launch is done."""
+        if self.write_fd is not None:
+            os.close(self.write_fd)
+            self.write_fd = None
+
+    def all_holders_gone(self, *, budget_seconds: float) -> bool:
+        """Block until every holder has exited; the budget only bounds a wait that never ends."""
+        readable, _, _ = select.select([self.read_fd], [], [], budget_seconds)
+        return bool(readable)
+
+    def close(self) -> None:
+        self.seal()
+        os.close(self.read_fd)
+
+
+@contextmanager
+def _holder_pipe() -> Iterator[_HolderPipe]:
+    pipe = _HolderPipe()
+    try:
+        yield pipe
+    finally:
+        pipe.close()
+
+
+def _launch_guarded(
+    *, guard: Path, command: list[str], holders: _HolderPipe
+) -> subprocess.CompletedProcess[str]:
+    """Run the SHIPPED guard around `command`, handing every descendant the holder pipe."""
+    assert holders.write_fd is not None
+    result = subprocess.run(
+        ["/bin/sh", str(guard), "--", *command],
+        capture_output=True,
+        text=True,
+        timeout=_LAUNCH_TIMEOUT_SECONDS,
+        env=_env_with(deadline=int(time.time()) + _WEEK_SECONDS),
+        pass_fds=(holders.write_fd,),
+        check=False,
+    )
+    holders.seal()
+    return result
 
 
 def test_process_scan_tolerates_a_process_disappearing(
@@ -158,10 +210,7 @@ def _owned_processes(*, guard: Path) -> Iterator[list[int]]:
     try:
         yield extra_pids
     finally:
-        for pid in extra_pids:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.kill(pid, signal.SIGKILL)
-        for pid in _processes_naming(guard=guard):
+        for pid in (*extra_pids, *_processes_naming(guard=guard)):
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGKILL)
 
@@ -179,14 +228,9 @@ def test_a_finished_group_disarms_rather_than_arming_a_multi_day_kill(
     """
     guard = _guard_script(tmp_path=tmp_path)
     marker = tmp_path / "ran"
-    with _owned_processes(guard=guard):
-        result = subprocess.run(
-            ["/bin/sh", str(guard), "--", "/bin/sh", "-c", f"printf done > {marker}"],
-            capture_output=True,
-            text=True,
-            timeout=_LAUNCH_TIMEOUT_SECONDS,
-            env=_env_with(deadline=int(time.time()) + _WEEK_SECONDS),
-            check=False,
+    with _owned_processes(guard=guard), _holder_pipe() as holders:
+        result = _launch_guarded(
+            guard=guard, command=["/bin/sh", "-c", f"printf done > {marker}"], holders=holders
         )
 
         # The positive control rides along: a far-future deadline is a bound,
@@ -194,8 +238,9 @@ def test_a_finished_group_disarms_rather_than_arming_a_multi_day_kill(
         assert result.returncode == 0, result.stderr
         assert marker.read_text(encoding="utf-8") == "done"
 
-        stragglers = _await_no_guard_process(guard=guard, budget_seconds=_DISARM_SETTLE_SECONDS)
-        assert stragglers == [], (
+        disarmed = holders.all_holders_gone(budget_seconds=_DISARM_SETTLE_SECONDS)
+        stragglers = _processes_naming(guard=guard)
+        assert disarmed and stragglers == [], (
             "a reaper is still armed after the guarded group finished; it holds "
             f"a recyclable process-group id for up to {_WEEK_SECONDS}s "
             f"(pids {stragglers})"
@@ -230,25 +275,26 @@ def test_a_surviving_descendant_keeps_the_reaper_armed(tmp_path: Path) -> None:
         "sleep 600 >/dev/null 2>&1 </dev/null & child=$!; "
         f"printf '%s' \"$child\" > {pid_file}; exit 0"
     )
-    with _owned_processes(guard=guard) as owned:
-        result = subprocess.run(
-            ["/bin/sh", str(guard), "--", "/bin/sh", "-c", adapter],
-            capture_output=True,
-            text=True,
-            timeout=_LAUNCH_TIMEOUT_SECONDS,
-            env=_env_with(deadline=int(time.time()) + _WEEK_SECONDS),
-            check=False,
-        )
+    with _owned_processes(guard=guard) as owned, _holder_pipe() as holders:
+        result = _launch_guarded(guard=guard, command=["/bin/sh", "-c", adapter], holders=holders)
         assert result.returncode == 0, result.stderr
 
         assert pid_file.exists(), "the descendant never recorded its pid"
-        owned.append(int(pid_file.read_text(encoding="utf-8").strip()))
+        descendant = int(pid_file.read_text(encoding="utf-8").strip())
+        owned.append(descendant)
 
         # The adapter has returned, so the guard shell is gone. Anything still
         # naming the guard is the reaper -- and it MUST still be there, because
         # the descendant keeps the group alive.
-        armed = _await_no_guard_process(guard=guard, budget_seconds=_ARMED_OBSERVATION_SECONDS)
-        assert armed != [], (
+        assert _processes_naming(guard=guard) != [], (
             "the reaper disarmed while a descendant of the guarded group was "
             "still executing, so that descendant is now unbounded"
         )
+
+        # Release the group, and the reaper must now disarm: its lifetime is
+        # tied to the group emptying, in that order, which is the event this
+        # case ends on rather than any interval.
+        os.kill(descendant, signal.SIGKILL)
+        assert holders.all_holders_gone(
+            budget_seconds=_DISARM_SETTLE_SECONDS
+        ), "the reaper stayed armed after the last descendant of the group exited"

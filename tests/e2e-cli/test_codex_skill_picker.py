@@ -267,24 +267,47 @@ def test_picker_wait_refuses_an_inactive_previously_matching_screen() -> None:
         os.close(write_fd)
 
 
+def _live_group_members(*, pgid: int) -> list[int]:
+    """The pids of every non-zombie process in the group, as one `ps` snapshot."""
+    states = subprocess.run(
+        ["ps", "-eo", "pid=,pgid=,stat="],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    ).stdout.splitlines()
+    return [
+        int(fields[0])
+        for line in states
+        if len(fields := line.split()) == 3
+        and int(fields[1]) == pgid
+        and not fields[2].startswith("Z")
+    ]
+
+
 def _wait_for_group_exit(*, pgid: int) -> None:
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        states = subprocess.run(
-            ["ps", "-eo", "pgid=,stat="],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=max(0.01, deadline - time.monotonic()),
-        ).stdout.splitlines()
-        if not any(
-            int(fields[0]) == pgid and not fields[1].startswith("Z")
-            for line in states
-            if len(fields := line.split()) == 2
-        ):
-            return
-        time.sleep(0.01)
-    raise AssertionError(f"Picker process group {pgid} still has live writers")
+    """Block until every writer in the group has terminated, by pidfd rather than by polling.
+
+    A pidfd becomes readable when its process terminates, whoever its parent
+    is, so the orphaned writers (reaped by init, not by this interpreter) are
+    waited on as events. The group was sent SIGKILL before this runs, so the
+    one snapshot of its members is complete; the 5s bound only keeps a writer
+    that somehow survived from hanging the suite.
+    """
+    descriptors: list[int] = []
+    try:
+        for pid in _live_group_members(pgid=pgid):
+            with suppress(ProcessLookupError):
+                descriptors.append(os.pidfd_open(pid))
+        pending = list(descriptors)
+        while pending:
+            ready, _, _ = select.select(pending, [], [], 5.0)
+            if not ready:
+                raise AssertionError(f"Picker process group {pgid} still has live writers")
+            pending = [descriptor for descriptor in pending if descriptor not in ready]
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
 
 
 def _stop_codex(*, proc: subprocess.Popen[bytes], fd: int) -> None:
@@ -320,7 +343,9 @@ def test_picker_cleanup_stops_writers_after_the_parent_exits(*, tmp_path: Path) 
         [
             "sh",
             "-c",
-            'while :; do printf writing > "$1"; sleep 0.01; done & ' 'printf "%s\\n" "$!" > "$2"',
+            'printf writing > "$1"; '
+            'while :; do printf writing > "$1"; sleep 0.01; done & '
+            'printf "%s\\n" "$!" > "$2"',
             "--",
             str(witness),
             str(child_pid_file),
@@ -332,10 +357,7 @@ def test_picker_cleanup_stops_writers_after_the_parent_exits(*, tmp_path: Path) 
     )
     try:
         assert proc.wait(timeout=5) == 0
-        deadline = time.monotonic() + 5.0
-        while not witness.exists() and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert witness.exists()
+        assert witness.exists(), "the shell exited before it wrote the witness"
         child_pid = int(child_pid_file.read_text(encoding="utf-8"))
         _stop_codex(proc=proc, fd=os.open(os.devnull, os.O_WRONLY))
         state = subprocess.run(
