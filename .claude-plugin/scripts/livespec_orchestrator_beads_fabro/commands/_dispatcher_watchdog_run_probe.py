@@ -49,6 +49,7 @@ class WatchdogRunReading:
 
     events_json: str
     record_text: str
+    record: object | None
 
 
 def watchdog_run_reading(*, port: FabroPort, run_id: str) -> WatchdogRunReading:
@@ -69,4 +70,5 @@ def watchdog_run_reading(*, port: FabroPort, run_id: str) -> WatchdogRunReading:
     return WatchdogRunReading(
         events_json=events_json,
         record_text=f"{events_json}\n{inspect_text}",
+        record=inspect.payload,
     )

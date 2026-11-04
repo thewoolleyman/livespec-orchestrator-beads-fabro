@@ -50,8 +50,6 @@ class _Runner:
                 stdout='[{"run_id": "01STATUS", "status": {"kind": "running"}}]',
                 stderr="",
             )
-        if argv[1] == "events":
-            return CommandResult(exit_code=0, stdout="[]", stderr="")
         return CommandResult(exit_code=0, stdout="Run: 01STATUS\n", stderr="")
 
 

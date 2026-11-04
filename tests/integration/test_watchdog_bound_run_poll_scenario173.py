@@ -126,7 +126,6 @@ class _FactoryRunner:
             "run": self._run,
             "ps": self._ps,
             "inspect": self._inspect,
-            "events": self._events,
         }[argv[1]]()
 
     def _run(self) -> CommandResult:
@@ -136,9 +135,6 @@ class _FactoryRunner:
 
     def _ps(self) -> CommandResult:
         return CommandResult(exit_code=0, stdout=_PS_LISTING, stderr="")
-
-    def _events(self) -> CommandResult:
-        return CommandResult(exit_code=0, stdout=_EVENTS, stderr="")
 
     def _inspect(self) -> CommandResult:
         index = min(self._inspects, len(self.inspect_readings) - 1)

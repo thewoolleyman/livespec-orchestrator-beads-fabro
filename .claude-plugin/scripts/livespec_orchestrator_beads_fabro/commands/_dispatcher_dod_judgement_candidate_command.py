@@ -98,6 +98,7 @@ def candidate_command(
         argv.append("--skip-git-repo-check")
         return argv, judge_environ
     if candidate.agent_id == _CLAUDE_AGENT:
+        judge_environ["DISABLE_PROMPT_CACHING"] = "1"
         model = candidate.adapter.env.get("ANTHROPIC_MODEL", "")
         credential = select_factory_credential(
             environ=environ,

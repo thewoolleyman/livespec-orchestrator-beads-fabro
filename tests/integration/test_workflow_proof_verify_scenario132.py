@@ -276,9 +276,9 @@ def test_the_registered_variant_declares_the_verify_node_and_leaves_it_unreached
     it. `GROOM_ONLY_ACP_NODES` is read off the module that owns that scoping
     rather than respelled here, so the two cannot drift apart.
     """
-    assert (
-        _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE) | GROOM_ONLY_ACP_NODES
-    )
+    assert _acp_node_names(payload=_VARIANT) == (
+        _acp_node_names(payload=_BUNDLE) - {"red", "green"}
+    ) | GROOM_ONLY_ACP_NODES | {"implement"}
     assert _input_value(toml=_toml(payload=_VARIANT), name=_VERIFY_ADAPTER_INPUT) is not None
     assert not any(_VERIFY in edge for edge in _edges(text=_dot(payload=_VARIANT)))
 

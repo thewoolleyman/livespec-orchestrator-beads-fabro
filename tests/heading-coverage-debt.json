@@ -1010,6 +1010,41 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 307 — The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target",
+    "work_item": "bd-ib-3ufx6l",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 308 — A required check that fails terminally on infrastructure is re-run once and files a flake item",
+    "work_item": "bd-ib-tckulg",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 309 — Fleet-launch launchers share one WIP claim-count read per repository per time-to-live",
+    "work_item": "bd-ib-zwtfbq",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 310 — A terminal dispatch span carries its run class, execution target and sandbox cost",
+    "work_item": "bd-ib-faprof",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 311 — Dropping an attribute the scheduler requires fails the check",
+    "work_item": "bd-ib-atmome",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label",
     "work_item": "bd-ib-pz7x",
     "first_seen": "2026-07-13"

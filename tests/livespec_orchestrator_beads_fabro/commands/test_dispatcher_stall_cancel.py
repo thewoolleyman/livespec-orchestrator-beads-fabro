@@ -67,7 +67,7 @@ def _plan(*, tmp_path: Path) -> DispatchPlan:
 
 def _reading(*, port: FabroPort, run_id: str) -> WatchdogRunReading:
     _ = (port, run_id)
-    return WatchdogRunReading(events_json="[]", record_text="")
+    return WatchdogRunReading(events_json="[]", record_text="", record=None)
 
 
 def test_the_port_fake_records_a_removal_attempt() -> None:
@@ -133,3 +133,31 @@ def test_a_refused_server_cancel_is_not_journaled_and_nothing_is_removed(
     assert len(api.cancel_calls) == 1
     assert port.rm_calls == []
     assert journal.records == []
+
+
+def test_a_failed_event_read_uses_the_stage_from_the_pre_cancel_run_record(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    api = _ServerApi()
+    port = _Port(api=api)
+    journal = _Journal()
+
+    def _record_reading(*, port: FabroPort, run_id: str) -> WatchdogRunReading:
+        _ = (port, run_id)
+        return WatchdogRunReading(
+            events_json="",
+            record_text="",
+            record={"stages": {"publish_draft@2": {"started_at_epoch": 15.0}}},
+        )
+
+    monkeypatch.setattr(_dispatcher_stall_cancel, "watchdog_run_reading", _record_reading)
+
+    assert _dispatcher_stall_cancel.cancel_stalled_run(
+        dispatch_id="dispatch-1",
+        plan=_plan(tmp_path=tmp_path),
+        port=cast("FabroPort", port),
+        journal=journal,
+        run_id="01RUN",
+        quiet_seconds=7200.0,
+    )
+    assert journal.records[0]["executing_stage"] == "publish_draft@2"

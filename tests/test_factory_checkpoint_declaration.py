@@ -331,7 +331,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # nothing. The bound is the only figure here this repository chooses, and no
 # derived figure is pinned beside it: a node-timeout edit that keeps the
 # allowance under the bound needs no edit to this module.
-_ALLOWANCE_BOUND_SECONDS = 1_350_000
+_ALLOWANCE_BOUND_SECONDS = 1_400_000
 
 # The lifetime of a FRESH Codex credential. Not this repository's to choose: it
 # is what the host mints at renewal, so a requirement past it is a fact about

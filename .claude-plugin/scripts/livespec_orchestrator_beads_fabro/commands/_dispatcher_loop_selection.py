@@ -22,6 +22,12 @@ from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
     outcome_after_acceptance,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_already_satisfied import (
+    ALREADY_SATISFIED_STAGE,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_already_satisfied_rest import (
+    rest_already_satisfied,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance_record import (
     record_base_advanced_after_arming,
 )
@@ -248,7 +254,12 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     # item into `acceptance` would accept unmerged work, and the item leaving
     # `active` would retract the attention row that keeps the hold visible; the
     # hold is released by a person, and the merge and this valve follow then.
-    if outcome.status == "green" and outcome.stage != MERGE_HELD_STAGE and args.close_on_merge:
+    if outcome.status == "green" and outcome.stage == ALREADY_SATISFIED_STAGE:
+        # NOT the post-merge valve: nothing merged and no pull request exists, so the
+        # item rests in `acceptance` with its claim released and the route to its
+        # Proof of Done named, rather than being accepted on a pass over no change.
+        outcome = rest_already_satisfied(repo=repo, outcome=outcome, journal=journal)
+    elif outcome.status == "green" and outcome.stage != MERGE_HELD_STAGE and args.close_on_merge:
         outcome = outcome_after_acceptance(
             outcome=outcome,
             disposition=complete_and_accept(

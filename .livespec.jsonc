@@ -273,6 +273,13 @@
     // that surface round-trips the file through json.dumps and silently strips
     // every comment here while reporting green — tracked as bd-ib-lmi5.
     "dispatcher": {
+      // INTERIM (2026-11-04, legacy-coordinator-agent ruling under R493; plan
+      // stall-watchdog-false-kills, bd-ib-laf735): petri `fabro events` reads of long
+      // runs exceed the watchdog probe timeout, and a failed read is counted as quiet
+      // time, so the 7200 s default cancels runs that are still progressing (4 of 4
+      // petri cancels on 2026-11-04 were false kills). 21600 s leaves a silent run to
+      // the whole-run wall budget. REVERT this key once bd-ib-snq7o6 is released.
+      "stall_timeout_seconds": 21600,
       "auto_approve_ready": true,
       // wip_cap: 16 matches the factory's 16-run cap (coordinator R99:
       // max_concurrent_runs 16, quota 64/32). Raised from 10 to 12 on
@@ -280,7 +287,11 @@
       // maintainer's direction to max out factory capacity: at each lower cap the
       // orchestrator's own active items filled it and further tickets were
       // capacity-deferred. Read on each admission pass; no restart needed.
-      "wip_cap": 16,
+      // Raised from 16 to 20 on 2026-11-04 (coordinator R301, reversible): the
+      // factory-runs quota went to 84 CPU / 42 pods and the fleet cap to 20, and
+      // at 21:00Z the launchers yielded on "repo WIP full (17/16)" with fleet
+      // slots free. To be replaced by the single Fabro limit (bd-ib-rtzhfc).
+      "wip_cap": 20,
       "acceptance_mode": "ai-only",
       // Committed maintainer delegations of the human valves (contracts.md,
       // journal invoker attribution, "Delegated valve authority"). A press
@@ -841,6 +852,15 @@
         // 2026-10-30: implement, fix and review on Codex Terra with a Sonnet fallback (maintainer
         // direction via the coordinator, superseding R153 for these three nodes); the Codex
         // headroom brake skips to the fallback before the weekly window is spent.
+        //
+        // 2026-11-04: an Opus 5.5 implement/fix canary (PR #4388, maintainer YES recorded on
+        // livespec-dev-tooling-6tgd2z 16:47:02Z) was REVERTED within the hour. Its first
+        // counted dispatch, bd-ib-adcaa6 run 01M6KVPC4B2J, failed both implement attempts with
+        // "API Error: 400 Claude Code 2.1.170 does not support this model; version 2.1.280 or
+        // newer is required", and the Terra fallback never engaged (failure class
+        // retry_requested). A host `claude -p --model claude-opus-5-5` succeeds only because
+        // the host CLI is newer. Before routing any node to claude-opus-5-5, raise the
+        // factory sandbox's Claude Code to 2.1.280 or newer and prove it with one dispatch.
         "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
         "review_fix": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" },

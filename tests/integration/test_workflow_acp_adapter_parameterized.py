@@ -80,8 +80,9 @@ def test_each_acp_node_has_its_own_adapter_input() -> None:
     """
     acp_lines = _acp_lines()
     for node, line in _NODE_ACP.items():
-        assert acp_lines.count(line) == 1, node
-    assert len(acp_lines) == len(_NODE_ACP)
+        expected = 2 if node == "implement" else 1
+        assert acp_lines.count(line) == expected, node
+    assert len(acp_lines) == len(_NODE_ACP) + 1
 
 
 def test_no_node_rides_a_retired_publication_adapter() -> None:

@@ -1953,7 +1953,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_implement_completion_field_scenario204",
-    "reason": "Integration-tier acceptance for this heading, completed by bd-ib-ahxcjx. The module binds all three sub-scenarios of the v165 completion-field rule, and the tier is tests.integration because two layers are needed and neither establishes the other: the committed graph decides where an incomplete turn routes and what the implement stage's completion gate costs, and the gate's own shipped script bytes decide what counts as a stated completion. The three sub-scenarios execute those bytes against a real throwaway clone -- a stated incomplete and a stated nothing each exit non-zero with the partial-progress cause on stderr and in the stage-cause file the needs_human terminal renders, and a stated complete exits zero and leaves no cause behind -- while the graph cases assert the gate sits on implement's own fallthrough ahead of the diff breaker and routes its failures to the terminal an outcome=failed implement reaches. The prompt half of the clause, which directs the turn to state the field at all, is tests.prompts.test_implement_completion_field. The v208 hook-refusal sub-scenarios (re-entry, exhausted budget, nothing staged, staged-but-accepted) are bound by tests.integration.test_implement_hook_refusal_reentry_scenario204, which executes the implement_hook_route script against a clone with a stub pre-commit hook (bd-ib-y7372n). v262 (proposal implement-red-green-node-split) rewrote this scenario for the red/green node split; rebinding its test to the new nodes is owed at the integration tier: livespec-dev-tooling-sv6m5p (plan implement-test-performance) owns it; the implementation children are filed under that plan."
+    "reason": "Integration-tier acceptance for this heading, completed by bd-ib-ahxcjx. The module binds all three sub-scenarios of the v165 completion-field rule, and the tier is tests.integration because two layers are needed and neither establishes the other: the committed graph decides where an incomplete turn routes and what the implement stage's completion gate costs, and the gate's own shipped script bytes decide what counts as a stated completion. The three sub-scenarios execute those bytes against a real throwaway clone -- a stated incomplete and a stated nothing each exit non-zero with the partial-progress cause on stderr and in the stage-cause file the needs_human terminal renders, and a stated complete exits zero and leaves no cause behind -- while the graph cases assert the gate sits on implement's own fallthrough ahead of the diff breaker and routes its failures to the terminal an outcome=failed implement reaches. The prompt half of the clause, which directs the turn to state the field at all, is tests.prompts.test_implement_completion_field. The v208 hook-refusal sub-scenarios (re-entry, exhausted budget, nothing staged, staged-but-accepted) are bound by tests.integration.test_implement_hook_refusal_reentry_scenario204, which executes the implement_hook_route script against a clone with a stub pre-commit hook (bd-ib-y7372n). v262 (proposal implement-red-green-node-split) moved the completion gate behind the Green node: the module's graph cases assert green -> implement_completion -> commit_green with the gate failure reaching implement_hook_route, and its script cases still execute the gate's shipped bytes. bd-ib-yuwftp kept implement_hook_route through the split, re-targeted to re-enter green, so tests.integration.test_implement_hook_refusal_reentry_scenario204 still binds the hook-refusal, check-suite, no-gate and exhausted-budget sub-scenarios by executing the route's shipped bytes."
   },
   {
     "heading": "## Scenario 205 \u2014 Gap detection enumerates headings without an exercising test",
@@ -2813,5 +2813,45 @@
     "test": "TODO",
     "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-k5teti owns implementation and proof.",
     "work_item": "bd-ib-k5teti"
+  },
+  {
+    "heading": "## Scenario 307 \u2014 The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-3ufx6l ports the repository hold, WIP gate, breakage exception, early-exit re-ticket, gmktec hold and candidate-target gates into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising each.",
+    "work_item": "bd-ib-3ufx6l"
+  },
+  {
+    "heading": "## Scenario 308 \u2014 A required check that fails terminally on infrastructure is re-run once and files a flake item",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-tckulg adds the merge-poll failed-job classifier, the single automatic failed-jobs re-run with its journal row and flake-item filing, and tests that exercise each scenario of this heading.",
+    "work_item": "bd-ib-tckulg"
+  },
+  {
+    "heading": "## Scenario 309 \u2014 Fleet-launch launchers share one WIP claim-count read per repository per time-to-live",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-zwtfbq carries the shared per-repository WIP claim-count cache into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising one projection read per time-to-live, stale recomputation, own-marker exclusion, failed-recomputation no-hold and cached-uncached equality.",
+    "work_item": "bd-ib-zwtfbq"
+  },
+  {
+    "heading": "## Scenario 310 \u2014 A terminal dispatch span carries its run class, execution target and sandbox cost",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-faprof adds the four terminal-span cost attributes (run class, execution target, sandbox CPU-seconds and peak memory) and their allowlist entries, with cases for a pod sandbox on gmktec-xubuntu and for an unreadable sandbox control group.",
+    "work_item": "bd-ib-faprof"
+  },
+  {
+    "heading": "## Scenario 311 \u2014 Dropping an attribute the scheduler requires fails the check",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-atmome adds the emitted-attribute vocabulary and the just-check member that reads livespec-dev-tooling's required_columns.json from the pinned package, with cases for a renamed vocabulary key and a dropped allowlist key.",
+    "work_item": "bd-ib-atmome"
   }
 ]

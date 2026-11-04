@@ -41,9 +41,23 @@ class _StateApi(Protocol):
 
 
 class _LegacyStateApi:
-    def __init__(self, *, result: FabroHttpResult, fallback: FabroHttpPort) -> None:
+    def __init__(
+        self, *, result: FabroHttpResult, fallback: FabroHttpPort, port: FabroPort
+    ) -> None:
         self._result = result
         self._fallback = fallback
+        self._port = port
+
+    def stream(self, *, run_id: str, after: int | None, timeout_seconds: float) -> FabroHttpResult:
+        _ = after
+        events = self._port.events(run_id=run_id, timeout_seconds=timeout_seconds)
+        return FabroHttpResult(
+            status=200 if events.command.exit_code == 0 else 503,
+            body=events.command.stdout,
+            error=None,
+            payload=events.payload,
+            succeeded=events.command.exit_code == 0,
+        )
 
     def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
         _ = (run_id, timeout_seconds)
@@ -94,8 +108,10 @@ def _legacy_state_api(*, port: FabroPort, module: object) -> _StateApi:
         raise PermissionError("artifact is unreadable")
     _stamp_during_legacy_export(runner=runner, module=module)
     if _legacy_failure_code(runner=runner) != 0:
-        return _LegacyStateApi(result=_failed_state_result(), fallback=fallback)
-    return _LegacyStateApi(result=_successful_state_result(runner=runner), fallback=fallback)
+        return _LegacyStateApi(result=_failed_state_result(), fallback=fallback, port=port)
+    return _LegacyStateApi(
+        result=_successful_state_result(runner=runner), fallback=fallback, port=port
+    )
 
 
 def _stamp_during_legacy_export(*, runner: object, module: object) -> None:

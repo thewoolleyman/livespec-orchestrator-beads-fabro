@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.286.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.285.0...v0.286.0) (2026-11-04)
+
+
+### Features
+
+* guide review-fix away from duplicate aggregates ([a37a410](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a37a4103f43cfd46cbffa6545fa95ce8b136385b))
+
+
+### Bug Fixes
+
+* **fix-prompt:** pin refresh repair to rebase and commit-runner integration ([3dcd8b1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3dcd8b19ea2fb80d8b9d3bdc8a88a0bb4af38643))
+
+## [0.285.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.284.0...v0.285.0) (2026-11-04)
+
+
+### Features
+
+* derive workers from cgroup CPU quota ([da0a075](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da0a07575bfba09b13bfca5465d76dae68ffb8cb))
+
+
+### Bug Fixes
+
+* **bd-guard:** make the telemetry emit portable to Darwin ([a35bfc5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a35bfc508f63efad03a7bcb0f2749d0147a0e15b))
+* clarify Scenario 297 hung-harness diagnostic ([80b2530](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/80b25305326c7de26beadefd8bd15376c13b4b4c))
+* make Scenario 297 check slice harness-only ([6fc2dd7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6fc2dd7d3d9d53c782a8fd7407d4061f851bf434))
+
 ## [0.284.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.283.0...v0.284.0) (2026-11-04)
 
 

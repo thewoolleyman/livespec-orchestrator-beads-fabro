@@ -11410,6 +11410,15 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     Then the preview passes and the turn's handoff section records that last preview run
     And no re-entry budget was spent on either preview run
 
+  Scenario: A gate preview inherits a check-skip variable and still reports the skipped check's failure
+    Given a green turn whose environment carries LIVESPEC_CHECK_SKIP naming check-keyword-only-args
+    And a change that fails the repository's check-keyword-only-args target
+    When the turn runs the gate preview before ending
+    Then the preview runs check-keyword-only-args and names it as failed
+    And the preview's report names LIVESPEC_CHECK_SKIP as a variable it unset for its run
+    And the turn's environment still carries LIVESPEC_CHECK_SKIP after the preview ends
+    And no commit was created and no re-entry budget was spent
+
   Scenario: A purely mechanical Green refusal re-enters green without spending its ordinary re-entry
     Given a repository that declares check-lint and check-per-file-coverage as mechanical targets
     And commit_green's hook refuses naming only check-per-file-coverage
@@ -12028,4 +12037,205 @@ Feature: A factory restart does not cost a run's finished work
     Given an item whose ledger carries a livespec-preserved-tree comment naming a preservation ref for its cancelled run
     When the item is dispatched again
     Then the dispatch brief names that preservation ref as the tree to start from
+```
+
+## Scenario 307 — The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet-launch launchers enforce the interim launcher's gates
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A red-master repository hold yields the FIFO head and keeps the ticket
+    Given an impl launcher for repository A holding the oldest gmktec FIFO ticket and an impl launcher for repository B behind it
+    And the repository hold file for repository A exists
+    When the launchers run
+    Then the repository B launcher binds and launches
+    And the repository A launcher keeps its ticket and launches nothing into repository A
+    When the repository hold file for repository A is removed
+    Then the repository A launcher takes its FIFO place back in the order of the ticket it kept
+
+  Scenario: A repository at its WIP cap yields the FIFO head without running the preflight
+    Given an impl launcher whose target repository's counted-claims count, read through the capacity projection, equals its configured wip_cap
+    When the launcher runs
+    Then it keeps its FIFO ticket and yields the FIFO head
+    And it does not run its launch-time preflight
+    When the counted-claims count drops below the cap
+    Then it takes its FIFO place back and runs its preflight
+
+  Scenario: Only a listed item passes the WIP gate one above the cap
+    Given a repository whose counted-claims count equals its configured wip_cap
+    And the committed breakage-exception list names work item bd-x and not work item bd-y
+    When impl launchers for bd-x and bd-y run
+    Then the WIP gate does not hold bd-x
+    And the WIP gate holds bd-y
+
+  Scenario: A drive that exits before its run lists re-takes a FIFO ticket
+    Given an impl launcher whose drive exits non-zero before its run lists on the factory board
+    When the launcher handles the exit
+    Then it re-takes a FIFO ticket for the same work item rather than dropping it
+
+  Scenario: The gmktec factory hold file holds every gmktec launch
+    Given the gmktec factory hold file at the path the launcher assigns exists
+    When a gmktec launcher reaches the head of the FIFO
+    Then it launches nothing onto any gmktec factory instance until the hold file is removed
+
+  Scenario: The gmktec target setting selects the candidate only below its cap
+    Given the gmktec target setting names the candidate instance
+    And the candidate cap is 2
+    When the candidate instance's board lists 2 live runs
+    Then the launcher holds the launch
+    When the candidate instance's board lists 1 live run
+    Then the launcher launches onto the candidate instance
+    When the gmktec target setting is absent
+    Then the launcher launches onto the default instance
+```
+
+## Scenario 308 — A required check that fails terminally on infrastructure is re-run once and files a flake item
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch", the paragraph **A required check that fails terminally on infrastructure is re-run once.**
+
+```gherkin
+Feature: merge-poll re-runs an infrastructure failure once, never a touched test
+  As an operator
+  I want a pull request that failed CI on a runner fault re-run once without me
+  So that a sound factory run is not parked for a human, and every re-run still owes a root fix
+
+  Scenario: a teardown-only failure is re-run once and a flake item is filed
+    Given a factory run's pull request whose required check failed terminally
+    And the only failed job of that workflow run failed only in teardown steps while every other step succeeded
+    When the merge wait classifies the failure
+    Then the job's class is runner-teardown
+    And the Dispatcher requests exactly one re-run of the failed jobs as the factory App identity
+    And it journals a merge-poll-failed-jobs-rerun row naming the workflow run, the job, the class and the evidence
+    And it files one flake work item naming the same
+    And the merge wait continues within its existing poll budget and judges only the re-run attempt
+
+  Scenario: an OOM kill that interrupts a pytest session is re-run
+    Given a required check failed terminally because its job was killed for exceeding its memory limit during a pytest session
+    And the job's log names no failing test in a file the pull request changed
+    When the merge wait classifies the failure
+    Then the job's class is oom-kill
+    And the Dispatcher requests exactly one re-run of the failed jobs
+
+  Scenario: a failure of the re-run attempt ends blocked as before
+    Given the Dispatcher has already re-run the failed jobs once for the pull request's head
+    When a required check of the re-run attempt fails terminally
+    Then no second re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: a re-run request the forge rejects ends blocked as before
+    Given a required check failed terminally and every failed required job classifies as runner-teardown
+    When the forge rejects the Dispatcher's re-run failed jobs request
+    Then the Dispatcher journals a merge-poll-failed-jobs-rerun row naming the rejection
+    And no further re-run is requested for that head
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: an OOM kill after a failing test the pull request touched is never re-run
+    Given a required check failed terminally because its job was killed for exceeding its memory limit
+    And before the kill the job's log names a failing test in a file the pull request changed
+    When the merge wait classifies the failure
+    Then no re-run is requested and no flake work item is filed
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: any unattributed failed required job prevents the re-run
+    Given a workflow run with two failed jobs backing required checks
+    And one job's class is runner-teardown and the other's is unattributed
+    When the merge wait classifies the failures
+    Then no re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: a pytest test failure is never re-run
+    Given a required check failed terminally because pytest reported a test failure and no kill or timeout evidence matched
+    When the merge wait classifies the failure
+    Then the job's class is unattributed and no re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+```
+
+## Scenario 309 — Fleet-launch launchers share one WIP claim-count read per repository per time-to-live
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet-launch launchers share the repository WIP claim-count read
+  Background:
+    Given fleet-launch/config.sh values overridden to a throwaway claim-count cache directory, a throwaway in-flight directory and a stub capacity projection that records each read
+
+  Scenario: Launchers polling within one time-to-live run the projection read once
+    Given five impl launchers for repository A at the WIP gate
+    And no claim-count cache file for repository A
+    When all five pass the WIP gate within one cache time-to-live
+    Then the stub capacity projection records exactly one read for repository A
+    And every launcher takes its count from that read
+
+  Scenario: A stale cached read is recomputed
+    Given a claim-count cache file for repository A older than the cache time-to-live
+    When an impl launcher for repository A passes the WIP gate
+    Then the stub capacity projection records a new read for repository A
+
+  Scenario: A launcher does not count its own in-flight marker
+    Given repository A's projection reports 2 counted claims and repository A's wip_cap is 3
+    And fleet in-flight markers with running launchers for not-yet-active work items bd-x and bd-y in repository A
+    When the impl launcher for bd-x passes the WIP gate
+    Then its in-flight addition is 1
+    And it holds, because 2 counted claims plus 1 in flight reaches the cap of 3
+
+  Scenario: A failed recomputation does not hold the launch
+    Given no claim-count cache file for repository A
+    And the stub capacity projection fails every read for repository A
+    When an impl launcher for repository A passes the WIP gate
+    Then the launcher does not hold on the unreadable count
+    And no claim-count cache file for repository A is written
+
+  Scenario: The cached sum equals the uncached sum
+    Given one ledger state and one set of in-flight markers for repository A
+    When the WIP gate sum is taken once with the cache and once with a cache time-to-live of 0
+    Then both sums are equal
+```
+
+## Scenario 310 — A terminal dispatch span carries its run class, execution target and sandbox cost
+
+Governing clause: `contracts.md` §"Bounded session waits and observable inventory".
+
+```gherkin
+Feature: Terminal dispatch span cost attributes
+  As the radar admission function placing work by measured cost
+  I want each terminated dispatch to report where it ran and what its sandbox consumed
+  So that per-run-class cost percentiles can be read from Honeycomb by code
+
+  Scenario: An implement-work-item dispatch whose pod sandbox ran on gmktec-xubuntu terminates
+    Given an implement-work-item dispatch whose pod sandbox was scheduled on a node of gmktec-xubuntu and consumed 840 CPU-seconds with a memory peak of 3221225472 bytes
+    When the dispatch terminates
+    Then its livespec.dispatch.terminal span carries livespec.dispatch.run_class implement-work-item and livespec.dispatch.execution_target gmktec-xubuntu
+    And it carries livespec.sandbox.cpu_seconds 840 and livespec.sandbox.memory_peak_bytes 3221225472
+    And all four keys survive the receiver allowlist into dataset livespec-dispatcher
+
+  Scenario: A dispatch whose sandbox control group cannot be read
+    Given a dispatch whose sandbox control group was gone before its usage was read
+    When the dispatch terminates
+    Then its terminal span carries neither livespec.sandbox.cpu_seconds nor livespec.sandbox.memory_peak_bytes
+    And livespec.dispatch.unavailable_fields on that span names both
+```
+
+## Scenario 311 — Dropping an attribute the scheduler requires fails the check
+
+Governing clause: `contracts.md` §"Bounded session waits and observable inventory".
+
+```gherkin
+Feature: Scheduler-required attribute check
+  As the maintainer relying on the radar admission function's Honeycomb inputs
+  I want a change that drops or renames a required attribute to fail before it merges
+  So that the scheduler is never silently starved of an input
+
+  Scenario: A change renames a required terminal-span attribute
+    Given the pinned livespec-dev-tooling package's required_columns.json requires livespec.sandbox.cpu_seconds from dataset livespec-dispatcher
+    When a change renames that key in the emitted-attribute vocabulary to livespec.sandbox.cpu_s
+    Then just check fails naming livespec.sandbox.cpu_seconds and dataset livespec-dispatcher
+
+  Scenario: A change drops a required key from the receiver allowlist
+    Given the same required_columns.json
+    When a change removes livespec.sandbox.cpu_seconds from _otel_scrub.ATTRIBUTE_ALLOWLIST
+    Then just check fails naming livespec.sandbox.cpu_seconds and dataset livespec-dispatcher
 ```

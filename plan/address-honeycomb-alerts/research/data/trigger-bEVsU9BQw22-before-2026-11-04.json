@@ -1,0 +1,54 @@
+{
+    "id": "bEVsU9BQw22",
+    "name": "livespec host: RAM-available floor breach (avg free < 8 GiB)",
+    "description": "P-host resource-health safety net (plan/fabro-ci-image-factoring, livespec-3lev.1). Fires when host average free RAM (system.memory.usage state=free) stays below the ~8 GiB hardware-derived hard floor for 2 consecutive 15-min windows (sustained saturation, not a transient dip). Swap is 0 on this host, so there is no cushion below this floor \u2014 a sustained breach is the PAUSE-for-provision signal for the maintainer to bump host resources. Threshold is hardware-derived, NOT a multi-day percentile baseline (that approach was retired 2026-07-12). Under normal load free RAM sits ~56-69 GiB, ~7x above this floor, so it cannot spuriously fire. Follow-on .1(a) signals still to wire: sustained CPU-idle-near-0 duration (soft hint) and a disk-free floor (hygiene).",
+    "disabled": false,
+    "query": {
+        "calculations": [
+            {
+                "column": "system.memory.usage",
+                "op": "AVG"
+            }
+        ],
+        "filters": [
+            {
+                "column": "state",
+                "op": "=",
+                "value": "free",
+                "join_column": ""
+            }
+        ],
+        "time_range": 900
+    },
+    "query_id": "APR4tWKqjbM",
+    "alert_type": "on_change",
+    "threshold": {
+        "value": 8589934592,
+        "op": "<",
+        "exceeded_limit": 2
+    },
+    "recipients": [
+        {
+            "type": "email",
+            "target": "thewoolleyman@gmail.com",
+            "id": "jKw2EyfLJ3W"
+        }
+    ],
+    "frequency": 900,
+    "triggered": true,
+    "evaluation_schedule_type": "frequency",
+    "auto_investigate": false,
+    "created_at": "2026-07-14T01:29:21Z",
+    "updated_at": "2026-07-14T01:29:21Z",
+    "tags": [
+        {
+            "key": "signal",
+            "value": "memory"
+        },
+        {
+            "key": "track",
+            "value": "fabro-ci-image-factoring"
+        }
+    ],
+    "dataset_slug": "livespec-host-metrics"
+}
