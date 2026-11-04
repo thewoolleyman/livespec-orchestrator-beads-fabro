@@ -380,6 +380,19 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # bd-ib-xevgsx: since 704a96ded the consumer replays the producer's
+      # canonical verdict only when .coverage-gates/per-file.{status,log} exist;
+      # without them it prints "no canonical per-file verdict; running the
+      # suite" and re-runs the whole suite. Ship the verdict beside .coverage.
+      - name: Publish the canonical per-file verdict for the check-coverage consumer
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   # Coverage-pair CONSUMER. Kept as a matrix with a literal `check-coverage`
   # target entry (NOT a plain job) because check-coverage is a tool-backed slug
   # and check-tool-backed-check-completeness requires every tool-backed slug to
@@ -436,6 +449,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: coverage-data-${{ matrix.uid }}
+
+      # bd-ib-xevgsx: restore .coverage-gates/ so check-coverage reads the
+      # producer's verdict instead of re-running the suite.
+      - name: Download this uid's canonical per-file verdict from the producer
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates
 
       - name: Prepare non-root leg (open baked toolchain to uid 1000)
         if: matrix.uid == 'nonroot'
