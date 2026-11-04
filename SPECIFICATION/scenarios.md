@@ -12194,3 +12194,48 @@ Feature: The committed fleet-launch launchers share the repository WIP claim-cou
     When the WIP gate sum is taken once with the cache and once with a cache time-to-live of 0
     Then both sums are equal
 ```
+
+## Scenario 310 — A terminal dispatch span carries its run class, execution target and sandbox cost
+
+Governing clause: `contracts.md` §"Bounded session waits and observable inventory".
+
+```gherkin
+Feature: Terminal dispatch span cost attributes
+  As the radar admission function placing work by measured cost
+  I want each terminated dispatch to report where it ran and what its sandbox consumed
+  So that per-run-class cost percentiles can be read from Honeycomb by code
+
+  Scenario: An implement-work-item dispatch whose pod sandbox ran on gmktec-xubuntu terminates
+    Given an implement-work-item dispatch whose pod sandbox was scheduled on a node of gmktec-xubuntu and consumed 840 CPU-seconds with a memory peak of 3221225472 bytes
+    When the dispatch terminates
+    Then its livespec.dispatch.terminal span carries livespec.dispatch.run_class implement-work-item and livespec.dispatch.execution_target gmktec-xubuntu
+    And it carries livespec.sandbox.cpu_seconds 840 and livespec.sandbox.memory_peak_bytes 3221225472
+    And all four keys survive the receiver allowlist into dataset livespec-dispatcher
+
+  Scenario: A dispatch whose sandbox control group cannot be read
+    Given a dispatch whose sandbox control group was gone before its usage was read
+    When the dispatch terminates
+    Then its terminal span carries neither livespec.sandbox.cpu_seconds nor livespec.sandbox.memory_peak_bytes
+    And livespec.dispatch.unavailable_fields on that span names both
+```
+
+## Scenario 311 — Dropping an attribute the scheduler requires fails the check
+
+Governing clause: `contracts.md` §"Bounded session waits and observable inventory".
+
+```gherkin
+Feature: Scheduler-required attribute check
+  As the maintainer relying on the radar admission function's Honeycomb inputs
+  I want a change that drops or renames a required attribute to fail before it merges
+  So that the scheduler is never silently starved of an input
+
+  Scenario: A change renames a required terminal-span attribute
+    Given the pinned livespec-dev-tooling package's required_columns.json requires livespec.sandbox.cpu_seconds from dataset livespec-dispatcher
+    When a change renames that key in the emitted-attribute vocabulary to livespec.sandbox.cpu_s
+    Then just check fails naming livespec.sandbox.cpu_seconds and dataset livespec-dispatcher
+
+  Scenario: A change drops a required key from the receiver allowlist
+    Given the same required_columns.json
+    When a change removes livespec.sandbox.cpu_seconds from _otel_scrub.ATTRIBUTE_ALLOWLIST
+    Then just check fails naming livespec.sandbox.cpu_seconds and dataset livespec-dispatcher
+```
