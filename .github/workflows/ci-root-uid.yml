@@ -119,21 +119,20 @@ jobs:
       # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
       # approach is invisible to it. It MUST be the --global write to
       # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
       # (Replaces the mise-action install + the actions/cache uv restore — the
       # container image is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: just ${{ matrix.target }} (root)
         if: matrix.uid == 'root'
@@ -170,16 +169,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: just check-per-file-coverage (root)
         if: matrix.uid == 'root'
@@ -229,16 +227,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       # Downloaded BEFORE the non-root prep below, so that step's
       # `chown -R 1000:1000 "$GITHUB_WORKSPACE"` covers the `.coverage` the
@@ -274,16 +271,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Run the batched python checks (root)
         if: matrix.uid == 'root'
