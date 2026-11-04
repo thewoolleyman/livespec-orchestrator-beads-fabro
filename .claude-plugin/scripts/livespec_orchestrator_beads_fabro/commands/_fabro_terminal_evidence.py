@@ -129,7 +129,7 @@ def terminal_evidence(*, payload: object | None) -> TerminalEvidence | None:
     if checkpoint is None:
         return None
     outcomes = fabro_node_outcomes(record=record, checkpoint=checkpoint)
-    failed = _failed_stages(checkpoint=checkpoint, outcomes=outcomes)
+    failed = _failed_stages(record=record, checkpoint=checkpoint, outcomes=outcomes)
     return TerminalEvidence(
         current_predecessor=failed[-1] if failed else None,
         failed_stages=failed,
@@ -173,23 +173,48 @@ def _sits_at_terminal(*, checkpoint: dict[str, Any]) -> bool:
 
 def _failed_stages(
     *,
+    record: dict[str, Any],
     checkpoint: dict[str, Any],
     outcomes: dict[str, dict[str, Any]],
 ) -> tuple[str, ...]:
     """Every failed non-terminal node, in the engine's own completed order.
 
     `completed_nodes` is a LIST and is therefore the only ordering evidence on
-    the checkpoint; nodes it does not mention keep their map order behind it, so
-    a record that omits the list still reports every failure it recorded.
+    the checkpoint. Petri omits it, but its conclusion records the stage list
+    in execution order; only where neither exists may a map's document order
+    decide the otherwise unordered failures.
     """
     failed = [
         node
         for node, outcome in outcomes.items()
         if fabro_stage_node(stage=node) != ESCALATION_NODE_ID and _node_failed(outcome=outcome)
     ]
-    ordered = [node for node in _completed_nodes(checkpoint=checkpoint) if node in failed]
-    ordered.extend(node for node in failed if node not in ordered)
-    return tuple(ordered)
+    execution = _completed_nodes(checkpoint=checkpoint) or _conclusion_stages(record=record)
+    return _ordered_failures(failed=failed, execution=execution)
+
+
+def _conclusion_stages(*, record: dict[str, Any]) -> tuple[str, ...]:
+    """The Petri conclusion's stage ids, oldest first, or no ordering evidence."""
+    conclusion = record.get("conclusion")
+    if not isinstance(conclusion, dict):
+        return ()
+    raw: object = cast("dict[str, object]", conclusion).get("stages")
+    if not isinstance(raw, list):
+        return ()
+    entries = cast("list[object]", raw)
+    return tuple(stage for item in entries if (stage := _text(value=item)) is not None)
+
+
+def _ordered_failures(*, failed: list[str], execution: tuple[str, ...]) -> tuple[str, ...]:
+    """Place failed stage visits in execution order, retaining unlisted entries."""
+    remaining = list(failed)
+    ordered: list[str] = []
+    for executed in execution:
+        for index, stage in enumerate(remaining):
+            if fabro_stage_node(stage=stage) == fabro_stage_node(stage=executed):
+                ordered.append(remaining.pop(index))
+                break
+    return tuple((*ordered, *remaining))
 
 
 def _completed_nodes(*, checkpoint: dict[str, Any]) -> tuple[str, ...]:
