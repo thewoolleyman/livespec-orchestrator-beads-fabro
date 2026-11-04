@@ -92,6 +92,8 @@ _RUN = "01M563W6CWYQ"
 _ITEM = "bd-ib-3nu5vv"
 _ROUTING_STAGE = "pr@1"
 _TERMINAL_STAGE = "needs_human@1"
+_REFRESH_STAGE = "pr_refresh@1"
+_REFRESH_REPAIR_STAGE = "refresh_repair@1"
 _RECORDED_AT_MS = 1792000000000
 
 # The chain, outermost-first: `causes[0]` is the fixed transport wrapper that
@@ -102,6 +104,8 @@ _INNERMOST_CAUSE = "script exited with status 1"
 # The shape the Petri-era engine IS measured writing for a failed step:
 # one `message` inside `outcome.status.failure`, with no chain beside it.
 _FAILURE_MESSAGE = "the agent process exited before the protocol completed"
+_REFRESH_FAILURE = "LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE: origin could not be fetched"
+_REPAIR_ABSENT = "LIVESPEC_REFRESH_REPAIR_ABSENT: refresh repair brief was absent"
 
 # The terminal's own failed step, which can never be the cause: it is a
 # dead-end script that exits 1 by design on every run that reaches it.
@@ -306,6 +310,86 @@ def test_the_measured_petri_failure_message_is_named_as_the_cause(
     assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
     assert f"innermost cause: {_FAILURE_MESSAGE}" in outcome.detail
     assert f"innermost cause: {_FAILURE_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_a_briefless_refresh_repair_reports_the_refresh_stages_own_cause(
+    tmp_path: Path,
+) -> None:
+    """A classifier failure does not displace the failed refresh it classifies.
+
+    `refresh_repair` fails deliberately when its brief is absent, then routes to
+    `needs_human`. Its ABSENT marker diagnoses that routing decision, not the
+    refresh failure the operator must triage. The fixture records both failed
+    stages, so selecting either merely by map order or by the final failure
+    reports the classifier instead of the source stage.
+    """
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    del stages[_ROUTING_STAGE]
+    stages[_REFRESH_STAGE] = _stage(handler="script", state="failed")
+    stages[_REFRESH_REPAIR_STAGE] = _stage(handler="script", state="failed")
+    events = [
+        _step_finished(
+            stream_seq=11,
+            node=_REFRESH_STAGE,
+            status={"failure": {"message": _REFRESH_FAILURE}},
+        ),
+        _step_finished(
+            stream_seq=12,
+            node=_REFRESH_REPAIR_STAGE,
+            status={"failure": {"message": _REPAIR_ABSENT}},
+        ),
+    ]
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=events,
+    )
+    record_body = needs_human_cause_body(outcome=outcome)
+
+    assert outcome.needs_human_stages == (_REFRESH_STAGE,)
+    assert outcome.fabro_failure_cause == _REFRESH_FAILURE
+    assert f"failed stage: {_REFRESH_STAGE}" in record_body
+    assert f"innermost cause: {_REFRESH_FAILURE}" in record_body
+    assert _REPAIR_ABSENT not in record_body
+
+
+def test_a_refresh_repair_after_an_unrelated_failure_keeps_its_own_cause(
+    tmp_path: Path,
+) -> None:
+    """Only a failed refresh stage is reattributed past `refresh_repair`."""
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    del stages[_ROUTING_STAGE]
+    stages["janitor@1"] = _stage(handler="script", state="failed")
+    stages[_REFRESH_REPAIR_STAGE] = _stage(handler="script", state="failed")
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=[
+            _step_finished(
+                stream_seq=11,
+                node="janitor@1",
+                status={"failure": {"message": "janitor failed"}},
+            ),
+            _step_finished(
+                stream_seq=12,
+                node=_REFRESH_REPAIR_STAGE,
+                status={"failure": {"message": _REPAIR_ABSENT}},
+            ),
+        ],
+    )
+
+    assert outcome.needs_human_stages == ("janitor@1", _REFRESH_REPAIR_STAGE)
+    assert outcome.fabro_failure_cause == _REPAIR_ABSENT
 
 
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(

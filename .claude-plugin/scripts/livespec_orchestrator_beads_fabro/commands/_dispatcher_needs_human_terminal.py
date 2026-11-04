@@ -8,6 +8,7 @@ left decides which ending a run reached.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import (
@@ -26,7 +27,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events impo
     routing_stage_failure,
     terminal_event_output,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
+from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import (
+    CausalStageFailure,
+    causal_stage_failure,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import graph_node_id
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroFailureDetail,
     FabroInspectResult,
@@ -39,6 +44,10 @@ if TYPE_CHECKING:
     )
 
 __all__: list[str] = ["needs_human_terminal_outcome"]
+
+_REFRESH_REPAIR_NODE = "refresh_repair"
+_REFRESH_SOURCE_NODES = frozenset({"pr_refresh", "publish_draft"})
+_REFRESH_CHAIN_STAGES = 2
 
 
 def needs_human_terminal_outcome(
@@ -115,6 +124,7 @@ def needs_human_terminal_outcome(
     causal = causal_stage_failure(
         evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
     )
+    causal = _refresh_source_causal(causal=causal)
     if inspect is not None and causal.stages:
         failure = routing_stage_failure(
             observed=failure,
@@ -152,3 +162,16 @@ def needs_human_terminal_outcome(
             None if failure is None else failure.provider_usage_limit_provider
         ),
     )
+
+
+def _refresh_source_causal(*, causal: CausalStageFailure) -> CausalStageFailure:
+    """Attribute a briefless refresh repair to the refresh stage it classifies."""
+    if (
+        len(causal.stages) < _REFRESH_CHAIN_STAGES
+        or graph_node_id(node=causal.stages[-1]) != _REFRESH_REPAIR_NODE
+    ):
+        return causal
+    source = causal.stages[-2]
+    if graph_node_id(node=source) not in _REFRESH_SOURCE_NODES:
+        return causal
+    return replace(causal, stages=(source,))
