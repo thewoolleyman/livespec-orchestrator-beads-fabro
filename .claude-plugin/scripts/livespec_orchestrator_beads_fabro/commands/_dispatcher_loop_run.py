@@ -13,6 +13,9 @@ from time import sleep as _real_sleep
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     dispatch_correlation,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
+    DispatchJournalIdentity,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_span import (
     emit_dispatch_span,
 )
@@ -39,6 +42,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
     PrelaunchCheckpoint,
+    PrelaunchCpuProfile,
     ignore_prelaunch_checkpoint,
     prelaunch_phase,
 )
@@ -50,9 +54,37 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_source_staging impor
 )
 
 __all__: list[str] = [
+    "DispatchLaunchContext",
+    "DispatchLifetime",
     "DispatchRunContext",
+    "dispatch_id_for_launch",
     "run_dispatch_with_watchdog",
 ]
+
+
+@dataclass(frozen=True, kw_only=True)
+class DispatchLaunchContext:
+    """Admission and telemetry facts carried into one item launch."""
+
+    janitor: tuple[str, ...] | None = None
+    prelaunch_profile: PrelaunchCpuProfile | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class DispatchLifetime:
+    """The identity and cleanup stack shared by one locked dispatch."""
+
+    identity: DispatchJournalIdentity
+    cleanup: ExitStack
+
+
+def dispatch_id_for_launch(*, context: DispatchLaunchContext, mint_id: Callable[[], str]) -> str:
+    """Reuse a profile's dispatch identity or mint one for an unprofiled launch."""
+    return (
+        context.prelaunch_profile.dispatch_id
+        if context.prelaunch_profile is not None
+        else mint_id()
+    )
 
 
 @dataclass(frozen=True, kw_only=True)

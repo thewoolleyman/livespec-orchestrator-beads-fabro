@@ -138,9 +138,8 @@ class _HeldScriptedRunner:
             if self._polls >= self.polls_before_run_returns:
                 self.run_done.set()
             return CommandResult(exit_code=0, stdout=_INSPECT_RUNNING, stderr="")
-        if verb == "events":
-            return CommandResult(exit_code=0, stdout=_FROZEN_EVENTS, stderr="")
-        return CommandResult(exit_code=0, stdout="", stderr="")
+        assert verb == "events", verb
+        return CommandResult(exit_code=0, stdout=_FROZEN_EVENTS, stderr="")
 
 
 @dataclass(kw_only=True)

@@ -82,12 +82,16 @@ def _codex_reading(**limits: object) -> codex.CodexHeadroomReading:
 
 
 def _policy(
-    *, reading: codex.CodexHeadroomReading | None, calls: list[str], floor: int = 20
+    *,
+    reading: codex.CodexHeadroomReading | None,
+    calls: list[str],
+    floor: int = 20,
+    claude_utilization: float = 0,
 ) -> headroom.SessionHeadroomPolicy:
     def _claude() -> headroom.SessionHeadroomReading:
         calls.append("claude")
         return headroom.session_headroom_reading(
-            credential_identity="claude-cred", observed_at=_NOW, utilization=0
+            credential_identity="claude-cred", observed_at=_NOW, utilization=claude_utilization
         )
 
     def _codex() -> codex.CodexHeadroomReading:
@@ -152,6 +156,23 @@ def test_a_window_below_the_floor_selects_the_fallback() -> None:
 
     assert [c.agent_id for c in node.candidates] == [CLAUDE_AGENT_ID]
     assert node.skipped[0].headroom_skip_kind == "floor"
+
+
+def test_reset_proximity_relaxes_only_codex_while_claude_keeps_the_committed_floor() -> None:
+    reading = _codex_reading(
+        primary_window={
+            "used_percent": 90,
+            "limit_window_seconds": 18000,
+            "reset_at": 1793206800,
+        }
+    )
+    policy = _policy(reading=reading, calls=[], claude_utilization=90)
+
+    node = _filter(policy=policy)
+
+    assert [candidate.agent_id for candidate in node.candidates] == [CODEX_AGENT_ID]
+    assert node.skipped[0].candidate_key == f"implement-{CLAUDE_AGENT_ID}"
+    assert node.skipped[0].headroom_floor_percent == 20
 
 
 def test_a_floor_of_zero_skips_nothing_but_still_records_the_reading() -> None:

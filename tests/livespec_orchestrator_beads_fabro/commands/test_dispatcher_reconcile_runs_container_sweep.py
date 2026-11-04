@@ -92,9 +92,8 @@ class _Runner:
         self.calls.append(argv)
         if argv[0] == DOCKER_BIN:
             return self._docker(argv=argv)
-        if argv[1] == "ps":
-            return CommandResult(exit_code=0, stdout=self.fabro_ps_json, stderr="")
-        return CommandResult(exit_code=0, stdout="", stderr="")
+        assert argv[1] == "ps", argv
+        return CommandResult(exit_code=0, stdout=self.fabro_ps_json, stderr="")
 
     def _docker(self, *, argv: list[str]) -> CommandResult:
         # Membership rather than a fixed index: every docker argv opens with

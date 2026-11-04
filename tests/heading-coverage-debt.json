@@ -128,6 +128,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Dispatch pre-launch step attribution and concurrency",
+    "work_item": "bd-ib-bpkqan",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Dispatch-brief lessons injection",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"
@@ -145,6 +152,13 @@
     "heading": "## Dispatcher loop invocation surface",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Factory sandbox clone release tags",
+    "work_item": "bd-ib-ia6zbf",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -480,13 +494,6 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario 210 — Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear",
     "work_item": "bd-ib-3lbt4o",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 211 — An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget",
-    "work_item": "bd-ib-egzipe",
     "first_seen": "2026-10-20"
   },
   {
@@ -947,9 +954,9 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 297 — A queued provisional launcher runs its preflight while it waits and still binds in FIFO order",
-    "work_item": "bd-ib-x7bwug",
-    "first_seen": "2026-11-02"
+    "heading": "## Scenario 298 — A factory sandbox clone carries the remote's release tags after its prepare steps",
+    "work_item": "bd-ib-ia6zbf",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -964,6 +971,20 @@
     "heading": "## Scenario 300 — Fabro-fork gates and carrier builds run on the cluster, not the dev host",
     "work_item": "bd-ib-dqxcsh",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 302 — A fleet-launch resume launcher waits for the fleet cap and the factory FIFO",
+    "work_item": "bd-ib-uhcn36",
+    "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 303 — The committed launch-time preflight runs under a PATH-resetting wrapper with a string-form adapter entry",
+    "work_item": "bd-ib-pys5lt",
+    "first_seen": "2026-11-03"
   },
   {
     "spec_root": "SPECIFICATION",

@@ -60,6 +60,7 @@ _CAPTURE = "proof_capture"
 _VERIFY = "proof_verify"
 _DISPOSITION = "disposition"
 _REVIEW_FIX = "review_fix"
+_REVIEW_FIX_ADMISSION = "review_fix_admission"
 _JANITOR = "janitor"
 _JANITOR_ADMISSION = "janitor_admission"
 _NON_CONVERGED = "non_converged"
@@ -142,7 +143,8 @@ def test_a_proof_record_verdict_routes_to_proof_capture_and_reaches_no_fix_stage
     ] == [_ROUTE]
     # And the fix verdict's own route is untouched, which is what keeps the
     # mixed-verdict rule below meaningful rather than vacuous.
-    assert (_REVIEW, _DISPOSITION, "preferred_label=fix") in edges, edges
+    assert (_REVIEW, _REVIEW_FIX_ADMISSION, "preferred_label=fix") in edges, edges
+    assert (_REVIEW_FIX_ADMISSION, _DISPOSITION, "") in edges, edges
 
     code = _code_text()
     assert (
@@ -494,7 +496,8 @@ def test_a_mixed_verdict_fixes_the_tree_and_still_carries_its_record_findings() 
     prompt must post that record on a `fix` verdict too, not only on a recapture.
     """
     edges = _edges()
-    assert (_REVIEW, _DISPOSITION, "preferred_label=fix") in edges
+    assert (_REVIEW, _REVIEW_FIX_ADMISSION, "preferred_label=fix") in edges
+    assert (_REVIEW_FIX_ADMISSION, _DISPOSITION, "") in edges
     assert (_DISPOSITION, _REVIEW_FIX, "preferred_label=fix") in edges
     assert (_REVIEW_FIX, "review_fix_commit_settle", "") in edges
     assert ("review_fix_commit_settle", _JANITOR_ADMISSION, "") in edges

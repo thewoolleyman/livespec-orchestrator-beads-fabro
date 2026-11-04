@@ -49,6 +49,8 @@ name the live run's own counters.
 from __future__ import annotations
 
 import os
+import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -357,8 +359,32 @@ def _publish_draft_script(*, check_suite: str) -> str:
     )
 
 
+def _push_refusal_bin(*, world: _World, refusal: str) -> Path:
+    """Put a git wrapper on PATH that refuses only the publication push."""
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = world.clone.parent / "push-refusal-bin"
+    bin_dir.mkdir(exist_ok=True)
+    git = bin_dir / "git"
+    _ = git.write_text(
+        "#!/bin/sh\n"
+        'if test "$1" = push; then\n'
+        f"    printf '%s\\n' {shlex.quote(refusal)} >&2\n"
+        "    exit 1\n"
+        "fi\n"
+        f'exec {shlex.quote(real_git)} "$@"\n',
+        encoding="utf-8",
+    )
+    git.chmod(0o755)
+    return bin_dir
+
+
 def _run_publish_draft(
-    *, world: _World, check_suite: str = "true", extra_env: dict[str, str] | None = None
+    *,
+    world: _World,
+    check_suite: str = "true",
+    extra_env: dict[str, str] | None = None,
+    push_refusal: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute the shipped `publish_draft` bytes in this world's clone.
 
@@ -375,8 +401,11 @@ def _run_publish_draft(
     _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
         record_file_program_source(), encoding="utf-8"
     )
+    push_refusal_path = ""
+    if push_refusal is not None:
+        push_refusal_path = f"{_push_refusal_bin(world=world, refusal=push_refusal)}{os.pathsep}"
     env = {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "PATH": f"{push_refusal_path}/usr/local/bin:/usr/bin:/bin",
         "HOME": str(world.clone.parent / "home"),
         "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
@@ -568,6 +597,27 @@ def test_both_refreshing_stages_declare_the_same_failed_outcome_arm() -> None:
     ]
 
 
+def test_an_exhausted_draft_refresh_reaches_needs_human_without_a_failed_publish_visit() -> None:
+    """The terminal repair outcome bypasses the engine failure-cycle breaker.
+
+    A conflicted refresh still fails and enters ``refresh_repair`` so the fix
+    loop can repair it.  Exhaustion is different: its restored head must reach
+    the preserving terminal through a successful ``publish_draft`` visit, then
+    a post-publication classifier outcome that ordinary repaired conflicts do
+    not emit.  Routing it as another failed publish visit repeats the rebase
+    transcript and lets the Petri circuit breaker end the run before the
+    terminal can push the recovery artifact.
+    """
+    assert _routed(source="publish_draft", condition=_FAILED) == _REPAIR_NODE
+    assert (
+        _routed(
+            source="publish_merged_reconcile_route",
+            condition="preferred_label=needs_human",
+        )
+        == "needs_human"
+    )
+
+
 def test_a_conflicted_draft_refresh_restores_the_head_janitor_passed(tmp_path: Path) -> None:
     """The conflict is UNDONE, not merely reported, and nothing is published.
 
@@ -685,84 +735,149 @@ def test_a_refreshed_head_the_gate_rejects_is_restored_and_repaired(tmp_path: Pa
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
 
 
-def _hook_refused_merge_refresh_world(*, root: Path) -> tuple[_World, str, str]:
-    """A remote-ancestry merge whose commit hook refuses without a conflict.
-
-    `publish_draft` preserves its published ancestry by merging when origin's
-    publish tip is an ancestor of the run.  That is the important shape: a
-    pre-merge-commit hook runs only once `git merge --no-edit` has constructed
-    the merge, so its refusal leaves `MERGE_HEAD` behind even though no path is
-    unmerged.  The stage must recognize that failed refresh commit as repairable
-    rather than sending the run to `needs_human`.
-    """
-    world = _world(root=root)
-    published = _commit(
-        cwd=world.clone,
-        path=_SHARED_FILE,
-        text="published work\n",
-        subject="feat: publish work",
-    )
-    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
-    janitor_head = _commit(
-        cwd=world.clone,
-        path=_OWNED_FILE,
-        text="this run's later work\n",
-        subject="feat: add run work",
-    )
-    assert (
-        _git("merge-base", "--is-ancestor", published, janitor_head, cwd=world.clone).returncode
-        == 0
-    )
-    advanced = _advance_default(world=world, path="default-only.txt", text="advanced default\n")
-    hook = world.clone / ".git" / "hooks" / "pre-merge-commit"
-    _ = hook.write_text(
-        "\n".join(
-            (
-                "#!/bin/sh",
-                "printf 'Failed targets (2):\\n' >&2",
-                "printf '  - check-refresh-hook\\n' >&2",
-                "printf '  - check-refresh-record\\n' >&2",
-                "printf 'hook refusal detail %s\\n' 1 2 3 4 5 6 7 8 9 10 >&2",
-                "printf 'hook-tail-marker\\n' >&2",
-                "exit 1",
-                "",
-            )
-        ),
-        encoding="utf-8",
-    )
-    hook.chmod(0o755)
-    return world, janitor_head, advanced
-
-
-def test_a_hook_refused_merge_refresh_restores_the_head_and_routes_to_fix(
+def test_a_recorded_pre_push_refusal_repairs_without_rerunning_the_declared_gate(
     tmp_path: Path,
 ) -> None:
-    """A no-conflict hook refusal is restored, recorded, and classified as repairable."""
-    world, janitor_head, advanced = _hook_refused_merge_refresh_world(root=tmp_path)
+    """A hook's target summary is enough evidence for the refresh-repair route."""
+    world, janitor_head, advanced = _clean_refresh_world(root=tmp_path)
+    gate_trace = tmp_path / "declared-gate-ran"
+    refusal = "\n".join(
+        (
+            "lefthook pre-push refused the refreshed head",
+            "Failed targets (2):",
+            "  - check-per-file-coverage",
+            "  - check-coverage",
+        )
+    )
+    check_suite = f"sh -c 'printf declared-gate-ran > {shlex.quote(str(gate_trace))}; exit 1'"
 
-    result = _run_publish_draft(world=world)
+    result = _run_publish_draft(
+        world=world,
+        check_suite=check_suite,
+        push_refusal=refusal,
+    )
     fields = _brief_fields(world=world)
-    classifier = _run_refresh_repair(world=world)
 
     assert result.returncode != 0, result.stdout
-    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    assert not gate_trace.exists(), "the hook summary must avoid a second declared-gate run"
     assert world.head() == janitor_head
     assert not (world.clone / ".git" / "rebase-merge").exists()
     assert not (world.clone / ".git" / "rebase-apply").exists()
     assert not (world.clone / ".git" / "MERGE_HEAD").exists()
+    assert world.remote_head(ref=_BRANCH) == ""
     assert fields.get("stage") == "publish_draft"
     assert fields.get("pre-refresh-head") == janitor_head
     assert fields.get("refresh-target") == advanced
-    assert "check-refresh-hook" in (fields.get("failed-hook-targets") or "")
-    brief = world.state(name=_BRIEF_FILENAME)
-    assert brief is not None
-    assert "check-refresh-record" in brief
-    assert "hook-output-last-80-lines:" in brief
-    assert "hook-tail-marker" in brief
+    targets = fields.get("failed-gate-targets") or ""
+    assert "check-per-file-coverage" in targets
+    assert "check-coverage" in targets
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+    classifier = _run_refresh_repair(world=world)
     assert classifier.returncode == 0, classifier.stderr
     assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
     assert _routed(source=_REPAIR_NODE, condition="outcome=succeeded") == "fix"
+
+
+def _refuse_commit_signing(*, world: _World) -> None:
+    """Make every commit a rebase would write fail, with NO path conflicted.
+
+    A non-conflict refresh failure has to be forced through something other than
+    the git identity. `bd-ib-lsr3vf` now renders a prepare step that sets a
+    repository-local identity, so the measured "Committer identity unknown"
+    trigger no longer occurs and a fixture built on it would quietly stop
+    exercising this arm the moment that step ran. A repository that requires
+    signed commits, inside a sandbox carrying no signing key, fails in the same
+    place for the same reason -- the sequencer cannot write the commit it is
+    replaying -- and `gpg.program` is pointed at a program that ALWAYS fails so
+    the case does not depend on whether the executing machine carries gpg at
+    all.
+
+    Measured with git 2.43.0: the rebase prints "error: gpg failed to sign the
+    data", exits 1, leaves `.git/rebase-merge` in place, reports ZERO paths at
+    `--diff-filter=U`, and leaves HEAD on the new base. That is precisely the
+    shape the conflicted arm cannot classify, and `_wedged_rebase_control`
+    below asserts each half of it rather than trusting this paragraph.
+    """
+    _ = _git("config", "commit.gpgsign", "true", cwd=world.clone)
+    _ = _git("config", "gpg.program", "/bin/false", cwd=world.clone)
+
+
+def _wedged_rebase_control(*, root: Path) -> None:
+    """Prove the trigger really wedges a rebase with nothing conflicted.
+
+    THE CONTROL FOR THE CASE BELOW, and it is what makes that case evidence
+    rather than a plausible green. "The stage restored its pre-refresh head"
+    says nothing unless the refresh got far enough to LOSE it: a trigger that
+    refused before the rebase started -- a dirty tree, a pre-rebase hook, an
+    untracked file in the way -- leaves HEAD at the run's own head already, so
+    every assertion below would pass against the unrepaired stage. This runs
+    the same rebase the stage runs, in an identical world, with the shipped
+    script taken out of the picture, and asserts the three properties the arm
+    is defined by: it failed, it left an in-progress rebase behind, it reported
+    no conflicted path, and HEAD is no longer the run's own head.
+    """
+    control, run_head, _advanced = _clean_refresh_world(root=root)
+    _refuse_commit_signing(world=control)
+    _ = _git("fetch", "origin", _DEFAULT_BRANCH, "--quiet", cwd=control.clone)
+
+    wedged = subprocess.run(
+        ["git", "rebase", f"origin/{_DEFAULT_BRANCH}"],
+        cwd=control.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_fixture_env(),
+    )
+
+    assert wedged.returncode != 0, wedged.stdout
+    assert (control.clone / ".git" / "rebase-merge").exists(), "the rebase was never wedged"
+    assert _git("diff", "--name-only", "--diff-filter=U", cwd=control.clone).stdout == ""
+    assert control.head() != run_head, "the wedged rebase left HEAD on the run's own head"
+
+
+def test_a_non_conflict_draft_refresh_failure_restores_the_head_janitor_passed(
+    tmp_path: Path,
+) -> None:
+    """A refresh that dies mid-rebase with nothing conflicted is UNDONE too.
+
+    THE MEASURED LOSS. On hp on 2026-10-15, canary 13 (run
+    01M4YV4YJ30J5ABBGJWR4KYWKX, item bd-ib-o6aeji) passed implement and janitor
+    and then died in `publish_draft@1` at "Rebasing (1/94)" with "Committer
+    identity unknown", exit 128. The conflicted arm could not classify it --
+    there were no conflicted paths -- so the stage exited with the rebase still
+    in progress, `needs_human` preserved whatever HEAD the stage had left, and
+    the ref it pushed carried a tree identical to origin's default branch. The
+    janitor-green checkpoint never reached origin.
+
+    So the discriminating assertion is HEAD, not the exit code: the stage
+    failed closed before this change too, and failing closed is still the right
+    ending for a cause this route does not repair. What was wrong is WHICH TREE
+    the ending preserved.
+
+    Five instruments. HEAD is back at the head the janitor passed. No rebase
+    directory of either backend is left behind, which would wedge the
+    preservation commit the terminal performs. Origin carries no publish branch,
+    so nothing half-refreshed was published. And the brief and the repair
+    counter are both ABSENT -- this cause is NOT repaired, so a build that
+    restored by routing into the repair round would have taken the one route
+    v134 reserves for a conflict or a gate rejection, and spent a repair budget
+    on a failure the `fix` turn cannot resolve.
+    """
+    _wedged_rebase_control(root=tmp_path / "control")
+    world, janitor_head, _advanced = _clean_refresh_world(root=tmp_path / "subject")
+    _refuse_commit_signing(world=world)
+
+    result = _run_publish_draft(world=world)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED" in result.stderr
+    assert world.head() == janitor_head
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
+    assert world.remote_head(ref=_BRANCH) == ""
+    assert world.state(name=_BRIEF_FILENAME) is None
+    assert world.state(name=_REPAIR_COUNT_FILENAME) is None
 
 
 def test_the_non_conflict_refresh_failure_names_the_restored_pre_refresh_head(
@@ -787,13 +902,19 @@ def test_the_non_conflict_refresh_failure_names_the_restored_pre_refresh_head(
     pass with the second arm untouched, which is the same defect in a path that
     fires rarely enough to go years without being seen.
     """
-    world, _janitor_head, _advanced = _hook_refused_merge_refresh_world(root=tmp_path)
+    world, janitor_head, _advanced = _clean_refresh_world(root=tmp_path)
+    _refuse_commit_signing(world=world)
 
     result = _run_publish_draft(world=world)
-    reported = [line for line in result.stderr.splitlines() if "LIVESPEC_REFRESH_REPAIR" in line]
+    reported = [
+        line
+        for line in result.stderr.splitlines()
+        if "LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED" in line
+    ]
 
     assert result.returncode != 0, result.stdout
-    assert reported, "the stage reported no refresh-repair cause at all"
+    assert reported, "the stage reported no refresh-failure cause at all"
+    assert janitor_head in reported[0], reported[0]
     assert _PRESERVED_STATE not in result.stderr
     assert _PRESERVED_STATE not in _publish_draft_script(check_suite="true")
 
@@ -1045,7 +1166,7 @@ def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
     )
 
 
-def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
+def test_a_third_refresh_needing_repair_restores_the_head_and_reports_exhaustion(
     tmp_path: Path,
 ) -> None:
     """The budget is two rounds, and the third says so by name with a pointer.
@@ -1076,13 +1197,79 @@ def test_a_third_refresh_needing_repair_ends_at_needs_human_exhausted(
     result = _run_publish_draft(world=world)
     reason = (world.clone / ".git" / "livespec-needs-human-reason").read_text(encoding="utf-8")
 
-    assert result.returncode != 0, result.stdout
+    assert result.returncode == 0, result.stdout
     assert "LIVESPEC_REFRESH_REPAIR_EXHAUSTED" in result.stderr
     assert world.state(name=_BRIEF_FILENAME) is None
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "2\n"
+    assert world.state(name="livespec-refresh-repair-exhausted") == ""
     assert reason.splitlines()[0].startswith("refresh-repair-exhausted:")
     assert janitor_head in reason.splitlines()[0]
     assert world.head() == janitor_head
+
+
+def test_needs_human_pushes_the_restored_exhausted_refresh_head_to_its_run_ref(
+    tmp_path: Path,
+) -> None:
+    """The terminal receives the recovered head without re-running publication.
+
+    The draft stage records the restored pre-refresh head in its recovery
+    reason, then its exhaustion marker makes the post-publication classifier
+    select ``needs_human``.  This fixture replaces the terminal's push helper
+    with an argv recorder: it proves the preserving node names its run-scoped
+    needs-human ref and carries the restored HEAD, without granting the test a
+    second publication path.
+    """
+    world = _world(root=tmp_path)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / _REPAIR_COUNT_FILENAME).write_text("2\n", encoding="utf-8")
+    restored = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _advance_default(world=world, path=_SHARED_FILE, text="a conflicting default edit\n")
+
+    exhausted = _run_publish_draft(world=world)
+    reason = (world.clone / ".git" / "livespec-needs-human-reason").read_text(encoding="utf-8")
+    recorder_root = tmp_path / "push-recorder"
+    recorder = recorder_root / "args"
+    helper = recorder_root / "bin" / "push_origin"
+    helper.parent.mkdir(parents=True)
+    _ = helper.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$LIVESPEC_PUSH_RECORD"\n',
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+    needs_human = _node_attribute(node="needs_human", attribute="script").replace(
+        "{{ inputs.default_branch }}", _DEFAULT_BRANCH
+    )
+    run_id = "01M6EXHAUSTEDREFRESH"
+    preserved = subprocess.run(
+        ["bash", "-c", needs_human],
+        cwd=world.clone,
+        capture_output=True,
+        input=f"{run_id}\n",
+        text=True,
+        check=False,
+        env={
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(tmp_path / "home"),
+            "LIVESPEC_GIT_AUTHOR_NAME": "Test",
+            "LIVESPEC_GIT_AUTHOR_EMAIL": "t@example.invalid",
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(recorder_root),
+            "LIVESPEC_PUSH_RECORD": str(recorder),
+        },
+    )
+
+    assert exhausted.returncode == 0, exhausted.stderr
+    assert restored in reason
+    assert world.head() == restored
+    assert preserved.returncode == 1
+    assert recorder.read_text(encoding="utf-8").splitlines()[-1] == (
+        f"HEAD:refs/heads/needs-human/{run_id}"
+    )
+    assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: refs/heads/needs-human/{run_id}" in preserved.stderr
 
 
 def _materialized_push_program(*, root: Path) -> Path:

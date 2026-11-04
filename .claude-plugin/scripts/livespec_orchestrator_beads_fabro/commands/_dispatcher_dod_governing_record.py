@@ -9,12 +9,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import clause_line
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
+    clause_line,
+    evidence_line,
+)
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
 )
 
 __all__: list[str] = [
+    "GOVERNING_EVIDENCE_FIELD",
     "GOVERNING_GENERALIZATION_FIELD",
     "GOVERNING_HEADING_FIELD",
     "GOVERNING_KIND_FIELD",
@@ -36,6 +40,7 @@ GOVERNING_SUBJECT_DIGEST_FIELD = "governing-heading-subject-digest"
 GOVERNING_PROVENANCE_FIELD = "governing-heading-provenance"
 GOVERNING_SELECTED_CLAUSE_FIELD = "governing-heading-selected-clause"
 GOVERNING_NAMED_CLAUSE_FIELD = "governing-heading-named-clause"
+GOVERNING_EVIDENCE_FIELD = "governing-heading-evidence"
 GOVERNING_GENERALIZATION_FIELD = "governing-heading-generalization-target"
 _FIELD_SEPARATOR = ": "
 
@@ -70,5 +75,8 @@ def governing_record_lines(*, governing: GoverningHeadingReceipt) -> list[str]:
     lines.extend(
         clause_line(key=GOVERNING_NAMED_CLAUSE_FIELD, clause=clause)
         for clause in verdict.named_clauses
+    )
+    lines.extend(
+        evidence_line(key=GOVERNING_EVIDENCE_FIELD, entry=entry) for entry in verdict.evidence
     )
     return lines

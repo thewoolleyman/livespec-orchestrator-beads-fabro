@@ -93,6 +93,33 @@ def _overshooting_sleeper(*, seconds: float) -> None:
 
 
 @dataclass(kw_only=True)
+class _DeadlineAfterPaneReadClock:
+    """A wait clock that reaches expiry only after its pane read is in flight.
+
+    Registration and launcher work may take longer than a short wait budget on
+    a loaded host. Holding this clock at zero makes that scheduling irrelevant:
+    the first poll starts the real pane worker, and the sleeper advances to the
+    deadline only after the controlled peer has received its request. That
+    receipt proves the worker reached the socket read this wait cancels.
+    """
+
+    read_started: threading.Event
+    deadline: float
+    now: float = 0.0
+    read_started_before_deadline: bool = field(default=False, init=False)
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, *, seconds: float) -> None:
+        assert self.read_started.wait(
+            timeout=_HANG_GUARD_SECONDS
+        ), "the pane read did not start inside the hang guard"
+        self.read_started_before_deadline = self.now < self.deadline
+        self.now += seconds
+
+
+@dataclass(kw_only=True)
 class _WatchedPaneProbe:
     """One real pane probe, keeping the task each of its polls was serving.
 
@@ -374,8 +401,13 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
     wait_store_root.mkdir()
     socket_path = tmp_path / "budget-hung.sock"
     watcher = _WatchingPaneLauncher(read_budget_seconds=_LONG_READ_BUDGET_SECONDS)
+    read_started = threading.Event()
+    clock = _DeadlineAfterPaneReadClock(
+        read_started=read_started,
+        deadline=_LONE_DEADLINE_SECONDS,
+    )
 
-    with _hung_peer(socket_path=socket_path) as received:
+    with _hung_peer(socket_path=socket_path, on_receive=read_started.set) as received:
         pane = _hung_pane(socket_path=socket_path, terminal_id="term_budget")
         result = run_wait(
             request=WaitRequest(
@@ -390,7 +422,10 @@ def test_a_lone_hung_pane_wait_is_ended_by_cancellation_not_by_its_own_timeout(
                 pane=watcher,
             ),
             wait_store_root=wait_store_root,
+            monotonic=clock.monotonic,
+            sleeper=clock.sleep,
         )
+        assert clock.read_started_before_deadline is True
         task = watcher.probes[0].tasks[0]
         assert task is not None
         read_budget = task.channel.timeout_seconds

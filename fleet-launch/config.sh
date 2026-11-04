@@ -49,6 +49,7 @@
 : "${FLEET_LAUNCH_DOLT_SERVER_WRAPPER:=/usr/local/bin/with-dolt-server-env.sh}"
 : "${FLEET_LAUNCH_OPENBRAIN_WRAPPER:=/data/projects/1password-env-wrapper/with-openbrain-env.sh}"
 : "${FLEET_LAUNCH_RESUME_WRAPPER:=/data/projects/resume/with-resume-env.sh}"
+: "${FLEET_LAUNCH_RESUME_COMMAND:=resume}"
 : "${FLEET_LAUNCH_HOMELAB_AWS_WRAPPER:=/usr/local/bin/with-homelab-aws.sh}"
 : "${FLEET_LAUNCH_HL_CLI:=/home/ubuntu/.nix-profile/bin/hl}"
 
@@ -58,3 +59,11 @@
 : "${FLEET_LAUNCH_POLL_S:=30}"
 : "${FLEET_LAUNCH_PREFLIGHT_REUSE_S:=600}"
 : "${FLEET_LAUNCH_MUTEX_HOLD_S:=900}"
+# The two fixed poll intervals below are waits on an observed state (a free
+# mutex, a listed run); the hermetic harness shortens them so each of its cases
+# advances on that state instead of sitting out a production-sized interval.
+: "${FLEET_LAUNCH_MUTEX_POLL_S:=10}"
+: "${FLEET_LAUNCH_LISTING_POLL_S:=15}"
+# How long a resume launcher keeps its in-flight marker counted after the resume
+# client has exited, while it waits for the run to list on the factory board.
+: "${FLEET_LAUNCH_LISTING_WAIT_S:=600}"

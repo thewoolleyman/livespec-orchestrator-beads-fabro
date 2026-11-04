@@ -73,6 +73,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
     DotGraph,
     parse_dot_graph,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pyright_cache import (
+    pyright_cache_prepare_steps_block,
+)
 
 __all__: list[str] = [
     "RESUME_ENTRY_NODE_ARG",
@@ -314,11 +317,12 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
     untracked state that a checkout does not disturb, while a checkout performed
     BEFORE them would be unshallowed out from under.
 
-    `""` for no resume, byte-for-byte what the overlay carried before this
-    existed, so an ordinary dispatch is untouched by the resume path.
+    An ordinary dispatch has no recovery checkout, but it still receives the
+    cache-provisioning step. A fresh sandbox needs the same serial pyright
+    installation before its first agent command as a resumed sandbox does.
     """
     if checkout is None:
-        return ""
+        return pyright_cache_prepare_steps_block()
     ref = checkout.fetch_ref or f"refs/heads/{checkout.branch}"
     script = " && ".join(
         (
@@ -327,12 +331,13 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
             f"git checkout --detach {shlex.quote(checkout.head)}",
         )
     )
-    return (
+    resume_step = (
         "\n# --- Dispatcher-materialized recovery checkout: the ref the recorded\n"
         "# --- head lives on, at that head ---\n"
         "[[run.prepare.steps]]\n"
         f"script = {_toml_basic_string(value=script)}\n"
     )
+    return resume_step + pyright_cache_prepare_steps_block()
 
 
 def resume_checkout_for(*, args: argparse.Namespace, branch: str) -> ResumeCheckout | None:

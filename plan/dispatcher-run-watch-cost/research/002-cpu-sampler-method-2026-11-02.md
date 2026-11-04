@@ -25,8 +25,22 @@ python3 measure_dispatcher_cpu.py <seconds> <out.json>
 ## Before figure
 
 On 2026-11-02, 19:10:37-19:11:37Z (60 s), 15 loops used 57.8 CPU-s of their own and 57.0 CPU-s in `fabro` children. That is
-7.6 CPU-s per live run per minute. Spawns in the window: events 11, inspect 10, ps 1. The 20-minute window
-(19:00:34-19:20:34Z) is posted to the plan timeline.
+7.6 CPU-s per live run per minute. Spawns in the window: events 11, inspect 10, ps 1. That 60 s window is the quick figure.
+
+The FORMAL before figure, the one the after leg compares against, is the 20-minute window 2026-11-02 19:00:34-19:20:34Z:
+
+| Measure | Value |
+| --- | --- |
+| Loops alive for the whole window | 13, load 45.6/38.7/39.8 on 18 CPUs |
+| Loops' own Python | 905.3 CPU-s |
+| `fabro` children | 962.9 CPU-s (37.2 of it in children still alive at the end) |
+| Total | 1,868 CPU-s, about 1.56 cores |
+| Per live run per minute | **7.18 CPU-s**, 0.12 of a core |
+| Spawns in the window | inspect 188, events 186, ps 2 |
+| Per events poll | **about 10.0 CPU-s**: 1,868 / 186, parent plus children |
+
+The two at-most-one-tenth targets are therefore 0.72 CPU-s per live run per minute (plan assertion 5) and about 1.0 CPU-s
+per live run per poll (bd-ib-u6llci's host-captured assertion).
 
 ## The sampler
 

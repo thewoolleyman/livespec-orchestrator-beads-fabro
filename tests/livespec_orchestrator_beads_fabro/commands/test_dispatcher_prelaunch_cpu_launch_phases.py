@@ -51,11 +51,39 @@ def _plan(*, repo: Path) -> DispatchPlan:
     )
 
 
-def test_the_live_drive_tree_reports_the_cpu_this_test_process_has_spent() -> None:
-    first = drive_tree_cpu_seconds()
-    _ = sum(index * index for index in range(200_000))
+def _stat_line(*, pid: int, comm: str, ppid: int, ticks: tuple[int, int, int, int]) -> str:
+    utime, stime, cutime, cstime = ticks
+    return (
+        f"{pid} ({comm}) S {ppid} 0 0 0 0 0 0 0 0 0 "
+        f"{utime} {stime} {cutime} {cstime} 20 0 1 0 0 0 0\n"
+    )
 
-    assert 0.0 < first <= drive_tree_cpu_seconds()
+
+def test_process_tree_cpu_sums_a_fixture_tree_and_excludes_an_unrelated_process(
+    tmp_path: Path,
+) -> None:
+    rows = {
+        100: _stat_line(pid=100, comm="drive", ppid=1, ticks=(100, 50, 25, 25)),
+        101: _stat_line(pid=101, comm="fabro", ppid=100, ticks=(10, 10, 0, 0)),
+        102: _stat_line(pid=102, comm="git", ppid=101, ticks=(200, 0, 0, 0)),
+        103: _stat_line(pid=103, comm="unrelated", ppid=1, ticks=(999, 999, 999, 999)),
+    }
+    for pid, line in rows.items():
+        (tmp_path / str(pid)).mkdir()
+        (tmp_path / str(pid) / "stat").write_text(line, encoding="utf-8")
+
+    seconds = cpu_module.process_tree_cpu_seconds(root=tmp_path, pid=100, clock_ticks=100)
+
+    assert seconds == 4.2
+
+
+def test_the_live_drive_tree_cpu_reader_is_nonnegative_and_non_decreasing() -> None:
+    first = drive_tree_cpu_seconds()
+    second = drive_tree_cpu_seconds()
+
+    assert isinstance(first, float)
+    assert isinstance(second, float)
+    assert 0.0 <= first <= second
 
 
 def test_a_caller_with_no_profile_ignores_the_checkpoint() -> None:
@@ -232,7 +260,7 @@ def test_for_drive_uses_the_drive_tree_cpu_reader_for_each_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     records: list[dict[str, object]] = []
-    readings = iter((10.0, 10.0, 10.0))
+    readings = iter((0.0, 0.0, 0.0))
 
     class _Journal:
         def append(self, *, record: dict[str, object]) -> None:

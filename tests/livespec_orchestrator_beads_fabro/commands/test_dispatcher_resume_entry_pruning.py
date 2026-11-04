@@ -194,8 +194,8 @@ def test_the_pruned_declaration_leaves_no_tail_of_its_own_script_behind() -> Non
     """The control that names the mechanism, not just the symptom.
 
     Without it, the case above could pass for any reason that made the reparse
-    succeed. `[[:space:]` is the prefix of `publish_draft`'s bracketed shell
-    idiom and occurs EXACTLY ONCE in the committed graph: a body pattern that
+    succeed. `${remote_line%%[[:space:]]*}` occurs EXACTLY ONCE in the
+    committed graph: a body pattern that
     stopped at the inner `]` deleted everything up to it and left the remainder —
     beginning `]*}` — standing in the derived text, so that fragment's absence is
     what distinguishes a whole-declaration prune from a reparse that happened to
@@ -211,7 +211,7 @@ def test_the_pruned_declaration_leaves_no_tail_of_its_own_script_behind() -> Non
     """
     module: Any = importlib.import_module(_MODULE_NAME)
     committed = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
-    assert committed.count("[[:space:]") == 1
+    assert committed.count("${remote_line%%[[:space:]]*}") == 1
     derived = module.graph_entered_at(graph_text=committed, node="verify_pr")
     assert derived is not None
     assert "publish_draft" not in set(_parsed(text=derived).nodes)

@@ -1994,14 +1994,6 @@
     "reason": "Integration-tier (`tests.integration`) through the real lane, the real spec tree and the real store/client seam: the bound test drives a pass over two merges after a recorded frontier and asserts the proposal rests under proposed_changes/ while every artifact an acceptance would have left - a history/vNNN snapshot, a <topic>-revision.md, the proposal leaving the open queue - is absent, which is the scenario's last case. Its siblings in the same module carry the frontier advance, the merges-after-the-frontier fact and the anchor-only ledger write; the failed-merge, retried-pass and queue-cap cases are exercised by tests.livespec_orchestrator_beads_fabro.commands.test_drift_run_frontier, ..._proposal_filing and ..._queue_cap."
   },
   {
-    "heading": "## Scenario 211 \u2014 An unmet plan obligation is superseded only by a typed event whose cause verifies, and keeps its original budget",
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal plan-obligation-supersession, and the owning work-item bd-ib-egzipe lands the supersession writer together with the integration-tier test that binds this entry.",
-    "work_item": "bd-ib-egzipe"
-  },
-  {
     "heading": "## Scenario 212 \u2014 The sandbox-images command reports the sandbox image sources a dispatch without an explicit workflow path resolves, through dispatch resolution, and changes nothing",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
@@ -2674,8 +2666,8 @@
     "heading": "## Scenario 297 \u2014 A queued provisional launcher runs its preflight while it waits and still binds in FIFO order",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal launch-preflight-while-queued (v277), and the owning work-item bd-ib-x7bwug adds the check-fleet-launch hermetic-harness cases (a queued launcher preflights before an older ticket binds while FIFO order holds, a fresh pass is reused at the head, a reused pass does not skip the hold check, a stale pass is re-taken at the head, a preflight that fails while queued drops the ticket without the mutex) together with the launcher change.",
+    "test": "tests.integration.test_fleet_launch_scenario297.test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate",
+    "reason": "Hermetic integration coverage for Scenario 297: the check-fleet-launch harness runs two real launcher processes with stub boards, credential wrapper, preflight, queue, lock, in-flight and state directories. It proves that a younger queued launcher begins its preflight before the older ticket binds, that FIFO bind order remains intact, that a fresh pass is reused, that a stale pass is renewed before binding, and that a queued preflight failure exits 4 after dropping its ticket without taking the mutex.",
     "work_item": "bd-ib-x7bwug"
   },
   {
@@ -2685,5 +2677,53 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: ratified with proposal fabro-fork-rust-gates-and (v278), and the owning work-item bd-ib-dqxcsh adds the test exercising the fork's carrier-branch gate and carrier-build venue together with the change.",
     "work_item": "bd-ib-dqxcsh"
+  },
+  {
+    "heading": "## Scenario 301 \u2014 A verified delegated press satisfies a human valve and is recorded as delegated",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "tests.integration.test_delegated_valve_press_scenario301.test_scenario301_a_verified_delegated_answer_is_admitted_and_recorded_as_delegated",
+    "reason": "Bound by integration-tier cases over the public drive.run_action press: a verified delegate:<name> answer under a committed dispatcher.valve_delegations ref admitted at the human disposition, its answer header, journal records and livespec-delegated-valve-press comment all naming the delegation and no human: identity; an unknown ref, a ref granted to another delegate, a ref with no delegate role, a delegate role with no ref and an unreadable setting each refused with nothing written; and set-merge-hold, set-factory-safety, set-admission and impl: refused as not delegable.",
+    "work_item": "bd-ib-heat"
+  },
+  {
+    "heading": "## Factory sandbox clone release tags",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-ia6zbf makes the Dispatcher's rendered prepare steps refresh the remote's tags, together with the test that binds this entry.",
+    "work_item": "bd-ib-ia6zbf"
+  },
+  {
+    "heading": "## Scenario 298 \u2014 A factory sandbox clone carries the remote's release tags after its prepare steps",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-ia6zbf adds the prepare-step tag refresh and the test exercising a clone whose tags lag the remote.",
+    "work_item": "bd-ib-ia6zbf"
+  },
+  {
+    "heading": "## Scenario 302 \u2014 A fleet-launch resume launcher waits for the fleet cap and the factory FIFO",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-uhcn36 adds the capped, FIFO-ordered resume launcher under fleet-launch/ and the check-fleet-launch harness cases exercising a resume waiting at the fleet cap and binding behind an older impl ticket.",
+    "work_item": "bd-ib-uhcn36"
+  },
+  {
+    "heading": "## Scenario 303 \u2014 The committed launch-time preflight runs under a PATH-resetting wrapper with a string-form adapter entry",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-pys5lt upstreams the launcher-local preflight deltas into dev-tooling/dod-preflight.sh and adds the test running it under a PATH-resetting wrapper with a string-form adapter entry.",
+    "work_item": "bd-ib-pys5lt"
+  },
+  {
+    "heading": "## Dispatch pre-launch step attribution and concurrency",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-bpkqan journals start and end records for every pre-launch step, runs independent pre-launch steps concurrently, computes per-loop-pass facts once, and tests the default branch's ref first in the source-checkout preflight, with the test exercising those dispatcher behaviours.",
+    "work_item": "bd-ib-bpkqan"
   }
 ]

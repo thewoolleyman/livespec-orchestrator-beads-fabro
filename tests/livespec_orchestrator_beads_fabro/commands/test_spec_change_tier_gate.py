@@ -29,6 +29,7 @@ did-not-run record makes legible.
 
 from __future__ import annotations
 
+import json
 import stat
 from pathlib import Path
 
@@ -189,6 +190,61 @@ def test_an_unstated_feature_is_classified_once_and_reused_on_the_next_pass(
     # dispatch path" a ledger read rather than two model calls per pass.
     assert _calls(ledger=ledger) == 2
     assert len(_comments(repo=repo)) == 1
+
+
+def test_a_taken_tier_record_carries_its_selected_and_named_clause_bodies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _ = _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("feature", _UNSTATED))
+    append_work_item(path=_config(repo=repo), item=_item())
+
+    _ = classify_item_spec_change_tier(
+        item=_item(), repo=repo, path=_config(repo=repo), stage=STAGE_FILING
+    )
+
+    fields = [
+        line.partition(": ")[2]
+        for line in _comments(repo=repo)[0].splitlines()
+        if line.startswith("spec-change-tier-selected-clause: ")
+    ]
+    named = [
+        line.partition(": ")[2]
+        for line in _comments(repo=repo)[0].splitlines()
+        if line.startswith("spec-change-tier-named-clause: ")
+    ]
+    expected = {"heading": _HEADING, "body": "\n\nThe clause body.\n"}
+    assert [json.loads(value) for value in fields] == [expected]
+    assert [json.loads(value) for value in named] == [expected]
+
+
+def test_an_unrelated_revision_reuses_the_tier_verdict_without_a_model_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    ledger = _install_judge(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        replies=("feature", _UNSTATED, "bug"),
+    )
+    append_work_item(path=_config(repo=repo), item=_item())
+
+    _ = classify_item_spec_change_tier(
+        item=_item(), repo=repo, path=_config(repo=repo), stage=STAGE_FILING
+    )
+    spec = repo / "SPECIFICATION"
+    (spec / "history" / "v002").mkdir()
+    _ = (spec / "unrelated.md").write_text(
+        "## Unrelated revision\n\n" + "x" * 250_000,
+        encoding="utf-8",
+    )
+
+    reused = classify_item_spec_change_tier(
+        item=_item(), repo=repo, path=_config(repo=repo), stage=STAGE_DISPATCH
+    )
+
+    assert reused.reused is True
+    assert _calls(ledger=ledger) == 2
 
 
 def test_a_bug_pays_for_the_classification_and_not_for_the_judgement(

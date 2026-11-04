@@ -14,11 +14,15 @@ import json
 from collections.abc import Sequence
 from typing import cast
 
+from livespec_runtime.spec_stated import ClauseEvidence
+
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
 __all__: list[str] = [
     "clause_line",
     "clauses_from",
+    "evidence_from",
+    "evidence_line",
 ]
 
 _FIELD_SEPARATOR = ": "
@@ -47,3 +51,28 @@ def clauses_from(*, values: Sequence[str]) -> tuple[CondensedClause, ...] | None
             return None
         clauses.append(CondensedClause(heading=heading, body=clause_body))
     return tuple(clauses)
+
+
+def evidence_line(*, key: str, entry: ClauseEvidence) -> str:
+    """One recorded clause quotation, on one line whatever the quote holds."""
+    value = json.dumps({"heading": entry.heading, "quote": entry.quote}, sort_keys=True)
+    return f"{key}{_FIELD_SEPARATOR}{value}"
+
+
+def evidence_from(*, values: Sequence[str]) -> tuple[ClauseEvidence, ...] | None:
+    """The quotations one record carries, or no reading when any is malformed."""
+    entries: list[ClauseEvidence] = []
+    for raw in values:
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(decoded, dict):
+            return None
+        fields = cast("dict[str, object]", decoded)
+        heading = fields.get("heading")
+        quote = fields.get("quote")
+        if not isinstance(heading, str) or not isinstance(quote, str):
+            return None
+        entries.append(ClauseEvidence(heading=heading, quote=quote))
+    return tuple(entries)

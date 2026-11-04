@@ -183,9 +183,8 @@ class _ScriptedFabroRunner:
                 stdout=_INSPECT_TEMPLATE.format(run=_RUN_ID, kind=self.status_kind),
                 stderr="",
             )
-        if verb == "events":
-            return CommandResult(exit_code=0, stdout=_FROZEN_EVENTS, stderr="")
-        return CommandResult(exit_code=0, stdout="", stderr="")
+        assert verb == "events", verb
+        return CommandResult(exit_code=0, stdout=_FROZEN_EVENTS, stderr="")
 
 
 def _wall_clock() -> Any:

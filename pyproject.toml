@@ -43,6 +43,7 @@ dev = [
     "pyright==1.1.391",
     "pytest==8.3.4",
     "pytest-cov==6.0.0",
+    "pytest-rerunfailures==14.0",
     "pytest-icdiff==0.9",
     "pytest-xdist==3.8.0",
     "hypothesis==6.122.3",
@@ -65,7 +66,7 @@ dev = [
 # module uses its types module for the canonical cross-repo manifest shape.
 # Pin matches livespec's pin (>=0.2.0; ~/livespec).
 [tool.uv.sources]
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.158.1" }
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.167.0" }
 livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.29.1" }
 
 # ---------------------------------------------------------------------------
@@ -165,6 +166,12 @@ ban-relative-imports = "all"
 # constants, and `git` must resolve through the mise-managed PATH rather than
 # an absolute path. No other diagnostic is waived for this file.
 ".claude/hooks/livespec_tdd_order_guard.py" = ["S603", "S607"]
+# The launcher deliberately replaces itself with the project virtualenv's
+# interpreter after accepting only the fixed `mise exec -- uv run --no-sync
+# python` command shape.  That replacement is the measured hot-path behavior;
+# starting a child through subprocess would retain the launcher and defeat it.
+# S606 cannot infer that the executable is constrained to `.venv/bin/python`.
+".claude/hooks/livespec_uv_hook_launcher.py" = ["S606"]
 # The Stop hook runs the plugin's own `session_wait.py check` through ONE
 # subprocess whose argv is the interpreter, a fixed script path under the
 # plugin root and constant subcommand tokens. Only S603 is waived.

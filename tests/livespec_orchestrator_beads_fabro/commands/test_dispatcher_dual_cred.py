@@ -1021,7 +1021,7 @@ def test_dispatch_one_refuses_when_policy_labels_cannot_be_read(
         repo=tmp_path,
         item=_policy_item(),
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
-        janitor=None,
+        launch=_dispatcher_loop.DispatchLaunchContext(),
     )
     assert outcome.status == "failed"
     assert outcome.stage == "ledger-labels"
@@ -1051,7 +1051,7 @@ def test_dispatch_one_releases_dispatch_lock_when_locked_body_raises(
             repo=tmp_path,
             item=item,
             journal=JournalFile(path=tmp_path / "journal.jsonl"),
-            janitor=None,
+            launch=_dispatcher_loop.DispatchLaunchContext(),
         )
 
     assert not lock_path.exists()

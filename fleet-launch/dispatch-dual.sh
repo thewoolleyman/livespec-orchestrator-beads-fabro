@@ -79,9 +79,14 @@ board_rows() {
 }
 rows_count() { if [ "$1" = U ]; then echo U; else printf '%s' "$1" | grep -c .; fi; }
 
-# unlisted_markers <listed-rows>: in-flight markers of launches whose run has not listed yet.
-unlisted_markers() {
-  local listed="$1" f p it n=0
+# marker_snapshot: the items of the live in-flight markers, one per line, or U
+# when the directory cannot be read.  Taken BEFORE the boards are read: a
+# launcher drops its marker only after a board lists its run, so a marker that
+# vanishes after this snapshot belongs to a run the later board read lists.
+# Reading the boards first undercounted a run that listed between the two
+# reads (bd-ib-uhcn36, run 01M6H3VFB451).
+marker_snapshot() {
+  local f p it items=""
   mkdir -p "$INFLIGHT" 2>/dev/null
   [ -d "$INFLIGHT" ] && [ -r "$INFLIGHT" ] && [ -x "$INFLIGHT" ] || { echo U; return; }
   for f in "$INFLIGHT"/*; do
@@ -93,19 +98,35 @@ unlisted_markers() {
     if ! { [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }; then
       [ -n "$it" ] && pgrep -u "$(id -u)" -f -- "drive.py .*--action impl:${it}( |$)" >/dev/null 2>&1 || continue
     fi
+    items="$items$it
+"
+  done
+  printf '%s' "$items"
+}
+
+# unlisted_markers <snapshot> <listed-rows>: the snapshot's launches whose run the (later) board read does not list.
+unlisted_markers() {
+  local snapshot="$1" listed="$2" it n=0
+  [ "$snapshot" = U ] && { echo U; return; }
+  while IFS= read -r it; do
+    [ -n "$it" ] || continue
     printf '%s\n' "$listed" | awk -v it="$it" '$4==it {found=1} END{exit !found}' && continue
     n=$((n + 1))
-  done
+  done <<EOF_SNAPSHOT
+$snapshot
+EOF_SNAPSHOT
   echo "$n"
 }
 
 # read_boards: sets gmk_live, hl_live, markers and fleet (a number, or U when any reading is unknown).
 read_boards() {
+  local snapshot
+  snapshot=$(marker_snapshot)
   gmk_rows=$(board_rows "$FABRO" "$GMK")
   hl_rows=$(board_rows "$FABRO" "$HL")
   gmk_live=$(rows_count "$gmk_rows"); hl_live=$(rows_count "$hl_rows")
   if [ "$gmk_live" = U ] || [ "$hl_live" = U ]; then markers=U; fleet=U; return; fi
-  markers=$(unlisted_markers "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
+  markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
   if [ "$markers" = U ]; then fleet=U; else fleet=$(( gmk_live + hl_live + markers )); fi
 }
 gt() { awk "BEGIN{exit !($1 > $2)}"; }
@@ -146,7 +167,7 @@ oldest_live_ticket() {
     rm -f "$q/$f"
   done
 }
-# take_mutex <queue-dir> <lock-dir>: FIFO ticket, 10 s polls, abandon after FLEET_LAUNCH_ABANDON_S.
+# take_mutex <queue-dir> <lock-dir>: FIFO ticket, FLEET_LAUNCH_MUTEX_POLL_S polls, abandon after FLEET_LAUNCH_ABANDON_S.
 take_mutex() {
   local q="$1" l="$2" queued early=""
   mkdir -p "$q"
@@ -161,7 +182,7 @@ take_mutex() {
       # FIFO place instead of polling ticketless. The ticket is dropped only once the launch binds.
       lock="$l"; echo "owner=$SEAT pid=$$ item=$ITEM at=$(date -u +%FT%TZ)" > "$l/holder"; [ -n "$early" ] || drop_ticket; return 0
     fi
-    sleep 10
+    sleep "$FLEET_LAUNCH_MUTEX_POLL_S"
   done
   [ -n "$early" ] || drop_ticket; return 1
 }
@@ -189,9 +210,10 @@ ready_check() {
 rcout=$(ready_check); rcrc=$?; echo "$(date -u +%T) $rcout"
 [ $rcrc = 0 ] || { echo "$(date -u +%T) ready-set check refused (rc=$rcrc): no slot taken, no launch"; exit 3; }
 
-# The launch-time Definition-of-Done preflight runs at launch, just before the marker, and a pass is
-# reused for FLEET_LAUNCH_PREFLIGHT_REUSE_S so a repeatedly-green launcher does not re-run it every poll.
+# A queued launcher takes its Definition-of-Done preflight while it waits; a pass
+# is reusable for FLEET_LAUNCH_PREFLIGHT_REUSE_S when it reaches the FIFO head.
 pf_ok_at=0
+queue_preflight_done=0
 launch_preflight() {
   local now prc pf="$OUT/$ITEM-preflight-launch.txt"; now=$(date +%s)
   [ $(( now - pf_ok_at )) -lt "$FLEET_LAUNCH_PREFLIGHT_REUSE_S" ] && return 0
@@ -204,6 +226,10 @@ launch_preflight() {
 }
 
 target=""; taken=0
+# The give-up deadline is checked only AFTER the first evaluation, so a launcher
+# whose start-up alone outlasts FLEET_LAUNCH_MAX_WAIT_S on a loaded host still
+# reads the boards and reports why it gave up instead of giving up blind.
+evaluated=0
 # A gmktec-only launch takes its FIFO ticket NOW and holds it while it polls, so a launcher queued
 # later cannot win the next freed slot ahead of it.
 if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
@@ -214,11 +240,17 @@ while [ -z "$target" ]; do
   if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
     ahead=$(oldest_live_ticket "$GMK_Q")
     if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
-      [ "$(date +%s)" -lt "$deadline" ] || give_up
+      [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+      evaluated=1
+      # Spend FIFO wait time on this launcher's own Definition-of-Done
+      # preflight. Do it once while queued; launch_preflight decides whether
+      # the cached pass is still reusable when this ticket reaches the head.
+      if [ "$queue_preflight_done" = 0 ]; then launch_preflight; queue_preflight_done=1; fi
       echo "$(date -u +%T) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
     fi
   fi
-  [ "$(date +%s)" -lt "$deadline" ] || give_up
+  [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+  evaluated=1
   gmk_idle=
   if ! fleet_green; then echo "$(date -u +%T) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
   if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%T) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
@@ -303,7 +335,7 @@ while :; do
   if [ -n "$run_row" ]; then echo "$(date -u +%T) LISTED on $target: $run_row"; break; fi
   if ! kill -0 "$drive_pid" 2>/dev/null; then echo "$(date -u +%T) drive exited before listing"; break; fi
   if [ -n "$lock" ] && [ $(( $(date +%s) - taken )) -ge "$FLEET_LAUNCH_MUTEX_HOLD_S" ]; then echo "$(date -u +%T) mutex hold elapsed: release (marker kept until listing or drive exit)"; release_lock; fi
-  sleep 15
+  sleep "$FLEET_LAUNCH_LISTING_POLL_S"
 done
 release_lock; rm -f "$marker"; marker=""
 echo "$(date -u +%FT%TZ) target=$target build=$build version=${build_version:-?} listed=${run_row:-none}" > "$OUT/$ITEM-r267.verdict"

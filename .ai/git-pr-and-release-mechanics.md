@@ -81,15 +81,32 @@ citations of ratified scenarios. Read what each file claims, and re-derive the
 gap set from `scenarios.md` directly; riders inside proposals name stale gap
 lists.
 
-## An agent cannot land a `.github/workflows/` change
+## A `.github/workflows/` change needs a tiered ledger authorization
 
 Any change under `.github/workflows/` is refused at pre-push by
-`dev-tooling/check-no-workflow-edits.sh` (maintainer rule 2026-09-04) unless it
-carries a tracked `.livespec-workflow-edit-exemption` (one `work_item=` line,
-one `reason=` line) AND that item carries the label `approval:workflow-edit`,
-which the footgun hook denies to agents. The guard has no environment or flag
-escape, by design: the factory must never land workflow edits autonomously.
-When a fix needs a workflow edit, split it: land everything else, declare the
+`dev-tooling/check-no-workflow-edits.sh` (maintainer rule 2026-09-04, tiered
+2026-11-02) unless it carries a tracked `.livespec-workflow-edit-exemption` (one
+`work_item=` line, one `reason=` line) AND that item carries a label for the
+edit's tier:
+
+- **ADDITIVE tier.** The workflow diff only adds lines, measured mechanically
+  against the merge base, and the exemption also attests `change=additive` and
+  `ci_runtime=no-significant-increase`. The label is
+  `approval:workflow-edit-additive`. An agent may set it only under the
+  maintainer's prior authorization, which may be delegated to a coordinator
+  agent. `approval:workflow-edit` also admits this tier.
+- **MAINTAINER tier.** Everything else needs `approval:workflow-edit`, which
+  only the maintainer sets, directly. That covers any deleted or modified
+  workflow line, any edit that removes or reduces test coverage or quality
+  gates, any edit that significantly increases CI runtime, and any exemption
+  without the additive attestation. An agent never sets this label. (The
+  footgun hook that once denied it to agents is retired; the rule stands
+  without it.)
+
+The guard refuses a `change=additive` claim over a diff with deleted or
+modified lines, naming them. It has no environment or flag escape, by design:
+the factory must never land workflow edits autonomously. When a fix needs a
+maintainer-tier workflow edit, split it: land everything else, declare the
 CI-visible gap the sanctioned way (for `check-ci-matrix-completeness`,
 `repo_local_ci_skips` entries marked PROVISIONAL naming the follow-up), and
 file the workflow edit as a blocked needs-human item for the maintainer to

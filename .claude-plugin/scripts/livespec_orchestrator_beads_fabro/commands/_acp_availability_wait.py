@@ -195,6 +195,12 @@ class AvailabilityWait:
     is EMPTY when no turn was run, which is deliberately distinct from a turn
     whose ending happened not to confirm: a filled-in ending would report a
     measurement nobody took.
+
+    `unreadable_runs` names each RUN whose record could not be read, with its
+    factory and the reason, so a refusal that an unreadable record governs
+    says which record it was (bd-ib-fhmpik). The count beside it says how many
+    sources were unreadable; on 2026-11-03 that count was all an operator had,
+    and finding the 10.4 MB record behind it took a read-only replay.
     """
 
     node: str | None
@@ -205,6 +211,7 @@ class AvailabilityWait:
     unobservable_observations: int
     legacy_provider: str | None = None
     confirmation_endings: tuple[str, ...] = ()
+    unreadable_runs: tuple[dict[str, object], ...] = ()
 
 
 def availability_wait(
@@ -253,6 +260,15 @@ def availability_wait(
         unobservable_observations=len(verdict.unobservable),
         legacy_provider=_legacy_provider(emptied=emptied),
         confirmation_endings=_confirmation_endings(emptied=emptied),
+        unreadable_runs=tuple(
+            {
+                "run_id": entry["run_id"],
+                "factory": entry.get("factory"),
+                "reason": entry.get("reason"),
+            }
+            for entry in verdict.unobservable
+            if "run_id" in entry
+        ),
     )
 
 
@@ -278,7 +294,13 @@ def availability_wait_refusal_fields(*, wait: AvailabilityWait | None) -> dict[s
     """
     if wait is None:
         return {}
+    unreadable: dict[str, object] = (
+        {"unreadable_runs": [dict(run) for run in wait.unreadable_runs]}
+        if wait.governing_condition == UNAVAILABLE_EVIDENCE
+        else {}
+    )
     return {
+        **unreadable,
         "governing_condition": wait.governing_condition,
         CONFIRMATION_ENDINGS_FIELD: list(wait.confirmation_endings),
         "admission_required_node": wait.node,

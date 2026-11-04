@@ -6,10 +6,10 @@ obligation that is absent, satisfied or null-tracked in `_plan_progress_decision
 and the arms for an UNMET one in `_plan_progress_unmet` — and both need these two
 values, so a home for them inside either closes an import cycle.
 
-`EVENT_SUPERSESSION` is deliberately NOT here. It is the one progress-event kind
-whose meaning is fixed by the cause that produces it, so it lives beside that
-cause in `_plan_supersession`; the four below are kinds a write chooses from what
-it is DOING, which is this module's own subject.
+The five event kinds below are kinds a write chooses from what it is DOING,
+which is this module's own subject. `replacement` is the one that names the
+result it replaced, in `TrackedDecision.replaced_result`, so the replaced
+obligation stays readable in the progress history.
 
 WHY `retained_authority` IS HERE RATHER THAN BESIDE EITHER CALLER. It is the
 guarantee the whole clause rests on — "Routine handoffs, supervisor handoffs and
@@ -35,6 +35,7 @@ __all__: list[str] = [
     "EVENT_PICKER",
     "EVENT_POINTER",
     "EVENT_RECOVERY",
+    "EVENT_REPLACEMENT",
     "TrackedDecision",
     "TrackedRefusal",
     "retained_authority",
@@ -44,6 +45,7 @@ EVENT_HANDOFF = "handoff"
 EVENT_POINTER = "pointer"
 EVENT_PICKER = "picker"
 EVENT_RECOVERY = "recovery"
+EVENT_REPLACEMENT = "replacement"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,8 +55,7 @@ class TrackedDecision:
     action: NextAction
     authority: AuthorityState
     event_kind: str
-    continuation_ruling_by: str | None = None
-    continuation_ruling_recorded_at: str | None = None
+    replaced_result: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
