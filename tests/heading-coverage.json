@@ -2829,5 +2829,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-tckulg adds the merge-poll failed-job classifier, the single automatic failed-jobs re-run with its journal row and flake-item filing, and tests that exercise each scenario of this heading.",
     "work_item": "bd-ib-tckulg"
+  },
+  {
+    "heading": "## Scenario 309 \u2014 Fleet-launch launchers share one WIP claim-count read per repository per time-to-live",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-zwtfbq carries the shared per-repository WIP claim-count cache into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising one projection read per time-to-live, stale recomputation, own-marker exclusion, failed-recomputation no-hold and cached-uncached equality.",
+    "work_item": "bd-ib-zwtfbq"
   }
 ]
