@@ -68,6 +68,11 @@ def test_ordinary_failure_text_carries_no_governing_condition() -> None:
     assert condition is None
 
 
+def test_a_distinct_already_satisfied_outcome_carries_its_dispatch_base() -> None:
+    """A correct no-op needs evidence that distinguishes it from truncation."""
+    assert "already_satisfied_base" in DispatchOutcome.__dataclass_fields__
+
+
 def test_dead_implementer_truncation_journals_the_id_and_governing_condition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

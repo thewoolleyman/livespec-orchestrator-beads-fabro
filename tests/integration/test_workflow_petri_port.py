@@ -105,6 +105,7 @@ _PROOF_GRADE_ADDED = {"proof_grade", "proof_grade_route"}
 # closes no cycle, and is reached once per attempt of the turn it guards — which
 # is why it appears here and not in the moved-node allowance below.
 _IMPLEMENT_COMPLETION_ADDED = {"implement_completion"}
+_ALREADY_SATISFIED_ADDED = {"already_satisfied"}
 
 # The recapture route (v175, Scenario 137; work-item bd-ib-j56cur), kept as its
 # own constant for the reason every set above gives. It closes a NEW cycle --
@@ -744,6 +745,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
+        | _ALREADY_SATISFIED_ADDED
         | _RECAPTURE_ADDED
         | _HOOK_ROUTE_ADDED
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
@@ -772,6 +774,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
+        | _ALREADY_SATISFIED_ADDED
         | _RECAPTURE_LOOP
         | _HOOK_ROUTE_LOOP
         | _IMPLEMENT_AMENDMENT_ROUTE_LOOP

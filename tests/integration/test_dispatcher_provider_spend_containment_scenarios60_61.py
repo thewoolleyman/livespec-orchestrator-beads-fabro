@@ -708,7 +708,8 @@ def test_scenario61_the_dispatched_workflow_truncates_an_unchanged_tree(
     node = re.search(r"\bimplementation_diff\s*\[(?P<body>[^\]]*)\]", graph)
     assert node is not None
     assert "git diff --quiet origin/{{ inputs.default_branch }}...HEAD" in node.group("body")
-    # The route from the turn to the breaker is TWO unconditional edges since
+    # The route from the turn first distinguishes a complete no-op from a dead
+    # implementer. The already-satisfied node is terminal on its success arm.
     # v165: Scenario 204's completion gate consumed `implement`'s fallthrough and
     # supplies the breaker's. Both legs are asserted, because a graph that
     # dropped either would reach janitor with the diff question unasked — and the
@@ -724,9 +725,10 @@ def test_scenario61_the_dispatched_workflow_truncates_an_unchanged_tree(
         graph,
     )
     assert re.search(
-        r"\bimplementation_diff\s*->\s*dead_implementer\b(?![^\n]*condition=)",
+        r"\bimplementation_diff\s*->\s*already_satisfied\b(?![^\n]*condition=)",
         graph,
     )
+    assert re.search(r"\balready_satisfied\s*->", graph) is None
     breaker = re.search(r"\bdead_implementer\s*\[(?P<body>[^\]]*)\]", graph, re.DOTALL)
     assert breaker is not None
     assert _DEAD_IMPLEMENTER_MARKER in breaker.group("body")
