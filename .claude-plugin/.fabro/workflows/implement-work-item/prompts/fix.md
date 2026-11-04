@@ -47,13 +47,14 @@ conflict or the gate failure:
    rather than through a conflict, and it has the same one remedy: run the
    generator the brief names for that path. If the generator exits non-zero, that
    is the finding to fix — never a reason to write the file by hand.
-2. Run the repository's check suite (`{{ inputs.sandbox_check_suite }}`)
-   against the integrated tree and fix what the integration broke.
-   Run it ONCE per tree, under the once-per-tree rule below, which counts a
-   commit whose pre-commit hook ran the full suite green on the exact
-   integrated tree it committed as that tree's run. A gate target the brief
-   names failed on the REFRESHED tree, so a green suite on the pre-refresh
-   tree is not evidence.
+2. Establish a full green run of the repository's check suite
+   (`{{ inputs.sandbox_check_suite }}`) on the integrated tree and fix what the
+   integration broke.
+   If a commit's pre-commit hook already passed the full suite on its exact committed tree, do NOT start it yourself.
+   Count that hook run as the integrated tree's run; otherwise, run the suite yourself ONCE per tree, under the once-per-tree rule below.
+   A gate target the brief names
+   failed on the REFRESHED tree, so a green suite on the pre-refresh tree is not
+   evidence.
 3. Leave the branch at the integrated, green head. The graph re-enters
    janitor, then `publish_draft`, then `proof_capture`, so publication is
    re-earned on the repaired head rather than claimed here.
@@ -178,10 +179,11 @@ that the commit-hook section below tells you to leave for `fix_commit_settle`.
    never an edit under an existing Green); commit trailer
    `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`; never
    create or switch branches, never touch `.beads/` or `core.bare`.
-3. Run the repository's check suite (`{{ inputs.sandbox_check_suite }}`)
-   yourself until it is green — ONCE per tree, under the once-per-tree rule
-   below, which counts a commit whose pre-commit hook ran the full suite green
-   on the exact tree it committed as that tree's run.
+3. Establish a full green run of the repository's check suite
+   (`{{ inputs.sandbox_check_suite }}`) on the tree you leave.
+   If a commit's pre-commit hook already passed the full suite on its exact committed tree, do NOT start it yourself.
+   Count that hook run as this turn's run; otherwise, run the suite yourself ONCE per tree, under the once-per-tree rule below,
+   fixing any failure before running it on the resulting new tree.
 4. Re-run the failed reproduction and report the before/after result,
    naming the source stage and assertion alongside the diagnosis and fix.
    Suite success alone is not evidence that the semantic finding is fixed.
