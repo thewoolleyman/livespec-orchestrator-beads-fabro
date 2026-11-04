@@ -61,6 +61,7 @@ fail() { FAIL=$((FAIL + 1)); printf '  FAIL: %s\n' "$1" >&2; }
 # The two stub server URLs. They are opaque to the launcher, which only passes
 # them to `fabro ps -a --server`, so the stub discriminates boards on them.
 GMK_URL="https://stub-gmktec.invalid:32276"
+GMK_CANDIDATE_URL="https://stub-gmktec.invalid:32278"
 HL_URL="https://stub-mi-homelab.invalid:32277"
 
 # --- the stubs ---------------------------------------------------------------
@@ -85,6 +86,7 @@ for argument in "$@"; do
 done
 case $server in
     "$STUB_SERVER_GMK") board=$STUB_BOARD_GMK ;;
+    "$STUB_SERVER_GMK_CANDIDATE") board=$STUB_BOARD_GMK_CANDIDATE ;;
     "$STUB_SERVER_HL") board=$STUB_BOARD_HL ;;
     *) echo "stub fabro: no board fixture for server '$server'" >&2; exit 1 ;;
 esac
@@ -136,6 +138,10 @@ if [ "${1:-}" = -- ]; then shift; fi
 for argument in "$@"; do
     case ${argument##*/} in
         ready-set-check.py)
+            if [ "${!#}" = capacity ]; then
+                printf '{"counted_claims": %s, "wip_cap": %s}\n' "${STUB_CAPACITY_COUNT:-0}" "${STUB_CAPACITY_CAP:-5}"
+                exit 0
+            fi
             printf 'READY-CHECK stub: in the ready set\n'
             exit "${STUB_READY_EXIT:-0}"
             ;;
@@ -192,6 +198,10 @@ for argument in "$@"; do
                 fi
             else
                 printf 'released %s\n' "$item" >> "$STUB_DRIVE_MUTEX_LOG"
+            fi
+            if [ -n "${STUB_DRIVE_FAIL_ONCE:-}" ] && [ ! -e "$STUB_DRIVE_FAIL_ONCE" ]; then
+                : > "$STUB_DRIVE_FAIL_ONCE"
+                exit 1
             fi
             if [ -n "$item" ] && [ -n "$server" ]; then
                 printf '%s %s\n' "$server" "$item" > "$STUB_DRIVEN_DIR/$item"
@@ -301,6 +311,7 @@ RESUME_OBSERVATION_LOG=""
 PS_LOG=""
 SNAPSHOT_DIR=""
 BOARD_GMK=""
+BOARD_GMK_CANDIDATE=""
 BOARD_HL=""
 CAP_FILE=""
 HOLD_FILE=""
@@ -326,14 +337,17 @@ new_case() {
     : > "$PS_LOG"
     SNAPSHOT_DIR="$CASE_DIR/board-snapshot"
     BOARD_GMK="$CASE_DIR/boards/gmktec"
+    BOARD_GMK_CANDIDATE="$CASE_DIR/boards/gmktec-candidate"
     BOARD_HL="$CASE_DIR/boards/mi-homelab"
     CAP_FILE="$CASE_DIR/state/fleet-cap"
     HOLD_FILE="$CASE_DIR/state/hold-gmktec"
 
     export PATH="$STUB/bin:$PATH"
     export STUB_SERVER_GMK="$GMK_URL"
+    export STUB_SERVER_GMK_CANDIDATE="$GMK_CANDIDATE_URL"
     export STUB_SERVER_HL="$HL_URL"
     export STUB_BOARD_GMK="$BOARD_GMK"
+    export STUB_BOARD_GMK_CANDIDATE="$BOARD_GMK_CANDIDATE"
     export STUB_BOARD_HL="$BOARD_HL"
     export STUB_DRIVEN_DIR="$CASE_DIR/driven"
     export STUB_RESUMED_DIR="$CASE_DIR/resumed"
@@ -345,6 +359,8 @@ new_case() {
     export STUB_PS_LOG="$PS_LOG"
     unset STUB_PS_DELAY_S
     export STUB_READY_EXIT=0
+    export STUB_CAPACITY_COUNT=0
+    export STUB_CAPACITY_CAP=5
     export STUB_PREFLIGHT_EXIT=0
     unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM
     export STUB_PREFLIGHT_RELEASE="$CASE_DIR/release-held-preflight"
@@ -357,11 +373,17 @@ new_case() {
     export FLEET_LAUNCH_STATE_DIR="$CASE_DIR/state"
     export FLEET_LAUNCH_FLEET_CAP_FILE="$CAP_FILE"
     export FLEET_LAUNCH_HOLD_FILE="$HOLD_FILE"
+    export FLEET_LAUNCH_GMK_HOLD_FILE="$HOLD_FILE"
+    export FLEET_LAUNCH_REPO_HOLD_DIR="$CASE_DIR/state"
+    export FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE="$CASE_DIR/breakage-exception"
     export FLEET_LAUNCH_GMK_SERVER="$GMK_URL"
+    export FLEET_LAUNCH_GMK_CANDIDATE_SERVER="$GMK_CANDIDATE_URL"
     export FLEET_LAUNCH_HL_SERVER="$HL_URL"
+    export FLEET_LAUNCH_GMK_TARGET_FILE="$CASE_DIR/state/gmk-target"
     export FLEET_LAUNCH_GMK_SSH="stub-factory-host"
     export FLEET_LAUNCH_GMK_SERVER_ENV="$CASE_DIR/state/server.env"
     export FLEET_LAUNCH_GMK_CAP=8
+    export FLEET_LAUNCH_GMK_CANDIDATE_CAP=2
     export FLEET_LAUNCH_HL_CAP=2
     export FLEET_LAUNCH_GMK_MIN_IDLE=25
     export FLEET_LAUNCH_FABRO="$STUB/fabro"
@@ -395,6 +417,9 @@ new_case() {
     export FLEET_LAUNCH_MUTEX_HOLD_S=60
     export FLEET_LAUNCH_LISTING_WAIT_S=60
     unset STUB_RESUME_UNLISTED
+    unset STUB_DRIVE_FAIL_ONCE
+    : > "$BOARD_GMK_CANDIDATE"
+    : > "$FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE"
     unset ONLY_GMK ONLY_HL CAPTURE_NULL CAPTURE_EXPECT TICKET_NS REWORK RELEASE_BLOCKED
 }
 
@@ -1051,6 +1076,81 @@ else
     head -4 "$CASE_DIR/impl-stamp.log" "$CASE_DIR/resume-stamp.log" >&2
 fi
 
+fi
+
+# --- 19. Scenario 307 parity gates -----------------------------------------
+echo "--- 19. Scenario 307 committed launcher parity gates"
+new_case launcher-parity
+: > "$BOARD_GMK"
+: > "$BOARD_GMK_CANDIDATE"
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+
+# The repository hold takes and marks the ticket but sends no drive.
+: > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+ONLY_GMK=1 run_launcher bd-ib-repository-held "$CASE_DIR/repository-held.log"
+if [ "$RC" = 75 ] && ! [ -s "$DRIVE_LOG" ] && log_has "$CASE_DIR/repository-held.log" "repository hold present"; then
+    pass "a repository hold keeps its ticket and launches nothing"
+else
+    fail "the repository hold did not stop the launch"
+fi
+rm -f "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+
+# A full authoritative projection occurs before preflight; the exception alone
+# receives one additional slot.
+export STUB_CAPACITY_COUNT=1
+export STUB_CAPACITY_CAP=1
+ONLY_GMK=1 run_launcher bd-ib-wip-held "$CASE_DIR/wip-held.log"
+if [ "$RC" = 75 ] && [ "$(preflight_count bd-ib-wip-held)" = 0 ] && ! [ -s "$DRIVE_LOG" ]; then
+    pass "the WIP gate yields before running preflight"
+else
+    fail "the WIP gate ran a preflight or launched at the cap"
+fi
+printf 'bd-ib-breakage\n' > "$FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE"
+ONLY_GMK=1 run_launcher bd-ib-breakage "$CASE_DIR/breakage.log"
+if [ "$RC" = 0 ] && [ "$(drive_log_items)" = bd-ib-breakage ]; then
+    pass "only the breakage exception receives the extra WIP slot"
+else
+    fail "the breakage exception did not receive exactly one extra slot"
+fi
+export STUB_CAPACITY_COUNT=0
+
+# The launcher checks its own gmktec hold path, then selects the candidate
+# only while the candidate board remains below its independent cap.
+: > "$FLEET_LAUNCH_GMK_HOLD_FILE"
+ONLY_GMK=1 run_launcher bd-ib-gmk-held "$CASE_DIR/gmk-held.log"
+if [ "$RC" = 75 ] && ! grep -q bd-ib-gmk-held "$DRIVE_LOG" && log_has "$CASE_DIR/gmk-held.log" "gmktec hold file present"; then
+    pass "the launcher reads and honours its gmktec hold path"
+else
+    fail "the gmktec hold did not stop the launch"
+fi
+rm -f "$FLEET_LAUNCH_GMK_HOLD_FILE"
+printf 'candidate\n' > "$FLEET_LAUNCH_GMK_TARGET_FILE"
+write_board "$BOARD_GMK_CANDIDATE" 2 candidate
+ONLY_GMK=1 run_launcher bd-ib-candidate-held "$CASE_DIR/candidate-held.log"
+if [ "$RC" = 75 ] && ! grep -q bd-ib-candidate-held "$DRIVE_LOG"; then
+    pass "the candidate cap holds its selected target"
+else
+    fail "the candidate cap did not hold the selected target"
+fi
+write_board "$BOARD_GMK_CANDIDATE" 1 candidate
+ONLY_GMK=1 run_launcher bd-ib-candidate "$CASE_DIR/candidate.log"
+if [ "$RC" = 0 ] && grep -q bd-ib-candidate "$DRIVE_LOG"; then
+    pass "the selected candidate launches below its cap"
+else
+    fail "the selected candidate did not launch below its cap"
+fi
+
+# A non-zero drive before its board row lists runs the same item again through
+# the ticket path. The stub fails exactly once, then lists the second drive.
+rm -f "$FLEET_LAUNCH_GMK_TARGET_FILE"
+: > "$BOARD_GMK_CANDIDATE"
+export STUB_DRIVE_FAIL_ONCE="$CASE_DIR/drive-failed-once"
+ONLY_GMK=1 run_launcher bd-ib-reticket "$CASE_DIR/reticket.log"
+if [ "$RC" = 0 ] && [ "$(grep -c '^bd-ib-reticket$' "$DRIVE_LOG")" = 2 ] && log_has "$CASE_DIR/reticket.log" "re-ticket item=bd-ib-reticket"; then
+    pass "an early drive failure re-tickets the same item"
+else
+    fail "an early drive failure did not re-ticket the item"
 fi
 
 echo

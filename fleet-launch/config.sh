@@ -18,14 +18,22 @@
 : "${FLEET_LAUNCH_STATE_DIR:=$FLEET_LAUNCH_ORCH_REPO/tmp/petri-canary}"
 : "${FLEET_LAUNCH_FLEET_CAP_FILE:=$FLEET_LAUNCH_STATE_DIR/fleet-cap}"
 : "${FLEET_LAUNCH_HOLD_FILE:=$FLEET_LAUNCH_STATE_DIR/hold-gmktec}"
+# A red master holds only the affected tenant, not the whole fleet.  The
+# launchers derive `hold-repo-<checkout-basename>` from this directory.
+: "${FLEET_LAUNCH_REPO_HOLD_DIR:=$FLEET_LAUNCH_STATE_DIR}"
+: "${FLEET_LAUNCH_GMK_HOLD_FILE:=$FLEET_LAUNCH_HOLD_FILE}"
+: "${FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE:=$FLEET_LAUNCH_ORCH_REPO/fleet-launch/breakage-exception}"
 
 # Factory servers. hp-xubuntu and vps are retired as factories and are never read.
 : "${FLEET_LAUNCH_GMK_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32276}"
+: "${FLEET_LAUNCH_GMK_CANDIDATE_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32278}"
 : "${FLEET_LAUNCH_HL_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32277}"
+: "${FLEET_LAUNCH_GMK_TARGET_FILE:=$FLEET_LAUNCH_STATE_DIR/gmk-target}"
 : "${FLEET_LAUNCH_GMK_SSH:=cwoolley@gmktec-xubuntu}"
 : "${FLEET_LAUNCH_GMK_SERVER_ENV:=/home/cwoolley/.fabro/storage/server.env}"
 # Per-factory ceilings, from the gitops host_vars for gmktec-xubuntu.
 : "${FLEET_LAUNCH_GMK_CAP:=8}"
+: "${FLEET_LAUNCH_GMK_CANDIDATE_CAP:=2}"
 : "${FLEET_LAUNCH_HL_CAP:=2}"
 # Minimum gmktec idle CPU percentage before a launch.
 : "${FLEET_LAUNCH_GMK_MIN_IDLE:=25}"

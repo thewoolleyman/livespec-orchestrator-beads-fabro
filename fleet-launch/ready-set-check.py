@@ -12,6 +12,7 @@ Exit 0: dispatchable (in the ready set, or pending-approval, which the loop admi
 itself). Exit 3: not in the ready set, with the reason printed. Exit 2: usage error.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -20,10 +21,11 @@ __all__: list[str] = ["main"]
 NOT_READY = 3
 USAGE_ERROR = 2
 ARGC = 4
+CAPACITY_ARGC = 5
 
 
 def main(*, argv: list[str]) -> int:
-    if len(argv) != ARGC:
+    if len(argv) not in (ARGC, CAPACITY_ARGC):
         print(__doc__)
         return USAGE_ERROR
     plugin, repo, item_id = argv[1], Path(argv[2]), argv[3]
@@ -40,6 +42,25 @@ def main(*, argv: list[str]) -> int:
     from livespec_orchestrator_beads_fabro.store import read_work_items
 
     items = list(read_work_items(path=resolve_store_config(cwd=repo, work_items_arg=None)))
+    if len(argv) == CAPACITY_ARGC and argv[4] == "capacity":
+        from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
+            claimed_active_projection,
+        )
+        from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+        from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
+            DEFAULT_WIP_CAP,
+            resolve_wip_cap,
+        )
+        from returns.unsafe import unsafe_perform_io
+
+        cap = unsafe_perform_io(resolve_wip_cap(cwd=repo).value_or(DEFAULT_WIP_CAP))
+        accounting = claimed_active_projection(
+            repo=repo,
+            items=items,
+            journal=JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl"),
+        )
+        print(json.dumps({"counted_claims": accounting.active_count, "wip_cap": cap}))
+        return 0
     me = next((i for i in items if i.id == item_id), None)
     if me is None:
         print(f"READY-CHECK {item_id}: not found")
