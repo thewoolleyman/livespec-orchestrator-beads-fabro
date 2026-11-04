@@ -16,9 +16,10 @@ changing anything.
 3. Run only that test and capture its failure output. Do not make a commit.
 4. Before ending, run
 
-       "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-implement-gate-preview.py" red
+       "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-implement-gate-preview.py" red <path of the test file you wrote>
 
-   to preview the checks `commit_red` will run over its staged test. Fix every
+   to preview the checks `commit_red` will run over its staged test, naming
+   that one test file explicitly. Fix every
    failed target the preview names that is within this turn's scope, then run
    the preview again after each fix. The preview does not decide whether a
    commit succeeds.

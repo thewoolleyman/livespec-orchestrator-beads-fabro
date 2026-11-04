@@ -50,7 +50,7 @@ def _environment(*, home: Path, plugins: Path) -> dict[str, str]:
 
 
 def _red_preview_repository(*, tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
-    """Materialize a Red-node repository whose test has no handoff yet."""
+    """Materialize a Red-node repository with a stale handoff and an extra changed path."""
     plugins = tmp_path / "plugins"
     repo = tmp_path / "repository"
     home = tmp_path / "home"
@@ -64,6 +64,10 @@ def _red_preview_repository(*, tmp_path: Path) -> tuple[Path, Path, dict[str, st
     test_file = repo / "tests" / "test_red.py"
     test_file.parent.mkdir()
     _ = test_file.write_text("def test_red() -> None:\n    assert False\n", encoding="utf-8")
+    _ = (repo / "product.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _ = (repo / ".git" / "livespec-implement-handoff.md").write_text(
+        "## red\n\nRed test file: `baseline.py`\n", encoding="utf-8"
+    )
     hook = repo / ".git" / "hooks" / "pre-commit"
     _ = hook.write_text(
         "#!/bin/sh\n"
@@ -93,8 +97,10 @@ def _red_preview_repository(*, tmp_path: Path) -> tuple[Path, Path, dict[str, st
     return repo, runner, env
 
 
-def test_red_preview_stages_the_new_test_without_reading_a_future_handoff(tmp_path: Path) -> None:
-    """Red previews the one test it will commit, without changing its caller's index."""
+def test_red_preview_stages_exactly_the_named_test_ignoring_handoff_and_other_changes(
+    tmp_path: Path,
+) -> None:
+    """Red previews exactly the test path it is given, without changing its caller's index."""
     repo, runner, env = _red_preview_repository(tmp_path=tmp_path)
     before_head = _git(repo=repo, env=env, argv=["rev-parse", "HEAD"])
     before_index = _git(repo=repo, env=env, argv=["hash-object", "--no-filters", ".git/index"])
@@ -103,12 +109,12 @@ def test_red_preview_stages_the_new_test_without_reading_a_future_handoff(tmp_pa
     completed = _run(
         repo=repo,
         env=env,
-        argv=[sys.executable, str(runner), "red"],
+        argv=[sys.executable, str(runner), "red", "tests/test_red.py"],
         check=False,
     )
 
+    assert completed.returncode == 1, completed.stderr
     report = cast("dict[str, Any]", json.loads(completed.stdout.splitlines()[-1]))
-    assert completed.returncode == 1
     assert report == {
         "failed_targets": [_FAILED_TARGET],
         "status": 1,

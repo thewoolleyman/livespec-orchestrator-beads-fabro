@@ -19,3 +19,9 @@ def test_red_and_green_prompts_require_gate_preview_repair_and_handoff_verdicts(
         assert "run the preview again after each fix" in normalized
         assert "exit status and failed target names of the last gate preview run" in normalized
         assert "If no preview ran, state that and why." in prompt
+
+
+def test_red_prompt_names_the_test_file_to_the_preview() -> None:
+    """The Red preview is told which test file commit_red will stage."""
+    prompt = (_PROMPTS / "red.md").read_text(encoding="utf-8")
+    assert 'gate-preview.py" red <path of the test file you wrote>' in prompt
