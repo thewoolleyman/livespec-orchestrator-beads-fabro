@@ -156,6 +156,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Expedited incident lifecycle",
+    "work_item": "bd-ib-dzbwaq",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Factory sandbox clone release tags",
     "work_item": "bd-ib-ia6zbf",
     "first_seen": "2026-11-03"
@@ -1160,6 +1167,55 @@
     "heading": "## Scenario 94 — A provider's availability claim does not extend an exhaustion record's expiry",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-08-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a deferred-proof-only finding is repaired without reverting healthy master",
+    "work_item": "bd-ib-riguvj",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a successful incident merge reenters normal factory on the same item",
+    "work_item": "bd-ib-riguvj",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an attributable regression fences repayment and reopens the same incident",
+    "work_item": "bd-ib-k5teti",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident keeps one item with explicit current operation ownership",
+    "work_item": "bd-ib-dzbwaq",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident completion requires final normal proof rather than an old repair merge",
+    "work_item": "bd-ib-mnny4v",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident entry defers slow admission without creating another identity",
+    "work_item": "bd-ib-dzbwaq",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident provenance exceptions remain exact and repayable",
+    "work_item": "bd-ib-y7ryj3",
+    "first_seen": "2026-11-04"
   },
   {
     "spec_root": "SPECIFICATION",

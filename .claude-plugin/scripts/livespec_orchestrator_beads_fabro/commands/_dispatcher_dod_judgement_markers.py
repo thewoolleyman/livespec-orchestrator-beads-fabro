@@ -29,6 +29,7 @@ __all__: list[str] = [
     "UNAVAILABLE_COMMENT_MARKER",
     "comment_marker",
     "is_judgement_record",
+    "is_receipt_comment",
 ]
 
 # The first line of each record, and the whole of how a reader tells these
@@ -37,6 +38,14 @@ JUDGEMENT_COMMENT_MARKER = "livespec-dod-judgement"
 UNAVAILABLE_COMMENT_MARKER = "livespec-dod-judgement-unavailable"
 
 _RECORD_MARKERS = frozenset({JUDGEMENT_COMMENT_MARKER, UNAVAILABLE_COMMENT_MARKER})
+
+# The filing-time records that are receipts, not brief: each reports a judgement
+# taken against ONE specification version, so a later revision can supersede it
+# and a judge handed it as a rider grades the superseded verdict. The tier marker
+# is matched by EXACT first line (its `-unavailable` extension is a different
+# record); a mechanical finding is matched by the prefix filing writes before it.
+_SPEC_CHANGE_TIER_MARKER = "livespec-spec-change-tier"
+_MECHANICAL_FINDING_PREFIX = "definition-of-done finding (mechanical):"
 
 
 def comment_marker(*, body: str) -> str:
@@ -54,3 +63,18 @@ def is_judgement_record(*, body: str) -> bool:
     receipt, and a receipt is the one class of comment the subject drops.
     """
     return comment_marker(body=body) in _RECORD_MARKERS
+
+
+def is_receipt_comment(*, body: str) -> bool:
+    """Whether one comment is a receipt the subject and the goal both leave out.
+
+    A judgement receipt, a spec-change tier record, or a filing-time mechanical
+    finding comment. Any other comment is an operator rider. Omitting a comment
+    here never removes it from the ledger: needs-attention and the filer read it.
+    """
+    marker = comment_marker(body=body)
+    return (
+        is_judgement_record(body=body)
+        or marker == _SPEC_CHANGE_TIER_MARKER
+        or marker.startswith(_MECHANICAL_FINDING_PREFIX)
+    )

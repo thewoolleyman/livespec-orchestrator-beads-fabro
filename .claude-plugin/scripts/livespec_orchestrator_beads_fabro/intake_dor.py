@@ -108,6 +108,7 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import (
     EDGE_PARENT_CHILD,
+    BeadsClient,
     make_beads_client,
 )
 from livespec_orchestrator_beads_fabro._intake_factory_size_gate import (
@@ -147,6 +148,9 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
     classify_and_hold,
 )
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.factory_safety import (
+    out_of_enum_factory_safety_finding,
+)
 from livespec_orchestrator_beads_fabro.store import (
     INTAKE_TRIAGED_LABEL,
     append_work_item,
@@ -299,6 +303,7 @@ def apply_intake_dor(
     verdict = evaluate(checklist=checklist)
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
     findings = filing_findings(item=item, repo_root=path.repo_root)
+    factory_safety_finding = out_of_enum_factory_safety_finding(value=item.factory_safety)
     if status == _PENDING_APPROVAL_STATUS and not item.depends_on:
         repo_root = path.repo_root
         if repo_root is None:
@@ -359,6 +364,7 @@ def apply_intake_dor(
         if (
             policy == _AUTO_ADMISSION
             and not findings.withholds_ready
+            and factory_safety_finding is None
             and spec_change is None
             and not judge_item_definition_of_done(
                 item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
@@ -384,6 +390,11 @@ def apply_intake_dor(
     )
     for body in findings.comment_bodies():
         client.add_comment(issue_id=item_id, body=body)
+    _record_factory_safety_finding(
+        client=client,
+        item_id=item_id,
+        finding=factory_safety_finding,
+    )
     return IOSuccess(status)
 
 
@@ -428,3 +439,14 @@ def _routed_status(*, verdict: Verdict, has_dependencies: bool) -> Verdict:
     if has_dependencies and verdict == _PENDING_APPROVAL_STATUS:
         return _PENDING_APPROVAL_STATUS
     return verdict
+
+
+def _record_factory_safety_finding(
+    *, client: BeadsClient, item_id: str, finding: str | None
+) -> None:
+    """Persist the legacy-label finding beside the intake verdict when present."""
+    if finding is not None:
+        client.add_comment(
+            issue_id=item_id,
+            body=f"definition-of-done finding (mechanical): {finding}",
+        )

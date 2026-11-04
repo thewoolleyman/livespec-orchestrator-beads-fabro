@@ -90,7 +90,7 @@ jobs:
     if: needs.decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.167.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -145,7 +145,7 @@ jobs:
     if: needs.decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.167.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -197,7 +197,7 @@ jobs:
     needs: [decide, check-per-file-coverage]
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.167.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -244,7 +244,7 @@ jobs:
     if: needs.decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.167.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"

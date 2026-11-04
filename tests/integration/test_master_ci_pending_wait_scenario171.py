@@ -108,8 +108,6 @@ class _PreflightRunner:
             answer = _ok(stdout="true\n")
         elif argv[:2] == ["git", "rev-parse"]:
             answer = _ok(stdout="abc1234\n")
-        elif argv[:2] == ["git", "merge-base"]:
-            answer = _ok()
         elif argv[:3] == ["gh", "run", "list"]:
             answer = self._run_list()
         elif argv[:3] == ["gh", "run", "view"]:

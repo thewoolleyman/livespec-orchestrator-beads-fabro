@@ -23,7 +23,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     DodJudgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
-    is_judgement_record,
+    is_receipt_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     recorded_governing_heading,
@@ -71,7 +71,7 @@ def governing_heading_subject_digest(*, item: WorkItem, comments: Sequence[str])
     section = definition_of_done(description=item.description)
     statement = governing_heading_statement(item=item, section=section)
     source = definition_of_done_source(description=item.description)
-    riders = "\n".join(comment for comment in comments if not is_judgement_record(body=comment))
+    riders = "\n".join(comment for comment in comments if not is_receipt_comment(body=comment))
     return hashlib.sha256(f"{statement}\n{source}\n{riders}".encode()).hexdigest()
 
 

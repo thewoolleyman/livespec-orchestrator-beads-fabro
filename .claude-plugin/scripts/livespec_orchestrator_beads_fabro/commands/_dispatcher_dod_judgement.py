@@ -30,7 +30,7 @@ appends a comment, so a subject that carried receipts would move the digest the
 verdict was just taken against. No later taking could ever reuse it, every pass
 would pay a model call, and every pass would append one more receipt — a subject
 that grows without bound and a reuse rule that can never fire. The predicate is
-`_dispatcher_dod_judgement_markers.is_judgement_record`, shared with the goal
+`_dispatcher_dod_judgement_markers.is_receipt_comment`, shared with the goal
 renderer, because a second spelling of the marker is two answers to one question.
 """
 
@@ -51,7 +51,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attemp
     CandidateAttempt,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
-    is_judgement_record,
+    is_receipt_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
@@ -313,7 +313,7 @@ def _riders_body(*, comments: Sequence[str]) -> str:
     because both move without the brief moving, and either in the subject would
     retire a recorded verdict on an edit that changed no requirement.
     """
-    riders = [body for body in comments if not is_judgement_record(body=body)]
+    riders = [body for body in comments if not is_receipt_comment(body=body)]
     return "\n\n".join(riders) if riders else _ABSENT_RIDERS_BODY
 
 

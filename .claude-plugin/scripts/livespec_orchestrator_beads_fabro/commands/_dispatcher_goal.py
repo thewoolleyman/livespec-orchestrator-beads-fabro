@@ -20,7 +20,7 @@ grade: a receipt is what the Dispatcher wrote ABOUT the brief, so a node that
 read one would grade a brief growing by a paragraph every time a verdict was
 recorded — and would meet, among its riders, a verdict about itself.
 
-The predicate is `_dispatcher_dod_judgement_markers.is_judgement_record`, the
+The predicate is `_dispatcher_dod_judgement_markers.is_receipt_comment`, the
 same one the subject uses. One spelling of the marker is the whole point: two
 would make the subject and the goal disagree about which comments the item's
 brief consists of, which is the disagreement between host and in-run takings
@@ -38,7 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     definition_of_done_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
-    is_judgement_record,
+    is_receipt_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     recorded_governing_heading,
@@ -256,7 +256,7 @@ def render_goal(
     # receipts. An item whose comments are ALL receipts renders no section at
     # all, exactly as one with no comment does: a heading with nothing under it
     # would tell the node riders exist.
-    riders = tuple(comment for comment in comments if not is_judgement_record(body=comment.text))
+    riders = tuple(comment for comment in comments if not is_receipt_comment(body=comment.text))
     # The governing-heading verdict rides AFTER the riders for the same reason
     # the recovery placement rides before them: a rider is part of the brief the
     # verdict was taken about, so a block standing ahead of them would describe
