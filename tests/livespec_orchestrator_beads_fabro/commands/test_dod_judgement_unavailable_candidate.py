@@ -11,6 +11,7 @@ error.
 
 from __future__ import annotations
 
+import importlib
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -40,6 +41,20 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 _HEADING = "## Scenario 239 — Every taking grades one subject by one rubric"
 _ENDER_PREFIX = "judgement-unavailable-candidate: "
 _CANDIDATE_PREFIX = "candidate: "
+
+
+def test_candidate_execution_and_unavailable_recording_are_cohesive_modules() -> None:
+    """The chain and gate keep their execution and unavailable-record concerns separate."""
+    commands = (
+        "_dod_judgement_execution",
+        "_dispatcher_dod_judgement_unavailable",
+    )
+    root = Path(__file__).parents[3] / ".claude-plugin" / "scripts"
+
+    for command in commands:
+        module_path = root / "livespec_orchestrator_beads_fabro" / "commands" / f"{command}.py"
+        assert module_path.is_file()
+        assert importlib.import_module(f"livespec_orchestrator_beads_fabro.commands.{command}")
 
 
 @dataclass
