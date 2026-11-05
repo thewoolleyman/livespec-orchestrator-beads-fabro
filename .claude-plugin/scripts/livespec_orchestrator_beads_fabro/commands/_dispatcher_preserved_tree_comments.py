@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_recor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 
-__all__: list[str] = ["preserved_tree_comment_seed"]
+__all__: list[str] = ["preserved_tree_comment_names_run", "preserved_tree_comment_seed"]
 
 
 def preserved_tree_comment_seed(
@@ -39,6 +39,15 @@ def preserved_tree_comment_seed(
             preservation_ref=fields["preservation ref"],
         )
     return None
+
+
+def preserved_tree_comment_names_run(*, comments: tuple[WorkItemComment, ...], run_id: str) -> bool:
+    """Whether a marked preserved-tree comment, success or failure, names this run."""
+    return any(
+        comment.text.startswith(PRESERVED_TREE_MARKER)
+        and _fields(text=comment.text).get("run id") == run_id
+        for comment in comments
+    )
 
 
 def _fields(*, text: str) -> dict[str, str]:

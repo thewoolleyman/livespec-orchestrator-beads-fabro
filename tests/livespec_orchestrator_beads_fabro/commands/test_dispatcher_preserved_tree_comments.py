@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_recovery_routing as routing
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_terminal_preservation as preservation,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_comments import (
     preserved_tree_comment_seed,
@@ -45,6 +49,26 @@ def _preserved_comment(*, item: str = _ITEM) -> WorkItemComment:
     )
 
 
+def _item() -> WorkItem:
+    return WorkItem(
+        id=_ITEM,
+        type="bug",
+        status="ready",
+        title="Preserve the cancelled run",
+        description="",
+        origin="freeform",
+        gap_id=None,
+        rank="a0",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-11-05T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+    )
+
+
 def test_the_newest_complete_comment_names_a_seed_and_ignores_noise() -> None:
     """Only a complete marker for this item can become a later dispatch's seed."""
     seed = preserved_tree_comment_seed(
@@ -76,23 +100,7 @@ def test_an_unreadable_comment_sidecar_holds_recovery(
 ) -> None:
     """A failed durable-comment read cannot be treated as confirmed absence."""
     monkeypatch.setattr(routing, "read_dispatch_comments", lambda **_kwargs: "ledger unavailable")
-    item = WorkItem(
-        id=_ITEM,
-        type="bug",
-        status="ready",
-        title="Preserve the cancelled run",
-        description="",
-        origin="freeform",
-        gap_id=None,
-        rank="a0",
-        assignee=None,
-        depends_on=(),
-        captured_at="2026-11-05T00:00:00Z",
-        resolution=None,
-        reason=None,
-        audit=None,
-        superseded_by=None,
-    )
+    item = _item()
     gather = ResumeGather(
         observation=ResumeObservation(
             work_item_id=_ITEM,
@@ -119,3 +127,28 @@ def test_an_unreadable_comment_sidecar_holds_recovery(
     assert route.route == ROUTE_HELD
     assert route.hold is not None
     assert route.hold.measurements[0].detail == "ledger unavailable"
+
+
+def test_a_run_that_is_not_a_cancelled_fabro_run_is_never_preserved_by_this_leg(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the externally cancelled run reaches the tree leg through this entry point."""
+    called: list[str] = []
+    monkeypatch.setattr(preservation, "_preserve_tree", lambda **_: called.append("tree"))
+    preservation.preserve_cancelled_janitor_green_tree(
+        args=argparse.Namespace(),
+        repo=tmp_path,
+        item=_item(),
+        outcome=DispatchOutcome(
+            work_item_id=_ITEM,
+            status="blocked",
+            stage="fabro-run",
+            pr_number=None,
+            merge_sha=None,
+            detail="",
+            fabro_run_id=_RUN,
+        ),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+    )
+
+    assert called == []

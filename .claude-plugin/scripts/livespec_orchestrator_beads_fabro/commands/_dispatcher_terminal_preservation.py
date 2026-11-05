@@ -39,8 +39,14 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_comments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference import (
     preserve_checkpointed_work_reference,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_comments import (
+    preserved_tree_comment_names_run,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_escalation import (
     PreservationInputs,
@@ -50,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
     read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -97,12 +104,33 @@ def preserve_cancelled_janitor_green_tree(
     """
     if outcome.status != "cancelled" or outcome.stage != "fabro-run":
         return
+    if _run_already_recorded(repo=repo, item=item, run_id=outcome.fabro_run_id):
+        return
     _preserve_tree(
         args=args,
         repo=repo,
         item=item,
         outcome=replace(outcome, status="blocked", fabro_failure_cause="checkpoint.failed"),
         journal=journal,
+    )
+
+
+def _run_already_recorded(*, repo: Path, item: WorkItem, run_id: str | None) -> bool:
+    """Whether a preserved-tree comment already names this run.
+
+    That comment is the durable record of the one publication attempt, so a
+    repeated report of the same cancellation must not append a rival. When the
+    comments cannot be read the answer is no: a duplicate record costs less than
+    the tree the factory will prune.
+    """
+    try:
+        comments = read_dispatch_comments(repo=repo, item=item)
+    except ConnectionPrefixMissingError:
+        return False
+    return (
+        run_id is not None
+        and not isinstance(comments, str)
+        and preserved_tree_comment_names_run(comments=comments, run_id=run_id)
     )
 
 

@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_preservatio
     PRESERVED_TREE_ERROR_STAGE,
     preserve_terminated_run_work,
 )
+from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _ITEM = "bd-ib-na2xvm"
@@ -153,6 +154,90 @@ def test_an_externally_cancelled_janitor_green_run_uses_the_tree_preservation_le
         item=_item(),
         outcome=outcome,
         journal=JournalFile(path=tmp_path / "journal.jsonl"),
+    )
+
+    assert called == ["tree"]
+
+
+def _cancelled_outcome() -> DispatchOutcome:
+    return DispatchOutcome(
+        work_item_id=_ITEM,
+        status="cancelled",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail="",
+        fabro_run_id=_RUN,
+        fabro_factory_name="hp",
+    )
+
+
+def _tree_calls_for_cancelled_run(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, comments: tuple[WorkItemComment, ...] | str
+) -> list[str]:
+    called: list[str] = []
+
+    def _tree(**kwargs: object) -> None:
+        _ = kwargs
+        called.append("tree")
+
+    monkeypatch.setattr(preservation, "preserve_checkpoint_failed_tree", _tree)
+    monkeypatch.setattr(preservation, "read_dispatch_comments", lambda **_: comments)
+    preservation.preserve_cancelled_janitor_green_tree(
+        args=_args(),
+        repo=tmp_path,
+        item=_item(),
+        outcome=_cancelled_outcome(),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+    )
+    return called
+
+
+def _preserved_comment(*, run_id: str) -> WorkItemComment:
+    return WorkItemComment(
+        text=f"livespec-preserved-tree\n\nwork-item: {_ITEM}\nrun id: {run_id}\nfactory: hp",
+        author="dispatcher",
+        created_at="2026-11-05T00:00:00Z",
+    )
+
+
+def test_a_cancelled_run_already_named_by_a_preserved_tree_comment_is_not_preserved_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The comment is the durable record, so a second report must not append a rival."""
+    called = _tree_calls_for_cancelled_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        comments=(_preserved_comment(run_id=_RUN),),
+    )
+
+    assert called == []
+
+
+def test_a_cancelled_run_named_only_by_an_unmarked_or_foreign_comment_is_still_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rider mentioning the run id, or another run's record, does not name this run."""
+    rider = WorkItemComment(
+        text=f"operator rider\nrun id: {_RUN}", author="a", created_at="2026-11-05T00:00:00Z"
+    )
+    called = _tree_calls_for_cancelled_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        comments=(rider, _preserved_comment(run_id="01OTHERRUN")),
+    )
+
+    assert called == ["tree"]
+
+
+def test_an_unreadable_comment_ledger_does_not_stop_the_cancelled_run_being_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Losing the tree is worse than a possible duplicate record."""
+    called = _tree_calls_for_cancelled_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        comments="ledger comments read failed for bd-ib-na2xvm",
     )
 
     assert called == ["tree"]
