@@ -97,6 +97,57 @@ def run_state_replaces_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FabroPort, "server_api", _state_api)
 
 
+@pytest.mark.parametrize("blob_result", ["success", "body", "missing", "corrupt"])
+def test_a_blob_backed_pointer_verifies_the_addressed_bytes(
+    *, blob_result: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    payload = _DIFF.encode()
+    digest = hashlib.sha256(payload).hexdigest()
+
+    class _BlobApi:
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={
+                    "stages": {
+                        "implement@1": {
+                            "first_event_seq": 2,
+                            "dump_ordinal": 2,
+                            "diff": f"blob://sha256/{digest}",
+                        }
+                    }
+                },
+                succeeded=True,
+            )
+
+        def run_blob(
+            self, *, run_id: str, blob_sha256: str, timeout_seconds: float
+        ) -> FabroHttpResult:
+            _ = (run_id, blob_sha256, timeout_seconds)
+            if blob_result == "missing":
+                return FabroHttpResult(
+                    status=404, body="gone", error=None, payload=None, succeeded=False
+                )
+            returned = payload if blob_result in {"success", "body"} else b"wrong bytes"
+            return FabroHttpResult(
+                status=200,
+                body=returned.decode(),
+                error=None,
+                payload=None,
+                succeeded=True,
+                raw_body=returned if blob_result != "body" else None,
+            )
+
+    monkeypatch.setattr(FabroPort, "server_api", lambda _port: _BlobApi())
+    check = _check(body=_digested_body(tmp_path), runner=_ExportRunner(), repo=tmp_path)
+
+    expected = "intact" if blob_result in {"success", "body"} else "dangling"
+    assert check.state == expected
+
+
 def _digested_body(tmp_path: Path) -> str:
     export_dir = tmp_path / "export"
     artifact = export_dir / _ARTIFACT

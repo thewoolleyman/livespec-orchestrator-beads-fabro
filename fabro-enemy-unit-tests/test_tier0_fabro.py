@@ -8,6 +8,7 @@ aggregate never needs a live Fabro server or credentials. Invoke it explicitly:
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -172,6 +173,34 @@ def test_run_state_completed_run_carries_a_bounded_stage_projection(
     assert state.succeeded is True
     assert isinstance(state.payload, dict)
     assert isinstance(state.payload.get("stages"), dict)
+
+
+def test_run_blob_returns_the_sha256_addressed_stage_diff_bytes(
+    *, config: _FabroTier0Config, port: FabroPort
+) -> None:
+    run_id = config.completed_run_id or _completed_run_id(port=port)
+    face = port.server_api()
+    state = face.run_state(run_id=run_id, timeout_seconds=TIMEOUT_SECONDS)
+
+    assert state.succeeded is True
+    assert isinstance(state.payload, dict)
+    stages = state.payload.get("stages")
+    assert isinstance(stages, dict)
+    references = [
+        diff
+        for stage in stages.values()
+        if isinstance(stage, dict)
+        and isinstance(diff := stage.get("diff"), str)
+        and diff.startswith("blob://sha256/")
+    ]
+    assert references
+    blob_sha256 = references[0].removeprefix("blob://sha256/")
+
+    blob = face.run_blob(run_id=run_id, blob_sha256=blob_sha256, timeout_seconds=TIMEOUT_SECONDS)
+
+    assert blob.succeeded is True
+    payload = blob.raw_body if blob.raw_body is not None else blob.body.encode("utf-8")
+    assert hashlib.sha256(payload).hexdigest() == blob_sha256
 
 
 def _event_records(*, stdout: str, payload: object | None) -> list[dict[str, Any]]:
