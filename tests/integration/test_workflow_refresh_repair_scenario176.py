@@ -1492,6 +1492,29 @@ def test_a_repaired_refresh_republishes_over_this_run_s_own_published_head(
     )
 
 
+def test_a_later_publish_draft_republishes_the_head_pr_refresh_pushed_for_this_run(
+    tmp_path: Path,
+) -> None:
+    """A changed-head refresh's own push is not a divergent prior run.
+
+    The first publication has been superseded by a successful `pr_refresh` and
+    its route through fresh proof has returned to `publish_draft`.  That later
+    visit carries no refresh-repair brief: the `pr_refresh` head record is the
+    provenance that distinguishes this run's remote tip from another run's.
+    """
+    refreshed = _repaired_run(root=tmp_path, push_program=True)
+    world = refreshed.world
+    (world.state_dir() / _BRIEF_FILENAME).unlink()
+    _ = (world.state_dir() / "livespec-pr-refresh-new-head").write_text(
+        f"{refreshed.published_head}\n", encoding="utf-8"
+    )
+
+    result = _run_repaired_publish_draft(repaired=refreshed)
+
+    assert result.returncode == 0, result.stderr
+    assert world.remote_head(ref=_BRANCH) == refreshed.repaired_head
+
+
 def test_a_repair_round_may_establish_its_published_head_from_resume_provenance(
     tmp_path: Path,
 ) -> None:
