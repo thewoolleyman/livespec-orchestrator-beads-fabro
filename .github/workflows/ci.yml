@@ -247,26 +247,43 @@ jobs:
           # every git call from a check fails "detected dubious ownership".
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       # No `--cov` or fail-under override here: this leg runs the SAME recipe
       # under a different uid, which is the whole point. Nothing about it is
       # advisory, warn-only, or gated behind an env lever — a failure here
       # fails the job, and `ci-green` (the sole required context) fails if any
       # matrix leg fails.
-      # UV_CACHE_DIR for every uid-1000 invocation: on the PowerEdge pool the
-      # hook template points uv at the warm seed /__w/_warm/uv, whose files are
-      # root-owned hardlinks into the fleet generation; uv as uid 1000 cannot
-      # initialize that cache ("Failed to initialize cache", master runs
-      # 33903087096 / 33903145604, 2026-09-04). The nonroot legs forgo the seed
-      # and use a private cache under /home/ci; the root legs keep the seed. The
-      # fleet-level cure is the seed-ownership decision on livespec-ifwnqj
-      # (plan ci-runner-pod-lifecycle-reliability, research/006).
+      # UV_CACHE_DIR for every uid-1000 invocation is NONROOT_UV_CACHE_DIR,
+      # which the prepare step sets to the warm seed /__w/_warm/uv when uid 1000
+      # can write it, and otherwise to a private cold cache under /home/ci. On
+      # 2026-09-04 the seed was root-owned hardlinks into the fleet generation
+      # and uv as uid 1000 could not initialize it ("Failed to initialize cache",
+      # master runs 33903087096 / 33903145604). Since livespec-dev-tooling-hmv2bo
+      # the seed is a private reflink copy per work volume. bd-ib-rpit5z
+      # (plan ci-cache-optimization, lever 4) points the nonroot legs back at it.
       - name: just ${{ matrix.target }} (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -349,13 +366,30 @@ jobs:
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just coverage-shard ${{ matrix.shard }} 4 (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -444,13 +478,30 @@ jobs:
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just check-per-file-coverage (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -564,13 +615,30 @@ jobs:
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just ${{ matrix.target }} (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -639,6 +707,23 @@ jobs:
           chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: Run the batched python checks (nonroot)
         if: matrix.uid == 'nonroot'
@@ -646,7 +731,7 @@ jobs:
           run_nonroot() {
             setpriv --reuid=1000 --regid=1000 --clear-groups \
               env HOME=/home/ci \
-                  UV_CACHE_DIR=/home/ci/.cache/uv \
+                  UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                   MISE_DATA_DIR=/root/.local/share/mise \
                   MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                   MISE_NOT_FOUND_AUTO_INSTALL=0 \
