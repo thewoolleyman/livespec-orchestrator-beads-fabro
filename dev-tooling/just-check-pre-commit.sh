@@ -45,6 +45,40 @@ if [[ "$(git config --get --bool livespec.sandboxExempt || printf 'false')" == t
     sandbox_skips+=(check-master-ci-green)
 fi
 
+# The factory refresh runs its required aggregate explicitly after Git has
+# prepared the merge index.  The commit-refuse installer owns the hooks
+# directory and removes Lefthook's extra merge wrapper, so this must not rely
+# on `pre-merge-commit`.  Reuse only complete evidence for this exact index;
+# a missing, malformed, or stale record falls through to the normal gate.
+if [[ "${LIVESPEC_FACTORY_REFRESH_MERGE:-}" == true ]] \
+    && [[ -f "$(git rev-parse --git-path MERGE_HEAD)" ]] \
+    && python3 - "$(git rev-parse --git-path livespec-green-token.json)" "$(git write-tree)" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+try:
+    token = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    evidence = token["pre_commit_aggregate"]
+    expected = sys.argv[2]
+    valid = (
+        token.get("mode") == "normal"
+        and token.get("scope") == "full-suite"
+        and token.get("tree_hash") == expected
+        and evidence.get("tree_hash") == expected
+        and all(isinstance(evidence.get(field), str) and evidence[field] for field in (
+            "run_id", "output_checksum", "captured_at"
+        ))
+    )
+except (KeyError, OSError, TypeError, json.JSONDecodeError):
+    valid = False
+raise SystemExit(0 if valid else 1)
+PY
+then
+    echo ":: refresh merge reuses its explicit same-index aggregate evidence"
+    exit 0
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
