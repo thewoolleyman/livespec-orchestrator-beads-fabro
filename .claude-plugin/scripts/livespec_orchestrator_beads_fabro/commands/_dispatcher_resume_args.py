@@ -14,6 +14,7 @@ import argparse
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import ResumeAnchor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     RESUME_ENTRY_NODE_ARG,
+    RESUME_FETCH_REF_ARG,
     RESUME_HEAD_ARG,
     RESUME_PROOF_ONLY_ARG,
 )
@@ -27,10 +28,22 @@ __all__: list[str] = [
 def resumed_args(
     *, args: argparse.Namespace, gather: ResumeGather, anchor: ResumeAnchor
 ) -> argparse.Namespace:
-    """Clone arguments with the published entry, head, and workflow identity."""
+    """Clone arguments with the published entry, head, and workflow identity.
+
+    A proof-only resume reads the merged pull request's immutable head rather
+    than its publish branch: that branch may have been deleted at merge, while
+    the forge still serves the pull-request ref needed to fetch the recorded
+    head. The command has already refused when the pull request is absent, so
+    this is a placement detail rather than a second admission decision.
+    """
     cloned = argparse.Namespace(**vars(args))
     setattr(cloned, RESUME_ENTRY_NODE_ARG, anchor.resumed_at)
     setattr(cloned, RESUME_HEAD_ARG, anchor.head)
-    setattr(cloned, RESUME_PROOF_ONLY_ARG, gather.observation.proof_only_resume is True)
+    proof_only = gather.observation.proof_only_resume is True
+    setattr(cloned, RESUME_PROOF_ONLY_ARG, proof_only)
+    if proof_only:
+        pull_request = gather.observation.pull_request
+        if isinstance(pull_request, int):
+            setattr(cloned, RESUME_FETCH_REF_ARG, f"refs/pull/{pull_request}/head")
     cloned.workflow_name = gather.workflow_name or getattr(args, "workflow_name", None)
     return cloned

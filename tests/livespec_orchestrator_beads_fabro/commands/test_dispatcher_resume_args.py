@@ -60,3 +60,29 @@ def test_resumed_args_carry_the_anchor_and_prefer_the_recorded_workflow(
     assert resumed.resume_proof_only is False
     assert resumed.workflow_name == expected_workflow
     assert resumed.untouched == "value"
+
+
+@pytest.mark.parametrize(
+    ("pull_request", "expected_fetch_ref"),
+    [(3731, "refs/pull/3731/head"), (None, None)],
+)
+def test_a_proof_only_resume_fetches_the_merged_pull_request_not_the_deleted_branch(
+    pull_request: int | None, expected_fetch_ref: str | None
+) -> None:
+    """Scenario 257 keeps the arm runnable after its publish branch is deleted."""
+    module = _module()
+    gather = cast(
+        ResumeGather,
+        SimpleNamespace(
+            workflow_name=None,
+            observation=SimpleNamespace(proof_only_resume=True, pull_request=pull_request),
+        ),
+    )
+    anchor = cast(ResumeAnchor, SimpleNamespace(resumed_at="proof_capture", head="a" * 40))
+
+    resumed = module.resumed_args(args=argparse.Namespace(), gather=gather, anchor=anchor)
+
+    if expected_fetch_ref is None:
+        assert not hasattr(resumed, "resume_fetch_ref")
+    else:
+        assert resumed.resume_fetch_ref == expected_fetch_ref
