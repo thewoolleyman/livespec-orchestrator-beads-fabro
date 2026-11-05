@@ -270,13 +270,6 @@ while [ -z "$target" ]; do
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
-  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
-    ensure_ticket
-    yield_ticket gmktec-hold
-    echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): yield FIFO head"
-    sleep "$FLEET_LAUNCH_POLL_S"
-    continue
-  fi
   restore_ticket
   if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
     ahead=$(oldest_live_ticket "$GMK_Q")
@@ -294,6 +287,7 @@ while [ -z "$target" ]; do
   evaluated=1
   gmk_idle=
   if ! fleet_green; then echo "$(date -u +%FT%TZ) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
+  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
   launch_preflight
   if [ -n "${ONLY_HL:-}" ]; then
     if [ "$hl_live" != U ] && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
@@ -320,10 +314,6 @@ while [ -z "$target" ]; do
       if bind_count petri && gmk_green; then
         if repository_hold_applies dispatch; then
           rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
-        elif [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
-          rm -f "$marker"; marker=""; yield_ticket gmktec-hold
-          echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): yield FIFO head"
-          release_lock
         else
           drop_ticket; target=petri; break
         fi

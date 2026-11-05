@@ -181,16 +181,15 @@ while :; do
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
-  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
-    yield_ticket gmktec-hold
-    echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): yield FIFO head"
-    sleep "$FLEET_LAUNCH_POLL_S"
-    continue
-  fi
   restore_ticket
   ahead=$(oldest_live_ticket)
   if [ "$ahead" != "$ticket" ]; then
     echo "$(date -u +%FT%TZ) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"
+    sleep "$FLEET_LAUNCH_POLL_S"
+    continue
+  fi
+  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
+    echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
@@ -214,15 +213,6 @@ while :; do
     marker=""
     yield_ticket repository-hold
     log_repository_hold
-    release_lock
-    sleep "$FLEET_LAUNCH_POLL_S"
-    continue
-  fi
-  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
-    rm -f "$marker"
-    marker=""
-    yield_ticket gmktec-hold
-    echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): yield FIFO head"
     release_lock
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
