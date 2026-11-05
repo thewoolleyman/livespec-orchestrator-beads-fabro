@@ -662,6 +662,8 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
     monkeypatch.setenv("BASH_ENV", str(operator_home / ".bashenv"))
     monkeypatch.setenv("ENV", str(operator_home / ".shenv"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(operator_home / ".config"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(operator_home / ".cache"))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(operator_home / "run"))
     repo = _repo(tmp_path=tmp_path)
     _write_codex_first_dod_gate(repo=repo)
     runner = _Runner(result=CommandResult(exit_code=0, stdout='{"outcome": "passed"}\n', stderr=""))
@@ -672,6 +674,7 @@ def test_a_host_codex_judge_gets_a_private_home_with_only_its_auth_file(
 
     assert verdict.outcome == JUDGEMENT_ADMITTED
     assert runner.environ is not None
+    assert [name for name in runner.environ if name.startswith("XDG_")] == []
     assert runner.environ["CODEX_HOME"] != str(codex_home)
     assert runner.codex_auth == "host-auth"
     assert runner.cwd is not None
