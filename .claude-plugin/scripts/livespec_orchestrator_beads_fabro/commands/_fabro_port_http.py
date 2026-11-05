@@ -87,6 +87,7 @@ SYSTEM_INFO_PATH = f"{_API_PREFIX}/system/info"
 # The `SubmitAnswerRequest` variant that picks one option of a multiple-choice
 # question by its `key`.
 _ANSWER_KIND_SELECTED = "selected"
+_EVENT_PAGE_LIMIT = 100
 _NO_SERVER_URL_ERROR = (
     "the factory target carries no server url; refusing to send a Fabro HTTP "
     "request against an unnamed host"
@@ -273,10 +274,12 @@ class FabroHttpPort:
         the complete history first and trims it at the client, so its cost
         grows with an otherwise healthy run's age.
         """
-        suffix = "" if after is None else f"?after={after}"
+        query = f"limit={_EVENT_PAGE_LIMIT}"
+        if after is not None:
+            query = f"after={after}&{query}"
         return self._verb(
             method="GET",
-            path=f"{_API_PREFIX}/runs/{run_id}/stream{suffix}",
+            path=f"{_API_PREFIX}/runs/{run_id}/events?{query}",
             payload=None,
             timeout_seconds=timeout_seconds,
         )

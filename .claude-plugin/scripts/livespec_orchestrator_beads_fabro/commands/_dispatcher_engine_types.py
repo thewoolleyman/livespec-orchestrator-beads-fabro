@@ -178,6 +178,11 @@ class DispatchOutcome:
     needs_human_stages: tuple[str, ...] | None = None
     needs_human_reason: str | None = None
     needs_human_preservation: str | None = None
+    # The run conclusion's final checkpoint commit, when the engine recorded
+    # one.  A sandbox-acquire failure happens after that checkpoint but before
+    # another node can start, so the durable cause record needs this immutable
+    # seed without re-reading a run the factory may already have pruned.
+    final_git_commit_sha: str | None = None
     hook_over_limit: HookOverLimit | None = None
     # The node-timeout cut this needs-human ending is, with the commit runs the cut
     # turn had started and their states when preservation began (Scenario 192,

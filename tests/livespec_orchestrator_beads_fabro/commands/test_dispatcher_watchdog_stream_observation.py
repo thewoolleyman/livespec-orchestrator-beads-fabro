@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
     STREAM_POLL_JOURNAL_STAGE,
     LivenessState,
@@ -44,12 +45,12 @@ class _Journal:
         self.records.append(record)
 
 
-def _response(*, body: str, succeeded: bool = True) -> FabroHttpResult:
+def _response(*, body: str, succeeded: bool = True, status: int | None = None) -> FabroHttpResult:
     return FabroHttpResult(
-        status=200 if succeeded else 0,
+        status=status if status is not None else (200 if succeeded else 0),
         body=body,
         error=None,
-        payload=None,
+        payload=json.loads(body) if succeeded and body else None,
         succeeded=succeeded,
     )
 
@@ -98,12 +99,23 @@ def test_a_stream_record_without_a_sequence_does_not_rewind_the_cursor() -> None
     assert state.stream_seq == 8
 
 
-def test_failed_or_empty_stream_is_unobservable_not_a_quiet_repeat() -> None:
+def test_a_single_event_mapping_is_an_observable_page() -> None:
+    api = _Api(
+        responses=[
+            _response(body=json.dumps({"stream_seq": 9, "recorded_at": 12_000})),
+        ]
+    )
+    state = LivenessState(stream_seq=8)
+
+    assert _sample(api=api, state=state, record=None, journal=_Journal()) == 12.0
+    assert state.stream_seq == 9
+
+
+def test_a_failed_stream_is_unobservable_and_journals_its_http_status() -> None:
     api = _Api(
         responses=[
             _response(body=json.dumps([{"stream_seq": 7, "recorded_at": 10_000}])),
-            _response(body="", succeeded=False),
-            _response(body="[]"),
+            _response(body="", succeeded=False, status=404),
         ]
     )
     state = LivenessState()
@@ -111,11 +123,145 @@ def test_failed_or_empty_stream_is_unobservable_not_a_quiet_repeat() -> None:
 
     assert _sample(api=api, state=state, record=None, journal=journal) == 10.0
     assert _sample(api=api, state=state, record=None, journal=journal) is None
-    assert _sample(api=api, state=state, record=None, journal=journal) is None
-    assert [(record["stage"], record["observable"]) for record in journal.records] == [
-        (STREAM_POLL_JOURNAL_STAGE, False),
-        (STREAM_POLL_JOURNAL_STAGE, False),
+    assert journal.records == [
+        {
+            "stage": STREAM_POLL_JOURNAL_STAGE,
+            "run_id": "01RUN",
+            "observable": True,
+            "status": 200,
+        },
+        {
+            "stage": STREAM_POLL_JOURNAL_STAGE,
+            "run_id": "01RUN",
+            "observable": False,
+            "status": 404,
+            "reason": "stream-read-unobservable",
+        },
     ]
+
+
+def test_an_empty_successful_page_is_observable_and_keeps_the_quiet_window() -> None:
+    api = _Api(
+        responses=[
+            _response(body=json.dumps({"data": [], "meta": {"has_more": False}})),
+        ]
+    )
+    state = LivenessState(newest_event_epoch=10.0, stream_seq=7)
+    journal = _Journal()
+
+    assert _sample(api=api, state=state, record=None, journal=journal) == 10.0
+    assert (api.calls, state.stream_seq) == ([7], 7)
+    assert journal.records == [
+        {
+            "stage": STREAM_POLL_JOURNAL_STAGE,
+            "run_id": "01RUN",
+            "observable": True,
+            "status": 200,
+        }
+    ]
+
+
+def test_a_poll_reads_all_event_pages_and_carries_the_newest_cursor() -> None:
+    api = _Api(
+        responses=[
+            _response(
+                body=json.dumps(
+                    {
+                        "data": [{"stream_seq": 7, "recorded_at": 10_000}],
+                        "meta": {"has_more": True},
+                    }
+                )
+            ),
+            _response(
+                body=json.dumps(
+                    {
+                        "data": [{"stream_seq": 8, "recorded_at": 11_000}],
+                        "meta": {"has_more": False},
+                    }
+                )
+            ),
+        ]
+    )
+    state = LivenessState()
+    journal = _Journal()
+
+    assert _sample(api=api, state=state, record=None, journal=journal) == 11.0
+    assert (api.calls, state.stream_seq) == ([None, 7], 8)
+    assert journal.records == [
+        {
+            "stage": STREAM_POLL_JOURNAL_STAGE,
+            "run_id": "01RUN",
+            "observable": True,
+            "status": 200,
+        }
+    ]
+
+
+def test_a_poll_timeout_is_unobservable_and_journals_its_last_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = LivenessState()
+    journal = _Journal()
+    monotonic_values = iter((10.0, 10_000.0))
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe.time.monotonic",
+        lambda: next(monotonic_values),
+    )
+
+    assert _sample(api=_Api(responses=[]), state=state, record=None, journal=journal) is None
+    assert journal.records == [
+        {
+            "stage": STREAM_POLL_JOURNAL_STAGE,
+            "run_id": "01RUN",
+            "observable": False,
+            "status": 0,
+            "reason": "stream-read-unobservable",
+        }
+    ]
+
+
+def test_a_malformed_successful_page_is_unobservable_and_journals_its_status() -> None:
+    api = _Api(
+        responses=[
+            FabroHttpResult(
+                status=200,
+                body=json.dumps({"data": "not-event-records"}),
+                error=None,
+                payload={"data": "not-event-records"},
+                succeeded=True,
+            )
+        ]
+    )
+    journal = _Journal()
+
+    assert _sample(api=api, state=LivenessState(), record=None, journal=journal) is None
+    assert journal.records[-1] == {
+        "stage": STREAM_POLL_JOURNAL_STAGE,
+        "run_id": "01RUN",
+        "observable": False,
+        "status": 200,
+        "reason": "stream-read-unobservable",
+    }
+
+
+def test_a_paginated_page_without_a_new_cursor_is_unobservable() -> None:
+    api = _Api(
+        responses=[
+            _response(body=json.dumps({"data": [], "meta": {"has_more": True}})),
+        ]
+    )
+    state = LivenessState(stream_seq=7)
+    journal = _Journal()
+
+    assert _sample(api=api, state=state, record=None, journal=journal) is None
+    assert api.calls == [7]
+    assert journal.records[-1] == {
+        "stage": STREAM_POLL_JOURNAL_STAGE,
+        "run_id": "01RUN",
+        "observable": False,
+        "status": 200,
+        "reason": "stream-read-unobservable",
+    }
 
 
 def test_newer_stage_transition_progresses_when_the_stream_read_fails() -> None:
@@ -221,5 +367,6 @@ def test_launcher_path_observe_run_facts_survive_the_sample_call() -> None:
 
     assert progressed == 15.0
     assert [(record["stage"], record["observable"]) for record in journal.records] == [
+        (STREAM_POLL_JOURNAL_STAGE, True),
         (STREAM_POLL_JOURNAL_STAGE, False),
     ]

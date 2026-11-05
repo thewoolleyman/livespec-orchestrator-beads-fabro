@@ -51,7 +51,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro._store_comments import (
+    append_work_item_comment,
+    read_work_item_comments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import (
     hook_over_limit_cause_lines,
@@ -70,6 +73,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     comment_safe_external_text,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_acquire_failure import (
+    SANDBOX_ACQUIRE_FAILURE,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import (
     AGENT_REQUEST,
@@ -149,7 +155,10 @@ def record_needs_human_cause(
         action=lambda: append_work_item_comment(
             path=store_config(repo=repo),
             work_item_id=item.id,
-            body=needs_human_cause_body(outcome=outcome),
+            body=needs_human_cause_body(
+                outcome=outcome,
+                preserve_by_reference=_preserve_by_reference_for_run(repo=repo, outcome=outcome),
+            ),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )
@@ -168,7 +177,9 @@ def record_needs_human_cause(
     journal.append(record=record)
 
 
-def needs_human_cause_body(*, outcome: DispatchOutcome) -> str:
+def needs_human_cause_body(
+    *, outcome: DispatchOutcome, preserve_by_reference: str | None = None
+) -> str:
     """Render the record. PURE, so every claim it makes is testable in isolation."""
     lines = [
         NEEDS_HUMAN_CAUSE_MARKER,
@@ -178,6 +189,7 @@ def needs_human_cause_body(*, outcome: DispatchOutcome) -> str:
         f"ending: {outcome.needs_human_kind}",
         *_attribution(outcome=outcome),
         *_terminal_reason(outcome=outcome),
+        *_sandbox_acquire_evidence(outcome=outcome, preserve_by_reference=preserve_by_reference),
         *_preservation(outcome=outcome),
         *_provider(outcome=outcome),
         "",
@@ -250,6 +262,22 @@ def _attribution(*, outcome: DispatchOutcome) -> tuple[str, ...]:
         lines.append(f"failure category: {outcome.fabro_failure_category}")
     if outcome.fabro_failure_signature is not None:
         lines.append(f"failure signature: {_safe(text=outcome.fabro_failure_signature)}")
+    return tuple(lines)
+
+
+def _sandbox_acquire_evidence(
+    *, outcome: DispatchOutcome, preserve_by_reference: str | None
+) -> tuple[str, ...]:
+    """Render the evidence the sandbox-acquire ending alone establishes."""
+    if outcome.needs_human_kind != SANDBOX_ACQUIRE_FAILURE:
+        return ()
+    lines: list[str] = []
+    if outcome.fabro_failure_cause is not None:
+        lines.append(f"engine failure detail: {_safe(text=outcome.fabro_failure_cause)}")
+    if outcome.final_git_commit_sha is not None:
+        lines.append(f"final checkpoint commit: {outcome.final_git_commit_sha}")
+    if preserve_by_reference is not None:
+        lines.append(f"preserve-by-reference artifact: {_safe(text=preserve_by_reference)}")
     return tuple(lines)
 
 
@@ -357,6 +385,12 @@ def _decision(*, outcome: DispatchOutcome) -> str:
             f"recorded above, then release the item with {valve} to re-dispatch, or leave "
             "it blocked"
         )
+    if outcome.needs_human_kind == SANDBOX_ACQUIRE_FAILURE:
+        return (
+            "decision: no agent asked anything; triage the sandbox acquisition failure "
+            f"recorded above, then release the item with {valve} to re-dispatch, or leave "
+            "it blocked"
+        )
     return (
         "decision: this run's record does not establish whether a stage failed or a "
         "decision was genuinely requested, so neither is claimed; triage the run to find "
@@ -376,3 +410,25 @@ def _preservation(*, outcome: DispatchOutcome) -> tuple[str, ...]:
     if outcome.needs_human_preservation is None:
         return ()
     return (f"preservation: {_safe(text=outcome.needs_human_preservation)}",)
+
+
+def _preserve_by_reference_for_run(*, repo: Path, outcome: DispatchOutcome) -> str | None:
+    """Read the pointer this dispatch wrote before its blocked transition.
+
+    The pointer is a separate durable comment and is written immediately before
+    this cause record.  Copying its exact artifact account into this record
+    joins the checkpoint commit to the re-dispatch seed without guessing an
+    artifact path from a run id.
+    """
+    if outcome.needs_human_kind != SANDBOX_ACQUIRE_FAILURE or outcome.fabro_run_id is None:
+        return None
+    comments = read_work_item_comments(
+        path=store_config(repo=repo), work_item_id=outcome.work_item_id
+    )
+    matching = [
+        comment.text
+        for comment in comments
+        if "livespec-preserve-by-reference" in comment.text
+        and f"run id: {outcome.fabro_run_id}" in comment.text
+    ]
+    return matching[-1] if matching else None

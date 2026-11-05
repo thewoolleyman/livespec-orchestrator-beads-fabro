@@ -179,7 +179,11 @@ def run_dispatch_with_watchdog(
             # so a probe without it can never match a beat.
             fabro_launcher=fabro_launcher_type(
                 run_runner=SourceStagingRunner(
-                    inner=runner, plan=context.plan, journal=context.journal
+                    inner=runner,
+                    plan=context.plan,
+                    journal=context.journal,
+                    resume_head=getattr(context.args, "resume_head", None),
+                    resume_fetch_ref=getattr(context.args, "resume_fetch_ref", None),
                 ),
                 heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
                 dispatch_id=context.dispatch_id,

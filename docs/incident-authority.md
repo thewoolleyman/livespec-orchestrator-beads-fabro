@@ -69,6 +69,50 @@ its authority generation or lifecycle state. A pre-PR snapshot may carry
 Other phases still require an identified PR. This permits pre-commit evidence
 on a previously provisioned chain; it does not create the chain.
 
+## Carrier state
+
+An attempt may carry an explicit `carrier` record (specification v302,
+"Carrier identity before and after PR creation"). It is one of three states:
+
+| `state` | Keys | PR number |
+| --- | --- | --- |
+| `branch-reserved` | `target_ref`, `input_parent`, `staged_tree` | `0` |
+| `head-published` | those keys plus `remote_head` | `0` |
+| `pr-bound` | the same keys as `head-published` | positive |
+
+`target_ref` is a fully qualified `refs/heads/...` name; the other values are
+full lowercase Git object ids. A pre-PR state also requires phase `repair` and no
+landed commit/tree pairs. A PR number exists exactly when the carrier is
+`pr-bound`; a placeholder or a positive number on a pre-PR carrier is invalid.
+
+A transition may advance a carrier (`branch-reserved` to `head-published` to
+`pr-bound`) but never regress it, drop it once present, change its target ref, or
+rewrite the recorded input parent and staged tree after the reservation was
+published. Only a still-reserved carrier may refresh its boundary. Once bound, the
+PR number is fixed. A record naming an unknown state, an extra key or a malformed
+value is refused as `incident-carrier-unsupported`, never read as normal mode.
+
+Migration: schema-1 attempts written before this model carry no `carrier` key.
+They remain readable with their exact earlier meaning, including the repair-only
+`pr_number: 0` case, and they serialize back without the key, so their receipt
+bytes do not change. A successor of such an attempt may introduce a carrier. This
+change models and validates the state only: it neither pushes, observes a forge,
+binds a PR nor fences a factory.
+
+## Genesis
+
+`publish-genesis --genesis-json <request>` takes the same identity arguments and
+one canonical request: `schema` 1, `principal`, `expected_claim` and the complete
+initial `attempt` (generation 1, phase `repair`, a `branch-reserved` carrier, and
+the named repository, item and operation). The request is decoded and bound to
+its SHA-256 digest, then refused as `incident-genesis-capability-unavailable`
+with exit 78. The installed public ledger offers no server-enforced operation that
+publishes a first root conditioned on an absent root and the exact current
+claim, so the command writes nothing, files no other item, constructs no ledger
+client and takes no local lock. An invalid or mismatched request is refused as
+`incident-genesis-invalid-request`. Real genesis waits on a claim-token protocol
+in which every applicable writer participates (bd-ib-jjws2).
+
 The canonical JSON receipt contains `receipt_id`, `hook` (`pre-commit`,
 `commit-msg`, or `pre-push`), the exact Git `tree`, `mode`,
 `evidence_kind: expedited-local-partial`, `exit_status`, and a nonempty `results`

@@ -17,12 +17,14 @@ from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     decode_attempt,
     decode_record,
     query_matches,
+    unsupported_carrier,
 )
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
     AuthorityRefusal,
     IncidentAttempt,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro._incident_carrier import CARRIER_UNSUPPORTED
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -94,6 +96,8 @@ def _transition(
         or not payload["next_token_id"]
     ):
         return _refuse(code="incident-authority-invalid-transition", detail=token)
+    if unsupported_carrier(value=payload["attempt"]):
+        return _refuse(code=CARRIER_UNSUPPORTED, detail=token)
     attempt = decode_attempt(value=payload["attempt"])
     if (
         attempt is None

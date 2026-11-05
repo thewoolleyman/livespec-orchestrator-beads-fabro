@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -80,6 +81,21 @@ def _write_fake_npm(*, bin_dir: Path) -> None:
     script.chmod(0o755)
 
 
+def _write_fake_node(*, bin_dir: Path) -> None:
+    script = bin_dir / "node"
+    _ = script.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'test "$1" = -p\n'
+        "python3 - \"$3\" <<'PY'\n"
+        "import json, pathlib, sys\n"
+        "print(json.loads(pathlib.Path(sys.argv[1]).read_text())['version'])\n"
+        "PY\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+
 def test_prepare_step_replaces_a_partial_locked_cache_with_the_complete_archive(
     tmp_path: Path,
 ) -> None:
@@ -89,6 +105,7 @@ def test_prepare_step_replaces_a_partial_locked_cache_with_the_complete_archive(
     bin_dir.mkdir()
     _write_fake_uv(bin_dir=bin_dir)
     _write_fake_npm(bin_dir=bin_dir)
+    _write_fake_node(bin_dir=bin_dir)
     home = tmp_path / "home"
     partial = home / ".cache" / "pyright-python" / _VERSION / "node_modules" / "pyright"
     partial.mkdir(parents=True)
@@ -99,11 +116,17 @@ def test_prepare_step_replaces_a_partial_locked_cache_with_the_complete_archive(
 
     rendered = tomli.loads(module.pyright_cache_prepare_steps_block())
     script = rendered["run"]["prepare"]["steps"][0]["script"]
+    host_path_without_node = os.pathsep.join(("/usr/bin", "/bin"))
+    assert shutil.which("node", path=host_path_without_node) is None
     result = subprocess.run(
         ["sh", "-c", script],
         check=False,
         capture_output=True,
-        env={**os.environ, "HOME": str(home), "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "PATH": f"{bin_dir}{os.pathsep}{host_path_without_node}",
+        },
         text=True,
     )
 
