@@ -431,10 +431,13 @@ def test_the_settle_nodes_are_billed_into_the_subprocess_ceiling() -> None:
 
 
 def test_fix_reaches_the_settle_before_the_janitor() -> None:
-    """A succeeded fix turn waits out its commit runs, then the janitor validates the tree."""
+    """Only a green settle reaches janitor; a refusal returns to the fix turn."""
     assert (_FIX_SETTLE, "") in _targets(source="fix")
     assert ("janitor", "") not in _targets(source="fix")
-    assert _targets(source=_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert _targets(source=_FIX_SETTLE) == [
+        ("fix", "outcome=failed"),
+        (_JANITOR_ADMISSION, ""),
+    ]
 
 
 def test_a_failed_fix_turn_still_goes_to_needs_human_without_the_settle() -> None:
@@ -470,6 +473,30 @@ def test_the_fix_settle_writes_its_own_brief_and_exits_zero(tmp_path: Path) -> N
     assert not _git_file(repo=repo, name=_REVIEW_FIX_LIVE_GIT_PATH).exists()
 
 
+def test_a_failed_fix_commit_run_reenters_fix_with_its_runner_brief(tmp_path: Path) -> None:
+    """A settled refusal remains actionable by fix instead of reaching janitor."""
+    repo = _clone(tmp_path)
+    plugins = _plugins(tmp_path)
+    path = _run_record(
+        repo=repo,
+        record={"state": "failed", "exit_code": 1, "hook_ran": True},
+    )
+    _ = path.with_suffix(".output").write_text(
+        f"Failed targets (1):\n  - {_FAILED_TARGET}\n{_ERROR_LINE}\n",
+        encoding="utf-8",
+    )
+
+    result = _run_node(repo=repo, node=_FIX_SETTLE, plugins=plugins)
+
+    assert result.returncode != 0, result.stderr
+    brief = _git_file(repo=repo, name=_FIX_LIVE_GIT_PATH).read_text(encoding="utf-8")
+    assert brief.startswith("failed\n")
+    assert _RUN_ID in brief
+    assert _FAILED_TARGET in brief
+    assert ("fix", "outcome=failed") in _targets(source=_FIX_SETTLE)
+    assert (_JANITOR_ADMISSION, "") in _targets(source=_FIX_SETTLE)
+
+
 def test_the_fix_settle_is_billed_into_the_subprocess_ceiling() -> None:
     """A node absent from the budget is billed at zero; the fix settle runs once per fix visit."""
     defaulted = node_timeouts_from_block(block={})
@@ -485,7 +512,10 @@ def test_the_fix_settle_is_billed_into_the_subprocess_ceiling() -> None:
 def test_review_fixes_reenter_janitor_through_a_routable_admission_gate() -> None:
     """A first Red janitor does not strand the later review-fixed Green tree."""
     assert _targets(source=_REVIEW_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
-    assert _targets(source=_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert _targets(source=_FIX_SETTLE) == [
+        ("fix", "outcome=failed"),
+        (_JANITOR_ADMISSION, ""),
+    ]
     assert _targets(source=_JANITOR_ADMISSION) == [
         ("needs_human", "outcome=failed"),
         ("janitor", ""),
