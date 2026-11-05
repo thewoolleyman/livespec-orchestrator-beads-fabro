@@ -168,8 +168,9 @@ def test_a_hook_still_running_at_the_limit_is_reported_with_its_elapsed_time(
     try:
         _await_ready(push=push)
         # The subject is the observer's REAL /proc starttime-to-boot-clock conversion.
-        # real-time-required: the hook must age on the real clock for the band to discriminate.
-        time.sleep(2)
+        time.sleep(
+            2  # real-time-required: the hook must age on the real clock for the band
+        )
         code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
     finally:
         _stop(push=push)
@@ -203,8 +204,9 @@ def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
     try:
         _await_ready(push=push)
         # The subject is the observer's REAL /proc starttime-to-boot-clock conversion.
-        # real-time-required: the delegate must age on the real clock for the band to discriminate.
-        time.sleep(2)
+        time.sleep(
+            2  # real-time-required: the delegate must age on the real clock for the band
+        )
         code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
     finally:
         _stop(push=push)
