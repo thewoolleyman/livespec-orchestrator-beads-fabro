@@ -2853,5 +2853,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-atmome adds the emitted-attribute vocabulary and the just-check member that reads livespec-dev-tooling's required_columns.json from the pinned package, with cases for a renamed vocabulary key and a dropped allowlist key.",
     "work_item": "bd-ib-atmome"
+  },
+  {
+    "heading": "## Scenario 312 \u2014 A fleet launcher that exits without a run leaves a terminal line, and its ready item's ticket is re-taken or reported",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-rk7mbd carries non-run-exit accounting into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising the terminal line on TERM, the dropped-ticket ledger comment, the bounded ready-set retry and the dead-pid stall line.",
+    "work_item": "bd-ib-rk7mbd"
   }
 ]

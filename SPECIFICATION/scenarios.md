@@ -12239,3 +12239,44 @@ Feature: Scheduler-required attribute check
     When a change removes livespec.sandbox.cpu_seconds from _otel_scrub.ATTRIBUTE_ALLOWLIST
     Then just check fails naming livespec.sandbox.cpu_seconds and dataset livespec-dispatcher
 ```
+
+## Scenario 312 — A fleet launcher that exits without a run leaves a terminal line, and its ready item's ticket is re-taken or reported
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A committed fleet-launch launcher accounts for every exit it makes before its run lists
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub ready-set check, a stub ledger that records comments, and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A launcher stopped by TERM while yielding leaves a terminal line and reports its dropped ticket
+    Given an impl launcher for bd-x holding FIFO ticket T while yielding on bd-x's repository hold file
+    And bd-x reads ready in the stub ledger
+    And no other launcher holds a ticket at T's ticket number
+    When the launcher receives TERM
+    Then its sequence log ends with one terminal line naming bd-x, T's ticket number and the TERM signal
+    And that line is written before T's ticket file is removed
+    And the stub ledger records one comment on bd-x naming T's ticket number, the TERM signal and that the exit was not a run ending
+    And that comment does not state that bd-x is held by its owner
+
+  Scenario: A ready-set refusal that clears within the retry bound keeps the ticket
+    Given FLEET_LAUNCH_READY_RETRY_POLLS set to 3
+    And a stub ready-set check that refuses bd-x on its first 2 polls and admits it on the 3rd
+    When the impl launcher for bd-x polls
+    Then it keeps its FIFO ticket while the check refuses
+    And it holds no factory mutex and no fleet in-flight marker while the check refuses
+    And it launches bd-x once the check admits it
+
+  Scenario: A ready-set refusal that outlasts the retry bound is reported
+    Given FLEET_LAUNCH_READY_RETRY_POLLS set to 3
+    And a stub ready-set check that refuses bd-x on every poll with reason R
+    When the impl launcher for bd-x exhausts its 3 polls
+    Then its terminal line names bd-x, its ticket number, reason R and 3 polls tried
+    And the stub ledger records one comment on bd-x naming its ticket number, reason R and 3 polls tried
+
+  Scenario: A dead-pid ticket is reported as a stall
+    Given a FIFO ticket file for bd-y whose launcher pid P is no longer alive
+    When another launcher reads that FIFO directory
+    Then it writes a stall line naming bd-y, the ticket number and the dead pid P
+    And it writes that line before it removes or skips the ticket
+```
