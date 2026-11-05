@@ -165,12 +165,13 @@ class LayeredLivenessProbe:
     cancelled at that beat plus the 7200 s window while `fabro events`
     carried tool activity up to 06:12:12Z.
 
-    The degrade rule survives unchanged because it is a rule about
-    ABSENCE, not about precedence: a layer that yields no signal
-    contributes no timestamp, so the other answers alone, and only when
-    BOTH are blind is the sample "no signal" — which `decide_stall` treats
-    as keep-waiting. A frozen heartbeat beside a frozen event stream still
-    confirms a stall, because neither reading advances.
+    A heartbeat may still report progress while the stream is unreadable,
+    but it cannot alone confirm a stall.  The combined sample therefore
+    carries the fallback's observability fact into `decide_stall`: a failed
+    stream read breaks the quiet window while a readable frozen stream and
+    frozen heartbeat still confirm one.  The heartbeat timestamp remains
+    useful on that failed-read poll, because a newer beat starts a fresh
+    window once stream observability returns.
 
     The open-command-node observation comes from the FALLBACK alone, and
     not out of any precedence between the layers: the event stream is the
@@ -197,4 +198,5 @@ class LayeredLivenessProbe:
             last_event_epoch=max(epochs) if epochs else None,
             observed_at=observed_at,
             open_command_node=fallback_sample.open_command_node,
+            event_stream_observable=fallback_sample.event_stream_observable,
         )
