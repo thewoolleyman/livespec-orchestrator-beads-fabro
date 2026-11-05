@@ -2142,6 +2142,8 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     dod_gate_mutation_guard -> red
 
     red -> already_satisfied [label="already satisfied", condition="preferred_label=already-satisfied"]
+    red -> green [label="seeded open Red", condition="preferred_label=seeded-open-red"]
+    red -> green [label="seeded already satisfied", condition="preferred_label=seeded-already-satisfied"]
     red -> commit_red
     commit_red -> red [label="refused", condition="outcome=failed"]
     commit_red -> green

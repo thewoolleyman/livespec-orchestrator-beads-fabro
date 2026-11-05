@@ -48,7 +48,7 @@ output for the one permitted incomplete-turn re-entry brief.
 
 ## Green steps
 
-1. Make the Red test pass by changing implementation files only. Never change the Red test file.
+1. Make the Red test pass by changing implementation files only. Never change the Red test file. When the handoff declares `seeded-open-red` or `seeded-already-satisfied`, preserve the seed's changes and take that route through this Green turn even when no new Red test was written: `commit_green` folds the seed checkpoints into the existing replay-evidenced commit.
 2. Run only the tests your change touches. Do not make a commit.
 3. Append, never rewrite an earlier section, using a `## green` section that
    states what changed and which tests ran.
