@@ -1097,11 +1097,13 @@
         "petri": {
           "registry": true,
           // `bin` is the client of the build gmktec serves (0.393.0-nightly.1 at
-          // c39bdbded, 2026-11-04). It requests compressed board reads and asks the
-          // server for only active statuses on plain `ps` (bd-ib-xoh477): against
-          // :32276 plain `ps` took 2.4-5.5 s where the 0.382 adeefec4c client took
-          // 16-26 s, measured 2026-11-04 from vps.
-          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro",
+          // 85af3547e; main :32276 since 2026-11-05 16:40Z). It requests compressed
+          // board reads and asks the server for only active statuses on plain `ps`
+          // (bd-ib-xoh477): against :32276 plain `ps` took 2.4-5.5 s where the 0.382
+          // adeefec4c client took 16-26 s, measured 2026-11-04 from vps. Its dispatch
+          // push retries a transient origin rejection and keeps the push stderr
+          // (bd-ib-uctbct, thewoolleyman/fabro#24).
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro",
           "secret_channel": "native_secrets",
           // factory-python: the toolchain-named catalog id (livespec-dev-tooling
           // SPECIFICATION, "Factory sandbox environment naming"). Its provider, not
@@ -1112,12 +1114,12 @@
         // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
         // ruling 2026-11-02T19:22:32Z). Same keys as `petri`; its address comes
         // from the factory registry. `bin` is the client of the build it serves
-        // (0.393.0-nightly.1 at c39bdbded). It is never the default: choose it per
+        // (0.393.0-nightly.1 at 85af3547e). It is never the default: choose it per
         // dispatch with `--factory candidate`, and count its runs against the
         // shared gmktec fleet cap.
         "candidate": {
           "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-c39bdbded/fabro",
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro",
           "secret_channel": "native_secrets",
           "environment": "factory-python"
         }

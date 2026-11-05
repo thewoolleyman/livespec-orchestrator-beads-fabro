@@ -376,6 +376,25 @@ worker from its own executable path, so every new run failed to launch from 14:4
 until the 15:04:02Z restart. The fix is livespec-dev-tooling-udma. Until it ships, any
 apply that stages a Fabro binary MUST restart that instance in the same step.
 
+**The serving build (2026-11-05).** Since 2026-11-05 all three gmktec instances serve
+`85af3547e`, the carrier tip after `c39bdbded`, with the three rows below; its `Cargo.lock`
+still pins Petri `d25a6c15`. The build is `fabro 0.393.0-nightly.1 (85af354 2026-11-04)`,
+sha256 `d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-85af3547e/` on vps.
+The pins are livespec-dev-tooling `5ff61d5c` (candidate) and `376f3791` (main and
+mi-homelab). Main `:32276` restarted at 16:40:11Z in the same apply that moved its sandbox
+driver to v0.8.1 (livespec-dev-tooling `7d2dd488`), after a verified preserve of all 15
+live runs and their cancel-and-redispatch. Its rollback target is `v0393-c39bdbded`, and
+the pre-staged revert is livespec-dev-tooling branch
+`revert/fabro-server-85af354-driver-v0.8.1`. The factory client moved to the same build
+in this change.
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `da6c8015a` (thewoolleyman/fabro#24) | `fabro run` retries the source-branch push on a transient origin rejection, and keeps the push stderr in its "could not be made available" error | one GitHub `Internal Server Error` or `commit_refs` failure on the push failed the whole dispatch, with no reason printed | **YES**, all three gmktec instances and the pinned factory client | `bd-ib-uctbct` (plan `fabro-currency`) |
+| `0a867ce16` (thewoolleyman/fabro#25) | `fabro events -n` reads only the tail pages from the server, prints each page as it arrives, and a node subject no longer carries the node's script | a bounded read of a long run downloaded the whole stream (107 MB) and printed nothing before a timeout, so the stall watchdog made false kills | **YES**, all three gmktec instances and the pinned factory client; on main `-n 30` of a 24,644-item run took 3.5 s | `bd-ib-dmjsmd` (plan `fabro-currency`) |
+| `85af3547e` (thewoolleyman/fabro#26) | the server keeps one sandbox plugin supervisor per provider configuration for its whole life | the server's own `sandbox cp` and `sandbox/describe` calls failed with "plugin response transport closed" | **YES**, all three gmktec instances | `bd-ib-m7lxgn` (plan `fabro-currency`) |
+
 **The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
 `fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
 `thewoolleyman/fabro`. It is upstream `v0.389.0-nightly.0` (`5c90ad2e0`) plus the two
