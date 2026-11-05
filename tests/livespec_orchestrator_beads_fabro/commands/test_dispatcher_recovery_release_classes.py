@@ -58,7 +58,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -91,6 +91,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     ROUTE_RESUME,
     ROUTE_SEEDED,
     RecoveryRoute,
+    RecoverySeed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     PUBLISH_HEAD_LABEL,
@@ -111,6 +112,9 @@ _PR = 3301
 _PUBLISHED_HEAD = "db9feb3900000000000000000000000000000001"
 _PRESERVED_COMMIT = "216c811200000000000000000000000000000002"
 _PRESERVED_REF = f"refs/heads/needs-human/{_RUN}"
+_CURRENT_BASE = "a216c8112000000000000000000000000000003"
+_STALE_BASE = "b216c8112000000000000000000000000000004"
+_PIN_BUMP_COMMIT = "246fecad0da0f9aad2ce7db339f6f17d6645326d"
 
 # The record a published run left on its pull request, which is what anchors a
 # resume from EITHER release class: it lives on the forge rather than in the
@@ -133,6 +137,7 @@ class _Shell:
     """
 
     answers: ClassVar[dict[str, CommandResult]] = {}
+    needs_earlier: ClassVar[dict[str, str]] = {}
     calls: ClassVar[list[str]] = []
 
     def run(
@@ -146,9 +151,13 @@ class _Shell:
     ) -> CommandResult:
         _ = cwd, timeout_seconds, env, stdin
         joined = " ".join(argv)
+        earlier = tuple(_Shell.calls)
         _Shell.calls.append(joined)
         for needle, result in _Shell.answers.items():
             if needle in joined:
+                prerequisite = _Shell.needs_earlier.get(needle)
+                if prerequisite is not None and not any(prerequisite in one for one in earlier):
+                    return CommandResult(exit_code=128, stdout="", stderr="bad object")
                 return result
         return CommandResult(exit_code=0, stdout="", stderr="")
 
@@ -160,6 +169,7 @@ class _World:
     name: str
     answers: dict[str, CommandResult]
     route: str
+    needs_earlier: dict[str, str] = field(default_factory=dict)
 
 
 _PINNED_AT = "2026-10-24T23:48:20Z"
@@ -196,6 +206,12 @@ def _worlds() -> tuple[_World, ...]:
                 "gh pr list": _NO_PULL_REQUEST,
                 "ls-remote origin refs/heads/needs-human/": CommandResult(
                     exit_code=0, stdout=f"{_PRESERVED_COMMIT}\t{_PRESERVED_REF}\n", stderr=""
+                ),
+                f"merge-base {_PRESERVED_COMMIT} origin/master": CommandResult(
+                    exit_code=0, stdout=f"{_CURRENT_BASE}\n", stderr=""
+                ),
+                f"merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_CURRENT_BASE}": CommandResult(
+                    exit_code=0, stdout="", stderr=""
                 ),
             },
             route=ROUTE_SEEDED,
@@ -313,6 +329,7 @@ def _route_once(
         encoding="utf-8",
     )
     _Shell.answers = dict(world.answers)
+    _Shell.needs_earlier = dict(world.needs_earlier)
     _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
     # The two passes run one after the other, so an unpinned journal clock lets
@@ -423,6 +440,61 @@ def test_a_returned_terminal_routes_like_an_explicit_recovery_release(
 
     assert terminal.route is not None
     assert terminal.route.route == world.route
+
+
+def test_a_released_seed_before_the_current_pin_bump_routes_fresh_with_its_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale seed starts from the default branch without discarding its tree.
+
+    The common ``seeded`` world above scripts the identical base and ancestry
+    reads, but answers that the base already carries the pin bump. This world
+    alone answers that it does not, isolating the route difference to the stale
+    preserved base rather than to a missing recovery measurement.
+    """
+    stale = _World(
+        name="stale-seed",
+        answers={
+            "gh pr list": _NO_PULL_REQUEST,
+            "ls-remote origin refs/heads/needs-human/": CommandResult(
+                exit_code=0, stdout=f"{_PRESERVED_COMMIT}\t{_PRESERVED_REF}\n", stderr=""
+            ),
+            f"merge-base {_PRESERVED_COMMIT} origin/master": CommandResult(
+                exit_code=0, stdout=f"{_STALE_BASE}\n", stderr=""
+            ),
+            f"merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_STALE_BASE}": CommandResult(
+                exit_code=1, stdout="", stderr=""
+            ),
+        },
+        needs_earlier={
+            f"merge-base {_PRESERVED_COMMIT} origin/master": f"fetch origin {_PRESERVED_REF}"
+        },
+        route=ROUTE_FRESH,
+    )
+
+    routed = _route_once(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        world=stale,
+        release_stage=STALL_RELEASE_STAGE,
+    )
+
+    assert routed.route == RecoveryRoute(
+        work_item_id=_ITEM_ID,
+        route=ROUTE_FRESH,
+        seed=RecoverySeed(
+            source_run_id=_RUN,
+            remote="origin",
+            commit_sha=_PRESERVED_COMMIT,
+            preservation_ref=_PRESERVED_REF,
+        ),
+    )
+    assert f"git fetch origin {_PRESERVED_REF}" in routed.calls
+    assert f"git merge-base {_PRESERVED_COMMIT} origin/master" in routed.calls
+    assert f"git merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_STALE_BASE}" in routed.calls
+    assert routed.calls.index(f"git fetch origin {_PRESERVED_REF}") < routed.calls.index(
+        f"git merge-base {_PRESERVED_COMMIT} origin/master"
+    )
 
 
 def test_a_newer_dispatch_or_an_unrelated_terminal_does_not_release_recovery() -> None:
