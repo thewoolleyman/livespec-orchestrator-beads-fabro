@@ -81,6 +81,8 @@ _DISPATCH = "a7395318d0c945589105940e7936139f"
 _DEAD_HEAD = "f3f139b28469c7efaae32dcb897d73518edbaadd"
 _PRESERVED_COMMIT = "216c811200000000000000000000000000000002"
 _PRESERVED_REF = f"refs/heads/needs-human/{_RUN}"
+_CURRENT_BASE = "a216c8112000000000000000000000000000003"
+_PIN_BUMP_COMMIT = "246fecad0da0f9aad2ce7db339f6f17d6645326d"
 
 # The journal stages this file reads. Spelled as literals because its Red
 # predates the module that exports them, and a Red's test bytes are fixed
@@ -154,6 +156,15 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
         ),
         "gh api --method POST": CommandResult(exit_code=0, stdout="", stderr=""),
         "gh api --method DELETE": CommandResult(exit_code=0, stdout="", stderr=""),
+        "symbolic-ref --short refs/remotes/origin/HEAD": CommandResult(
+            exit_code=0, stdout="origin/master\n", stderr=""
+        ),
+        f"merge-base {_PRESERVED_COMMIT} origin/master": CommandResult(
+            exit_code=0, stdout=f"{_CURRENT_BASE}\n", stderr=""
+        ),
+        f"merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_CURRENT_BASE}": CommandResult(
+            exit_code=0, stdout="", stderr=""
+        ),
     }
     _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
