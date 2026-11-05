@@ -18,6 +18,9 @@
 : "${FLEET_LAUNCH_STATE_DIR:=$FLEET_LAUNCH_ORCH_REPO/tmp/petri-canary}"
 : "${FLEET_LAUNCH_FLEET_CAP_FILE:=$FLEET_LAUNCH_STATE_DIR/fleet-cap}"
 : "${FLEET_LAUNCH_HOLD_FILE:=$FLEET_LAUNCH_STATE_DIR/hold-gmktec}"
+# A repository hold is hold-repo-<target-checkout-basename> in this directory.
+# It scopes a red repository to its own launches without stopping other tenants.
+: "${FLEET_LAUNCH_REPO_HOLD_DIR:=$FLEET_LAUNCH_STATE_DIR}"
 
 # Factory servers. hp-xubuntu and vps are retired as factories and are never read.
 : "${FLEET_LAUNCH_GMK_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32276}"
