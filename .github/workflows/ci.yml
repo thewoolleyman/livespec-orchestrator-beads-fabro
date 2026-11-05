@@ -98,7 +98,7 @@ jobs:
     name: ${{ matrix.target }} (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -296,12 +296,20 @@ jobs:
   # Each uid produces its OWN `.coverage` under its own artifact name, and the
   # consumer leg for a uid reads only the artifact its own uid produced — so
   # the two legs stay independently gated exactly as before.
-  check-per-file-coverage:
-    name: check-per-file-coverage (${{ matrix.uid }})
-    # bd-ib-uxv5al: the coverage pair routes through its OWN variable so it can
-    # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
-    # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
-    # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
+  # bd-ib-m26pql: per-file coverage as PARALLEL SHARDS. The suite was the PR
+  # critical path (check-per-file-coverage nonroot: median 35.0 min, p90 63.4,
+  # n=39 since 2026-11-04T20Z) because every pod runs at most
+  # LIVESPEC_TEST_PARALLELISM=3 xdist workers. Each shard runs a disjoint
+  # round-robin quarter of the tracked test files (dev-tooling/just-coverage-shard.sh)
+  # and only RECORDS coverage; check-per-file-coverage below `needs` every shard,
+  # combines their data, and runs the unchanged canonical per-file verifier.
+  # The shard count is 4: at most 4 churn slots per PR, well inside the free
+  # slots on poweredge-xubuntu (15 of 21 free at 05:05Z 2026-11-05). Raising it
+  # means editing both the `shard` list and the count passed to the recipe.
+  # In ci-green's needs, so a failed shard fails the gate directly. Root-uid
+  # coverage (ci-root-uid.yml) is unchanged and still runs the whole suite.
+  check-per-file-coverage-shard:
+    name: check-per-file-coverage-shard (${{ matrix.uid }}, ${{ matrix.shard }}/4)
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
@@ -313,6 +321,82 @@ jobs:
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        uid:
+          - nonroot
+        shard: [1, 2, 3, 4]
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # Same narrow non-root route as check-per-file-coverage below.
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          chmod 0755 /root
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
+          mkdir -p /home/ci
+          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+
+      - name: just coverage-shard ${{ matrix.shard }} 4 (uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci \
+                UV_CACHE_DIR=/home/ci/.cache/uv \
+                MISE_DATA_DIR=/root/.local/share/mise \
+                MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                GITHUB_TOKEN="$GITHUB_TOKEN" \
+                GH_TOKEN="$GH_TOKEN" \
+              just coverage-shard ${{ matrix.shard }} 4
+
+      # include-hidden-files is REQUIRED: the data file is a dotfile.
+      - name: Publish this shard's coverage data for check-per-file-coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ matrix.uid }}-${{ matrix.shard }}
+          path: .coverage-shards/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  check-per-file-coverage:
+    name: check-per-file-coverage (${{ matrix.uid }})
+    # bd-ib-m26pql: combines the shards' coverage instead of running the suite.
+    needs: [check-per-file-coverage-shard]
+    # bd-ib-uxv5al: the coverage pair routes through its OWN variable so it can
+    # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
+    # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
+    # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+    env:
+      # Lane-selected uv bounds from THIS job's routing (see the top-level env).
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      # bd-ib-m26pql: just-check-per-file-coverage.sh combines this directory's
+      # shard data instead of re-running the suite.
+      LIVESPEC_COVERAGE_SHARDS_DIR: .coverage-shards
     strategy:
       fail-fast: false
       matrix:
@@ -334,6 +418,15 @@ jobs:
           mise trust
           mise install
           uv sync --all-groups
+
+      # bd-ib-m26pql: every shard's data, downloaded BEFORE the non-root prep so
+      # its chown covers the files uid 1000 combines.
+      - name: Download every coverage shard's data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-${{ matrix.uid }}-*
+          path: .coverage-shards
+          merge-multiple: true
 
       # Same narrow route as check-python's non-root leg — see that job for the
       # /root-mode rationale and its stated limitation. Runs AFTER `uv sync` so
@@ -411,7 +504,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -507,7 +600,7 @@ jobs:
     name: check-python-batch (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -596,7 +689,7 @@ jobs:
     name: check-doctor-static
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -661,7 +754,7 @@ jobs:
     name: ${{ matrix.target }}
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -751,7 +844,7 @@ jobs:
     name: e2e-cli
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     # SINGLE env block — this job already had a job-level `env:` carrying
     # LIVESPEC_E2E_HARNESS before the baked-image cutover, so the container
     # preamble's vars are MERGED in here rather than added as a second `env:`
@@ -807,7 +900,7 @@ jobs:
     name: check-metadata-batch
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -941,7 +1034,7 @@ jobs:
     name: acceptance
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1021,7 +1114,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1058,7 +1151,7 @@ jobs:
   # (push-only, not a gate) is intentionally absent from `needs:`.
   ci-green:
     name: ci-green
-    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance]
+    needs: [check-python, check-per-file-coverage-shard, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance]
     if: always()
     runs-on: ubuntu-latest
     steps:

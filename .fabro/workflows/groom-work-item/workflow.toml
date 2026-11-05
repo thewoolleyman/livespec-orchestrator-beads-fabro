@@ -60,6 +60,8 @@ contents = "write"
 pull_requests = "write"
 
 [run.inputs]
+mechanical_targets = ""
+mechanical_reentries = "0"
 # WHAT THIS VARIANT IS. Read by `commands/_workflow_variant_kind.py` off this
 # very file: the Dispatcher's groom door admits a `backlog` item into `active`
 # only under a variant whose directory declares `groom` here, and the apply
@@ -196,7 +198,7 @@ provider = "docker"
 # baked global. The shared `bump-pin` autodiscovery walks the top-level
 # `.fabro/workflows/` root as well as the plugin's own, so this tag is rewritten
 # in lockstep with the bundle's rather than drifting behind it.
-docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.174.0"
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.175.0"
 
 [environments.livespec-ci.resources]
 cpu = 4

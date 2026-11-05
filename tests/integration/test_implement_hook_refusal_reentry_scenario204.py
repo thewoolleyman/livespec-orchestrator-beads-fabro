@@ -113,7 +113,7 @@ _ROUTE_VISITS = 3
 # The `implement` timeout key addresses `red` and `green` alike, and each is
 # billed at three visits of two attempts, so the key's delta is billed twelve
 # times.
-_IMPLEMENT_VISITS = 12
+_IMPLEMENT_VISITS = 16
 _CONFIGURED_DELTA = 137
 
 

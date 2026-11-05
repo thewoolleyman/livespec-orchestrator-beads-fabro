@@ -191,8 +191,8 @@ def test_subprocess_ceiling_follows_the_resolved_graph() -> None:
         stall_layer="default",
     )
     # Red and Green each resolve the implement-stage timeout independently:
-    # three visits with one retry each makes twelve affected attempts.
-    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 12 * (14400 - 1800)
+    # Four visits with one retry each makes sixteen affected attempts.
+    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 16 * (14400 - 1800)
 
 
 def test_ceiling_never_falls_below_the_stall_watchdog() -> None:

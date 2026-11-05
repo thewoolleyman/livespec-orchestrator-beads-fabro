@@ -72,13 +72,13 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # Dispatcher can kill the CLI out from under.
 #
 # `red` and `green` each inherit the implement stage's timeout and can make
-# three visits with one retry each, so both are billed at six attempts. Each
+# four visits with one retry each, so both are billed at eight attempts. Each
 # successful Red and Green turn passes through its dedicated command node;
 # command refusal returns to the producing turn.
 # `implement_completion` sits on `green`'s single fallthrough, so it is reached
-# once per `green` visit, THREE. `implement_hook_route` (v208, Scenario 204) sits
+# once per `green` visit, FOUR. `implement_hook_route` (v208, Scenario 204) sits
 # on that gate's failure edge and can send an incomplete Green turn back to
-# `green`; it is reached at most once per `green` visit, THREE, and it runs the
+# `green`; it is reached at most once per `green` visit, FOUR, and it runs the
 # repository's pre-commit hook over what the turn left staged, which can take
 # the better part of its timeout, so it is billed at its full visit count.
 # `implementation_diff` now follows a successful Green command exactly once.
@@ -151,12 +151,14 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "red": 6,
-    "commit_red": 3,
-    "green": 6,
-    "implement_completion": 3,
+    "red": 8,
+    "commit_red": 4,
+    "commit_red_reentry": 4,
+    "green": 8,
+    "implement_completion": 4,
     "implement_hook_route": 3,
-    "commit_green": 3,
+    "commit_green": 4,
+    "commit_green_reentry": 4,
     "implementation_diff": 1,
     "janitor_admission": 3,
     "janitor": 3,

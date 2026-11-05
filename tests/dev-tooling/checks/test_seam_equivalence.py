@@ -459,18 +459,25 @@ def test_the_four_input_families_are_disjoint_and_cover_what_the_payload_declare
 ) -> None:
     assert frozenset() == rules.SCHEMA_PROJECTABLE_INPUTS & rules.ADAPTER_INPUT_NAMES
     assert frozenset() == rules.SCHEMA_PROJECTABLE_INPUTS & rules.POLICY_INPUT_NAMES
+    assert frozenset() == rules.SCHEMA_PROJECTABLE_INPUTS & rules.MECHANICAL_REENTRY_INPUT_NAMES
     assert frozenset() == rules.SCHEMA_PROJECTABLE_INPUTS & rules.VARIANT_KIND_INPUT_NAMES
     assert frozenset() == rules.ADAPTER_INPUT_NAMES & rules.VARIANT_KIND_INPUT_NAMES
     assert frozenset() == rules.POLICY_INPUT_NAMES & rules.VARIANT_KIND_INPUT_NAMES
+    assert frozenset() == rules.MECHANICAL_REENTRY_INPUT_NAMES & rules.VARIANT_KIND_INPUT_NAMES
     assert (
         frozenset({"review_fix_visit_cap", "merge_on_review_cap_outcome", "merge_hold"})
         == rules.POLICY_INPUT_NAMES
+    )
+    assert (
+        frozenset({"mechanical_targets", "mechanical_reentries"})
+        == rules.MECHANICAL_REENTRY_INPUT_NAMES
     )
     assert frozenset({"workflow_kind"}) == rules.VARIANT_KIND_INPUT_NAMES
     assert rules.classified_input_names() == (
         rules.SCHEMA_PROJECTABLE_INPUTS
         | rules.ADAPTER_INPUT_NAMES
         | rules.POLICY_INPUT_NAMES
+        | rules.MECHANICAL_REENTRY_INPUT_NAMES
         | rules.VARIANT_KIND_INPUT_NAMES
     )
     assert rules.scoping_findings(declared={}) == []

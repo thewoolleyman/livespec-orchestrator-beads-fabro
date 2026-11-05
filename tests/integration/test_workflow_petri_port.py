@@ -151,7 +151,9 @@ _DOD_GATE_GUARD_ADDED = {"dod_gate_mutation_guard"}
 _RED_GREEN_ADDED = {
     "already_satisfied",
     "commit_green",
+    "commit_green_reentry",
     "commit_red",
+    "commit_red_reentry",
     "green",
     "red",
 }

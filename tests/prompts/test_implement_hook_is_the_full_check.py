@@ -18,8 +18,12 @@ def test_implement_commits_are_owned_by_command_nodes() -> None:
     assert not isinstance(graph, str), graph
 
     assert "implement" not in graph.nodes
-    assert graph.nodes["commit_red"]["script"] == "bash dev-tooling/commit-red.sh"
-    assert graph.nodes["commit_green"]["script"] == "bash dev-tooling/commit-green.sh"
+    for node in ("red", "green"):
+        assert graph.nodes[f"commit_{node}"]["script"] == (
+            'LIVESPEC_MECHANICAL_TARGETS="{{ inputs.mechanical_targets }}" '
+            'LIVESPEC_MECHANICAL_REENTRIES="{{ inputs.mechanical_reentries }}" '
+            f"bash dev-tooling/commit-{node}.sh"
+        )
 
 
 def test_fix_and_review_fix_keep_their_commit_runner_settle_nodes() -> None:

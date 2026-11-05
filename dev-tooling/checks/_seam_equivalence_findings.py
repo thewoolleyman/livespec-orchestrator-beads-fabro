@@ -12,7 +12,8 @@ payload on disk.
 FOUR DISJOINT FAMILIES, AND ONLY THE EQUALITY IS SCOPED TO ONE OF THEM. The
 `[run.inputs]` table carries the integration inputs, the per-node ACP adapter inputs,
 the PER-ITEM POLICY inputs -- `review_fix_visit_cap`,
-`merge_on_review_cap_outcome` and `merge_hold` -- and the variant's own KIND
+`merge_on_review_cap_outcome` and `merge_hold` -- the commit-refusal policy inputs
+-- `mechanical_targets` and `mechanical_reentries` -- and the variant's own KIND
 DECLARATION. The ratified typed-workflow-inputs clause names the first three and
 draws the line between them exactly once: the token/rendered-input EQUALITY
 ranges over the integration inputs alone, because only those are projections of
@@ -63,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
 
 __all__: list[str] = [
     "ADAPTER_INPUT_NAMES",
+    "MECHANICAL_REENTRY_INPUT_NAMES",
     "POLICY_INPUT_NAMES",
     "SCHEMA_PROJECTABLE_INPUTS",
     "VARIANT_KIND_INPUT_NAMES",
@@ -96,6 +98,14 @@ POLICY_INPUT_NAMES: frozenset[str] = frozenset(
     {"review_fix_visit_cap", "merge_on_review_cap_outcome", "merge_hold"}
 )
 
+# The commit-refusal inputs are a repository-declared dispatch policy rather
+# than an item's effective policy.  They are projected only to workflows that
+# declare them, so unlike `POLICY_INPUT_NAMES` they do not impose the
+# every-payload declaration rule below.
+MECHANICAL_REENTRY_INPUT_NAMES: frozenset[str] = frozenset(
+    {"mechanical_targets", "mechanical_reentries"}
+)
+
 # The variant's own KIND declaration, read off the module that reads it from
 # the payload rather than respelled here. That module is the one place that
 # decides which `[run.inputs]` name carries a variant's kind, and a second
@@ -117,6 +127,7 @@ def classified_input_names() -> frozenset[str]:
         SCHEMA_PROJECTABLE_INPUTS
         | ADAPTER_INPUT_NAMES
         | POLICY_INPUT_NAMES
+        | MECHANICAL_REENTRY_INPUT_NAMES
         | VARIANT_KIND_INPUT_NAMES
     )
 
@@ -219,6 +230,7 @@ def scoping_findings(*, declared: Mapping[str, str]) -> list[Finding]:
         ("schema-projectable", SCHEMA_PROJECTABLE_INPUTS),
         ("acp-adapter", ADAPTER_INPUT_NAMES),
         ("per-item-policy", POLICY_INPUT_NAMES),
+        ("commit-refusal-policy", MECHANICAL_REENTRY_INPUT_NAMES),
         ("variant-kind", VARIANT_KIND_INPUT_NAMES),
     )
     findings = [

@@ -9,6 +9,10 @@ readonly CHECKPOINT_LIMIT=500
 readonly CHECKPOINT_SUBJECT='^fabro\([^)]*\): '
 readonly HANDOFF_NAME="livespec-implement-handoff.md"
 readonly OUTPUT_NAME="livespec-commit-green-output"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+REENTRY_POLICY="$SCRIPT_DIR/commit-reentry-policy.sh"
+readonly REENTRY_POLICY
 
 checkpoint_commit() {
     local ref="$1"
@@ -31,8 +35,12 @@ fold_checkpoints() {
         return
     fi
     red_message="$(git log -1 --format=%B "$ref" 2>/dev/null || true)"
-    if grep -q '^TDD-Red-Test-File-Checksum: ' <<<"$red_message" \
-        && ! grep -q '^TDD-Green-Verified-At: ' <<<"$red_message"; then
+    if grep -q '^TDD-Red-Test-File-Checksum: ' <<<"$red_message"; then
+        # A seeded tree may carry checkpoints from an earlier run.  Fold that
+        # complete suffix into its evidence-bearing commit: an open Red is
+        # completed here, while an already-Green pair is amended without losing
+        # either trailer.  Leaving those checkpoints as published commits would
+        # publish implementation changes with no replay evidence.
         git reset --soft "HEAD~${depth}"
     fi
 }
@@ -76,6 +84,11 @@ main() {
     set -e
     cat "$output"
     append_verdict "$handoff" "$status" "$output"
+    if (( status != 0 )); then
+        "$REENTRY_POLICY" green \
+            "${LIVESPEC_MECHANICAL_TARGETS:-check-lint,check-format,check-keyword-only-args,check-file-lloc,check-per-file-coverage}" \
+            "${LIVESPEC_MECHANICAL_REENTRIES:-2}" "$output" "$handoff" "$status"
+    fi
     return "$status"
 }
 

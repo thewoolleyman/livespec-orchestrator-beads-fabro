@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.287.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.287.0...v0.287.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* order Petri terminal failures by execution ([a5415de](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a5415decc44953afff95981ac002704d40e16435))
+
 ## [0.287.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.286.0...v0.287.0) (2026-11-05)
 
 

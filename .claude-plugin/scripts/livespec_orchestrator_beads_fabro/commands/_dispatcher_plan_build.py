@@ -85,6 +85,31 @@ __all__: list[str] = [
 _MERGE_ON_REVIEW_CAP_DISABLED_OUTCOME = "__merge_on_review_cap_disabled__"
 
 
+def _mechanical_commit_refusal_policy(*, config_text: str) -> tuple[tuple[str, ...], int]:
+    """Read the declared, bounded commit-hook retry policy for an implement run."""
+    plugin = declaration_from_config_text(config_text=config_text)
+    dispatcher_value: object = plugin.get("dispatcher")
+    if not isinstance(dispatcher_value, dict):
+        return (), 0
+    dispatcher = cast("dict[str, object]", dispatcher_value)
+    implement_value: object = dispatcher.get("implement")
+    if not isinstance(implement_value, dict):
+        return (), 0
+    implement = cast("dict[str, object]", implement_value)
+    raw_targets: object = implement.get("mechanical_targets")
+    raw_reentries: object = implement.get("mechanical_reentries")
+    if not isinstance(raw_targets, list) or not isinstance(raw_reentries, int):
+        return (), 0
+    targets = cast("list[object]", raw_targets)
+    if (
+        not all(isinstance(target, str) and target for target in targets)
+        or isinstance(raw_reentries, bool)
+        or raw_reentries < 0
+    ):
+        return (), 0
+    return tuple(cast("str", target) for target in targets), raw_reentries
+
+
 def resolve_repo_integration_contract(
     *, config_text: str, default_branch: str | None
 ) -> ResolvedIntegrationContract:
@@ -164,6 +189,12 @@ class DispatchPlan:
     janitor_core_ref: str
     review_fix_visit_cap: int
     merge_on_review_cap_outcome: str
+    # The commit-hook targets allowed to spend the separate mechanical retry
+    # budget, and that budget.  These are resolved once into the plan so the
+    # journal, launch inputs and sandbox cannot read different policies.
+    mechanical_targets: tuple[str, ...] = ()
+    mechanical_reentries: int = 0
+    mechanical_run_inputs: tuple[str, ...] = ()
     # This item's effective merge hold — the per-item hold `contracts.md`
     # ratifies — resolved host-side HERE, at
     # plan-build time, and journaled with the dispatch record. It rides the plan
@@ -288,6 +319,17 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         config_text=config_text, default_branch=default_branch
     )
     core = janitor_core_provisioning_from_contract(resolved=integration)
+    mechanical_targets, mechanical_reentries = _mechanical_commit_refusal_policy(
+        config_text=config_text
+    )
+    mechanical_run_inputs = (
+        (
+            f"mechanical_targets={','.join(mechanical_targets)}",
+            f"mechanical_reentries={mechanical_reentries}",
+        )
+        if "mechanical_targets" in committed_workflow_text
+        else ()
+    )
     return DispatchPlan(
         repo=repo,
         work_item_id=work_item_id,
@@ -316,6 +358,9 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         merge_on_review_cap_outcome=(
             "succeeded" if merge_on_review_cap else _MERGE_ON_REVIEW_CAP_DISABLED_OUTCOME
         ),
+        mechanical_targets=mechanical_targets,
+        mechanical_reentries=mechanical_reentries,
+        mechanical_run_inputs=mechanical_run_inputs,
         merge_hold=merge_hold,
         fabro_version=fabro_version,
         fabro_timeout_seconds=fabro_timeout_seconds,

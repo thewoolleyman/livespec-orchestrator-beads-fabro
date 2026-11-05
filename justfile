@@ -1121,6 +1121,16 @@ check-pbt-coverage-pure-modules:
 check-per-file-coverage:
     dev-tooling/just-check-per-file-coverage.sh
 
+# bd-ib-m26pql: ONE shard of the per-file coverage suite, for CI's parallel
+# coverage jobs. It records coverage data under .coverage-shards/ and judges
+# nothing; check-per-file-coverage combines every shard (when
+# LIVESPEC_COVERAGE_SHARDS_DIR names that directory) and runs the unchanged
+# per-file verifier. Deliberately NOT a `check-` slug and not in the `check`
+# aggregate: locally, check-per-file-coverage runs the whole suite itself.
+[positional-arguments]
+coverage-shard shard_index shard_count:
+    dev-tooling/just-coverage-shard.sh "$@"
+
 # Shared baseline Verifier: validates this repo's harness-conformance
 # declaration against the plugin-resolution invariant. Shipped by
 # livespec-dev-tooling (>=v0.21.0); with `harnesses` declared in

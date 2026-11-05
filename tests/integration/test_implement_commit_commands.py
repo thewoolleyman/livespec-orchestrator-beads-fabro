@@ -10,9 +10,15 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
+    _mechanical_commit_refusal_policy,
+)
+
 _ROOT = Path(__file__).parents[2]
 _RED = _ROOT / "dev-tooling" / "commit-red.sh"
 _GREEN = _ROOT / "dev-tooling" / "commit-green.sh"
+_REENTRY_POLICY = _ROOT / "dev-tooling" / "commit-reentry-policy.sh"
+_REENTRY_ADMISSION = _ROOT / "dev-tooling" / "commit-reentry-admission.sh"
 
 
 def _run(*, repo: Path, argv: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -196,6 +202,153 @@ def test_commit_red_refuses_when_the_latest_red_section_names_no_test_file(tmp_p
     assert _git(repo=repo, argv=["rev-parse", "HEAD"]) == before
     recorded = handoff.read_text(encoding="utf-8")
     assert "Cause: latest red section names no test file" in recorded
+
+
+def test_commit_red_accepts_test_file_label_in_the_latest_red_section(tmp_path: Path) -> None:
+    """The Red prompt's `Test file:` spelling names the test commit_red stages."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    test_file = repo / "tests" / "test_feature.py"
+    test_file.parent.mkdir()
+    _ = test_file.write_text("def test_feature() -> None:\n    assert False\n", encoding="utf-8")
+    _git(repo=repo, argv=["add", "tests/test_feature.py"])
+    _checkpoint(repo=repo, name="red")
+    _handoff(repo=repo, text="## red\nTest file: tests/test_feature.py\n")
+
+    completed = _run(repo=repo, argv=["bash", str(_RED)], check=False)
+
+    assert completed.returncode == 0, completed.stderr
+    assert _git(repo=repo, argv=["show", "--format=", "--name-only", "HEAD"]) == (
+        "tests/test_feature.py"
+    )
+
+
+def test_declared_mechanical_refusals_use_their_budget_before_the_ordinary_reentry(
+    tmp_path: Path,
+) -> None:
+    """The two target-only refusals preserve Red's ordinary re-entry for later."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    handoff = _handoff(repo=repo, text="## commit_red\n\nExit status: 1\n")
+    output = repo / "hook-output"
+    _ = output.write_text("Failed targets (1):\n  - check-lint\n", encoding="utf-8")
+
+    for remaining in (1, 0):
+        recorded = _run(
+            repo=repo,
+            argv=[
+                "bash",
+                str(_REENTRY_POLICY),
+                "red",
+                "check-lint,check-format",
+                "2",
+                str(output),
+                str(handoff),
+                "1",
+            ],
+            check=False,
+        )
+        assert recorded.returncode == 0, recorded.stderr
+        admitted = _run(repo=repo, argv=["bash", str(_REENTRY_ADMISSION), "red"], check=False)
+        assert admitted.returncode == 0, admitted.stderr
+        assert f"Mechanical re-entries remaining: {remaining}" in handoff.read_text(
+            encoding="utf-8"
+        )
+
+    # The next target-only refusal uses the still-unspent ordinary re-entry.
+    recorded = _run(
+        repo=repo,
+        argv=[
+            "bash",
+            str(_REENTRY_POLICY),
+            "red",
+            "check-lint,check-format",
+            "2",
+            str(output),
+            str(handoff),
+            "1",
+        ],
+        check=False,
+    )
+    assert recorded.returncode == 0, recorded.stderr
+    assert "Refusal classification: ordinary" in handoff.read_text(encoding="utf-8")
+    assert (
+        _run(repo=repo, argv=["bash", str(_REENTRY_ADMISSION), "red"], check=False).returncode == 0
+    )
+
+    exhausted = _run(
+        repo=repo,
+        argv=[
+            "bash",
+            str(_REENTRY_POLICY),
+            "red",
+            "check-lint,check-format",
+            "2",
+            str(output),
+            str(handoff),
+            "1",
+        ],
+        check=False,
+    )
+    assert exhausted.returncode == 0
+    refused = _run(repo=repo, argv=["bash", str(_REENTRY_ADMISSION), "red"], check=False)
+    assert refused.returncode != 0
+    assert "mechanical re-entries exhausted (2 of 2)" in refused.stderr
+    assert "ordinary re-entry exhausted (1 of 1)" in refused.stderr
+
+
+def test_unlisted_or_unnamed_hook_targets_spend_only_the_ordinary_reentry(
+    tmp_path: Path,
+) -> None:
+    """A target outside the declaration, including no target, cannot spend mechanical budget."""
+    for name, output_text in (
+        ("outside", "Failed targets (1):\n  - check-types\n"),
+        ("unnamed", "hook failed before its target summary\n"),
+    ):
+        case = tmp_path / name
+        case.mkdir()
+        repo = _initialize_repository(tmp_path=case)
+        handoff = _handoff(repo=repo, text="## commit_green\n\nExit status: 1\n")
+        output = repo / "hook-output"
+        _ = output.write_text(output_text, encoding="utf-8")
+
+        recorded = _run(
+            repo=repo,
+            argv=[
+                "bash",
+                str(_REENTRY_POLICY),
+                "green",
+                "check-lint,check-format",
+                "2",
+                str(output),
+                str(handoff),
+                "1",
+            ],
+            check=False,
+        )
+
+        assert recorded.returncode == 0, recorded.stderr
+        assert (
+            _run(repo=repo, argv=["bash", str(_REENTRY_ADMISSION), "green"], check=False).returncode
+            == 0
+        )
+        assert "Refusal classification: ordinary" in handoff.read_text(encoding="utf-8")
+        assert not (repo / ".git" / "livespec-commit-green-mechanical-reentries").exists()
+
+
+def test_malformed_mechanical_commit_refusal_policy_is_disabled() -> None:
+    """Only a list of non-empty targets and a non-negative integer enables it."""
+    malformed_targets = (
+        '{"livespec-orchestrator-beads-fabro": '
+        '{"dispatcher": {"implement": '
+        '{"mechanical_targets": "check-lint", "mechanical_reentries": 2}}}}'
+    )
+    malformed_budget = (
+        '{"livespec-orchestrator-beads-fabro": '
+        '{"dispatcher": {"implement": '
+        '{"mechanical_targets": ["check-lint"], "mechanical_reentries": -1}}}}'
+    )
+
+    assert _mechanical_commit_refusal_policy(config_text=malformed_targets) == ((), 0)
+    assert _mechanical_commit_refusal_policy(config_text=malformed_budget) == ((), 0)
 
 
 def test_commit_red_refuses_naming_every_changed_product_path_after_the_fold(

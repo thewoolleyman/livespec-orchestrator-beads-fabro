@@ -168,7 +168,10 @@ digraph ImplementWorkItem {
         acp.command="{{ inputs.implement_adapter }}"
         timeout="1800s"
         max_retries=1
-        max_visits=3
+        // Initial visit + two mechanical commit refusals + one ordinary
+        // refusal.  The admission node, not this engine backstop, names an
+        // exhausted budget before a fourth re-entry could be attempted.
+        max_visits=4
         prompt="@prompts/red.md"
     ]
 
@@ -176,7 +179,14 @@ digraph ImplementWorkItem {
         label="Commit Red test through repository hooks"
         shape=parallelogram
         timeout="1800s"
-        script="bash dev-tooling/commit-red.sh"
+        script="LIVESPEC_MECHANICAL_TARGETS=\"{{ inputs.mechanical_targets }}\" LIVESPEC_MECHANICAL_REENTRIES=\"{{ inputs.mechanical_reentries }}\" bash dev-tooling/commit-red.sh"
+    ]
+
+    commit_red_reentry [
+        label="Red commit refusal: spend its mechanical or ordinary re-entry"
+        shape=parallelogram
+        timeout="600s"
+        script="bash dev-tooling/commit-reentry-admission.sh red"
     ]
 
     green [
@@ -186,7 +196,9 @@ digraph ImplementWorkItem {
         output_schema="{\"type\":\"object\",\"properties\":{\"definition_of_done_complete\":{\"type\":\"boolean\"}}}"
         timeout="1800s"
         max_retries=1
-        max_visits=3
+        // See red: the independent mechanical budget adds two re-entries
+        // without consuming this node's one ordinary re-entry.
+        max_visits=4
         prompt="@prompts/green.md"
     ]
 
@@ -315,7 +327,14 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         label="Amend Red commit through repository hooks"
         shape=parallelogram
         timeout="1800s"
-        script="bash dev-tooling/commit-green.sh"
+        script="LIVESPEC_MECHANICAL_TARGETS=\"{{ inputs.mechanical_targets }}\" LIVESPEC_MECHANICAL_REENTRIES=\"{{ inputs.mechanical_reentries }}\" bash dev-tooling/commit-green.sh"
+    ]
+
+    commit_green_reentry [
+        label="Green commit refusal: spend its mechanical or ordinary re-entry"
+        shape=parallelogram
+        timeout="600s"
+        script="bash dev-tooling/commit-reentry-admission.sh green"
     ]
 
     already_satisfied [
@@ -2142,8 +2161,12 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     dod_gate_mutation_guard -> red
 
     red -> already_satisfied [label="already satisfied", condition="preferred_label=already-satisfied"]
+    red -> green [label="seeded open Red", condition="preferred_label=seeded-open-red"]
+    red -> green [label="seeded already satisfied", condition="preferred_label=seeded-already-satisfied"]
     red -> commit_red
-    commit_red -> red [label="refused", condition="outcome=failed"]
+    commit_red -> commit_red_reentry [label="refused", condition="outcome=failed"]
+    commit_red_reentry -> red [label="re-enter", condition="outcome=succeeded"]
+    commit_red_reentry -> needs_human
     commit_red -> green
     green -> needs_human [label="Blocked", condition="outcome=failed"]
     green -> implement_completion
@@ -2151,7 +2174,9 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     implement_completion -> commit_green
     implement_hook_route -> green [label="Incomplete: re-enter", condition="outcome=succeeded"]
     implement_hook_route -> needs_human
-    commit_green -> green [label="refused", condition="outcome=failed"]
+    commit_green -> commit_green_reentry [label="refused", condition="outcome=failed"]
+    commit_green_reentry -> green [label="re-enter", condition="outcome=succeeded"]
+    commit_green_reentry -> needs_human
     commit_green -> implementation_diff
 
     // Changed-tree routing: exit 0 means `git diff --quiet` found a

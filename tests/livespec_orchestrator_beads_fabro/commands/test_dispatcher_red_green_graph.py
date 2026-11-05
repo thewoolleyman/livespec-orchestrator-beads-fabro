@@ -31,8 +31,12 @@ def test_the_implement_stage_is_a_red_green_command_graph() -> None:
     assert graph.nodes["green"]["backend"] == "acp"
     assert graph.nodes["green"]["acp.command"] == "{{ inputs.implement_adapter }}"
     assert graph.nodes["green"]["prompt"] == "@prompts/green.md"
-    assert graph.nodes["commit_red"]["script"] == "bash dev-tooling/commit-red.sh"
-    assert graph.nodes["commit_green"]["script"] == "bash dev-tooling/commit-green.sh"
+    for node in ("red", "green"):
+        assert graph.nodes[f"commit_{node}"]["script"] == (
+            'LIVESPEC_MECHANICAL_TARGETS="{{ inputs.mechanical_targets }}" '
+            'LIVESPEC_MECHANICAL_REENTRIES="{{ inputs.mechanical_reentries }}" '
+            f"bash dev-tooling/commit-{node}.sh"
+        )
 
     edges = {
         (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
@@ -40,16 +44,35 @@ def test_the_implement_stage_is_a_red_green_command_graph() -> None:
     assert ("dod_gate_mutation_guard", "red", None) in edges
     assert ("red", "commit_red", None) in edges
     assert ("commit_red", "green", None) in edges
-    assert ("commit_red", "red", "outcome=failed") in edges
     assert ("green", "implement_completion", None) in edges
     assert ("implement_completion", "implement_hook_route", "outcome=failed") in edges
     assert ("implement_hook_route", "green", "outcome=succeeded") in edges
     assert ("implement_completion", "commit_green", None) in edges
     assert ("green", "commit_green", None) not in edges
     assert ("commit_green", "implementation_diff", None) in edges
-    assert ("commit_green", "green", "outcome=failed") in edges
     assert ("red", "already_satisfied", "preferred_label=already-satisfied") in edges
+    assert ("red", "green", "preferred_label=seeded-open-red") in edges
+    assert ("red", "green", "preferred_label=seeded-already-satisfied") in edges
     assert not [edge for edge in graph.edges if edge.source == "already_satisfied"]
+
+
+def test_refused_command_commits_reenter_only_after_budget_admission() -> None:
+    """A refusal is routed through its node-specific budget before a fresh turn."""
+    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    edges = {
+        (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
+    }
+
+    for node in ("red", "green"):
+        command = f"commit_{node}"
+        admission = f"{command}_reentry"
+        assert graph.nodes[admission]["script"] == (
+            f"bash dev-tooling/commit-reentry-admission.sh {node}"
+        )
+        assert (command, admission, "outcome=failed") in edges
+        assert (admission, node, "outcome=succeeded") in edges
+        assert (admission, "needs_human", None) in edges
 
 
 def test_the_already_satisfied_node_prints_the_line_the_dispatcher_reads() -> None:

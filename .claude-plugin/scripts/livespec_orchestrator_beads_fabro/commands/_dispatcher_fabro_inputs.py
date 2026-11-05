@@ -69,6 +69,7 @@ def dispatch_fabro_run_inputs(*, plan: DispatchPlan) -> tuple[str, ...]:
     return (
         *adapters,
         *plan.integration_inputs,
+        *plan.mechanical_run_inputs,
         f"review_fix_visit_cap={plan.review_fix_visit_cap}",
         f"merge_on_review_cap_outcome={plan.merge_on_review_cap_outcome}",
         f"merge_hold={'true' if plan.merge_hold else 'false'}",

@@ -64,10 +64,10 @@ _INCOMPLETE_FIELD = (
     '"definition_of_done_complete": false}'
 )
 
-# The gate sits behind `green`, which can be visited three times, so it is billed
-# at EXACTLY three: a node absent from the ceiling table is billed at ZERO, and
+# The gate sits behind `green`, which can be visited four times, so it is billed
+# at EXACTLY four: a node absent from the ceiling table is billed at ZERO, and
 # "greater than zero" would pass for a budget of one.
-_GATE_VISITS = 3
+_GATE_VISITS = 4
 _CONFIGURED_DELTA = 137
 
 

@@ -70,7 +70,9 @@ __all__: list[str] = [
 COMMAND_NODES: tuple[str, ...] = (
     "already_satisfied",
     "commit_green",
+    "commit_green_reentry",
     "commit_red",
+    "commit_red_reentry",
     "dead_implementer",
     "dod_gate_mutation_guard",
     "fix_commit_settle",
