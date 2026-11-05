@@ -4,15 +4,18 @@ Use read-current immediately before a side effect. read-history proves a recorde
 snapshot without authorizing current effects. Neither labels, invocation flags,
 caller JSON, mutable metadata nor an ordinary progress comment can grant authority.
 The writer must retain server-assigned conditional-close tokens for historical
-proof. This reader does not bootstrap authority, fence a factory or grant workflow
-publication authority; an absent sanctioned chain fails closed. Genesis decodes and
-binds a first-publication request, then refuses it by name: no installed ledger
-provider offers the required server-enforced first-root exclusion.
+proof. This reader does not fence a factory or grant workflow publication
+authority; an absent sanctioned chain fails closed. Genesis publishes a first root
+through the server-enforced close of the item's current dispatch claim token, and
+refuses by name wherever that exclusion is not installed or a live factory claim
+would have to be fenced.
 """
 
 # EXPEDITED_INCIDENT_RESPONSE flag: bd-ib-dzbwaq
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
@@ -20,17 +23,19 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
     IncidentReading,
 )
-from livespec_orchestrator_beads_fabro._incident_genesis import GenesisRequest, publish_genesis
+from livespec_orchestrator_beads_fabro._incident_genesis import GenesisReceipt, GenesisRequest
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
 from livespec_orchestrator_beads_fabro.effects._incident_authority_transition import (
     commit_transition,
 )
+from livespec_orchestrator_beads_fabro.effects._incident_genesis_writer import publish_genesis
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 
 __all__: list[str] = [
     "AuthorityRefusal",
+    "GenesisReceipt",
     "GenesisRequest",
     "IncidentAttempt",
     "IncidentReading",
@@ -61,6 +66,12 @@ def commit_incident_transition(
     return commit_transition(client=client, observed=observed, successor=successor)
 
 
-def publish_incident_genesis(*, request: GenesisRequest) -> AuthorityRefusal:
-    """Refuse first incident publication by name, with zero ledger writes."""
-    return publish_genesis(request=request)
+def publish_incident_genesis(
+    *,
+    client: BeadsClient,
+    request: GenesisRequest,
+    claim_tokens: bool,
+    clock: Callable[[], float] = time.monotonic,
+) -> GenesisReceipt | AuthorityRefusal:
+    """Publish a first root by winning the item's current claim token, or refuse by name."""
+    return publish_genesis(client=client, request=request, claim_tokens=claim_tokens, clock=clock)
