@@ -2933,5 +2933,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-efiasj adds deletion of an item's work-in-progress, preserved-publish and needs-human refs when the Dispatcher closes or accepts it or collects its ended runs.",
     "work_item": "bd-ib-efiasj"
+  },
+  {
+    "heading": "## Scenario 321 \u2014 drive names the stage and offending sources of a goal-template preflight refusal",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-it2d makes drive's human summary of a pre-run Dispatcher refusal name the refusing stage and its detail, naming each offending field and each ledger comment by id and creation instant for a goal-minijinja-preflight refusal, with the --json payload unchanged.",
+    "work_item": "bd-ib-it2d"
+  },
+  {
+    "heading": "## Scenario 322 \u2014 A comment-poisoned item is superseded by a successor that passes the goal-template preflight",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-it2d adds dispatcher.py supersede-contaminated, which files one successor through the capture filing seam, copies instruction comments with a provenance line and neutralized openers while keeping a FOR-stage scope line first, re-points blocks edges, closes the original as duplicate, and refuses closed, uncontaminated or field-poisoned items with no writes.",
+    "work_item": "bd-ib-it2d"
   }
 ]

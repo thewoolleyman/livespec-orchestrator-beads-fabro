@@ -12721,3 +12721,76 @@ Feature: Preserved run refs do not accumulate on origin
     When the Dispatcher's next pass runs
     Then it attempts the deletion again and the item's state is unchanged
 ```
+
+## Scenario 321 — drive names the stage and offending sources of a goal-template preflight refusal
+
+Governing clause: `contracts.md` §"The skill surface" → "A pre-run refusal names its stage and detail".
+
+```gherkin
+Feature: A refused dispatch says why in drive's own summary
+  As an operator who presses an impl action through drive
+  I want the summary to name the refusing stage and its detail
+  So that I do not have to know the dispatch journal exists to learn why nothing ran
+
+  Scenario: a goal-template preflight refusal names the stage and the offending comment
+    Given a ready work item W one of whose ledger comments, C, carries a goal-template opening delimiter
+    When an operator runs drive --action impl:W without --json
+    Then the Dispatcher refuses the dispatch at stage goal-minijinja-preflight before any factory run is created
+    And drive's human summary names the stage goal-minijinja-preflight
+    And the summary names comment C by its id and its creation instant
+    And the summary does not consist only of a statement that the Dispatcher did not report green
+
+  Scenario: a field opener is named by the field
+    Given a ready work item W whose description carries a goal-template opening delimiter
+    When an operator runs drive --action impl:W without --json
+    Then drive's human summary names the stage goal-minijinja-preflight and the field description
+
+  Scenario: the machine payload is unchanged
+    Given the same refused dispatch of W
+    When the operator runs drive --action impl:W --json
+    Then the JSON payload has the same shape it has for any other refused dispatch
+```
+
+## Scenario 322 — A comment-poisoned item is superseded by a successor that passes the goal-template preflight
+
+Governing clause: `contracts.md` §"Dispatcher policy settings" → "A template-poisoned item is superseded, never repaired in place".
+
+```gherkin
+Feature: A permanently poisoned item is replaced, not abandoned
+  As an operator whose item recorded a template opener in an append-only comment
+  I want one command that files a clean successor and retires the original
+  So that the work is dispatchable again without hand-copying fields and comments
+
+  Scenario: supersede-contaminated files a clean successor and closes the original
+    Given an open work item W with a plan parent P, a blocks dependency on item B, a dependent item D that W blocks, a dispatch-record label, a lifecycle label and one other label L
+    And W carries an instruction comment containing a goal-template opening delimiter, a clean instruction comment, and a livespec-dod-judgement record comment K
+    When an operator runs dispatcher.py supersede-contaminated --item W --reason R
+    Then exactly one successor S is filed with W's title, type, priority, description, plan parent P and a blocks dependency on B
+    And S carries label L and carries neither the lifecycle label nor the dispatch-record label
+    And D's blocks edge names S as the blocker
+    And S carries both instruction comments in their original order, each opening with a provenance line naming W, the source comment's id and its creation instant
+    And the poisoned comment's copy carries the opener in bracket form and the clean comment's copy is otherwise verbatim
+    And S does not carry the record comment K
+    And S carries a comment naming W, the reason R and the id of K, and W carries a comment naming S and the reason R
+    And one supersede-contaminated journal record names W, S, the invoker and a UTC instant
+    And W is closed with resolution duplicate
+    And a dispatch of S passes stage goal-minijinja-preflight
+
+  Scenario: a stage-scoped rider keeps its scope line first
+    Given an open comment-poisoned work item W one of whose instruction comments opens with the line FOR review ONLY:
+    When an operator runs dispatcher.py supersede-contaminated --item W --reason R
+    Then that comment's copy on the successor opens with the line FOR review ONLY: and carries the provenance line second
+    And the copied rider reaches the review stage's brief and does not reach the implement or review_fix stage's brief
+
+  Scenario: an item that cannot or need not be superseded is refused
+    Given a work item W that is closed, or whose ledger comments carry no goal-template opening delimiter, or one of whose fields carries one
+    When an operator runs dispatcher.py supersede-contaminated --item W --reason R
+    Then the command exits 3 naming the reason, and for the field case naming each field to edit
+    And no item, comment, edge, journal record or status change is written
+
+  Scenario: a failure after the successor is filed leaves the original open
+    Given supersede-contaminated has filed successor S for W
+    When the write of the closing comment on W fails
+    Then the command exits non-zero naming S and the step it reached
+    And W is still open
+```
