@@ -4631,7 +4631,7 @@ is `<role>:<name>` (for example `human:<name>`, `session:<session-name>`,
 human's explicit order SHOULD carry that human in the identity they
 assert. Where a ratified door already journals a door-specific actor
 field (the v051 valve records), that field remains; `invoker`/
-`invoker_source` is the uniform envelope-level attribution.
+`invoker_source` is the uniform envelope-level attribution. The `release-spec-tier` valve's attestation actor (§"Grooming and slice-size calibration" → "An autonomy tier is assigned") is such a door-specific actor. When an invoker is asserted, by `--invoker` or by `LIVESPEC_INVOKER`, the attestation's ledger comment and its dispatch-journal entry MUST record that asserted invoker as the actor. When no invoker is asserted, both MUST record as the actor the identity computed from the invoking session. That is the invoking agent session's id when the session sets one, otherwise the forge login of the human at the terminal, computed exactly as the plan-record and proof-record posting primitives compute their publishing identity. The recorded actor MUST name which of the two kinds it is, as `session:<agent-session-id>` or `human:<forge-login>`, so an actor computed from an agent session is distinguishable from one computed from a forge login. Only when no invoker is asserted and no session identity can be computed does the attestation record the `unattributed:<os-user>@<hostname>` mark as its actor. This computation never changes the journal entry's envelope `invoker` and `invoker_source`, which the append layer stamps by the three-step order above.
 
 **Delegated valve authority.** A maintainer MAY delegate the pressing of
 human valves to a named delegate (for this fleet, the coordinator seat under
