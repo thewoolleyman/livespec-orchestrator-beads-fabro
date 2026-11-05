@@ -262,7 +262,7 @@ def test_a_second_start_while_one_is_running_is_refused_naming_the_running_run(
 def test_a_start_launches_the_commit_unchanged_in_its_own_session_and_prints_its_id(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The run is recorded, the worker is launched detached, and start does not wait."""
+    """Scenario 179: settle restores a live amend's starting HEAD before it waits."""
     fake = _FakeSubprocess()
     program = _program(tmp_path, fake)
     command = ["mise", "exec", "--", "git", "commit", "--amend", "--no-edit"]
@@ -272,9 +272,42 @@ def test_a_start_launches_the_commit_unchanged_in_its_own_session_and_prints_its
     run_id = capsys.readouterr().out.strip()
     record = json.loads((tmp_path / "runs" / f"{run_id}.json").read_text(encoding="utf-8"))
 
-    assert record == {"state": "running", "command": command, "root": str(tmp_path)}
+    assert record == {
+        "state": "running",
+        "command": command,
+        "root": str(tmp_path),
+        "start_head": "0123abc",
+    }
     assert fake.popens[0][1:] == ["/runner.py", "worker", run_id]
     assert (tmp_path / "runs" / f"{run_id}.pid").read_text(encoding="utf-8") == "4242\n"
+
+    reset_calls: list[tuple[str, ...]] = []
+    path = tmp_path / "runs" / f"{run_id}.json"
+    _ = path.write_text(json.dumps(record), encoding="utf-8")
+    answers = {
+        ("rev-parse", "--git-path", "livespec-commit-runs"): str(tmp_path / "runs"),
+        ("rev-parse", "HEAD"): "checkpoint-head",
+        ("reset", "--soft", "0123abc"): "",
+    }
+
+    def git_output(*argv: str) -> str:
+        if argv == ("reset", "--soft", "0123abc"):
+            reset_calls.append(argv)
+        return answers[argv]
+
+    def passes_after_restore(group: int) -> bool:
+        assert group == 4242
+        assert reset_calls == [("reset", "--soft", "0123abc")]
+        _ = path.write_text(
+            json.dumps({"state": "passed", "exit_code": 0, "head": "green-head"}),
+            encoding="utf-8",
+        )
+        return False
+
+    program["git_output"] = git_output
+    program["group_alive"] = passes_after_restore
+
+    assert program["settle"](0, str(tmp_path / "brief"), restore_head_before_wait=True) == 0
 
 
 @pytest.mark.parametrize(
