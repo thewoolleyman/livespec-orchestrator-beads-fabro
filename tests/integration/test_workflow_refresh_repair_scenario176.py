@@ -729,7 +729,7 @@ def test_a_clean_draft_refresh_reinstalls_the_refreshed_tree_s_conformance_hooks
         "for hook in pre-commit pre-push commit-msg; do\n"
         "    printf '%s\\n' '#!/bin/sh' \\\n"
         "        'actual=$(cat canonical-hook-body)' \\\n"
-        '        "test \\"$actual\\" = \\"$expected\\"" \\\n'
+        '        "test \\"\\$actual\\" = \\"$expected\\"" \\\n'
         "        'status=$?' \\\n"
         '        \'if test "$status" -ne 0; then printf "body_mismatch\\\\n" >&2; fi\' \\\n'
         '        \'exit "$status"\' > ".git/hooks/$hook"\n'
@@ -756,6 +756,11 @@ def test_a_clean_draft_refresh_reinstalls_the_refreshed_tree_s_conformance_hooks
     forge = forge_bin / "gh"
     _ = forge.write_text("\n".join(_GH_DOUBLE_LINES), encoding="utf-8")
     forge.chmod(0o755)
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
+        record_file_program_source(), encoding="utf-8"
+    )
 
     result = subprocess.run(
         [
@@ -774,7 +779,7 @@ def test_a_clean_draft_refresh_reinstalls_the_refreshed_tree_s_conformance_hooks
             "PATH": f"{forge_bin}:/usr/local/bin:/usr/bin:/bin",
             "HOME": str(world.clone.parent / "home"),
             "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
-            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(world.clone.parent / "plugins"),
+            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
             "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
         },
     )
