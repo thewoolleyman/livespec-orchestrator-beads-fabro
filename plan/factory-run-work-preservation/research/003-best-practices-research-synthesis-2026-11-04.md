@@ -114,6 +114,11 @@ Astra adds a requirement for receipt acceptance: a preservation receipt should p
 
 ## 5. Revised recommendation for the maintainer — NOT a decision
 
+> **Superseded 2026-11-05.** The maintainer chose a different, simpler direction, recorded in note
+> `004-chosen-direction-preserve-on-progress-2026-11-05.md`. Both this section's outbox mirror and the engine run-branch push
+> share a defect this section missed: the engine's push is never forced, so the Red-to-Green amend stalls it at the Red commit.
+> This section is kept as the record of what was recommended.
+
 This replaces note 002 §6, which picked a Dispatcher-side `/files` mirror (b3). Both researchers show that b3 depends on the live sandbox and the provider transport, which is exactly the dependency that fails on Kubernetes and on E7 and E8.
 
 **Recommended direction: the outbox mirror to origin refs, plus one deletion gate.** This is Fable's design, with three additions from Astra.
