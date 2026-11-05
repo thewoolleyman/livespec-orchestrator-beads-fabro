@@ -444,6 +444,17 @@ surface emits the action-id (the `needs-attention`/`drive` action-id
 coordination defined by the broader epic), not by `drive`; it is
 forward-referenced here rather than defined by this section.
 
+**A pre-run refusal names its stage and detail.** When `drive` executes an
+`impl:<work-item-id>` action and the Dispatcher's outcome is a refusal that
+ended the dispatch before any factory run was created, `drive`'s human summary
+MUST name the refusing stage and the outcome detail the Dispatcher reported for
+it, and MUST NOT reduce them to a statement that the Dispatcher did not report
+green. The `--json` payload is unchanged. For a refusal at stage
+`goal-minijinja-preflight` (§"Dispatcher policy settings" → "A
+template-poisoned item is superseded, never repaired in place"), the detail
+MUST name every offending goal source: each item field by name, and each ledger
+comment by its id and its creation instant.
+
 **Human valve actions.** `drive` additionally accepts the fourteen human
 operator action ids (the two human-delegable gate commands, the
 corrective `reject:`, the blocked-resolution `resolve-blocked:`, the two
@@ -8105,6 +8116,62 @@ and are ratified here.
 
 Design record: the route shipped in `bd-ib-aqith2` (PR #2168) and `bd-ib-uuohty`
 (PR #2200); ratified here per `bd-ib-rh3iyd.7`. Scenarios 124 and 125 bind it.
+
+### A template-poisoned item is superseded, never repaired in place
+
+**The dispatch-time goal-template preflight.** Before it renders an item's goal
+brief, the Dispatcher MUST run the shared template-opener detector over every
+goal source: the item's title, description, acceptance criteria, notes, the
+injected lessons, and every ledger comment the brief would carry. When any
+source carries a goal-template opening delimiter, the Dispatcher MUST refuse the
+dispatch at stage `goal-minijinja-preflight`, before any factory run is created,
+and its outcome detail MUST name each offending source. An opener in an item
+FIELD is recoverable by editing that field. An opener in a ledger COMMENT is
+permanent, because a ledger comment is append-only; that is the posture the
+human answer route's poison preflight protects, and this section does not
+relax it.
+
+**The supersede verb.** An operator or a delegated coordinator MAY replace a
+comment-poisoned item by running
+`dispatcher.py supersede-contaminated --repo <path> --item <work-item-id> --reason <text>`.
+The command MUST:
+
+1. Refuse with exit 3 and write nothing when the item is closed, when none of the
+   item's ledger comments carries an opener, or when any item field carries one.
+   The field refusal names each field to edit instead, because a field opener is
+   recoverable in place and would also poison the successor.
+2. File exactly one successor through the filing seam the `capture-work-item`
+   operation uses, never by a raw `bd create`. The successor carries the
+   original's title, type, priority, description, acceptance criteria, its labels
+   other than lifecycle, claim and dispatch-record labels, its `blocks`
+   dependencies, and its plan parent edge.
+3. Re-point every `blocks` edge on which the original is the blocker, so the
+   successor is the blocker.
+4. Copy the original's instruction comments to the successor in their original
+   order. Each copy MUST carry one provenance line naming the original's id, the
+   source comment's id and its creation instant. The provenance line is the
+   copy's FIRST line, except that when the source comment's first line is a
+   stage-scope line of the form `FOR <stage>[, <stage>...] ONLY:` (§"Dispatch-brief
+   lessons injection" → "Work-item riders are scoped to the stages they name"),
+   that scope line stays first and the provenance line is the second line, so the
+   copied rider reaches exactly the stages the original reached. An
+   uncontaminated comment is otherwise copied verbatim. A contaminated comment is
+   copied with every opener neutralized by `comment_safe_external_text`, the
+   shared neutralizer the preserve-by-reference pointer and the needs-human cause
+   record already use, which rewrites each goal-template opening delimiter to its
+   bracket form. A record comment, one that opens with a `livespec-` marker line,
+   MUST NOT be copied, because the successor's own dispatches re-derive it; it
+   stays readable on the closed original.
+5. Write one ledger comment on the successor naming the original, the reason and
+   the ids of the record comments left behind, and one on the original naming
+   the successor and the reason. Append one `supersede-contaminated` journal
+   record carrying both ids, the invoker and the UTC instant. Then close the
+   original with resolution `duplicate`.
+6. When any step after the successor is filed fails, exit non-zero naming the
+   successor's id and the step reached, and leave the original open.
+
+No text the command writes may carry a goal-template opening delimiter, so the
+successor passes the dispatch-time goal-template preflight on its next dispatch.
 
 ### Temporary setting postures carry an owned restore item
 
