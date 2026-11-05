@@ -76,10 +76,26 @@ def measure_conflicted_paths(
             paths=None,
             failure=detail or f"git merge-tree exited {exit_code}",
         )
-    paths = tuple(path for path in stdout.splitlines() if path)
+    # `--write-tree` begins with the resulting tree OID.  On conflict, its
+    # path block ends at the first blank line; the subsequent Auto-merging and
+    # CONFLICT diagnostics are not paths and must not disqualify a record-file
+    # only conflict from the Scenario 184 resume arm.
+    lines = stdout.splitlines()
+    path_lines = lines[1:] if lines and _is_object_id(lines[0]) else lines
+    paths_list: list[str] = []
+    for line in path_lines:
+        if not line:
+            break
+        paths_list.append(line)
+    paths = tuple(paths_list)
     if not paths:
         return ConflictMeasurement(paths=None, failure="git merge-tree named no conflicted paths")
     return ConflictMeasurement(paths=paths, failure=None)
+
+
+def _is_object_id(value: str) -> bool:
+    """Return whether ``value`` has one of Git's SHA-1/SHA-256 OID shapes."""
+    return len(value) in (40, 64) and all(character in "0123456789abcdef" for character in value)
 
 
 def record_file_resume_paths(
