@@ -1138,9 +1138,10 @@ def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
     The accounting paragraph says both halves and each needs its own instrument.
     `fix.max_visits` must ACCOMMODATE the two repair rounds in addition to what
     its other entry paths already allow, so the value is asserted as exactly two
-    apiece for the three agent-finding producers PLUS two -- an inequality would
-    be satisfied by a budget widened by any amount, including one that re-opened
-    the starvation the two-apiece sizing closed.
+    apiece for the three agent-finding producers and the failed-settle retry,
+    PLUS two -- an inequality would be satisfied by a budget widened by any
+    amount, including one that re-opened the starvation the two-apiece sizing
+    closed.
 
     And a refresh-repair round must consume no review-fix round. That is read as
     a REACHABILITY claim rather than from the two budgets alone: `review_fix` and
@@ -1158,6 +1159,7 @@ def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
     }
 
     assert _REPAIR_NODE in producers
+    assert "fix_commit_settle" in producers
     assert budgets["fix"] == 2 * len(producers - {_REPAIR_NODE}) + 2
     assert budgets["disposition"] == 3
     assert budgets["review_fix"] == 3
