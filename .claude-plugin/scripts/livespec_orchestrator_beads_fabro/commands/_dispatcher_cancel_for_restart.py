@@ -31,12 +31,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_base 
     run_base_commit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_publish import (
-    STEP_FILES_READ,
     PreservedTree,
     PublishFailure,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_record import (
+    preserved_tree_body,
     unpreserved_tree_body,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_restart_preservation_record import (
+    RestartPreservationComment,
+    append_restart_preservation_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpPort
@@ -126,11 +130,10 @@ def cancel_for_restart(
 ) -> tuple[str, ...]:
     """Perform one preservation-before-cancellation sweep over a factory's live runs.
 
-    A failed *file read* is the one best-effort arm: it leaves an explicit
-    ``livespec-preserved-tree`` comment then cancellation continues, because a
-    restart cannot wait on a server tree it cannot read.  Any later forge
-    publication failure leaves that eligible run alive: cancelling it would
-    violate the ordering guarantee that a preservation ref exists first.
+    Every preservation outcome leaves an explicit ``livespec-preserved-tree``
+    record before cancellation. A successful publication establishes the ref
+    the restart must wait for; an unreadable tree or refused forge operation is
+    best effort and must not hold a factory restart.
     """
     listed = port.live_ps(timeout_seconds=_PS_TIMEOUT_SECONDS)
     if listed.command.exit_code != 0:
@@ -196,14 +199,32 @@ def _preserve_before_cancel(*, sweep: RestartSweep, run: RestartRun) -> bool:
                 "base_commit": base,
             }
         )
+        append_restart_preservation_comment(
+            repo=sweep.repo,
+            journal=sweep.journal,
+            comment=RestartPreservationComment(
+                work_item_id=run.work_item_id,
+                run_id=run.run_id,
+                factory=sweep.factory,
+                body=preserved_tree_body(
+                    work_item_id=run.work_item_id,
+                    run_id=run.run_id,
+                    factory=sweep.factory,
+                    base_commit=base,
+                    preserved=published,
+                ),
+            ),
+            resolve_config=store_config,
+            append_comment=append_work_item_comment,
+        )
         return True
     _record_unpreserved(
         sweep=sweep, run_id=run.run_id, work_item_id=run.work_item_id, failure=published
     )
-    # The stated recovery arm authorizes cancellation after an unreadable file
-    # read only.  A forge failure does not prove a ref exists, so leave the run
-    # untouched for the operator rather than losing its only recoverable tree.
-    return published.step == STEP_FILES_READ
+    # The restart's preservation is best effort: the durable failure record
+    # names the missing tree, so a refused read or forge write must not keep
+    # the factory running while its operator is trying to restart it.
+    return True
 
 
 def _record_unpreserved(
@@ -222,15 +243,22 @@ def _record_unpreserved(
     )
     # The body deliberately contains the required marker and the files-read
     # step, while the free-form factory diagnostic stays in the journal.
-    append_work_item_comment(
-        path=store_config(repo=sweep.repo),
-        work_item_id=work_item_id,
-        body=unpreserved_tree_body(
+    append_restart_preservation_comment(
+        repo=sweep.repo,
+        journal=sweep.journal,
+        comment=RestartPreservationComment(
             work_item_id=work_item_id,
             run_id=run_id,
             factory=sweep.factory,
-            failure=failure,
+            body=unpreserved_tree_body(
+                work_item_id=work_item_id,
+                run_id=run_id,
+                factory=sweep.factory,
+                failure=failure,
+            ),
         ),
+        resolve_config=store_config,
+        append_comment=append_work_item_comment,
     )
 
 

@@ -164,6 +164,7 @@ def test_green_janitor_is_published_before_it_is_cancelled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls: list[str] = []
+    comments: list[str] = []
 
     def _publish(**kwargs: object) -> PreservedTree:
         calls.append("publish")
@@ -171,6 +172,10 @@ def test_green_janitor_is_published_before_it_is_cancelled(
         return _preserved()
 
     monkeypatch.setattr(subject, "publish_run_tree", _publish)
+    monkeypatch.setattr(subject, "store_config", lambda **_: object())
+    monkeypatch.setattr(
+        subject, "append_work_item_comment", lambda **kwargs: comments.append(kwargs["body"])
+    )
     result = _sweep(
         tmp_path=tmp_path,
         rows=[_row()],
@@ -182,6 +187,10 @@ def test_green_janitor_is_published_before_it_is_cancelled(
     assert calls == ["state:run-1", "publish", "cancel:run-1"]
     journal = (tmp_path / "journal.jsonl").read_text(encoding="utf-8")
     assert "refs/livespec/preserved-publish/bd-ib-adcaa6/commit" in journal
+    assert "livespec-preserved-tree" in comments[0]
+    assert "run id: run-1" in comments[0]
+    assert "factory: petri" in comments[0]
+    assert "commit id: commit" in comments[0]
 
 
 @pytest.mark.parametrize(
@@ -267,7 +276,7 @@ def test_unreadable_green_tree_is_recorded_then_cancelled(
     )
 
 
-def test_forge_failure_keeps_green_run_alive(
+def test_forge_failure_records_the_loss_and_keeps_the_restart_moving(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls: list[str] = []
@@ -284,8 +293,8 @@ def test_forge_failure_keeps_green_run_alive(
         calls=calls,
     )
 
-    assert result == ("HELD run-1 factory=petri preservation-ref-missing",)
-    assert calls == ["state:run-1"]
+    assert result == ("CANCELLED run-1 factory=petri",)
+    assert calls == ["state:run-1", "cancel:run-1"]
 
 
 def test_state_unavailable_and_unattributed_green_runs_are_not_cancelled(tmp_path: Path) -> None:
