@@ -12280,3 +12280,44 @@ Feature: A committed fleet-launch launcher accounts for every exit it makes befo
     Then it writes a stall line naming bd-y, the ticket number and the dead pid P
     And it writes that line before it removes or skips the ticket
 ```
+
+## Scenario 313 — A failed scheduled default-branch workflow run becomes one ledger item per failed job
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Scheduled-workflow breakage pass".
+
+```gherkin
+Feature: a red scheduled workflow on the default branch becomes owned work
+  As the maintainer who moved a CI leg off pull requests onto a schedule
+  I want every failed job of that scheduled run filed as a ledger item from the host
+  So that a failure found after merge is owned work rather than a red mark nobody reads
+
+  Scenario: a failed run files one item per failed job
+    Given .livespec.jsonc declares dispatcher.breakage_workflows as ["ci-root-uid.yml"]
+    And the latest completed default-branch run of ci-root-uid.yml concluded failure with jobs check-coverage and check-types failed
+    When dispatcher.py breakage-pass runs
+    Then it files two work items through the capture-work-item filing seam
+    And each title names ci-root-uid.yml and its failed job
+    And each description names the run URL, the head commit and each failing test the job log names
+    And each item carries the label breakage:ci-root-uid.yml and its breakage_key
+    And the verdict line reads filed with both item ids
+
+  Scenario: a later pass over the same failure files nothing new
+    Given a prior pass filed an item for ci-root-uid.yml:check-coverage at head commit H, and that item is now closed
+    And the latest completed run is a re-run at head commit H whose check-coverage job failed again
+    When dispatcher.py breakage-pass runs
+    Then it files no item
+    And the verdict line reads already-filed naming the closed item
+
+  Scenario: a green run files nothing
+    Given the latest completed default-branch run of ci-root-uid.yml concluded success
+    When dispatcher.py breakage-pass runs
+    Then it files no item
+    And the verdict line reads green
+
+  Scenario: an unreadable workflow fails visibly
+    Given the forge credential is unusable
+    When dispatcher.py breakage-pass runs
+    Then it files no item
+    And the verdict line reads unreadable naming what could not be read
+    And the pass exits non-zero
+```
