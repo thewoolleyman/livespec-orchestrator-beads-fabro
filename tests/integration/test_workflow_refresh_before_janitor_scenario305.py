@@ -190,6 +190,39 @@ def test_scenario305_refreshes_before_janitor_and_pushes_that_exact_green_head(
     assert "LIVESPEC_PUBLISH_DRAFT_REFRESH_SKIPPED" in pushed.stderr
 
 
+def test_scenario305_preserves_an_existing_publish_branch_during_janitor_refresh(
+    *, tmp_path: Path
+) -> None:
+    run, _ = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+    published_anchor = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    _ = _git(
+        "push",
+        "origin",
+        f"HEAD:refs/heads/{_PUBLISH_BRANCH}",
+        cwd=run,
+    )
+
+    janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+
+    assert janitor.returncode == 0, janitor.stderr
+    janitor_passed_head = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    assert (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", published_anchor, janitor_passed_head],
+            check=False,
+            cwd=run,
+        ).returncode
+        == 0
+    )
+
+    pushed = _run(node="publish_draft", cwd=run, plugins=plugins, check_suite="true")
+
+    assert pushed.returncode == 0, pushed.stderr
+    remote = _git("ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}", cwd=run)
+    assert remote.stdout.split()[0] == janitor_passed_head
+
+
 def test_scenario305_conflicting_pre_aggregate_refresh_restores_and_briefs_for_fix(
     *, tmp_path: Path
 ) -> None:
