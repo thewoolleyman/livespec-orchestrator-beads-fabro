@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_b
     PRESERVE_POINTER_MARKER,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
+from livespec_orchestrator_beads_fabro.commands._fabro_run_blob import read_run_blob
 from livespec_orchestrator_beads_fabro.commands._fabro_stage_diffs import (
     StageDiff,
     stage_diffs_from_run_state,
@@ -169,7 +170,18 @@ def check_preserved_pointer(
                 f"(HTTP status {run_state.status})"
             ),
         )
-    stage_diffs = stage_diffs_from_run_state(run_state=run_state.payload)
+    try:
+        stage_diffs = stage_diffs_from_run_state(
+            run_state=run_state.payload,
+            read_blob=lambda blob_sha256: read_run_blob(
+                run_id=pointer.run_id,
+                blob_sha256=blob_sha256,
+                port=port,
+                timeout_seconds=_STAGE_DIFF_READ_TIMEOUT_SECONDS,
+            ),
+        )
+    except OSError as error:
+        return PointerCheck(state=POINTER_DANGLING, detail=str(error))
     if not pointer.artifacts:
         return PointerCheck(
             state=POINTER_UNVERIFIABLE,
@@ -185,9 +197,7 @@ def check_preserved_pointer(
 def _verify_recorded_digests(
     *, pointer: PreservedPointer, stage_diffs: tuple[StageDiff, ...]
 ) -> PointerCheck:
-    diffs_by_path = {
-        stage_diff.path.as_posix(): stage_diff.payload.encode("utf-8") for stage_diff in stage_diffs
-    }
+    diffs_by_path = {stage_diff.path.as_posix(): stage_diff.payload for stage_diff in stage_diffs}
     for artifact in pointer.artifacts:
         payload = diffs_by_path.get(artifact.path)
         if payload is None:

@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_recor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
+from livespec_orchestrator_beads_fabro.commands._fabro_run_blob import read_run_blob
 from livespec_orchestrator_beads_fabro.commands._fabro_stage_diffs import (
     stage_diffs_from_run_state,
     write_stage_diffs,
@@ -202,7 +203,15 @@ def pointer_record_for_run(
             selective_read_succeeded = False
         else:
             artifacts = write_stage_diffs(
-                stage_diffs=stage_diffs_from_run_state(run_state=run_state.payload),
+                stage_diffs=stage_diffs_from_run_state(
+                    run_state=run_state.payload,
+                    read_blob=lambda blob_sha256: read_run_blob(
+                        run_id=run_id,
+                        blob_sha256=blob_sha256,
+                        port=port,
+                        timeout_seconds=_STAGE_DIFF_READ_TIMEOUT_SECONDS,
+                    ),
+                ),
                 output_dir=output_dir,
             )
             if artifacts:

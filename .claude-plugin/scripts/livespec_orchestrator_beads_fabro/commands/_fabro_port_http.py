@@ -107,6 +107,7 @@ class FabroHttpResult:
     error: str | None
     payload: object | None
     succeeded: bool
+    raw_body: bytes | None = None
 
 
 class FabroHttpTransport(Protocol):
@@ -260,6 +261,15 @@ class FabroHttpPort:
             timeout_seconds=timeout_seconds,
         )
 
+    def run_blob(self, *, run_id: str, blob_sha256: str, timeout_seconds: float) -> FabroHttpResult:
+        """Read the exact bytes of one run-scoped content-addressed blob."""
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/blobs/{blob_sha256}",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
     def stream(
         self,
         *,
@@ -376,26 +386,28 @@ def _raised_exchange(*, error: Exception) -> FabroHttpResult:
             succeeded=False,
         )
     read = attempt(
-        action=lambda: error.read().decode("utf-8", errors="replace"),
+        action=error.read,
         exceptions=(urllib.error.URLError, OSError, ValueError),
     )
     return FabroHttpResult(
         status=int(error.code),
-        body="" if isinstance(read, AttemptFailure) else read,
+        body="" if isinstance(read, AttemptFailure) else read.decode("utf-8", errors="replace"),
         error=described,
         payload=None,
         succeeded=False,
+        raw_body=None if isinstance(read, AttemptFailure) else read,
     )
 
 
 def _exchange(*, request: urllib.request.Request, timeout_seconds: float) -> FabroHttpResult:
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
         status = int(response.status)
-        text = response.read().decode("utf-8", errors="replace")
+        raw_body = response.read()
     return FabroHttpResult(
         status=status,
-        body=text,
+        body=raw_body.decode("utf-8", errors="replace"),
         error=None,
         payload=None,
         succeeded=_HTTP_SUCCESS_FLOOR <= status < _HTTP_SUCCESS_CEILING,
+        raw_body=raw_body,
     )
