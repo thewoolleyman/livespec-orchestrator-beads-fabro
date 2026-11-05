@@ -655,6 +655,11 @@ fi
 # its fresh pass is not needlessly repeated at the head.
 if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario297 ]; then
 echo "--- 6. preflights while queued and reuses a fresh pass at the FIFO head"
+if bash "$HARNESS_DIR/test-scenario297-polling.sh"; then
+    pass "the Scenario 297 cases poll observed state at the harness interval instead of sleeping fixed seconds"
+else
+    fail "the Scenario 297 polling configuration regressed"
+fi
 new_case queued-preflight
 export FLEET_LAUNCH_MAX_WAIT_S=300
 export STUB_PREFLIGHT_SLOW_ITEM=bd-ib-older
