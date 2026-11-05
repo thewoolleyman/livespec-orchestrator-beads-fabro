@@ -206,6 +206,51 @@ def test_the_comment_opens_with_the_marker_line_and_carries_every_measurement() 
     assert "0 names were left out" in body
 
 
+def test_the_comment_names_the_merge_measurement_when_it_failed() -> None:
+    """A failed comparison is durable evidence, not detail the rest hides.
+
+    Scenario 184 preserves the ordinary needs-human ending when the merge
+    comparison cannot produce paths.  Its distinguishing requirement is that
+    the operator can see which measurement failed in the ledger comment.
+    """
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
+        BaseAdvancedAfterArming,
+    )
+
+    parameters = inspect.signature(BaseAdvancedAfterArming).parameters
+    assert (
+        "conflict_measurement_failure" in parameters
+    ), "the overtaken-arming outcome does not carry the failed conflict measurement"
+    module = _record_module()
+    outcome = DispatchOutcome(
+        work_item_id=_ITEM_ID,
+        status="blocked",
+        stage="merge-poll",
+        pr_number=2606,
+        merge_sha=None,
+        detail=_detail(work_item_id=_ITEM_ID),
+        fabro_run_id=_RUN_ID,
+        base_advanced=BaseAdvancedAfterArming(
+            factory=_FACTORY,
+            pr_head=_PR_HEAD,
+            default_branch_tip=_BASE_TIP,
+            conflict_measurement_failure="git-merge-tree",
+        ),
+    )
+
+    body = module.base_advanced_comment_body(  # type: ignore[attr-defined]
+        work_item_id=_ITEM_ID,
+        run_id=_RUN_ID,
+        factory=_FACTORY,
+        pr_number=2606,
+        pr_head=_PR_HEAD,
+        default_branch_tip=_BASE_TIP,
+        conflict_measurement_failure=outcome.base_advanced.conflict_measurement_failure,
+    )
+
+    assert "conflict measurement failed: git-merge-tree" in body
+
+
 def test_a_name_that_is_not_identifier_shaped_is_left_out_and_counted() -> None:
     """Two unpassable names, both gone from the body, and the count says two."""
     module = _record_module()
