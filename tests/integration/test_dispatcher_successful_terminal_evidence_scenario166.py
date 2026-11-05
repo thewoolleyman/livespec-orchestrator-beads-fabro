@@ -53,11 +53,15 @@ _SUCCESSFUL_NODES = (
     # The post-turn mutation guard (bd-ib-al54tl) sits on `dod_gate`'s
     # fallthrough, so every green run passes through it.
     "dod_gate_mutation_guard",
-    "red",
-    "commit_red",
-    "green",
+    "implement",
+    # The commit-run settle (bd-ib-xj3qqb) sits on `implement`'s fallthrough
+    # ahead of the completion gate, so every green run passes through it.
+    "implement_commit_settle",
+    # The implement stage's completion gate (v165, Scenario 204;
+    # bd-ib-ahxcjx). It is on the success route because it sits on
+    # `implement`'s single fallthrough: a green run reached the diff breaker
+    # THROUGH it, having stated its Definition of Done complete.
     "implement_completion",
-    "commit_green",
     "implementation_diff",
     "janitor_admission",
     "janitor",

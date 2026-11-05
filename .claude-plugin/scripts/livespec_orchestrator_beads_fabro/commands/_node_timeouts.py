@@ -71,21 +71,35 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # `fabro run` subprocess ceiling comes from, so an omitted node is a node the
 # Dispatcher can kill the CLI out from under.
 #
-# `red` and `green` each inherit the implement stage's timeout and can make
-# three visits with one retry each, so both are billed at six attempts. Each
-# successful Red and Green turn passes through its dedicated command node;
-# command refusal returns to the producing turn.
-# `implement_completion` sits on `green`'s single fallthrough, so it is reached
-# once per `green` visit, THREE. `implement_hook_route` (v208, Scenario 204) sits
-# on that gate's failure edge and can send an incomplete Green turn back to
-# `green`; it is reached at most once per `green` visit, THREE, and it runs the
-# repository's pre-commit hook over what the turn left staged, which can take
-# the better part of its timeout, so it is billed at its full visit count.
-# `implementation_diff` now follows a successful Green command exactly once.
-# `review_fix_commit_settle` follows `review_fix`'s three and
+# `implementation_diff` after `implement` carries the budget of the retryable
+# node it guards, because it can be reached once per attempt of it. It is cheap
+# in practice (one `git` call) and budgeting it at the guarded node's count is
+# what keeps the ceiling ABOVE the graph rather than level with an optimistic
+# reading of it.
+#
+# `implement_completion` (v165, Scenario 204; work-item bd-ib-ahxcjx) is the
+# OTHER postcondition of that same turn and is budgeted identically for the
+# identical reason: it sits on `implement`'s single fallthrough, so each attempt
+# of the turn can reach it once. It is cheaper still than the diff breaker --
+# one file read -- and this repository declares it DOWNWARD at 600 s in
+# `.livespec.jsonc`, which is the credential floor's own documented remedy
+# applied to work that genuinely takes milliseconds.
+#
+# `implement_hook_route` (v208, Scenario 204; work-item bd-ib-y7372n) sits on
+# `implement_completion`'s failure edge and can send an incomplete turn back to
+# `implement` ONCE, when the commit hook refused what the turn left staged, and
+# (bd-ib-xj3qqb) ONCE MORE without spending that budget when the turn ended while
+# a commit run it started was still running and that run passed. So `implement`
+# is reached by three visits of two attempts each, SIX, and the route, the
+# completion gate, the diff breaker and `implement_commit_settle` once per
+# visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three and
 # `fix_commit_settle` follows `fix`'s two. `janitor_admission` sits ahead of
-# each janitor visit and is likewise billed three times; its ninth invocation
-# names the exhausted eight-visit bound rather than extending a successful path.
+# each janitor visit and is likewise billed three times; it has its own
+# engine-side ninth visit only to name the exhausted eight-visit bound and
+# preserve the tree, which is not part of a successful run's longest path. The
+# route runs the repository's pre-commit hook, which can take the better part
+# of its timeout, so it is billed at its full visit count like any node that can
+# spend its ceiling.
 #
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
@@ -151,13 +165,11 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "red": 6,
-    "commit_red": 3,
-    "green": 6,
+    "implement": 6,
+    "implement_commit_settle": 3,
     "implement_completion": 3,
     "implement_hook_route": 3,
-    "commit_green": 3,
-    "implementation_diff": 1,
+    "implementation_diff": 3,
     "janitor_admission": 3,
     "janitor": 3,
     "fix": 2,

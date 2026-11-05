@@ -1276,6 +1276,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident entry owns one initial authority before a carrier PR exists",
+    "work_item": "bd-ib-dzbwaq",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: incident provenance exceptions remain exact and repayable",
     "work_item": "bd-ib-y7ryj3",
     "first_seen": "2026-11-04"
