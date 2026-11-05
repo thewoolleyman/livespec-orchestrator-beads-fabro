@@ -114,6 +114,10 @@ def record_base_advanced_after_arming(
         pr_head=measured.pr_head,
         default_branch_tip=measured.default_branch_tip,
     )
+    body = _with_conflict_measurement_failure(
+        body=body,
+        failure=measured.conflict_measurement_failure,
+    )
     refusal = _detector_refusal(body=body)
     if refusal is not None:
         journal.append(
@@ -232,6 +236,13 @@ def _comment_body(
 
 
 _NAME_LABELS = ("run id", "factory", "pull request head", "default branch tip")
+
+
+def _with_conflict_measurement_failure(*, body: str, failure: str | None) -> str:
+    """Name a failed comparison without putting its untrusted output in the comment."""
+    if failure is None:
+        return body
+    return f"{body}\n\nconflict measurement failed: {failure}"
 
 
 # The one thing a reader has to DO, and the one thing they must not. The

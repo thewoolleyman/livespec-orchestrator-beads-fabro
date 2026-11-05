@@ -206,7 +206,9 @@ def test_the_comment_opens_with_the_marker_line_and_carries_every_measurement() 
     assert "0 names were left out" in body
 
 
-def test_the_comment_names_the_merge_measurement_when_it_failed() -> None:
+def test_the_comment_names_the_merge_measurement_when_it_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A failed comparison is durable evidence, not detail the rest hides.
 
     Scenario 184 preserves the ordinary needs-human ending when the merge
@@ -221,6 +223,11 @@ def test_the_comment_names_the_merge_measurement_when_it_failed() -> None:
     assert (
         "conflict_measurement_failure" in parameters
     ), "the overtaken-arming outcome does not carry the failed conflict measurement"
+    from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+
+    monkeypatch.chdir(tmp_path)
+    _write_config(project_root=tmp_path)
+    append_work_item(path=_config(), item=_item())
     module = _record_module()
     outcome = DispatchOutcome(
         work_item_id=_ITEM_ID,
@@ -238,17 +245,15 @@ def test_the_comment_names_the_merge_measurement_when_it_failed() -> None:
         ),
     )
 
-    body = module.base_advanced_comment_body(  # type: ignore[attr-defined]
-        work_item_id=_ITEM_ID,
-        run_id=_RUN_ID,
-        factory=_FACTORY,
-        pr_number=2606,
-        pr_head=_PR_HEAD,
-        default_branch_tip=_BASE_TIP,
-        conflict_measurement_failure=outcome.base_advanced.conflict_measurement_failure,
+    module.record_base_advanced_after_arming(  # type: ignore[attr-defined]
+        repo=tmp_path,
+        item=_item(),
+        outcome=outcome,
+        journal=_Journal(),
     )
 
-    assert "conflict measurement failed: git-merge-tree" in body
+    comment = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)[0].text
+    assert "conflict measurement failed: git-merge-tree" in comment
 
 
 def test_a_name_that_is_not_identifier_shaped_is_left_out_and_counted() -> None:

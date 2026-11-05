@@ -107,12 +107,18 @@ class BaseAdvancedAfterArming:
 
     `cause` names which of the two endings carries these readings; the record
     writer derives its marker line and journal stages from it.
+
+    `conflict_measurement_failure` is the identifier of the read-only merge
+    measurement that could not produce a path set. It is deliberately an
+    identifier, rather than the command's stderr, because the durable comment
+    may carry names and figures but must not preserve arbitrary command output.
     """
 
     factory: str
     pr_head: str | None
     default_branch_tip: str | None
     cause: str = BASE_ADVANCED_AFTER_ARMING
+    conflict_measurement_failure: str | None = None
 
 
 def base_advanced_detail(*, work_item_id: str) -> str:

@@ -87,7 +87,7 @@ def await_merge(
         if view is not None and _reports_overtaken_arming(view=view):
             conflicting_reports += 1
             if conflicting_reports >= CONSECUTIVE_CONFLICTING_REPORTS:
-                _ = measure_conflicted_paths(
+                measurement = measure_conflicted_paths(
                     repo=plan.repo,
                     runner=runner,
                     pr_head=view.head or "",
@@ -104,6 +104,9 @@ def await_merge(
                         factory=plan.fabro_factory_name,
                         pr_head=view.head,
                         default_branch_tip=view.base,
+                        conflict_measurement_failure=(
+                            "git-merge-tree" if measurement.failure is not None else None
+                        ),
                     ),
                 )
         else:

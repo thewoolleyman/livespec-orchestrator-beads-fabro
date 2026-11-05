@@ -294,6 +294,24 @@ def test_an_overtaken_arming_measures_mixed_conflicted_paths_before_resting(
     ]
 
 
+def test_a_failed_overtaken_arming_measurement_is_carried_to_the_comment_layer(
+    tmp_path: Path,
+) -> None:
+    runner = _Runner(
+        queue=[
+            _ok(stdout=_pr_json()),
+            _ok(stdout=_pr_json()),
+            CommandResult(exit_code=0, stdout="", stderr="comparison unavailable"),
+        ]
+    )
+
+    outcome = _await(repo=tmp_path, runner=runner)
+
+    assert isinstance(outcome, DispatchOutcome)
+    assert outcome.base_advanced is not None
+    assert outcome.base_advanced.conflict_measurement_failure == "git-merge-tree"
+
+
 def test_the_ending_reports_exit_code_four(tmp_path: Path) -> None:
     runner = _Runner(queue=[_ok(stdout=_pr_json())])
 
