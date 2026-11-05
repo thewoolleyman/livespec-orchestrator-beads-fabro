@@ -41,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attri
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_baseline import (
     session_headroom_baseline,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_step_persistence import (
+    outstanding_degraded_step,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMMANDS = (
@@ -132,6 +135,23 @@ def test_every_pre_launch_reader_shares_one_parse_of_the_journal(
     assert spies.opens_for_read == 1
     assert spies.lines_parsed == _RECORDS
     assert len(records) == _RECORDS
+    assert runs.item_id_by_run["run7"] == "bd-ib-item7"
+
+
+def test_step_persistence_and_reconciliation_share_the_dispatch_pass_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The preamble's step gate and reconciliation answer from one journal read."""
+    snapshot = _snapshot()
+    journal = _journal(tmp_path=tmp_path)
+    spies = _spy(monkeypatch=monkeypatch, journal=journal.path)
+
+    with snapshot.pass_snapshot():
+        degraded = outstanding_degraded_step(journal_path=journal.path)
+        runs = read_journaled_runs(path=journal.path)
+
+    assert spies.opens_for_read == 1
+    assert degraded is None
     assert runs.item_id_by_run["run7"] == "bd-ib-item7"
 
 

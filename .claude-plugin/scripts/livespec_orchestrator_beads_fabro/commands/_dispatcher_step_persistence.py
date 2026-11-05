@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_step_ids import STEP_IDS
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt, parse_json
 
@@ -155,6 +156,11 @@ def persistence_refusal_detail(
 
 def _records(*, path: Path) -> list[dict[str, Any]]:
     """Every parseable JSONL record in the journal; an absent journal has none."""
+    snapshot = snapshot_records(journal_path=path)
+    if snapshot is not None:
+        # The pass snapshot already parsed this file; copy only the outer list
+        # because the persistence calculation filters it without mutating records.
+        return [cast("dict[str, Any]", record) for record in snapshot]
     if not path.is_file():
         return []
     loaded = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
