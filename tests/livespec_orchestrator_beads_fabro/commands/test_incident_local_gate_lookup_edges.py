@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro._incident_authority_payload import attempt_record
 from livespec_orchestrator_beads_fabro.commands import incident_authority as command
 from livespec_orchestrator_beads_fabro.commands import incident_local_gate_lookup as module
 from livespec_orchestrator_beads_fabro.commands import incident_local_gate_receipt as writer
@@ -27,7 +28,7 @@ def _body(*, observed: Any, receipt: dict[str, Any]) -> str:
     return writer.MARKER + _canonical(
         dict(
             schema=1,
-            attempt=asdict(observed.attempt),
+            attempt=attempt_record(attempt=observed.attempt),
             committed_token_id=observed.committed_token_id,
             current_token_id=observed.current_token_id,
             receipt=receipt,
@@ -115,7 +116,7 @@ def test_matching_receipt_id_never_accepts_foreign_envelope(change: dict[str, An
     client, observed, receipt = _context()
     record = dict(
         schema=1,
-        attempt=asdict(observed.attempt),
+        attempt=attempt_record(attempt=observed.attempt),
         committed_token_id=observed.committed_token_id,
         current_token_id=observed.current_token_id,
         receipt=receipt,
