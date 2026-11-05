@@ -1,0 +1,56 @@
+{
+ "build": {
+  "release_tag": "none",
+  "installed_build": "dolt-server primary checkout /data/projects/dolt-server at 7e22cbdc713c9c85c2f7358912a9d5d0a73d69fb (contains PR #162 merge cf8c9a0cb40bced322701fccf71293851980fd66), the tree dolt-backup.service executes",
+  "commit": "7e22cbdc713c9c85c2f7358912a9d5d0a73d69fb"
+ },
+ "assertions": [
+  {
+   "text": "Two consecutive scheduled dolt-backup.service runs on the dolt-server host exit 0 with every tenant database, livespec-orch-beads-fabro included, reported as synced.",
+   "steps": [
+    "sudo -n journalctl -u dolt-backup.service --since '2026-11-04 22:00' --no-pager | grep -E 'Starting dolt|all syncs|FAILED|Finished dolt'   (journal timestamps are CET, UTC+1)",
+    "systemctl show dolt-backup.service -p Result -p ExecMainStatus after each run"
+   ],
+   "proof": "Nov 04 22:01:31 vmi3006760 systemd[1]: Starting dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB)...\nNov 04 22:28:49 vmi3006760 backup-sync.sh[48778]: backup-sync.sh: all syncs succeeded (15/15).\nNov 04 22:28:49 vmi3006760 systemd[1]: Finished dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB).\nNov 04 23:01:15 vmi3006760 systemd[1]: Starting dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB)...\nNov 04 23:34:46 vmi3006760 backup-sync.sh[705987]: backup-sync.sh: all syncs succeeded (15/15).\nNov 04 23:34:46 vmi3006760 systemd[1]: Finished dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB).\nNov 05 00:01:23 vmi3006760 systemd[1]: Starting dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB)...\nNov 05 00:32:26 vmi3006760 backup-sync.sh[1321111]: backup-sync.sh: all syncs succeeded (15/15).\nNov 05 00:32:26 vmi3006760 systemd[1]: Finished dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB).\nNov 05 01:01:23 vmi3006760 systemd[1]: Starting dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB)...\nNov 05 01:03:52 vmi3006760 backup-sync.sh[1910093]: backup-sync.sh: all syncs succeeded (14/15; skipped in progress: livespec-orch-beads-fabro).\nNov 05 01:03:52 vmi3006760 systemd[1]: Finished dolt-backup.service - dolt-server S3 backup sync (CALL DOLT_BACKUP('sync','s3') for every tenant DB).\nScheduled runs started 21:01:31Z, 22:01:15Z and 23:01:23Z each logged 'all syncs succeeded (15/15)' and exited 0 (Result=success, ExecMainStatus=0); the oversized tenant livespec-orch-beads-fabro was synced in each ('synced; staging deleted')."
+  },
+  {
+   "text": "The Honeycomb agent-activity dolt-backup dataset records a backup-sync success event for each of those two runs and no partial_failure or unit_failure event between them.",
+   "steps": [
+    "Honeycomb MCP run_query, env agent-activity, dataset dolt-backup, from 2026-11-04T20:55:00Z to now (read 2026-11-05T00:05Z), filter name != dolt-connection-probe, COUNT by name, outcome, db, dbs_synced, dbs_skipped, skipped_dbs, skipped_cycles, holder_age_s, fsck_ms"
+   ],
+   "proof": "| COUNT | db | dbs_skipped | dbs_synced | fsck_ms | holder_age_s | name | outcome | skipped_cycles | skipped_dbs |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| 3 |  | 0 | 15 |  |  | backup-sync | success | 0 |  |\n| 1 | livespec-orch-beads-fabro |  |  | 0 | 818 | backup-oversized | skipped_in_progress |  |  |\n| 1 | livespec-orch-beads-fabro |  |  | 883942 | 0 | backup-oversized | success |  |  |\n| 1 | livespec-orch-beads-fabro |  |  | 1062496 | 0 | backup-oversized | success |  |  |\n| 1 | livespec-orch-beads-fabro |  |  | 1284341 | 0 | backup-oversized | success |  |  |\n| 1 | livespec-orch-beads-fabro |  |  | 1474063 | 0 | backup-oversized | success |  |  |\n| 1 |  | 0 | 1 |  |  | backup-sync | success | 0 |  |\n| 1 |  | 1 | 14 |  |  | backup-sync | success | 0 | livespec-orch-beads-fabro |\n| 0 | OTHER | OTHER | OTHER | OTHER | OTHER | OTHER | OTHER | OTHER | OTHER |\n| 10 | TOTAL | TOTAL | TOTAL | TOTAL | TOTAL | TOTAL | TOTAL | TOTAL | TOTAL |\nThree backup-sync success rows with dbs_synced 15 (the three scheduled runs), one with dbs_synced 1 (a manual --db run), one with 14 synced and 1 skipped (the overlap cycle). No row has outcome partial_failure, unit_failure or failure."
+  },
+  {
+   "text": "The interactive client read and write timeouts the ledger server applies to tenant connections are unchanged from 300 s.",
+   "steps": [
+    "sudo -n sed -n 41,42p /etc/doltdb/config.yaml (the config doltdb.service runs: ExecStart=/usr/local/bin/dolt sql-server --config /etc/doltdb/config.yaml)",
+    "grep -n timeout_millis /data/projects/dolt-server/config/dolt-config.yaml.template"
+   ],
+   "proof": "/etc/doltdb/config.yaml:\n  read_timeout_millis: 300000\n  write_timeout_millis: 300000\ntemplate:\n41:  read_timeout_millis: 300000\n42:  write_timeout_millis: 300000"
+  },
+  {
+   "text": "A scheduled dolt-backup.service run that starts while a prior run's sync is still in progress does not start a second sync of the same tenant, and records the skipped cycle in its telemetry.",
+   "steps": [
+    "At 23:50:10Z start a manual oversized run so it holds the per-tenant lock across the next scheduled run: sudo -n systemd-run --unit=dolt-backup-overlap-proof-2 --uid=dolt --gid=dolt -p WorkingDirectory=/data/projects/dolt-server -p EnvironmentFile=/data/projects/dolt-server/backup.env -p EnvironmentFile=-/etc/doltdb/backup-creds.env.local -p EnvironmentFile=-/etc/doltdb/alert.env.local -p EnvironmentFile=-/etc/doltdb/backup-aws.env.local /data/projects/dolt-server/scripts/backup-sync.sh --db livespec-orch-beads-fabro",
+    "Read the scheduled run's journal: sudo -n journalctl -u dolt-backup.service --since '2026-11-05 01:00' --no-pager",
+    "Honeycomb MCP run_query, env agent-activity, dataset dolt-backup, from 2026-11-04T20:55:00Z to now (read 2026-11-05T00:05Z), filter name != dolt-connection-probe, COUNT by name, outcome, db, dbs_synced, dbs_skipped, skipped_dbs, skipped_cycles, holder_age_s, fsck_ms"
+   ],
+   "proof": "Nov 05 01:01:23 systemd[1]: Starting dolt-backup.service ...\nNov 05 01:03:49 backup-sync.sh[1910093]: WARN: oversized backup: `livespec-orch-beads-fabro` sync already in progress (818s); not starting a second sync this cycle.\nNov 05 01:03:52 backup-sync.sh[1910093]: backup-sync.sh: all syncs succeeded (14/15; skipped in progress: livespec-orch-beads-fabro).\nNov 05 01:03:52 systemd[1]: dolt-backup.service: Deactivated successfully.\nThe manual holder meanwhile continued (restore ok 238954 ms at 00:54:43 CET, then fsck). Honeycomb: backup-oversized outcome=skipped_in_progress db=livespec-orch-beads-fabro holder_age_s=818, and backup-sync success dbs_synced=14 dbs_skipped=1 skipped_dbs=livespec-orch-beads-fabro."
+  },
+  {
+   "text": "Each backup run's telemetry carries the duration of every step of the oversized-tenant path, so a sync that overruns the hourly cadence is visible in Honeycomb.",
+   "steps": [
+    "Honeycomb MCP run_query, env agent-activity, dataset dolt-backup, from 2026-11-04T20:55:00Z, filter name = backup-oversized, COUNT by db, outcome, copy_ms, restore_ms, fsck_ms, s3_sync_ms, duration_ms"
+   ],
+   "proof": "| COUNT | copy_ms | db | duration_ms | fsck_ms | outcome | restore_ms | s3_sync_ms |\n| 1 | 13827 | livespec-orch-beads-fabro | 1490400 | 1062496 | success | 245671 | 166745 |\n| 1 | 17324 | livespec-orch-beads-fabro | 1846174 | 1474063 | success | 241648 | 110259 |\n(read at 22:38Z; later runs carry fsck_ms 883942 and 1284341 likewise; the skipped cycle carries fsck_ms 0 and holder_age_s 818)"
+  },
+  {
+   "text": "The dolt-backup.timer cadence is unchanged at hourly.",
+   "steps": [
+    "systemctl cat dolt-backup.timer | grep -E 'OnCalendar|Randomized'",
+    "systemctl show dolt-backup.timer -p TimersCalendar"
+   ],
+   "proof": "OnCalendar=hourly\nRandomizedDelaySec=120\nTimersCalendar={ OnCalendar=*-*-* *:00:00 ; next_elapse=... }"
+  }
+ ]
+}
