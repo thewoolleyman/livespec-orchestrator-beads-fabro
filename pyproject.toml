@@ -638,6 +638,10 @@ destructive_cli_allowlist = [
 #   and a doubled process table cannot tell a stopped hook from one never
 #   started. It scrubs the child env exactly as an allowlisted spawn must,
 #   dropping every GIT_ and COV_CORE_ variable and COVERAGE_PROCESS_START.
+# - test_workflow_refresh_before_janitor_scenario305.py exercises Lefthook's
+#   real install followed by the commit-refuse installer in a temporary Git
+#   repository. The factory defect is their hook-directory interaction, which
+#   an in-process substitute cannot observe. Both children scrub coverage.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -668,6 +672,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_empty_checkpoint_commits_dropped.py",
     "tests/integration/test_sandbox_commit_runner_scenario179.py",
     "tests/integration/test_needs_human_node_timeout_cut_scenario192.py",
+    "tests/integration/test_workflow_refresh_before_janitor_scenario305.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
