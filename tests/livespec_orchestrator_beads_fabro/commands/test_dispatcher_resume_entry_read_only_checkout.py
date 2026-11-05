@@ -61,3 +61,14 @@ def test_an_ordinary_resume_checkout_is_not_made_read_only() -> None:
     assert f"refs/heads/{_BRANCH}" in block
     assert "set-url" not in block
     assert getattr(checkout, "read_only", None) is False
+
+
+def test_a_reference_commit_without_a_fetch_ref_is_no_checkout() -> None:
+    """A reference needs a ref to fetch it from; without one there is nothing to place."""
+    module = _module()
+    args = argparse.Namespace(**{module.RESUME_REFERENCE_COMMIT_ARG: _HEAD})
+    assert module.resume_checkout_for(args=args, branch=_BRANCH) is None
+    empty = argparse.Namespace(
+        **{module.RESUME_REFERENCE_COMMIT_ARG: "", module.RESUME_FETCH_REF_ARG: _PULL_REF}
+    )
+    assert module.resume_checkout_for(args=empty, branch=_BRANCH) is None

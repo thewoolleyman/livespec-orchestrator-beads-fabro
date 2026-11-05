@@ -102,6 +102,8 @@ _THIRD_RUN = "01M52R2WND7Y0000000000000C"
 _PUBLISHED_HEAD = "db9feb3900000000000000000000000000000001"
 _PRESERVED_COMMIT = "216c811200000000000000000000000000000002"
 _PRESERVED_REF = f"{NEEDS_HUMAN_REF_PREFIX}/{_THIRD_RUN}"
+_CURRENT_BASE = "a216c8112000000000000000000000000000003"
+_PIN_BUMP_COMMIT = "246fecad0da0f9aad2ce7db339f6f17d6645326d"
 
 # The record the newest run published before dying, which is what makes the
 # resume's anchor measurement succeed — so the refusal can only come from the
@@ -179,6 +181,15 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
         "ps -a --json": CommandResult(exit_code=0, stdout="[]", stderr=""),
         f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
             exit_code=0, stdout=f"{_PRESERVED_COMMIT}\t{_PRESERVED_REF}\n", stderr=""
+        ),
+        "symbolic-ref --short refs/remotes/origin/HEAD": CommandResult(
+            exit_code=0, stdout="origin/master\n", stderr=""
+        ),
+        f"merge-base {_PRESERVED_COMMIT} origin/master": CommandResult(
+            exit_code=0, stdout=f"{_CURRENT_BASE}\n", stderr=""
+        ),
+        f"merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_CURRENT_BASE}": CommandResult(
+            exit_code=0, stdout="", stderr=""
         ),
     }
     _Shell.calls = []

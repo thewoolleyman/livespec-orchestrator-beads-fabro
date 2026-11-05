@@ -241,7 +241,19 @@ def test_evaluate_refuses_unavailable_declared_interpreter(
     assert decision.detail == "the recorded check did not pass"
 
 
-@pytest.mark.parametrize("interpreter_mutation", ["rm", "chmod -x"])
+@pytest.mark.parametrize(
+    "interpreter_mutation",
+    [
+        "rm",
+        pytest.param(
+            "chmod -x",
+            marks=pytest.mark.skipif(
+                os.geteuid() == 0,
+                reason="root can execute the no-longer-executable interpreter",
+            ),
+        ),
+    ],
+)
 def test_evaluate_refuses_when_env_interpreter_becomes_unavailable_between_legs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, interpreter_mutation: str
 ) -> None:
