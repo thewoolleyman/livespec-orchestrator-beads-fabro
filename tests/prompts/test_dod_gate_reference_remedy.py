@@ -6,6 +6,12 @@ import importlib
 import re
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    GoverningHeadingReader,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _REPOSITORY_ROOT = Path(__file__).parents[2]
@@ -88,9 +94,17 @@ def _definition_of_done(*, references: str) -> str:
     )
 
 
-def _display(*, item: WorkItem, cwd: Path) -> list[str]:
+def _taken_governing_heading(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict:
+    """A taken clean verdict for the reference-remedy display controls."""
+    del item, repo
+    return GoverningHeadingVerdict(kind="unstated")
+
+
+def _display(
+    *, item: WorkItem, cwd: Path, governing: GoverningHeadingReader = _taken_governing_heading
+) -> list[str]:
     module = importlib.import_module(_FILING_DISPLAY_MODULE)
-    return module.filing_display(item=item, cwd=cwd).splitlines()
+    return module.filing_display(item=item, cwd=cwd, governing=governing).splitlines()
 
 
 def test_dod_gate_prescribes_marker_prefixed_multi_heading_references() -> None:
