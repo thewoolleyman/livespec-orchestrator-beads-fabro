@@ -70,6 +70,7 @@ class WatchPoll:
     run: FabroRunSummary | None
     running_run_id: str | None
     recorded_running_epoch: float | None
+    record: object | None
     abandoned_item_status: str | None
     attribution: RunAttribution
 
@@ -127,6 +128,7 @@ def observe_watch_poll(
     return WatchPoll(
         run=run,
         recorded_running_epoch=recorded_running_epoch(payload=observed.record),
+        record=observed.record,
         running_run_id=(
             run.run_id if run is not None and run.status_kind == _RUNNING_STATUS_KIND else None
         ),

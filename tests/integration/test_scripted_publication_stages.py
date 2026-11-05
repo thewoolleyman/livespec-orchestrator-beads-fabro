@@ -55,11 +55,21 @@ def _node_block(*, dot: str, name: str) -> str | None:
 
     An EDGE line never matches: the name must be followed directly by the
     opening bracket, which is the same discrimination `_dispatcher_graph_render`
-    relies on. The body admits no `]` of its own so a single-line declaration
-    cannot swallow the block that follows it.
+    relies on. A closing bracket on its own line ends the block, leaving quoted
+    shell bracket expressions inside a script attribute intact.
     """
-    found = re.search(rf"(?ms)^[ \t]*{re.escape(name)}[ \t]*\[(?P<body>[^\]]*)\]", dot)
+    found = re.search(rf"(?ms)^[ \t]*{re.escape(name)}[ \t]*\[(?P<body>.*?)^[ \t]*\]", dot)
     return None if found is None else found.group("body")
+
+
+def test_node_block_keeps_a_bracket_character_inside_a_quoted_script() -> None:
+    """A shell bracket expression is node content, not the DOT block terminator."""
+    dot = 'pr_refresh [\n    script="case "$value" in [^0-9]) : ;; esac"\n]\n'
+
+    body = _node_block(dot=dot, name="pr_refresh")
+
+    assert body is not None
+    assert 'script="case "$value" in [^0-9]) : ;; esac"' in body
 
 
 def _graph(*, directory: Path) -> str:

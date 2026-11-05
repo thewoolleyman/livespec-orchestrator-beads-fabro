@@ -708,21 +708,8 @@ def test_scenario61_the_dispatched_workflow_truncates_an_unchanged_tree(
     node = re.search(r"\bimplementation_diff\s*\[(?P<body>[^\]]*)\]", graph)
     assert node is not None
     assert "git diff --quiet origin/{{ inputs.default_branch }}...HEAD" in node.group("body")
-    # The route from the turn to the breaker is TWO unconditional edges since
-    # v165: Scenario 204's completion gate consumed `implement`'s fallthrough and
-    # supplies the breaker's. Both legs are asserted, because a graph that
-    # dropped either would reach janitor with the diff question unasked — and the
-    # gate itself spends no provider, so the containment this case guards is
-    # unmoved.
-    assert re.search(r"\bimplement\s*->\s*implement_commit_settle\b(?![^\n]*condition=)", graph)
-    assert re.search(
-        r"\bimplement_commit_settle\s*->\s*implement_completion\b(?![^\n]*condition=)",
-        graph,
-    )
-    assert re.search(
-        r"\bimplement_completion\s*->\s*implementation_diff\b(?![^\n]*condition=)",
-        graph,
-    )
+    # Only the Green commit command may enter the diff breaker.
+    assert re.search(r"\bcommit_green\s*->\s*implementation_diff\b(?![^\n]*condition=)", graph)
     assert re.search(
         r"\bimplementation_diff\s*->\s*dead_implementer\b(?![^\n]*condition=)",
         graph,

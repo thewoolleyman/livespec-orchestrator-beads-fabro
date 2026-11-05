@@ -1381,6 +1381,42 @@ def test_a_remote_moving_after_observation_is_rejected_by_the_lease(tmp_path: Pa
     assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
 
 
+def test_a_forge_server_error_retries_the_leased_push_while_origin_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    """A transient forge refusal is retried, rather than misreported as a lease race."""
+    box = _build(root=tmp_path)
+    before = box.remote_head(ref=_BRANCH)
+    attempts = tmp_path / "forge-push-attempts"
+    helper_root = tmp_path / "push-helper"
+    helper = helper_root / "bin" / "push_origin"
+    helper.parent.mkdir(parents=True)
+    _ = helper.write_text(
+        "#!/bin/sh\n"
+        f"printf x >> {attempts}\n"
+        "printf '%s\\n' 'remote: HTTP 502 Bad Gateway' >&2\n"
+        "printf '%s\\n' 'remote: GitHub Request ID: TEST-REQUEST-ID' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    helper.chmod(0o700)
+    _ = _advance_default(box=box)
+
+    result = _run(
+        box=box,
+        extra_env={"LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(helper_root)},
+    )
+
+    assert result.returncode == 1, result.stdout
+    assert attempts.read_text(encoding="utf-8") == "xxx"
+    assert "LIVESPEC_PR_REFRESH_FORGE_ERROR" in result.stderr
+    assert "HTTP 502 Bad Gateway" in result.stderr
+    assert "TEST-REQUEST-ID" in result.stderr
+    assert "LIVESPEC_PR_REFRESH_LEASE_FAILED" not in result.stderr
+    assert box.remote_head(ref=_BRANCH) == before
+    assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
+
+
 def test_a_non_numeric_refresh_counter_fails_closed(tmp_path: Path) -> None:
     """A counter nothing can compare cannot bound anything, so it refuses.
 

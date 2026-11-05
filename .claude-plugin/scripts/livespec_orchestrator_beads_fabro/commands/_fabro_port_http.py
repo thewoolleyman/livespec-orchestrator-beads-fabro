@@ -259,6 +259,28 @@ class FabroHttpPort:
             timeout_seconds=timeout_seconds,
         )
 
+    def stream(
+        self,
+        *,
+        run_id: str,
+        after: int | None,
+        timeout_seconds: float,
+    ) -> FabroHttpResult:
+        """Read the items after one run-local stream cursor.
+
+        The run route applies ``after`` before serialising its response.  That
+        is materially different from ``fabro events -n``: the CLI downloads
+        the complete history first and trims it at the client, so its cost
+        grows with an otherwise healthy run's age.
+        """
+        suffix = "" if after is None else f"?after={after}"
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/stream{suffix}",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
     def cancel(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
         """Cancel one run through the server's lifecycle route."""
         return self._verb(

@@ -283,6 +283,20 @@ def test_bearer_token_resolution_matches_what_the_server_accepts(
         assert result.status != _HTTP_UNAUTHORIZED
 
 
+def test_per_run_stream_route_reaches_the_factory_before_a_watch_binds_a_cursor(
+    *,
+    port: FabroPort,
+) -> None:
+    """The cursor route is a server read, not a client-side event-history trim."""
+    result = port.server_api().stream(
+        run_id=_ABSENT_RUN_ID,
+        after=None,
+        timeout_seconds=TIMEOUT_SECONDS,
+    )
+
+    assert result.status != 0, f"status {result.status}: {result.error}"
+
+
 def test_answering_a_question_the_factory_does_not_hold_is_declined_not_accepted(
     *,
     port: FabroPort,

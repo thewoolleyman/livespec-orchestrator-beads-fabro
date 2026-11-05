@@ -22,6 +22,8 @@ wrong.
 
 from __future__ import annotations
 
+from typing import cast
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
@@ -35,6 +37,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_run_probe i
     watchdog_run_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import fabro_inspect_record
 
 __all__: list[str] = [
     "FABRO_RM_TIMEOUT_SECONDS",
@@ -107,7 +110,10 @@ def cancel_stalled_run(
                 dispatch_id=dispatch_id,
                 run_id=run_id,
                 factory=plan.fabro_factory_name,
-                executing_stage=executing_stage(events_json=reading.events_json),
+                executing_stage=(
+                    executing_stage(events_json=reading.events_json)
+                    or _record_executing_stage(record=reading.record)
+                ),
                 publication=last_publish_draft_publication(
                     events_json=reading.events_json,
                     record_text=reading.record_text,
@@ -119,3 +125,20 @@ def cancel_stalled_run(
         }
     )
     return True
+
+
+def _record_executing_stage(*, record: object | None) -> str | None:
+    """Read the active stage from the pre-cancel run record when events failed."""
+    inspected = fabro_inspect_record(payload=record)
+    if inspected is None or not isinstance(stages := inspected.get("stages"), dict):
+        return None
+    typed_stages = cast("dict[object, object]", stages)
+    active = [
+        name
+        for name, stage in typed_stages.items()
+        if isinstance(name, str)
+        and isinstance(stage, dict)
+        and cast("dict[object, object]", stage).get("finished_at_epoch") is None
+        and cast("dict[object, object]", stage).get("started_at_epoch") is not None
+    ]
+    return active[-1] if active else None
