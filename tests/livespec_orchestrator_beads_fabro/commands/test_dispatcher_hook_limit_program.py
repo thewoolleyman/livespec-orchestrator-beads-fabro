@@ -93,6 +93,11 @@ def _observe(*, program: Path, push_pid: int, extra: tuple[str, ...] = ()) -> tu
     return result.returncode, result.stderr
 
 
+def _age_on_the_real_clock() -> None:
+    # The subject is the observer's REAL /proc starttime-to-boot-clock conversion.
+    time.sleep(2)  # real-time-required: the hook's real age is what the observer measures
+
+
 def _await_ready(*, push: subprocess.Popen[str]) -> None:
     """Block until the stand-in reports that the process it names is running.
 
@@ -167,10 +172,7 @@ def test_a_hook_still_running_at_the_limit_is_reported_with_its_elapsed_time(
     push = subprocess.Popen(["sh", "-c", f"{hook}; true"], stdout=subprocess.PIPE, text=True)
     try:
         _await_ready(push=push)
-        # The subject is the observer's REAL /proc starttime-to-boot-clock conversion.
-        time.sleep(
-            2  # real-time-required: the hook must age on the real clock for the band
-        )
+        _age_on_the_real_clock()
         code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
     finally:
         _stop(push=push)
@@ -203,10 +205,7 @@ def test_a_hook_that_execs_into_a_delegate_is_still_found_and_named(
     push = subprocess.Popen(["sh", "-c", f"{hook}; true"], stdout=subprocess.PIPE, text=True)
     try:
         _await_ready(push=push)
-        # The subject is the observer's REAL /proc starttime-to-boot-clock conversion.
-        time.sleep(
-            2  # real-time-required: the delegate must age on the real clock for the band
-        )
+        _age_on_the_real_clock()
         code, stderr = _observe(program=_program(tmp_path=tmp_path), push_pid=push.pid)
     finally:
         _stop(push=push)

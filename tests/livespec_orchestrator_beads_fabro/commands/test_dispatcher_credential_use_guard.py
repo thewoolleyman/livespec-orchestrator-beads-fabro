@@ -90,6 +90,14 @@ _HARD_TOLERANCE_SECONDS = 0.5
 _SETTLE_SECONDS = 10
 
 
+def _wall_clock() -> float:
+    return time.time()  # real-time-required: the guard's deadline is an absolute epoch
+
+
+def _real_sleep(seconds: float) -> None:
+    time.sleep(seconds)  # real-time-required: the epoch under test only arrives in real time
+
+
 def _guard(*, tmp_path: Path) -> Path:
     """Render the SHIPPED guard script and make it executable."""
     script = tmp_path / "credential-use-guard.sh"
@@ -192,7 +200,7 @@ def test_a_sufficiently_fresh_deadline_lets_an_ordinary_command_finish(
     marker = tmp_path / "ran"
     result = _run(
         tmp_path=tmp_path,
-        deadline=str(int(time.time()) + 3600),
+        deadline=str(int(_wall_clock()) + 3600),
         argv=["/bin/sh", "-c", f"printf done > {marker}; exit 7"],
     )
 
@@ -213,7 +221,7 @@ def test_a_running_child_stops_by_the_deadline_itself(tmp_path: Path) -> None:
     """
     beat_file = tmp_path / "beats"
     pid_file = tmp_path / "pid"
-    deadline = int(time.time()) + _SOON_SECONDS
+    deadline = int(_wall_clock()) + _SOON_SECONDS
 
     result = _run(
         tmp_path=tmp_path,
@@ -243,7 +251,7 @@ def test_a_term_resistant_child_still_stops_by_the_deadline(tmp_path: Path) -> N
     """
     beat_file = tmp_path / "beats"
     pid_file = tmp_path / "pid"
-    deadline = int(time.time()) + _SOON_SECONDS
+    deadline = int(_wall_clock()) + _SOON_SECONDS
 
     result = _run(
         tmp_path=tmp_path,
@@ -282,7 +290,7 @@ def test_a_credential_using_grandchild_stops_by_the_deadline_after_its_parent_ex
     """
     beat_file = tmp_path / "beats"
     pgid_file = tmp_path / "pgid"
-    deadline = int(time.time()) + _SOON_SECONDS
+    deadline = int(_wall_clock()) + _SOON_SECONDS
 
     result = _run(
         tmp_path=tmp_path,
@@ -302,11 +310,7 @@ def test_a_credential_using_grandchild_stops_by_the_deadline_after_its_parent_ex
     assert result.returncode == 0
 
     # Wait THROUGH the deadline, then read when the grandchild last ran.
-    time.sleep(
-        (deadline - time.time())
-        + _HARD_TOLERANCE_SECONDS
-        + 1.0  # real-time-required: the absolute epoch under test can only arrive in real time
-    )
+    _real_sleep((deadline - _wall_clock()) + _HARD_TOLERANCE_SECONDS + 1.0)
 
     last = _last_beat(beat_file=beat_file)
     try:
@@ -334,7 +338,7 @@ def test_a_launch_after_the_deadline_is_refused_without_running_the_command(
     marker = tmp_path / "must-not-exist"
     result = _run(
         tmp_path=tmp_path,
-        deadline=str(int(time.time()) - 60),
+        deadline=str(int(_wall_clock()) - 60),
         argv=["/bin/sh", "-c", f"printf ran > {marker}"],
     )
 
@@ -352,7 +356,7 @@ def test_a_retried_launch_inherits_the_same_deadline_rather_than_a_fresh_budget(
     The first finishes inside its budget; the second is refused. A guard
     measuring a duration per launch would admit both.
     """
-    deadline = str(int(time.time()) + _SOON_SECONDS)
+    deadline = str(int(_wall_clock()) + _SOON_SECONDS)
     first_marker = tmp_path / "first"
     second_marker = tmp_path / "second"
 
@@ -361,10 +365,7 @@ def test_a_retried_launch_inherits_the_same_deadline_rather_than_a_fresh_budget(
         deadline=deadline,
         argv=["/bin/sh", "-c", f"printf one > {first_marker}"],
     )
-    time.sleep(
-        _SOON_SECONDS
-        + 1  # real-time-required: the one shared deadline must genuinely fall between the launches
-    )
+    _real_sleep(_SOON_SECONDS + 1)
     second = _run(
         tmp_path=tmp_path,
         deadline=deadline,
@@ -415,7 +416,7 @@ def test_the_start_check_reports_remaining_budget_without_running_anything(
     while the run sat queued must refuse at startup, not mid-turn.
     """
     env = _hermetic_env()
-    env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(int(time.time()) + 3600)
+    env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(int(_wall_clock()) + 3600)
     fresh = subprocess.run(
         ["/bin/sh", str(_guard(tmp_path=tmp_path)), "--check-start"],
         capture_output=True,
@@ -425,7 +426,7 @@ def test_the_start_check_reports_remaining_budget_without_running_anything(
         check=False,
     )
 
-    env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(int(time.time()) - 1)
+    env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(int(_wall_clock()) - 1)
     aged = subprocess.run(
         ["/bin/sh", str(_guard(tmp_path=tmp_path)), "--check-start"],
         capture_output=True,
@@ -533,7 +534,7 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
     ready_fifo = tmp_path / "ready"
     os.mkfifo(ready_fifo)
     ready_fd = os.open(ready_fifo, os.O_RDONLY | os.O_NONBLOCK)
-    deadline = int(time.time()) + _SOON_SECONDS
+    deadline = int(_wall_clock()) + _SOON_SECONDS
     env = _hermetic_env()
     env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
 
@@ -557,11 +558,7 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
     guarded.send_signal(signal.SIGKILL)
     _ = guarded.wait(timeout=10)
 
-    time.sleep(
-        _SOON_SECONDS
-        + _HARD_TOLERANCE_SECONDS
-        + 2  # real-time-required: the reaper's own epoch must pass with no waiter alive
-    )
+    _real_sleep(_SOON_SECONDS + _HARD_TOLERANCE_SECONDS + 2)
 
     last = _last_beat(beat_file=beat_file)
     assert (
@@ -588,7 +585,7 @@ def test_a_bidirectional_protocol_session_survives_the_guard(tmp_path: Path) -> 
     requests = "first-request\nsecond-request\nthird-request\n"
     result = _run(
         tmp_path=tmp_path,
-        deadline=str(int(time.time()) + 3600),
+        deadline=str(int(_wall_clock()) + 3600),
         argv=[
             "python3",
             "-c",
@@ -636,11 +633,9 @@ def test_a_fractional_start_still_stops_by_the_absolute_epoch(
     # The wait body runs only when the clock is not already inside the window on
     # entry, so whether it executes depends on timing. Excluded so per-file
     # coverage cannot fail at random (run 38878333019, PR 3090).
-    while not (start_fraction <= (time.time() % 1) <= start_fraction + 0.08):
-        time.sleep(  # pragma: no cover - timing-dependent alignment wait
-            0.005  # real-time-required: the defect is sub-second rounding of the real epoch
-        )
-    deadline = int(time.time()) + _SOON_SECONDS
+    while not (start_fraction <= (_wall_clock() % 1) <= start_fraction + 0.08):
+        _real_sleep(0.005)  # pragma: no cover - timing-dependent alignment wait
+    deadline = int(_wall_clock()) + _SOON_SECONDS
 
     result = _run(
         tmp_path=tmp_path,

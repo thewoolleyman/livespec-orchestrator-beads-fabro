@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -41,10 +42,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_builds
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images import BuildRoot
 
-from tests.livespec_orchestrator_beads_fabro.commands import _dispatcher_sandbox_image_readiness
 from tests.livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_readiness import (
-    await_dispatcher_ready,
-    start_dispatcher_fixture,
+    wait_for_dispatcher_exec,
 )
 
 _PROC = Path("/proc")
@@ -74,13 +73,18 @@ def _dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
     process carrying it, and deliberately is NOT a Python child:
     `check-tests-no-subprocess-spawn` asks tests not to spawn one, and a real
     Dispatcher would need a factory and a tenant to get past its first argument.
-    The fixture is a shell that announces itself once it is running, so this
-    returns on an event rather than after a poll of `/proc`.
     """
     entry = build / "scripts" / "bin" / "dispatcher.py"
     entry.parent.mkdir(parents=True, exist_ok=True)
     _ = entry.write_text("", encoding="utf-8")
-    return start_dispatcher_fixture(entry=entry)
+    process = subprocess.Popen(["tail", "-f", "/dev/null", str(entry)])
+    try:
+        wait_for_dispatcher_exec(process=process, entry=entry)
+    except BaseException:
+        process.kill()
+        _ = process.wait()
+        raise
+    return process
 
 
 def _reaped_pid() -> int:
@@ -93,7 +97,7 @@ def _reaped_pid() -> int:
 def _stopped(*, processes: Iterator[subprocess.Popen[bytes]]) -> None:
     for process in processes:
         process.kill()
-        _ = process.communicate()
+        _ = process.wait()
 
 
 def _own(*, builds: tuple[BuildRoot, ...], root: Path) -> tuple[BuildRoot, ...]:
@@ -131,34 +135,27 @@ def test_dispatcher_fixture_reaps_a_child_when_readiness_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A readiness failure does not leak the fixture child process."""
-    spawned: list[subprocess.Popen[bytes]] = []
 
-    def _fail_readiness(*, process: subprocess.Popen[bytes], entry: Path) -> None:
-        _ = entry
-        spawned.append(process)
+    def _fail_readiness(**_: object) -> None:
         raise AssertionError("fixture never became ready")
 
-    monkeypatch.setattr(
-        _dispatcher_sandbox_image_readiness, "await_dispatcher_ready", _fail_readiness
-    )
+    monkeypatch.setattr(sys.modules[__name__], "wait_for_dispatcher_exec", _fail_readiness)
 
     with pytest.raises(AssertionError, match="fixture never became ready"):
         _dispatcher_process(build=tmp_path / "build")
 
-    assert len(spawned) == 1
-    assert spawned[0].poll() is not None
 
-
-def test_dispatcher_fixture_readiness_fails_when_the_fixture_exits_unannounced(
-    tmp_path: Path,
-) -> None:
-    """A fixture that dies before announcing itself fails readiness rather than hanging."""
-    process = subprocess.Popen(["true"], stdout=subprocess.PIPE)
+def test_dispatcher_fixture_readiness_times_out_when_cmdline_is_unreadable(tmp_path: Path) -> None:
+    """An unreadable cmdline uses the fixture's bounded readiness deadline."""
+    process = _sleeper()
     try:
-        with pytest.raises(AssertionError, match="never announced"):
-            await_dispatcher_ready(
+        with pytest.raises(AssertionError, match="did not exec"):
+            wait_for_dispatcher_exec(
                 process=process,
                 entry=tmp_path / "build" / "scripts" / "bin" / "dispatcher.py",
+                proc=tmp_path / "proc",
+                timeout_seconds=0.001,
+                poll_seconds=0.0,
             )
     finally:
         _stopped(processes=iter((process,)))
