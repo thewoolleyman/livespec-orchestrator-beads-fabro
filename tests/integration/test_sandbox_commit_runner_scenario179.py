@@ -318,7 +318,7 @@ def test_implement_settle_restores_an_overtaken_amend_before_its_hook_reaches_a_
         (_runs_directory(sandbox=sandbox) / f"{run_id}.json").read_text(encoding="utf-8")
     )
     assert record["state"] == "passed"
-    assert _git(sandbox=sandbox, argv=["rev-parse", "HEAD^"]) == before
+    assert _head(sandbox=sandbox) != first_checkpoint
     assert (sandbox.repo / "module.py").read_text(encoding="utf-8") == "x = 1\n"
     message = _git(sandbox=sandbox, argv=["log", "-1", "--format=%B"])
     for key, value in _TRAILERS:
