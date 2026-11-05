@@ -54,8 +54,16 @@ Three parts. None changes Fabro or the fork; every part lives in this repository
 
 1. **Preserve step (progress leg).**
    - **When it runs.** A node visit of the implement-work-item workflow ends, whatever its outcome, and the engine's checkpoint
-     moved the run branch's head. The run then pushes that head to `refs/livespec/wip/<work-item-id>/<run-id>` on origin, as a
-     forced update, before the next agent turn starts.
+     moved the tip of the run branch `fabro/run/<run-id>`. Before the next agent turn starts, the run puts that tip on origin
+     under `refs/livespec/wip/<work-item-id>/`.
+   - **Which ref it writes.**
+     - The first push creates `refs/livespec/wip/<work-item-id>/<run-id>`.
+     - A later tip that descends from an existing work-in-progress ref of the run fast-forwards that ref.
+     - A tip that descends from none of them, because the run branch was rewritten (an amend, a rebase), goes to a new sibling
+       `refs/livespec/wip/<work-item-id>/<run-id>-<sha12>` and every existing ref stays where it is.
+     - Nothing is ever forced, and no ref is moved to a commit that does not descend from it.
+   - **What it pushes.** The run branch's tip, never the workspace `HEAD`, which a node such as `refresh_repair` can leave
+     detached on another commit.
    - **What it never does:**
      - make a commit, or move `HEAD`, the index or the working tree;
      - run with repository hooks enabled;
@@ -70,6 +78,9 @@ Three parts. None changes Fabro or the fork; every part lives in this repository
      - reads the run's work-in-progress ref;
      - writes the `livespec-preserved-tree` comment naming the newest preserving ref;
      - then destroys, even when nothing was preserved.
+   - **What the receipt proves.** The comment names every work-in-progress ref of the run with its commit and marks the newest.
+     It records ancestry, not only presence: a ref's presence on the forge is never by itself reported as the run's latest
+     work, and a ref holding only the item's base commit is never named as preserving the run.
    - **What it does not do.** It adds no new read of a live sandbox, which removes the dependency on Fabro's `/runs/{id}/files`
      transport on Kubernetes. The work in progress that no ref carries is the loss the maintainer accepted.
    - **Enforcement.** The `fabro_port_seam` family of checks fails any Dispatcher module that destroys a run another way. This is
@@ -83,8 +94,8 @@ Three parts. None changes Fabro or the fork; every part lives in this repository
 
 **Recovery (assertion 2).** Recovery routing counts the work-in-progress ref as the run's preserved work. A needs-human or
 preserved-publish ref published at the same run's ending is preferred over it. A seed taken from the work-in-progress ref is
-taken exactly as a seed from a needs-human ref, so it rides on bd-ib-lmwyfj's fix for seeds that carry an earlier run's checkpoint
-commits.
+taken exactly as a seed from a needs-human ref, so it rides on whatever the current graph does with a seed that carries an earlier
+run's checkpoint commits (bd-ib-lmwyfj fixed that for the split graph, which is being reverted).
 
 **Accepted residual loss.** At most the node visit in progress when:
 
@@ -92,17 +103,34 @@ commits.
 - the Fabro server crashes;
 - an operator runs `fabro rm`.
 
-## 4. How the Red/Green node split shapes the design
+## 4. Two corrections from legacy-coordinator-agent (2026-11-05, at the maintainer's direction)
 
-The split has landed (bd-ib-yuwftp closed): red, then commit_red, then green, then implement_completion, then commit_green.
+**A measured regression rules out the forced update this note first proposed.**
 
-- **Push after every node visit that moved the head, not only after `commit_red` and `commit_green`.**
-  - A refused `commit_red` re-enters `red`, possibly several times. Pushing only after commit steps could therefore lose several
-    laps.
-  - Pushing after every visit that moved the head caps the loss at one visit.
-- **The step must leave local state untouched.** `commit_red` compares the tree against the dispatch base after folding the
-  engine's checkpoint commits. So the step must not run the `git add` and `git commit` that `needs_human` does.
-- **The forced update handles both rewrites:** the Green amend, and the rewind before a re-entered `red`.
+- At 06:20Z an interim preserve pass for bd-ib-rhivsm (run 01M6MHQE92Q4) force-pushed the workspace `HEAD`.
+- `refresh_repair` had left that `HEAD` detached on master `df5df9c86`.
+- Both preserve refs moved off the run's real tip, and the reviewed tree `63afe28e` (52 files of disposition, review_fix and
+  settle checkpoints) was left on no origin ref.
+- It was recovered only because the Dispatcher's launch clone still held the objects; it is restored to `86018f18`.
+- `git ls-remote` had reported the wrong SHA as verified, because it proves presence, not that the SHA is the run's latest work.
+
+Three guards follow, all now in section 3 and in the spec proposal:
+
+- preserve the run branch tip, never a detached `HEAD`;
+- never move a ref to a commit that does not descend from it, and write a SHA-suffixed sibling instead;
+- the receipt records ancestry, not only presence.
+
+The kubernetes-sandbox-backend session's interim `preserve_runs.sh` already does the first two and is the reference.
+
+**The split red/green graph is being reverted.** The maintainer directed a revert of the v0.287.0 split (`e7f5ec757`,
+bd-ib-yuwftp). The implement stage returns to the single `implement` node with its detached commit runner. The design is
+unaffected, because the spec rule names no node: it fires on every node visit that moved the run branch tip, which covers
+`implement`, `fix`, `review_fix`, the settle steps and `refresh_repair` alike. Three consequences:
+
+- **One push per visit, not only after commit steps.** That still bounds the loss to one visit.
+- **The step must leave local state untouched.** It must not run the `git add` and `git commit` that `needs_human` does.
+- **Rewrites now open a sibling ref instead of being forced.** These are the amend inside `implement`, a `refresh_repair`
+  rebase, and the Red-retry rewind if the split ever returns.
 - **The push skips repository hooks.** The pre-push aggregate would run the full check suite. Its Red/Green replay check could
   also refuse checkpoint commits that change product files without TDD trailers.
 - **The tooling must not be a script the repository carries.** `bd-ib-sdumcm` (P0, active) shows what happens otherwise: other
