@@ -12,6 +12,7 @@ import os
 import shlex
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
@@ -132,6 +133,14 @@ def _environment(*, plugins: Path) -> dict[str, str]:
         "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins),
         "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
         "PATH": f"{plugins / 'bin'}:{os.environ['PATH']}",
+    }
+
+
+def _subprocess_environment() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key != "COVERAGE_PROCESS_START" and not key.startswith("COV_CORE")
     }
 
 
@@ -296,6 +305,44 @@ def test_scenario305_refresh_merge_reuses_its_pre_merge_aggregate_evidence() -> 
     )
     assert "GIT_EDITOR=true LIVESPEC_FACTORY_REFRESH_MERGE=true git commit --no-edit" in workflow
     assert "pre-merge-commit:" not in lefthook
+
+
+def test_scenario305_commit_refuse_install_removes_the_lefthook_merge_wrapper(
+    *, tmp_path: Path
+) -> None:
+    """The factory's real hook-install order cannot carry refresh behavior."""
+    repo = tmp_path / "hook-order"
+    repo.mkdir()
+    _ = _git("init", cwd=repo)
+    _ = (repo / "lefthook.yml").write_text(
+        _LEFTHOOK.read_text(encoding="utf-8")
+        + "\npre-merge-commit:\n  commands:\n    00-test-wrapper:\n      run: true\n",
+        encoding="utf-8",
+    )
+
+    lefthook = subprocess.run(
+        ["lefthook", "install"],
+        check=False,
+        capture_output=True,
+        cwd=repo,
+        env=_subprocess_environment(),
+        text=True,
+    )
+    assert lefthook.returncode == 0, lefthook.stderr
+    merge_hook = repo / ".git" / "hooks" / "pre-merge-commit"
+    assert merge_hook.is_file()
+
+    installed = subprocess.run(
+        [sys.executable, "-m", "livespec_dev_tooling.install_commit_refuse_hooks"],
+        check=False,
+        capture_output=True,
+        cwd=repo,
+        env=_subprocess_environment(),
+        text=True,
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    assert not merge_hook.exists()
 
 
 _ROUTE = "janitor_refresh_route"
