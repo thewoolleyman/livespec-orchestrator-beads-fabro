@@ -241,7 +241,12 @@ jobs:
           # the `/tmp/*` coverage omit glob (pyproject.toml) and trip
           # livespec-impl-beads-1l6's regression guard.
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           # The root-side safe.directory trust was written to /github/home,
           # which uid 1000 does not read (its HOME is /home/ci). Without this,
           # every git call from a check fails "detected dubious ownership".
@@ -371,7 +376,12 @@ jobs:
           chmod 0755 /root
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
           # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
@@ -491,7 +501,12 @@ jobs:
           # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
           # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
@@ -611,7 +626,7 @@ jobs:
           uv sync --all-groups
 
       # Downloaded BEFORE the non-root prep below, so that step's
-      # `chown -R 1000:1000 "$GITHUB_WORKSPACE"` covers the `.coverage` the
+      # targeted ownership pass over "$GITHUB_WORKSPACE" covers the `.coverage` the
       # uid-1000 leg has to read AND delete (consume-once).
       - name: Download this uid's .coverage from the producer
         uses: actions/download-artifact@v4
@@ -636,7 +651,12 @@ jobs:
           # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
           # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
@@ -736,7 +756,12 @@ jobs:
           # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
           # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
