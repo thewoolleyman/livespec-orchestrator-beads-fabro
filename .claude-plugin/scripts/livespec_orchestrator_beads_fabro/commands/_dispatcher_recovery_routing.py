@@ -50,6 +50,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_comments,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_comments import (
+    preserved_tree_comment_seed,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     MEASUREMENT_PRESERVED_WORK,
     unobservable_measurements,
@@ -91,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation i
     gather_resume,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
+from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -349,12 +356,38 @@ def _fallback_route(
     it, and asking it anyway would spend an origin round trip per released
     candidate to answer a question the route had already settled.
     """
+    try:
+        comments = read_dispatch_comments(repo=repo, item=item)
+    except ConnectionPrefixMissingError:
+        # A routing fixture or a repository without a beads connection has no
+        # ledger sidecar to consult. Its existing journal remains the only
+        # recoverable source, exactly as it was before durable comments existed.
+        comments = ()
+    if isinstance(comments, str):
+        return _held_route(
+            item=item,
+            journal=journal,
+            hold=RecoveryHold(
+                measurements=(
+                    RecoveryMeasurement(name=MEASUREMENT_PRESERVED_WORK, detail=comments),
+                )
+            ),
+        )
+    comment_seed = preserved_tree_comment_seed(comments=comments, work_item_id=item.id)
+    if comment_seed is not None:
+        return RecoveryRoute(
+            work_item_id=item.id,
+            route=ROUTE_SEEDED,
+            seed=comment_seed,
+            preserved_work=PRESERVED_WORK_VERIFIED,
+        )
+    journal_records = read_journal_records(journal_path=journal.path)
     preserved = verified_preserved_seed(
         runner=runner,
         repo=repo,
         work_item_id=item.id,
         earlier_run_ids=gather.earlier_run_ids,
-        journal_records=read_journal_records(journal_path=journal.path),
+        journal_records=journal_records,
     )
     if isinstance(preserved, PreservedWorkUnobservable):
         return _held_route(

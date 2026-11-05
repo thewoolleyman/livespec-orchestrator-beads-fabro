@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_loop_wave as loop_wave,
 )
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_recovery_routing as recovery_routing,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -66,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import 
     resume_checkout_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
+from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _ITEM_ID = "bd-ib-qgcpoc"
@@ -81,6 +85,9 @@ _DISPATCH = "a7395318d0c945589105940e7936139f"
 _DEAD_HEAD = "f3f139b28469c7efaae32dcb897d73518edbaadd"
 _PRESERVED_COMMIT = "216c811200000000000000000000000000000002"
 _PRESERVED_REF = f"refs/heads/needs-human/{_RUN}"
+_TREE_COMMIT = "316c811200000000000000000000000000000003"
+_TREE_BASE = "416c811200000000000000000000000000000004"
+_TREE_REF = f"refs/livespec/preserved-publish/{_ITEM_ID}/{_TREE_COMMIT}"
 
 # The journal stages this file reads. Spelled as literals because its Red
 # predates the module that exports them, and a Red's test bytes are fixed
@@ -238,13 +245,29 @@ class _Wave:
     launched: argparse.Namespace
 
 
-def _drive_wave(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Wave:
+def _drive_wave(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    comments: tuple[WorkItemComment, ...] = (),
+    terminal_tree: bool = True,
+) -> _Wave:
     """One wave over the single released candidate, with routing and reclaim live."""
     journal = _journal(tmp_path=tmp_path)
     items = [_work_item()]
     captured: list[argparse.Namespace] = []
 
     _arm(monkeypatch=monkeypatch)
+    if not terminal_tree:
+        _Shell.answers["ls-remote origin refs/heads/needs-human/"] = CommandResult(
+            exit_code=0, stdout="", stderr=""
+        )
+    monkeypatch.setattr(
+        recovery_routing,
+        "read_dispatch_comments",
+        lambda **_kwargs: comments,
+        raising=False,
+    )
     monkeypatch.setattr(loop_wave, "await_usable_credential", lambda **_kwargs: None)
     monkeypatch.setattr(loop_wave, "resolve_acp_preflight", lambda **_kwargs: None)
     monkeypatch.setattr(
@@ -346,3 +369,35 @@ def test_an_unanchorable_released_item_is_seeded_from_its_preserved_commit(
         < _first_index(needle="gh api --method DELETE")
         < _first_index(needle="launched the run")
     )
+
+
+def test_a_preserved_tree_comment_seeds_the_later_dispatch_and_its_brief(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A durable cancellation record replaces the host-local journal as the seed source."""
+    comment = WorkItemComment(
+        text="\n".join(
+            (
+                "livespec-preserved-tree",
+                "",
+                f"work-item: {_ITEM_ID}",
+                f"run id: {_RUN}",
+                "factory: hp",
+                f"preservation ref: {_TREE_REF}",
+                f"commit id: {_TREE_COMMIT}",
+                f"base commit: {_TREE_BASE}",
+            )
+        ),
+        author="dispatcher",
+        created_at="2026-11-05T00:00:00Z",
+    )
+
+    wave = _drive_wave(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        comments=(comment,),
+        terminal_tree=False,
+    )
+
+    assert getattr(wave.launched, "resume_head", None) == _TREE_BASE
+    assert getattr(wave.launched, "resume_fetch_ref", None) == _TREE_REF
