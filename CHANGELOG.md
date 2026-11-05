@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.290.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.289.0...v0.290.0) (2026-11-05)
+
+
+### Features
+
+* **fleet-launch:** scope repository holds by launch kind (bd-ib-fa5elg) ([a7e00c2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a7e00c262bc1652f26258010fb3b7ddbe8040951))
+* red ([249751f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/249751fdaa0cd81d5e25332b4067b974977db87f))
+
+
+### Bug Fixes
+
+* **fleet-launch:** preserve factory hold FIFO behavior ([f323dfe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f323dfecdcb8a7179e925884672cbde56c09e4dc))
+
 ## [0.289.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.288.0...v0.289.0) (2026-11-05)
 
 
