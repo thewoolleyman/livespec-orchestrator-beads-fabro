@@ -29,10 +29,11 @@ behind it that reads like evidence.
 THE SIGNATURES ARE MEASUREMENTS, NOT DOCUMENTATION. The ChatGPT-account
 diagnostic the contract requires is the one measured at the v107 `pr`-node
 outage, and it is carried on the OpenAI entries whose account boundary produced
-it rather than on every model in the file: a signature lent to a model whose
-adapter never emits it classifies somebody else's failure as that candidate's.
-`_acp_builtin_signatures` holds the same measurement for the built-in domains
-and records where each came from.
+it rather than on every model in the file. The measured Claude Code
+model-version diagnostic is carried on every shipped Anthropic model: those
+structured entries all render through the same `claude-acp` adapter that
+emitted it. A signature lent to a model whose adapter never emits it classifies
+somebody else's failure as that candidate's.
 """
 
 from __future__ import annotations
@@ -45,6 +46,10 @@ from typing import Any
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
     ANTHROPIC_PROVIDER,
     OPENAI_PROVIDER,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import ANTHROPIC_DOMAIN
+from livespec_orchestrator_beads_fabro.commands._acp_builtin_signatures import (
+    builtin_availability_signatures,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_pricing import (
     PRICE_FIELDS,
@@ -154,6 +159,11 @@ def builtin_model_catalog() -> Mapping[str, AcpModelEntry]:
             canonical_id=model,
             aliases=_MODEL_ALIASES.get(model, ()),
             pricing=builtin_model_pricing(model=model),
+            signatures=(
+                builtin_availability_signatures(availability_key=ANTHROPIC_DOMAIN)
+                if provider == ANTHROPIC_PROVIDER
+                else ()
+            ),
         )
         for provider, models in _PROVIDER_MODELS
         for model, display_name in models
@@ -193,9 +203,10 @@ def model_catalog_digest(*, catalog: Mapping[str, AcpModelEntry]) -> str:
     catalog ship under an unchanged snapshot id, and a re-priced catalog is
     exactly what changes every derived run cost downstream of it.
 
-    Availability signatures stay OUT, and the reason is the same one that kept
-    pricing out until now: no shipped entry carries one, so including them
-    would put a field into the digest that no committed byte can vary.
+    Availability signatures are included beside pricing: both change what a
+    rendered structured candidate carries, so either change must produce a new
+    snapshot identity rather than reuse one that names different dispatch
+    behavior.
     """
     return _digest(
         payload=[
@@ -205,6 +216,17 @@ def model_catalog_digest(*, catalog: Mapping[str, AcpModelEntry]) -> str:
                 entry.display_name,
                 list(entry.aliases),
                 _pricing_projection(pricing=entry.pricing),
+                [
+                    [
+                        signature.source,
+                        signature.cause,
+                        signature.scope,
+                        list(signature.all_literals),
+                        signature.machine_code,
+                        signature.final_text,
+                    ]
+                    for signature in entry.signatures
+                ],
             ]
             for key, entry in sorted(catalog.items())
         ]
