@@ -39,6 +39,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._store_claim_tokens import (
+    CLAIM_TOKEN_METADATA_KEY,
+    ClaimChangeResult,
+    change_claim,
+    create_claim_token,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
@@ -46,10 +52,14 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "CLAIM_STAMP_METADATA_KEY",
+    "CLAIM_TOKEN_METADATA_KEY",
+    "ClaimChangeResult",
     "ClaimRow",
     "ClaimStamp",
+    "change_claim",
     "claim_row_for",
     "claim_stamp_from_record",
+    "create_claim_token",
     "record_claim_stamp",
 ]
 
