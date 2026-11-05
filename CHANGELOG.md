@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.288.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.287.1...v0.288.0) (2026-11-05)
+
+
+### Features
+
+* red ([c6f6751](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6f6751f9ea44660cde1da02772432d760e8ed83))
+* red ([ac3e184](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac3e184d3752bb30cf2e245c509a5348f0eb5b9e))
+* red ([576bbb7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/576bbb7324eed6bcfae27c9ec0e7820bc5e12bed))
+
+
+### Bug Fixes
+
+* restore the single implement node by reverting the v0.287.0 red/green split (bd-ib-yuwftp) ([067118d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/067118d969432fca989541d2f2e63381d2d11d20))
+
 ## [0.287.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.287.0...v0.287.1) (2026-11-05)
 
 
