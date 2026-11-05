@@ -150,6 +150,30 @@ _PETRI_WORKFLOW_ERROR_PAYLOAD: list[dict[str, Any]] = [
     }
 ]
 
+# A run can fail after its final checkpoint without ever visiting the workflow's
+# `needs_human` node: the engine could not acquire the next sandbox.  This is a
+# terminal infrastructure failure, not an active dispatch that can make further
+# progress, so it must enter the same durable needs-human lifecycle as a
+# workflow-routed failure while retaining its distinct ending.
+_SANDBOX_ACQUIRE_DETAIL = (
+    "could not acquire the environment: sandbox acquire failed: waiting for pod "
+    "petri-01sandbox-l0 to run timed out after 600.978226943s"
+)
+_PETRI_SANDBOX_ACQUIRE_FAILURE_PAYLOAD: list[dict[str, Any]] = [
+    {
+        "run_id": _PETRI_RUN_ID,
+        "status": {"kind": "failed", "reason": "workflow_error"},
+        "conclusion": {
+            "status": "failed",
+            "final_git_commit_sha": "f65923ed177e5d73332f7f3ece04ffb70f077984",
+            "failure": {
+                "reason": "workflow_error",
+                "detail": {"message": _SANDBOX_ACQUIRE_DETAIL, "category": "deterministic"},
+            },
+        },
+    }
+]
+
 
 @dataclass(kw_only=True)
 class _Runner:
@@ -285,3 +309,26 @@ def test_petri_non_cancelled_reason_keeps_the_generic_failure_outcome(tmp_path: 
     assert outcome.fabro_factory_name is None
     assert outcome.fabro_failure_cause == "Pipeline failed"
     assert outcome.fabro_failure_category == "deterministic"
+
+
+def test_petri_sandbox_acquire_failure_is_a_distinct_blocked_terminal(tmp_path: Path) -> None:
+    """A failed post-checkpoint acquisition must release the active claim.
+
+    The engine's `workflow_error` is otherwise indistinguishable from a stage
+    failure at the status level, but its detail identifies an environment that
+    could not be acquired.  This mapping is the precondition for the shared
+    blocked disposition to transition the item and write its durable cause.
+    """
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id=_PETRI_RUN_ID,
+        inspect=_inspect(tmp_path=tmp_path, payload=_PETRI_SANDBOX_ACQUIRE_FAILURE_PAYLOAD),
+        exit_code=1,
+        stderr="",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "blocked"
+    assert outcome.needs_human_kind == "sandbox-acquire-failure"
+    assert outcome.fabro_failure_cause == _SANDBOX_ACQUIRE_DETAIL
