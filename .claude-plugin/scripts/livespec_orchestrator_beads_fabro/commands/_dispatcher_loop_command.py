@@ -14,6 +14,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import (
+    add_dispatch_common,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
@@ -68,6 +71,7 @@ from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "add_loop_arguments",
     "run_loop_command",
 ]
 
@@ -77,6 +81,15 @@ class _LoopStart:
     janitor: tuple[str, ...] | None
     items: list[WorkItem]
     journal: JournalFile
+
+
+def add_loop_arguments(*, parser: argparse.ArgumentParser) -> None:
+    """Add the loop-only arguments around the router's shared dispatch options."""
+    add_dispatch_common(parser=parser)
+    _ = parser.add_argument("--budget", dest="budget", type=int, required=True)
+    _ = parser.add_argument("--parallel", dest="parallel", type=int, default=1)
+    _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
+    _ = parser.add_argument("--item", dest="items", action="append", default=None)
 
 
 def run_loop_command(*, args: argparse.Namespace) -> int:

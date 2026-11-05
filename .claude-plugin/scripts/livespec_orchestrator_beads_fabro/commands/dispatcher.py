@@ -305,6 +305,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_canary import (
     add_file_canary_arguments,
     run_file_canary_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cancel_for_restart_command import (
+    add_cancel_for_restart_arguments,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cancel_for_restart_command import (
+    run_cancel_for_restart_command as _run_cancel_for_restart_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_classify_tier import (
     add_classify_tier_arguments,
     run_classify_tier_command,
@@ -357,6 +363,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates impo
     candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command import (
+    add_loop_arguments,
     run_loop_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
@@ -430,9 +437,9 @@ _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
 )
 
 
-def _run_drift_run(*, args: argparse.Namespace) -> int:
-    """Resolve the drift-job handler at invocation time, like the other CLI seams."""
-    return run_drift_run_command(args=args)
+# This public alias remains a late-bound global in ``main``, allowing callers to
+# inject its implementation without mutating the dispatch table.
+run_cancel_for_restart_command = _run_cancel_for_restart_command
 
 
 __all__: list[str] = [
@@ -453,6 +460,7 @@ __all__: list[str] = [
     "ready_items",
     "reflector_oob_after_verdict",
     "requested_items_preflight_error",
+    "run_cancel_for_restart_command",
     "run_classify_tier_command",
     "run_claude_cred_status",
     "run_clear_acp_availability_hold_command",
@@ -483,7 +491,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "codex-cred-refresh": run_codex_cred_refresh,
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
-    "drift-run": _run_drift_run,
+    "drift-run": run_drift_run_command,
     "file-canary": run_file_canary_command,
     "idle-slot-audit": run_idle_slot_audit_command,
     "inspect": run_factory_inspect_command,
@@ -504,7 +512,11 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
 def main(*, argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    handler = _SUBCOMMAND_HANDLERS.get(args.subcommand, run_loop_command)
+    handler = (
+        run_cancel_for_restart_command
+        if args.subcommand == "cancel-for-restart"
+        else _SUBCOMMAND_HANDLERS.get(args.subcommand, run_loop_command)
+    )
     return handler(args=args)
 
 
@@ -523,6 +535,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_clear_acp_availability_hold_arguments(
         parser=subparsers.add_parser("clear-acp-availability-hold")
     )
+    add_cancel_for_restart_arguments(parser=subparsers.add_parser("cancel-for-restart"))
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
@@ -538,9 +551,5 @@ def _build_parser() -> argparse.ArgumentParser:
     add_dispatch_common(parser=(dispatch := subparsers.add_parser("dispatch")))
     _ = dispatch.add_argument("--item", dest="item", required=True)
     add_resume_arguments(parser=subparsers.add_parser("resume"))
-    add_dispatch_common(parser=(loop := subparsers.add_parser("loop")))
-    _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
-    _ = loop.add_argument("--parallel", dest="parallel", type=int, default=1)
-    _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")
-    _ = loop.add_argument("--item", dest="items", action="append", default=None)
+    add_loop_arguments(parser=subparsers.add_parser("loop"))
     return parser
