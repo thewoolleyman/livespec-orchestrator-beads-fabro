@@ -373,7 +373,7 @@ def _run_janitor(*, world: _World) -> subprocess.CompletedProcess[str]:
     plugins = world.clone.parent / "janitor-plugins"
     plugins.mkdir(parents=True, exist_ok=True)
     gate = plugins / "livespec-run-plugin-gate.py"
-    _ = gate.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    _ = gate.write_text("raise SystemExit(0)\n", encoding="utf-8")
     gate.chmod(0o755)
     env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
