@@ -32,6 +32,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_outco
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted import (
     recapture_exhausted_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_acquire_failure import (
+    sandbox_acquire_failure_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
     terminal_event_output,
 )
@@ -148,14 +151,22 @@ def _terminal_outcome(
     )
     if unobservable is not None:
         return unobservable
-    terminated = needs_human_terminal_outcome(
+    terminated = sandbox_acquire_failure_outcome(
         outcome_type=outcome_type,
         plan=plan,
         run_id=run_id,
         inspect=inspect,
         failure=failure,
-        text=client_text,
     )
+    if terminated is None:
+        terminated = needs_human_terminal_outcome(
+            outcome_type=outcome_type,
+            plan=plan,
+            run_id=run_id,
+            inspect=inspect,
+            failure=failure,
+            text=client_text,
+        )
     # AFTER the needs-human terminal and BEFORE the generic failure, because the
     # `non_converged` terminal also ends a recapture-cap run and the generic arm
     # would hand its detail to the non-convergence bounce.
