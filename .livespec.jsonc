@@ -285,6 +285,13 @@
       // at 21:00Z the launchers yielded on "repo WIP full (17/16)" with fleet
       // slots free. To be replaced by the single Fabro limit (bd-ib-rtzhfc).
       "wip_cap": 20,
+      // redispatch_no_progress_limit: how many consecutive item-attributable
+      // terminals that fail to advance the prior high-water milestone refuse the
+      // NEXT dispatch before it claims (contracts.md "Across-dispatch
+      // required-result progress"). Committed-only, no per-item override and no
+       // inferred default. 3 matches the within-run review-fix cap, so an item
+       // gets the same three tries across dispatches that it gets inside one run.
+      "redispatch_no_progress_limit": 3,
       "acceptance_mode": "ai-only",
       // Committed maintainer delegations of the human valves (contracts.md,
       // journal invoker attribution, "Delegated valve authority"). A press

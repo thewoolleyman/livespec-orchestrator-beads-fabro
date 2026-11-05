@@ -83,6 +83,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryResume,
     RecoveryRoute,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_redispatch_admission import (
+    grade_redispatch_progress,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
@@ -223,7 +226,14 @@ def route_recovery(
     runner = ShellCommandRunner()
     routes: list[RecoveryRoute] = []
     for item in candidates:
-        if not released_for_recovery(records=journaled, work_item_id=item.id):
+        # "The pre-claim refusal of §'Across-dispatch required-result progress' MUST
+        # be graded BEFORE recovery routing": a refused item is not routed, so it
+        # takes no measurement here and the valve then refuses it with the grade.
+        if (
+            not released_for_recovery(records=journaled, work_item_id=item.id)
+            or grade_redispatch_progress(repo=repo, work_item_id=item.id, records=journaled)
+            is not None
+        ):
             routes.append(RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH))
             continue
         routes.append(
