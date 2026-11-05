@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from livespec_orchestrator_beads_fabro import _store_dispatch_claim as dispatch_claim
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client, reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_STAMP_METADATA_KEY,
@@ -181,3 +182,34 @@ def test_a_pending_stamp_is_replaced_wholesale_by_the_run_stamp() -> None:
     row = claim_row_for(path=_config(), work_item_id=_ITEM_ID)
     assert (row.status, row.assignee) == ("active", "fabro")
     assert row.stamp == replace(pending, run_id="01RUN")
+
+
+def test_a_claim_change_mints_a_server_assigned_open_claim_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The protocol's successor must be a new no-history server record.
+
+    A fixed-id create could reopen a token a competing writer has already
+    closed, defeating the close-as-compare-and-swap protocol before a writer
+    has a chance to read the winning close reason back.
+    """
+    client = make_beads_client(config=_config())
+    create = getattr(dispatch_claim, "create_claim_token", None)
+
+    assert callable(create), "claim-token protocol must expose its successor-token mint"
+
+    no_history_create = client.create_no_history_issue
+    no_history_calls: list[tuple[str, str]] = []
+
+    def _create_no_history(*, title: str, description: str) -> str:
+        no_history_calls.append((title, description))
+        return no_history_create(title=title, description=description)
+
+    monkeypatch.setattr(client, "create_no_history_issue", _create_no_history)
+
+    token_id = create(client=client)
+
+    assert no_history_calls, "a claim token must receive its id from the server"
+    record = client.show_issue(issue_id=token_id)
+    assert record["status"] != "closed"
+    assert "claim-token" in record["labels"]
