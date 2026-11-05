@@ -64,6 +64,7 @@ def _script(*, node: str, check_suite: str) -> str:
     return (
         script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
         .replace("{{ inputs.sandbox_check_suite }}", check_suite)
+        .replace("{{ inputs.conformance_hook_install }}", "")
         .replace(r"\"", '"')
     )
 
