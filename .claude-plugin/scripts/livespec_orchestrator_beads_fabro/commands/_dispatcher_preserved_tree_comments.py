@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_recor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 
-__all__: list[str] = ["preserved_tree_comment_seed"]
+__all__: list[str] = ["preserved_tree_comment_names_run", "preserved_tree_comment_seed"]
 
 
 def preserved_tree_comment_seed(
@@ -39,6 +39,23 @@ def preserved_tree_comment_seed(
             preservation_ref=fields["preservation ref"],
         )
     return None
+
+
+def preserved_tree_comment_names_run(
+    *, comments: tuple[WorkItemComment, ...], work_item_id: str, run_id: str | None
+) -> bool:
+    """Whether any marked comment of this item already accounts for this run.
+
+    A failed-publication comment names the run too, so it counts: the attempt
+    was made and its outcome is recorded, and a repeat report must not append a
+    second account of the same run.
+    """
+    return any(
+        comment.text.startswith(PRESERVED_TREE_MARKER)
+        and (fields := _fields(text=comment.text)).get("work-item") == work_item_id
+        and fields.get("run id") == run_id
+        for comment in comments
+    )
 
 
 def _fields(*, text: str) -> dict[str, str]:
