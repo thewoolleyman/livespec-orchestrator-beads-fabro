@@ -229,7 +229,8 @@ def test_scenario305_refresh_merge_reuses_its_pre_merge_aggregate_evidence() -> 
     workflow = _WORKFLOW.read_text(encoding="utf-8")
     lefthook = _LEFTHOOK.read_text(encoding="utf-8")
 
-    assert "LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-edit" in workflow
+    assert workflow.count("LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-edit") == 1
+    assert "GIT_EDITOR=true LIVESPEC_FACTORY_REFRESH_MERGE=true git commit --no-edit" in workflow
     assert "pre-merge-commit:" in lefthook
     assert "    00-refresh-merge-pre-commit-evidence:" in lefthook
     assert "      run: just check-refresh-merge-pre-commit" in lefthook
