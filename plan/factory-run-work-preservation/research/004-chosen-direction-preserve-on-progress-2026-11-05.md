@@ -3,6 +3,9 @@
 Session: factory-run-work-preservation plan seat, 2026-11-05, attended. This note records the direction the maintainer chose. It
 REPLACES the recommendation in note 003 §5 (the outbox mirror) and the option to turn on the engine's run-branch push.
 
+> **Revised the same day.** Two independent reviews found defects in sections 3 to 6 of this note. The revised design, and the
+> findings behind it, are in note `005-independent-review-and-revised-design-2026-11-05.md`, which governs where the two differ.
+
 ## 1. The ruling
 
 Maintainer, verbatim, 2026-11-05:
