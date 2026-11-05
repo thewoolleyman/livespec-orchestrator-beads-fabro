@@ -156,19 +156,23 @@ def resumes_anchored_on(
     Returned as names rather than as a count because the third-resume refusal
     has to name both earlier resumes, and a count cannot be named. Each resume
     is named by the earlier run it set out to finish, which is the identifier an
-    operator can look up on the factory; a record naming no identifier falls
-    back to the stage it entered at, so a malformed row that DID create a run
-    still CONTRIBUTES to the bound rather than silently raising the cap by one.
+    operator can look up on the factory. A record naming no earlier run -- a
+    proof-only resume of a merged pull request, which finishes no run, or a
+    malformed row -- is named by the run it launched instead, which is just as
+    lookup-able and distinct per resume, so it still CONTRIBUTES to the bound
+    rather than silently raising the cap by one.
 
     An attempt that created no run is absent entirely, for the reason the module
     docstring gives: it spent none of the per-run caps the bound replaces.
     """
     anchored: list[str] = []
-    for record in _launched_resume_records(records=records, work_item_id=work_item_id):
+    for record, launched_run_id in _launched_resume_records(
+        records=records, work_item_id=work_item_id
+    ):
         if record.get(_PULL_REQUEST_KEY) != pull_request:
             continue
         named = _identifier_list(value=record.get(_EARLIER_RUN_IDS_KEY))
-        anchored.append(named[0] if named else f"a resume at {record.get('resumed_at')}")
+        anchored.append(named[0] if named else launched_run_id)
     return tuple(anchored)
 
 
@@ -207,8 +211,8 @@ def _resume_records(
 
 def _launched_resume_records(
     *, records: Sequence[Mapping[str, object]], work_item_id: str
-) -> tuple[Mapping[str, object], ...]:
-    """Every `resume` record of one item that went on to create a factory run.
+) -> tuple[tuple[Mapping[str, object], str], ...]:
+    """Every `resume` record of one item that went on to create a factory run, with that run's id.
 
     One pass over the item's own rows, carrying at most one resume record as
     PENDING. A `resume` row replaces whatever was pending — which is what closes
@@ -219,17 +223,17 @@ def _launched_resume_records(
     The run-naming test is `journaled_run_ids` rather than a stage comparison, so
     this reader and `_run_attribution` cannot disagree about what names a run.
     """
-    launched: list[Mapping[str, object]] = []
+    launched: list[tuple[Mapping[str, object], str]] = []
     pending: Mapping[str, object] | None = None
     for record in records:
         if record.get(_WORK_ITEM_KEY) != work_item_id:
             continue
         if record.get(_STAGE_KEY) == RESUME_STAGE:
             pending = record
-        elif pending is not None and journaled_run_ids(
-            records=(record,), work_item_id=work_item_id
-        ):
-            launched.append(pending)
+            continue
+        run_ids = journaled_run_ids(records=(record,), work_item_id=work_item_id)
+        if pending is not None and run_ids:
+            launched.append((pending, run_ids[0]))
             pending = None
     return tuple(launched)
 
