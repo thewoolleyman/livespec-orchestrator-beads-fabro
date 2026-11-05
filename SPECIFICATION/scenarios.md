@@ -8540,6 +8540,32 @@ Feature: New behaviour gets new spec before it is built
       | a held spec-change-tier item                  | a stem that propose-change's topic canonicalization would change       | the non-canonical topic |
       | a held spec-change-tier item                  | a stem with no proposed change under proposed_changes or the history   | the unknown topic       |
       | a held spec-change-tier item                  | a stem with no pending proposal whose latest revision record is reject | the rejected topic      |
+
+  Scenario: An attestation with no asserted invoker records the invoking session's computed identity
+    Given a held feature and an existing H2 heading that states its asked-for behaviour
+    And release-spec-tier is driven for the item with no --invoker flag and no LIVESPEC_INVOKER in the environment
+    And the invoking session sets an agent session id
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the actor as session:<that agent session id>
+    And neither records an unattributed mark as the actor
+    And the journal entry's envelope invoker and invoker_source are stamped by the append layer exactly as before
+
+  Scenario: An attestation from a human terminal with no asserted invoker records the forge login
+    Given release-spec-tier is driven for a held feature with no asserted invoker
+    And the invoking session sets no agent session id and the forge reports a login
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the actor as human:<that forge login>
+
+  Scenario: An asserted invoker is the attestation's actor
+    Given release-spec-tier is driven for a held feature with an invoker asserted by flag or by environment
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record that asserted invoker as the actor
+
+  Scenario: An attestation with no computable identity records the fallback mark
+    Given release-spec-tier is driven for a held feature with no asserted invoker
+    And the invoking session sets no agent session id and no forge login can be read
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the unattributed:<os-user>@<hostname> mark as the actor
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
