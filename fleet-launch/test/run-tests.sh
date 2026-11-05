@@ -50,6 +50,12 @@ case "$HARNESS_SLICE" in
         ;;
 esac
 
+# GNU sleep accepts hundredth-second durations.  That is the smallest useful
+# non-zero launcher poll: zero would make the bounded loops spin rather than
+# wait for the state they observe.  Export it because the stub wrapper runs in
+# a child shell while it holds a launcher's preflight.
+export HARNESS_POLL_S=0.01
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -149,10 +155,10 @@ for argument in "$@"; do
                 # younger launcher's queued preflight, however slow the host is.
                 # A fixed sleep raced launcher start-up and failed under CI load
                 # (bd-ib-x7bwug, PR #4235).
-                held=0
-                while [ ! -e "${STUB_PREFLIGHT_RELEASE:-/nonexistent}" ] && [ "$held" -lt "$STUB_PREFLIGHT_SLOW_S" ]; do
-                    sleep 1
-                    held=$((held + 1))
+                deadline=$(( $(date +%s) + STUB_PREFLIGHT_SLOW_S ))
+                while [ ! -e "${STUB_PREFLIGHT_RELEASE:-/nonexistent}" ] \
+                    && [ "$(date +%s)" -lt "$deadline" ]; do
+                    sleep "$HARNESS_POLL_S"
                 done
             fi
             if [ "$item" = "${STUB_PREFLIGHT_FAIL_ITEM:-}" ]; then
@@ -377,16 +383,15 @@ new_case() {
     export FLEET_LAUNCH_DEFAULT_WRAPPER="$STUB/wrapper"
     export FLEET_LAUNCH_RESUME_WRAPPER="$STUB/wrapper"
     export FLEET_LAUNCH_RESUME_COMMAND=resume
-    # A short wait and a one-second poll: a refusal case must reach its
-    # give-up exit in seconds rather than in the six hours a real launcher waits.
+    # The launchers use their smallest useful non-zero poll, so a queued
+    # launcher rechecks FIFO almost immediately after the harness changes it.
     export FLEET_LAUNCH_MAX_WAIT_S=4
     export FLEET_LAUNCH_ABANDON_S=60
-    export FLEET_LAUNCH_POLL_S=1
-    # The mutex retry and the post-drive listing poll wait on an observed
-    # state too: a one-second step lets a case advance as soon as the lock frees
-    # or the run lists, rather than after a 10 s or 15 s production interval.
-    export FLEET_LAUNCH_MUTEX_POLL_S=1
-    export FLEET_LAUNCH_LISTING_POLL_S=1
+    export FLEET_LAUNCH_POLL_S=0.01
+    # Keep all launcher state polls at that step: mutex release and post-drive
+    # listing are observed conditions, not reasons to wait a whole second.
+    export FLEET_LAUNCH_MUTEX_POLL_S=0.01
+    export FLEET_LAUNCH_LISTING_POLL_S=0.01
     export FLEET_LAUNCH_PREFLIGHT_REUSE_S=600
     # A TTL of zero keeps every board read live, so a case that changes a board fixture sees it on
     # the next poll; the snapshot cases below raise it.
@@ -414,13 +419,13 @@ preflight_count() { grep -c " $1$" "$PREFLIGHT_LOG" 2>/dev/null || true; }
 # wait_for_preflight <item> <count> <seconds>: wait until the stub recorded a
 # particular number of Definition-of-Done preflights for an item.
 wait_for_preflight() {
-    local item="$1" count="$2" limit="$3" waited=0
-    while [ "$waited" -lt "$limit" ]; do
+    local item="$1" count="$2" limit="$3" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while :; do
         if [ "$(preflight_count "$item")" -ge "$count" ]; then return 0; fi
-        sleep 1
-        waited=$((waited + 1))
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
     done
-    return 1
 }
 
 # await_both <pid> <pid> <seconds>: wait for two launchers to exit, terminating
@@ -437,11 +442,12 @@ wait_for_preflight() {
 FIRST_RC=""
 SECOND_RC=""
 await_both() {
-    local first="$1" second="$2" limit="$3" waited=0
-    while [ "$waited" -lt "$limit" ]; do
+    local first="$1" second="$2" limit="$3" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while :; do
         if ! kill -0 "$first" 2>/dev/null && ! kill -0 "$second" 2>/dev/null; then break; fi
-        sleep 1
-        waited=$((waited + 1))
+        [ "$(date +%s)" -lt "$deadline" ] || break
+        sleep "$HARNESS_POLL_S"
     done
     kill -TERM "$first" "$second" 2>/dev/null
     wait "$first"; FIRST_RC=$?
@@ -450,13 +456,13 @@ await_both() {
 
 # wait_for_line <log> <needle> <seconds>: poll one launcher's log for a line.
 wait_for_line() {
-    local log="$1" needle="$2" limit="$3" waited=0
-    while [ "$waited" -lt "$limit" ]; do
+    local log="$1" needle="$2" limit="$3" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while :; do
         if [ -f "$log" ] && grep -qF -- "$needle" "$log"; then return 0; fi
-        sleep 1
-        waited=$((waited + 1))
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
     done
-    return 1
 }
 
 echo "=== fleet-launch hermetic harness"
