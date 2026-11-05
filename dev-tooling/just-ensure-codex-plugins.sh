@@ -5,8 +5,8 @@ if ! command -v codex >/dev/null 2>&1; then
     echo "codex CLI not found; skipping host-wide Codex plugin install." >&2
     exit 0
 fi
-codex plugin marketplace add thewoolleyman/livespec --ref release --sparse .agents/plugins --sparse .claude-plugin
-codex plugin marketplace add thewoolleyman/livespec-driver-codex --ref release --sparse .agents/plugins --sparse .claude-plugin
+codex plugin marketplace add thewoolleyman/livespec --ref release
+codex plugin marketplace add thewoolleyman/livespec-driver-codex --ref release
 codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro --ref release --sparse .agents/plugins --sparse .claude-plugin
 codex plugin marketplace upgrade livespec
 codex plugin marketplace upgrade livespec-driver-codex
