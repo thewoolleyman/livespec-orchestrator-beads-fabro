@@ -1100,6 +1100,32 @@ else
 fi
 rm -f "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
 
+# A repository hold that begins while the launcher is already polling, with no
+# ticket taken at start, still gives the launcher a FIFO ticket to hold; the
+# launcher takes the same place back and launches once the hold lifts.
+printf '0\n' > "$CAP_FILE"
+FLEET_LAUNCH_MAX_WAIT_S=60 "$LAUNCHER" bd-ib-late-hold > "$CASE_DIR/late-hold.log" 2>&1 &
+late_pid=$!
+for _ in $(seq 1 50); do log_has "$CASE_DIR/late-hold.log" "fleet not green" && break; sleep 0.2; done
+: > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+for _ in $(seq 1 50); do log_has "$CASE_DIR/late-hold.log" "repository hold present" && break; sleep 0.2; done
+late_ticket=$(grep -l 'item=bd-ib-late-hold' "$CASE_DIR"/queue/* 2>/dev/null | head -1)
+if [ -n "$late_ticket" ] && grep -q '^held=repository-hold$' "$late_ticket"; then
+    pass "a hold that begins after start still leaves the launcher a held FIFO ticket"
+else
+    fail "a late repository hold left the launcher with no held FIFO ticket"
+fi
+rm -f "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+printf '8\n' > "$CAP_FILE"
+wait "$late_pid"; RC=$?
+if [ "$RC" = 0 ] && [ "$(drive_log_items)" = bd-ib-late-hold ] \
+    && [ -n "$late_ticket" ] && ! [ -e "$late_ticket" ]; then
+    pass "control: once the late hold lifts the same launcher launches from its ticket"
+else
+    fail "the launcher did not launch after the late hold lifted (rc=$RC)"
+fi
+: > "$DRIVE_LOG"
+
 # A full authoritative projection occurs before preflight; the exception alone
 # receives one additional slot.
 export STUB_CAPACITY_COUNT=1
