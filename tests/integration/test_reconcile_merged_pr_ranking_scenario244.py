@@ -8,7 +8,7 @@ resolution, refusal, journal, and status effects under test together.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -427,3 +427,83 @@ def test_a_selector_rejects_an_unmerged_or_nonidentifying_pr(
     assert exit_code == 3
     assert f"PR #{selected['number']}" in capsys.readouterr().err
     assert _stored().status == "active"
+
+
+def test_a_selector_refuses_when_its_merged_pr_differs_from_green_janitor_evidence(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An acceptance re-run cannot switch away from the PR its janitor proved."""
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=replace(_item(), status="acceptance"))
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal.parent.mkdir()
+    _ = journal.write_text(
+        "\n".join(
+            (
+                json.dumps(
+                    {
+                        "stage": "reconcile-pr-selected",
+                        "work_item_id": _ITEM_ID,
+                        "pr_number": 81,
+                        "merge_sha": "janitor81",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "stage": "janitor-post-merge",
+                        "work_item_id": _ITEM_ID,
+                        "pr_number": 81,
+                        "merge_sha": "janitor81",
+                        "exit_code": 0,
+                    }
+                ),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = _Runner(
+        queue=[
+            _ok(stdout="origin/master"),
+            _ok(
+                stdout=json.dumps(
+                    _listed(
+                        number=82,
+                        title=f"fix: {_ITEM_ID}",
+                        body="",
+                        sha="selected82",
+                        head="fix/another-merge",
+                    )
+                )
+            ),
+        ]
+    )
+    acceptance_calls: list[object] = []
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **kwargs: acceptance_calls.append(kwargs) or _AcceptancePass(),
+    )
+
+    exit_code = main(
+        argv=[
+            "reconcile-merged",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--pr",
+            "82",
+        ]
+    )
+
+    assert exit_code == 3
+    error = capsys.readouterr().err
+    assert "janitor" in error
+    assert "#81" in error
+    assert "#82" in error
+    assert acceptance_calls == []
+    assert _stored().status == "acceptance"
