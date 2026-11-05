@@ -207,6 +207,33 @@ def test_scenario305_conflicting_pre_aggregate_refresh_restores_and_briefs_for_f
     assert "LIVESPEC_REFRESH_REPAIR" in janitor.stderr
 
 
+def test_scenario305_aborts_a_foreign_rebase_before_its_own_refresh(*, tmp_path: Path) -> None:
+    """A fix turn's abandoned rebase cannot block janitor from refreshing cleanly."""
+    run, default = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+    _ = _git("branch", "rebase-target", "origin/master", cwd=run)
+    _ = _git("switch", "rebase-target", cwd=run)
+    _ = _commit(cwd=run, path="owned.txt", text="foreign\n", subject="feat: foreign target")
+    _ = _git("switch", "fabro/run/test", cwd=run)
+    stranded = subprocess.run(
+        ["git", "rebase", "rebase-target"],
+        check=False,
+        capture_output=True,
+        cwd=run,
+        text=True,
+    )
+    assert stranded.returncode != 0
+    assert (run / ".git" / "rebase-merge").is_dir()
+
+    janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+
+    assert janitor.returncode == 0, janitor.stderr
+    assert not (run / ".git" / "rebase-merge").exists()
+    advanced = _git("rev-parse", "HEAD", cwd=default).stdout.strip()
+    refreshed = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    assert _git("merge-base", "--is-ancestor", advanced, refreshed, cwd=run).returncode == 0
+
+
 def test_scenario305_red_refreshed_aggregate_restores_and_briefs_for_fix(*, tmp_path: Path) -> None:
     run, _ = _world(root=tmp_path)
     plugins = _plugins(root=tmp_path)
