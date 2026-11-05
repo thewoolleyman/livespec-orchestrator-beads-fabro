@@ -64,9 +64,10 @@ rows ARE the across-dispatch record — the cancel site appends exactly one per
 cancellation — which is why no per-item counter is stored beside them. Note what
 that does NOT claim to be. `contracts.md`'s "progress high-water mark" paragraph
 defines a CONSECUTIVE NON-PROGRESS COUNT with a committed
-`dispatcher.redispatch_no_progress_limit` refusing the next dispatch, and nothing
-in this repository implements that mechanism yet — so this routing does not
-increment it, does not reset it, and must not be read as having implemented it.
+`dispatcher.redispatch_no_progress_limit` refusing the next dispatch. That
+mechanism is `_dispatcher_redispatch_admission`, which counts from the journaled
+terminals and graph-ordered milestones — so this routing does not increment it,
+does not reset it, and must not be read as having implemented it.
 A local counter no admission gate consults would be a field written and never
 read, which is the constant-reported-as-a-measurement failure
 `_dispatcher_non_convergence_cap`'s own docstring warns about.

@@ -14,7 +14,7 @@ per-row ladder: an unreadable `dispatcher.adopted_assertion_count_ceiling` is
 a fact about the repository that refuses every candidate identically, so
 resolving it per row would re-read one file once per candidate to reach the
 same answer. The dispatch's RENDERED ACP CANDIDATES are resolved there for
-the same reason. The FIVE per-row refusals then run in this order:
+the same reason. The SIX per-row refusals then run in this order:
 
 1. An unexpired LEGACY provider-exhaustion record COVERING a candidate this
    dispatch's resolved ACP nodes render. A vendor ceiling this dispatch would
@@ -34,8 +34,13 @@ the same reason. The FIVE per-row refusals then run in this order:
    performs N lifecycle mutations on rows the next condition was about to
    refuse anyway -- and the mutation is the expensive half, because a refused
    dispatch is retried while a row moved to `backlog` has to be regroomed.
-4. The item's own ledger labels.
-5. The host-only routing refusal, which needs those labels.
+4. The across-dispatch progress refusal (`_dispatcher_redispatch_admission`),
+   which reads this row's journaled terminals and, for an item-attributable
+   one, the factory that run was recorded on. It sits after the factory-wide
+   conditions for the cost reason above and BEFORE the ledger label read: it
+   must precede the claim, and it spends no ledger round trip.
+5. The item's own ledger labels.
+6. The host-only routing refusal, which needs those labels.
 
 Putting either factory-wide condition after the label read would report a
 provider outage as "this item's labels could not be read" whenever both were
@@ -75,6 +80,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     provider_exhaustion_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_redispatch_admission import (
+    RunInspector,
+    redispatch_progress_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gate import (
     journal_session_headroom,
 )
@@ -91,6 +100,7 @@ def filter_eligible_candidates(
     preflight: AcpPreflightVerdict,
     candidates: list[WorkItem],
     journal: JournalFile,
+    factory_runs: RunInspector | None = None,
 ) -> tuple[list[WorkItem], list[DispatchOutcome]]:
     """Split a candidate list into the dispatchable rows and the refused ones.
 
@@ -163,6 +173,7 @@ def filter_eligible_candidates(
             projected_identities=projected_identities,
             now_iso=now_iso,
             wait=wait,
+            factory_runs=factory_runs,
         )
         if refusal is None:
             admittable.append(item)
@@ -182,8 +193,9 @@ def _refusal_for(  # noqa: PLR0913 -- one kw-only condition ladder; every input 
     projected_identities: frozenset[str],
     now_iso: str,
     wait: AvailabilityWait | None,
+    factory_runs: RunInspector | None,
 ) -> DispatchOutcome | None:
-    """The first condition this row fails, or `None` when it passes all five."""
+    """The first condition this row fails, or `None` when it passes all six."""
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,
@@ -207,6 +219,11 @@ def _refusal_for(  # noqa: PLR0913 -- one kw-only condition ladder; every input 
     )
     if size_refusals:
         return size_refusals[0]
+    progress_refusal = redispatch_progress_refusal(
+        repo=repo, item=item, journal=journal, factory_runs=factory_runs
+    )
+    if progress_refusal is not None:
+        return progress_refusal
     raw_labels = read_dispatch_labels(repo=repo, item=item)
     if isinstance(raw_labels, str):
         return failed_dispatch_outcome(

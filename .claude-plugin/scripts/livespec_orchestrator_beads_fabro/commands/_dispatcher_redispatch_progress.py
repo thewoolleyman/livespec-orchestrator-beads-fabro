@@ -79,10 +79,12 @@ def redispatch_progress_decision(
 ) -> RedispatchProgressDecision:
     """Apply the prior-high-water rule to one item's observed attempt history.
 
-    The first completed terminal establishes the baseline.  Only later,
-    comparable item-attributable terminals at or below that prior mark consume
-    the limit.  A higher graph position starts a new consecutive sequence;
-    host failures leave it untouched.  An unknown cause or workflow variant is
+    The first completed item-attributable terminal establishes the baseline.
+    Only later, comparable item-attributable terminals at or below that prior
+    mark consume the limit, and the count is graded over the WHOLE history so a
+    run an authorized epoch spent is counted.  A higher graph position starts a
+    new consecutive sequence; host failures leave it untouched and never
+    establish the baseline.  An unknown cause or workflow variant is
     a diagnosis, never an inferred host failure.
     """
     if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
@@ -96,6 +98,8 @@ def redispatch_progress_decision(
         seen.add(attempt.run_id)
         if attempt.item_attributable is None:
             return _diagnosis(detail=f"{attempt.run_id} has an unknown terminal cause")
+        if not attempt.item_attributable:
+            continue
         if baseline is None:
             baseline = attempt
             continue
@@ -103,24 +107,22 @@ def redispatch_progress_decision(
             return _diagnosis(
                 detail=(f"{attempt.run_id} uses incomparable workflow {attempt.workflow_identity}")
             )
-        if not attempt.item_attributable:
-            continue
         if attempt.high_water_order > baseline.high_water_order:
             baseline = attempt
             flat = []
             continue
         flat.append(attempt)
-        if len(flat) >= limit:
-            refusal = RedispatchProgressRefusal(
-                run_ids=tuple(entry.run_id for entry in flat),
-                causes=tuple(entry.terminal_cause for entry in flat),
-                high_water_milestone=baseline.high_water_milestone,
-            )
-            return _recovery_decision(
-                refusal=refusal,
-                recovery=recovery,
-                consumed_recovery_attempt_ids=consumed_recovery_attempt_ids,
-            )
+    if baseline is not None and len(flat) >= limit:
+        refusal = RedispatchProgressRefusal(
+            run_ids=tuple(entry.run_id for entry in flat),
+            causes=tuple(entry.terminal_cause for entry in flat),
+            high_water_milestone=baseline.high_water_milestone,
+        )
+        return _recovery_decision(
+            refusal=refusal,
+            recovery=recovery,
+            consumed_recovery_attempt_ids=consumed_recovery_attempt_ids,
+        )
     return RedispatchProgressDecision(
         refusal=None,
         diagnosis=None,
