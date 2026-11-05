@@ -58,6 +58,13 @@ candidate_rows=""; candidate_live=U; GMK_HOLD=$FLEET_LAUNCH_GMK_HOLD_FILE
 mkdir -p "$OUT"
 
 drop_ticket() { [ -n "$ticket" ] && rm -f "$ticket"; ticket=""; }
+ensure_ticket() {
+  [ -n "$ticket" ] && return 0
+  mkdir -p "$GMK_Q"
+  ticket="$GMK_Q/$(date +%s%N)-$SEAT"
+  ticket_token=${ticket##*/}
+  echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
+}
 yield_ticket() {
   [ -n "$ticket" ] && [ -f "$ticket" ] && ! grep -q '^held=' "$ticket" && echo "held=$1" >> "$ticket"
 }
@@ -265,18 +272,14 @@ while [ -z "$target" ]; do
   [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
   evaluated=1
   if [ -e "$repo_hold_file" ]; then
+    ensure_ticket
     yield_ticket "repository-hold"
     echo "$(date -u +%FT%TZ) repository hold present ($repo_hold_file): yield FIFO head"
     sleep "$FLEET_LAUNCH_POLL_S"; continue
   fi
   restore_ticket
   if ! wip_green; then
-    if [ -z "$ticket" ]; then
-      mkdir -p "$GMK_Q"
-      ticket="$GMK_Q/$(date +%s%N)-$SEAT"
-      ticket_token=${ticket##*/}
-      echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
-    fi
+    ensure_ticket
     yield_ticket "repository-wip"
     echo "$(date -u +%FT%TZ) repository WIP gate: yield FIFO head before preflight"
     sleep "$FLEET_LAUNCH_POLL_S"; continue
