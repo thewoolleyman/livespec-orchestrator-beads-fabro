@@ -6819,10 +6819,11 @@ Feature: A factory agent's commit leg is not bounded by one tool call
 
   Scenario: A Green amend whose hook outlasts one tool call completes
     Given a review_fix-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
-    When the agent starts the amend through the sandbox commit runner and repeats bounded waits in later tool calls
-    Then the amend completes with the hook's own verdict
+    When the agent starts the amend through the sandbox commit runner, waits on it once, and ends its turn while the commit run is still running
+    Then the run waits on that commit run before the review_fix stage's outcome is decided
+    And the amend completes with the hook's own verdict
     And the resulting commit carries every trailer the hook wrote
-    And the final wait reports the passed state, exit status zero and the resulting commit id
+    And the settled commit run reports the passed state, exit status zero and the resulting commit id
 
   Scenario: A commit refused by its hook is reported as failed
     Given a commit started through the sandbox commit runner whose hook refuses it
@@ -6848,6 +6849,14 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     Given a commit started through the sandbox commit runner that is still running
     When the agent starts another commit through the runner
     Then the runner refuses the start and names the running commit run
+
+  Scenario: A fix turn cannot wait twice on one running commit
+    Given a fix-stage agent that started a commit through the sandbox commit runner
+    And the agent's first wait on that commit run reported it running
+    When the agent waits on the same commit run again in the same stage visit
+    Then the runner refuses the wait and leaves the commit run untouched
+    And the refusal reports the commit run as still running
+    And the refusal names the stage's commit-run settle as what will wait on it
 ```
 
 ## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
