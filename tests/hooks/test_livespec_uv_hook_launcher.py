@@ -238,6 +238,37 @@ def test_every_uv_launched_pretooluse_hook_command_is_routed_through_the_launche
     assert uv_launched == [f"{_LAUNCHER_PREFIX} {guard}" for guard in _UV_LAUNCHED_GUARDS]
 
 
+def test_every_python_pretooluse_hook_uses_the_system_interpreter() -> None:
+    """Hook startup must not resolve ``python3`` through a seat's mise shim.
+
+    The launcher has no project imports, and the direct guards need no project
+    interpreter.  Giving every Python PreToolUse command the stable system
+    interpreter keeps a PATH-local ``python3`` from adding mise processes
+    before the guard can decide the call.
+    """
+    settings = json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
+    python_hook_paths = (
+        "livespec_uv_hook_launcher.py",
+        "livespec_footgun_guard.py",
+        "livespec_sandbox_path_guard.py",
+    )
+    python_hooks = [
+        hook["command"]
+        for entry in settings["hooks"]["PreToolUse"]
+        for hook in entry["hooks"]
+        if any(path in hook["command"] for path in python_hook_paths)
+    ]
+
+    assert python_hooks == [
+        '/usr/bin/python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_uv_hook_launcher.py" '
+        'mise exec -- uv run --no-sync python "$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_tdd_order_guard.py"',
+        '/usr/bin/python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_uv_hook_launcher.py" '
+        "mise exec -- uv run --no-sync python -m livespec_dev_tooling.agent_hooks.pretooluse_background_guard",
+        '/usr/bin/python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_footgun_guard.py"',
+        '/usr/bin/python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/livespec_sandbox_path_guard.py"',
+    ]
+
+
 def test_the_manifest_is_resolved_from_the_working_directory_without_a_project_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
