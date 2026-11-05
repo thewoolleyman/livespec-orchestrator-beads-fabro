@@ -1127,8 +1127,9 @@ check-per-file-coverage:
 # LIVESPEC_COVERAGE_SHARDS_DIR names that directory) and runs the unchanged
 # per-file verifier. Deliberately NOT a `check-` slug and not in the `check`
 # aggregate: locally, check-per-file-coverage runs the whole suite itself.
+[positional-arguments]
 coverage-shard shard_index shard_count:
-    dev-tooling/just-coverage-shard.sh {{shard_index}} {{shard_count}}
+    dev-tooling/just-coverage-shard.sh "$@"
 
 # Shared baseline Verifier: validates this repo's harness-conformance
 # declaration against the plugin-resolution invariant. Shipped by
