@@ -255,6 +255,14 @@ jobs:
           # per work volume), and hosted runners have no seed at all.
           nonroot_uv_cache=/home/ci/.cache/uv
           if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
             unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
               find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
             if [ -z "$unwritable" ]; then
@@ -374,6 +382,14 @@ jobs:
           # per work volume), and hosted runners have no seed at all.
           nonroot_uv_cache=/home/ci/.cache/uv
           if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
             unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
               find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
             if [ -z "$unwritable" ]; then
@@ -486,6 +502,14 @@ jobs:
           # per work volume), and hosted runners have no seed at all.
           nonroot_uv_cache=/home/ci/.cache/uv
           if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
             unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
               find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
             if [ -z "$unwritable" ]; then
@@ -623,6 +647,14 @@ jobs:
           # per work volume), and hosted runners have no seed at all.
           nonroot_uv_cache=/home/ci/.cache/uv
           if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
             unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
               find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
             if [ -z "$unwritable" ]; then
@@ -715,6 +747,14 @@ jobs:
           # per work volume), and hosted runners have no seed at all.
           nonroot_uv_cache=/home/ci/.cache/uv
           if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
             unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
               find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
             if [ -z "$unwritable" ]; then
