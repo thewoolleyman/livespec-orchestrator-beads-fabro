@@ -67,6 +67,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import 
     RESUME_ENTRY_NODE_ARG,
     RESUME_FETCH_REF_ARG,
     RESUME_HEAD_ARG,
+    RESUME_REFERENCE_COMMIT_ARG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resume_journal_record,
@@ -143,10 +144,13 @@ def recovery_launch_args(
         return named
     seeded = argparse.Namespace(**vars(named))
     # A stale seed is routed fresh but keeps its preservation ref available to
-    # the sandbox. Only the `seeded` route checks out the preserved commit;
-    # otherwise the run retains the default branch's current hook body.
+    # the sandbox as a reference the prepare step fetches and the brief names.
+    # Only the `seeded` route checks out the preserved commit; otherwise the run
+    # retains the default branch's current hook body.
     if route is not None and route.route == ROUTE_SEEDED:
         setattr(seeded, RESUME_HEAD_ARG, seed.commit_sha)
+    else:
+        setattr(seeded, RESUME_REFERENCE_COMMIT_ARG, seed.commit_sha)
     setattr(seeded, RESUME_FETCH_REF_ARG, seed.preservation_ref)
     return seeded
 

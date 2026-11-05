@@ -390,6 +390,7 @@ def test_a_stale_seed_launches_fresh_while_retaining_its_preservation_reference(
 
     assert getattr(launched, "resume_head", None) is None
     assert getattr(launched, "resume_fetch_ref", None) == seed.preservation_ref
+    assert getattr(launched, "resume_reference_commit", None) == seed.commit_sha
     assert row["route"] == ROUTE_FRESH
     assert row["preservation_ref"] == seed.preservation_ref
     assert row["preserved_base_commit"] == "basecafe"
