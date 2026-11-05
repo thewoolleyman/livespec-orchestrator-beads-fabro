@@ -305,6 +305,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_canary import (
     add_file_canary_arguments,
     run_file_canary_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cancel_for_restart import (
+    add_cancel_for_restart_arguments,
+    run_cancel_for_restart_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_classify_tier import (
     add_classify_tier_arguments,
     run_classify_tier_command,
@@ -431,8 +435,11 @@ _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
 
 
 def _run_drift_run(*, args: argparse.Namespace) -> int:
-    """Resolve the drift-job handler at invocation time, like the other CLI seams."""
     return run_drift_run_command(args=args)
+
+
+def _run_cancel_for_restart(*, args: argparse.Namespace) -> int:
+    return run_cancel_for_restart_command(args=args)
 
 
 __all__: list[str] = [
@@ -453,6 +460,7 @@ __all__: list[str] = [
     "ready_items",
     "reflector_oob_after_verdict",
     "requested_items_preflight_error",
+    "run_cancel_for_restart_command",
     "run_classify_tier_command",
     "run_claude_cred_status",
     "run_clear_acp_availability_hold_command",
@@ -478,6 +486,7 @@ __all__: list[str] = [
 _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "claude-cred-status": run_claude_cred_status,
     "classify-tier": run_classify_tier_command,
+    "cancel-for-restart": _run_cancel_for_restart,
     "clear-acp-availability-hold": run_clear_acp_availability_hold_command,
     "clear-provider-exhaustion": run_clear_provider_exhaustion_command,
     "codex-cred-refresh": run_codex_cred_refresh,
@@ -504,14 +513,14 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
 def main(*, argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    handler = _SUBCOMMAND_HANDLERS.get(args.subcommand, run_loop_command)
-    return handler(args=args)
+    return _SUBCOMMAND_HANDLERS.get(args.subcommand, run_loop_command)(args=args)
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - command registry.
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
     add_classify_tier_arguments(parser=subparsers.add_parser("classify-tier"))
+    add_cancel_for_restart_arguments(parser=subparsers.add_parser("cancel-for-restart"))
     add_ledger_check_arguments(parser=subparsers.add_parser("ledger-check"))
     add_ledger_normalize_arguments(parser=subparsers.add_parser("ledger-normalize"))
     add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
