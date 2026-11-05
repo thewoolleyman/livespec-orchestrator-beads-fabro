@@ -12074,6 +12074,14 @@ Feature: Safe initial incident authority and a carrier before PR creation
     Then queued old admission and a delayed old completion or proof writer perform no current effect
     And an unknown cancel result is retained as unknown rather than claimed canceled
     And later normal repayment transfers current ownership conditionally, retains the host attempt and uses ordinary factory validation
+
+  Scenario: Missing all-writer exclusion refuses factory takeover instead of claiming a fence
+    Given the item has a current queued or live factory claim
+    And the installed provider cannot conditionally invalidate that claim for every applicable writer
+    When authorized incident entry requests host ownership
+    Then incident entry MUST refuse with a named capability refusal
+    And it records no host ownership, reports no cancelled or fenced factory run and performs no incident effect
+    And the factory claim and its run history remain unchanged
 ```
 
 ## Scenario 306 — A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref
