@@ -55,8 +55,6 @@ def test_an_example_slower_than_the_retired_deadline_still_passes(*, size: int) 
     measures that ceiling on the host clock: an injected clock would leave
     nothing for the retired deadline to have declined to enforce.
     """
-    time.sleep(
-        _PAST_THE_RETIRED_DEADLINE_SECONDS  # real-time-required: retired deadline is the subject
-    )
+    time.sleep(_PAST_THE_RETIRED_DEADLINE_SECONDS)  # real-time-required: deadline is the subject
 
     assert str(size).isdigit()
