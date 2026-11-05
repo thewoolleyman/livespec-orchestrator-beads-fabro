@@ -49,6 +49,8 @@ def test_the_implement_stage_is_a_red_green_command_graph() -> None:
     assert ("commit_green", "implementation_diff", None) in edges
     assert ("commit_green", "green", "outcome=failed") in edges
     assert ("red", "already_satisfied", "preferred_label=already-satisfied") in edges
+    assert ("red", "green", "preferred_label=seeded-open-red") in edges
+    assert ("red", "green", "preferred_label=seeded-already-satisfied") in edges
     assert not [edge for edge in graph.edges if edge.source == "already_satisfied"]
 
 

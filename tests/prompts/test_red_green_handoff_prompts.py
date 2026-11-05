@@ -42,12 +42,14 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         "Create, change or delete no product file",
         _HANDOFF_COMMAND,
         "## red",
-        "Test file",
+        "Red test file: <path>",
         "Definition of Done assertion",
         "what the test verifies and does not verify",
         "code locations for the change",
         "declared `already-satisfied` outcome",
         '{"preferred_next_label": "already-satisfied"}',
+        '{"preferred_next_label": "seeded-open-red"}',
+        '{"preferred_next_label": "seeded-already-satisfied"}',
     ):
         assert phrase in red, f"the red prompt omits {phrase!r}"
 
@@ -65,6 +67,8 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         '{"definition_of_done_complete": false}',
         "read as incomplete",
         "declared `test-wrong` outcome and its reason",
+        "seeded-open-red",
+        "seeded-already-satisfied",
     ):
         assert phrase in green, f"the green prompt omits {phrase!r}"
 

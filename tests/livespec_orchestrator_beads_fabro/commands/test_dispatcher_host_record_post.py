@@ -119,6 +119,10 @@ class _Runner:
     # A merged pull request that only MENTIONS the item in its body: neither its head
     # branch nor its title names the item, so no dispatch of the item produced it.
     body_mention_only: bool = False
+    # A second title-identified merge models a host landing split across sequenced
+    # pull requests. Reconciliation's explicit selector has already identified the
+    # intended one in the shared journal, so the host record must not re-rank these.
+    extra_title_match: bool = False
     # The proof-asset store's upload leg. Defaults to SUCCEEDING, so a test that is
     # not about the store does not have to stub one; the failure arm is what the
     # upload-refusal case sets.
@@ -176,18 +180,28 @@ class _Runner:
                     }
                 ]
             )
-        return json.dumps(
-            [
+        candidates: list[dict[str, object]] = [
+            {
+                "number": _PR_NUMBER,
+                "title": f"feat: {_ITEM_ID}",
+                "headRefName": "host/first-landing",
+                "baseRefName": "master",
+                "state": "MERGED",
+                "mergeCommit": {"oid": _MERGE_SHA},
+            }
+        ]
+        if self.extra_title_match:
+            candidates.append(
                 {
-                    "number": _PR_NUMBER,
-                    "title": f"feat: {_ITEM_ID}",
-                    "headRefName": f"feat/{_ITEM_ID}",
+                    "number": _PR_NUMBER + 1,
+                    "title": f"docs: {_ITEM_ID} follow-up",
+                    "headRefName": "docs/host-landing-follow-up",
                     "baseRefName": "master",
                     "state": "MERGED",
-                    "mergeCommit": {"oid": _MERGE_SHA},
+                    "mergeCommit": {"oid": "second-merged-sha"},
                 }
-            ]
-        )
+            )
+        return json.dumps(candidates)
 
 
 def _comments(*, records: tuple[dict[str, str], ...] = ()) -> str:
@@ -816,6 +830,46 @@ def test_an_item_with_no_merged_pull_request_is_refused(tmp_path: Path) -> None:
     assert exit_code != 0
     assert "no single merged pull request" in emitted
     assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
+
+
+def test_a_host_record_targets_the_pull_request_reconciliation_selected(
+    tmp_path: Path,
+) -> None:
+    """A host-routed split landing uses reconciliation's selected pull request.
+
+    The host item has no factory run whose branch can resolve a pull request. Two
+    sequenced merged pull requests name it in their titles, but reconciliation already
+    recorded the operator's explicit selection. Re-ranking those title matches would
+    recreate the ambiguity that selection removed and strand the host-captured proof.
+    """
+    _file_item(repo=tmp_path)
+    journal = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
+    _ = journal.parent.mkdir()
+    _ = journal.write_text(
+        json.dumps(
+            {
+                "stage": "reconcile-pr-selected",
+                "work_item_id": _ITEM_ID,
+                "pr_number": _PR_NUMBER,
+                "merge_sha": _MERGE_SHA,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner = _Runner(comments=_comments(), extra_title_match=True)
+
+    exit_code, _ = _post(
+        repo=tmp_path,
+        verdict=VERDICT_HOST_RECORDED,
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+    )
+
+    assert exit_code == 0
+    posted = [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]]
+    assert len(posted) == 1
+    assert posted[0][3] == str(_PR_NUMBER)
 
 
 def test_a_merged_pull_request_that_only_mentions_the_item_is_not_a_target(

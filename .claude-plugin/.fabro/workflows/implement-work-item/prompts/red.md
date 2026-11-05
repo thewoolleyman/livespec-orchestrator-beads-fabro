@@ -18,26 +18,48 @@ Never run `git push` and never publish a branch or pull request.
    If the file exists, read it in full before deciding or changing anything.
    A Red turn that follows a refused commit carries its context only through
    the sections earlier turns appended there.
-2. Decide whether the Definition of Done already holds on the dispatch base.
-   If it does, do not write or run a test. Append a `## already-satisfied`
-   section to the handoff file with a declared `already-satisfied` outcome and
-   the evidence for it, then end the turn with that declared
-   `already-satisfied` outcome. End your final reply with exactly:
+2. Before deciding that the Definition of Done is already satisfied, inspect
+   the nearest non-checkpoint commit below any consecutive `fabro(...)` commits
+   at `HEAD`. If it carries `TDD-Red-Test-File-Checksum:` but no
+   `TDD-Green-Verified-At:`, a preserved seed has an open Red. Do not write or
+   run a second Red test. Append a `## seeded-open-red` section naming that
+   commit and its Red test file, then end your final reply with exactly:
+
+       {"preferred_next_label": "seeded-open-red"}
+
+   The graph sends this directly to Green, whose command commit completes that
+   existing Red pair.
+3. Decide whether the Definition of Done already holds on the dispatch base.
+   If it does and the tree equals the dispatch base, do not write or run a
+   test. Append a `## already-satisfied` section to the handoff file with a
+   declared `already-satisfied` outcome and the evidence for it, then end the
+   turn with that declared `already-satisfied` outcome. End your final reply
+   with exactly:
 
        {"preferred_next_label": "already-satisfied"}
 
-   The graph routes that label to the already-satisfied ending. Without it the
-   turn takes the ordinary route to `commit_red`, which has no Red test to
-   commit.
-3. Otherwise, continue with the failing-test path. Write one failing test for one Definition of Done assertion.
+   The graph routes that label to the already-satisfied ending. If the
+   Definition of Done holds but the tree differs from the dispatch base because
+   a preserved seed carries the work, append `## seeded-already-satisfied` and
+   end with exactly:
+
+       {"preferred_next_label": "seeded-already-satisfied"}
+
+   That route enters Green so the seed is retained and its checkpoint changes
+   are folded into replay evidence rather than ending as already satisfied.
+4. Otherwise, continue with the failing-test path. Write one failing test for one Definition of Done assertion.
    The test must fail on a genuine assertion rather than during collection or
    import.
-4. Run only that test and capture its failure output. Do not make a commit.
+5. Run only that test and capture its failure output. Do not make a commit.
    Create, change or delete no product file: the implementation belongs to the
    `green` turn. A product file is a path that the repository's product-path
    classification counts as product. `commit_red` refuses a tree where any
    product file differs from the dispatch base.
-5. Append, never rewrite an earlier section, using a `## red` section that names the Test file, the Definition of Done assertion it proves, the command that ran the test with its failure output, what the test verifies and does not verify, and the code locations for the change.
+6. Append, never rewrite an earlier section, using a `## red` section that
+   names the test on a line written exactly as `Red test file: <path>`, the
+   Definition of Done assertion it proves, the command that ran the test with
+   its failure output, what the test verifies and does not verify, and the code
+   the code locations for the change.
 
 The handoff is append-only: append your new section to the resolved file and
 never rewrite an earlier section.
