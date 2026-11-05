@@ -431,10 +431,13 @@ def test_the_settle_nodes_are_billed_into_the_subprocess_ceiling() -> None:
 
 
 def test_fix_reaches_the_settle_before_the_janitor() -> None:
-    """A succeeded fix turn waits out its commit runs, then the janitor validates the tree."""
+    """A settled failure re-enters fix; every other settled verdict proceeds to janitor."""
     assert (_FIX_SETTLE, "") in _targets(source="fix")
     assert ("janitor", "") not in _targets(source="fix")
-    assert _targets(source=_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert _targets(source=_FIX_SETTLE) == [
+        ("fix", "preferred_label=retry_fix"),
+        (_JANITOR_ADMISSION, ""),
+    ]
 
 
 def test_a_failed_fix_turn_still_goes_to_needs_human_without_the_settle() -> None:
@@ -483,9 +486,10 @@ def test_the_fix_settle_is_billed_into_the_subprocess_ceiling() -> None:
 
 
 def test_review_fixes_reenter_janitor_through_a_routable_admission_gate() -> None:
-    """A first Red janitor does not strand the later review-fixed Green tree."""
+    """A review fix always reaches janitor; a failed fix settle returns to its repair turn."""
     assert _targets(source=_REVIEW_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
-    assert _targets(source=_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert (_JANITOR_ADMISSION, "") in _targets(source=_FIX_SETTLE)
+    assert ("fix", "preferred_label=retry_fix") in _targets(source=_FIX_SETTLE)
     assert _targets(source=_JANITOR_ADMISSION) == [
         ("needs_human", "outcome=failed"),
         ("janitor", ""),
