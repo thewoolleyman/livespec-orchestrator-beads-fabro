@@ -1,15 +1,13 @@
-"""Incident genesis: the first authority publication, refused without capability.
+"""Incident genesis records: the request, the retained fence and the receipt.
 
-A first incident authority must be published in ONE server-enforced operation
-conditioned on an absent incident root AND the exact current claim. The public
-ledger boundary installed today offers no such operation: a conditional close
-binds one record, a create is unconditional, a fixed-id create is an upsert and
-a metadata update is a client read-modify-write. Until a claim-token protocol in
-which every applicable writer participates provides it, genesis returns the
-named `incident-genesis-capability-unavailable` refusal. It writes nothing,
-files no other item and takes no local lock, so a refusal can never be mistaken
-for authority. The request is still decoded and bound, so the refusal names the
-exact request an operator asked for.
+A first incident authority is published in ONE server-enforced operation: the
+conditional close of the canonical item's CURRENT dispatch claim token. Its
+close reason is a valid claim-token transition (so every other claim writer
+reads it as the protocol's own record) carrying an `incident` block that binds
+the absent root being published, the exact expected claim and the immutable
+request digest. Winning that close is the only exclusion; a comment, a fixed-id
+create, a metadata update or a host-scoped lock never initializes authority.
+This module is pure: it decodes, encodes and digests, and writes nothing.
 """
 
 # EXPEDITED_INCIDENT_RESPONSE flag: bd-ib-dzbwaq
@@ -20,7 +18,10 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, cast
 
-from livespec_orchestrator_beads_fabro._incident_authority_payload import decode_attempt
+from livespec_orchestrator_beads_fabro._incident_authority_payload import (
+    GENESIS_MARKER,
+    decode_attempt,
+)
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
     AuthorityRefusal,
     IncidentAttempt,
@@ -30,13 +31,35 @@ from livespec_orchestrator_beads_fabro.effects import parse_json
 
 __all__: list[str] = [
     "GENESIS_CAPABILITY_UNAVAILABLE",
+    "GenesisFence",
+    "GenesisReceipt",
     "GenesisRequest",
+    "capability_unavailable",
+    "claim_successor",
+    "decode_genesis_fence",
     "decode_genesis_request",
-    "publish_genesis",
+    "genesis_comment",
+    "genesis_fence",
+    "genesis_fence_reason",
+    "request_digest",
 ]
 
 GENESIS_CAPABILITY_UNAVAILABLE = "incident-genesis-capability-unavailable"
 _REQUEST_KEYS = frozenset(("schema", "principal", "expected_claim", "attempt"))
+# The claim-token protocol's own transition record shape: every claim writer
+# parses `kind` and `successor`, so a genesis close is never read as foreign.
+_CLAIM_TRANSITION_KIND = "claim-token-transition"
+_GENESIS_INTENT = "incident-genesis"
+_FENCE_TEXT_KEYS = (
+    "repository",
+    "item_id",
+    "operation_id",
+    "principal",
+    "request_digest",
+    "root_token_id",
+    "expected_claim",
+)
+_FENCE_KEYS = frozenset(("schema", *_FENCE_TEXT_KEYS))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -46,6 +69,34 @@ class GenesisRequest:
     principal: str
     expected_claim: str
     attempt: IncidentAttempt
+
+
+@dataclass(frozen=True, kw_only=True)
+class GenesisFence:
+    """The incident block retained on the closed claim token that genesis won."""
+
+    repository: str
+    item_id: str
+    operation_id: str
+    principal: str
+    request_digest: str
+    root_token_id: str
+    expected_claim: str
+    successor: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class GenesisReceipt:
+    """A confirmed first publication, read back from the chain it created."""
+
+    request_digest: str
+    root_token_id: str
+    claim_token_id: str
+    successor_claim_token_id: str
+    committed_token_id: str
+    current_token_id: str
+    attempt: IncidentAttempt
+    recovered: bool
 
 
 def _canonical(*, value: object) -> str:
@@ -91,9 +142,9 @@ def decode_genesis_request(
     )
 
 
-def publish_genesis(*, request: GenesisRequest) -> AuthorityRefusal:
-    """Refuse first publication by name; no installed provider offers the exclusion."""
-    digest = hashlib.sha256(
+def request_digest(*, request: GenesisRequest) -> str:
+    """The SHA-256 of the canonical request bytes; identical retries share it."""
+    return hashlib.sha256(
         _canonical(
             value={
                 "schema": 1,
@@ -103,9 +154,109 @@ def publish_genesis(*, request: GenesisRequest) -> AuthorityRefusal:
             }
         ).encode()
     ).hexdigest()
+
+
+def capability_unavailable(*, request: GenesisRequest) -> AuthorityRefusal:
+    """The named refusal when no all-writer conditional operation is installed."""
     detail = (
-        f"{request.attempt.item_id} request sha256:{digest}: the installed public ledger "
-        "offers no server-enforced operation conditioned on an absent incident root and "
-        "the exact current claim; no activation or incident effect was written"
+        f"{request.attempt.item_id} request sha256:{request_digest(request=request)}: the "
+        "installed public ledger offers no server-enforced operation conditioned on an "
+        "absent incident root and the exact current claim; no activation or incident "
+        "effect was written"
     )
     return AuthorityRefusal(code=GENESIS_CAPABILITY_UNAVAILABLE, detail=detail)
+
+
+def genesis_fence(*, request: GenesisRequest, root_token_id: str, successor: str) -> GenesisFence:
+    """The fence one genesis attempt retains on the claim token it closes."""
+    return GenesisFence(
+        repository=request.attempt.repository,
+        item_id=request.attempt.item_id,
+        operation_id=request.attempt.operation_id,
+        principal=request.principal,
+        request_digest=request_digest(request=request),
+        root_token_id=root_token_id,
+        expected_claim=request.expected_claim,
+        successor=successor,
+    )
+
+
+def genesis_fence_reason(*, fence: GenesisFence, closed_at: str) -> str:
+    """The close reason that publishes a root and rotates the claim in one record."""
+    return _canonical(
+        value={
+            "kind": _CLAIM_TRANSITION_KIND,
+            "writer": fence.principal,
+            "intent": _GENESIS_INTENT,
+            "successor": fence.successor,
+            "closed_at": closed_at,
+            "incident": {
+                "schema": 1,
+                "repository": fence.repository,
+                "item_id": fence.item_id,
+                "operation_id": fence.operation_id,
+                "principal": fence.principal,
+                "request_digest": fence.request_digest,
+                "root_token_id": fence.root_token_id,
+                "expected_claim": fence.expected_claim,
+            },
+        }
+    )
+
+
+def _transition(*, reason: object) -> dict[str, Any] | None:
+    if not isinstance(reason, str):
+        return None
+    value = parse_json(text=reason)
+    if not isinstance(value, dict):
+        return None
+    row = cast("dict[str, Any]", value)
+    if row.get("kind") != _CLAIM_TRANSITION_KIND or not _text(value=row.get("successor")):
+        return None
+    return row
+
+
+def claim_successor(*, reason: object) -> str | None:
+    """The successor a closed claim token names, under any writer's intent."""
+    row = _transition(reason=reason)
+    return None if row is None else cast("str", row["successor"])
+
+
+def decode_genesis_fence(*, reason: object) -> GenesisFence | None:
+    """Decode a genesis close exactly; any other close reason is not a fence."""
+    row = _transition(reason=reason)
+    if row is None or row.get("intent") != _GENESIS_INTENT:
+        return None
+    block = row.get("incident")
+    if not isinstance(block, dict):
+        return None
+    fence = cast("dict[str, Any]", block)
+    if frozenset(fence) != _FENCE_KEYS or fence["schema"] != 1:
+        return None
+    if not all(_text(value=fence[key]) for key in _FENCE_TEXT_KEYS):
+        return None
+    return GenesisFence(
+        repository=fence["repository"],
+        item_id=fence["item_id"],
+        operation_id=fence["operation_id"],
+        principal=fence["principal"],
+        request_digest=fence["request_digest"],
+        root_token_id=fence["root_token_id"],
+        expected_claim=fence["expected_claim"],
+        successor=row["successor"],
+    )
+
+
+def genesis_comment(
+    *, repository: str, item_id: str, root_token_id: str, claim_token_id: str
+) -> str:
+    """The published genesis record, naming the claim token whose close fenced it."""
+    return GENESIS_MARKER + _canonical(
+        value={
+            "schema": 1,
+            "repository": repository,
+            "item_id": item_id,
+            "root_token_id": root_token_id,
+            "claim_token_id": claim_token_id,
+        }
+    )

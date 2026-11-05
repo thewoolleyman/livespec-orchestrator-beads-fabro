@@ -9,6 +9,9 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
 
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
+
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     attempt_record,
@@ -16,8 +19,15 @@ from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     unsupported_carrier,
 )
 from livespec_orchestrator_beads_fabro._incident_carrier import CARRIER_UNSUPPORTED
-from livespec_orchestrator_beads_fabro._incident_genesis import decode_genesis_request
+from livespec_orchestrator_beads_fabro._incident_genesis import (
+    GENESIS_CAPABILITY_UNAVAILABLE,
+    capability_unavailable,
+    decode_genesis_request,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    resolve_claim_tokens,
+)
 from livespec_orchestrator_beads_fabro.commands.incident_local_gate_lookup import (
     LocalGateLookup,
     read_local_gates,
@@ -29,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands.incident_local_gate_receipt impo
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.incident_authority import (
     AuthorityRefusal,
+    GenesisReceipt,
     IncidentReading,
     commit_incident_transition,
     publish_incident_genesis,
@@ -118,8 +129,8 @@ def main(*, argv: Sequence[str] | None = None) -> int:
     return _reply(result=result, authorizes=args.action == "read-current")
 
 
-def _genesis(*, args: argparse.Namespace) -> AuthorityRefusal:
-    """Decode and bind the request, then refuse by name without any ledger client."""
+def _genesis(*, args: argparse.Namespace) -> GenesisReceipt | AuthorityRefusal:
+    """Bind the request; without the committed claim-token cutover, refuse with no client."""
     request = decode_genesis_request(
         text=args.genesis_json,
         repository=args.repository,
@@ -133,21 +144,39 @@ def _genesis(*, args: argparse.Namespace) -> AuthorityRefusal:
         request.attempt.phase,
     ) != (args.attempt, args.owner, args.generation, args.phase):
         return AuthorityRefusal(code="incident-genesis-invalid-request", detail=args.item)
-    return publish_incident_genesis(request=request)
+    setting = resolve_claim_tokens(cwd=args.repo)
+    if not is_successful(setting):
+        return AuthorityRefusal(
+            code=GENESIS_CAPABILITY_UNAVAILABLE,
+            detail=f"{args.item}: committed dispatcher.claim_tokens is unreadable",
+        )
+    if not unsafe_perform_io(setting.unwrap()):
+        return capability_unavailable(request=request)
+    client = make_beads_client(config=store_config(repo=args.repo))
+    return publish_incident_genesis(client=client, request=request, claim_tokens=True)
 
 
 def _result_body(
-    *, result: IncidentReading | AuthorityRefusal | LocalGateLookup | LocalGateReceipt
+    *,
+    result: IncidentReading
+    | AuthorityRefusal
+    | LocalGateLookup
+    | LocalGateReceipt
+    | GenesisReceipt,
 ) -> dict[str, object]:
     body = asdict(result)
-    if isinstance(result, IncidentReading):
+    if isinstance(result, IncidentReading | GenesisReceipt):
         body["attempt"] = attempt_record(attempt=result.attempt)
     return body
 
 
 def _reply(
     *,
-    result: IncidentReading | AuthorityRefusal | LocalGateLookup | LocalGateReceipt,
+    result: IncidentReading
+    | AuthorityRefusal
+    | LocalGateLookup
+    | LocalGateReceipt
+    | GenesisReceipt,
     authorizes: bool,
 ) -> int:
     refused = isinstance(result, AuthorityRefusal)

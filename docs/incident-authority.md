@@ -104,14 +104,56 @@ binds a PR nor fences a factory.
 `publish-genesis --genesis-json <request>` takes the same identity arguments and
 one canonical request: `schema` 1, `principal`, `expected_claim` and the complete
 initial `attempt` (generation 1, phase `repair`, a `branch-reserved` carrier, and
-the named repository, item and operation). The request is decoded and bound to
-its SHA-256 digest, then refused as `incident-genesis-capability-unavailable`
-with exit 78. The installed public ledger offers no server-enforced operation that
-publishes a first root conditioned on an absent root and the exact current
-claim, so the command writes nothing, files no other item, constructs no ledger
-client and takes no local lock. An invalid or mismatched request is refused as
-`incident-genesis-invalid-request`. Real genesis waits on a claim-token protocol
-in which every applicable writer participates (bd-ib-jjws2).
+the named repository, item and operation). `expected_claim` is the item's current
+dispatch claim token id (`metadata.dispatch_claim_token`) as the caller observed
+it. The request is decoded and bound to its SHA-256 digest; an invalid or
+mismatched request is refused as `incident-genesis-invalid-request`.
+
+The exclusion is the claim-token protocol's own server-enforced operation: the
+conditional close of that current token. While the committed
+`dispatcher.claim_tokens` cutover is not `true`, no all-writer conditional
+operation is installed, so the command refuses
+`incident-genesis-capability-unavailable` with exit 78, constructs no ledger
+client, writes nothing, files no other item and takes no local lock. Once it is `true`, the writer first recovers
+an exact retry from the chain (same operation and identical request bytes return
+the original root with `recovered: true`; changed bytes under the same operation
+refuse `incident-operation-conflict`; another operation's root, or an unfenced
+legacy root, refuses `incident-genesis-root-exists`). It then reads the item:
+an `active` item assigned `fabro` has a live factory claim this build cannot
+fence and refuses `incident-factory-fence-unavailable`; an item naming no open
+token refuses `incident-genesis-claim-token-missing`; a token other than
+`expected_claim` refuses `incident-genesis-claim-mismatch`; an unreadable token
+refuses `incident-genesis-claim-unobservable`; a token another writer closed
+whose successor the item does not yet name refuses
+`incident-genesis-claim-transition-pending` and is never taken over.
+
+To publish, the writer mints the root and its open successor (server-assigned
+incident epoch tokens), closes the root privately with the generation-1
+transition, mints a successor claim token, and closes the current claim token
+with a claim-token transition reason (`kind: claim-token-transition`, `intent:
+incident-genesis`, the successor) whose `incident` block binds the repository,
+item, operation, principal, request digest, root token and expected claim. The
+read-back reason decides: a foreign reason is `incident-genesis-lost-race` and
+the loser deletes its unlinked root and successor and discards its claim token;
+an open token after the close is `incident-genesis-outcome-unknown` and every
+candidate is kept. A winner past the protocol's 120 s lease refuses
+`incident-genesis-lease-expired` and leaves its successor open. Inside the
+lease the winner appends the genesis comment, which now also names
+`claim_token_id`, then writes the item once, naming the successor as its current
+token; lifecycle state is not changed by this slice. A won close whose
+publication never landed is completed by the exact retry: the comment is
+appended and nothing else is written. Tenant failures are
+`incident-genesis-unavailable`.
+
+The reply is a `GenesisReceipt`: `request_digest`, `root_token_id`,
+`claim_token_id`, `successor_claim_token_id`, the committed and current token
+ids, the verified generation-1 `attempt` read back through the canonical reader,
+and `recovered`. It never authorizes current effects; consumers read current
+authority before acting. The reader verifies a genesis record that names
+`claim_token_id` against that token's retained close: the token must be closed
+and its fence must name the same root, item, repository and token, or the record
+is `incident-authority-invalid-genesis`. Records without `claim_token_id` keep
+their earlier meaning.
 
 The canonical JSON receipt contains `receipt_id`, `hook` (`pre-commit`,
 `commit-msg`, or `pre-push`), the exact Git `tree`, `mode`,

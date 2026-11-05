@@ -24,15 +24,13 @@ from livespec_orchestrator_beads_fabro._incident_carrier import (
     carrier_successor_allowed,
     decode_carrier,
 )
-from livespec_orchestrator_beads_fabro._incident_genesis import (
-    decode_genesis_request,
-    publish_genesis,
-)
+from livespec_orchestrator_beads_fabro._incident_genesis import decode_genesis_request
 from livespec_orchestrator_beads_fabro.commands import incident_authority as command
 from livespec_orchestrator_beads_fabro.incident_authority import (
     AuthorityRefusal,
     IncidentReading,
     commit_incident_transition,
+    publish_incident_genesis,
     read_incident_authority,
 )
 
@@ -285,11 +283,14 @@ def test_genesis_refuses_with_the_named_capability_error_and_binds_the_request()
         text=_genesis_text(), repository=REPOSITORY, item_id=ITEM, operation_id="operation-1"
     )
     assert request is not None
-    first = publish_genesis(request=request)
-    again = publish_genesis(request=request)
+    client = FakeBeadsClient()
+    first = publish_incident_genesis(client=client, request=request, claim_tokens=False)
+    again = publish_incident_genesis(client=client, request=request, claim_tokens=False)
+    assert isinstance(first, AuthorityRefusal)
     assert first.code == "incident-genesis-capability-unavailable"
     assert first == again
     assert ITEM in first.detail
+    assert client.no_history_issue_ids() == ()
 
 
 @pytest.mark.parametrize(

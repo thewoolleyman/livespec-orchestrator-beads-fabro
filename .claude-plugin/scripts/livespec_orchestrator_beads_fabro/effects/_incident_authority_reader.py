@@ -25,6 +25,10 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentReading,
 )
 from livespec_orchestrator_beads_fabro._incident_carrier import CARRIER_UNSUPPORTED
+from livespec_orchestrator_beads_fabro.effects._incident_genesis_fence import (
+    FENCED_GENESIS_KEYS,
+    fenced_root_holds,
+)
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -57,13 +61,16 @@ def _genesis(*, client: BeadsClient, repository: str, item_id: str) -> str | Aut
         text = comment.get("text")
         if not isinstance(text, str) or not text.startswith(GENESIS_MARKER):
             continue
-        record = decode_record(text=text, marker=GENESIS_MARKER, keys=_GENESIS_KEYS)
+        record = decode_record(
+            text=text, marker=GENESIS_MARKER, keys=_GENESIS_KEYS
+        ) or decode_record(text=text, marker=GENESIS_MARKER, keys=FENCED_GENESIS_KEYS)
         if (
             record is None
             or record["repository"] != repository
             or record["item_id"] != item_id
             or not isinstance(record["root_token_id"], str)
             or not record["root_token_id"]
+            or not fenced_root_holds(client=client, record=record, repository=repository)
         ):
             return _refuse(code="incident-authority-invalid-genesis", detail=item_id)
         roots.add(record["root_token_id"])
