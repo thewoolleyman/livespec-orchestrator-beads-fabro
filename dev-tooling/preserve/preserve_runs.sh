@@ -31,7 +31,7 @@ for c in json.load(sys.stdin)["containers"]:
   pid=$(sshn "$node" "sudo -n k3s crictl inspect $cid" | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["pid"])')
   G=/proc/$pid/root/workspace/.git
   url=$(sshn "$node" "sudo -n git config --file $G/config --get remote.origin.url" 2>/dev/null)
-  for attempt in 1 2 3; do
+  for _ in 1 2 3; do
     head=$(sshn "$node" "sudo -n cat $G/HEAD")
     D=$WORK/$run.git; rm -rf "$D" "$D.push.err"; mkdir -p "$D/refs/tags" "$D/refs/remotes"
     printf '[core]\n\trepositoryformatversion = 0\n\tbare = true\n' > "$D/config"
