@@ -359,6 +359,37 @@ def _publish_draft_script(*, check_suite: str) -> str:
     )
 
 
+def _janitor_script(*, check_suite: str) -> str:
+    graph = parse_dot_graph(text=_graph_text())
+    assert not isinstance(graph, str), graph
+    script: str = graph.nodes["janitor"]["script"]
+    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", check_suite
+    )
+
+
+def _run_janitor(*, world: _World) -> subprocess.CompletedProcess[str]:
+    """Execute the committed janitor script with its plugin gate made green."""
+    plugins = world.clone.parent / "janitor-plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    gate = plugins / "livespec-run-plugin-gate.py"
+    _ = gate.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gate.chmod(0o755)
+    env = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(world.clone.parent / "home"),
+        SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
+    }
+    return subprocess.run(
+        ["bash", "-c", _janitor_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
 def _push_refusal_bin(*, world: _World, refusal: str) -> Path:
     """Put a git wrapper on PATH that refuses only the publication push."""
     real_git = shutil.which("git")
@@ -1164,6 +1195,69 @@ def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
     assert {destination for destination, _ in edges[_REPAIR_NODE]}.isdisjoint(
         {"review_fix", "disposition"}
     )
+
+
+def test_a_failed_fix_commit_settle_reenters_fix_with_its_runner_brief() -> None:
+    """A failed runner verdict retries the fix before janitor can refresh its rebase."""
+    edges = _successors()
+    fix_prompt = (
+        _REPO_ROOT
+        / ".claude-plugin"
+        / ".fabro"
+        / "workflows"
+        / "implement-work-item"
+        / "prompts"
+        / "fix.md"
+    ).read_text(encoding="utf-8")
+
+    assert _routed(source="fix_commit_settle", condition="preferred_label=retry_fix") == "fix"
+    assert _routed(source="fix_commit_settle", condition="other") == "janitor_admission"
+    assert "livespec-fix-live-commit" in fix_prompt
+    assert "ended FAILED" in fix_prompt
+    assert "failed targets" in fix_prompt
+    assert "fix_commit_settle" in edges
+
+
+def test_janitor_aborts_an_inherited_rebase_before_its_own_refresh(tmp_path: Path) -> None:
+    """A foreign rebase cannot make janitor's clean refresh fail before its gate runs."""
+    world = _world(root=tmp_path)
+    _ = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _advance_default(
+        world=world,
+        path=_SHARED_FILE,
+        text="a conflicting default edit\n",
+    )
+    _ = _git("fetch", "origin", _DEFAULT_BRANCH, cwd=world.clone)
+    inherited = subprocess.run(
+        ["git", "rebase", f"origin/{_DEFAULT_BRANCH}"],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_fixture_env(),
+    )
+    assert inherited.returncode != 0
+    assert (world.clone / ".git" / "rebase-merge").is_dir()
+
+    base = _git("rev-parse", f"origin/{_DEFAULT_BRANCH}~1", cwd=world.clone).stdout.strip()
+    _ = _git(
+        "push",
+        "--force",
+        "origin",
+        f"{base}:refs/heads/{_DEFAULT_BRANCH}",
+        cwd=world.clone,
+    )
+
+    janitor = _run_janitor(world=world)
+
+    assert janitor.returncode == 0, janitor.stderr
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
 
 
 def test_a_third_refresh_needing_repair_restores_the_head_and_reports_exhaustion(
