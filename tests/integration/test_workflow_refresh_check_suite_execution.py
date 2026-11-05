@@ -566,4 +566,5 @@ def test_pr_refresh_bounds_its_post_rebase_gate_below_its_node_timeout(*, tmp_pa
     brief = world.state(name=_BRIEF_FILENAME)
     assert brief is not None, "the timed-out gate recorded no refresh-repair brief"
     assert "failed-gate-targets: check-unit" in brief
+    assert "last-completed-gate-target: check-unit" in brief
     assert "expired-gate-budget-seconds: 1" in brief
