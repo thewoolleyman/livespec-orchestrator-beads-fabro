@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
@@ -81,6 +81,14 @@ _DISPATCH = "a7395318d0c945589105940e7936139f"
 _DEAD_HEAD = "f3f139b28469c7efaae32dcb897d73518edbaadd"
 _PRESERVED_COMMIT = "216c811200000000000000000000000000000002"
 _PRESERVED_REF = f"refs/heads/needs-human/{_RUN}"
+_PRESERVED_BASE = "75c45b2ee0000000000000000000000000000000"
+_PIN_BUMP_COMMIT = "8f6fd7c4b00000000000000000000000000000000"
+_DEFAULT_BRANCH_TIP = "b4751f5690000000000000000000000000000000"
+
+_OLD_PIN = 'livespec-dev-tooling = { git = "https://example.test/dev-tooling", tag = "v1.171.0" }\n'
+_CURRENT_PIN = (
+    'livespec-dev-tooling = { git = "https://example.test/dev-tooling", tag = "v1.172.0" }\n'
+)
 
 # The journal stages this file reads. Spelled as literals because its Red
 # predates the module that exports them, and a Red's test bytes are fixed
@@ -157,6 +165,30 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
     }
     _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
+
+
+def _arm_stale_base(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A separate stale-base fixture; `_arm` remains the current-base seed case."""
+    _arm(monkeypatch=monkeypatch)
+    _Shell.answers.update(
+        {
+            f"rev-parse {_PRESERVED_COMMIT}^": CommandResult(
+                exit_code=0, stdout=f"{_PRESERVED_BASE}\n", stderr=""
+            ),
+            "rev-parse origin/master": CommandResult(
+                exit_code=0, stdout=f"{_DEFAULT_BRANCH_TIP}\n", stderr=""
+            ),
+            f"show {_PRESERVED_BASE}:pyproject.toml": CommandResult(
+                exit_code=0, stdout=_OLD_PIN, stderr=""
+            ),
+            "show origin/master:pyproject.toml": CommandResult(
+                exit_code=0, stdout=_CURRENT_PIN, stderr=""
+            ),
+            f"log --format=%H {_PRESERVED_BASE}..origin/master -- pyproject.toml": CommandResult(
+                exit_code=0, stdout=f"{_PIN_BUMP_COMMIT}\n", stderr=""
+            ),
+        }
+    )
 
 
 def _work_item() -> WorkItem:
@@ -238,13 +270,18 @@ class _Wave:
     launched: argparse.Namespace
 
 
-def _drive_wave(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Wave:
+def _drive_wave(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    arm: Callable[..., None] = _arm,
+) -> _Wave:
     """One wave over the single released candidate, with routing and reclaim live."""
     journal = _journal(tmp_path=tmp_path)
     items = [_work_item()]
     captured: list[argparse.Namespace] = []
 
-    _arm(monkeypatch=monkeypatch)
+    arm(monkeypatch=monkeypatch)
     monkeypatch.setattr(loop_wave, "await_usable_credential", lambda **_kwargs: None)
     monkeypatch.setattr(loop_wave, "resolve_acp_preflight", lambda **_kwargs: None)
     monkeypatch.setattr(
@@ -346,3 +383,42 @@ def test_an_unanchorable_released_item_is_seeded_from_its_preserved_commit(
         < _first_index(needle="gh api --method DELETE")
         < _first_index(needle="launched the run")
     )
+
+
+def test_a_preserved_base_before_the_dev_tooling_pin_bump_starts_fresh_with_its_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale seed must not install its obsolete canonical hook in a new sandbox.
+
+    The preserved ref's commit is based on `_PRESERVED_BASE`, whose dev-tooling
+    pin predates the bump on the current default branch. Recovery must therefore
+    start the run from the default branch, while carrying the preserved ref for
+    the new run to apply. The route record retains the evidence for that choice.
+    """
+    wave = _drive_wave(monkeypatch=monkeypatch, tmp_path=tmp_path, arm=_arm_stale_base)
+
+    assert [
+        {
+            key: record.get(key)
+            for key in (
+                "stage",
+                "work_item_id",
+                "route",
+                "preservation_ref",
+                "base_commit",
+                "default_branch_commit",
+            )
+        }
+        for record in _rows(journal=wave.journal, stage=_ROUTE_STAGE)
+    ] == [
+        {
+            "stage": _ROUTE_STAGE,
+            "work_item_id": _ITEM_ID,
+            "route": "fresh",
+            "preservation_ref": _PRESERVED_REF,
+            "base_commit": _PRESERVED_BASE,
+            "default_branch_commit": _PIN_BUMP_COMMIT,
+        }
+    ]
+    assert getattr(wave.launched, "resume_head", None) is None
+    assert getattr(wave.launched, "recovery_preservation_ref", None) == _PRESERVED_REF
