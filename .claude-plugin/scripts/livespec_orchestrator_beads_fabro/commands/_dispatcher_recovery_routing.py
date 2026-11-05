@@ -57,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurement
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_non_fallback import (
     non_fallback_refusals,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_pin_drift import (
+    preserved_base_pin_drift,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
     PreservedWorkAbsent,
     PreservedWorkUnobservable,
@@ -80,6 +83,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryHold,
     RecoveryLoss,
     RecoveryMeasurement,
+    RecoveryPreservationReference,
     RecoveryResume,
     RecoveryRoute,
 )
@@ -379,6 +383,18 @@ def _fallback_route(
                 source_run_id=preserved.source_run_id, sources_asked=preserved.sources_asked
             ),
             preserved_work=PRESERVED_WORK_ABSENT,
+        )
+    pin_drift = preserved_base_pin_drift(runner=runner, repo=repo, seed=preserved)
+    if pin_drift is not None:
+        return RecoveryRoute(
+            work_item_id=item.id,
+            route=ROUTE_FRESH,
+            preserved_work=PRESERVED_WORK_VERIFIED,
+            preservation=RecoveryPreservationReference(
+                preservation_ref=preserved.preservation_ref,
+                base_commit=pin_drift.base_commit,
+                default_branch_commit=pin_drift.default_branch_commit,
+            ),
         )
     return RecoveryRoute(
         work_item_id=item.id,

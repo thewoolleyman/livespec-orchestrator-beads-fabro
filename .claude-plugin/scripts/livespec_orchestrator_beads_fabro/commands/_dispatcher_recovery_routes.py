@@ -43,6 +43,7 @@ __all__: list[str] = [
     "RecoveryHold",
     "RecoveryLoss",
     "RecoveryMeasurement",
+    "RecoveryPreservationReference",
     "RecoveryResume",
     "RecoveryRoute",
     "RecoverySeed",
@@ -91,6 +92,15 @@ class RecoverySeed:
     remote: str
     commit_sha: str
     preservation_ref: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class RecoveryPreservationReference:
+    """Preserved work carried into a fresh run after a stale-base detection."""
+
+    preservation_ref: str
+    base_commit: str
+    default_branch_commit: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -162,3 +172,4 @@ class RecoveryRoute:
     hold: RecoveryHold | None = None
     loss: RecoveryLoss | None = None
     preserved_work: str | None = None
+    preservation: RecoveryPreservationReference | None = None

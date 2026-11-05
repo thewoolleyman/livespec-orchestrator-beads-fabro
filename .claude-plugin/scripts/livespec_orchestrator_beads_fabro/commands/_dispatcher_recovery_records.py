@@ -37,6 +37,7 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     RecoveryHold,
     RecoveryLoss,
+    RecoveryPreservationReference,
     RecoverySeed,
 )
 
@@ -68,6 +69,7 @@ def recovery_route_record(
     seed: RecoverySeed | None = None,
     loss: RecoveryLoss | None = None,
     preserved_work: str | None = None,
+    preservation: RecoveryPreservationReference | None = None,
 ) -> dict[str, object]:
     """One non-held route's row, with the SAME key set whichever route it is.
 
@@ -92,8 +94,12 @@ def recovery_route_record(
         "source_run_id": _source_run_id(seed=seed, loss=loss),
         "remote": None if seed is None else seed.remote,
         "commit_sha": None if seed is None else seed.commit_sha,
-        "preservation_ref": None if seed is None else seed.preservation_ref,
+        "preservation_ref": _preservation_ref(seed=seed, preservation=preservation),
         "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
+        "base_commit": None if preservation is None else preservation.base_commit,
+        "default_branch_commit": (
+            None if preservation is None else preservation.default_branch_commit
+        ),
     }
 
 
@@ -107,6 +113,15 @@ def _source_run_id(*, seed: RecoverySeed | None, loss: RecoveryLoss | None) -> s
     if seed is not None:
         return seed.source_run_id
     return None if loss is None else loss.source_run_id
+
+
+def _preservation_ref(
+    *, seed: RecoverySeed | None, preservation: RecoveryPreservationReference | None
+) -> str | None:
+    """The verified seed ref or the ref retained by a fresh stale-base route."""
+    if seed is not None:
+        return seed.preservation_ref
+    return None if preservation is None else preservation.preservation_ref
 
 
 def recovery_held_record(*, work_item_id: str, hold: RecoveryHold) -> dict[str, object]:

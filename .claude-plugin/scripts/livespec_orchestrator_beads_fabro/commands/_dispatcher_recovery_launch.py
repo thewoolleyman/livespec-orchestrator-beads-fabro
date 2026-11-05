@@ -73,9 +73,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal impor
 
 __all__: list[str] = [
     "LaunchPins",
+    "RECOVERY_PRESERVATION_REF_ARG",
     "journal_recovery_route",
     "recovery_launch_args",
 ]
+
+RECOVERY_PRESERVATION_REF_ARG = "recovery_preservation_ref"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -139,7 +142,12 @@ def recovery_launch_args(
     named = pins.workflow(args=pinned, repo=repo, work_item_id=work_item_id)
     seed = None if route is None else route.seed
     if seed is None:
-        return named
+        preservation = None if route is None else route.preservation
+        if preservation is None:
+            return named
+        carried = argparse.Namespace(**vars(named))
+        setattr(carried, RECOVERY_PRESERVATION_REF_ARG, preservation.preservation_ref)
+        return carried
     seeded = argparse.Namespace(**vars(named))
     setattr(seeded, RESUME_HEAD_ARG, seed.commit_sha)
     setattr(seeded, RESUME_FETCH_REF_ARG, seed.preservation_ref)
@@ -179,5 +187,6 @@ def journal_recovery_route(*, route: RecoveryRoute | None, journal: JournalFile)
             seed=route.seed,
             loss=route.loss,
             preserved_work=route.preserved_work,
+            preservation=route.preservation,
         )
     )
