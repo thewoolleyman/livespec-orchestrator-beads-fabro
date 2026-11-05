@@ -207,6 +207,54 @@ def test_scenario305_conflicting_pre_aggregate_refresh_restores_and_briefs_for_f
     assert "LIVESPEC_REFRESH_REPAIR" in janitor.stderr
 
 
+def test_scenario305_a_hook_refused_pre_aggregate_refresh_briefs_and_routes_to_fix(
+    *, tmp_path: Path
+) -> None:
+    """A clean commit-hook refusal is repairable, not a conflicted refresh.
+
+    The hook emits two target declarations followed by 81 numbered lines.  The
+    brief must preserve the named targets and the final 80 lines of the hook's
+    own output while restoring the run head and leaving no rebase in progress.
+    The route then has to carry that recorded brief through the existing
+    classifier, rather than falling through to ``needs_human``.
+    """
+    run, _ = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+    before = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    # `git rebase` bypasses its pre-commit hook, so use its signing hook point:
+    # git asks the configured executable to make the refresh's own commit and
+    # leaves an in-progress rebase when that executable refuses.
+    hook = tmp_path / "commit-hook"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "echo 'FAILED_TARGET: checks/first-target' >&2\n"
+        "echo 'FAILED_TARGET: checks/second-target' >&2\n"
+        "i=1\n"
+        'while test "$i" -le 81; do echo "hook-line-$i" >&2; i=$((i + 1)); done\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
+    _ = _git("config", "commit.gpgsign", "true", cwd=run)
+    _ = _git("config", "gpg.program", str(hook), cwd=run)
+
+    janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+
+    assert janitor.returncode != 0
+    assert _git("rev-parse", "HEAD", cwd=run).stdout.strip() == before
+    assert not (run / ".git" / "rebase-merge").exists()
+    assert not (run / ".git" / "rebase-apply").exists()
+    brief = _brief(run=run)
+    assert "failed-hook-targets: checks/first-target checks/second-target" in brief
+    assert "hook-output-last-80-lines: hook-line-2" in brief
+    assert "hook-line-81" in brief
+    assert "hook-line-1" not in brief
+    assert '"preferred_next_label":"refresh_repair"' in _route_label(run=run, plugins=plugins)
+    repaired = _run(node="refresh_repair", cwd=run, plugins=plugins, check_suite="true")
+    assert repaired.returncode == 0, repaired.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in repaired.stderr
+
+
 def test_scenario305_red_refreshed_aggregate_restores_and_briefs_for_fix(*, tmp_path: Path) -> None:
     run, _ = _world(root=tmp_path)
     plugins = _plugins(root=tmp_path)
