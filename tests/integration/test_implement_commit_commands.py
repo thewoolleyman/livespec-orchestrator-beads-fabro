@@ -198,6 +198,24 @@ def test_commit_red_refuses_when_the_latest_red_section_names_no_test_file(tmp_p
     assert "Cause: latest red section names no test file" in recorded
 
 
+def test_commit_red_accepts_test_file_label_in_the_latest_red_section(tmp_path: Path) -> None:
+    """The Red prompt's `Test file:` spelling names the test commit_red stages."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    test_file = repo / "tests" / "test_feature.py"
+    test_file.parent.mkdir()
+    _ = test_file.write_text("def test_feature() -> None:\n    assert False\n", encoding="utf-8")
+    _git(repo=repo, argv=["add", "tests/test_feature.py"])
+    _checkpoint(repo=repo, name="red")
+    _handoff(repo=repo, text="## red\nTest file: tests/test_feature.py\n")
+
+    completed = _run(repo=repo, argv=["bash", str(_RED)], check=False)
+
+    assert completed.returncode == 0, completed.stderr
+    assert _git(repo=repo, argv=["show", "--format=", "--name-only", "HEAD"]) == (
+        "tests/test_feature.py"
+    )
+
+
 def test_commit_red_refuses_naming_every_changed_product_path_after_the_fold(
     tmp_path: Path,
 ) -> None:
