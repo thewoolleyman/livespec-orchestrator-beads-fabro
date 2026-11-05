@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import DispatchCorrelation
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
@@ -18,6 +18,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_span import
     terminal_request_line,
 )
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import ATTRIBUTE_ALLOWLIST
+
+from tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_loop_finish import (
+    _item,
+    _plan,
+)
+from tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_loop_finish import (
+    _outcome as _finish_outcome,
+)
 
 
 def _outcome(*, status: str = "green", verdict: str | None = None) -> DispatchOutcome:
@@ -218,4 +226,102 @@ def test_terminal_span_is_absent_without_correlation_and_appendable_with_it(tmp_
 
 def test_terminal_attempts_refuses_an_unreadable_event_payload() -> None:
     """An unreadable event stream invents neither attempts nor model values."""
-    assert terminal_attempts(events_payload="not json", terminal_at_ns=1) == ()
+    assert terminal_attempts(events_payload="not json", terminal_at_ns=1) is None
+
+
+def test_terminal_span_names_an_unobserved_attempt_count_instead_of_reporting_zero() -> None:
+    """Unobserved attempts omit the count, name it, and emit no child spans."""
+    payload = json.loads(
+        terminal_request_line(
+            correlation=_correlation(),
+            outcome=_outcome(),
+            attempts=None,
+            started_at_ns=1,
+            ended_at_ns=2,
+        )
+    )
+    spans = payload["resourceSpans"][0]["scopeSpans"][0]["spans"]
+
+    assert len(spans) == 1
+    attrs = _attrs(spans[0])
+    assert "livespec.dispatch.attempt_count" not in attrs
+    assert attrs["livespec.dispatch.unavailable_fields"] == ("livespec.dispatch.attempt_count",)
+
+
+def _finish(*, monkeypatch: Any, tmp_path: Path, outcome: DispatchOutcome, emitter: Any) -> Any:
+    import argparse
+
+    from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_finish as module
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
+        DispatchJournalIdentity,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+
+    def dispose(**kwargs: object) -> DispatchOutcome:
+        return cast("DispatchOutcome", kwargs["outcome"])
+
+    def emit_review(**_: object) -> None:
+        return None
+
+    monkeypatch.setattr(module, "emit_terminal_span", emitter)
+    return module.finish_dispatch(
+        args=argparse.Namespace(),
+        repo=tmp_path,
+        item=_item(),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+        plan=_plan(repo=tmp_path),
+        outcome=outcome,
+        started_at=0.0,
+        goal_text="goal",
+        token_supplier=lambda: "token",
+        identity=DispatchJournalIdentity(dispatch_id="dispatch-7", dispatch_factory="hp"),
+        spans=tmp_path / "spans.jsonl",
+        dispose=dispose,
+        emit_review=emit_review,
+    )
+
+
+def test_finish_reports_zero_attempts_only_when_no_fabro_run_was_made(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    """A dispatch with no run id genuinely made no attempts, so the count is zero."""
+    emitted: list[dict[str, object]] = []
+
+    def emitter(**kwargs: object) -> None:
+        emitted.append(kwargs)
+
+    outcome = _finish_outcome(detail="done")
+    no_run = DispatchOutcome(
+        work_item_id=outcome.work_item_id,
+        status=outcome.status,
+        stage=outcome.stage,
+        pr_number=outcome.pr_number,
+        merge_sha=outcome.merge_sha,
+        detail=outcome.detail,
+        fabro_run_id=None,
+    )
+    _ = _finish(monkeypatch=monkeypatch, tmp_path=tmp_path, outcome=no_run, emitter=emitter)
+
+    assert emitted[0]["attempts"] == ()
+
+
+def test_finish_keeps_the_result_when_the_terminal_span_cannot_be_appended(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    """A local append failure never rewrites the dispatch result."""
+
+    def emitter(**_: object) -> None:
+        raise OSError("disk full")
+
+    outcome = DispatchOutcome(
+        work_item_id="bd-ib-5d5aue",
+        status="green",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail="done",
+        fabro_run_id=None,
+    )
+    result = _finish(monkeypatch=monkeypatch, tmp_path=tmp_path, outcome=outcome, emitter=emitter)
+
+    assert result.detail == "done"

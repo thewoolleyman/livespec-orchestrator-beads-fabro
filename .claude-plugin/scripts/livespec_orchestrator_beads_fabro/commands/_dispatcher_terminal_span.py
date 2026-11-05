@@ -69,16 +69,17 @@ def terminal_outcome(*, outcome: DispatchOutcome) -> str:
 
 def terminal_attempts(
     *, events_payload: object, terminal_at_ns: int
-) -> tuple[TerminalAttempt, ...]:
+) -> tuple[TerminalAttempt, ...] | None:
     """Read observed implementing-turn attempts from a Fabro events payload.
 
-    A malformed or unavailable stream yields no observations rather than a
-    fabricated attempt.  The final successful candidate has no failover event
+    A malformed or unavailable stream yields ``None`` (the attempt set is
+    unobserved) rather than an empty tuple, which would claim zero attempts.
+    The final successful candidate has no failover event
     to close it, so the terminal instant is its observable end boundary.
     """
     scan = scan_acp_events(payload=events_payload)
     if isinstance(scan, str):
-        return ()
+        return None
     models = {
         (start.node, start.node_visit, start.candidate_index): start.confirmed_model
         for start in scan.starts
@@ -106,7 +107,7 @@ def emit_terminal_span(
     *,
     correlation: DispatchCorrelation | None,
     outcome: DispatchOutcome,
-    attempts: tuple[TerminalAttempt, ...],
+    attempts: tuple[TerminalAttempt, ...] | None,
     spans_path: Path,
     started_at_ns: int,
     ended_at_ns: int,
@@ -132,18 +133,23 @@ def terminal_request_line(
     *,
     correlation: DispatchCorrelation,
     outcome: DispatchOutcome,
-    attempts: tuple[TerminalAttempt, ...],
+    attempts: tuple[TerminalAttempt, ...] | None,
     started_at_ns: int,
     ended_at_ns: int,
 ) -> str:
     """Render the terminal and all observed child attempts as one OTLP request."""
     ids = dispatch_span_ids(dispatch_id=correlation.dispatch_id)
     terminal_id = _child_span_id(dispatch_id=correlation.dispatch_id, suffix="terminal")
-    terminal_attributes = {
+    terminal_attributes: dict[str, object] = {
         **correlation_attributes(correlation=correlation),
         "livespec.dispatch.outcome": terminal_outcome(outcome=outcome),
-        "livespec.dispatch.attempt_count": len(attempts),
     }
+    if attempts is None:
+        terminal_attributes["livespec.dispatch.unavailable_fields"] = (
+            "livespec.dispatch.attempt_count",
+        )
+    else:
+        terminal_attributes["livespec.dispatch.attempt_count"] = len(attempts)
     terminal = {
         "traceId": ids.trace_id,
         "spanId": terminal_id,
@@ -161,7 +167,7 @@ def terminal_request_line(
             attempt=attempt,
             trace_id=ids.trace_id,
         )
-        for attempt in attempts
+        for attempt in attempts or ()
     ]
     request: dict[str, object] = {
         "resourceSpans": [
