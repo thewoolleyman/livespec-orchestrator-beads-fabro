@@ -61,7 +61,6 @@ _GROOM_PR_ADAPTER = (
     "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
     "npx -y @agentclientprotocol/claude-agent-acp"
 )
-_GROOM_IMPLEMENTER_NODE = "implement"
 
 # A DOT node declaration: a name at the start of a line followed by its
 # attribute block. An edge line (`a -> b [...]`) cannot match, because the
@@ -147,8 +146,7 @@ def test_the_groom_variant_declares_the_bundles_acp_nodes() -> None:
     # meaningless rather than false.
     assert bundle_nodes == {
         "dod_gate",
-        "red",
-        "green",
+        "implement",
         "fix",
         "review_fix",
         "proof_capture",
@@ -157,9 +155,7 @@ def test_the_groom_variant_declares_the_bundles_acp_nodes() -> None:
         "disposition",
     }
     assert {"pr"} == GROOM_ONLY_ACP_NODES
-    assert _acp_nodes(directory=_GROOM_VARIANT_DIRECTORY) == (
-        (bundle_nodes - {"red", "green"}) | GROOM_ONLY_ACP_NODES | {_GROOM_IMPLEMENTER_NODE}
-    )
+    assert _acp_nodes(directory=_GROOM_VARIANT_DIRECTORY) == bundle_nodes | GROOM_ONLY_ACP_NODES
 
 
 def test_the_groom_variant_declares_the_bundles_input_token_set() -> None:

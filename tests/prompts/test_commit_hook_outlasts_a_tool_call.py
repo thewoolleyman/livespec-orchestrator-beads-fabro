@@ -61,7 +61,7 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_COMMITTING_STAGE_NODES = ("fix",)
+_COMMITTING_STAGE_NODES = ("implement", "fix")
 
 _HEADING = "## A commit hook outlasts a tool call — a return is not a verdict"
 # One regex rather than a find-the-next-heading walk: the lookahead ends the
@@ -91,10 +91,10 @@ _WAIT_WITHOUT_KILLING = (
     "DO NOT START ANOTHER `git commit` WHILE ONE IS STILL LIVE.",
 )
 
-# Direction 4 — the fix turn does not end while a commit hook is still running
-# inside its own foreground `git commit` tool call (bd-ib-oueyxf). The implement
-# stage's turns no longer commit (bd-ib-yuwftp), so no implement prompt carries
-# this direction.
+# Direction 4 — the implement turn does not end while a hook it started is still
+# running. The fix turn limits this rule to a commit made inside its own
+# foreground `git commit` tool call (bd-ib-oueyxf).
+_NO_TURN_END_MID_HOOK = ("DO NOT END YOUR TURN WHILE A COMMIT HOOK YOU STARTED IS STILL RUNNING.",)
 _FOREGROUND_TURN_END_BOUND = (
     "DO NOT END YOUR TURN WHILE A COMMIT HOOK IS STILL RUNNING INSIDE YOUR OWN",
     "FOREGROUND `git commit` TOOL CALL. That commit is waited out in the",
@@ -179,6 +179,13 @@ def test_the_prompt_directs_waiting_without_killing_or_a_second_commit(node: str
         assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
 
 
+def test_the_implement_prompt_forbids_ending_the_turn_while_a_commit_hook_runs() -> None:
+    section = _section(node="implement")
+
+    for phrase in _NO_TURN_END_MID_HOOK:
+        assert phrase in section, f"the implement prompt's commit-hook section omits {phrase!r}"
+
+
 def test_the_fix_prompt_limits_the_turn_end_rule_to_its_own_foreground_commit() -> None:
     section = _section(node="fix")
 
@@ -202,9 +209,16 @@ def test_the_waiting_direction_holds_for_a_commit_runner_s_bounded_waits(node: s
         assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
 
 
-def test_the_only_agent_stage_that_commits_carries_the_waiting_directions() -> None:
-    """The command nodes, not Red or Green, own implement commits."""
-    distinct = {_section(node=node) for node in _COMMITTING_STAGE_NODES}
+def test_the_fix_prompt_carries_the_same_directions_as_the_implement_prompt() -> None:
+    """One wording, not two: a per-prompt paraphrase drifts and cannot be audited.
+
+    The comparison stops before the turn-end bullet, the one direction the fix
+    prompt words differently (bd-ib-oueyxf).
+    """
+    distinct = {
+        _section(node=node).split(_TURN_END_BULLET, maxsplit=1)[0]
+        for node in _COMMITTING_STAGE_NODES
+    }
 
     assert len(distinct) == 1, (
         f"{len(distinct)} distinct commit-hook wordings across "

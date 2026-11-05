@@ -22,7 +22,6 @@ raised here would take that choice away from both.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
@@ -164,14 +163,9 @@ def _attached_chains(
     )
     if isinstance(attached, str):
         return attached
-    chains = dict(attached.chains)
-    implement = chains.get("implement")
-    if implement is not None:
-        chains["red"] = replace(implement, node="red")
-        chains["green"] = replace(implement, node="green")
     graph = workflow_graph_path(committed_text=manifest_text, workflow_dir=manifest.parent)
     return (
-        chains,
+        attached.chains,
         None if graph is None else _read(path=graph),
         frozenset(identity.pair for identity in builtins.values()),
     )

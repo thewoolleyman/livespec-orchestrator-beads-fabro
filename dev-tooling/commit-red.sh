@@ -20,31 +20,10 @@ checkpoint_commit() {
     [[ "$subject" =~ $CHECKPOINT_SUBJECT ]] && grep -q '^Fabro-Run: ' <<<"$message"
 }
 
-checkpoint_run_id() {
-    local ref="$1"
-    git log -1 --format=%B "$ref" 2>/dev/null | sed -n 's/^Fabro-Run: //p' | head -n 1
-}
-
-checkpoint_for_run() {
-    local ref="$1"
-    local run_id="$2"
-    checkpoint_commit "$ref" && [[ "$(checkpoint_run_id "$ref")" == "$run_id" ]]
-}
-
 fold_checkpoints() {
     local depth=0
     local ref="HEAD"
-    local run_id=""
-    # The checkpoint directly above this command is the one the current run's
-    # Red node made.  A preserved seed can itself end in Fabro checkpoints, so
-    # fold only this run's contiguous checkpoint suffix: older checkpoints hold
-    # already-authored implementation, not Red's uncommitted product writes.
-    run_id="$(checkpoint_run_id "$ref")"
-    if [[ -z "$run_id" ]]; then
-        printf '%s\n' "$depth"
-        return
-    fi
-    while (( depth < CHECKPOINT_LIMIT )) && checkpoint_for_run "$ref" "$run_id"; do
+    while (( depth < CHECKPOINT_LIMIT )) && checkpoint_commit "$ref"; do
         ((depth += 1))
         ref="HEAD~${depth}"
     done
@@ -105,9 +84,9 @@ latest_red_test_file() {
     awk '
         /^##[[:space:]]+red([[:space:]]|$)/ { in_red = 1; latest = ""; next }
         /^##[[:space:]]/ { in_red = 0 }
-        in_red && /^(Red test file|Test file):[[:space:]]*/ {
+        in_red && /^Red test file:[[:space:]]*/ {
             value = $0
-            sub(/^(Red test file|Test file):[[:space:]]*/, "", value)
+            sub(/^Red test file:[[:space:]]*/, "", value)
             sub(/^`/, "", value)
             sub(/`$/, "", value)
             latest = value

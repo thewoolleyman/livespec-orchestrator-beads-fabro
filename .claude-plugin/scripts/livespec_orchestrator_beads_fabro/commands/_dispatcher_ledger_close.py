@@ -324,7 +324,6 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # is what identifies the ending, so an explicit null on every other
     # outcome would put the key on dispatches that are not that ending and
     # leave a consumer discriminating by its value instead of its presence.
-    "already_satisfied_base",
     "base_advanced",
     "dead_implementer_condition",
     # Factory identity is carried only by the terminal cancellation arm so
