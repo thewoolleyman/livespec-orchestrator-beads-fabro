@@ -27,6 +27,7 @@ _ORIGIN_HEAD = "b" * 40
 class _Runner:
     origin_head: str = _ORIGIN_HEAD
     fetch_exit: int = 0
+    observed_exit: int = 0
     ancestor: bool = True
     calls: list[list[str]] = field(default_factory=list)
 
@@ -44,7 +45,11 @@ class _Runner:
         if argv[:2] == ["git", "fetch"]:
             return CommandResult(exit_code=self.fetch_exit, stdout="", stderr="fetch refused")
         if argv[:2] == ["git", "rev-parse"]:
-            return CommandResult(exit_code=0, stdout=f"{self.origin_head}\n", stderr="")
+            return CommandResult(
+                exit_code=self.observed_exit,
+                stdout=f"{self.origin_head}\n",
+                stderr="FETCH_HEAD unreadable",
+            )
         if argv[:2] == ["git", "merge-base"]:
             return CommandResult(exit_code=0 if self.ancestor else 1, stdout="", stderr="")
         return CommandResult(exit_code=0, stdout="", stderr="")
@@ -131,6 +136,59 @@ def test_an_unobservable_origin_head_fails_the_staging_closed(
         assert "rev-parse FETCH_HEAD" in result.stderr
     else:
         assert result.stderr == "fetch refused"
+
+
+@pytest.mark.parametrize(
+    ("fetch_exit", "observed_exit", "origin_head", "expected_detail"),
+    [
+        (0, 0, _HEAD, None),
+        (1, 0, _ORIGIN_HEAD, "fetch refused"),
+        (0, 0, _ORIGIN_HEAD, f"resolved to {_ORIGIN_HEAD}"),
+        (0, 1, _HEAD, "FETCH_HEAD unreadable"),
+    ],
+)
+@pytest.mark.usefixtures("proven_head")
+def test_a_resume_stages_only_the_recorded_pull_request_head(
+    *,
+    tmp_path: Path,
+    fetch_exit: int,
+    observed_exit: int,
+    origin_head: str,
+    expected_detail: str | None,
+) -> None:
+    """A moved or unreadable publication head refuses before Fabro can run."""
+    runner = _Runner(
+        fetch_exit=fetch_exit,
+        observed_exit=observed_exit,
+        origin_head=origin_head,
+    )
+    journal = _Journal()
+    plan = _plan(repo=tmp_path, root=tmp_path)
+    result = staging.SourceStagingRunner(
+        inner=runner,
+        plan=plan,
+        journal=journal,
+        worktree_root=tmp_path / ".worktrees",
+        resume_head=_HEAD,
+    ).run(argv=["fabro", "run"], cwd=tmp_path, timeout_seconds=30)
+
+    fetch = next(call for call in runner.calls if call[:2] == ["git", "fetch"])
+    assert fetch == ["git", "fetch", "--quiet", "origin", plan.branch]
+    staged = next(row for row in journal.records if row["stage"] == "source-checkout-stage")
+    if expected_detail is None:
+        added = next(call for call in runner.calls if call[:3] == ["git", "worktree", "add"])
+        assert result.exit_code == 0
+        assert added[-1] == _HEAD
+        assert staged["status"] == "passed"
+        assert staged["staged_at"] == _HEAD
+    else:
+        assert result.exit_code == 1
+        assert expected_detail in result.stderr
+        assert _HEAD in result.stderr
+        assert not any(call[:2] == ["git", "worktree"] for call in runner.calls)
+        assert staged["status"] == "failed"
+        assert staged["reason"] == "source-resume-head-unobservable"
+        assert staged["terminal"] is True
 
 
 def _git(*, repo: Path, args: list[str]) -> str:
