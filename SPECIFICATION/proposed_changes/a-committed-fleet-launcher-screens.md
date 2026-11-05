@@ -33,7 +33,7 @@ In contracts.md §"Provisional fleet launch scripts":
 
 In scenarios.md, ADD:
 
-## Scenario 314 — A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal
+#### (as an H2 `## ` heading) Scenario 314 — A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal
 
 Governing clause: `contracts.md` §"Provisional fleet launch scripts".
 
@@ -85,7 +85,7 @@ In contracts.md §"Dispatcher exit codes", REPLACE the `5` entry's opening "`5` 
 
 In scenarios.md, ADD:
 
-## Scenario 315 — A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line
+#### (as an H2 `## ` heading) Scenario 315 — A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line
 
 Governing clause: `contracts.md` §"Dispatcher exit codes".
 
@@ -104,3 +104,28 @@ Feature: Every permanent pre-dispatch refusal gives a caller one signal
       | whose description declares an edit under .github/workflows/      |
       | whose pre-dispatch Definition-of-Done judgement rests it at needs-human |
 ```
+
+## Proposal: A repository hold file can name the launch kinds it holds, with its reason and end condition
+
+### Target specification files
+
+- SPECIFICATION/contracts.md
+- SPECIFICATION/scenarios.md
+
+### Summary
+
+A repository hold file MAY name which launch kinds it holds — `dispatch` (the impl launcher's `drive --action impl:<item>`, which covers both a fresh dispatch and one the Dispatcher's recovery routing seeds from preserved work) and `resume` (the resume launcher's `resume --item <item>`) — plus a free-text reason and end condition that every yield line names. A hold file that names no kind holds every launch kind, exactly as before, so a targeted stop-the-line on fresh launches no longer also holds resumes that re-enter past the defective node.
+
+### Motivation
+
+Measured 2026-11-05 under the coordinator's hold (g), set at 06:14:51Z: "no new FRESH orchestrator launch until livespec-orchestrator-beads-fabro PR #4440 is in the launch clone; resumes past commit_green may run". The only mechanism was the repository hold file `hold-repo-<repository>`, which the impl launcher (dispatch-dual) and the resume launcher (resume-capped.sh line 17) both honour unconditionally. So the two queued capped resumes, bd-ib-ff5ohb (re-entering at publish_draft) and bd-ib-ch44wn, were held along with the fresh launches, although the ruling allowed them. Briefly lifting the hold was declined because a fresh head launcher could slip onto the 1800 s commit_green wall in that window. Inputs from legacy-coordinator-agent and legacy-dispatcher-agent for bd-ib-v52w7a's revise (R301). This aligns with the pending `a-fleet-launcher-honours-a` proposal's line-based `exempt:` syntax for the same file and composes with it.
+
+### Proposed Changes
+
+In contracts.md §"Provisional fleet launch scripts", after the "Red-master repository hold" bullet (and beside the `exempt:` paragraph that the pending `a-fleet-launcher-honours-a` proposal adds, using the same one-key-per-line syntax), ADD:
+
+- **Hold scope by launch kind.** A repository hold file MAY carry one line that begins with `kinds:` followed by a comma-separated list drawn from `dispatch` and `resume`. A launcher MUST apply the hold only to a launch of a listed kind: an impl launcher's launch is kind `dispatch`, and a resume launcher's launch is kind `resume`. A launch of an unlisted kind MUST proceed as if the hold file did not exist. A hold file with no `kinds:` line, or with an empty or unparseable one, MUST hold every launch kind, exactly as before. The kind `dispatch` covers both a fresh dispatch and one the Dispatcher's recovery routing seeds from preserved work, because only the Dispatcher decides between those, and a launcher MUST NOT attempt to tell them apart. A hold file MAY also carry one `reason:` line and one `until:` line, each with free text. Every log line in which a launcher yields to the hold MUST name the hold's `kinds`, and its `reason` and `until` text when present. An `exempt:` line, once ratified, MUST exempt its work item whatever the `kinds:` line says.
+
+EXTEND the `check-fleet-launch` harness case list: the harness MUST cover a hold file carrying `kinds: dispatch` under which an impl launcher yields and a resume launcher for the same repository launches; a hold file carrying `kinds: resume` under which the reverse holds; and a hold file carrying no `kinds:` line, which holds both, as before. It MUST also cover that a yield line names the `kinds`, `reason` and `until` text.
+
+In scenarios.md, ADD a scenario under the next free number, as an H2 `## ` heading: "Scenario 316 — A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run". Its body: Governing clause `contracts.md` §"Provisional fleet launch scripts". Given a repository hold file for repository R carrying `kinds: dispatch`, `reason: commit_green ceiling`, `until: PR 4440 merged`, and queued tickets for an impl launcher of bd-x and a resume launcher of bd-y, both in R; When both launchers poll; Then the impl launcher for bd-x MUST keep its ticket, yield the FIFO head and log a yield line naming `dispatch`, the reason and the until text; And the resume launcher for bd-y MUST launch. Second scenario: Given the same hold file without its `kinds:` line; When both launchers poll; Then both MUST hold.
