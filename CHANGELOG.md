@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.287.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.286.0...v0.287.0) (2026-11-05)
+
+
+### Features
+
+* read watchdog events through the factory stream ([b365925](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b3659258977e68f67d41edbe85d46d7d50e12631))
+* run red, commit_red, green and commit_green in place of the single implement node (bd-ib-yuwftp) ([e7f5ec7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e7f5ec757f56453e805997ef2cf01c299ff8ab90))
+
+
+### Bug Fixes
+
+* keep the launcher's by-id record and journal through the liveness sample ([6ef1203](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ef1203932bd4e49e7c2115cf3b18bfc79832889))
+* recognize GitHub 5xx refresh failures ([51efca6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/51efca6e1f5514a2886a6fa179f44fc5f36b1acd))
+* retry transient needs human preservation pushes ([3d0edf6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d0edf67cbc274772a9649387c53ae1995b10f57))
+* retry transient pr refresh push failures ([1ecef33](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ecef3305a750749fa94c852af3f18c873ef7916))
+
 ## [0.286.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.285.0...v0.286.0) (2026-11-04)
 
 
