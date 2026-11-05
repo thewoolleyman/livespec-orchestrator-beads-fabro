@@ -6307,6 +6307,26 @@ When the events cannot be read, the Dispatcher MUST still apply the disposition 
 
 These obligations apply equally to member and adopter repositories. A hook runner or aggregate whose summary is not recognized falls back to the labelled observation. A workflow that skips git hooks at checkpoint produces no hook output, so its attribution is the engine error or the budget. This subsection changes no run reconciliation rule, no artifact retention rule and no other terminal outcome. Scenario 170 in `scenarios.md` exercises this section.
 
+### Scheduled-workflow breakage pass
+
+A scheduled workflow on the default branch reports its failure only on the forge. The runners that execute it cannot reach the beads tenant, so the workflow cannot file the failure as work itself. The breakage pass turns such a failure into a ledger work item from the host that can reach the tenant.
+
+**Watched workflows.** A governed repository MAY declare watched workflows in `.livespec.jsonc` as `dispatcher.breakage_workflows`: an array of workflow file names relative to `.github/workflows/`, for example `["ci-root-uid.yml"]`. An absent or empty array means no workflow is watched. A value that is not an array of non-empty strings MUST make the pass fail visibly, naming the key, and MUST NOT be read as an empty array.
+
+**The pass.** `dispatcher.py breakage-pass --repo <path>` MUST, for each watched workflow, read that workflow's most recently created COMPLETED run on the resolved default branch, of any trigger event. It MUST read through the forge's cached or conditional request path and MUST NOT poll in a loop: one invocation is one pass, and the host schedules repeat passes. Then:
+
+1. When the run concluded success, the pass MUST file nothing for that workflow.
+2. When the run concluded failure, the pass MUST compute, for each job of that run that concluded failure, the breakage key `<workflow-file>:<job-name>:<head-sha>`. It MUST file exactly one work item for each key that no item in the ledger already carries. That covers items of every lifecycle status, closed included, so a re-run of the same commit that fails the same job files nothing new.
+3. When the run concluded cancelled, skipped, or any other conclusion that is neither success nor failure, the pass MUST file nothing for that workflow and MUST report the conclusion.
+4. When no completed run exists, the pass MUST file nothing and MUST report that no completed run exists.
+5. When the forge credential is unusable, the default branch, the workflow, its runs or its jobs cannot be read, or the ledger's dedupe read fails, the pass MUST file nothing for that workflow, MUST report the failure naming what could not be read, and MUST exit non-zero. An unreadable workflow MUST NOT be reported as green.
+
+**The filed item.** Each item MUST be filed through the filing seam the `capture-work-item` operation uses, never by a raw `bd create`. Its title MUST name the workflow and the failing job. Its description MUST name the run URL, the head commit, and each failing test the job's log names, read from the test runner's per-test failure lines. When the log names no failing test, the description MUST say so and name the job's failing step instead. The item MUST carry the label `breakage:<workflow-file>` and MUST record the breakage key in its metadata as `breakage_key`, which is what the dedupe read compares. It enters the lifecycle exactly as any captured item does, and this subsection grants it no admission of its own. The description MUST pass the shared template-opener detector before the item is filed. A description that fails the detector MUST NOT be filed, and the pass MUST report that key as unfiled and exit non-zero.
+
+**Verdicts.** Each pass MUST print one verdict line per watched workflow, naming the workflow, the run it read when it read one, and one of `green`, `filed <item-id>[, <item-id>...]`, `already-filed <item-id>[, <item-id>...]`, `not-concluded <conclusion>`, `no-completed-run`, or `unreadable <reason>`. When the pass runs under a host timer, these lines are what the timer's journal shows. The pass is idempotent over an unchanged run, so the host that reaches the tenant SHOULD run it at least every 30 minutes. Installing that schedule belongs to the host's provisioning, not to this plugin.
+
+The pass reads default-branch CI state only to file work. It MUST NOT gate, hold, defer or start any dispatch, so it is not a caller gating a dispatch on the default branch's CI under §"Dispatch preflight and post-merge step discipline", and it changes no admission condition. Scenario 313 in `scenarios.md` exercises this subsection.
+
 ### Repository integration contract
 
 The set of integration points the orchestrator requires of a governed
