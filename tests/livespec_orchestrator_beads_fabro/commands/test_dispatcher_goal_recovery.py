@@ -207,6 +207,39 @@ def test_a_placement_whose_commit_or_ref_is_empty_narrates_nothing() -> None:
     )
 
 
+def test_a_fresh_route_names_its_preserved_ref_as_a_reference_not_a_placement() -> None:
+    """A stale seed's commit is surfaced as a reference the agent is not standing on."""
+    reference = argparse.Namespace(
+        resume_fetch_ref=_PRESERVATION_REF, resume_reference_commit=_PRESERVED_COMMIT
+    )
+
+    brief = _brief(args=reference)
+
+    assert _PRESERVED_COMMIT in brief
+    assert _PRESERVATION_REF in brief
+    assert "preserved reference" in brief.lower()
+    assert "NOT checked out" in brief
+    assert "interrupted prior attempt" not in brief.lower()
+
+
+def test_a_reference_commit_without_its_ref_narrates_nothing() -> None:
+    """The reference needs both a ref to fetch and a commit to name."""
+    module = _recovery_module()
+
+    assert (
+        module.interrupted_attempt_for(
+            args=argparse.Namespace(resume_reference_commit=_PRESERVED_COMMIT)
+        )
+        is None
+    )
+    assert (
+        module.interrupted_attempt_for(
+            args=argparse.Namespace(resume_fetch_ref=_PRESERVATION_REF, resume_reference_commit="")
+        )
+        is None
+    )
+
+
 def test_the_dispatch_paths_one_goal_render_passes_the_recovery_section() -> None:
     """The wiring, read off the parsed call rather than hoped for.
 

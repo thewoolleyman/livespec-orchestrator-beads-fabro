@@ -42,9 +42,15 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
+    resolve_default_branch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    RELEASE_REPOSITORY_MASTER_REF,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -82,6 +88,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryMeasurement,
     RecoveryResume,
     RecoveryRoute,
+    RecoverySeed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
@@ -97,6 +104,12 @@ __all__: list[str] = [
     "RecoveryRouting",
     "route_recovery",
 ]
+
+# The default-branch commit which installed the current canonical hook body.
+# It is a commit identity rather than a toolchain/version literal: the recovery
+# question is whether the preserved base contains this change.
+_CANONICAL_HOOK_PIN_BUMP_COMMIT = "246fecad0da0f9aad2ce7db339f6f17d6645326d"
+_RECOVERY_BASE_TIMEOUT_SECONDS = 30.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -380,12 +393,56 @@ def _fallback_route(
             ),
             preserved_work=PRESERVED_WORK_ABSENT,
         )
+    stale_base = stale_preserved_base(repo=repo, runner=runner, preserved=preserved)
+    if stale_base is not None:
+        return RecoveryRoute(
+            work_item_id=item.id,
+            route=ROUTE_FRESH,
+            seed=preserved,
+            preserved_base_commit=stale_base,
+            default_branch_commit=_CANONICAL_HOOK_PIN_BUMP_COMMIT,
+        )
     return RecoveryRoute(
         work_item_id=item.id,
         route=ROUTE_SEEDED,
         seed=preserved,
         preserved_work=PRESERVED_WORK_VERIFIED,
     )
+
+
+def stale_preserved_base(
+    *, repo: Path, runner: CommandRunner, preserved: RecoverySeed
+) -> str | None:
+    """The preserved base when it predates the canonical-hook pin bump.
+
+    An unreadable comparison leaves the existing verified-seed behavior in
+    place. The preservation read has already established the ref and commit;
+    this narrow guard only changes that route when both Git measurements provide
+    the affirmative stale-base result.
+    """
+    default_branch = resolve_default_branch(repo=repo, runner=runner)
+    if default_branch is None:
+        default_branch = RELEASE_REPOSITORY_MASTER_REF.removeprefix("refs/heads/")
+    base = runner.run(
+        argv=["git", "merge-base", preserved.commit_sha, f"origin/{default_branch}"],
+        cwd=repo,
+        timeout_seconds=_RECOVERY_BASE_TIMEOUT_SECONDS,
+    )
+    base_commit = base.stdout.strip()
+    if base.exit_code != 0 or base_commit == "":
+        return None
+    contains_pin_bump = runner.run(
+        argv=[
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            _CANONICAL_HOOK_PIN_BUMP_COMMIT,
+            base_commit,
+        ],
+        cwd=repo,
+        timeout_seconds=_RECOVERY_BASE_TIMEOUT_SECONDS,
+    )
+    return base_commit if contains_pin_bump.exit_code == 1 else None
 
 
 def _held_route(*, item: WorkItem, journal: JournalFile, hold: RecoveryHold) -> RecoveryRoute:

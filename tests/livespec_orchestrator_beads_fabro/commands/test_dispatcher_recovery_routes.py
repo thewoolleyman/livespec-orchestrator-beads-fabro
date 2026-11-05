@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryLoss,
     RecoveryResume,
     RecoveryRoute,
+    RecoverySeed,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -356,3 +357,60 @@ def test_a_resume_route_skips_the_workflow_pin_and_keeps_the_requested_name() ->
     assert launched.workflow_name == "implement-work-item"
     assert getattr(launched, "resume_entry_node", None) == "proof_capture"
     assert getattr(launched, "resume_head", None) == "deadbeef"
+
+
+def test_a_stale_seed_launches_fresh_while_retaining_its_preservation_reference(
+    tmp_path: Path,
+) -> None:
+    """The stale tree is fetched as a reference but never selected as HEAD."""
+    seed = RecoverySeed(
+        source_run_id=_RUN,
+        remote="origin",
+        commit_sha="deadbeef",
+        preservation_ref=f"refs/heads/needs-human/{_RUN}",
+    )
+    route = RecoveryRoute(
+        work_item_id=_ITEM_ID,
+        route=ROUTE_FRESH,
+        seed=seed,
+        preserved_base_commit="basecafe",
+        default_branch_commit="bumpcafe",
+    )
+
+    launched = launch.recovery_launch_args(
+        args=argparse.Namespace(workflow_name="implement-work-item"),
+        repo=Path("/repo"),
+        work_item_id=_ITEM_ID,
+        route=route,
+        pins=_pins(seen=[]),
+    )
+    journal = _journal(tmp_path=tmp_path, records=())
+    launch.journal_recovery_route(route=route, journal=journal)
+    row = _rows(journal=journal, stage=RECOVERY_ROUTE_STAGE)[0]
+
+    assert getattr(launched, "resume_head", None) is None
+    assert getattr(launched, "resume_fetch_ref", None) == seed.preservation_ref
+    assert getattr(launched, "resume_reference_commit", None) == seed.commit_sha
+    assert row["route"] == ROUTE_FRESH
+    assert row["preservation_ref"] == seed.preservation_ref
+    assert row["preserved_base_commit"] == "basecafe"
+    assert row["default_branch_commit"] == "bumpcafe"
+
+
+def test_an_unreadable_preserved_base_keeps_the_verified_seed_eligible() -> None:
+    """A failed base read does not claim that verified preserved work is stale."""
+    seed = RecoverySeed(
+        source_run_id=_RUN,
+        remote="origin",
+        commit_sha="deadbeef",
+        preservation_ref=f"refs/heads/needs-human/{_RUN}",
+    )
+    _Shell.answers = {
+        "symbolic-ref --short refs/remotes/origin/HEAD": CommandResult(
+            exit_code=0, stdout="origin/master\n", stderr=""
+        ),
+        "merge-base deadbeef origin/master": CommandResult(exit_code=1, stdout="", stderr="boom"),
+    }
+    _Shell.calls = []
+
+    assert routing.stale_preserved_base(repo=Path("/repo"), runner=_Shell(), preserved=seed) is None
