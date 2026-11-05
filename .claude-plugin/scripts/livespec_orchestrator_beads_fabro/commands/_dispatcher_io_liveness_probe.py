@@ -24,6 +24,8 @@ the per-poll probe cost on every dispatch in the fleet.
 
 from __future__ import annotations
 
+import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,30 +103,25 @@ class _WallClockEventProbe:
     def sample(self, *, observed_at: float) -> LivenessSample:
         if self.run_id is None:
             return LivenessSample(last_event_epoch=None, observed_at=observed_at)
-        stream = self.port.server_api().stream(
-            run_id=self.run_id,
-            after=self.state.stream_seq,
-            timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
-        )
-        records = fabro_event_records_from_stdout(stdout=stream.body) if stream.succeeded else None
+        records, observable, status = self._read_event_pages(run_id=self.run_id)
         stage_epoch = _stage_progress_epoch(record=self.state.run_record)
-        if records is None or not records:
-            if self.state.journal is not None:
-                self.state.journal.append(
-                    record={
-                        "stage": STREAM_POLL_JOURNAL_STAGE,
-                        "run_id": self.run_id,
-                        "observable": False,
-                        "reason": "stream-read-unobservable",
-                    }
-                )
+        if self.state.journal is not None:
+            self.state.journal.append(
+                record={
+                    "stage": STREAM_POLL_JOURNAL_STAGE,
+                    "run_id": self.run_id,
+                    "observable": observable,
+                    "status": status,
+                    **({} if observable else {"reason": "stream-read-unobservable"}),
+                }
+            )
+        if not observable:
             return _stage_progress_sample(
                 state=self.state,
                 stage_epoch=stage_epoch,
                 observed_at=observed_at,
             )
-        events_json = stream.body
-        self.state.stream_seq = _newest_stream_seq(records=records, current=self.state.stream_seq)
+        events_json = json.dumps(records)
         newest = parse_last_event_epoch(events_json=events_json)
         progress = max(
             (epoch for epoch in (newest, stage_epoch) if epoch is not None), default=None
@@ -146,6 +143,50 @@ class _WallClockEventProbe:
             # decision applies is the value the rendered graph gave the node.
             open_command_node=self.state.open_command_node,
         )
+
+    def _read_event_pages(self, *, run_id: str) -> tuple[tuple[dict[str, object], ...], bool, int]:
+        """Read every available server page within this poll's one read budget.
+
+        A completed empty page is a successful observation: it says the bound
+        run emitted nothing after its cursor, rather than saying the watchdog
+        failed to observe the run.  A later page failure does not discard an
+        earlier page's cursor; the next poll resumes immediately after the
+        newest stream sequence actually received.
+        """
+        deadline = time.monotonic() + FABRO_PROBE_TIMEOUT_SECONDS
+        records: tuple[dict[str, object], ...] = ()
+        status = 0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return records, False, status
+            stream = self.port.server_api().stream(
+                run_id=run_id,
+                after=self.state.stream_seq,
+                timeout_seconds=remaining,
+            )
+            status = stream.status
+            if not stream.succeeded:
+                return records, False, status
+            page = fabro_event_records_from_stdout(stdout=stream.body)
+            if page is None:
+                return records, False, status
+            records += page
+            previous_cursor = self.state.stream_seq
+            self.state.stream_seq = _newest_stream_seq(records=page, current=previous_cursor)
+            if not _page_has_more(payload=stream.payload):
+                return records, True, status
+            if self.state.stream_seq == previous_cursor:
+                return records, False, status
+
+
+def _page_has_more(*, payload: object | None) -> bool:
+    """Whether a successful event-page response declares another page."""
+    if not isinstance(payload, Mapping):
+        return False
+    payload_mapping = cast("Mapping[str, object]", payload)
+    meta: object = payload_mapping.get("meta")
+    return isinstance(meta, Mapping) and cast("Mapping[str, object]", meta).get("has_more") is True
 
 
 def liveness_sample(  # noqa: PLR0913 — each poll input names an independent dispatch or probe fact.
