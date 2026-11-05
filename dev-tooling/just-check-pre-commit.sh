@@ -112,4 +112,19 @@ if [[ "$impl_count" -ge 1 ]] \
     exit $?
 fi
 echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
+if [[ "${LIVESPEC_FACTORY_REFRESH_MERGE:-}" == true ]] \
+    && [[ -f "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+    merge_output="$(mktemp)"
+    cleanup_refresh_merge_output() {
+        rm -f "$merge_output"
+    }
+    trap cleanup_refresh_merge_output EXIT
+    if ! just check-skipping check-codex-skill-picker "${sandbox_skips[@]}" >"$merge_output" 2>&1; then
+        cat "$merge_output"
+        exit 1
+    fi
+    cat "$merge_output"
+    bash dev-tooling/record-refresh-merge-evidence.sh "$merge_output"
+    exit $?
+fi
 just check-skipping check-codex-skill-picker "${sandbox_skips[@]}"
