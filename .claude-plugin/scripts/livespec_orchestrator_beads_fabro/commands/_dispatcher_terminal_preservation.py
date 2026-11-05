@@ -39,8 +39,14 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_comments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference import (
     preserve_checkpointed_work_reference,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_comments import (
+    preserved_tree_comment_names_run,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_escalation import (
     PreservationInputs,
@@ -50,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
     read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -97,12 +104,33 @@ def preserve_cancelled_janitor_green_tree(
     """
     if outcome.status != "cancelled" or outcome.stage != "fabro-run":
         return
+    if _a_comment_already_names_the_run(repo=repo, item=item, outcome=outcome):
+        return
     _preserve_tree(
         args=args,
         repo=repo,
         item=item,
         outcome=replace(outcome, status="blocked", fabro_failure_cause="checkpoint.failed"),
         journal=journal,
+    )
+
+
+def _a_comment_already_names_the_run(
+    *, repo: Path, item: WorkItem, outcome: DispatchOutcome
+) -> bool:
+    """Whether this run was already preserved, so a repeat report publishes nothing.
+
+    An unreadable ledger answers False: a duplicate preservation is recoverable
+    and a missed one is not.
+    """
+    try:
+        comments = read_dispatch_comments(repo=repo, item=item)
+    except ConnectionPrefixMissingError:
+        return False
+    if isinstance(comments, str):
+        return False
+    return preserved_tree_comment_names_run(
+        comments=comments, work_item_id=item.id, run_id=outcome.fabro_run_id
     )
 
 
