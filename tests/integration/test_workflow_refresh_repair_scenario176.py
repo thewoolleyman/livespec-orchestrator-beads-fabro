@@ -1063,12 +1063,14 @@ def _node_attribute(*, node: str, attribute: str) -> str:
     return value
 
 
-def _pr_refresh_script(*, check_suite: str) -> str:
+def _pr_refresh_script(*, check_suite: str, conformance_hook_install: str = "") -> str:
     graph = parse_dot_graph(text=_graph_text())
     assert not isinstance(graph, str), graph
     script: str = graph.nodes["pr_refresh"]["script"]
-    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
-        "{{ inputs.sandbox_check_suite }}", check_suite
+    return (
+        script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
+        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
+        .replace("{{ inputs.conformance_hook_install }}", conformance_hook_install)
     )
 
 
