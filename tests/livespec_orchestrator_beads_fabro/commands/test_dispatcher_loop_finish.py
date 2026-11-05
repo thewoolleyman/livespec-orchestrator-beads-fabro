@@ -214,3 +214,83 @@ def test_finish_keeps_the_disposition_when_terminal_telemetry_cannot_be_read(
 
     assert result.detail == "done"
     assert len(reviewed) == 1
+
+
+def _finish_with_events(
+    *, monkeypatch: Any, tmp_path: Path, events_for_run: Any
+) -> list[dict[str, object]]:
+    module = importlib.import_module(_MODULE)
+    fabro_port_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._fabro_port"
+    )
+    emitted: list[dict[str, object]] = []
+
+    class _Port:
+        def events(self, *, run_id: str, timeout_seconds: float) -> object:
+            _ = (run_id, timeout_seconds)
+            return events_for_run()
+
+    def port_for_plan(**_: object) -> _Port:
+        return _Port()
+
+    def terminal_emitter(**kwargs: object) -> None:
+        emitted.append(kwargs)
+
+    def dispose(**kwargs: object) -> DispatchOutcome:
+        return cast("DispatchOutcome", kwargs["outcome"])
+
+    def emit_review(**_: object) -> None:
+        return None
+
+    monkeypatch.setattr(fabro_port_module, "fabro_port_for_plan", port_for_plan)
+    monkeypatch.setattr(module, "emit_terminal_span", terminal_emitter)
+    _ = finish_dispatch(
+        args=argparse.Namespace(),
+        repo=tmp_path,
+        item=_item(),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+        plan=_plan(repo=tmp_path),
+        outcome=_outcome(detail="done"),
+        started_at=0.0,
+        goal_text="goal",
+        token_supplier=lambda: "token",
+        identity=DispatchJournalIdentity(dispatch_id="dispatch-7", dispatch_factory="hp"),
+        spans=tmp_path / "spans.jsonl",
+        dispose=dispose,
+        emit_review=emit_review,
+    )
+    return emitted
+
+
+def test_finish_marks_attempts_unobserved_when_the_event_read_is_refused(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    """A non-zero event read is an unobserved attempt set, never zero attempts."""
+
+    class _Events:
+        def __init__(self) -> None:
+            self.command = type("Command", (), {"exit_code": 1})()
+            self.payload: list[object] = []
+
+    emitted = _finish_with_events(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, events_for_run=_Events
+    )
+
+    assert len(emitted) == 1
+    assert emitted[0]["attempts"] is None
+
+
+def test_finish_still_emits_the_terminal_span_when_the_event_read_raises(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    """A failing event read still yields the one terminal span, attempts unobserved."""
+
+    def raising() -> object:
+        raise OSError("events unavailable")
+
+    emitted = _finish_with_events(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, events_for_run=raising
+    )
+
+    assert len(emitted) == 1
+    assert emitted[0]["attempts"] is None
