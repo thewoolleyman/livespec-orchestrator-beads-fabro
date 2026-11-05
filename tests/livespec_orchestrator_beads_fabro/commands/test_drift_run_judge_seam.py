@@ -93,6 +93,7 @@ class _Runner:
     reply: str = '{"kind": "stated"}'
     argvs: list[list[str]] = field(default_factory=list)
     environs: list[dict[str, str] | None] = field(default_factory=list)
+    codex_configs: list[str | None] = field(default_factory=list)
     stdin_text: list[str] = field(default_factory=list)
     timeouts: list[float] = field(default_factory=list)
 
@@ -108,6 +109,11 @@ class _Runner:
         _ = cwd
         self.argvs.append(argv)
         self.environs.append(None if env is None else dict(env))
+        codex_home = None if env is None else env.get("CODEX_HOME")
+        config = None if codex_home is None else Path(codex_home) / "config.toml"
+        self.codex_configs.append(
+            None if config is None or not config.is_file() else config.read_text()
+        )
         self.timeouts.append(timeout_seconds)
         # Read unconditionally: this seam ALWAYS hands the child a descriptor,
         # so a guard here would be an arm no call can reach — and an
@@ -163,6 +169,30 @@ def test_the_drift_judge_appends_its_caller_to_inherited_resource_attributes(
         runner.environs[0]["OTEL_RESOURCE_ATTRIBUTES"]
         == "service.namespace=livespec-family,livespec.caller=drift_run"
     )
+
+
+def test_the_drift_judge_preserves_the_host_codex_telemetry_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The isolated Codex judge keeps the trace exporter that reaches llm-spend."""
+    operator_codex_home = tmp_path / "operator-codex"
+    operator_codex_home.mkdir()
+    telemetry_config = (
+        '[otel]\nmetrics_exporter = "none"\n\n'
+        "[otel.trace_exporter.otlp-http]\n"
+        'endpoint = "http://receiver.invalid/v1/traces"\n'
+        'protocol = "json"\n'
+    )
+    _ = (operator_codex_home / "config.toml").write_text(telemetry_config, encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(operator_codex_home))
+    runner = _Runner()
+    project, payload = _project_root(tmp_path=tmp_path)
+
+    _ = drift_judge(project_root=project, payload_root=payload, runner=runner, caller="drift_run")(
+        "a prompt"
+    )
+
+    assert runner.codex_configs == [telemetry_config]
 
 
 def test_the_drift_judge_journals_a_claude_response_for_host_spend(
