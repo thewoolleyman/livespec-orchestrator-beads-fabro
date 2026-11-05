@@ -94,6 +94,36 @@ def test_process_tree_cpu_counts_live_descendants_that_os_times_cannot_see(
     assert seconds == 4.2
 
 
+def test_process_tree_cpu_does_not_scan_unrelated_host_processes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A checkpoint walks only drive descendants, not every host PID."""
+    module = importlib.import_module(_MODULE)
+    rows = {
+        100: (1, 200),
+        101: (100, 100),
+        102: (101, 50),
+        103: (1, 9_999),
+    }
+    for pid, children in {100: "101", 101: "102", 102: "", 103: ""}.items():
+        task = tmp_path / str(pid) / "task" / str(pid)
+        task.mkdir(parents=True)
+        _ = (task / "children").write_text(children, encoding="utf-8")
+    read_pids: list[int] = []
+
+    def fake_stat_row(*, path: Path) -> tuple[int, int] | None:
+        pid = int(path.parent.name)
+        read_pids.append(pid)
+        return rows[pid]
+
+    monkeypatch.setattr(module, "_stat_row", fake_stat_row)
+
+    seconds = module.process_tree_cpu_seconds(root=tmp_path, pid=100, clock_ticks=100)
+
+    assert seconds == 3.5
+    assert read_pids == [100, 101, 102]
+
+
 def test_a_launch_profile_holds_its_rows_until_the_dispatched_item_is_named() -> None:
     """Phases that close before the drive knows its item are not lost."""
     module = importlib.import_module(_MODULE)
