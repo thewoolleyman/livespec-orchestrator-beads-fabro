@@ -51,6 +51,8 @@ measured on that walk.
   2026-11-02 no fork target directory existed on vps, so the first gate was
   a cold build anyway. Do not plan an ETA around a warm cache without
   `ls`-ing it first.
+- Cap that cache after every build or gate (see "Target-cache retention"
+  below). The shared target has no other owner that sweeps it.
 - Run `uptime` BEFORE any build or test run, every time, and bound the
   compile (`CARGO_BUILD_JOBS`, `nice`, `--test-threads`) when the load is
   already high. The load on 2026-09-12 was 25 to 30 on 18 cores from other
@@ -63,6 +65,55 @@ measured on that walk.
   host build on gmktec is not sanctioned. The throttle protects the shared
   box. It is never a reason to read a test verdict differently: see "A test
   verdict never depends on load" below.
+
+## Target-cache retention
+
+The shared `CARGO_TARGET_DIR` is a regenerable cache, and this track owns it.
+livespec-dev-tooling's `ansible/roles/dev_host_retention/HOST_VARS.md` leaves
+it out of that role's scope by design, so no host sweep reclaims it.
+
+Measured 2026-11-05 by `dev-host-disk-retention`:
+- `target/` had grown back to 98 G (92 G of it `debug/`), writing 45.3 G in
+  about 31 hours, roughly 40 G/day.
+- At that rate the vps root filesystem would have crossed its 85% alarm in
+  about a day and a half.
+- Deleting `debug/` alone took the free space on `/` from 168 G to 260 G.
+
+The rule, under coordinator ruling R301 (P13): after every fork build or gate
+that used this cache, and before starting a new one when the cache is large:
+
+```bash
+T=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
+uptime; pgrep -a -x cargo; pgrep -a -x rustc    # nothing of yours may be building
+/usr/bin/du -sh "$T/debug" "$T/release"         # du and ls are aliased on vps
+# cargo-sweep finds the target through `cargo metadata`, so give it a fork
+# checkout as the project path and CARGO_TARGET_DIR to pick this cache.
+# Hold both of cargo's build locks so no build can write mid-sweep.
+sweep() {
+  mkdir -p "$T/debug" "$T/release"   # a lock file needs its directory
+  CARGO_TARGET_DIR="$T" flock -n -E 75 "$T/release/.cargo-lock" \
+    flock -n -E 75 "$T/debug/.cargo-lock" cargo sweep "$@" /data/projects/fabro
+}
+sweep --time 3        # 1. drop artifacts no build has touched in 3 days
+sweep --maxsize 40GB  # 2. then drop the oldest until the cache is under 40 G
+```
+
+- Measured 2026-11-05: both sweeps dry-run (`-d`) cleanly against this cache,
+  with `/data/projects/fabro` as the project path.
+- A `flock` exit of 75 means another cargo holds a lock. Delete nothing;
+  retry after that build ends.
+- When a reclaim is urgent and `debug/` dominates the cache, drop `debug/`
+  whole instead, as was done on 2026-11-05. Rename it under both locks,
+  release the locks, then delete the renamed copy. Keep `release/`, because a
+  staged engine build may still need its incremental artifacts for a host
+  roll.
+- Report the before and after free space on `/` to whoever asked for the
+  reclaim.
+
+This rule is needed only while fork Rust builds run on vps. Once `bd-ib-dqxcsh`
+moves the fork gates onto the ARC k3s runners, this cache stops growing on
+vps. Then delete `debug/` one last time and retire this section in the same
+change that records the move.
 
 ## Nightly tags are release tags
 
