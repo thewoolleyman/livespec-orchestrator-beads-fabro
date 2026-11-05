@@ -19,6 +19,10 @@ _OVER_LIMIT_HEADING_BODY = (
     "(the referenced heading body was omitted because no governing-heading verdict "
     "named or selected no clause for it within this judgement's input bound)"
 )
+_OMITTED_CLAUSE_BODY = (
+    "(a clause the governing-heading verdict named or selected was omitted because "
+    "it does not fit within this judgement's input bound)"
+)
 
 
 def bounded_reference_blocks(
@@ -29,13 +33,10 @@ def bounded_reference_blocks(
     governing: GoverningHeadingVerdict | None,
     heading_body: Callable[[str], str],
 ) -> list[str]:
-    """Render every verdict-named clause whole; bound only the no-verdict full bodies."""
+    """Render each reference within the subject bound, keeping whatever clauses fit verbatim."""
     if governing is not None:
-        return _reference_blocks(
-            references=references,
-            bodies=[
-                _clause_body(reference=reference, governing=governing) for reference in references
-            ],
+        return _bounded_clause_blocks(
+            prefix=prefix, references=references, ending=ending, governing=governing
         )
     bodies = [_OVER_LIMIT_HEADING_BODY for _ in references]
     for index, reference in enumerate(references):
@@ -48,16 +49,55 @@ def bounded_reference_blocks(
     return _reference_blocks(references=references, bodies=bodies)
 
 
-def _clause_body(*, reference: str, governing: GoverningHeadingVerdict) -> str:
-    """Retain every named or selected clause for the cited heading, verbatim."""
-    clauses = tuple(
+def _bounded_clause_blocks(
+    *,
+    prefix: Sequence[str],
+    references: Sequence[str],
+    ending: Sequence[str],
+    governing: GoverningHeadingVerdict,
+) -> list[str]:
+    """Admit each named or selected clause verbatim while the whole subject still fits.
+
+    Every clause starts omitted; a clause that does not fit is passed over rather
+    than ending the walk, so one enormous clause cannot withhold smaller ones.
+    """
+    clauses = [_clauses_for(reference=reference, governing=governing) for reference in references]
+    kept = [[False] * len(group) for group in clauses]
+
+    def bodies() -> list[str]:
+        return [
+            _clause_body(clauses=group, kept=flags)
+            for group, flags in zip(clauses, kept, strict=True)
+        ]
+
+    for group_index, group in enumerate(clauses):
+        for clause_index in range(len(group)):
+            kept[group_index][clause_index] = True
+            if len(
+                _render(prefix=prefix, references=references, bodies=bodies(), ending=ending)
+            ) > (_SUBJECT_CHARACTER_LIMIT):
+                kept[group_index][clause_index] = False
+    return _reference_blocks(references=references, bodies=bodies())
+
+
+def _clauses_for(*, reference: str, governing: GoverningHeadingVerdict) -> tuple[str, ...]:
+    """Every named or selected clause body recorded for the cited heading, deduplicated."""
+    return tuple(
         dict.fromkeys(
-            clause
+            clause.body
             for clause in (*governing.selected_clauses, *governing.named_clauses)
             if _heading_matches(reference=reference, heading=clause.heading)
         )
     )
-    return "\n".join(clause.body for clause in clauses) if clauses else _UNSELECTED_HEADING_BODY
+
+
+def _clause_body(*, clauses: Sequence[str], kept: Sequence[bool]) -> str:
+    """Join the kept clauses verbatim, with one marker per omitted clause."""
+    if not clauses:
+        return _UNSELECTED_HEADING_BODY
+    return "\n".join(
+        body if keep else _OMITTED_CLAUSE_BODY for body, keep in zip(clauses, kept, strict=True)
+    )
 
 
 def _render(

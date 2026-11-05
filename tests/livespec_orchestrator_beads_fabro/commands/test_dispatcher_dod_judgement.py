@@ -232,10 +232,10 @@ def test_subject_bounds_a_large_referenced_heading_after_its_verdict_is_availabl
     assert "The governing clause remains verbatim." in subject
 
 
-def test_subject_keeps_every_named_clause_verbatim_even_past_the_shared_bound(
+def test_subject_keeps_named_clauses_verbatim_where_they_fit_and_stays_within_the_bound(
     tmp_path: Path,
 ) -> None:
-    """A clause the verdict names or selects is never dropped to fit the bound."""
+    """A verdict-named clause too large for the bound is marked omitted, never sent whole."""
     judgement = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
     )
@@ -244,6 +244,7 @@ def test_subject_keeps_every_named_clause_verbatim_even_past_the_shared_bound(
     _ = (spec / "contracts.md").write_text("## Governing\n\nBody.\n", encoding="utf-8")
     named_body = "\n\nNamed clause marker. " + "n" * 160_000 + "\n"
     selected_body = "\n\nSelected clause marker. " + "s" * 10_000 + "\n"
+    fitting_named_body = "\n\nFitting named clause marker. " + "f" * 10_000 + "\n"
     item = replace(
         _item(),
         description=(
@@ -261,13 +262,18 @@ def test_subject_keeps_every_named_clause_verbatim_even_past_the_shared_bound(
             stated_by=("## Second",),
             generalization_target="## Governing",
             selected_clauses=(CondensedClause(heading="## Second", body=selected_body),),
-            named_clauses=(CondensedClause(heading="## Governing", body=named_body),),
+            named_clauses=(
+                CondensedClause(heading="## Governing", body=named_body),
+                CondensedClause(heading="## Governing", body=fitting_named_body),
+            ),
         ),
     )
 
-    assert named_body in subject
+    assert len(subject) <= 150_000
+    assert named_body not in subject
     assert selected_body in subject
-    assert "was omitted because" not in subject
+    assert fitting_named_body in subject
+    assert "clause the governing-heading verdict named or selected was omitted" in subject
 
 
 def test_subject_bounds_large_references_before_a_governing_verdict_is_available(
