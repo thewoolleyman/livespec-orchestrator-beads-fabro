@@ -63,6 +63,18 @@ class RestartRun:
     janitor_succeeded: bool
 
 
+@dataclass(frozen=True, kw_only=True)
+class RestartSweep:
+    """The sweep-wide collaborators every preservation attempt shares."""
+
+    repo: Path
+    factory: str
+    http: FabroHttpPort
+    journal: JournalFile
+    records: tuple[dict[str, object], ...]
+    runner: ShellCommandRunner
+
+
 def add_cancel_for_restart_arguments(*, parser: argparse.ArgumentParser) -> None:
     """Add the narrow, explicitly factory-addressed restart surface."""
     _ = parser.add_argument("--factory", required=True)
@@ -125,21 +137,16 @@ def cancel_for_restart(
         return (f"ERROR factory={factory} could not list active runs",)
     output: list[str] = []
     http = port.server_api()
+    sweep = RestartSweep(
+        repo=repo, factory=factory, http=http, journal=journal, records=records, runner=runner
+    )
     for summary in listed.runs:
         run = _restart_run(summary=summary, http=http)
         if run is None:
             continue
         allowed = True
         if run.janitor_succeeded:
-            allowed = _preserve_before_cancel(
-                repo=repo,
-                factory=factory,
-                http=http,
-                journal=journal,
-                records=records,
-                runner=runner,
-                run=run,
-            )
+            allowed = _preserve_before_cancel(sweep=sweep, run=run)
         if not allowed:
             output.append(f"HELD {run.run_id} factory={factory} preservation-ref-missing")
             continue
@@ -163,43 +170,36 @@ def _restart_run(*, summary: FabroRunSummary, http: FabroHttpPort) -> RestartRun
     )
 
 
-def _preserve_before_cancel(  # noqa: PLR0913 - preserves a single fully identified run.
-    *,
-    repo: Path,
-    factory: str,
-    http: FabroHttpPort,
-    journal: JournalFile,
-    records: tuple[dict[str, object], ...],
-    runner: ShellCommandRunner,
-    run: RestartRun,
-) -> bool:
+def _preserve_before_cancel(*, sweep: RestartSweep, run: RestartRun) -> bool:
     """Publish one eligible run, returning whether cancellation may proceed."""
     if run.work_item_id is None:
         return False
-    base = run_base_commit(records=records, work_item_id=run.work_item_id)
+    base = run_base_commit(records=sweep.records, work_item_id=run.work_item_id)
     if base is None:
         return False
     published = publish_run_tree(
-        port=http,
-        runner=runner,
-        repo=repo,
+        port=sweep.http,
+        runner=sweep.runner,
+        repo=sweep.repo,
         work_item_id=run.work_item_id,
         run_id=run.run_id,
         base_commit=base,
     )
     if isinstance(published, PreservedTree):
-        journal.append(
+        sweep.journal.append(
             record={
                 "stage": "restart-preserved-tree",
                 "work_item_id": run.work_item_id,
                 "run_id": run.run_id,
-                "factory": factory,
+                "factory": sweep.factory,
                 "preservation_ref": published.ref,
                 "base_commit": base,
             }
         )
         return True
-    _record_unpreserved(repo=repo, factory=factory, run=run, journal=journal, failure=published)
+    _record_unpreserved(
+        sweep=sweep, run_id=run.run_id, work_item_id=run.work_item_id, failure=published
+    )
     # The stated recovery arm authorizes cancellation after an unreadable file
     # read only.  A forge failure does not prove a ref exists, so leave the run
     # untouched for the operator rather than losing its only recoverable tree.
@@ -207,18 +207,15 @@ def _preserve_before_cancel(  # noqa: PLR0913 - preserves a single fully identif
 
 
 def _record_unpreserved(
-    *, repo: Path, factory: str, run: RestartRun, journal: JournalFile, failure: PublishFailure
+    *, sweep: RestartSweep, run_id: str, work_item_id: str, failure: PublishFailure
 ) -> None:
     """Durably name an unreadable tree before the restart cancels its run."""
-    work_item_id = run.work_item_id
-    if work_item_id is None:
-        return
-    journal.append(
+    sweep.journal.append(
         record={
             "stage": "restart-preserved-tree-unpreserved",
             "work_item_id": work_item_id,
-            "run_id": run.run_id,
-            "factory": factory,
+            "run_id": run_id,
+            "factory": sweep.factory,
             "failed_step": failure.step,
             "detail": failure.detail,
         }
@@ -226,12 +223,12 @@ def _record_unpreserved(
     # The body deliberately contains the required marker and the files-read
     # step, while the free-form factory diagnostic stays in the journal.
     append_work_item_comment(
-        path=store_config(repo=repo),
+        path=store_config(repo=sweep.repo),
         work_item_id=work_item_id,
         body=unpreserved_tree_body(
             work_item_id=work_item_id,
-            run_id=run.run_id,
-            factory=factory,
+            run_id=run_id,
+            factory=sweep.factory,
             failure=failure,
         ),
     )

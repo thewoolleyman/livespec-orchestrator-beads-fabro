@@ -330,7 +330,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     warn_item_sizing,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import (
-    add_dispatch_common,
+    add_dispatch_and_loop_arguments,
     add_probe_arguments,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_drift_run_command import (
@@ -516,9 +516,11 @@ def main(*, argv: list[str] | None = None) -> int:
     return _SUBCOMMAND_HANDLERS.get(args.subcommand, run_loop_command)(args=args)
 
 
-def _build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - command registry.
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    add_dispatch_and_loop_arguments(add_parser=subparsers.add_parser)
+    add_resume_arguments(parser=subparsers.add_parser("resume"))
     add_classify_tier_arguments(parser=subparsers.add_parser("classify-tier"))
     add_cancel_for_restart_arguments(parser=subparsers.add_parser("cancel-for-restart"))
     add_ledger_check_arguments(parser=subparsers.add_parser("ledger-check"))
@@ -544,12 +546,4 @@ def _build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - command regis
     add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
     add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
-    add_dispatch_common(parser=(dispatch := subparsers.add_parser("dispatch")))
-    _ = dispatch.add_argument("--item", dest="item", required=True)
-    add_resume_arguments(parser=subparsers.add_parser("resume"))
-    add_dispatch_common(parser=(loop := subparsers.add_parser("loop")))
-    _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
-    _ = loop.add_argument("--parallel", dest="parallel", type=int, default=1)
-    _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")
-    _ = loop.add_argument("--item", dest="items", action="append", default=None)
     return parser
