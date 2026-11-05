@@ -1356,5 +1356,33 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 317 — Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref",
+    "work_item": "bd-ib-ofvsr3",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 318 — A run's ending names its latest preserved capture on the item",
+    "work_item": "bd-ib-xdhe5z",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 319 — A re-dispatch starts from the latest run's latest preserved capture",
+    "work_item": "bd-ib-v6br5b",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 320 — Preservation refs are deleted when the Dispatcher closes or collects an item's runs",
+    "work_item": "bd-ib-efiasj",
+    "first_seen": "2026-11-05"
   }
 ]
