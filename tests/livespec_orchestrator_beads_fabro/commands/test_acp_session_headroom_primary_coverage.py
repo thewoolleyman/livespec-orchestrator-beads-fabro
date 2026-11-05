@@ -66,6 +66,7 @@ _CLAUDE_ROUTED_NODES = {
         "proof_capture",
         "proof_verify",
         "review",
+        "pr",
         "disposition",
     )
 }

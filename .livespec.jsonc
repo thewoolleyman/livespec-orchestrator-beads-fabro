@@ -273,6 +273,16 @@
     // that surface round-trips the file through json.dumps and silently strips
     // every comment here while reporting green — tracked as bd-ib-lmi5.
     "dispatcher": {
+      // INTERIM, RE-LANDED (2026-11-05, legacy-coordinator-agent ruling; plan
+      // stall-watchdog-false-kills, bd-ib-laf735). The v0.287.0 watchdog stream leg reads
+      // a route petri does not serve (404), so every stream poll is unobservable and the
+      // 7200 s default measures run age, not quiet: run 01M6MZSSK8F6 (bd-ib-v5dqyn) was
+      // cancelled at 06:38:12Z with its last event 0.03 s earlier, and its pod was reaped
+      // before any preserve ref existed. 21600 s leaves a silent run to the whole-run wall
+      // budget, whose preserve ask works. REVERT this key only once BOTH bd-ib-fn5uq4
+      // (correct stream route) ships with a real quiet reading AND bd-ib-xdhe5z (a stall
+      // cancel pushes a preserve ref) is live.
+      "stall_timeout_seconds": 21600,
       "auto_approve_ready": true,
       // wip_cap: 16 matches the factory's 16-run cap (coordinator R99:
       // max_concurrent_runs 16, quota 64/32). Raised from 10 to 12 on

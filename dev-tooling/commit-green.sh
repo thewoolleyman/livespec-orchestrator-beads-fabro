@@ -31,12 +31,8 @@ fold_checkpoints() {
         return
     fi
     red_message="$(git log -1 --format=%B "$ref" 2>/dev/null || true)"
-    if grep -q '^TDD-Red-Test-File-Checksum: ' <<<"$red_message"; then
-        # A seeded tree may carry checkpoints from an earlier run.  Fold that
-        # complete suffix into its evidence-bearing commit: an open Red is
-        # completed here, while an already-Green pair is amended without losing
-        # either trailer.  Leaving those checkpoints as published commits would
-        # publish implementation changes with no replay evidence.
+    if grep -q '^TDD-Red-Test-File-Checksum: ' <<<"$red_message" \
+        && ! grep -q '^TDD-Green-Verified-At: ' <<<"$red_message"; then
         git reset --soft "HEAD~${depth}"
     fi
 }

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro._incident_carrier import IncidentCarrier
+
 __all__: list[str] = ["AuthorityRefusal", "IncidentAttempt", "IncidentReading"]
 
 
@@ -35,6 +37,8 @@ class IncidentAttempt:
     original_paths: tuple[str, ...]
     deferred_work: tuple[str, ...]
     repayment_required: bool
+    # None is a schema-1 record written before the explicit carrier model.
+    carrier: IncidentCarrier | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

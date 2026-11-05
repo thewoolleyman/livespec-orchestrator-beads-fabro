@@ -6819,10 +6819,11 @@ Feature: A factory agent's commit leg is not bounded by one tool call
 
   Scenario: A Green amend whose hook outlasts one tool call completes
     Given a review_fix-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
-    When the agent starts the amend through the sandbox commit runner and repeats bounded waits in later tool calls
-    Then the amend completes with the hook's own verdict
+    When the agent starts the amend through the sandbox commit runner, waits on it once, and ends its turn while the commit run is still running
+    Then the run waits on that commit run before the review_fix stage's outcome is decided
+    And the amend completes with the hook's own verdict
     And the resulting commit carries every trailer the hook wrote
-    And the final wait reports the passed state, exit status zero and the resulting commit id
+    And the settled commit run reports the passed state, exit status zero and the resulting commit id
 
   Scenario: A commit refused by its hook is reported as failed
     Given a commit started through the sandbox commit runner whose hook refuses it
@@ -6848,6 +6849,14 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     Given a commit started through the sandbox commit runner that is still running
     When the agent starts another commit through the runner
     Then the runner refuses the start and names the running commit run
+
+  Scenario: A fix turn cannot wait twice on one running commit
+    Given a fix-stage agent that started a commit through the sandbox commit runner
+    And the agent's first wait on that commit run reported it running
+    When the agent waits on the same commit run again in the same stage visit
+    Then the runner refuses the wait and leaves the commit run untouched
+    And the refusal reports the commit run as still running
+    And the refusal names the stage's commit-run settle as what will wait on it
 ```
 
 ## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
@@ -8540,6 +8549,32 @@ Feature: New behaviour gets new spec before it is built
       | a held spec-change-tier item                  | a stem that propose-change's topic canonicalization would change       | the non-canonical topic |
       | a held spec-change-tier item                  | a stem with no proposed change under proposed_changes or the history   | the unknown topic       |
       | a held spec-change-tier item                  | a stem with no pending proposal whose latest revision record is reject | the rejected topic      |
+
+  Scenario: An attestation with no asserted invoker records the invoking session's computed identity
+    Given a held feature and an existing H2 heading that states its asked-for behaviour
+    And release-spec-tier is driven for the item with no --invoker flag and no LIVESPEC_INVOKER in the environment
+    And the invoking session sets an agent session id
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the actor as session:<that agent session id>
+    And neither records an unattributed mark as the actor
+    And the journal entry's envelope invoker and invoker_source are stamped by the append layer exactly as before
+
+  Scenario: An attestation from a human terminal with no asserted invoker records the forge login
+    Given release-spec-tier is driven for a held feature with no asserted invoker
+    And the invoking session sets no agent session id and the forge reports a login
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the actor as human:<that forge login>
+
+  Scenario: An asserted invoker is the attestation's actor
+    Given release-spec-tier is driven for a held feature with an invoker asserted by flag or by environment
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record that asserted invoker as the actor
+
+  Scenario: An attestation with no computable identity records the fallback mark
+    Given release-spec-tier is driven for a held feature with no asserted invoker
+    And the invoking session sets no agent session id and no forge login can be read
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the unattributed:<os-user>@<hostname> mark as the actor
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
@@ -11996,6 +12031,59 @@ Feature: an attributable regression fences repayment and reopens the same incide
     And final normal factory repayment remains owed on that item
 ```
 
+## Scenario: incident entry owns one initial authority before a carrier PR exists
+
+```gherkin
+Feature: Safe initial incident authority and a carrier before PR creation
+  Scenario: Independent hosts race the first incident publication
+    Given one canonical item has no incident root and its exact current claim is observable
+    And two clients share only the public ledger server and request different initial incident operations
+    When both condition publication on that same absent root and claim
+    Then at most one immutable initial root and host generation becomes current
+    And the loser performs no incident hook, push or lifecycle effect
+
+  Scenario: A lost initialization reply recovers the same operation
+    Given initial publication committed but its reply was lost
+    When the same operation and identical request are retried
+    Then exact authoritative lookup recovers the original root and result without another root
+    And a changed payload under that operation id is refused as incident-operation-conflict
+    And an unavailable lookup remains unknown without a blind initialization effect
+
+  Scenario: Missing server capability never becomes host-local authority
+    Given the installed provider cannot atomically publish the absent root and expected claim state
+    When authorized incident entry is requested for an existing item
+    Then it reports incident-genesis-capability-unavailable and performs no activation or incident effect
+    And it neither creates another incident item nor uses metadata read-modify-write or a local lock as authority
+
+  Scenario: A real first commit and push precede PR creation
+    Given current branch-reserved authority names the exact repository, target ref, input parent and staged tree
+    And no carrier PR exists
+    When its authorized local commit records the verified resulting commit and its first push wins the recorded remote-ref compare-and-swap
+    Then canonical head-published authority retains that exact remote head and branch history without a fabricated PR number
+    And changed input bytes, changed generation or an unrelated existing ref refuse before publication
+
+  Scenario: PR binding requires the actual authorized forge identity
+    Given head-published authority has no PR number
+    When an authenticated forge observation reports the real matching repository, head ref, head commit and intended base
+    Then that attempt advances to pr-bound with the real positive PR number
+    And a foreign PR, stale head, wrong base or unsupported carrier schema refuses without replacing its existing authority
+
+  Scenario: Factory takeover fences delayed work and normal repayment retains history
+    Given the item has a current queued or live factory claim
+    When the sanctioned incident transition conditionally invalidates that exact claim and records host ownership plus cancel or fence intent
+    Then queued old admission and a delayed old completion or proof writer perform no current effect
+    And an unknown cancel result is retained as unknown rather than claimed canceled
+    And later normal repayment transfers current ownership conditionally, retains the host attempt and uses ordinary factory validation
+
+  Scenario: Missing all-writer exclusion refuses factory takeover instead of claiming a fence
+    Given the item has a current queued or live factory claim
+    And the installed provider cannot conditionally invalidate that claim for every applicable writer
+    When authorized incident entry requests host ownership
+    Then incident entry MUST refuse with a named capability refusal
+    And it records no host ownership, reports no cancelled or fenced factory run and performs no incident effect
+    And the factory claim and its run history remain unchanged
+```
+
 ## Scenario 306 — A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref
 
 Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Failed engine checkpoint commit attribution".
@@ -12320,4 +12408,219 @@ Feature: a red scheduled workflow on the default branch becomes owned work
     Then it files no item
     And the verdict line reads unreadable naming what could not be read
     And the pass exits non-zero
+```
+
+## Scenario 314 — A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A committed fleet-launch launcher spends no launch slot on work no factory may run
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub Dispatcher, a stub ledger that records comments, and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A host-only item exits before the mutex and the preflight
+    Given an impl launcher for bd-x holding FIFO ticket T
+    And the stub Dispatcher's host-only command reports bd-x host_only true with reason "declares an edit under .github/workflows/"
+    When the launcher reaches its host-only screen
+    Then it takes no factory mutex and runs no launch-time preflight
+    And its sequence log ends with one terminal line naming bd-x, T's ticket number and the cause host-only
+    And the stub ledger records one comment on bd-x naming T's ticket number and the host-only reason
+    And no launcher re-takes a ticket for bd-x
+
+  Scenario: A drive refused with exit code 5 is not re-ticketed
+    Given an impl launcher for bd-x whose stub drive exits 5 before any run lists, writing "REFUSED: work-item bd-x is refused"
+    When the drive exits
+    Then the launcher re-takes no ticket for bd-x
+    And its sequence log ends with one terminal line naming bd-x, its ticket number and the cause refused
+    And the stub ledger records one comment on bd-x naming the dropped ticket number and the REFUSED line
+
+  Scenario: A transient early exit still re-takes the same ticket
+    Given an impl launcher for bd-x holding FIFO ticket T whose stub drive exits 1 before any run lists
+    When the drive exits
+    Then the launcher re-takes a FIFO ticket for bd-x at T's ticket number
+```
+
+## Scenario 315 — A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Dispatcher exit codes".
+
+```gherkin
+Feature: Every permanent pre-dispatch refusal gives a caller one signal
+  Scenario Outline: A hand-picked dispatch refused before any run exits 5
+    Given a ready work item bd-x <shape>
+    When an operator runs dispatcher.py loop --item bd-x
+    Then no claim is taken and no factory run is created
+    And the command exits with code 5
+    And stderr carries exactly one line beginning "REFUSED: " that names bd-x
+
+    Examples:
+      | shape                                                                   |
+      | whose factory_safety is needs-host-secrets                              |
+      | whose description declares an edit under .github/workflows/            |
+      | whose pre-dispatch Definition-of-Done judgement rests it at needs-human |
+```
+
+## Scenario 316 — A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A repository hold names the launch kinds it holds
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway queue, lock, in-flight and state directories
+    And queued tickets for an impl launcher of bd-x and a resume launcher of bd-y, both in repository R
+
+  Scenario: A hold scoped to dispatch holds the impl launcher and lets the resume launch
+    Given a repository hold file for R carrying "kinds: dispatch", "reason: commit_green ceiling" and "until: PR 4440 merged"
+    When both launchers poll
+    Then the impl launcher for bd-x keeps its ticket, yields the FIFO head and logs a yield line naming dispatch, the reason and the until text
+    And the resume launcher for bd-y launches
+
+  Scenario: A hold file with no kinds line holds both launch kinds
+    Given a repository hold file for R carrying no kinds line
+    When both launchers poll
+    Then the impl launcher for bd-x and the resume launcher for bd-y both keep their tickets and launch nothing
+
+  Scenario: A hold set while a launcher waits for the mutex is honoured at the launch point
+    Given the impl launcher for bd-x has passed its WIP gate and waits for the factory launch mutex
+    And no repository hold file for R exists
+    When a repository hold file for R is created before the launcher invokes drive
+    Then the launcher releases the mutex and its fleet in-flight marker without launching
+    And it keeps its FIFO ticket
+```
+
+## Scenario 317 — Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref".
+
+```gherkin
+Feature: A run's committed work reaches origin as it progresses
+  As the maintainer of a repository dispatched through the factory
+  I want each settled agent stage's commits on origin before the run moves on
+  So that a cancel, a server crash or an operator removal costs at most the node visit in progress
+
+  Scenario: a settled implement visit is preserved as the run's first capture
+    Given a run of work item W whose implement visit committed through the detached commit runner
+    When implement_commit_settle ends with the tip of fabro/run/<run-id> at commit I
+    Then origin's ref refs/livespec/wip/W/<run-id>/1 points at commit I
+    And the run's HEAD, index and working tree are the same as they were before the push
+    And no repository hook ran for the push
+
+  Scenario: a later settled visit adds the next capture and rewrites nothing
+    Given origin's ref refs/livespec/wip/W/<run-id>/1 points at commit I
+    When fix_commit_settle ends with the run branch's tip at commit F
+    Then origin's ref refs/livespec/wip/W/<run-id>/2 points at commit F
+    And origin's ref refs/livespec/wip/W/<run-id>/1 still points at commit I
+
+  Scenario: a tip the engine reset onto the default branch is not preserved
+    Given origin's ref refs/livespec/wip/W/<run-id>/2 points at commit F
+    And a node left the workspace HEAD detached on the default branch's head D, and the engine's next checkpoint moved fabro/run/<run-id> to an empty commit on D
+    When the next preserving step runs
+    Then no work-in-progress ref of the run is created at that tip
+    And the step's recorded output names the tip and states that its tree carries none of the run's work
+    And the run's latest preserved capture is still refs/livespec/wip/W/<run-id>/2
+
+  Scenario: a failed preservation push does not fail the run
+    Given the forge refuses the push of the run's next work-in-progress ref
+    When fix_commit_settle ends
+    Then the step keeps its own outcome and the run continues
+    And the step's recorded output names the ref, the tip and the failure
+
+  Scenario: needs-human preserves the run branch, not a detached HEAD
+    Given a run whose workspace HEAD is detached on the default branch's head while fabro/run/<run-id> holds the run's work
+    When the run reaches needs_human
+    Then origin's ref refs/heads/needs-human/<run-id> holds a tree that carries the run's work
+
+  Scenario: a committing step without preservation fails the check
+    Given a workflow that declares a step settling an agent stage's commits without the preservation
+    When the repository's checks run
+    Then the check fails and names that step
+```
+
+## Scenario 318 — A run's ending names its latest preserved capture on the item
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "A run's ending names its latest preserved capture on the item".
+
+```gherkin
+Feature: The ledger says where a lost run's work is
+  As the maintainer of a repository dispatched through the factory
+  I want every run that ended without merging to name its latest preserved capture on its item
+  So that I can find the work without reading the forge's refs
+
+  Scenario: a wall-budget cancel names the latest capture
+    Given a run of work item W whose highest-numbered work-in-progress ref is refs/livespec/wip/W/<run-id>/3 at commit C
+    When the Dispatcher records the run's wall-budget cancel
+    Then W carries a livespec-preserved-tree ledger comment naming the run id, the factory, refs/livespec/wip/W/<run-id>/3 and commit C
+
+  Scenario: a run with no capture is named as having none
+    Given a run of work item W that ended before any preserving step ran
+    When the Dispatcher records the run's ending
+    Then W carries a livespec-preserved-tree ledger comment stating that the run has no work-in-progress ref
+
+  Scenario: an unreadable forge is not reported as no capture
+    Given the forge refuses the Dispatcher's listing of the run's work-in-progress refs
+    When the Dispatcher records the run's ending
+    Then W carries a livespec-preserved-tree ledger comment stating that the preservation could not be determined
+```
+
+## Scenario 319 — A re-dispatch starts from the latest run's latest preserved capture
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: A re-dispatch does not redo a lost run's settled work
+  As the maintainer of a repository dispatched through the factory
+  I want a re-dispatch to start from the newest work the item's latest run preserved
+  So that a run lost to a crash or a removal costs only the node visit that was in progress
+
+  Scenario: a run removed without a terminal publication is seeded from its latest capture
+    Given work item W whose latest run was removed by an operator fabro rm after its fix visit settled
+    And that run's highest-numbered work-in-progress ref holds the settled fix commit
+    And no needs-human ref or preservation ref was published at that run's ending
+    When W is released for recovery and routed
+    Then the route is seeded from that work-in-progress ref
+    And the dispatch brief names that ref as the tree to start from
+
+  Scenario: a terminal publication of the same run is preferred
+    Given work item W whose latest run has both a work-in-progress ref and a preserved-publish ref published at its ending
+    When W is released for recovery and routed
+    Then the route is seeded from the preserved-publish ref
+
+  Scenario: a seeded run carries the preserved work through the commit gates
+    Given work item W seeded from a work-in-progress ref that holds a settled implement commit and a later settled fix commit
+    When the seeded run reaches publication in a fresh sandbox
+    Then the published branch carries both preserved changes
+    And every commit on it passed the repository's commit and pre-push gates
+```
+
+## Scenario 320 — Preservation refs are deleted when the Dispatcher closes or collects an item's runs
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Preservation refs are deleted when the Dispatcher closes or collects an item's runs".
+
+```gherkin
+Feature: Preserved run refs do not accumulate on origin
+  As the maintainer of a repository dispatched through the factory
+  I want an item's preserved run refs removed once the Dispatcher closes it or collects its ended runs
+  So that origin keeps only the preserved work that a re-dispatch can still use
+
+  Scenario: accepting an item deletes its preservation refs
+    Given work item W with refs under refs/livespec/wip/W/ and refs/livespec/preserved-publish/W/
+    When the Dispatcher accepts W
+    Then none of those refs exists on origin
+
+  Scenario: collecting a closed item's ended run deletes that run's refs
+    Given a closed work item W whose ended run R has work-in-progress refs and a needs-human ref
+    When the Dispatcher's ended-run collection removes R
+    Then neither R's work-in-progress refs nor refs/heads/needs-human/R exists on origin
+
+  Scenario: an open item keeps its preservation refs
+    Given work item W, blocked for a human, with a ref under refs/livespec/wip/W/
+    When the Dispatcher's ended-run collection runs
+    Then that ref still exists on origin
+
+  Scenario: a failed deletion is retried
+    Given the forge refuses the deletion of a closed item's preservation ref
+    When the Dispatcher's next pass runs
+    Then it attempts the deletion again and the item's state is unchanged
 ```

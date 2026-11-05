@@ -324,7 +324,6 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # is what identifies the ending, so an explicit null on every other
     # outcome would put the key on dispatches that are not that ending and
     # leave a consumer discriminating by its value instead of its presence.
-    "already_satisfied_base",
     "base_advanced",
     "dead_implementer_condition",
     # Factory identity is carried only by the terminal cancellation arm so
@@ -354,6 +353,10 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # reached the parser are both None, so an explicit null would read as a
     # positive finding about a terminal nobody observed.
     "needs_human_reason",
+    # The final checkpoint is evidence only a post-checkpoint terminal observed;
+    # omit it from unrelated outcome payloads rather than reporting a null as a
+    # failed observation.
+    "final_git_commit_sha",
     # The hook-over-limit event, dropped on the same terms. The reason is the
     # ATTRIBUTION one again, and at its sharpest: an explicit null here would
     # read as "this run's hooks stayed inside their limits", which is a positive

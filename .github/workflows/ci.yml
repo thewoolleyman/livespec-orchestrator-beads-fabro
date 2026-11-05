@@ -98,7 +98,7 @@ jobs:
     name: ${{ matrix.target }} (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -241,32 +241,62 @@ jobs:
           # the `/tmp/*` coverage omit glob (pyproject.toml) and trip
           # livespec-impl-beads-1l6's regression guard.
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           # The root-side safe.directory trust was written to /github/home,
           # which uid 1000 does not read (its HOME is /home/ci). Without this,
           # every git call from a check fails "detected dubious ownership".
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       # No `--cov` or fail-under override here: this leg runs the SAME recipe
       # under a different uid, which is the whole point. Nothing about it is
       # advisory, warn-only, or gated behind an env lever — a failure here
       # fails the job, and `ci-green` (the sole required context) fails if any
       # matrix leg fails.
-      # UV_CACHE_DIR for every uid-1000 invocation: on the PowerEdge pool the
-      # hook template points uv at the warm seed /__w/_warm/uv, whose files are
-      # root-owned hardlinks into the fleet generation; uv as uid 1000 cannot
-      # initialize that cache ("Failed to initialize cache", master runs
-      # 33903087096 / 33903145604, 2026-09-04). The nonroot legs forgo the seed
-      # and use a private cache under /home/ci; the root legs keep the seed. The
-      # fleet-level cure is the seed-ownership decision on livespec-ifwnqj
-      # (plan ci-runner-pod-lifecycle-reliability, research/006).
+      # UV_CACHE_DIR for every uid-1000 invocation is NONROOT_UV_CACHE_DIR,
+      # which the prepare step sets to the warm seed /__w/_warm/uv when uid 1000
+      # can write it, and otherwise to a private cold cache under /home/ci. On
+      # 2026-09-04 the seed was root-owned hardlinks into the fleet generation
+      # and uv as uid 1000 could not initialize it ("Failed to initialize cache",
+      # master runs 33903087096 / 33903145604). Since livespec-dev-tooling-hmv2bo
+      # the seed is a private reflink copy per work volume. bd-ib-rpit5z
+      # (plan ci-cache-optimization, lever 4) points the nonroot legs back at it.
       - name: just ${{ matrix.target }} (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -312,7 +342,7 @@ jobs:
     name: check-per-file-coverage-shard (${{ matrix.uid }}, ${{ matrix.shard }}/4)
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -346,16 +376,46 @@ jobs:
           chmod 0755 /root
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just coverage-shard ${{ matrix.shard }} 4 (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -385,7 +445,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -441,16 +501,46 @@ jobs:
           # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just check-per-file-coverage (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -504,7 +594,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -536,7 +626,7 @@ jobs:
           uv sync --all-groups
 
       # Downloaded BEFORE the non-root prep below, so that step's
-      # `chown -R 1000:1000 "$GITHUB_WORKSPACE"` covers the `.coverage` the
+      # targeted ownership pass over "$GITHUB_WORKSPACE" covers the `.coverage` the
       # uid-1000 leg has to read AND delete (consume-once).
       - name: Download this uid's .coverage from the producer
         uses: actions/download-artifact@v4
@@ -561,16 +651,46 @@ jobs:
           # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just ${{ matrix.target }} (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -600,7 +720,7 @@ jobs:
     name: check-python-batch (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -636,9 +756,39 @@ jobs:
           # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
           find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: Run the batched python checks (nonroot)
         if: matrix.uid == 'nonroot'
@@ -646,7 +796,7 @@ jobs:
           run_nonroot() {
             setpriv --reuid=1000 --regid=1000 --clear-groups \
               env HOME=/home/ci \
-                  UV_CACHE_DIR=/home/ci/.cache/uv \
+                  UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                   MISE_DATA_DIR=/root/.local/share/mise \
                   MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                   MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -689,7 +839,7 @@ jobs:
     name: check-doctor-static
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -754,7 +904,7 @@ jobs:
     name: ${{ matrix.target }}
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -844,7 +994,7 @@ jobs:
     name: e2e-cli
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     # SINGLE env block — this job already had a job-level `env:` carrying
     # LIVESPEC_E2E_HARNESS before the baked-image cutover, so the container
     # preamble's vars are MERGED in here rather than added as a second `env:`
@@ -900,7 +1050,7 @@ jobs:
     name: check-metadata-batch
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1034,7 +1184,7 @@ jobs:
     name: acceptance
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1114,7 +1264,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.176.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"

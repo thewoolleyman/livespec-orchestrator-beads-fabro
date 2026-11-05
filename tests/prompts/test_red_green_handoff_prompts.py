@@ -30,26 +30,17 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
     red = _prompt(path=_RED_PROMPT)
     green = _prompt(path=_GREEN_PROMPT)
 
-    assert red.index(_HANDOFF_COMMAND) < red.index(
-        "Decide whether the Definition of Done"
-    ), "the red prompt must resolve the handoff before deciding"
-    assert "read it in full before deciding or changing anything" in red
-
     for phrase in (
         "Write one failing test for one Definition of Done assertion.",
         "Run only that test and capture its failure output.",
         "Do not make a commit.",
-        "Create, change or delete no product file",
         _HANDOFF_COMMAND,
         "## red",
-        "Red test file: <path>",
+        "Test file",
         "Definition of Done assertion",
         "what the test verifies and does not verify",
         "code locations for the change",
         "declared `already-satisfied` outcome",
-        '{"preferred_next_label": "already-satisfied"}',
-        '{"preferred_next_label": "seeded-open-red"}',
-        '{"preferred_next_label": "seeded-already-satisfied"}',
     ):
         assert phrase in red, f"the red prompt omits {phrase!r}"
 
@@ -63,12 +54,7 @@ def test_red_and_green_prompts_direct_the_append_only_implement_handoff() -> Non
         "## green",
         "what changed",
         "which tests ran",
-        '{"definition_of_done_complete": true}',
-        '{"definition_of_done_complete": false}',
-        "read as incomplete",
         "declared `test-wrong` outcome and its reason",
-        "seeded-open-red",
-        "seeded-already-satisfied",
     ):
         assert phrase in green, f"the green prompt omits {phrase!r}"
 

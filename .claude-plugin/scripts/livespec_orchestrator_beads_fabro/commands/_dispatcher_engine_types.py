@@ -178,6 +178,11 @@ class DispatchOutcome:
     needs_human_stages: tuple[str, ...] | None = None
     needs_human_reason: str | None = None
     needs_human_preservation: str | None = None
+    # The run conclusion's final checkpoint commit, when the engine recorded
+    # one.  A sandbox-acquire failure happens after that checkpoint but before
+    # another node can start, so the durable cause record needs this immutable
+    # seed without re-reading a run the factory may already have pruned.
+    final_git_commit_sha: str | None = None
     hook_over_limit: HookOverLimit | None = None
     # The node-timeout cut this needs-human ending is, with the commit runs the cut
     # turn had started and their states when preservation began (Scenario 192,
@@ -208,10 +213,6 @@ class DispatchOutcome:
     # acceptance pass needs the merged head, and a record of what the ending
     # proved cannot be recovered from the pull request alone.
     merged_reconcile: MergedReconcile | None = None
-    # The dispatch base a `red` turn declared the work already satisfied on, when the run
-    # ended that way. Typed rather than re-read from `detail`, for the seam reason
-    # `dead_implementer_condition` above is.
-    already_satisfied_base: str | None = None
 
 
 SleepFn = Callable[[float], None]

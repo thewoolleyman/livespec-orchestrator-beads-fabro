@@ -15,6 +15,9 @@ FLEET_LAUNCH_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$FLEET_LAUNCH_DIR/board-snapshot.sh"
 
 ITEM=${1:?usage: resume-capped.sh <item-id>}
+REPO=${REPO_OVERRIDE:-$FLEET_LAUNCH_ORCH_REPO}
+REPO_NAME=$(basename "$REPO")
+REPO_HOLD_FILE="$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$REPO_NAME"
 SEAT=$FLEET_LAUNCH_SEAT
 OUT=$FLEET_LAUNCH_STATE_DIR
 FABRO=$FLEET_LAUNCH_FABRO
@@ -36,6 +39,31 @@ fleet=U
 mkdir -p "$OUT" "$QUEUE" "$INFLIGHT"
 
 drop_ticket() { [ -n "$ticket" ] && rm -f "$ticket"; ticket=""; }
+yield_ticket() {
+  [ -n "$ticket" ] && [ -f "$ticket" ] && ! grep -q '^held=' "$ticket" && echo "held=$1" >> "$ticket"
+}
+restore_ticket() { [ -n "$ticket" ] && [ -f "$ticket" ] && sed -i '/^held=/d' "$ticket"; }
+repository_hold_applies() {
+  local raw compact
+  HOLD_KINDS=all
+  HOLD_REASON=$(sed -n '/^reason:/ { s/^reason:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  HOLD_UNTIL=$(sed -n '/^until:/ { s/^until:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  [ -e "$REPO_HOLD_FILE" ] || return 1
+  raw=$(sed -n '/^kinds:/ { s/^kinds:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  compact=$(printf '%s' "$raw" | tr -d '[:space:]')
+  case "$compact" in
+    dispatch|resume|dispatch,resume|resume,dispatch) HOLD_KINDS=$compact ;;
+  esac
+  [ "$HOLD_KINDS" = all ] && return 0
+  case ",$HOLD_KINDS," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+log_repository_hold() {
+  local details="kinds=$HOLD_KINDS"
+  [ -n "$HOLD_REASON" ] && details="$details reason=$HOLD_REASON"
+  [ -n "$HOLD_UNTIL" ] && details="$details until=$HOLD_UNTIL"
+  echo "$(date -u +%FT%TZ) repository hold present ($REPO_HOLD_FILE): $details: yield FIFO head"
+}
 release_lock() {
   if [ -n "$lock" ] && grep -q "pid=$$ " "$lock/holder" 2>/dev/null; then
     rm -f "$lock/holder"
@@ -104,7 +132,10 @@ oldest_live_ticket() {
   local f pid
   for f in $(command ls -1 "$QUEUE" 2>/dev/null | sort); do
     pid=$(grep -oE 'pid=[0-9]+' "$QUEUE/$f" 2>/dev/null | head -1 | cut -d= -f2)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "$QUEUE/$f"; return; fi
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      grep -q '^held=' "$QUEUE/$f" && continue
+      echo "$QUEUE/$f"; return
+    fi
     rm -f "$QUEUE/$f"
   done
 }
@@ -144,6 +175,13 @@ echo "$(date -u +%FT%TZ) gmktec FIFO ticket taken at start: ${ticket##*/}"
 
 while :; do
   [ "$(date +%s)" -lt "$deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit 75; }
+  if repository_hold_applies resume; then
+    yield_ticket repository-hold
+    log_repository_hold
+    sleep "$FLEET_LAUNCH_POLL_S"
+    continue
+  fi
+  restore_ticket
   ahead=$(oldest_live_ticket)
   if [ "$ahead" != "$ticket" ]; then
     echo "$(date -u +%FT%TZ) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"
@@ -166,6 +204,15 @@ while :; do
   fi
   if ! write_marker; then
     echo "$(date -u +%FT%TZ) could not write resume in-flight marker; keep FIFO ticket"
+    release_lock
+    sleep "$FLEET_LAUNCH_POLL_S"
+    continue
+  fi
+  if repository_hold_applies resume; then
+    rm -f "$marker"
+    marker=""
+    yield_ticket repository-hold
+    log_repository_hold
     release_lock
     sleep "$FLEET_LAUNCH_POLL_S"
     continue

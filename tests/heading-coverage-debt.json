@@ -1059,6 +1059,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 314 — A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal",
+    "work_item": "bd-ib-v52w7a",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 315 — A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line",
+    "work_item": "bd-ib-t5aju3",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 316 — A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run",
+    "work_item": "bd-ib-fa5elg",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label",
     "work_item": "bd-ib-pz7x",
     "first_seen": "2026-07-13"
@@ -1276,6 +1297,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: incident entry owns one initial authority before a carrier PR exists",
+    "work_item": "bd-ib-dzbwaq",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: incident provenance exceptions remain exact and repayable",
     "work_item": "bd-ib-y7ryj3",
     "first_seen": "2026-11-04"
@@ -1328,5 +1356,33 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 317 — Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref",
+    "work_item": "bd-ib-ofvsr3",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 318 — A run's ending names its latest preserved capture on the item",
+    "work_item": "bd-ib-xdhe5z",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 319 — A re-dispatch starts from the latest run's latest preserved capture",
+    "work_item": "bd-ib-v6br5b",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 320 — Preservation refs are deleted when the Dispatcher closes or collects an item's runs",
+    "work_item": "bd-ib-efiasj",
+    "first_seen": "2026-11-05"
   }
 ]

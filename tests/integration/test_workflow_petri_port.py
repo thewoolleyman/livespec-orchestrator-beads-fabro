@@ -119,19 +119,24 @@ _RECAPTURE_LOOP = _RECAPTURE_ADDED | {
     "proof_grade",
 }
 # The hook-refusal route (v208, Scenario 204; work-item bd-ib-y7372n), kept as
-# its own constant for the same reason, and kept through the Red/Green split
-# (bd-ib-yuwftp). It closes the cycle
-# `green -> implement_completion -> implement_hook_route -> green`, so the nodes
-# it moves are that cycle's members; everything below `commit_green` is already
-# attributed to the Red/Green loop.
+# its own constant for the same reason. It closes a NEW cycle --
+# `implement -> implement_completion -> implement_hook_route -> implement` --
+# so the nodes it moves are that cycle's members plus the diff breaker the
+# second visit's completion re-earns; everything below the breaker is already
+# attributed to a loop above.
 _HOOK_ROUTE_ADDED = {"implement_hook_route"}
 _HOOK_ROUTE_LOOP = _HOOK_ROUTE_ADDED | {
-    "green",
+    "implement",
     "implement_completion",
+    "implementation_diff",
 }
-# The repair-loop commit settles remain when the single implement turn is split:
-# only `fix` and `review_fix` still own detached commit-runner settlement.
-_ACTIVE_COMMIT_SETTLE_ADDED = {
+# The commit-run settles (bd-ib-xj3qqb), kept as their own constant for the same
+# reason. `implement_commit_settle` sits on `implement`'s fallthrough, and the
+# settled-commit re-entry it informs raises the hook-route cycle from two visits
+# to three (so `_HOOK_ROUTE_LOOP` is the set it moves); `review_fix_commit_settle`
+# sits on `review_fix`'s fallthrough and closes no cycle of its own.
+_COMMIT_SETTLE_ADDED = {
+    "implement_commit_settle",
     "fix_commit_settle",
     "review_fix_commit_settle",
 }
@@ -143,23 +148,16 @@ _JANITOR_REFRESH_ROUTE_ADDED = {"janitor_refresh_route"}
 # review-fix budget while converting a fourth request into a named terminal
 # route instead of the engine's unroutable entry abort.
 _REVIEW_FIX_ADMISSION_ADDED = {"review_fix_admission"}
+_IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
 # The `dod_gate` post-turn mutation guard (work-item bd-ib-al54tl), kept as its
 # own constant for the reason every set above gives. It sits on `dod_gate`'s
 # single fallthrough, closes no cycle and is reached once, so it moves no other
 # node's count.
 _DOD_GATE_GUARD_ADDED = {"dod_gate_mutation_guard"}
-_RED_GREEN_ADDED = {
-    "already_satisfied",
-    "commit_green",
-    "commit_red",
-    "green",
-    "red",
+_IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
+    "implement",
+    "implement_completion",
 }
-# A successful Green commit is now the only route into the existing diff
-# breaker, so its visit count moves with the Red/Green loop even though the
-# node itself predates this change.
-_RED_GREEN_LOOP = _RED_GREEN_ADDED | {"implementation_diff"}
-_RETIRED_IMPLEMENT_NODES = {"implement"}
 _REFRESH_REPAIR_LOOP = _REFRESH_REPAIR_ADDED | {
     "fix",
     "janitor",
@@ -742,8 +740,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
 
     # The two new stages, the v134 refresh-repair classifier, the v145 refresh
     # route, the v156 per-assertion grade, the v165 completion gate, the v175
-    # recapture route, the v208 hook-refusal route, the review-fix admission
-    # route and the Red-Green command graph are the ONLY nodes added,
+    # recapture route and the v208 hook-refusal route are the ONLY nodes added,
     # and nothing was dropped: a node
     # the ported graph lost would be an executable path missing from a figure
     # still presented as an allowance.
@@ -753,17 +750,17 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REFRESH_REPAIR_ADDED
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
         | _RECAPTURE_ADDED
-        | _ACTIVE_COMMIT_SETTLE_ADDED
+        | _HOOK_ROUTE_ADDED
+        | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
+        | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _JANITOR_REFRESH_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
-        | _IMPLEMENT_COMPLETION_ADDED
-        | _RED_GREEN_ADDED
-        | _HOOK_ROUTE_ADDED
     )
-    assert set(pre_port.node_visits) - set(ported.node_visits) == _RETIRED_IMPLEMENT_NODES
+    assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
     # The visit TABLE, not just its sum: two different tables can total the same
     # seconds, and it is the per-node figure the credential deadline and the
@@ -782,16 +779,15 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REFRESH_REPAIR_LOOP
         | _PR_ROUTE_ADDED
         | _PROOF_GRADE_ADDED
+        | _IMPLEMENT_COMPLETION_ADDED
         | _RECAPTURE_LOOP
-        | _ACTIVE_COMMIT_SETTLE_ADDED
+        | _HOOK_ROUTE_LOOP
+        | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
+        | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _JANITOR_REFRESH_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
-        | _IMPLEMENT_COMPLETION_ADDED
-        | _RED_GREEN_LOOP
-        | _HOOK_ROUTE_LOOP
-        | _RETIRED_IMPLEMENT_NODES
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

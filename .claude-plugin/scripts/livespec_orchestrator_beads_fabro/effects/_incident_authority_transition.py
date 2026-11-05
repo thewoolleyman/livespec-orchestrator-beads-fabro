@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     TOKEN_TITLE,
     TRANSITION_MARKER,
+    attempt_record,
     decode_attempt,
 )
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
@@ -22,6 +23,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro._incident_carrier import carrier_successor_allowed
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
 from livespec_orchestrator_beads_fabro.errors import (
@@ -62,6 +64,12 @@ def _valid_successor(*, before: IncidentAttempt, after: IncidentAttempt) -> bool
         and after.generation == before.generation + 1
         and before.operation_id != after.operation_id
         and set(before.original_paths).issubset(after.original_paths)
+        and carrier_successor_allowed(
+            before=before.carrier,
+            after=after.carrier,
+            before_pr=before.pr_number,
+            after_pr=after.pr_number,
+        )
     )
 
 
@@ -78,7 +86,7 @@ def _close(
         "item_id": successor.item_id,
         "prior_token_id": observed.current_token_id,
         "next_token_id": candidate,
-        "attempt": asdict(successor),
+        "attempt": attempt_record(attempt=successor),
     }
     reason = TRANSITION_MARKER + json.dumps(payload, sort_keys=True, separators=(",", ":"))
     client.close_issue_without_verdict(issue_id=observed.current_token_id, reason=reason)
@@ -96,7 +104,7 @@ def _close(
 def _commit(
     *, client: BeadsClient, observed: IncidentReading, successor: IncidentAttempt
 ) -> IncidentReading | AuthorityRefusal:
-    decoded = decode_attempt(value=parse_json(text=json.dumps(asdict(successor))))
+    decoded = decode_attempt(value=parse_json(text=json.dumps(attempt_record(attempt=successor))))
     if decoded is None or not _valid_successor(before=observed.attempt, after=decoded):
         return AuthorityRefusal(
             code="incident-transition-invalid-successor", detail=observed.attempt.item_id

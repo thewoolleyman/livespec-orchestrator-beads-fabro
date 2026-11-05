@@ -230,15 +230,13 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
 
     assert set(critical.nodes) == {
         "dod_gate",
-        "green",
-        "red",
+        "implement",
     }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
     assert set(graph.acp_names) == {
         "dod_gate",
-        "green",
-        "red",
+        "implement",
         "fix",
         "review_fix",
         "proof_capture",
@@ -1346,8 +1344,7 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
     assert verdict.fallback_enabled is True
     assert set(verdict.success_critical) == {
         "dod_gate",
-        "green",
-        "red",
+        "implement",
     }
     assert verdict.viable is True
 

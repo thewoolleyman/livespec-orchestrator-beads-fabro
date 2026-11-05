@@ -18,6 +18,7 @@ from returns.io import impure_safe
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro._incident_authority_payload import attempt_record
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
     AuthorityRefusal,
     IncidentReading,
@@ -179,7 +180,7 @@ def receipt_body(*, observed: IncidentReading, receipt: dict[str, Any]) -> str:
     return MARKER + json.dumps(
         dict(
             schema=1,
-            attempt=asdict(observed.attempt),
+            attempt=attempt_record(attempt=observed.attempt),
             committed_token_id=observed.committed_token_id,
             current_token_id=observed.current_token_id,
             receipt=receipt,

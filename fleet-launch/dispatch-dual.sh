@@ -40,6 +40,8 @@ FLEET_LAUNCH_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ITEM=${1:?usage: dispatch-dual.sh <item-id>}
 SEAT=$FLEET_LAUNCH_SEAT
 REPO=${REPO_OVERRIDE:-$FLEET_LAUNCH_ORCH_REPO}
+REPO_NAME=$(basename "$REPO")
+REPO_HOLD_FILE="$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$REPO_NAME"
 OUT=$FLEET_LAUNCH_STATE_DIR
 WRAP=${WRAPPER:-$FLEET_LAUNCH_DEFAULT_WRAPPER}
 GMK=$FLEET_LAUNCH_GMK_SERVER
@@ -54,6 +56,38 @@ gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=""
 mkdir -p "$OUT"
 
 drop_ticket() { [ -n "$ticket" ] && rm -f "$ticket"; ticket=""; }
+ensure_ticket() {
+  [ -n "$ticket" ] && [ -f "$ticket" ] && return
+  mkdir -p "$GMK_Q"
+  ticket="$GMK_Q/${TICKET_NS:-$(date +%s%N)}-$SEAT"
+  echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
+  echo "$(date -u +%FT%TZ) gmktec FIFO ticket taken at start: ${ticket##*/}"
+}
+yield_ticket() {
+  [ -n "$ticket" ] && [ -f "$ticket" ] && ! grep -q '^held=' "$ticket" && echo "held=$1" >> "$ticket"
+}
+restore_ticket() { [ -n "$ticket" ] && [ -f "$ticket" ] && sed -i '/^held=/d' "$ticket"; }
+repository_hold_applies() {
+  local raw compact
+  HOLD_KINDS=all
+  HOLD_REASON=$(sed -n '/^reason:/ { s/^reason:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  HOLD_UNTIL=$(sed -n '/^until:/ { s/^until:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  [ -e "$REPO_HOLD_FILE" ] || return 1
+  raw=$(sed -n '/^kinds:/ { s/^kinds:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  compact=$(printf '%s' "$raw" | tr -d '[:space:]')
+  case "$compact" in
+    dispatch|resume|dispatch,resume|resume,dispatch) HOLD_KINDS=$compact ;;
+  esac
+  [ "$HOLD_KINDS" = all ] && return 0
+  case ",$HOLD_KINDS," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+log_repository_hold() {
+  local details="kinds=$HOLD_KINDS"
+  [ -n "$HOLD_REASON" ] && details="$details reason=$HOLD_REASON"
+  [ -n "$HOLD_UNTIL" ] && details="$details until=$HOLD_UNTIL"
+  echo "$(date -u +%FT%TZ) repository hold present ($REPO_HOLD_FILE): $details: yield FIFO head"
+}
 give_up() {
   echo "no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up item=$ITEM queue-ticket=${ticket:-none}"
   exit 75
@@ -155,28 +189,29 @@ oldest_live_ticket() {
   local q="$1" f p
   for f in $(command ls -1 "$q" 2>/dev/null | sort); do
     p=$(grep -oE 'pid=[0-9]+' "$q/$f" 2>/dev/null | head -1 | cut -d= -f2)
-    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then echo "$q/$f"; return; fi
+    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
+      grep -q '^held=' "$q/$f" && continue
+      echo "$q/$f"; return
+    fi
     rm -f "$q/$f"
   done
 }
 # take_mutex <queue-dir> <lock-dir>: FIFO ticket, FLEET_LAUNCH_MUTEX_POLL_S polls, abandon after FLEET_LAUNCH_ABANDON_S.
 take_mutex() {
-  local q="$1" l="$2" queued early=""
+  local q="$1" l="$2" queued
   mkdir -p "$q"
-  # Reuse a ticket taken at launcher start, so its FIFO place is when the launch was queued.
-  if [ -n "$ticket" ] && [ "${ticket%/*}" = "$q" ] && [ -f "$ticket" ]; then early=1; else
-    ticket="$q/$(date +%s%N)-$SEAT"; echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"; fi
+  # Keep the ticket through the launch-point hold re-read, so a newly-created
+  # hold can yield it instead of losing its FIFO place.
+  ensure_ticket
   queued=$(date +%s)
   while [ $(( $(date +%s) - queued )) -lt "$FLEET_LAUNCH_ABANDON_S" ]; do
     if [ -d "$l" ] && holder_dead "$l"; then echo "$(date -u +%FT%TZ) dead holder on $l: $(cat "$l/holder" 2>/dev/null); removing"; rm -f "$l/holder"; rmdir "$l" 2>/dev/null; fi
     if [ ! -d "$l" ] && [ "$(oldest_live_ticket "$q")" = "$ticket" ] && mkdir "$l" 2>/dev/null; then
-      # An EARLY ticket is kept while the lock is held: if bind_count then fails, the launcher keeps its
-      # FIFO place instead of polling ticketless. The ticket is dropped only once the launch binds.
-      lock="$l"; echo "owner=$SEAT pid=$$ item=$ITEM at=$(date -u +%FT%TZ)" > "$l/holder"; [ -n "$early" ] || drop_ticket; return 0
+      lock="$l"; echo "owner=$SEAT pid=$$ item=$ITEM at=$(date -u +%FT%TZ)" > "$l/holder"; return 0
     fi
     sleep "$FLEET_LAUNCH_MUTEX_POLL_S"
   done
-  [ -n "$early" ] || drop_ticket; return 1
+  return 1
 }
 
 installed_build() {
@@ -225,10 +260,17 @@ evaluated=0
 # A gmktec-only launch takes its FIFO ticket NOW and holds it while it polls, so a launcher queued
 # later cannot win the next freed slot ahead of it.
 if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
-  mkdir -p "$GMK_Q"; ticket="$GMK_Q/${TICKET_NS:-$(date +%s%N)}-$SEAT"; echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
-  echo "$(date -u +%FT%TZ) gmktec FIFO ticket taken at start: ${ticket##*/}"
+  ensure_ticket
 fi
 while [ -z "$target" ]; do
+  if repository_hold_applies dispatch; then
+    ensure_ticket
+    yield_ticket repository-hold
+    log_repository_hold
+    sleep "$FLEET_LAUNCH_POLL_S"
+    continue
+  fi
+  restore_ticket
   if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
     ahead=$(oldest_live_ticket "$GMK_Q")
     if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
@@ -252,7 +294,13 @@ while [ -z "$target" ]; do
       echo "$(date -u +%FT%TZ) mi-homelab green (live=$hl_live fleet=$fleet): queue for the gmktec mutex"
       if take_mutex "$GMK_Q" "$GMK_LOCK"; then
         taken=$(date +%s)
-        if bind_count mi-homelab && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then drop_ticket; target=mi-homelab; break; fi
+        if bind_count mi-homelab && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
+          if repository_hold_applies dispatch; then
+            rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
+          else
+            drop_ticket; target=mi-homelab; break
+          fi
+        fi
         [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
         echo "$(date -u +%FT%TZ) under the gmktec mutex: mi-homelab no longer green (hl=$hl_live fleet=$fleet): release"; release_lock
       fi
@@ -263,7 +311,13 @@ while [ -z "$target" ]; do
     echo "$(date -u +%FT%TZ) gmktec green (live=$gmk_live hl=$hl_live idle=$gmk_idle fleet=$fleet): queue for the gmktec mutex"
     if take_mutex "$GMK_Q" "$GMK_LOCK"; then
       taken=$(date +%s)
-      if bind_count petri && gmk_green; then drop_ticket; target=petri; break; fi
+      if bind_count petri && gmk_green; then
+        if repository_hold_applies dispatch; then
+          rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
+        else
+          drop_ticket; target=petri; break
+        fi
+      fi
       [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
       echo "$(date -u +%FT%TZ) under the gmktec mutex: no longer green (gmktec=$gmk_live fleet=$fleet): release"; release_lock
     fi
