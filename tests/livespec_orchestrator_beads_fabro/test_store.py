@@ -475,15 +475,15 @@ def test_depends_on_mixed_local_and_non_local_roundtrip() -> None:
     assert len(materialized["li-x"].depends_on) == 2
 
 
-def test_read_back_superseded_by_is_none_by_design() -> None:
-    """A single record cannot self-report being superseded — reads to None."""
+def test_read_back_superseded_by_is_projected_from_the_successor_edge() -> None:
+    """A successor-owned edge projects its successor onto the duplicate record."""
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-new"))
     append_work_item(
         path=_config(),
         item=_minimal_work_item(id_="li-old", superseded_by="li-new"),
     )
     materialized = materialize_work_items(records=read_work_items(path=_config()))
-    assert materialized["li-old"].superseded_by is None
+    assert materialized["li-old"].superseded_by == "li-new"
 
 
 def test_depends_on_non_str_non_dict_entry_emits_no_edge() -> None:
