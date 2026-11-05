@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     RESUME_FETCH_REF_ARG,
     RESUME_HEAD_ARG,
+    RESUME_REFERENCE_COMMIT_ARG,
 )
 
 __all__: list[str] = [
@@ -66,6 +67,7 @@ class InterruptedAttempt:
 
     commit_sha: str
     fetch_ref: str
+    reference_only: bool = False
 
 
 def interrupted_attempt_for(*, args: argparse.Namespace) -> InterruptedAttempt | None:
@@ -84,10 +86,13 @@ def interrupted_attempt_for(*, args: argparse.Namespace) -> InterruptedAttempt |
     """
     head = getattr(args, RESUME_HEAD_ARG, None)
     fetch_ref = getattr(args, RESUME_FETCH_REF_ARG, None)
-    if not isinstance(head, str) or not head:
-        return None
     if not isinstance(fetch_ref, str) or not fetch_ref:
         return None
+    if not isinstance(head, str) or not head:
+        reference = getattr(args, RESUME_REFERENCE_COMMIT_ARG, None)
+        if not isinstance(reference, str) or not reference:
+            return None
+        return InterruptedAttempt(commit_sha=reference, fetch_ref=fetch_ref, reference_only=True)
     return InterruptedAttempt(commit_sha=head, fetch_ref=fetch_ref)
 
 
@@ -100,6 +105,20 @@ def interrupted_attempt_section(*, attempt: InterruptedAttempt | None) -> str:
     """
     if attempt is None:
         return ""
+    if attempt.reference_only:
+        return (
+            "\nPreserved reference (NOT your working tree):\n"
+            "Your sandbox is on the default branch's current tree. An earlier attempt"
+            f" at this same work-item left unfinished work at commit {attempt.commit_sha},"
+            f" fetched from {attempt.fetch_ref} and available locally as"
+            f" refs/livespec/preserved-reference. Its base predates the default branch's"
+            " current dev-tooling pin, so it was deliberately NOT checked out: building"
+            " on it would inherit a stale canonical hook body. It is NOT a reviewed"
+            " baseline and NOT merged.\n"
+            "Use it as a reference only: read what it changed (`git diff"
+            " refs/livespec/preserved-reference^!`), and carry over only the parts that"
+            " are correct, onto the current tree.\n"
+        )
     return (
         "\nInterrupted prior attempt:\n"
         f"Your sandbox has already been placed on commit {attempt.commit_sha},"

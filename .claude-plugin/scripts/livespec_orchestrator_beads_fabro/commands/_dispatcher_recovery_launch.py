@@ -60,12 +60,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_RESUME,
+    ROUTE_SEEDED,
     RecoveryRoute,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     RESUME_ENTRY_NODE_ARG,
     RESUME_FETCH_REF_ARG,
     RESUME_HEAD_ARG,
+    RESUME_REFERENCE_COMMIT_ARG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resume_journal_record,
@@ -141,7 +143,14 @@ def recovery_launch_args(
     if seed is None:
         return named
     seeded = argparse.Namespace(**vars(named))
-    setattr(seeded, RESUME_HEAD_ARG, seed.commit_sha)
+    # A stale seed is routed fresh but keeps its preservation ref available to
+    # the sandbox as a reference the prepare step fetches and the brief names.
+    # Only the `seeded` route checks out the preserved commit; otherwise the run
+    # retains the default branch's current hook body.
+    if route is not None and route.route == ROUTE_SEEDED:
+        setattr(seeded, RESUME_HEAD_ARG, seed.commit_sha)
+    else:
+        setattr(seeded, RESUME_REFERENCE_COMMIT_ARG, seed.commit_sha)
     setattr(seeded, RESUME_FETCH_REF_ARG, seed.preservation_ref)
     return seeded
 
@@ -172,12 +181,4 @@ def journal_recovery_route(*, route: RecoveryRoute | None, journal: JournalFile)
                 source=resume.source,
             )
         )
-    journal.append(
-        record=recovery_route_record(
-            work_item_id=route.work_item_id,
-            route=route.route,
-            seed=route.seed,
-            loss=route.loss,
-            preserved_work=route.preserved_work,
-        )
-    )
+    journal.append(record=recovery_route_record(recovery_route=route))

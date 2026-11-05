@@ -82,6 +82,7 @@ __all__: list[str] = [
     "RESUME_FETCH_REF_ARG",
     "RESUME_HEAD_ARG",
     "RESUME_PROOF_ONLY_ARG",
+    "RESUME_REFERENCE_COMMIT_ARG",
     "ResumeCheckout",
     "graph_entered_at",
     "proof_only_graph",
@@ -103,6 +104,15 @@ RESUME_HEAD_ARG = "resume_head"
 # one the reclaim deletes before the run starts. Absent for a resume, which fetches
 # the publish branch the resumed run goes on to push to.
 RESUME_FETCH_REF_ARG = "resume_fetch_ref"
+
+# The preserved commit a FRESH route carries as a reference only. A stale seed is
+# routed fresh because its base predates the default branch's dev-tooling pin, so
+# its commit must not become the sandbox HEAD (`resume_head` stays absent); it is
+# fetched from `resume_fetch_ref` and named in the brief instead.
+RESUME_REFERENCE_COMMIT_ARG = "resume_reference_commit"
+
+# The local ref a reference-only fetch lands the preserved commit on.
+_REFERENCE_LOCAL_REF = "refs/livespec/preserved-reference"
 
 # The explicit selector for the merged-resume arm. It is its own attribute rather
 # than a node name carried in `resume_entry_node`, because the arm is not "the
@@ -193,12 +203,16 @@ class ResumeCheckout:
 
     `read_only` marks the proof-only arm's checkout: the merged pull request's head
     commit at merge, on which nothing may be pushed.
+
+    `reference_only` marks a fresh route's preserved commit: it is fetched and
+    verified but never checked out, so the sandbox keeps the default branch's tree.
     """
 
     branch: str
     head: str
     fetch_ref: str | None = None
     read_only: bool = False
+    reference_only: bool = False
 
 
 def graph_entered_at(*, graph_text: str, node: str) -> str | None:
@@ -406,6 +420,23 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
         return pyright_cache_prepare_steps_block()
     ref = checkout.fetch_ref or f"refs/heads/{checkout.branch}"
     head = shlex.quote(checkout.head)
+    if checkout.reference_only:
+        local_ref = shlex.quote(_REFERENCE_LOCAL_REF)
+        fetch_spec = shlex.quote(f"+{ref}:{_REFERENCE_LOCAL_REF}")
+        reference_script = " && ".join(
+            [
+                "set -e",
+                f"git fetch --no-tags origin {fetch_spec}",
+                f'test "$(git rev-parse {local_ref})" = {head}',
+            ]
+        )
+        reference_step = (
+            "\n# --- Dispatcher-materialized reference fetch: the preserved ref a fresh\n"
+            "# --- route keeps for inspection, fetched and never checked out ---\n"
+            "[[run.prepare.steps]]\n"
+            f"script = {_toml_basic_string(value=reference_script)}\n"
+        )
+        return reference_step + pyright_cache_prepare_steps_block()
     commands = [
         "set -e",
         f"git fetch --no-tags origin {shlex.quote(ref)}",
@@ -446,13 +477,17 @@ def resume_checkout_for(*, args: argparse.Namespace, branch: str) -> ResumeCheck
     caller already holds the item, so it is the party with nothing to resolve.
     """
     head = getattr(args, RESUME_HEAD_ARG, None)
-    if not isinstance(head, str) or not head:
-        return None
     fetch_ref = getattr(args, RESUME_FETCH_REF_ARG, None)
+    fetch = fetch_ref if isinstance(fetch_ref, str) and fetch_ref else None
+    if not isinstance(head, str) or not head:
+        reference = getattr(args, RESUME_REFERENCE_COMMIT_ARG, None)
+        if fetch is None or not isinstance(reference, str) or not reference:
+            return None
+        return ResumeCheckout(branch=branch, head=reference, fetch_ref=fetch, reference_only=True)
     return ResumeCheckout(
         branch=branch,
         head=head,
-        fetch_ref=fetch_ref if isinstance(fetch_ref, str) and fetch_ref else None,
+        fetch_ref=fetch,
         read_only=getattr(args, RESUME_PROOF_ONLY_ARG, False) is True,
     )
 
