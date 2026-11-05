@@ -134,3 +134,11 @@ def test_gate_preview_runs_the_hook_against_a_disposable_staged_tree_and_unsets_
     )
     assert _git(repo=repo, env=env, argv=["log", "--format=%H"]) == before_history
     assert _git(repo=repo, env=env, argv=["diff", "--cached", "--name-only"]) == ""
+
+
+def test_gate_preview_materializes_as_an_executable_file(tmp_path: Path) -> None:
+    """The prompts run the preview path directly, so the prepare step must set the executable bit."""
+    preview = importlib.import_module(_MODULE)
+    _, runner, env = _preview_repository(tmp_path=tmp_path, preview=preview)
+    assert os.access(runner, os.X_OK)
+    assert env["LIVESPEC_CHECK_SKIP"] == _FAILED_TARGET
