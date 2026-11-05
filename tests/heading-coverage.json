@@ -2869,5 +2869,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-pgbr52 adds dispatcher.py breakage-pass, with cases for a failed run filing one item per failed job, a re-run at the same head commit filing nothing, a green run filing nothing, and an unreadable workflow failing visibly.",
     "work_item": "bd-ib-pgbr52"
+  },
+  {
+    "heading": "## Scenario: incident entry owns one initial authority before a carrier PR exists",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior: independent concurrent clients sharing only the installed public ledger server race first incident publication, retry after a lost reply, pre-PR commit and first push, and exact PR binding; bd-ib-dzbwaq owns implementation and proof.",
+    "work_item": "bd-ib-dzbwaq"
   }
 ]

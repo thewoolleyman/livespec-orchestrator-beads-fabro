@@ -11996,6 +11996,51 @@ Feature: an attributable regression fences repayment and reopens the same incide
     And final normal factory repayment remains owed on that item
 ```
 
+## Scenario: incident entry owns one initial authority before a carrier PR exists
+
+```gherkin
+Feature: Safe initial incident authority and a carrier before PR creation
+  Scenario: Independent hosts race the first incident publication
+    Given one canonical item has no incident root and its exact current claim is observable
+    And two clients share only the public ledger server and request different initial incident operations
+    When both condition publication on that same absent root and claim
+    Then at most one immutable initial root and host generation becomes current
+    And the loser performs no incident hook, push or lifecycle effect
+
+  Scenario: A lost initialization reply recovers the same operation
+    Given initial publication committed but its reply was lost
+    When the same operation and identical request are retried
+    Then exact authoritative lookup recovers the original root and result without another root
+    And a changed payload under that operation id is refused as incident-operation-conflict
+    And an unavailable lookup remains unknown without a blind initialization effect
+
+  Scenario: Missing server capability never becomes host-local authority
+    Given the installed provider cannot atomically publish the absent root and expected claim state
+    When authorized incident entry is requested for an existing item
+    Then it reports incident-genesis-capability-unavailable and performs no activation or incident effect
+    And it neither creates another incident item nor uses metadata read-modify-write or a local lock as authority
+
+  Scenario: A real first commit and push precede PR creation
+    Given current branch-reserved authority names the exact repository, target ref, input parent and staged tree
+    And no carrier PR exists
+    When its authorized local commit records the verified resulting commit and its first push wins the recorded remote-ref compare-and-swap
+    Then canonical head-published authority retains that exact remote head and branch history without a fabricated PR number
+    And changed input bytes, changed generation or an unrelated existing ref refuse before publication
+
+  Scenario: PR binding requires the actual authorized forge identity
+    Given head-published authority has no PR number
+    When an authenticated forge observation reports the real matching repository, head ref, head commit and intended base
+    Then that attempt advances to pr-bound with the real positive PR number
+    And a foreign PR, stale head, wrong base or unsupported carrier schema refuses without replacing its existing authority
+
+  Scenario: Factory takeover fences delayed work and normal repayment retains history
+    Given the item has a current queued or live factory claim
+    When the sanctioned incident transition conditionally invalidates that exact claim and records host ownership plus cancel or fence intent
+    Then queued old admission and a delayed old completion or proof writer perform no current effect
+    And an unknown cancel result is retained as unknown rather than claimed canceled
+    And later normal repayment transfers current ownership conditionally, retains the host attempt and uses ordinary factory validation
+```
+
 ## Scenario 306 — A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref
 
 Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Failed engine checkpoint commit attribution".
