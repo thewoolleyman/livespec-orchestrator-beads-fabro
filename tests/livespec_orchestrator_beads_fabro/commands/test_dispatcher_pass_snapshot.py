@@ -22,6 +22,7 @@ re-parsed lines on each read shows up as a count above the journal's line count.
 from __future__ import annotations
 
 import importlib
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -153,6 +154,35 @@ def test_step_persistence_and_reconciliation_share_the_dispatch_pass_parse(
     assert spies.opens_for_read == 1
     assert degraded is None
     assert runs.item_id_by_run["run7"] == "bd-ib-item7"
+
+
+def test_preamble_parses_only_the_records_its_readers_consume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unrelated history is not JSON-parsed before a dispatch can launch."""
+    snapshot = _snapshot()
+    journal = tmp_path / "journal.jsonl"
+    unrelated = [json.dumps({"stage": "history", "n": index}) for index in range(_RECORDS)]
+    relevant = [
+        json.dumps({"stage": "outcome", "outcome": {"step": "not-a-step"}}),
+        json.dumps(
+            {
+                "stage": "dispatch-run-stamp",
+                "work_item_id": "bd-ib-item7",
+                "run_id": "run7",
+            }
+        ),
+    ]
+    _ = journal.write_text("\n".join([*unrelated, *relevant]) + "\n", encoding="utf-8")
+    spies = _spy(monkeypatch=monkeypatch, journal=journal)
+
+    with snapshot.pass_snapshot():
+        assert outstanding_degraded_step(journal_path=journal) is None
+        runs = read_journaled_runs(path=journal)
+
+    assert spies.opens_for_read == 1
+    assert spies.lines_parsed == len(relevant)
+    assert runs.item_id_by_run == {"run7": "bd-ib-item7"}
 
 
 def test_a_record_the_pass_appends_is_visible_without_reading_the_journal_again(
