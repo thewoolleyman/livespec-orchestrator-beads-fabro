@@ -40,7 +40,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
+    snapshot_records_for_stages,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroRunSummary
 from livespec_orchestrator_beads_fabro.commands._run_attribution import (
     GOAL_TEXT_ONLY,
@@ -198,7 +200,7 @@ def read_journaled_runs(*, path: Path) -> JournaledRuns:
     make the join louder: with no journaled run ids the `superseded-run` arm
     simply never fires, and every other arm still holds.
     """
-    snapshot = snapshot_records(journal_path=path)
+    snapshot = snapshot_records_for_stages(journal_path=path, stages=_OWNERSHIP_JOURNAL_STAGES)
     if snapshot is not None:
         return journaled_runs_from_records(records=snapshot, source_path=path)
     read = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))

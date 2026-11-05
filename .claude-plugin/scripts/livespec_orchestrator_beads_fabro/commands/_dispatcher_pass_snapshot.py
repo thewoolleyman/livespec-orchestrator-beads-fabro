@@ -73,6 +73,7 @@ __all__: list[str] = [
     "record_journal_append",
     "release_pass_snapshot",
     "snapshot_records",
+    "snapshot_records_for_stages",
 ]
 
 _ANCHOR_BYTES = 64
@@ -89,9 +90,10 @@ class _Cursor:
     offset: int = 0
     anchor: bytes = b""
     stat_key: _StatKey | None = None
-    records: list[dict[str, object]] = field(default_factory=list)
+    lines: list[bytes] = field(default_factory=list)
+    parsed: list[dict[str, object] | None] = field(default_factory=list)
     view: tuple[dict[str, object], ...] | None = None
-    tail: tuple[dict[str, object], ...] = ()
+    tail: bytes = b""
 
 
 @dataclass(kw_only=True)
@@ -230,7 +232,40 @@ def snapshot_records(*, journal_path: Path | None) -> tuple[dict[str, object], .
         if isinstance(extended, AttemptFailure):
             _ = scope.cursors.pop(key, None)
             return None
-        return extended
+        cursor = scope.cursors[key]
+        if cursor.view is None:
+            cursor.view = _records_for(cursor=cursor, markers=None)
+        return cursor.view
+
+
+def snapshot_records_for_stages(
+    *, journal_path: Path | None, stages: tuple[str, ...]
+) -> tuple[dict[str, object], ...] | None:
+    """Parsed records for only the journal stages a pre-launch reader needs.
+
+    The pass still opens the journal only once.  Its first preamble reader keeps
+    the raw lines and parses just the stage(s) that reader consumes; later
+    readers reuse those bytes and parse their own stage(s).  A generic reader
+    can still ask :func:`snapshot_records` and receives the complete view.
+    """
+    if journal_path is None:
+        return None
+    with _LOCK:
+        scope = _HOLDER.scope
+        if scope is None or not scope.live:
+            return None
+        key = journal_path.resolve()
+        if not key.is_file():
+            _ = scope.cursors.pop(key, None)
+            return ()
+        cursor = scope.cursors.setdefault(key, _Cursor())
+        extended = attempt(
+            action=lambda: _extend(cursor=cursor, path=key), exceptions=(OSError, ValueError)
+        )
+        if isinstance(extended, AttemptFailure):
+            _ = scope.cursors.pop(key, None)
+            return None
+        return _records_for(cursor=cursor, markers=_stage_markers(stages=stages))
 
 
 def record_journal_append(*, path: Path, start: int, line: bytes, status: os.stat_result) -> None:
@@ -253,12 +288,13 @@ def record_journal_append(*, path: Path, start: int, line: bytes, status: os.sta
         record = _as_record(parsed=json.loads(line))
         if record is None:
             return
-        cursor.records.append(record)
+        cursor.lines.append(line.rstrip(b"\n"))
+        cursor.parsed.append(record)
         cursor.offset = end
         cursor.anchor = (cursor.anchor + line)[-_ANCHOR_BYTES:]
         cursor.stat_key = _key_of(status=status)
         cursor.view = None
-        cursor.tail = ()
+        cursor.tail = b""
 
 
 def _extend(*, cursor: _Cursor, path: Path) -> tuple[dict[str, object], ...]:
@@ -268,18 +304,16 @@ def _extend(*, cursor: _Cursor, path: Path) -> tuple[dict[str, object], ...]:
         fresh = _fresh_bytes(cursor=cursor, path=path)
         cut = fresh.rfind(b"\n") + 1
         complete = fresh[:cut]
-        for line in complete.decode("utf-8").splitlines():
-            record = _as_record(parsed=parse_json(text=line))
-            if record is not None:
-                cursor.records.append(record)
+        _ = complete.decode("utf-8")
+        lines = complete.splitlines()
+        cursor.lines.extend(lines)
+        cursor.parsed.extend(None for _line in lines)
         cursor.offset += cut
         cursor.anchor = (cursor.anchor + complete)[-_ANCHOR_BYTES:]
         cursor.stat_key = key
         cursor.view = None
-        cursor.tail = _unfinished_line(fragment=fresh[cut:])
-    if cursor.view is None:
-        cursor.view = tuple(cursor.records)
-    return cursor.view + cursor.tail
+        cursor.tail = fresh[cut:]
+    return ()
 
 
 def _fresh_bytes(*, cursor: _Cursor, path: Path) -> bytes:
@@ -289,17 +323,43 @@ def _fresh_bytes(*, cursor: _Cursor, path: Path) -> bytes:
     if anchored[:held] != cursor.anchor:
         cursor.offset = 0
         cursor.anchor = b""
-        cursor.records.clear()
+        cursor.lines.clear()
+        cursor.parsed.clear()
         return _read_from(path=path, start=0)
     return anchored[held:]
 
 
-def _unfinished_line(*, fragment: bytes) -> tuple[dict[str, object], ...]:
-    """The newline-less final line as a record, when it already parses."""
-    if not fragment:
-        return ()
-    record = _as_record(parsed=parse_json(text=fragment.decode("utf-8")))
-    return () if record is None else (record,)
+def _records_for(
+    *, cursor: _Cursor, markers: tuple[bytes, ...] | None
+) -> tuple[dict[str, object], ...]:
+    """Return the full view, or lazily parse just lines carrying a requested stage."""
+    records: list[dict[str, object]] = []
+    for index, line in enumerate(cursor.lines):
+        if markers is not None and not any(marker in line for marker in markers):
+            continue
+        parsed = cursor.parsed[index]
+        if parsed is None:
+            parsed = _as_record(parsed=parse_json(text=line.decode("utf-8")))
+            cursor.parsed[index] = parsed
+        if parsed is not None:
+            records.append(parsed)
+    if cursor.tail and (markers is None or any(marker in cursor.tail for marker in markers)):
+        record = _as_record(parsed=parse_json(text=cursor.tail.decode("utf-8")))
+        if record is not None:
+            records.append(record)
+    return tuple(records)
+
+
+def _stage_markers(*, stages: tuple[str, ...]) -> tuple[bytes, ...]:
+    """The two compact JSON spellings JournalFile and historic rows use."""
+    return tuple(
+        marker
+        for stage in stages
+        for marker in (
+            f'"stage": "{stage}"'.encode(),
+            f'"stage":"{stage}"'.encode(),
+        )
+    )
 
 
 def _read_from(*, path: Path, start: int) -> bytes:
