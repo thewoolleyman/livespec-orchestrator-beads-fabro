@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This hook is deliberately inert outside the scripted factory refresh. A
-# regular developer merge keeps the ordinary hook behavior; the factory marks
-# only its preserve-remote-ancestry merge because the following publication
-# path already owes the refreshed tree one full aggregate.
+# This workflow-owned gate is deliberately inert outside the scripted factory
+# refresh. A regular developer merge keeps the ordinary hook behavior; the
+# factory marks only its preserve-remote-ancestry merge because the following
+# publication path already owes the refreshed tree one full aggregate.
 if [[ "${LIVESPEC_FACTORY_REFRESH_MERGE:-}" != "true" ]]; then
     exit 0
 fi
