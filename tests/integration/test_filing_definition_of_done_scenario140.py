@@ -46,6 +46,9 @@ from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro.commands import needs_attention
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import filing_display
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
@@ -92,6 +95,17 @@ _GOVERNED_ASSERTION = (
 )
 _TEST_EXISTENCE_ASSERTION = "Tests prove the accept valve refuses an unverified item."
 _CAPABILITIES = ("terminal", "headless_browser")
+
+
+def _taken_governing_heading(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict:
+    """A taken clean verdict for assertions about a clean filing display."""
+    del item, repo
+    return GoverningHeadingVerdict(kind="unstated")
+
+
+def _not_taken_governing_heading(*, item: WorkItem, repo: Path) -> None:
+    """A supplied reader that cannot take a governing-heading verdict."""
+    del item, repo
 
 
 @pytest.fixture(autouse=True)
@@ -263,7 +277,7 @@ def test_filing_displays_the_parse_the_modes_the_capabilities_and_the_finding(
         description=_section(assertion=_TEST_EXISTENCE_ASSERTION, references=_RESOLVABLE_HEADING),
     )
 
-    lines = filing_display(item=item, cwd=repo).splitlines()
+    lines = filing_display(item=item, cwd=repo, governing=_taken_governing_heading).splitlines()
 
     assert lines[0] == (
         "effective acceptance criteria: 1 gradeable assertion(s) resolved from"
@@ -274,6 +288,25 @@ def test_filing_displays_the_parse_the_modes_the_capabilities_and_the_finding(
     assert lines[3].startswith("definition-of-done finding (advisory):")
     assert "tests prove" in lines[3]
     assert len(lines) == 4
+
+
+def test_filing_distinguishes_a_supplied_reader_that_did_not_take_a_verdict(
+    tmp_path: Path,
+) -> None:
+    """An untaken supplied verdict cannot render as a clean finding result."""
+    repo = _project(root=tmp_path)
+    item = _seed(
+        id_="bd-display-not-taken",
+        description=_section(assertion=_TEST_EXISTENCE_ASSERTION, references=_RESOLVABLE_HEADING),
+    )
+
+    lines = filing_display(item=item, cwd=repo, governing=_not_taken_governing_heading).splitlines()
+
+    assert (
+        "governing-heading verdict not taken: the supplied governing-heading reader returned no verdict"
+        in lines
+    )
+    assert "definition-of-done findings: none" not in lines
 
 
 # --------------------------------------------------------------------------
@@ -385,8 +418,12 @@ def test_a_carrier_bullet_is_a_finding_while_the_same_prose_above_the_heading_is
         ),
     )
 
-    inside_lines = filing_display(item=inside, cwd=repo).splitlines()
-    above_lines = filing_display(item=above, cwd=repo).splitlines()
+    inside_lines = filing_display(
+        item=inside, cwd=repo, governing=_taken_governing_heading
+    ).splitlines()
+    above_lines = filing_display(
+        item=above, cwd=repo, governing=_taken_governing_heading
+    ).splitlines()
 
     carrier_findings = [line for line in inside_lines if "carrier map" in line]
     assert len(carrier_findings) == 1
