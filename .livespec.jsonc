@@ -933,9 +933,23 @@
       // (bd-ib-tusqrf): it reads and increments one counter under `$GIT_DIR`
       // before a fresh janitor suite run, or records the named exhausted bound
       // for needs_human. It never runs the suite itself.
+      //
+      // `commit_red` and `commit_green` are declared UPWARD as a stopgap
+      // (plan bd-ib-qy5wol, sandbox-commit-gate-ceiling). Since v0.287.0 the
+      // split implement graph runs the commit hooks in these two script nodes,
+      // and the Green amend's hook runs the full in-sandbox suite. Inherited at
+      // the 1800 s default, every visit of a correct green timed out: bd-ib-abbb3j
+      // run 01M6MW212ABC and bd-ib-hap62u run 01M6MW9171VA each failed
+      // commit_green 3 of 3 with "Script timed out after 1800000ms", while
+      // bd-ib-adcaa6 measured that suite at 5863 s on a loaded petri. 7200 s sits
+      // above that measurement and matches `review_fix`. The root fix is the
+      // commit node not re-running the whole suite, at which point these two
+      // entries come back down.
       "node_timeouts": {
         "implement": 14400,
         "implement_completion": 600,
+        "commit_red": 7200,
+        "commit_green": 7200,
         "dod_gate": 600,
         "janitor_admission": 600,
         "janitor": 4340,
