@@ -32,6 +32,13 @@ import importlib
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+    GoverningHeadingReader,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display"
@@ -86,9 +93,20 @@ def _capabilities_config(*, entries: str) -> str:
     )
 
 
-def _display(*, item: WorkItem, cwd: Path) -> list[str]:
+def _taken_governing_heading(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict:
+    """A taken clean verdict for filing-display cases that assert a clean result."""
+    del item, repo
+    return GoverningHeadingVerdict(kind="unstated")
+
+
+def _display(
+    *,
+    item: WorkItem,
+    cwd: Path,
+    governing: GoverningHeadingReader | None = _taken_governing_heading,
+) -> list[str]:
     module = importlib.import_module(_MODULE)
-    return module.filing_display(item=item, cwd=cwd).splitlines()
+    return module.filing_display(item=item, cwd=cwd, governing=governing).splitlines()
 
 
 def test_the_display_module_is_a_module_of_its_own_exporting_its_named_surface() -> None:
@@ -101,6 +119,7 @@ def test_the_display_module_is_a_module_of_its_own_exporting_its_named_surface()
         "ADVISORY_FINDING_PREFIX",
         "CAPABILITIES_PREFIX",
         "FINDINGS_NONE_REPORT",
+        "GOVERNING_HEADING_NOT_TAKEN_PREFIX",
         "MECHANICAL_FINDING_PREFIX",
         "NO_ASSERTIONS_REPORT",
         "UNDECLARED_PROOF_MODE_REPORT",
@@ -146,6 +165,39 @@ def test_a_conforming_filing_shows_the_parse_the_modes_the_capabilities_and_no_f
     assert lines[3] == "sandbox-capabilities: terminal, tmux"
     assert lines[4] == "definition-of-done findings: none"
     assert len(lines) == 5
+
+
+def test_a_reply_discarded_by_the_evidence_quote_check_is_displayed_as_not_taken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A discarded reply is not the same thing as a clean governing verdict."""
+    judge = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge"
+    )
+    monkeypatch.setattr(
+        judge,
+        "drift_judge",
+        lambda **_kwargs: lambda _prompt: (
+            '{"kind": "stated", "stated_by": ["'
+            + _SPEC_HEADING
+            + '"], "generalization_target": null, "rationale": "Stated.", '
+            '"evidence": [{"heading": "'
+            + _SPEC_HEADING
+            + '", "quote": "A quote from somewhere else."}]}'
+        ),
+    )
+    item = _item(
+        description=(
+            "## Definition of Done\n\n"
+            "- The accept valve refuses an item with no verified record.\n\n"
+            f"References: {_SPEC_HEADING}\n"
+        )
+    )
+
+    lines = _display(item=item, cwd=_repo(tmp_path=tmp_path), governing=None)
+
+    assert "governing-heading verdict not taken: evidence-quote check discarded the reply" in lines
+    assert "definition-of-done findings: none" not in lines
 
 
 def test_an_unset_capability_key_is_reported_unpublished_rather_than_empty(

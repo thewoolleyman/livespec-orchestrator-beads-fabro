@@ -65,6 +65,7 @@ item that has no reference line.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from livespec_runtime.spec_stated import ClauseEvidence
@@ -104,8 +105,12 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "SPECIFICATION_DIRNAME",
     "GoverningHeadingReader",
+    "GoverningHeadingTaking",
+    "GoverningHeadingTakingReader",
+    "governing_heading_taking",
     "governing_heading_verdict",
     "host_governing_heading_reader",
+    "host_governing_heading_taking_reader",
     "unjudged_governing_heading",
 ]
 
@@ -157,6 +162,11 @@ _NON_CONTENT_TERMS = frozenset(
         "with",
     }
 )
+_NO_SECTION_REASON = "the item has no Definition-of-Done section"
+_SPEC_TREE_UNREADABLE_REASON = "the specification tree could not be read"
+_JUDGE_CANDIDATE_FAILED_REASON = "the governing-heading judge candidate failed"
+_MULTILINE_TARGET_REASON = "the generalization target spans more than one line"
+_EVIDENCE_DISCARDED_REASON = "evidence-quote check discarded the reply"
 
 
 class GoverningHeadingReader(Protocol):
@@ -170,6 +180,22 @@ class GoverningHeadingReader(Protocol):
 
     def __call__(self, *, item: WorkItem, repo: Path) -> GoverningHeadingVerdict | None:
         """One item's governing-heading verdict, or `None` when none was taken."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class GoverningHeadingTaking:
+    """The verdict a host taking produced, or why the taking did not produce one."""
+
+    verdict: GoverningHeadingVerdict | None
+    not_taken_reason: str | None = None
+
+
+class GoverningHeadingTakingReader(Protocol):
+    """How a display asks for a verdict together with an absent-verdict reason."""
+
+    def __call__(self, *, item: WorkItem, repo: Path) -> GoverningHeadingTaking:
+        """One host taking, including the reason when it did not yield a verdict."""
+        ...
 
 
 def unjudged_governing_heading(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict | None:
@@ -205,13 +231,37 @@ def host_governing_heading_reader(*, runner: CommandRunner) -> GoverningHeadingR
     return read
 
 
+def host_governing_heading_taking_reader(*, runner: CommandRunner) -> GoverningHeadingTakingReader:
+    """A reader that preserves why this host could not take the shared judgement."""
+
+    def read(*, item: WorkItem, repo: Path) -> GoverningHeadingTaking:
+        return governing_heading_taking(
+            item=item,
+            repo=repo,
+            run_model=drift_judge(
+                project_root=repo,
+                runner=runner,
+                caller="dod_governing_heading",
+            ),
+        )
+
+    return read
+
+
 def governing_heading_verdict(
     *, item: WorkItem, repo: Path, run_model: ModelRunner
 ) -> GoverningHeadingVerdict | None:
     """One item's governing-heading verdict, or `None` when it could not be taken."""
+    return governing_heading_taking(item=item, repo=repo, run_model=run_model).verdict
+
+
+def governing_heading_taking(
+    *, item: WorkItem, repo: Path, run_model: ModelRunner
+) -> GoverningHeadingTaking:
+    """One host taking, preserving the reason whenever no verdict was produced."""
     section = definition_of_done(description=item.description)
     if not section.present:
-        return None
+        return GoverningHeadingTaking(verdict=None, not_taken_reason=_NO_SECTION_REASON)
     # `UnicodeDecodeError` as well as `OSError`, and it is the arm that bites:
     # the reader opens every spec file with `read_text(encoding="utf-8")`, and a
     # file carrying one invalid byte raises a `ValueError` subclass rather than
@@ -225,7 +275,7 @@ def governing_heading_verdict(
         exceptions=(OSError, UnicodeDecodeError),
     )
     if isinstance(read, AttemptFailure):
-        return None
+        return GoverningHeadingTaking(verdict=None, not_taken_reason=_SPEC_TREE_UNREADABLE_REASON)
     statement = governing_heading_statement(item=item, section=section)
     condensed = condensed_spec_tree(
         spec_tree=read,
@@ -241,14 +291,14 @@ def governing_heading_verdict(
         exceptions=(OSError,),
     )
     if isinstance(judged, AttemptFailure | Failure):
-        return None
+        return GoverningHeadingTaking(verdict=None, not_taken_reason=_JUDGE_CANDIDATE_FAILED_REASON)
     verdict = judged.unwrap()
     target = verdict.generalization_target
     # The shared parser type-checks the target and nothing more. One spanning
     # lines would be written into the receipt as extra `key: value` lines, so
     # it is treated exactly as a response the parser refused.
     if target is not None and len(target.splitlines()) > 1:
-        return None
+        return GoverningHeadingTaking(verdict=None, not_taken_reason=_MULTILINE_TARGET_REASON)
     headings = verdict_named_headings(stated_by=verdict.stated_by, generalization_target=target)
     named = clauses_named(spec_tree=read, headings=headings)
     if not _evidence_matches_named_clauses(
@@ -257,15 +307,17 @@ def governing_heading_verdict(
         named=named,
         statement=statement,
     ):
-        return None
-    return GoverningHeadingVerdict(
-        kind=verdict.kind,
-        stated_by=verdict.stated_by,
-        generalization_target=target,
-        selected_clauses=condensed.clauses,
-        named_clauses=named,
-        provenance_complete=headings_resolved(headings=headings, clauses=named),
-        evidence=verdict.evidence,
+        return GoverningHeadingTaking(verdict=None, not_taken_reason=_EVIDENCE_DISCARDED_REASON)
+    return GoverningHeadingTaking(
+        verdict=GoverningHeadingVerdict(
+            kind=verdict.kind,
+            stated_by=verdict.stated_by,
+            generalization_target=target,
+            selected_clauses=condensed.clauses,
+            named_clauses=named,
+            provenance_complete=headings_resolved(headings=headings, clauses=named),
+            evidence=verdict.evidence,
+        )
     )
 
 

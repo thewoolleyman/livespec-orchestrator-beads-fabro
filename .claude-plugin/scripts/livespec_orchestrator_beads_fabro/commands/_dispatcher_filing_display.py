@@ -62,7 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     GoverningHeadingReader,
-    host_governing_heading_reader,
+    host_governing_heading_taking_reader,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
@@ -79,6 +79,7 @@ __all__: list[str] = [
     "ADVISORY_FINDING_PREFIX",
     "CAPABILITIES_PREFIX",
     "FINDINGS_NONE_REPORT",
+    "GOVERNING_HEADING_NOT_TAKEN_PREFIX",
     "MECHANICAL_FINDING_PREFIX",
     "NO_ASSERTIONS_REPORT",
     "UNDECLARED_PROOF_MODE_REPORT",
@@ -100,6 +101,8 @@ ADVISORY_FINDING_PREFIX = "definition-of-done finding (advisory):"
 # What a clean item renders. An absent line would be indistinguishable from a
 # display that simply never looked.
 FINDINGS_NONE_REPORT = "definition-of-done findings: none"
+# The display line that keeps a failed taking distinct from a clean verdict.
+GOVERNING_HEADING_NOT_TAKEN_PREFIX = "governing-heading verdict not taken:"
 # What an item with no gradeable assertion renders, for the same reason.
 NO_ASSERTIONS_REPORT = "assertions: none"
 # The mode an assertion from a LEGACY source carries, which is none.
@@ -140,16 +143,29 @@ def filing_display(
     turn one listing into a model call per item, does not reach here: it holds
     the advisory directly, through `advisory_definition_of_done_findings`.
     """
-    reader = (
-        host_governing_heading_reader(runner=ShellCommandRunner())
-        if governing is None
-        else governing
-    )
+    not_taken_reason: str | None = None
+    if governing is None:
+        taking = host_governing_heading_taking_reader(runner=ShellCommandRunner())(
+            item=item, repo=cwd
+        )
+        verdict = taking.verdict
+        not_taken_reason = taking.not_taken_reason
+    else:
+        verdict = governing(item=item, repo=cwd)
+        if verdict is None:
+            not_taken_reason = "the supplied governing-heading reader returned no verdict"
     resolved = effective_criteria(item=item)
     lines = [assertion_count_of(criteria=resolved).parse_display]
     lines.extend(_assertion_lines(criteria=resolved))
     lines.append(_capability_line(cwd=cwd))
-    lines.extend(_finding_lines(item=item, cwd=cwd, governing=reader(item=item, repo=cwd)))
+    lines.extend(
+        _finding_lines(
+            item=item,
+            cwd=cwd,
+            governing=verdict,
+            not_taken_reason=not_taken_reason,
+        )
+    )
     return "\n".join(lines)
 
 
@@ -206,7 +222,11 @@ def _capability_line(*, cwd: Path) -> str:
 
 
 def _finding_lines(
-    *, item: WorkItem, cwd: Path, governing: GoverningHeadingVerdict | None
+    *,
+    item: WorkItem,
+    cwd: Path,
+    governing: GoverningHeadingVerdict | None,
+    not_taken_reason: str | None,
 ) -> list[str]:
     """Every finding the host-side wall can detect, labelled by kind.
 
@@ -221,6 +241,8 @@ def _finding_lines(
         f"{ADVISORY_FINDING_PREFIX} {finding}"
         for finding in advisory_definition_of_done_findings(item=item, cwd=cwd, governing=governing)
     )
+    if not_taken_reason is not None:
+        lines.append(f"{GOVERNING_HEADING_NOT_TAKEN_PREFIX} {not_taken_reason}")
     if not lines:
         return [FINDINGS_NONE_REPORT]
     return lines
