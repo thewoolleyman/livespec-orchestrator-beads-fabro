@@ -71,6 +71,7 @@ __all__: list[str] = [
     "resolve_auto_approve_ready",
     "resolve_automated_regroom_cap",
     "resolve_availability_probe_timeout_seconds",
+    "resolve_claim_tokens",
     "resolve_credential_reprobe_interval_seconds",
     "resolve_drift_capture_merge_threshold",
     "resolve_drift_proposal_queue_cap",
@@ -312,6 +313,16 @@ def resolve_availability_probe_timeout_seconds(
         default=DEFAULT_AVAILABILITY_PROBE_TIMEOUT_SECONDS,
         minimum=1,
     )
+
+
+def resolve_claim_tokens(*, cwd: Path) -> IOResult[bool, PolicySettingUnreadable]:
+    """Read committed-only `dispatcher.claim_tokens`, defaulting to False.
+
+    The token cutover protects every claim-changing writer, so the drive
+    configuration API must not be able to switch hosts between protocols.
+    It is intentionally absent from `_drive_config_schema.CONFIG_KEYS`.
+    """
+    return _resolve_bool_setting(cwd=cwd, key="claim_tokens", default=False)
 
 
 def resolve_require_invoker(*, cwd: Path) -> IOResult[bool, PolicySettingUnreadable]:

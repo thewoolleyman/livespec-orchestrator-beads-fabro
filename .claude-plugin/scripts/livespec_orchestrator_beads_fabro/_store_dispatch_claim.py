@@ -39,15 +39,24 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._store_claim_tokens import (
+    CLAIM_TOKEN_METADATA_KEY,
+    ClaimChangeResult,
+    change_claim,
+    create_claim_token,
+)
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro._beads_client import BeadsClient, BeadsRecord
+    from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "CLAIM_STAMP_METADATA_KEY",
+    "CLAIM_TOKEN_METADATA_KEY",
+    "ClaimChangeResult",
     "ClaimRow",
     "ClaimStamp",
+    "change_claim",
     "claim_row_for",
     "claim_stamp_from_record",
     "create_claim_token",
@@ -62,26 +71,6 @@ _RUN_ID_KEY = "run_id"
 _FACTORY_KEY = "factory"
 _FACTORY_NAME_KEY = "name"
 _FACTORY_SERVER_KEY = "server"
-
-
-def create_claim_token(*, client: BeadsClient) -> str:
-    """Mint an open, server-assigned token for one claim transition.
-
-    The id-free create is deliberate. An explicit-id Beads create is an
-    upsert, which could reopen a token another writer has closed and erase the
-    close reason that establishes the winner. Tokens are labelled so every
-    public work-item projection can exclude them without inferring their kind
-    from an opaque server-assigned id.
-    """
-    token_id = client.create_no_history_issue(
-        title="livespec dispatch claim token",
-        description=(
-            "Single-use dispatch-claim token. Not a work item: it serializes one "
-            "claim-changing ledger write through its close reason."
-        ),
-    )
-    client.update_issue(issue_id=token_id, add_labels=["claim-token"])
-    return token_id
 
 
 @dataclass(frozen=True, kw_only=True)
