@@ -100,7 +100,11 @@ class _WallClockEventProbe:
 
     def sample(self, *, observed_at: float) -> LivenessSample:
         if self.run_id is None:
-            return LivenessSample(last_event_epoch=None, observed_at=observed_at)
+            return LivenessSample(
+                last_event_epoch=None,
+                observed_at=observed_at,
+                event_stream_observable=False,
+            )
         stream = self.port.server_api().stream(
             run_id=self.run_id,
             after=self.state.stream_seq,
@@ -145,6 +149,7 @@ class _WallClockEventProbe:
             # dispatch's own resolved node timeouts, so the bound the stall
             # decision applies is the value the rendered graph gave the node.
             open_command_node=self.state.open_command_node,
+            event_stream_observable=True,
         )
 
 
@@ -210,8 +215,16 @@ def _stage_progress_sample(
         state.newest_event_epoch is None or stage_epoch > state.newest_event_epoch
     ):
         state.newest_event_epoch = stage_epoch
-        return LivenessSample(last_event_epoch=stage_epoch, observed_at=observed_at)
-    return LivenessSample(last_event_epoch=None, observed_at=observed_at)
+        return LivenessSample(
+            last_event_epoch=stage_epoch,
+            observed_at=observed_at,
+            event_stream_observable=False,
+        )
+    return LivenessSample(
+        last_event_epoch=None,
+        observed_at=observed_at,
+        event_stream_observable=False,
+    )
 
 
 def _stage_progress_epoch(*, record: object | None) -> float | None:
