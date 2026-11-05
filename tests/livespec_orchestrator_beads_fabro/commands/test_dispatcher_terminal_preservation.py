@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_terminal_preservation as preservation,
 )
@@ -32,7 +33,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_preservatio
     PRESERVED_TREE_ERROR_STAGE,
     preserve_terminated_run_work,
 )
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _ITEM = "bd-ib-na2xvm"
 _RUN = "01M4YJGC55V86C9V1X07QG3Y2H"
@@ -199,3 +201,119 @@ def test_a_refused_tree_preservation_is_journaled_and_never_raised(
     assert len(refused) == 1
     assert refused[0]["reason"] == "OSError"
     assert refused[0]["outcome_status"] == "blocked"
+
+
+def _cancelled_green_outcome() -> DispatchOutcome:
+    return DispatchOutcome(
+        work_item_id=_ITEM,
+        status="cancelled",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail="",
+        fabro_run_id=_RUN,
+        fabro_factory_name="hp",
+        janitor_green=True,
+    )
+
+
+def _ledger_repo(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "livespec-impl-beads"}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    append_work_item(path=_comment_config(), item=_item())
+    return repo
+
+
+def _publish_cancelled_green(
+    *, repo: Path, journal_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[str]:
+    called: list[str] = []
+
+    def _tree(**kwargs: object) -> None:
+        _ = kwargs
+        called.append("tree")
+
+    monkeypatch.setattr(preservation, "preserve_checkpoint_failed_tree", _tree)
+    preservation.preserve_cancelled_janitor_green_tree(
+        args=_args(),
+        repo=repo,
+        item=_item(),
+        outcome=_cancelled_green_outcome(),
+        journal=JournalFile(path=journal_path),
+    )
+    return called
+
+
+def _comment_naming(*, run_id: str) -> str:
+    return "\n".join(
+        [
+            "livespec-preserved-tree",
+            "",
+            f"work-item: {_ITEM}",
+            f"run id: {run_id}",
+            "factory: hp",
+            "preservation ref: none -- the tree was NOT preserved",
+        ]
+    )
+
+
+def _comment_config() -> StoreConfig:
+    return StoreConfig(
+        tenant="livespec-impl-beads",
+        prefix="livespec-impl-beads",
+        server_user="livespec-impl-beads",
+        database="livespec-impl-beads",
+        bd_path="bd",
+        fake=True,
+    )
+
+
+def test_a_run_a_preserved_tree_comment_already_names_is_not_published_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repeat report of the same cancelled run must not duplicate ref or comment."""
+    repo = _ledger_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    append_work_item_comment(
+        path=_comment_config(), work_item_id=_ITEM, body=_comment_naming(run_id=_RUN)
+    )
+
+    called = _publish_cancelled_green(
+        repo=repo, journal_path=tmp_path / "journal.jsonl", monkeypatch=monkeypatch
+    )
+
+    assert called == []
+
+
+def test_a_comment_naming_another_run_does_not_suppress_this_runs_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _ledger_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    append_work_item_comment(
+        path=_comment_config(), work_item_id=_ITEM, body=_comment_naming(run_id="OTHERRUN")
+    )
+
+    called = _publish_cancelled_green(
+        repo=repo, journal_path=tmp_path / "journal.jsonl", monkeypatch=monkeypatch
+    )
+
+    assert called == ["tree"]
+
+
+def test_an_unreadable_ledger_never_suppresses_the_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A duplicate preservation is recoverable and a missed one is not."""
+    monkeypatch.setattr(
+        preservation, "read_dispatch_comments", lambda **_: "ledger comments read failed"
+    )
+
+    called = _publish_cancelled_green(
+        repo=tmp_path, journal_path=tmp_path / "journal.jsonl", monkeypatch=monkeypatch
+    )
+
+    assert called == ["tree"]
