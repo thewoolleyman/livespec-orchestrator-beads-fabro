@@ -274,8 +274,13 @@ def test_scenario228_a_coding_agent_still_running_at_the_deadline_is_stopped() -
     with tempfile.TemporaryDirectory() as directory:
         guard = Path(directory) / "guard.sh"
         _ = guard.write_text(guard_module.guard_script_text(), encoding="utf-8")
-        deadline = int(time.time()) + _GUARD_DEADLINE_SECONDS
-        started = time.monotonic()
+        deadline = (
+            int(
+                time.time()  # real-time-required: the shipped guard consumes an absolute epoch
+            )
+            + _GUARD_DEADLINE_SECONDS
+        )
+        started = time.monotonic()  # real-time-required: the shipped guard is measured on its epoch
         completed = subprocess.run(
             ["/bin/sh", str(guard), "--", "/bin/sh", "-c", "sleep 600"],
             capture_output=True,
@@ -289,8 +294,15 @@ def test_scenario228_a_coding_agent_still_running_at_the_deadline_is_stopped() -
 
     assert completed.returncode != 0, completed.stdout
     # BY the deadline, not after it: the grace is spent inside the allowance.
-    assert time.monotonic() - started <= _GUARD_DEADLINE_SECONDS + _GUARD_SLACK_SECONDS
-    assert int(time.time()) >= deadline - _GUARD_SLACK_SECONDS
+    assert (
+        time.monotonic()  # real-time-required: the shipped POSIX guard is judged against its absolute epoch
+        - started
+        <= _GUARD_DEADLINE_SECONDS + _GUARD_SLACK_SECONDS
+    )
+    assert (
+        int(time.time())  # real-time-required: the guard's deadline is an absolute epoch
+        >= deadline - _GUARD_SLACK_SECONDS
+    )
 
 
 def test_scenario228_the_start_check_grades_the_credential_with_budget_remaining() -> None:
@@ -311,7 +323,9 @@ def test_scenario228_the_start_check_grades_the_credential_with_budget_remaining
     guard_module = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard"
     )
-    now = int(time.time())
+    now = int(
+        time.time()  # real-time-required: the start check compares real credential epochs
+    )
     deadline = now + _CREDENTIAL_USE_WINDOW_SECONDS
     assert deadline - now >= _RUN_WALL_BUDGET_SECONDS, "the budget premise does not hold"
 
