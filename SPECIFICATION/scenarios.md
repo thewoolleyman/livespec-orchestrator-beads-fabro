@@ -7301,6 +7301,103 @@ Feature: Recovery routing for an automatically released item
     When the Dispatcher's next pass grades the item
     Then the refusal is recorded before any claim and before recovery routing
     And the item is neither routed nor offered to the admission valve in that pass
+
+  Scenario: A dispatch honours a current seed ruling ahead of the automatic preference order
+    Given an item resting ready whose earlier run left an older preserved-publish ref P
+    And a livespec-seed-ruling comment on the item names ref R at commit S, and R exists on origin at S
+    When the Dispatcher next dispatches the item
+    Then its recovery route is seeded with R as the preservation reference and S as the immutable commit
+    And its sandbox checks out S, not P's commit
+    And the item carries one livespec-seed-ruling-consumed comment naming the ruling and the run
+
+  Scenario: A seed ruling whose ref moved or vanished holds the item by name
+    Given an item resting ready that carries a current seed ruling naming ref R at commit S
+    And R is absent on origin, or stands at a commit other than S
+    When the Dispatcher next grades the item's recovery route
+    Then the route is held and no run is launched
+    And the recovery-held record names R, S and the commit observed at R, or R's absence
+    And the item is not seeded from any other preserved tree and is not routed fresh
+
+  Scenario: A consumed seed ruling does not govern a later dispatch
+    Given an item carrying a livespec-seed-ruling-consumed comment for its latest seed ruling
+    When the item is later released for recovery again with no newer ruling
+    Then its recovery route is graded by the clause's ordinary order without that ruling
+
+  Scenario: A needs-human ref named outside the run id is honoured as the run's terminal tree
+    Given an item released for recovery whose earlier run has run id U
+    And no ref needs-human/U exists, while ref needs-human/A's tip commit carries the trailer Fabro-Run: U
+    And the item also has an older preserved-publish ref P
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded with needs-human/A as the preservation reference and its tip as the immutable commit
+    And the route is not seeded from P and is not fresh
+
+  Scenario: A recovery route names every needs-human tree it passed over
+    Given an item released for recovery whose route resumes its published pull request
+    And needs-human ref N's tip commit carries the trailer Fabro-Run naming one of the item's earlier runs
+    When the Dispatcher journals the item's recovery-route record
+    Then the record's passed_over_needs_human field lists N with its commit
+
+  Scenario: An unreadable needs-human identification holds rather than routing fresh
+    Given an item released for recovery for which no needs-human ref is named under a run id
+    And the forge read that identifies needs-human refs by their tip commit cannot be taken
+    When the Dispatcher grades the item's recovery route
+    Then the route is held and the recovery-held record names that measurement
+
+  Scenario: The seed-ruling command records a ruling whose ref stands at the ruled commit
+    Given ref R exists on origin at commit S
+    When an operator runs dispatcher.py seed-ruling naming the item, R, S and a reason
+    Then the item carries one livespec-seed-ruling comment naming R, S, the invoker, the reason and the instant
+    And the journal carries one seed-ruling record with the same fields
+
+  Scenario: The seed-ruling command refuses a ref that is absent or at another commit and writes nothing
+    Given ref R is absent on origin, or stands at a commit other than S
+    When an operator runs dispatcher.py seed-ruling naming the item, R and S
+    Then the command exits 3 naming R, S and the commit observed at R, or R's absence
+    And no livespec-seed-ruling comment and no seed-ruling record is written
+
+  Scenario: A current seed ruling takes precedence over an admissible resume
+    Given an item whose published pull request passes every resume precondition
+    And a current seed ruling names ref R at commit S, and R exists on origin at S
+    When the Dispatcher next grades the item's recovery route
+    Then the route is seeded from R at S, not resume
+
+  Scenario: A non-fallback refusal still holds an item that carries a seed ruling
+    Given an item that carries a current seed ruling whose ref stands at the ruled commit
+    And the item's pull request is merged, or its earlier run is live
+    When the Dispatcher next grades the item's recovery route
+    Then the route is held with that non-fallback refusal and its existing remedy
+
+  Scenario: A later seed ruling replaces an earlier one
+    Given an item carrying a seed ruling for ref R1 and a later seed ruling for ref R2, neither consumed
+    When the Dispatcher next dispatches the item
+    Then the route is seeded from R2
+
+  Scenario: A seed-ruling launch whose consumed comment was not written is consumed by reconciliation
+    Given a run launched seeded from a seed ruling whose item carries no livespec-seed-ruling-consumed comment
+    When a reconciliation pass reads that run
+    Then the item gains one livespec-seed-ruling-consumed comment naming the ruling, the dispatch and the run
+
+  Scenario: Of two needs-human refs carrying one run, the one named under a run identifier is taken
+    Given an earlier run U of the item carried by needs-human/U and by needs-human/A
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded from needs-human/U
+    And the recovery-route record lists needs-human/A in passed_over_needs_human
+
+  Scenario: Of two needs-human refs carrying one run under other names, the newer tip is taken
+    Given an earlier run U of the item carried by needs-human/A and needs-human/B and by no ref named under a run identifier
+    And B's tip commit is newer by committer time than A's
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded from needs-human/B
+
+  Scenario: A recovery route with nothing passed over records an empty list
+    Given an item released for recovery whose only needs-human tree is the one its route takes
+    When the Dispatcher journals the item's recovery-route record
+    Then the record carries passed_over_needs_human as an empty list
+
+  Scenario: One needs-human identification serves every item of a routing pass
+    Given two items released for recovery in the same pass
+    When the Dispatcher grades both items' recovery routes
+    Then the needs-human refs and their tip commit messages are listed once for the pass
 ```
 
 ## Scenario 186 — A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor
