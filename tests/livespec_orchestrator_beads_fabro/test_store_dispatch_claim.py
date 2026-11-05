@@ -213,3 +213,24 @@ def test_a_claim_change_mints_a_server_assigned_open_claim_token(
     record = client.show_issue(issue_id=token_id)
     assert record["status"] != "closed"
     assert "claim-token" in record["labels"]
+
+
+def test_claim_token_protocol_disabled_preserves_the_legacy_single_item_write() -> None:
+    """The default is a strict no-token cutover: existing writers stay unchanged."""
+    append_work_item(path=_config(), item=_item())
+    client = make_beads_client(config=_config())
+    change = getattr(dispatch_claim, "change_claim", None)
+
+    assert callable(change), "claim-token protocol must expose the guarded claim write"
+    outcome = change(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="test-writer",
+        intent="hold-for-test",
+        claim_tokens=False,
+        status="blocked",
+    )
+
+    assert outcome.outcome == "applied"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "blocked"
+    assert client.no_history_issue_ids() == ()
