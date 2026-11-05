@@ -6,15 +6,16 @@ from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
     CONSECUTIVE_CONFLICTING_REPORTS,
-    MERGE_POLL_BUDGET_EXHAUSTED,
     BaseAdvancedAfterArming,
     base_advanced_detail,
-    merge_poll_budget_exhausted_detail,
     reports_base_advanced_after_arming,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_confirm import confirm_pr
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_outcome import (
+    outcome_at_exhaustion,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_pr_association import (
     pr_view_for_merge_sha,
 )
@@ -27,8 +28,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_view import (
     GH_TIMEOUT_SECONDS,
     view_pr,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_required_checks import (
-    required_check_names,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_required_check_failure import (
+    RequiredCheckFailureContext,
+    RerunPollState,
+    required_check_failure,
 )
 
 if TYPE_CHECKING:
@@ -58,6 +61,13 @@ def await_merge(
     # `_dispatcher_base_advance`'s own rule that an absent reading is not a
     # report in either direction.
     conflicting_reports = 0
+    rerun_state = RerunPollState(workflow_ids=set())
+    required_check_context = RequiredCheckFailureContext(
+        outcome_type=outcome_type,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+    )
     for attempt in range(poll.attempts):
         reading = view_pr(
             plan=plan,
@@ -107,12 +117,11 @@ def await_merge(
             )
             journal_stage(journal=journal, plan=plan, stage="pr-update-branch", result=update)
         elif (
-            failure := _required_check_failure(
-                outcome_type=outcome_type,
+            failure := required_check_failure(
+                context=required_check_context,
                 view=view,
-                plan=plan,
-                runner=runner,
-                journal=journal,
+                rerun_state=rerun_state,
+                may_keep_polling=attempt + 1 < poll.attempts,
             )
         ) is not None:
             return failure
@@ -140,7 +149,7 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
     with a disposition tree hanging off its end.
     """
     if merged is None:
-        merged = _outcome_at_exhaustion(
+        merged = outcome_at_exhaustion(
             outcome_type=outcome_type,
             plan=plan,
             runner=runner,
@@ -165,96 +174,6 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
             ),
         )
     return merged
-
-
-def _outcome_at_exhaustion(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-    pr_number: int,
-    run_id: str | None,
-) -> PrView | DispatchOutcome:
-    """What an exhausted poll budget earns, after one final read of the pull request.
-
-    MERGED proceeds as a merge observed within the budget; OPEN and not in
-    conflict rests the item for resume so no claim is left `active` over an
-    ended run. The read omits the status-check rollup, as the access-denied
-    confirmation above does: only the state and mergeability are decided on.
-    Anything else -- conflicting, closed, unreadable -- keeps the existing failed
-    outcome, which is the clause's silence rather than a ruling.
-    """
-    view = view_pr(plan=plan, runner=runner, journal=journal, include_status_checks=False).view
-    if view is not None and view.state == "MERGED":
-        return view
-    if view is not None and view.state == "OPEN" and view.merge_state_status != "DIRTY":
-        return outcome_type(
-            work_item_id=plan.work_item_id,
-            status="blocked",
-            stage="merge-poll",
-            pr_number=view.number,
-            merge_sha=None,
-            detail=merge_poll_budget_exhausted_detail(work_item_id=plan.work_item_id),
-            fabro_run_id=run_id,
-            base_advanced=BaseAdvancedAfterArming(
-                factory=plan.fabro_factory_name,
-                pr_head=view.head,
-                default_branch_tip=view.base,
-                cause=MERGE_POLL_BUDGET_EXHAUSTED,
-            ),
-        )
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="failed",
-        stage="merge-poll",
-        pr_number=pr_number,
-        merge_sha=None,
-        detail="PR did not reach MERGED within the poll budget",
-        fabro_run_id=run_id,
-    )
-
-
-def _required_check_failure(
-    *,
-    outcome_type: type[DispatchOutcome],
-    view: PrView | None,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-) -> DispatchOutcome | None:
-    """The terminal outcome when a check the forge reports as required has failed for good.
-
-    The forge is asked only once something has already failed, so a green poll
-    spends no extra call. An unreadable answer is no answer: the poll continues.
-    """
-    if view is None or not view.terminal_check_failures:
-        return None
-    required = required_check_names(
-        plan=plan,
-        number=view.number,
-        runner=runner,
-        journal=journal,
-    )
-    if required is None:
-        return None
-    failed = [name for name in view.terminal_check_failures if name in required]
-    if not failed:
-        return None
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="blocked",
-        stage="merge-poll",
-        pr_number=view.number,
-        merge_sha=view.merge_sha,
-        detail=(
-            f"required check failed terminally: {', '.join(failed)}; the factory run "
-            "succeeded but its pull request cannot merge. Recover with "
-            f"`resolve-blocked:{plan.work_item_id}:ready`, then "
-            f"`resume --item {plan.work_item_id}`, which checks out the pull request's "
-            "published head for rework."
-        ),
-    )
 
 
 def _reports_overtaken_arming(*, view: PrView) -> bool:
