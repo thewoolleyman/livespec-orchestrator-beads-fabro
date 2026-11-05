@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import
     COMMIT_RUNNER_PROGRAM_FILENAME,
     commit_runner_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
@@ -44,6 +45,15 @@ _TRAILERS = (("Hook-Trailer-One", "alpha"), ("Hook-Trailer-Two", "beta"))
 _FAILED_TARGET = "check-lint"
 _FIRST_WAIT_SECONDS = "1"
 _TERMINAL_WAIT_SECONDS = "120"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_GRAPH = (
+    _REPO_ROOT
+    / ".claude-plugin"
+    / ".fabro"
+    / "workflows"
+    / "implement-work-item"
+    / "workflow.fabro"
+)
 
 # The hook polls for the release file, then answers with its content: `pass`
 # lets the commit proceed, anything else refuses it with the gate aggregate's
@@ -217,6 +227,14 @@ def _head(*, sandbox: _Sandbox) -> str:
     return _git(sandbox=sandbox, argv=["rev-parse", "HEAD"])
 
 
+def _engine_checkpoint(*, sandbox: _Sandbox, parent: str) -> str:
+    """Advance HEAD like the engine checkpoint without disturbing the staged tree."""
+    tree = _git(sandbox=sandbox, argv=["write-tree"])
+    checkpoint = _git(sandbox=sandbox, argv=["commit-tree", tree, "-p", parent])
+    _ = _git(sandbox=sandbox, argv=["update-ref", "HEAD", checkpoint, parent])
+    return checkpoint
+
+
 def test_a_commit_whose_hook_outlasts_the_first_wait_completes_with_the_hooks_verdict(
     sandbox: _Sandbox,
 ) -> None:
@@ -244,6 +262,65 @@ def test_a_commit_whose_hook_outlasts_the_first_wait_completes_with_the_hooks_ve
     assert final["head"] == after
     message = _git(sandbox=sandbox, argv=["log", "-1", "--format=%B"])
     assert message.startswith("feat: slow hook commit")
+    for key, value in _TRAILERS:
+        assert f"{key}: {value}" in message.splitlines()
+
+
+def test_implement_settle_restores_an_overtaken_amend_before_its_hook_reaches_a_verdict(
+    sandbox: _Sandbox,
+) -> None:
+    """Scenario 179: engine checkpoints cannot make a live Green amend empty."""
+    parsed = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(parsed, str), parsed
+    script = parsed.nodes["implement_commit_settle"].get("script", "")
+    assert "--restore-running-head" in script
+
+    before = _head(sandbox=sandbox)
+    checkpoint_ready = sandbox.repo / ".git" / "engine-checkpoint-ready"
+    _install_hook(
+        repo=sandbox.repo,
+        name="pre-commit",
+        body=(
+            "#!/bin/sh\n"
+            f"checkpoint={checkpoint_ready}\n"
+            f'while ! test -f "$checkpoint"; do sleep 0.02; done\n'
+            f'while test "$(git rev-parse HEAD)" != {before}; do sleep 0.02; done\n'
+        ),
+    )
+    started = _runner(
+        sandbox=sandbox,
+        argv=["start", "--", "git", "commit", "--amend", "--no-edit"],
+    )
+    assert started.returncode == 0, started.stderr
+    run_id = started.stdout.strip()
+    assert run_id.startswith("commit-")
+    assert _wait(sandbox=sandbox, run_id=run_id, seconds=_FIRST_WAIT_SECONDS)["state"] == "running"
+
+    first_checkpoint = _engine_checkpoint(sandbox=sandbox, parent=before)
+    _ = _engine_checkpoint(sandbox=sandbox, parent=first_checkpoint)
+    _ = checkpoint_ready.write_text("ready\n", encoding="utf-8")
+
+    brief = sandbox.repo / ".git" / "implement-live-commit"
+    settled = _runner(
+        sandbox=sandbox,
+        argv=[
+            "settle",
+            "--restore-running-head",
+            "--timeout-seconds",
+            _TERMINAL_WAIT_SECONDS,
+            "--brief-file",
+            str(brief),
+        ],
+    )
+
+    assert settled.returncode == 0, settled.stderr
+    record = json.loads(
+        (_runs_directory(sandbox=sandbox) / f"{run_id}.json").read_text(encoding="utf-8")
+    )
+    assert record["state"] == "passed"
+    assert _git(sandbox=sandbox, argv=["rev-parse", "HEAD^"]) == before
+    assert (sandbox.repo / "module.py").read_text(encoding="utf-8") == "x = 1\n"
+    message = _git(sandbox=sandbox, argv=["log", "-1", "--format=%B"])
     for key, value in _TRAILERS:
         assert f"{key}: {value}" in message.splitlines()
 
