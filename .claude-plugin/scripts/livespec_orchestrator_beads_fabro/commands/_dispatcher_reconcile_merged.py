@@ -71,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     build_plan,
     janitor_reconcile_checkout_path,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_janitor_evidence import (
+    selected_pr_janitor_evidence_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged_pr import (
     merged_pr_list_argv,
     parse_merged_pr_list,
@@ -82,6 +85,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_preflight 
     repo_path_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade import run_regrade
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -281,6 +287,15 @@ def _reaccept_in_acceptance(
     )
     if isinstance(merged, int):
         return merged
+    janitor_evidence_refusal = selected_pr_janitor_evidence_refusal(
+        item_id=item.id,
+        records=read_journal_records(journal_path=journal.path),
+        selected_pr_number=merged.number,
+        selected_pr=selected_pr,
+    )
+    if janitor_evidence_refusal is not None:
+        _ = write_stderr(text=janitor_evidence_refusal)
+        return EXIT_PRECONDITION_ERROR
     outcome = DispatchOutcome(
         work_item_id=item.id,
         status="green",
