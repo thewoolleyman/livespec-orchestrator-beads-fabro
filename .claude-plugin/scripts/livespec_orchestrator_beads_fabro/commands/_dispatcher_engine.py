@@ -54,9 +54,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_already_satisfied import (
-    already_satisfied_outcome,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     dispatch_correlation,
 )
@@ -68,6 +65,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
     failed_outcome,
     journal_run_output_markers,
     journal_stage,
+    run_wall_budget_outcome,
+    stalled_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
     await_merge,
@@ -89,9 +88,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_inputs import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import inspect_after_run
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_launcher_terminal import (
-    launcher_terminal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import (
     merged_reconcile_from_text,
@@ -226,9 +222,9 @@ def run_dispatch(
     launched = launcher.launch(plan=plan, runner=runner, journal=journal)
     fabro = launched.command
     journal_stage(journal=journal, plan=plan, stage="fabro-run", result=fabro)
-    ended_by_launcher = launcher_terminal(plan=plan, launched=launched)
-    if ended_by_launcher is not None:
-        return ended_by_launcher
+    launcher_terminal = _launcher_terminal(plan=plan, launched=launched)
+    if launcher_terminal is not None:
+        return launcher_terminal
     run_id = launched.run_id
     inspect = inspect_after_run(
         plan=plan,
@@ -270,19 +266,6 @@ def run_dispatch(
         inspect=inspect,
         terminal=terminal,
     )
-    # A `red` turn that declared the work already satisfied ends the run at its own
-    # node with the tree unchanged, so there is no pull request to find: the ending
-    # is read off the succeeded run before the publication reconciliation looks for
-    # one, and it is never the generic dead-implementer truncation.
-    satisfied = already_satisfied_outcome(
-        outcome_type=DispatchOutcome,
-        plan=plan,
-        run_id=run_id,
-        terminal=terminal,
-        text=run_output,
-    )
-    if satisfied is not None:
-        return satisfied
     # A STRUCTURED SUCCESSFUL CHECKPOINT OUTRANKS THE ENGINE'S OWN CONCLUSION,
     # and only for the one conclusion that admits it cannot answer: a worker
     # that exited zero before its terminal run event was persisted. The engine
@@ -313,16 +296,20 @@ def run_dispatch(
             journal=journal,
         )
     hold, view = publication.hold, publication.view
-    if publication.pr_view_error is not None or view is None:
+    if publication.pr_view_error is not None:
         return failed_outcome(
             outcome_type=DispatchOutcome,
             plan=plan,
             stage="pr-view",
-            detail=(
-                "no pull request exists for branch"
-                if publication.pr_view_error is None
-                else f"pull-request read unobservable: {publication.pr_view_error}"
-            ),
+            detail=f"pull-request read unobservable: {publication.pr_view_error}",
+            fabro_run_id=run_id,
+        )
+    if view is None:
+        return failed_outcome(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            stage="pr-view",
+            detail="no pull request exists for branch",
             fabro_run_id=run_id,
         )
     # The branch-versus-base size, recorded HERE and not at the terminal (plan
@@ -363,3 +350,57 @@ def run_dispatch(
     if run_id is not None and outcome.fabro_run_id is None:
         outcome = replace(outcome, fabro_run_id=run_id)
     return with_merged_reconcile(outcome=outcome, event=merged_reconcile_from_text(text=run_output))
+
+
+def _launcher_terminal(
+    *,
+    plan: DispatchPlan,
+    launched: FabroRunResult,
+) -> DispatchOutcome | None:
+    """The terminal the LAUNCHER itself ended this run with, or None.
+
+    Three endings reach the engine already decided, because the launcher's own
+    watch loop took them: a reaped run whose work-item had stopped being
+    dispatchable, a run cancelled past its whole-run wall budget, and a run
+    cancelled as stalled. Each is final — the run has been `fabro rm -f`-ed —
+    so the engine short-circuits before any PR flow rather than inspecting a
+    run that no longer exists.
+
+    THE BUDGET ARM PRECEDES THE STALL ARM, which is the clause's own precedence:
+    "When a run's measured budget is exceeded and the run also meets the
+    stalled-no-progress rule, the budget takes precedence." A quiet run past its
+    budget satisfies both, and only the budget disposition rests it for a person
+    — so a stall arm reading first would release an item nothing automatic
+    should re-dispatch. The launcher applies the same precedence in its own
+    loop; this ordering is the second half of one guarantee rather than a
+    duplicate of it, because the two surfaces decide different things: the loop
+    decides which cancel to PERFORM and this decides which terminal to REPORT.
+
+    Grouped into one function rather than three returns in `run_dispatch`
+    because they are one question — "did the launcher already end this run?" —
+    and because reading them as a group is what makes the precedence above
+    visible at the point it applies.
+    """
+    if launched.abandoned_run_id is not None:
+        return DispatchOutcome(
+            work_item_id=plan.work_item_id,
+            status="failed",
+            stage="stale-run-reap",
+            pr_number=None,
+            merge_sha=None,
+            detail=(
+                f"run {launched.abandoned_run_id} abandoned because work-item "
+                f"{plan.work_item_id} status is {launched.abandoned_item_status}; "
+                "item is no longer dispatchable"
+            ),
+            fabro_run_id=launched.abandoned_run_id,
+        )
+    if launched.budget_exceeded_run_id is not None:
+        return run_wall_budget_outcome(
+            outcome_type=DispatchOutcome, plan=plan, run_id=launched.budget_exceeded_run_id
+        )
+    if launched.stalled_run_id is not None:
+        return stalled_outcome(
+            outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id
+        )
+    return None

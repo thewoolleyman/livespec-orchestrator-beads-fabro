@@ -1,4 +1,4 @@
-"""Scenario 204 (v208, widened v214) — an incomplete Green turn re-enters green.
+"""Scenario 204 (v208, widened v214) — an incomplete implement turn re-enters implement.
 
 `SPECIFICATION/scenarios.md` "Scenario 204" and the paragraph "An implement turn
 that ends incomplete does not succeed" of `SPECIFICATION/contracts.md` section
@@ -29,14 +29,6 @@ failing run of the declared check suite, otherwise a statement that none was
 recorded. The implement prompt runs the prepared recorder whenever it runs the
 declared suite, so the route reads the prior failed tool output and never runs a
 fresh suite over the tree the turn left.
-
-The Red/Green split (bd-ib-yuwftp, Scenario 285) replaced the single
-`implement` node with `red`, `commit_red`, `green` and `commit_green`. The
-completion gate now grades the `green` turn, and this route re-enters `green`
-rather than the retired `implement` node. Its hook-refusal and exhausted-budget
-causes are kept unchanged, and still name the implement stage, until the slice
-that owns the test-wrong route and the exhausted-bound causes (bd-ib-rf7fvk)
-replaces them.
 """
 
 from __future__ import annotations
@@ -55,12 +47,11 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _GRAPH = _PAYLOAD / "workflow.fabro"
-_PROMPT = _PAYLOAD / "prompts" / "green.md"
+_PROMPT = _PAYLOAD / "prompts" / "implement.md"
 
 _GATE = "implement_completion"
 _ROUTE = "implement_hook_route"
 _IMPLEMENT = "implement"
-_GREEN = "green"
 _NEEDS_HUMAN = "needs_human"
 
 _REFUSAL_GIT_PATH = "livespec-implement-hook-refusal"
@@ -107,13 +98,11 @@ exit 0
 """
 # The cause `implement_completion` leaves behind when it fails the stage.
 _PARTIAL_CAUSE = f"stage: implement\ncause: {_PARTIAL_PROGRESS}: the turn stated incomplete\n"
-# The route is reached at most once per `green` visit, and `green` makes at
-# most three, so the route's worst case is three visits.
+# Fabro's node-retry budget for `implement` is one retry; the re-entry budget
+# matches it, and the settled-commit re-entry that does not spend it adds one
+# more, so the turn's worst case is three visits.
 _ROUTE_VISITS = 3
-# The `implement` timeout key addresses `red` and `green` alike, and each is
-# billed at three visits of two attempts, so the key's delta is billed twelve
-# times.
-_IMPLEMENT_VISITS = 12
+_IMPLEMENT_VISITS = 6
 _CONFIGURED_DELTA = 137
 
 
@@ -158,7 +147,7 @@ def _clone(
 
 
 def _routed(*, repo: Path) -> subprocess.CompletedProcess[str]:
-    """Run the committed route bytes after the Green turn has ended."""
+    """Run the committed route bytes after the implement turn has ended."""
     script = _route_attributes().get("script", "exit 2")
     return subprocess.run(
         ["sh", "-c", script], cwd=repo, check=False, capture_output=True, text=True, env=os.environ
@@ -174,8 +163,8 @@ def _recorded_suite(*, repo: Path, output: str) -> None:
     _ = _git_file(repo=repo, name=_SUITE_VERDICT_GIT_PATH).write_text(output, encoding="utf-8")
 
 
-def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_green() -> None:
-    """The completion gate's failure edge leads to the route, and the route back to green.
+def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_implement() -> None:
+    """The completion gate's failure edge leads to the route, and the route back to implement.
 
     The route's fallthrough is `needs_human`, unconditional, so the ending every
     non-qualifying turn reached before v208 is unchanged. `max_visits` cuts the
@@ -185,8 +174,7 @@ def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_gre
     assert (_ROUTE, "outcome=failed") in _targets(source=_GATE)
     assert (_NEEDS_HUMAN, "outcome=failed") not in _targets(source=_GATE)
     route = _targets(source=_ROUTE)
-    assert (_GREEN, "outcome=succeeded") in route, route
-    assert (_GREEN, "outcome=failed") not in _targets(source=_GATE)
+    assert (_IMPLEMENT, "outcome=succeeded") in route, route
     assert (_NEEDS_HUMAN, "") in route, route
     assert _route_attributes().get("max_visits") == str(_ROUTE_VISITS)
 
@@ -275,7 +263,7 @@ def test_an_incomplete_turn_with_no_failing_gate_reenters_saying_so(tmp_path: Pa
     assert not _git_file(repo=repo, name=_RECORD_GIT_PATH).exists()
 
 
-def test_staged_changes_the_hook_accepts_reenter_green(tmp_path: Path) -> None:
+def test_staged_changes_the_hook_accepts_reenter_implement(tmp_path: Path) -> None:
     """Sub-scenario: staged but accepted -> no refused commit, so the turn re-enters."""
     repo = _clone(tmp_path=tmp_path, hook=_ACCEPTING_HOOK, staged=True)
 
@@ -286,7 +274,7 @@ def test_staged_changes_the_hook_accepts_reenter_green(tmp_path: Path) -> None:
     assert _REENTER not in result.stderr
 
 
-def test_a_repository_with_no_commit_hook_reenters_green(tmp_path: Path) -> None:
+def test_a_repository_with_no_commit_hook_reenters_implement(tmp_path: Path) -> None:
     """Sub-scenario: staged changes but no hook at all -> nothing refused them.
 
     `git hook run --ignore-missing` exits zero when the repository installs no
@@ -301,7 +289,7 @@ def test_a_repository_with_no_commit_hook_reenters_green(tmp_path: Path) -> None
     assert _SUITE_REENTER in result.stderr
 
 
-def test_a_turn_with_no_completion_field_reenters_green(tmp_path: Path) -> None:
+def test_a_turn_with_no_completion_field_reenters_implement(tmp_path: Path) -> None:
     """Sub-scenario: bd-ib-3kqdln's ending, no completion field and nothing staged."""
     repo = _clone(tmp_path=tmp_path, hook=None, staged=False, completion=None)
 
@@ -334,7 +322,7 @@ def test_an_unrefused_incomplete_turn_with_the_budget_exhausted_fails_as_partial
     assert not _git_file(repo=repo, name=_REFUSAL_GIT_PATH).exists()
 
 
-def test_the_green_prompt_directs_a_reentered_turn_to_the_hooks_verdict() -> None:
+def test_the_implement_prompt_directs_a_reentered_turn_to_the_hooks_verdict() -> None:
     """The brief is the prompt plus the per-clone file the route writes."""
     prompt = _PROMPT.read_text(encoding="utf-8")
 
@@ -353,7 +341,7 @@ def test_the_route_never_reruns_the_declared_suite() -> None:
 
 
 def test_the_route_and_the_reentered_turn_are_billed_into_the_subprocess_ceiling() -> None:
-    """The route runs the hook, so it is billed; the implement key bills red and green."""
+    """The route runs the hook, so it is billed; the two re-entries triple implement's visits."""
     defaulted = node_timeouts_from_block(block={})
     assert not isinstance(defaulted, str), defaulted
     base = derive_fabro_timeout_seconds(timeouts=defaulted)
