@@ -19,15 +19,30 @@ surface plus two decisions about it, so the two cannot be understood apart.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     add_invoker_argument,
 )
 
 __all__: list[str] = [
+    "add_dispatch_and_loop_arguments",
     "add_dispatch_common",
     "add_probe_arguments",
 ]
+
+
+def add_dispatch_and_loop_arguments(
+    *, add_parser: Callable[[str], argparse.ArgumentParser]
+) -> None:
+    """Register `dispatch` and `loop`, the two subcommands that take the common group whole."""
+    add_dispatch_common(parser=(dispatch := add_parser("dispatch")))
+    _ = dispatch.add_argument("--item", dest="item", required=True)
+    add_dispatch_common(parser=(loop := add_parser("loop")))
+    _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
+    _ = loop.add_argument("--parallel", dest="parallel", type=int, default=1)
+    _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")
+    _ = loop.add_argument("--item", dest="items", action="append", default=None)
 
 
 def add_probe_arguments(*, parser: argparse.ArgumentParser) -> None:
