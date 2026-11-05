@@ -39,6 +39,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     build_plan,
     janitor_reconcile_checkout_path,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -57,6 +60,9 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
     qualifies. A merge that merely MENTIONS the item in its body is a sibling or a
     follow-up, never a pull request a dispatch of the item produced, so it yields `None`.
     """
+    selected = reconciled_pr_selection(repo=repo, item=item)
+    if selected is not None:
+        return selected
     # Imported here rather than at module scope: the resolution pulls in the reconcile
     # supervisor, which imports the completion path, which imports the acceptance pass —
     # and the acceptance pass imports the proof evidence this module also uses. A
@@ -87,3 +93,29 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
         produced_by_item_dispatch_only=True,
     )
     return merged.number if merged is not None and not isinstance(merged, str) else None
+
+
+def reconciled_pr_selection(*, repo: Path, item: WorkItem) -> int | None:
+    """Return the latest pull-request choice a successful reconciliation recorded.
+
+    Reconciliation validates an explicit selector against the forge before it writes
+    this record. Re-reading title matches here would discard that authority and makes
+    a host landing split across several pull requests ambiguous again. The reverse
+    scan is deliberate: the ordinary dispatch journal is append-only, so a later
+    reconciliation is the item's current resolved target.
+    """
+    records = read_journal_records(journal_path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
+    for record in reversed(records):
+        if record.get("stage") != "reconcile-pr-selected":
+            continue
+        if record.get("work_item_id") != item.id:
+            continue
+        pr_number = record.get("pr_number")
+        merge_sha = record.get("merge_sha")
+        if (
+            isinstance(pr_number, int)
+            and not isinstance(pr_number, bool)
+            and isinstance(merge_sha, str)
+        ):
+            return pr_number
+    return None
