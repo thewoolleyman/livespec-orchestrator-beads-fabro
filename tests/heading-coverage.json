@@ -2877,5 +2877,29 @@
     "test": "TODO",
     "reason": "A real integration-tier test is owed for this incident lifecycle behavior: independent concurrent clients sharing only the installed public ledger server race first incident publication, retry after a lost reply, pre-PR commit and first push, and exact PR binding; bd-ib-dzbwaq owns implementation and proof.",
     "work_item": "bd-ib-dzbwaq"
+  },
+  {
+    "heading": "## Scenario 314 \u2014 A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-v52w7a adds the host-only screen and the exit-5 no-re-ticket rule to the committed fleet-launch/ launchers, with check-fleet-launch harness cases for a host-only verdict, a drive exiting 5 and a drive exiting 1 before listing.",
+    "work_item": "bd-ib-v52w7a"
+  },
+  {
+    "heading": "## Scenario 315 \u2014 A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-t5aju3 makes every permanent pre-dispatch refusal of a hand-picked dispatch, the host-only refusal included, exit 5 with exactly one REFUSED: stderr line, and adds dispatcher.py host-only.",
+    "work_item": "bd-ib-t5aju3"
+  },
+  {
+    "heading": "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-fa5elg adds kinds:, reason: and until: to repository hold files and the hold re-read under the factory mutex to the committed fleet-launch/ launchers, with check-fleet-launch harness cases for each.",
+    "work_item": "bd-ib-fa5elg"
   }
 ]
