@@ -167,3 +167,16 @@ def test_set_workflow_scope_override_records_label_without_touching_status(
     record = fake_singleton().show_issue(issue_id="bd-ib-123")
     assert "workflow-scope-override:citation-only" in record["labels"]
     assert "awaits-scope-override" not in record["labels"]
+
+
+def test_close_duplicate_closes_a_blocked_duplicate(tmp_path: Path) -> None:
+    """A duplicate disposition closes even an item parked behind a human hold."""
+    repo = _repo(tmp_path=tmp_path)
+    duplicate = _item(id="bd-ib-duplicate", status="blocked")
+    successor = _item(id="bd-ib-successor", status="backlog")
+    append_work_item(path=_config(), item=duplicate)
+    append_work_item(path=_config(), item=successor)
+
+    _ = run_action(repo=repo, action_id="close-duplicate:bd-ib-duplicate:bd-ib-successor")
+
+    assert _stored()[duplicate.id].status == "done"
