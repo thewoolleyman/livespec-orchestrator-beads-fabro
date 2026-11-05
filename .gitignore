@@ -58,6 +58,7 @@ __pycache__/
 .coverage
 .coverage.*
 .coverage-gates/
+.coverage-shards/
 .ruff_cache/
 .pyright/
 .mutmut-cache/
