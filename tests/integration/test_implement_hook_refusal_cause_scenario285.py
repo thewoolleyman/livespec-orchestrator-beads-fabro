@@ -141,6 +141,28 @@ def test_the_cause_carries_the_first_error_line_when_no_test_id_is_reported(
     assert "truncated" not in cause
 
 
+def test_a_uutils_print_filter_keeps_spaces_in_the_error_excerpt(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tr = bin_dir / "tr"
+    _ = tr.write_text(
+        "#!/bin/sh\n"
+        "if test \"$2\" = '[:print:]\\n'; then\n"
+        "    exec /usr/bin/tr -cd '\\041-\\176\\n'\n"
+        "fi\n"
+        'exec /usr/bin/tr "$@"\n',
+        encoding="utf-8",
+    )
+    tr.chmod(0o755)
+    body = f"::: just check-types\n{_ERROR_LINE}\n{_targets_block(targets=('check-types',))}"
+    repo = _clone(tmp_path=tmp_path / "clone", hook=_hook_script(body=body, status=1))
+
+    result = _route(repo=repo, extra_env={"PATH": f"{bin_dir}:{os.environ['PATH']}"})
+
+    assert result.returncode != 0, result.stderr
+    assert f"first error line: {_ERROR_LINE}" in _cause(repo=repo)
+
+
 def test_an_overlong_error_line_is_cut_to_200_characters_and_marked_truncated(
     tmp_path: Path,
 ) -> None:
