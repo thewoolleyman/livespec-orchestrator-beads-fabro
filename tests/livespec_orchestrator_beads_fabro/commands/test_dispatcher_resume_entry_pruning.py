@@ -211,7 +211,10 @@ def test_the_pruned_declaration_leaves_no_tail_of_its_own_script_behind() -> Non
     """
     module: Any = importlib.import_module(_MODULE_NAME)
     committed = _IMPLEMENT_GRAPH.read_text(encoding="utf-8")
-    assert committed.count("${remote_line%%[[:space:]]*}") == 1
+    workflow = parse_dot_graph(text=committed)
+    assert not isinstance(workflow, str), workflow
+    publish_draft_script = str(workflow.nodes["publish_draft"]["script"])
+    assert publish_draft_script.count("${remote_line%%[[:space:]]*}") == 1
     derived = module.graph_entered_at(graph_text=committed, node="verify_pr")
     assert derived is not None
     assert "publish_draft" not in set(_parsed(text=derived).nodes)
