@@ -13,7 +13,9 @@ __all__: list[str] = ["FailedJob", "Run", "failed_jobs", "latest_completed_run"]
 
 _CACHE_DURATION = "30m"
 _GH_TIMEOUT_SECONDS = 60
-_TEST_FAILURE_RE = re.compile(r"(?m)^(?:FAILED|ERROR)\s+([^\s].*?)(?:\s+-\s+.*)?$")
+_TEST_FAILURE_RE = re.compile(
+    r"(?m)^(?:\d{4}-\d{2}-\d{2}T[\d:.]+Z\s+)?(?:FAILED|ERROR)\s+([^\s].*?)(?:\s+-\s+.*)?$"
+)
 
 
 @dataclass(frozen=True, kw_only=True)

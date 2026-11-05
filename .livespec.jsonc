@@ -284,6 +284,10 @@
       // cancel pushes a preserve ref) is live.
       "stall_timeout_seconds": 21600,
       "auto_approve_ready": true,
+      // breakage_workflows: workflow files (under .github/workflows/) whose latest
+      // completed default-branch run the host-side `dispatcher breakage-pass`
+      // reads, filing one ledger item per failed job (Scenario 313).
+      "breakage_workflows": ["ci-root-uid.yml"],
       // wip_cap: 16 matches the factory's 16-run cap (coordinator R99:
       // max_concurrent_runs 16, quota 64/32). Raised from 10 to 12 on
       // 2026-10-26 (R77) and from 12 to 16 on 2026-10-27 (R115), both under the
