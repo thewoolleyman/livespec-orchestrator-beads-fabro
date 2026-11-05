@@ -8,17 +8,19 @@ without preventing the launcher from finding that executable.
 The candidate itself runs from an empty scratch directory that is not inside any
 Git worktree.  The governed repository is therefore available only through the
 explicit ``--add-dir`` grant.  Codex receives a fresh ``CODEX_HOME`` containing
-at most its copied ``auth.json``, so none of the invoking profile's
-configuration, skills or project instructions reach the judgement.
+its copied ``auth.json`` and host telemetry-only ``[otel]`` configuration, so
+none of the invoking profile's interactive configuration, skills or project
+instructions reach the judgement.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,6 +43,7 @@ _PROFILE_ENVIRONMENT = (
     "XDG_DATA_HOME",
     "XDG_STATE_HOME",
 )
+_OTEL_TABLE = re.compile(r"^\s*\[\s*otel(?:\s*\]|\s*\.)")
 
 
 def resolve_codex_path(*, environ: dict[str, str]) -> str:
@@ -144,21 +147,57 @@ def _isolated_environ(
     codex_home = scratch / "codex-home"
     codex_home.mkdir()
     _copy_codex_auth(ambient_environ=ambient_environ, destination=codex_home / "auth.json")
+    _copy_codex_telemetry_config(
+        ambient_environ=ambient_environ, destination=codex_home / "config.toml"
+    )
     isolated["CODEX_HOME"] = str(codex_home)
     return isolated
 
 
 def _copy_codex_auth(*, ambient_environ: dict[str, str], destination: Path) -> None:
     """Copy only the invoking Codex authentication file when it exists."""
-    configured_home = ambient_environ.get("CODEX_HOME", "").strip()
-    source_home = (
-        Path(configured_home)
-        if configured_home
-        else Path(ambient_environ.get("HOME", str(Path.home()))) / ".codex"
-    )
-    source = source_home / "auth.json"
+    source = _host_codex_home(ambient_environ=ambient_environ) / "auth.json"
     if source.is_file():
         _ = attempt(
             action=lambda: shutil.copyfile(source, destination),
             exceptions=(OSError,),
         )
+
+
+def _copy_codex_telemetry_config(*, ambient_environ: dict[str, str], destination: Path) -> None:
+    """Project only host ``[otel]`` tables into an isolated Codex configuration.
+
+    Codex reads its trace-exporter settings from ``$CODEX_HOME/config.toml``.
+    Preserve the table bodies byte-for-byte so the nested exporter and span
+    attributes remain valid, while deliberately excluding every non-telemetry
+    setting from the operator's interactive configuration.
+    """
+    source = _host_codex_home(ambient_environ=ambient_environ) / "config.toml"
+    if not source.is_file():
+        return
+    content = ""
+    with suppress(OSError):
+        content = source.read_text(encoding="utf-8")
+    copied_lines: list[str] = []
+    copying = False
+    for line in content.splitlines(keepends=True):
+        if line.lstrip().startswith("["):
+            copying = _OTEL_TABLE.match(line) is not None
+        if copying:
+            copied_lines.append(line)
+    if not copied_lines:
+        return
+    _ = attempt(
+        action=lambda: destination.write_text("".join(copied_lines), encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+
+
+def _host_codex_home(*, ambient_environ: dict[str, str]) -> Path:
+    """Resolve the invoking Codex home before replacing it for a candidate."""
+    configured_home = ambient_environ.get("CODEX_HOME", "").strip()
+    return (
+        Path(configured_home)
+        if configured_home
+        else Path(ambient_environ.get("HOME", str(Path.home()))) / ".codex"
+    )
