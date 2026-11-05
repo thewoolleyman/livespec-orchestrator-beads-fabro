@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.289.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.288.0...v0.289.0) (2026-11-05)
+
+
+### Features
+
+* carry explicit pre-PR incident carrier state and refuse genesis without capability (bd-ib-dzbwaq) ([7a6e626](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7a6e62679a524947804163576656b821625950bf))
+
 ## [0.288.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.287.1...v0.288.0) (2026-11-05)
 
 
