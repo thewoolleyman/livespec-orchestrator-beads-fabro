@@ -197,4 +197,5 @@ class LayeredLivenessProbe:
             last_event_epoch=max(epochs) if epochs else None,
             observed_at=observed_at,
             open_command_node=fallback_sample.open_command_node,
+            event_stream_observable=fallback_sample.event_stream_observable,
         )
