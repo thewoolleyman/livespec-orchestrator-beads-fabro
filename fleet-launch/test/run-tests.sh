@@ -43,9 +43,9 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario297) ;;
+    all|scenario297|scenario316) ;;
     *)
-        echo "usage: run-tests.sh [scenario297]" >&2
+        echo "usage: run-tests.sh [scenario297|scenario316]" >&2
         exit 2
         ;;
 esac
@@ -357,6 +357,7 @@ new_case() {
     export FLEET_LAUNCH_STATE_DIR="$CASE_DIR/state"
     export FLEET_LAUNCH_FLEET_CAP_FILE="$CAP_FILE"
     export FLEET_LAUNCH_HOLD_FILE="$HOLD_FILE"
+    export FLEET_LAUNCH_REPO_HOLD_DIR="$CASE_DIR/state"
     export FLEET_LAUNCH_GMK_SERVER="$GMK_URL"
     export FLEET_LAUNCH_HL_SERVER="$HL_URL"
     export FLEET_LAUNCH_GMK_SSH="stub-factory-host"
@@ -646,6 +647,7 @@ fi
 # use that interval for its own Definition-of-Done preflight, rather than wait
 # for the older launcher to bind first.  The same observation also proves that
 # its fresh pass is not needlessly repeated at the head.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario297 ]; then
 echo "--- 6. preflights while queued and reuses a fresh pass at the FIFO head"
 new_case queued-preflight
 export FLEET_LAUNCH_MAX_WAIT_S=300
@@ -757,6 +759,7 @@ fi
 touch "$STUB_PREFLIGHT_RELEASE"
 kill -TERM "$older_pid" 2>/dev/null
 wait "$older_pid" || true
+fi
 
 # Cases 9-13 cover the resume launcher and the in-flight marker count, not
 # Scenario 297's queued preflight, so the scenario297 slice skips them: that
@@ -1051,6 +1054,139 @@ else
     head -4 "$CASE_DIR/impl-stamp.log" "$CASE_DIR/resume-stamp.log" >&2
 fi
 
+fi
+
+# --- 19. repository holds scope themselves to their named launch kinds ------
+# A repository hold yields its own FIFO ticket so another launch kind can run.
+# The scope parser fails closed: absent, empty, and malformed kinds all retain
+# the former all-kinds hold.  The launch-point case puts the hold in place only
+# after the impl launcher has reached the mutex, proving that the binding path
+# re-reads the hold before it can call drive.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario316 ]; then
+echo "--- 19. repository holds scope launch kinds and are re-read under the mutex"
+new_case repository-hold-dispatch
+export FLEET_LAUNCH_MAX_WAIT_S=120
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+cat > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")" <<'HOLD'
+kinds: dispatch
+reason: commit_green ceiling
+until: PR 4440 merged
+HOLD
+DISPATCH_LOG="$CASE_DIR/dispatch.log"
+RESUME_CASE_LOG="$CASE_DIR/resume.log"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-held-dispatch > "$DISPATCH_LOG" 2>&1 &
+dispatch_pid=$!
+if ! wait_for_line "$DISPATCH_LOG" "repository hold present" 5; then
+    fail "a dispatch-scoped repository hold did not yield the impl launcher"
+fi
+TICKET_NS=200 "$RESUME_LAUNCHER" bd-ib-open-resume > "$RESUME_CASE_LOG" 2>&1
+resume_rc=$?
+if kill -0 "$dispatch_pid" 2>/dev/null \
+    && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] \
+    && [ ! -s "$DRIVE_LOG" ] \
+    && [ "$resume_rc" = 0 ] \
+    && [ "$(cat "$RESUME_LOG")" = bd-ib-open-resume ] \
+    && grep -qF 'kinds=dispatch reason=commit_green ceiling until=PR 4440 merged' "$DISPATCH_LOG"; then
+    pass "a dispatch-scoped hold keeps the impl ticket, lets resume launch, and logs its scope"
+else
+    fail "a dispatch-scoped hold did not keep only the impl launch parked"
+    tail -n 8 "$DISPATCH_LOG" "$RESUME_CASE_LOG" >&2
+fi
+kill -TERM "$dispatch_pid" 2>/dev/null
+wait "$dispatch_pid" 2>/dev/null
+
+new_case repository-hold-resume
+export FLEET_LAUNCH_MAX_WAIT_S=120
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+printf 'kinds: resume\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+RESUME_CASE_LOG="$CASE_DIR/resume.log"
+IMPL_LOG="$CASE_DIR/impl.log"
+TICKET_NS=100 "$RESUME_LAUNCHER" bd-ib-held-resume > "$RESUME_CASE_LOG" 2>&1 &
+resume_pid=$!
+if ! wait_for_line "$RESUME_CASE_LOG" "repository hold present" 5; then
+    fail "a resume-scoped repository hold did not yield the resume launcher"
+fi
+ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-open-dispatch > "$IMPL_LOG" 2>&1
+impl_rc=$?
+if kill -0 "$resume_pid" 2>/dev/null \
+    && grep -lF 'item=bd-ib-held-resume' "$FLEET_LAUNCH_GMK_QUEUE_DIR"/* >/dev/null 2>&1 \
+    && [ ! -s "$RESUME_LOG" ] \
+    && [ "$impl_rc" = 0 ] \
+    && [ "$(drive_log_items)" = bd-ib-open-dispatch ]; then
+    pass "a resume-scoped hold keeps the resume ticket and lets dispatch launch"
+else
+    fail "a resume-scoped hold did not keep only the resume launch parked"
+    tail -n 8 "$RESUME_CASE_LOG" "$IMPL_LOG" >&2
+fi
+kill -TERM "$resume_pid" 2>/dev/null
+wait "$resume_pid" 2>/dev/null
+
+for hold_shape in no-kinds empty-kinds malformed-kinds; do
+    new_case "repository-hold-$hold_shape"
+    export FLEET_LAUNCH_MAX_WAIT_S=120
+    : > "$BOARD_GMK"
+    : > "$BOARD_HL"
+    printf '8\n' > "$CAP_FILE"
+    hold_path="$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+    case "$hold_shape" in
+        no-kinds) printf 'reason: all launch kinds\n' > "$hold_path" ;;
+        empty-kinds) printf 'kinds: \n' > "$hold_path" ;;
+        malformed-kinds) printf 'kinds: dispatch,unknown\n' > "$hold_path" ;;
+    esac
+    ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-held-impl > "$CASE_DIR/impl.log" 2>&1 &
+    impl_pid=$!
+    TICKET_NS=200 "$RESUME_LAUNCHER" bd-ib-held-resume > "$CASE_DIR/resume.log" 2>&1 &
+    resume_pid=$!
+    if wait_for_line "$CASE_DIR/impl.log" "repository hold present" 5 \
+        && wait_for_line "$CASE_DIR/resume.log" "repository hold present" 5 \
+        && kill -0 "$impl_pid" 2>/dev/null && kill -0 "$resume_pid" 2>/dev/null \
+        && [ ! -s "$DRIVE_LOG" ] && [ ! -s "$RESUME_LOG" ]; then
+        pass "a $hold_shape repository hold fails closed for both launch kinds"
+    else
+        fail "a $hold_shape repository hold did not hold both launch kinds"
+    fi
+    kill -TERM "$impl_pid" "$resume_pid" 2>/dev/null
+    wait "$impl_pid" 2>/dev/null
+    wait "$resume_pid" 2>/dev/null
+done
+
+new_case repository-hold-launch-point
+export FLEET_LAUNCH_MAX_WAIT_S=120
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+mkdir "$FLEET_LAUNCH_GMK_LOCK_DIR"
+sleep 600 &
+holder_pid=$!
+printf 'owner=other-seat pid=%s item=bd-ib-holder\n' "$holder_pid" > "$FLEET_LAUNCH_GMK_LOCK_DIR/holder"
+LAUNCH_POINT_LOG="$CASE_DIR/impl.log"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-launch-point > "$LAUNCH_POINT_LOG" 2>&1 &
+launch_point_pid=$!
+if ! wait_for_line "$LAUNCH_POINT_LOG" "queue for the gmktec mutex" 5; then
+    fail "the launch-point impl launcher did not wait for the mutex"
+fi
+printf 'kinds: dispatch\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+kill "$holder_pid" 2>/dev/null
+wait "$holder_pid" 2>/dev/null
+rm -f "$FLEET_LAUNCH_GMK_LOCK_DIR/holder"
+rmdir "$FLEET_LAUNCH_GMK_LOCK_DIR"
+if wait_for_line "$LAUNCH_POINT_LOG" "repository hold present" 5 \
+    && kill -0 "$launch_point_pid" 2>/dev/null \
+    && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] \
+    && [ -z "$(find "$FLEET_LAUNCH_INFLIGHT_DIR" -type f -print -quit)" ] \
+    && [ ! -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ] \
+    && [ ! -s "$DRIVE_LOG" ]; then
+    pass "a hold created during the mutex wait releases the mutex and marker without driving"
+else
+    fail "a launch-point repository hold did not cleanly yield its bound launch"
+    tail -10 "$LAUNCH_POINT_LOG" >&2
+fi
+kill -TERM "$launch_point_pid" 2>/dev/null
+wait "$launch_point_pid" 2>/dev/null
 fi
 
 echo
