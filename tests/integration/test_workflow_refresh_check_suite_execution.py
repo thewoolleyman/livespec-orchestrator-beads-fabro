@@ -214,7 +214,7 @@ def _slow_check_suite(*, root: Path, record: Path) -> Path:
     quoted_record = shlex.quote(str(record))
     lines = (
         "#!/usr/bin/env bash",
-        f'printf "%s\\n" check-unit > {quoted_record}',
+        f'printf "%s\\n" check-unit | tee {quoted_record}',
         "sleep 2",
         "",
     )
@@ -563,3 +563,7 @@ def test_pr_refresh_bounds_its_post_rebase_gate_below_its_node_timeout(*, tmp_pa
 
     assert result.returncode == 1, result.stderr
     assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
+    brief = world.state(name=_BRIEF_FILENAME)
+    assert brief is not None, "the timed-out gate recorded no refresh-repair brief"
+    assert "failed-gate-targets: check-unit" in brief
+    assert "expired-gate-budget-seconds: 1" in brief
