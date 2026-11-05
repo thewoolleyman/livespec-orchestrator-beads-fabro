@@ -316,3 +316,30 @@ def test_was_resumed_is_keyed_on_the_pull_request() -> None:
     records = [_resume_row(pull_request=2581)]
     assert module.was_resumed(records=records, work_item_id=_ITEM, pull_request=2581) is True
     assert module.was_resumed(records=records, work_item_id=_ITEM, pull_request=2639) is False
+
+
+def test_two_proof_only_resumes_are_each_named_by_the_run_they_launched(tmp_path: Path) -> None:
+    """A proof-only resume sets out to finish no earlier run, so it is named by its own run.
+
+    The records are journaled through the real `JournalFile` exactly as the
+    command appends them -- an empty `earlier_run_ids`, entry at `proof_capture`
+    -- so the third-resume refusal can name the two earlier resumes by identifiers
+    an operator can look up, rather than by one identical fallback label twice.
+    """
+    import json
+
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+
+    module = _journal_module()
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    for launched in ("01M4PROOFONE", "01M4PROOFTWO"):
+        journal.append(
+            record=_resume_row(earlier_run_ids=(), pull_request=3731, resumed_at="proof_capture")
+        )
+        journal.append(record=_run_row(run_id=launched))
+    records = [json.loads(line) for line in journal.path.read_text().splitlines()]
+
+    assert module.resumes_anchored_on(records=records, work_item_id=_ITEM, pull_request=3731) == (
+        "01M4PROOFONE",
+        "01M4PROOFTWO",
+    )
