@@ -12392,3 +12392,83 @@ Feature: a red scheduled workflow on the default branch becomes owned work
     And the verdict line reads unreadable naming what could not be read
     And the pass exits non-zero
 ```
+
+## Scenario 314 — A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A committed fleet-launch launcher spends no launch slot on work no factory may run
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub Dispatcher, a stub ledger that records comments, and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A host-only item exits before the mutex and the preflight
+    Given an impl launcher for bd-x holding FIFO ticket T
+    And the stub Dispatcher's host-only command reports bd-x host_only true with reason "declares an edit under .github/workflows/"
+    When the launcher reaches its host-only screen
+    Then it takes no factory mutex and runs no launch-time preflight
+    And its sequence log ends with one terminal line naming bd-x, T's ticket number and the cause host-only
+    And the stub ledger records one comment on bd-x naming T's ticket number and the host-only reason
+    And no launcher re-takes a ticket for bd-x
+
+  Scenario: A drive refused with exit code 5 is not re-ticketed
+    Given an impl launcher for bd-x whose stub drive exits 5 before any run lists, writing "REFUSED: work-item bd-x is refused"
+    When the drive exits
+    Then the launcher re-takes no ticket for bd-x
+    And its sequence log ends with one terminal line naming bd-x, its ticket number and the cause refused
+    And the stub ledger records one comment on bd-x naming the dropped ticket number and the REFUSED line
+
+  Scenario: A transient early exit still re-takes the same ticket
+    Given an impl launcher for bd-x holding FIFO ticket T whose stub drive exits 1 before any run lists
+    When the drive exits
+    Then the launcher re-takes a FIFO ticket for bd-x at T's ticket number
+```
+
+## Scenario 315 — A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Dispatcher exit codes".
+
+```gherkin
+Feature: Every permanent pre-dispatch refusal gives a caller one signal
+  Scenario Outline: A hand-picked dispatch refused before any run exits 5
+    Given a ready work item bd-x <shape>
+    When an operator runs dispatcher.py loop --item bd-x
+    Then no claim is taken and no factory run is created
+    And the command exits with code 5
+    And stderr carries exactly one line beginning "REFUSED: " that names bd-x
+
+    Examples:
+      | shape                                                                   |
+      | whose factory_safety is needs-host-secrets                              |
+      | whose description declares an edit under .github/workflows/            |
+      | whose pre-dispatch Definition-of-Done judgement rests it at needs-human |
+```
+
+## Scenario 316 — A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A repository hold names the launch kinds it holds
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway queue, lock, in-flight and state directories
+    And queued tickets for an impl launcher of bd-x and a resume launcher of bd-y, both in repository R
+
+  Scenario: A hold scoped to dispatch holds the impl launcher and lets the resume launch
+    Given a repository hold file for R carrying "kinds: dispatch", "reason: commit_green ceiling" and "until: PR 4440 merged"
+    When both launchers poll
+    Then the impl launcher for bd-x keeps its ticket, yields the FIFO head and logs a yield line naming dispatch, the reason and the until text
+    And the resume launcher for bd-y launches
+
+  Scenario: A hold file with no kinds line holds both launch kinds
+    Given a repository hold file for R carrying no kinds line
+    When both launchers poll
+    Then the impl launcher for bd-x and the resume launcher for bd-y both keep their tickets and launch nothing
+
+  Scenario: A hold set while a launcher waits for the mutex is honoured at the launch point
+    Given the impl launcher for bd-x has passed its WIP gate and waits for the factory launch mutex
+    And no repository hold file for R exists
+    When a repository hold file for R is created before the launcher invokes drive
+    Then the launcher releases the mutex and its fleet in-flight marker without launching
+    And it keeps its FIFO ticket
+```
