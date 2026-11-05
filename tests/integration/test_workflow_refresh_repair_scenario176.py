@@ -1418,6 +1418,81 @@ def _run_repaired_publish_draft(
     )
 
 
+def _pr_refreshed_then_rebased_run(*, root: Path) -> _Repaired:
+    """A successful `pr_refresh` whose later run head no longer contains its push.
+
+    The published ref is first moved by the real refresh stage, which records
+    both its new head and the changed-head marker.  A second default-branch
+    movement then gives the later `publish_draft` visit a non-ancestor local
+    head, the shape that used to misclassify the refresh's own push as foreign.
+    """
+    world = _world(root=root)
+    published = _commit(
+        cwd=world.clone,
+        path=_OWNED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit an owned file",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    _ = _advance_default(world=world, path=_SHARED_FILE, text="first default advance\n")
+    plugins_root = _materialized_push_program(root=root)
+    _ = (plugins_root / "livespec-run-plugin-gate.py").write_text(
+        "raise SystemExit(0)\n", encoding="utf-8"
+    )
+    refresh = subprocess.run(
+        ["bash", "-c", _pr_refresh_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{_unarmed_forge_bin(world=world)}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+    )
+    assert refresh.returncode == 0, refresh.stderr
+    refreshed = world.head()
+    assert world.remote_head(ref=_BRANCH) == refreshed
+    assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{refreshed}\n"
+    assert (world.state_dir() / "livespec-pr-refresh-changed").is_file()
+
+    mover = world.clone.parent / "mover-after-refresh"
+    _ = _git("clone", "--quiet", str(world.origin), str(mover), cwd=world.clone.parent)
+    advanced_default = _commit(
+        cwd=mover,
+        path=_SHARED_FILE,
+        text="second default advance\n",
+        subject="feat: advance default after refresh",
+    )
+    _ = _git("push", "--quiet", "origin", _DEFAULT_BRANCH, cwd=mover)
+    _ = _git("fetch", "origin", _DEFAULT_BRANCH, cwd=world.clone)
+    _ = _git("rebase", f"origin/{_DEFAULT_BRANCH}", cwd=world.clone)
+    rebased = world.head()
+    contains = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", refreshed, rebased],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_fixture_env(),
+    )
+    assert contains.returncode != 0, "the later head still contains pr_refresh's push"
+
+    return _Repaired(
+        world=world,
+        published_head=refreshed,
+        repaired_head=rebased,
+        advanced_default=advanced_default,
+        plugins_root=plugins_root,
+        forge_bin=_forge_double(root=root),
+    )
+
+
 def _record_file_program_without_push_helper(*, root: Path) -> Path:
     """Materialize the ordinary record helper while deliberately withholding push.
 
@@ -1490,6 +1565,36 @@ def test_a_repaired_refresh_republishes_over_this_run_s_own_published_head(
         _routed(source="publish_merged_reconcile_route", condition="preferred_label=continue")
         == "proof_capture"
     )
+
+
+def test_a_pr_refresh_republished_head_is_its_own_divergent_prior_push(tmp_path: Path) -> None:
+    """A later draft republishes the refresh's own head but not a foreign one.
+
+    `pr_refresh` records the new publication head itself, so its changed-head
+    marker plus that matching record establish run ownership when the next
+    `publish_draft` sees the refreshed ref as a non-ancestor.  Replacing that
+    ref after the same setup is the control: the marker must not lease over a
+    head another run pushed.
+    """
+    own = _pr_refreshed_then_rebased_run(root=tmp_path / "own")
+
+    republished = _run_repaired_publish_draft(repaired=own)
+
+    assert republished.returncode == 0, republished.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PR_REFRESH_REPUBLISH" in republished.stderr
+    assert own.world.remote_head(ref=_BRANCH) == own.repaired_head
+    assert own.world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{own.repaired_head}\n"
+
+    foreign_case = _pr_refreshed_then_rebased_run(root=tmp_path / "foreign")
+    foreign = _foreign_publish_tip(world=foreign_case.world)
+
+    refused = _run_repaired_publish_draft(repaired=foreign_case)
+
+    assert refused.returncode != 0, refused.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in refused.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PR_REFRESH_REPUBLISH" not in refused.stderr
+    assert foreign_case.world.remote_head(ref=_BRANCH) == foreign
+    assert foreign_case.world.head() == foreign_case.repaired_head
 
 
 def test_a_repair_round_may_establish_its_published_head_from_resume_provenance(
