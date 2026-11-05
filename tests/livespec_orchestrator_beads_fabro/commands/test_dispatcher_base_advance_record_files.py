@@ -59,6 +59,33 @@ def test_measurement_returns_each_conflicted_path_from_git_merge_tree(tmp_path: 
     ]
 
 
+def test_measurement_ignores_the_merge_tree_oid_and_conflict_diagnostics(tmp_path: Path) -> None:
+    runner = _Runner(
+        result=CommandResult(
+            exit_code=1,
+            stdout=(
+                "2c630dce9f3d42470a3c72d64394a8823985a2d1\n"
+                "record.json\n"
+                "notes.md\n"
+                "\n"
+                "Auto-merging record.json\n"
+                "CONFLICT (content): Merge conflict in record.json\n"
+            ),
+            stderr="",
+        )
+    )
+
+    measurement = measure_conflicted_paths(
+        repo=tmp_path,
+        runner=runner,
+        pr_head="head1111",
+        default_branch_tip="base2222",
+    )
+
+    assert measurement.paths == ("record.json", "notes.md")
+    assert measurement.failure is None
+
+
 @pytest.mark.parametrize(
     ("result", "failure"),
     [
