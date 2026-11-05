@@ -6,13 +6,15 @@ return a well-formed list of events. The stall watchdog reads these records for
 their timestamps and the port hands them on as its events payload; both go
 through here.
 
-THREE CONTAINERS, all measured rather than assumed. The pinned 0.254 build
+FOUR CONTAINERS, all measured rather than assumed. The pinned 0.254 build
 prints a JSON ARRAY, and a server-side payload wraps the same array under
-`events` — the two shapes `_acp_fallback_events` already tolerates for the same
-reason. The Petri-era build (v0.378.0-nightly.0, research note 006) prints "a
-stream of envelopes", each carrying a `stream_seq`, so the records can arrive
-one JSON object per LINE; the enemy-test harness has carried a line-parsing
-fallback for that case since before this reader existed.
+`events`. The factory's paged `GET /runs/{id}/events` route instead wraps it
+under `data`; both envelopes are read here so a cursor poll has the same event
+records as an unpaged CLI result. The Petri-era build (v0.378.0-nightly.0,
+research note 006) prints "a stream of envelopes", each carrying a
+`stream_seq`, so the records can arrive one JSON object per LINE; the enemy-test
+harness has carried a line-parsing fallback for that case since before this
+reader existed.
 
 AN UNREADABLE STREAM IS `None`, AND AN EMPTY ONE IS `()`. "Read failure is not
 absence" is the governing rule for every consumer here: a run whose probe
@@ -53,9 +55,12 @@ def _records_from_payload(*, payload: object) -> tuple[dict[str, Any], ...] | No
     if not isinstance(payload, dict):
         return None
     mapping = cast("dict[str, Any]", payload)
-    events: object = mapping.get("events")
-    if isinstance(events, list):
-        return _mappings(values=cast("list[object]", events))
+    for key in ("events", "data"):
+        events: object = mapping.get(key)
+        if isinstance(events, list):
+            return _mappings(values=cast("list[object]", events))
+        if key in mapping:
+            return None
     return (mapping,)
 
 

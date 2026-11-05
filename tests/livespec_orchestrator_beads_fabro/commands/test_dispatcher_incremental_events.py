@@ -75,7 +75,10 @@ def test_incremental_event_reads_retain_one_watchs_established_facts(
                 succeeded=result.exit_code == 0,
             )
 
-    monkeypatch.setattr(FabroPort, "server_api", lambda _port: _Api())
+    def server_api(_port: FabroPort) -> _Api:
+        return _Api()
+
+    monkeypatch.setattr(FabroPort, "server_api", server_api)
     plan = build_plan(
         repo=tmp_path,
         work_item_id="bd-ib-u6llci",
@@ -116,8 +119,8 @@ def test_incremental_event_reads_retain_one_watchs_established_facts(
 
     assert first.last_event_epoch is not None
     assert first.open_command_node is not None
-    assert retained.last_event_epoch is None
-    assert retained.open_command_node is None
+    assert retained.last_event_epoch == first.last_event_epoch
+    assert retained.open_command_node == first.open_command_node
     assert completed.last_event_epoch == first.last_event_epoch
     assert completed.open_command_node is None
     assert calls == [None, None, None]
