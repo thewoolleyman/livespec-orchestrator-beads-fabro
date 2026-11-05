@@ -33,7 +33,7 @@ half, and two paths re-deriving one thing is how they come to disagree.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 __all__: list[str] = [
     "ROUTE_FRESH",
@@ -162,3 +162,9 @@ class RecoveryRoute:
     hold: RecoveryHold | None = None
     loss: RecoveryLoss | None = None
     preserved_work: str | None = None
+    # These are the evidence for a fresh route which retained verified work as a
+    # reference rather than seeding from it.  They are audit facts, not route
+    # identity: a caller deciding how to launch needs the route and seed, while
+    # the journal needs the commits that explain why that route was chosen.
+    preserved_base_commit: str | None = field(default=None, compare=False)
+    default_branch_commit: str | None = field(default=None, compare=False)
