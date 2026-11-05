@@ -392,6 +392,46 @@ def test_a_refresh_repair_after_an_unrelated_failure_keeps_its_own_cause(
     assert outcome.fabro_failure_cause == _REPAIR_ABSENT
 
 
+def test_a_refresh_repair_failing_for_its_own_reason_keeps_its_own_cause(
+    tmp_path: Path,
+) -> None:
+    """Only the briefless-ABSENT outcome is reattributed to the refresh stage.
+
+    A `refresh_repair` that fails for any other reason, such as a node timeout,
+    is itself the fault a triager must see, so it keeps its own cause and both
+    stages stay named.
+    """
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    del stages[_ROUTING_STAGE]
+    stages[_REFRESH_STAGE] = _stage(handler="script", state="failed")
+    stages[_REFRESH_REPAIR_STAGE] = _stage(handler="script", state="failed")
+    repair_timeout = "node refresh_repair timed out after 300s"
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=[
+            _step_finished(
+                stream_seq=11,
+                node=_REFRESH_STAGE,
+                status={"failure": {"message": _REFRESH_FAILURE}},
+            ),
+            _step_finished(
+                stream_seq=12,
+                node=_REFRESH_REPAIR_STAGE,
+                status={"failure": {"message": repair_timeout}},
+            ),
+        ],
+    )
+
+    assert outcome.needs_human_stages == (_REFRESH_STAGE, _REFRESH_REPAIR_STAGE)
+    assert outcome.fabro_failure_cause == repair_timeout
+
+
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(
     tmp_path: Path,
 ) -> None:

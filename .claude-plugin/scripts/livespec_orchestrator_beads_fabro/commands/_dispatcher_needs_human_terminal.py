@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 __all__: list[str] = ["needs_human_terminal_outcome"]
 
 _REFRESH_REPAIR_NODE = "refresh_repair"
+_REFRESH_REPAIR_ABSENT_MARKER = "LIVESPEC_REFRESH_REPAIR_ABSENT"
 _REFRESH_SOURCE_NODES = frozenset({"pr_refresh", "publish_draft"})
 _REFRESH_CHAIN_STAGES = 2
 
@@ -124,7 +125,7 @@ def needs_human_terminal_outcome(
     causal = causal_stage_failure(
         evidence=None if inspect is None else terminal_evidence(payload=inspect.payload)
     )
-    causal = _refresh_source_causal(causal=causal)
+    causal = _refresh_source_causal(causal=causal, inspect=inspect)
     if inspect is not None and causal.stages:
         failure = routing_stage_failure(
             observed=failure,
@@ -164,14 +165,29 @@ def needs_human_terminal_outcome(
     )
 
 
-def _refresh_source_causal(*, causal: CausalStageFailure) -> CausalStageFailure:
-    """Attribute a briefless refresh repair to the refresh stage it classifies."""
+def _refresh_source_causal(
+    *, causal: CausalStageFailure, inspect: FabroInspectResult | None
+) -> CausalStageFailure:
+    """Attribute a briefless refresh repair to the refresh stage it classifies.
+
+    Only a `refresh_repair` that failed with its ABSENT marker is reattributed;
+    any other failure of that node is itself the cause and keeps its own.
+    """
     if (
-        len(causal.stages) < _REFRESH_CHAIN_STAGES
+        inspect is None
+        or len(causal.stages) < _REFRESH_CHAIN_STAGES
         or graph_node_id(node=causal.stages[-1]) != _REFRESH_REPAIR_NODE
     ):
         return causal
     source = causal.stages[-2]
     if graph_node_id(node=source) not in _REFRESH_SOURCE_NODES:
+        return causal
+    repair = routing_stage_failure(
+        observed=None,
+        inspect_payload=inspect.payload,
+        events_payload=inspect.events_payload,
+        stage=causal.stages[-1],
+    )
+    if repair is None or _REFRESH_REPAIR_ABSENT_MARKER not in (repair.cause or ""):
         return causal
     return replace(causal, stages=(source,))
