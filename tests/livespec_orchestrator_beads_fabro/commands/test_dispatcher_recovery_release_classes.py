@@ -167,6 +167,7 @@ class _World:
 
 
 _PINNED_AT = "2026-10-24T23:48:20Z"
+_CURRENT_PIN_BUMP_COMMIT = "39d4c6b5294cbaf497613439c7c84dc1f6ab5ab6"
 
 
 def _open_pull_request() -> CommandResult:
@@ -206,6 +207,9 @@ def _worlds() -> tuple[_World, ...]:
                 ),
                 f"merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_CURRENT_BASE}": CommandResult(
                     exit_code=0, stdout="", stderr=""
+                ),
+                "git log -1 --format=%H -G ^livespec-dev-tooling =.*tag origin/master -- pyproject.toml": CommandResult(
+                    exit_code=0, stdout=f"{_PIN_BUMP_COMMIT}\n", stderr=""
                 ),
             },
             route=ROUTE_SEEDED,
@@ -455,7 +459,10 @@ def test_a_released_seed_before_the_current_pin_bump_routes_fresh_with_its_refer
             f"merge-base {_PRESERVED_COMMIT} origin/master": CommandResult(
                 exit_code=0, stdout=f"{_STALE_BASE}\n", stderr=""
             ),
-            f"merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_STALE_BASE}": CommandResult(
+            "git log -1 --format=%H -G ^livespec-dev-tooling =.*tag origin/master -- pyproject.toml": CommandResult(
+                exit_code=0, stdout=f"{_CURRENT_PIN_BUMP_COMMIT}\n", stderr=""
+            ),
+            f"merge-base --is-ancestor {_CURRENT_PIN_BUMP_COMMIT} {_STALE_BASE}": CommandResult(
                 exit_code=1, stdout="", stderr=""
             ),
         },
@@ -480,7 +487,11 @@ def test_a_released_seed_before_the_current_pin_bump_routes_fresh_with_its_refer
         ),
     )
     assert f"git merge-base {_PRESERVED_COMMIT} origin/master" in routed.calls
-    assert f"git merge-base --is-ancestor {_PIN_BUMP_COMMIT} {_STALE_BASE}" in routed.calls
+    assert (
+        "git log -1 --format=%H -G ^livespec-dev-tooling =.*tag origin/master -- pyproject.toml"
+        in routed.calls
+    )
+    assert f"git merge-base --is-ancestor {_CURRENT_PIN_BUMP_COMMIT} {_STALE_BASE}" in routed.calls
 
 
 def test_a_newer_dispatch_or_an_unrelated_terminal_does_not_release_recovery() -> None:
