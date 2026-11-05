@@ -33,6 +33,7 @@ _WORKFLOW = (
     / "implement-work-item"
     / "workflow.fabro"
 )
+_LEFTHOOK = _REPO_ROOT / "lefthook.yml"
 _DEFAULT_BRANCH = "master"
 _PUBLISH_BRANCH = "feat/bd-ib-fvgkw4"
 _STATE_DIRECTORY = ".git/livespec-publication"
@@ -221,6 +222,17 @@ def test_scenario305_red_refreshed_aggregate_restores_and_briefs_for_fix(*, tmp_
     assert f"pre-refresh-head: {before}" in brief
     assert "failed-gate-targets: red-target" in brief
     assert "LIVESPEC_REFRESH_REPAIR" in janitor.stderr
+
+
+def test_scenario305_refresh_merge_reuses_its_pre_merge_aggregate_evidence() -> None:
+    """The merge hook gates the merged index once before commit-msg replays it."""
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
+    lefthook = _LEFTHOOK.read_text(encoding="utf-8")
+
+    assert "LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-edit" in workflow
+    assert "pre-merge-commit:" in lefthook
+    assert "    00-refresh-merge-pre-commit-evidence:" in lefthook
+    assert "      run: just check-refresh-merge-pre-commit" in lefthook
 
 
 _ROUTE = "janitor_refresh_route"
