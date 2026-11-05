@@ -131,6 +131,16 @@ def test_a_stated_verdict_files_nothing(tmp_path: Path) -> None:
     assert outcome.filed == ()
 
 
+def test_a_drift_run_never_files_its_proposal_in_the_repo_working_tree(tmp_path: Path) -> None:
+    """A drift job leaves its ``--repo`` checkout clean for its caller."""
+    assert (_COMMANDS / "_drift_run_proposals.py").is_file()
+    spec_root = _spec_tree(root=tmp_path)
+
+    _ = _run(root=tmp_path, kind="unstated")
+
+    assert _filed(spec_root=spec_root) == []
+
+
 @pytest.mark.parametrize("kind", ["partial", "unstated"])
 def test_each_partial_or_unstated_behaviour_files_one_proposal(tmp_path: Path, kind: str) -> None:
     assert (_COMMANDS / "_drift_run_proposals.py").is_file()
