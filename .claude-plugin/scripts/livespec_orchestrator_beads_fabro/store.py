@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 from livespec_runtime.work_items.reduce import materialize_work_items
 
-from livespec_orchestrator_beads_fabro._beads_client import EDGE_BLOCKS, make_beads_client
+from livespec_orchestrator_beads_fabro._beads_client import (
+    EDGE_BLOCKS,
+    make_beads_client,
+)
 from livespec_orchestrator_beads_fabro._store_beads_store import BeadsWorkItemStore
 from livespec_orchestrator_beads_fabro._store_comments import (
     WorkItemComment,
@@ -55,6 +58,7 @@ from livespec_orchestrator_beads_fabro._store_statuses import (
     ALLOWED_BEADS_STATUSES,
     livespec_status_for,
 )
+from livespec_orchestrator_beads_fabro._store_supersession import superseded_by_from_records
 from livespec_orchestrator_beads_fabro.errors import BeadsMappingError
 from livespec_orchestrator_beads_fabro.types import (
     AuditRecord,
@@ -130,8 +134,11 @@ def read_work_items(*, path: StoreConfig) -> Iterator[WorkItem]:
     ranker works UNCHANGED over the materialized WorkItems.
     """
     client = make_beads_client(config=path)
-    for record in client.list_issues():
-        yield _record_to_work_item(record=record)
+    records = client.list_issues()
+    superseded_by = superseded_by_from_records(records=records)
+    for record in records:
+        issue_id = _require_str(record=record, key="id")
+        yield _record_to_work_item(record=record, superseded_by=superseded_by.get(issue_id))
 
 
 # --------------------------------------------------------------------------
@@ -139,7 +146,7 @@ def read_work_items(*, path: StoreConfig) -> Iterator[WorkItem]:
 # --------------------------------------------------------------------------
 
 
-def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
+def _record_to_work_item(*, record: BeadsRecord, superseded_by: str | None = None) -> WorkItem:
     issue_id = _require_str(record=record, key="id")
     labels = _labels_of(record=record)
     metadata = _metadata_of(record=record)
@@ -157,7 +164,6 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     content_fields = {**metadata, **record}
     title = _require_str(record=record, key="title")
     description = _optional_str(record=record, key="description") or ""
-    factory_safety = _factory_safety_from_labels(labels=labels)
     return WorkItem(
         id=issue_id,
         type=cast("Any", _require_str(record=record, key="issue_type")),
@@ -178,13 +184,10 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
         resolution=cast("Any", resolution),
         reason=_optional_str(record=record, key="close_reason"),
         audit=audit,
-        # `supersedes` is stored on the SUPERSEDING issue, so a single
-        # record cannot self-report that it was superseded — there is no
-        # `superseded_by` edge on this row to read. `superseded_by` does
-        # not gate ranker readiness, so None is the safe materialized
-        # value; the write path still persists the relationship via the
-        # supersedes edge on the superseding issue.
-        superseded_by=None,
+        # A supersedes edge is stored on the SUCCESSOR. `read_work_items`
+        # therefore builds the inverse once across this tenant snapshot and
+        # passes the successor id into this row's logical projection.
+        superseded_by=superseded_by,
         spec_commitment_hint=_optional_str(record=record, key="spec_id"),
         acceptance_criteria=_optional_str(record=content_fields, key=_META_ACCEPTANCE_CRITERIA),
         notes=_optional_str(record=content_fields, key=_META_NOTES),
@@ -193,20 +196,13 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
         admission_policy=cast("Any", _label_value(labels=labels, prefix=_LABEL_ADMISSION)),
         acceptance_policy=cast("Any", _label_value(labels=labels, prefix=_LABEL_ACCEPTANCE)),
         blocked_reason=cast("Any", _label_value(labels=labels, prefix=_LABEL_BLOCKED_REASON)),
-        factory_safety=cast("Any", factory_safety),
+        factory_safety=cast("Any", _label_value(labels=labels, prefix=_LABEL_FACTORY_SAFETY)),
         awaits_scope_override=_LABEL_AWAITS_SCOPE_OVERRIDE in labels,
         # The rework marker is a presence flag, materialized here so the
         # selection, accounting, and stranded-state clauses that key on it read
         # a first-class field rather than each re-deriving it from raw labels.
         rework_pending=LABEL_REWORK_PENDING in labels,
     )
-
-
-def _factory_safety_from_labels(
-    *,
-    labels: list[str],
-) -> str | None:
-    return _label_value(labels=labels, prefix=_LABEL_FACTORY_SAFETY)
 
 
 def _depends_on_from_edges(
@@ -229,11 +225,12 @@ def _depends_on_from_edges(
     by the write path and reconstructed here so cross-repo DAGs survive.
     """
     deps: list[DependsOnRaw] = []
-    for edge in _edges_of(record=record):
-        if edge.get("type") == EDGE_BLOCKS:
-            dep_id = edge.get("depends_on_id")
-            if isinstance(dep_id, str):
-                deps.append({"kind": "local", "work_item_id": dep_id})
+    deps.extend(
+        {"kind": "local", "work_item_id": dep_id}
+        for edge in _edges_of(record=record)
+        if edge.get("type") == EDGE_BLOCKS
+        if isinstance(dep_id := edge.get("depends_on_id"), str)
+    )
     non_local_raw = metadata.get(_META_NON_LOCAL_DEPENDS_ON)
     if isinstance(non_local_raw, list):
         deps.extend(cast("list[DependsOnRaw]", non_local_raw))
