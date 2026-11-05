@@ -71,6 +71,16 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "livespec.dispatch.id",
         "fabro.run_id",
         "livespec.dispatch.factory",
+        # Terminal dispatch and ACP-fallback-attempt scalars.  These are emitted
+        # by the host after a dispatch has reached its final disposition; every
+        # value is an identifier, bounded enum, count, bool, or omitted-field
+        # name, and is therefore safe for the same fail-closed egress path.
+        "livespec.dispatch.outcome",
+        "livespec.dispatch.attempt_count",
+        "livespec.dispatch.attempt.index",
+        "livespec.dispatch.attempt.fallback",
+        "livespec.dispatch.unavailable_fields",
+        "acp.model",
         # CC session correlation (native; backfilled by the join map).
         "session.id",
         # Reflection stage scalars (already shipped by _dispatcher_reflection).
