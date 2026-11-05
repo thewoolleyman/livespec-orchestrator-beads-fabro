@@ -236,6 +236,17 @@ def test_scenario305_refresh_merge_reuses_its_pre_merge_aggregate_evidence() -> 
     assert "      run: just check-refresh-merge-pre-commit" in lefthook
 
 
+def test_scenario305_refresh_merge_survives_the_commit_refuse_hook_install_order() -> None:
+    """The workflow owns merge evidence because hook installation removes extra wrappers."""
+    workflow = _WORKFLOW.read_text(encoding="utf-8")
+    lefthook = _LEFTHOOK.read_text(encoding="utf-8")
+
+    assert "LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-commit --no-ff" in workflow
+    assert "LIVESPEC_FACTORY_REFRESH_MERGE=true just check-refresh-merge-pre-commit" in workflow
+    assert "GIT_EDITOR=true LIVESPEC_FACTORY_REFRESH_MERGE=true git commit --no-edit" in workflow
+    assert "pre-merge-commit:" not in lefthook
+
+
 _ROUTE = "janitor_refresh_route"
 
 
