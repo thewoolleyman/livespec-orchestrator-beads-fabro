@@ -12481,3 +12481,138 @@ Feature: A repository hold names the launch kinds it holds
     Then the launcher releases the mutex and its fleet in-flight marker without launching
     And it keeps its FIFO ticket
 ```
+
+## Scenario 317 — Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref".
+
+```gherkin
+Feature: A run's committed work reaches origin as it progresses
+  As the maintainer of a repository dispatched through the factory
+  I want each settled agent stage's commits on origin before the run moves on
+  So that a cancel, a server crash or an operator removal costs at most the node visit in progress
+
+  Scenario: a settled implement visit is preserved as the run's first capture
+    Given a run of work item W whose implement visit committed through the detached commit runner
+    When implement_commit_settle ends with the tip of fabro/run/<run-id> at commit I
+    Then origin's ref refs/livespec/wip/W/<run-id>/1 points at commit I
+    And the run's HEAD, index and working tree are the same as they were before the push
+    And no repository hook ran for the push
+
+  Scenario: a later settled visit adds the next capture and rewrites nothing
+    Given origin's ref refs/livespec/wip/W/<run-id>/1 points at commit I
+    When fix_commit_settle ends with the run branch's tip at commit F
+    Then origin's ref refs/livespec/wip/W/<run-id>/2 points at commit F
+    And origin's ref refs/livespec/wip/W/<run-id>/1 still points at commit I
+
+  Scenario: a tip the engine reset onto the default branch is not preserved
+    Given origin's ref refs/livespec/wip/W/<run-id>/2 points at commit F
+    And a node left the workspace HEAD detached on the default branch's head D, and the engine's next checkpoint moved fabro/run/<run-id> to an empty commit on D
+    When the next preserving step runs
+    Then no work-in-progress ref of the run is created at that tip
+    And the step's recorded output names the tip and states that its tree carries none of the run's work
+    And the run's latest preserved capture is still refs/livespec/wip/W/<run-id>/2
+
+  Scenario: a failed preservation push does not fail the run
+    Given the forge refuses the push of the run's next work-in-progress ref
+    When fix_commit_settle ends
+    Then the step keeps its own outcome and the run continues
+    And the step's recorded output names the ref, the tip and the failure
+
+  Scenario: needs-human preserves the run branch, not a detached HEAD
+    Given a run whose workspace HEAD is detached on the default branch's head while fabro/run/<run-id> holds the run's work
+    When the run reaches needs_human
+    Then origin's ref refs/heads/needs-human/<run-id> holds a tree that carries the run's work
+
+  Scenario: a committing step without preservation fails the check
+    Given a workflow that declares a step settling an agent stage's commits without the preservation
+    When the repository's checks run
+    Then the check fails and names that step
+```
+
+## Scenario 318 — A run's ending names its latest preserved capture on the item
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "A run's ending names its latest preserved capture on the item".
+
+```gherkin
+Feature: The ledger says where a lost run's work is
+  As the maintainer of a repository dispatched through the factory
+  I want every run that ended without merging to name its latest preserved capture on its item
+  So that I can find the work without reading the forge's refs
+
+  Scenario: a wall-budget cancel names the latest capture
+    Given a run of work item W whose highest-numbered work-in-progress ref is refs/livespec/wip/W/<run-id>/3 at commit C
+    When the Dispatcher records the run's wall-budget cancel
+    Then W carries a livespec-preserved-tree ledger comment naming the run id, the factory, refs/livespec/wip/W/<run-id>/3 and commit C
+
+  Scenario: a run with no capture is named as having none
+    Given a run of work item W that ended before any preserving step ran
+    When the Dispatcher records the run's ending
+    Then W carries a livespec-preserved-tree ledger comment stating that the run has no work-in-progress ref
+
+  Scenario: an unreadable forge is not reported as no capture
+    Given the forge refuses the Dispatcher's listing of the run's work-in-progress refs
+    When the Dispatcher records the run's ending
+    Then W carries a livespec-preserved-tree ledger comment stating that the preservation could not be determined
+```
+
+## Scenario 319 — A re-dispatch starts from the latest run's latest preserved capture
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: A re-dispatch does not redo a lost run's settled work
+  As the maintainer of a repository dispatched through the factory
+  I want a re-dispatch to start from the newest work the item's latest run preserved
+  So that a run lost to a crash or a removal costs only the node visit that was in progress
+
+  Scenario: a run removed without a terminal publication is seeded from its latest capture
+    Given work item W whose latest run was removed by an operator fabro rm after its fix visit settled
+    And that run's highest-numbered work-in-progress ref holds the settled fix commit
+    And no needs-human ref or preservation ref was published at that run's ending
+    When W is released for recovery and routed
+    Then the route is seeded from that work-in-progress ref
+    And the dispatch brief names that ref as the tree to start from
+
+  Scenario: a terminal publication of the same run is preferred
+    Given work item W whose latest run has both a work-in-progress ref and a preserved-publish ref published at its ending
+    When W is released for recovery and routed
+    Then the route is seeded from the preserved-publish ref
+
+  Scenario: a seeded run carries the preserved work through the commit gates
+    Given work item W seeded from a work-in-progress ref that holds a settled implement commit and a later settled fix commit
+    When the seeded run reaches publication in a fresh sandbox
+    Then the published branch carries both preserved changes
+    And every commit on it passed the repository's commit and pre-push gates
+```
+
+## Scenario 320 — Preservation refs are deleted when the Dispatcher closes or collects an item's runs
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Preservation refs are deleted when the Dispatcher closes or collects an item's runs".
+
+```gherkin
+Feature: Preserved run refs do not accumulate on origin
+  As the maintainer of a repository dispatched through the factory
+  I want an item's preserved run refs removed once the Dispatcher closes it or collects its ended runs
+  So that origin keeps only the preserved work that a re-dispatch can still use
+
+  Scenario: accepting an item deletes its preservation refs
+    Given work item W with refs under refs/livespec/wip/W/ and refs/livespec/preserved-publish/W/
+    When the Dispatcher accepts W
+    Then none of those refs exists on origin
+
+  Scenario: collecting a closed item's ended run deletes that run's refs
+    Given a closed work item W whose ended run R has work-in-progress refs and a needs-human ref
+    When the Dispatcher's ended-run collection removes R
+    Then neither R's work-in-progress refs nor refs/heads/needs-human/R exists on origin
+
+  Scenario: an open item keeps its preservation refs
+    Given work item W, blocked for a human, with a ref under refs/livespec/wip/W/
+    When the Dispatcher's ended-run collection runs
+    Then that ref still exists on origin
+
+  Scenario: a failed deletion is retried
+    Given the forge refuses the deletion of a closed item's preservation ref
+    When the Dispatcher's next pass runs
+    Then it attempts the deletion again and the item's state is unchanged
+```
