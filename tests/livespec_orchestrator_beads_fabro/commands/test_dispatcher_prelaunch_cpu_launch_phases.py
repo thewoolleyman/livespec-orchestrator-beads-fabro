@@ -229,6 +229,54 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
     assert events == ["span", "dispatch-span", "launcher", "engine"]
 
 
+def test_a_resumed_dispatch_hands_its_pull_request_head_to_source_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pull_request_head = "a" * 40
+    staged_runners: list[object] = []
+    monkeypatch.setattr(run_module, "emit_dispatch_span", lambda **_: None)
+    monkeypatch.setattr(run_module, "dispatch_spans_path", lambda **_: tmp_path / "spans.jsonl")
+    monkeypatch.setattr(run_module, "heartbeat_path", lambda **_: tmp_path / "beat.jsonl")
+    monkeypatch.setattr(run_module, "revoke_proof_credentials", lambda **_: None)
+    outcome = DispatchOutcome(
+        work_item_id="bd-ib-5d5aue",
+        status="green",
+        stage="fabro-run",
+        pr_number=42,
+        merge_sha="abc123",
+        detail="done",
+        fabro_run_id="01RUN",
+    )
+
+    def run_dispatch(**kwargs: object) -> DispatchOutcome:
+        launcher = kwargs["fabro_launcher"]
+        staged_runners.append(launcher.run_runner)
+        return outcome
+
+    _ = run_module.run_dispatch_with_watchdog(
+        context=run_module.DispatchRunContext(
+            args=argparse.Namespace(
+                poll_attempts=1,
+                poll_interval_seconds=0.0,
+                resume_head=pull_request_head,
+            ),
+            repo=tmp_path,
+            plan=_plan(repo=tmp_path),
+            journal=JournalFile(path=tmp_path / "journal.jsonl"),
+            overlay_file=tmp_path / "overlay.toml",
+            token_supplier=lambda: "token",
+            dispatch_id="dispatch-7",
+        ),
+        run_dispatch_func=run_dispatch,
+        fabro_launcher_type=lambda **kwargs: SimpleNamespace(**kwargs),
+    )
+
+    # A resume is anchored by its open pull request, not the default branch.
+    # The source-staging runner must receive that exact head before it creates
+    # the worktree that Fabro clones for the resumed run.
+    assert getattr(staged_runners[0], "resume_head", None) == pull_request_head
+
+
 def test_a_profile_checkpoint_journals_the_delta_from_an_injected_cpu_reader() -> None:
     records: list[dict[str, object]] = []
     readings = iter((4.25, 6.75))

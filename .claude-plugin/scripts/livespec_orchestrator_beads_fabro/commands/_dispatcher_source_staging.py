@@ -17,6 +17,14 @@ rather than merely origin-reachable -- a local `origin/*` tracking ref names
 whatever this clone's last fetch left, which is an answer about fetch state
 reported as a fact about the branch.
 
+A true resume is different: its recorded pull-request head is the continuation
+base, not a candidate to compare with the default branch.  Before staging it,
+the runner fetches the publish branch and proves that its fetched tip equals the
+recorded head.  A bare object fetch is intentionally avoided because a forge may
+decline it even when that object is reachable from the branch.  Failure names
+the recorded head and prevents the engine from entering any workflow stage on a
+default-branch worktree.
+
 An origin head that cannot be READ fails the staging closed. Falling back to
 the checkout's HEAD there would reinstate exactly the defect above, and would
 do it on the one path where nothing in the record says the base went unproven.
@@ -57,6 +65,7 @@ _UNREADABLE_ORIGIN_HEAD_EXIT = 1
 _REASON_CREATED = "source-worktree-created"
 _REASON_CREATE_FAILED = "source-worktree-create-failed"
 _REASON_ORIGIN_HEAD_UNOBSERVABLE = "source-origin-head-unobservable"
+_REASON_RESUME_HEAD_UNOBSERVABLE = "source-resume-head-unobservable"
 
 
 class _Launch(Protocol):
@@ -86,6 +95,11 @@ class SourceStagingRunner:
     plan: DispatchPlan
     journal: JournalWriter
     worktree_root: Path | None = None
+    # A resume (unlike a seeded recovery) continues from its own publish branch.
+    # Both values are carried so the staging boundary can distinguish the two:
+    # a seed's commit has a preservation ref and remains placed by its overlay.
+    resume_head: str | None = None
+    resume_fetch_ref: str | None = None
 
     def run(
         self,
@@ -147,6 +161,7 @@ class SourceStagingRunner:
                 # question a refused push raises.
                 "default_branch_head": base.origin_head,
                 "staged_at": base.commit,
+                "resume_head": self.resume_head,
                 "status": "passed" if created.exit_code == 0 else "failed",
                 "reason": _stage_reason(base=base, created=created),
                 "terminal": created.exit_code != 0,
@@ -168,6 +183,8 @@ class SourceStagingRunner:
 
     def _staging_base(self, *, head: str) -> _StagingBase:
         """Freshly fetch the default branch and decide which commit to stage at."""
+        if self.resume_head and not self.resume_fetch_ref:
+            return self._resumed_staging_base(expected=self.resume_head)
         default_branch = self.plan.integration.contract.default_branch
         fetched = self._git(argv=["fetch", "--quiet", "origin", default_branch])
         if fetched.exit_code != 0:
@@ -191,6 +208,38 @@ class SourceStagingRunner:
         if origin_head != head and self._behind(head=head, origin_head=origin_head):
             return _StagingBase(commit=origin_head, origin_head=origin_head, failure=None)
         return _StagingBase(commit=head, origin_head=origin_head, failure=None)
+
+    def _resumed_staging_base(self, *, expected: str) -> _StagingBase:
+        """Fetch and prove the recorded pull-request head before staging it."""
+        fetched = self._git(argv=["fetch", "--quiet", "origin", self.plan.branch])
+        if fetched.exit_code != 0:
+            return _StagingBase(
+                commit=expected,
+                origin_head="",
+                failure=self._resume_head_failure(expected=expected, detail=fetched.stderr),
+            )
+        observed = self._git(argv=["rev-parse", "FETCH_HEAD"])
+        actual = observed.stdout.strip()
+        if observed.exit_code != 0 or actual != expected:
+            detail = observed.stderr
+            if observed.exit_code == 0:
+                detail = f"origin/{self.plan.branch} resolved to {actual or '<no commit>'}"
+            return _StagingBase(
+                commit=expected,
+                origin_head="",
+                failure=self._resume_head_failure(expected=expected, detail=detail),
+            )
+        return _StagingBase(commit=expected, origin_head="", failure=None)
+
+    def _resume_head_failure(self, *, expected: str, detail: str) -> CommandResult:
+        return CommandResult(
+            exit_code=_UNREADABLE_ORIGIN_HEAD_EXIT,
+            stdout="",
+            stderr=(
+                "could not anchor resumed source checkout on pull-request head "
+                f"{expected} from origin/{self.plan.branch}: {detail.strip()}\n"
+            ),
+        )
 
     def _behind(self, *, head: str, origin_head: str) -> bool:
         merge_base = self._git(argv=["merge-base", "--is-ancestor", head, origin_head])
@@ -263,5 +312,7 @@ def _stage_reason(*, base: _StagingBase, created: CommandResult) -> str:
     could not be taken, the other a checkout that could not be created.
     """
     if base.failure is not None:
+        if base.failure.stderr.startswith("could not anchor resumed source checkout"):
+            return _REASON_RESUME_HEAD_UNOBSERVABLE
         return _REASON_ORIGIN_HEAD_UNOBSERVABLE
     return _REASON_CREATED if created.exit_code == 0 else _REASON_CREATE_FAILED
