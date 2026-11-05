@@ -41,6 +41,29 @@ def test_projection_diffs_have_the_same_paths_bytes_sizes_and_digests_as_a_dump(
     ]
 
 
+def test_projection_uses_the_dump_stage_ordinal_not_its_event_sequence(tmp_path: Path) -> None:
+    """A captured state projection's event sequence is not its dump directory ordinal."""
+    dump_patch = b"diff --git a/app.py b/app.py\n+print('implemented')\n"
+    stage_diffs = stage_diffs_from_run_state(
+        run_state={
+            "stages": {
+                "implement@1": {
+                    "first_event_seq": 239551,
+                    "dump_ordinal": 55,
+                    "diff": dump_patch.decode(),
+                }
+            }
+        }
+    )
+
+    artifacts = write_stage_diffs(stage_diffs=stage_diffs, output_dir=tmp_path)
+
+    actual = {
+        artifact.relative_to(tmp_path).as_posix(): artifact.read_bytes() for artifact in artifacts
+    }
+    assert actual == {"stages/055-implement@1/diff.patch": dump_patch}
+
+
 def test_unreadable_or_diff_less_projection_yields_no_artifacts(tmp_path: Path) -> None:
     assert stage_diffs_from_run_state(run_state=None) == ()
     assert stage_diffs_from_run_state(run_state={"stages": []}) == ()
