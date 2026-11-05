@@ -50,9 +50,18 @@ output for the one permitted incomplete-turn re-entry brief.
 
 1. Make the Red test pass by changing implementation files only. Never change the Red test file.
 2. Run only the tests your change touches. Do not make a commit.
-3. Append, never rewrite an earlier section, using a `## green` section that
-   states what changed and which tests ran.
-4. End your final reply with a structured completion field,
+3. Before ending, run
+
+       "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-implement-gate-preview.py" green
+
+   to preview the checks `commit_green` will run over its staged change. Fix
+   every failed target the preview names that is within this turn's scope, then
+   run the preview again after each fix. The preview does not decide whether a
+   commit succeeds.
+4. Append, never rewrite an earlier section, using a `## green` section that
+   states what changed, which tests ran, and the exit status and failed target
+   names of the last gate preview run. If no preview ran, state that and why.
+5. End your final reply with a structured completion field,
    `{"definition_of_done_complete": true}` when the work item's Definition of
    Done is complete in the tree you leave for `commit_green` to commit, and
    `{"definition_of_done_complete": false}` otherwise. A reply that carries no
