@@ -25,6 +25,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
 from livespec_orchestrator_beads_fabro.commands._drive_accept_valve import accept_item
 from livespec_orchestrator_beads_fabro.commands._drive_answer import answer_delivery
 from livespec_orchestrator_beads_fabro.commands._drive_approve_valve import approve_item
+from livespec_orchestrator_beads_fabro.commands._drive_close_duplicate_valve import (
+    CLOSE_DUPLICATE_ACTION,
+    close_duplicate,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
     CLEAR_FACTORY_SAFETY_ACTION,
     FACTORY_SAFETY_ACTION,
@@ -133,7 +137,9 @@ class _ValveCall:
     identity: InvokerIdentity
 
 
-def _route(*, call: _ValveCall, answer: str | None) -> dict[str, Any]:
+def _route(  # noqa: PLR0911 - one return per action makes the dispatch legible.
+    *, call: _ValveCall, answer: str | None
+) -> dict[str, Any]:
     """Dispatch one parsed action onto its valve."""
     edit = _policy_edit(call=call)
     if edit is None and call.action == RELEASE_SPEC_TIER_ACTION:
@@ -176,6 +182,16 @@ def _route(*, call: _ValveCall, answer: str | None) -> dict[str, Any]:
     if call.action == "move":
         return move_item(
             config=call.config, item=call.item, aid=call.action_id, target_status=call.value
+        )
+    if call.action == CLOSE_DUPLICATE_ACTION:
+        return close_duplicate(
+            repo=call.repo,
+            config=call.config,
+            item=call.item,
+            aid=call.action_id,
+            successor_id=call.value,
+            identity=call.identity,
+            runner=call.runner,
         )
     result = reject_item(
         repo=call.repo,
