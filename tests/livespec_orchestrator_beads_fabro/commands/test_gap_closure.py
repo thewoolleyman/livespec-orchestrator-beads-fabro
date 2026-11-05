@@ -241,9 +241,19 @@ def test_evaluate_refuses_unavailable_declared_interpreter(
     assert decision.detail == "the recorded check did not pass"
 
 
-@pytest.mark.parametrize("interpreter_mutation", ["rm", "chmod -x"])
+@pytest.mark.parametrize(
+    ("interpreter_mutation", "process_umask"),
+    [
+        ("rm", None),
+        pytest.param("chmod a-x", None, id="chmod -x"),
+        pytest.param("chmod a-x", 0o077, id="chmod -x-umask-077"),
+    ],
+)
 def test_evaluate_refuses_when_env_interpreter_becomes_unavailable_between_legs(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, interpreter_mutation: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    interpreter_mutation: str,
+    process_umask: int | None,
 ) -> None:
     """An env-shebang launch failure cannot prove a negative control discriminates."""
     _init_git_repo(repo_root=tmp_path)
@@ -270,9 +280,18 @@ def test_evaluate_refuses_when_env_interpreter_becomes_unavailable_between_legs(
     )
     monkeypatch.setattr(_gap_closure, "make_beads_client", lambda **_kwargs: client)
 
-    decision = evaluate_gap_closure(
-        config=cast("Any", None), project_root=tmp_path, item_id="bd-ib-gap1"
-    )
+    if process_umask is None:
+        decision = evaluate_gap_closure(
+            config=cast("Any", None), project_root=tmp_path, item_id="bd-ib-gap1"
+        )
+    else:
+        previous_umask = os.umask(process_umask)
+        try:
+            decision = evaluate_gap_closure(
+                config=cast("Any", None), project_root=tmp_path, item_id="bd-ib-gap1"
+            )
+        finally:
+            os.umask(previous_umask)
 
     assert decision.verdict == "refuse-check-failed"
 
