@@ -275,7 +275,7 @@ it is unchanged.
 
 THE FIX-TURN COMMIT-RUN SETTLE (work-item bd-ib-y4oq27) ADDS ONE NODE, and the
 bound moves from 1300000 to 1350000. `fix_commit_settle` sits on `fix`'s
-fallthrough, ahead of the janitor, and carries `fix`'s `max_visits=8` because it
+fallthrough, ahead of the janitor, and carried `fix`'s `max_visits=8` because it
 is entered once per `fix` visit. Its 1500-second settle bound and 1800-second
 node timeout join the derivation, which took the shipped allowance to
 1300540, past the old bound. The 1350000 bound sits above the
