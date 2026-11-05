@@ -246,6 +246,8 @@ def test_evaluate_refuses_when_env_interpreter_becomes_unavailable_between_legs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, interpreter_mutation: str
 ) -> None:
     """An env-shebang launch failure cannot prove a negative control discriminates."""
+    if interpreter_mutation == "chmod -x" and os.geteuid() == 0:
+        pytest.skip("root can execute a wrapper after its executable bit is removed")
     _init_git_repo(repo_root=tmp_path)
     interpreter_dir = tmp_path / "bin"
     interpreter_dir.mkdir()

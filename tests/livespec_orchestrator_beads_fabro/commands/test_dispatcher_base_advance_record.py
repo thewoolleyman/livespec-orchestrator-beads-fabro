@@ -206,6 +206,54 @@ def test_the_comment_opens_with_the_marker_line_and_carries_every_measurement() 
     assert "0 names were left out" in body
 
 
+def test_the_comment_names_the_merge_measurement_when_it_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The durable record identifies a failed comparison without its stderr."""
+    from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+
+    parameters = inspect.signature(
+        __import__(
+            "livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance",
+            fromlist=["BaseAdvancedAfterArming"],
+        ).BaseAdvancedAfterArming
+    ).parameters
+    assert "conflict_measurement_failure" in parameters
+    monkeypatch.chdir(tmp_path)
+    _write_config(project_root=tmp_path)
+    append_work_item(path=_config(), item=_item())
+    module = _record_module()
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
+        BaseAdvancedAfterArming,
+    )
+
+    outcome = DispatchOutcome(
+        work_item_id=_ITEM_ID,
+        status="blocked",
+        stage="merge-poll",
+        pr_number=2606,
+        merge_sha=None,
+        detail=_detail(work_item_id=_ITEM_ID),
+        fabro_run_id=_RUN_ID,
+        base_advanced=BaseAdvancedAfterArming(
+            factory=_FACTORY,
+            pr_head=_PR_HEAD,
+            default_branch_tip=_BASE_TIP,
+            conflict_measurement_failure="git-merge-tree",
+        ),
+    )
+
+    module.record_base_advanced_after_arming(  # type: ignore[attr-defined]
+        repo=tmp_path,
+        item=_item(),
+        outcome=outcome,
+        journal=_Journal(),
+    )
+
+    comment = read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)[0].text
+    assert "conflict measurement failed: git-merge-tree" in comment
+
+
 def test_a_name_that_is_not_identifier_shaped_is_left_out_and_counted() -> None:
     """Two unpassable names, both gone from the body, and the count says two."""
     module = _record_module()
