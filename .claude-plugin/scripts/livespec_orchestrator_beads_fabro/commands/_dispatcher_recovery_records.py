@@ -37,6 +37,7 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     RecoveryHold,
     RecoveryLoss,
+    RecoveryRoute,
     RecoverySeed,
 )
 
@@ -63,11 +64,7 @@ PRESERVED_WORK_ABSENT = "absent"
 
 def recovery_route_record(
     *,
-    work_item_id: str,
-    route: str,
-    seed: RecoverySeed | None = None,
-    loss: RecoveryLoss | None = None,
-    preserved_work: str | None = None,
+    recovery_route: RecoveryRoute,
 ) -> dict[str, object]:
     """One non-held route's row, with the SAME key set whichever route it is.
 
@@ -84,17 +81,28 @@ def recovery_route_record(
     answer to point at, which is exactly why the clause requires that one
     recorded.
     """
-    return {
+    record: dict[str, object] = {
         "stage": RECOVERY_ROUTE_STAGE,
-        "work_item_id": work_item_id,
-        "route": route,
-        "preserved_work": preserved_work,
-        "source_run_id": _source_run_id(seed=seed, loss=loss),
-        "remote": None if seed is None else seed.remote,
-        "commit_sha": None if seed is None else seed.commit_sha,
-        "preservation_ref": None if seed is None else seed.preservation_ref,
-        "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
+        "work_item_id": recovery_route.work_item_id,
+        "route": recovery_route.route,
+        "preserved_work": recovery_route.preserved_work,
+        "source_run_id": _source_run_id(seed=recovery_route.seed, loss=recovery_route.loss),
+        "remote": None if recovery_route.seed is None else recovery_route.seed.remote,
+        "commit_sha": None if recovery_route.seed is None else recovery_route.seed.commit_sha,
+        "preservation_ref": (
+            None if recovery_route.seed is None else recovery_route.seed.preservation_ref
+        ),
+        "preservation_sources_asked": (
+            None if recovery_route.loss is None else list(recovery_route.loss.sources_asked)
+        ),
     }
+    if (
+        recovery_route.preserved_base_commit is not None
+        and recovery_route.default_branch_commit is not None
+    ):
+        record["preserved_base_commit"] = recovery_route.preserved_base_commit
+        record["default_branch_commit"] = recovery_route.default_branch_commit
+    return record
 
 
 def _source_run_id(*, seed: RecoverySeed | None, loss: RecoveryLoss | None) -> str | None:
