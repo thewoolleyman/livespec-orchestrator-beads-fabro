@@ -88,11 +88,11 @@ def _config() -> StoreConfig:
     )
 
 
-def _item() -> WorkItem:
+def _item(*, status: str = "active") -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
         type="bug",
-        status="active",
+        status=status,
         title="Rank merged pull request candidates",
         description="Resolve the carrier before mentions.",
         origin="freeform",
@@ -379,6 +379,70 @@ def test_an_explicit_selector_chooses_one_title_match_without_ranking_its_siblin
         "pr_number": 81,
         "merge_sha": "selected81",
     }.items() <= records[2].items()
+
+
+def test_a_selector_refuses_before_acceptance_when_green_janitor_evidence_names_another_pr(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A selected merged PR cannot replace the merge the parked janitor certified."""
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item(status="acceptance"))
+    journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    _ = journal.write_text(
+        json.dumps(
+            {
+                "stage": "outcome",
+                "outcome": {
+                    "work_item_id": _ITEM_ID,
+                    "status": "green",
+                    "stage": "done",
+                    "pr_number": 81,
+                    "merge_sha": "janitor81",
+                    "detail": "merged, post-merge janitor green",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    selected = _listed(
+        number=82,
+        title=f"fix: {_ITEM_ID}",
+        body="",
+        sha="selected82",
+        head="fix/another-merged-pr",
+    )
+    runner = _Runner(queue=[_ok(stdout="origin/master"), _ok(stdout=json.dumps(selected))])
+    acceptance_calls: list[object] = []
+    monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: (acceptance_calls.append(object()), _AcceptancePass())[1],
+    )
+
+    exit_code = main(
+        argv=[
+            "reconcile-merged",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--pr",
+            str(selected["number"]),
+        ]
+    )
+
+    assert exit_code == 3
+    error = capsys.readouterr().err
+    assert "post-merge janitor" in error
+    assert "#81" in error
+    assert "#82" in error
+    assert acceptance_calls == []
+    assert _stored().status == "acceptance"
 
 
 @pytest.mark.parametrize(
