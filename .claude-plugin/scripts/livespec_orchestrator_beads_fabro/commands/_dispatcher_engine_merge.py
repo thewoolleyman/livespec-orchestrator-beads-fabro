@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
     CONSECUTIVE_CONFLICTING_REPORTS,
-    MERGE_POLL_BUDGET_EXHAUSTED,
     BaseAdvancedAfterArming,
     base_advanced_detail,
-    merge_poll_budget_exhausted_detail,
     reports_base_advanced_after_arming,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_confirm import confirm_pr
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_failed_jobs_rerun import (
+    attempt_failed_jobs_rerun,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_outcome import (
+    outcome_at_exhaustion,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_pr_association import (
     pr_view_for_merge_sha,
 )
@@ -43,6 +48,14 @@ if TYPE_CHECKING:
 __all__: list[str] = ["await_merge", "confirm_pr", "outcome_after_await"]
 
 
+@dataclass(kw_only=True)
+class _RerunPollState:
+    """One poll's permission and history for bounded failed-jobs recovery."""
+
+    workflow_ids: set[str]
+    may_keep_polling: bool
+
+
 def await_merge(
     *,
     outcome_type: type[DispatchOutcome],
@@ -58,6 +71,7 @@ def await_merge(
     # `_dispatcher_base_advance`'s own rule that an absent reading is not a
     # report in either direction.
     conflicting_reports = 0
+    rerun_workflow_ids: set[str] = set()
     for attempt in range(poll.attempts):
         reading = view_pr(
             plan=plan,
@@ -113,6 +127,10 @@ def await_merge(
                 plan=plan,
                 runner=runner,
                 journal=journal,
+                rerun_state=_RerunPollState(
+                    workflow_ids=rerun_workflow_ids,
+                    may_keep_polling=attempt + 1 < poll.attempts,
+                ),
             )
         ) is not None:
             return failure
@@ -140,7 +158,7 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
     with a disposition tree hanging off its end.
     """
     if merged is None:
-        merged = _outcome_at_exhaustion(
+        merged = outcome_at_exhaustion(
             outcome_type=outcome_type,
             plan=plan,
             runner=runner,
@@ -167,54 +185,6 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
     return merged
 
 
-def _outcome_at_exhaustion(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-    pr_number: int,
-    run_id: str | None,
-) -> PrView | DispatchOutcome:
-    """What an exhausted poll budget earns, after one final read of the pull request.
-
-    MERGED proceeds as a merge observed within the budget; OPEN and not in
-    conflict rests the item for resume so no claim is left `active` over an
-    ended run. The read omits the status-check rollup, as the access-denied
-    confirmation above does: only the state and mergeability are decided on.
-    Anything else -- conflicting, closed, unreadable -- keeps the existing failed
-    outcome, which is the clause's silence rather than a ruling.
-    """
-    view = view_pr(plan=plan, runner=runner, journal=journal, include_status_checks=False).view
-    if view is not None and view.state == "MERGED":
-        return view
-    if view is not None and view.state == "OPEN" and view.merge_state_status != "DIRTY":
-        return outcome_type(
-            work_item_id=plan.work_item_id,
-            status="blocked",
-            stage="merge-poll",
-            pr_number=view.number,
-            merge_sha=None,
-            detail=merge_poll_budget_exhausted_detail(work_item_id=plan.work_item_id),
-            fabro_run_id=run_id,
-            base_advanced=BaseAdvancedAfterArming(
-                factory=plan.fabro_factory_name,
-                pr_head=view.head,
-                default_branch_tip=view.base,
-                cause=MERGE_POLL_BUDGET_EXHAUSTED,
-            ),
-        )
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="failed",
-        stage="merge-poll",
-        pr_number=pr_number,
-        merge_sha=None,
-        detail="PR did not reach MERGED within the poll budget",
-        fabro_run_id=run_id,
-    )
-
-
 def _required_check_failure(
     *,
     outcome_type: type[DispatchOutcome],
@@ -222,6 +192,7 @@ def _required_check_failure(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
+    rerun_state: _RerunPollState,
 ) -> DispatchOutcome | None:
     """The terminal outcome when a check the forge reports as required has failed for good.
 
@@ -241,6 +212,55 @@ def _required_check_failure(
     failed = [name for name in view.terminal_check_failures if name in required]
     if not failed:
         return None
+    if rerun_state.workflow_ids:
+        return _terminal_required_check_outcome(
+            outcome_type=outcome_type,
+            plan=plan,
+            view=view,
+            failed=failed,
+            journal=journal,
+        )
+    rerun = (
+        attempt_failed_jobs_rerun(
+            failed_check_names=failed,
+            failures=view.terminal_check_failure_details,
+            plan=plan,
+            pr_number=view.number,
+            runner=runner,
+            journal=journal,
+        )
+        if rerun_state.may_keep_polling
+        else None
+    )
+    if rerun is not None:
+        rerun_state.workflow_ids.add(rerun.workflow_run)
+    if rerun is not None and rerun.requested:
+        return None
+    return _terminal_required_check_outcome(
+        outcome_type=outcome_type,
+        plan=plan,
+        view=view,
+        failed=failed,
+        journal=journal,
+    )
+
+
+def _terminal_required_check_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    view: PrView,
+    failed: list[str],
+    journal: JournalWriter,
+) -> DispatchOutcome:
+    """Return the ordinary blocked outcome, recording a re-run attempt verdict."""
+    journal.append(
+        record={
+            "work_item_id": plan.work_item_id,
+            "stage": "merge-poll-failed-jobs-rerun",
+            "outcome": "required-check-failed" if failed else "not-requested",
+        }
+    )
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
