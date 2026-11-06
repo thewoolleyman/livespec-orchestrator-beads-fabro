@@ -29,6 +29,20 @@ It never launches a Fabro run, cuts a branch, or re-runs the post-merge
 janitor. The janitor already ran for this item — that is how the merge got
 there — and re-running it would spend a full checkout to answer a question
 about criteria text.
+
+BOTH DISPOSITIONS ARE CLAIM-CHANGING WRITES BY A HUMAN VALVE
+(`SPECIFICATION/contracts.md`, "Claim tokens"): the arm is an attributed
+operator act that parks the item in `acceptance` or closes it. Once
+`dispatcher.claim_tokens` is true each is made only after winning the item's
+current token, and only while the item still rests where the arm read it,
+still carrying `rework:pending`, under the claim row `run_regrade` read before
+anything else. The park is one guarded write. The close is two: `bd close`
+cannot name a successor token, so the arm first wins the token in a write that
+names the successor and changes nothing else, and closes only after that write
+landed. An arm that does not win has written nothing, and reports the
+protocol's outcome on a failed result. Both writes, guarded and unguarded,
+are made in `_dispatcher_reconcile_regrade_claims`, because this module is at
+its size ceiling.
 """
 
 from __future__ import annotations
@@ -59,10 +73,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
     read_dispatch_labels,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
-    write_work_item_status_and_reconcile,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
@@ -70,6 +80,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged_pr import (
     resolve_merged_pr,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade_claims import (
+    RegradeClaim,
+    refused_regrade_outcome,
+    regrade_claim,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
@@ -115,6 +130,9 @@ def run_regrade(
     `regrade` when it reaches any other verdict and the item is untouched — or
     an exit code when the merge evidence the arm keys on does not hold.
     """
+    # Read FIRST, ahead of the merge evidence and the grading pass: it is what the
+    # arm's disposition is later bound to.
+    claim = regrade_claim(repo=repo, item=item, journal=journal)
     merged = resolve_merged_pr(plan=plan, item=item, runner=runner, journal=journal)
     if isinstance(merged, str):
         _ = write_stderr(text=merged)
@@ -128,7 +146,9 @@ def run_regrade(
     if containment is not None:
         _ = write_stderr(text=containment)
         return EXIT_PRECONDITION_ERROR
-    return _grade_and_dispose(repo=repo, item=item, merged=merged, runner=runner, journal=journal)
+    return _grade_and_dispose(
+        repo=repo, item=item, merged=merged, runner=runner, journal=journal, claim=claim
+    )
 
 
 def _merge_containment_refusal(
@@ -181,6 +201,7 @@ def _grade_and_dispose(
     merged: PrView,
     runner: CommandRunner,
     journal: JournalFile,
+    claim: RegradeClaim,
 ) -> DispatchOutcome:
     """Run the acceptance pass over the verified merge and dispose on a clear PASS.
 
@@ -238,11 +259,12 @@ def _grade_and_dispose(
             policy=policy,
             result=result,
             journal=journal,
+            claim=claim,
         )
-    return _close_regraded_item(repo=repo, item=item, outcome=outcome, journal=journal)
+    return _close_regraded_item(repo=repo, item=item, outcome=outcome, journal=journal, claim=claim)
 
 
-def _park_regraded_item(
+def _park_regraded_item(  # noqa: PLR0913 — kw-only; the pass's facts and the claim it rests on.
     *,
     repo: Path,
     item: WorkItem,
@@ -250,11 +272,12 @@ def _park_regraded_item(
     policy: str,
     result: AcceptancePassResult,
     journal: JournalFile,
+    claim: RegradeClaim,
 ) -> DispatchOutcome:
     """Park a passing re-grade whose host or human proof leg is still pending."""
-    write_work_item_status_and_reconcile(
-        path=store_config(repo=repo), item_id=item.id, status="acceptance"
-    )
+    lost = claim.park()
+    if lost is not None:
+        return refused_regrade_outcome(item=item, outcome=outcome, refusal=lost)
     park_in_acceptance(
         repo=repo,
         item_id=item.id,
@@ -274,7 +297,12 @@ def _park_regraded_item(
 
 
 def _close_regraded_item(
-    *, repo: Path, item: WorkItem, outcome: DispatchOutcome, journal: JournalFile
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+    claim: RegradeClaim,
 ) -> DispatchOutcome:
     """Close a re-graded PASS, which is what clears the `rework:pending` marker.
 
@@ -285,6 +313,9 @@ def _close_regraded_item(
     cleared the marker by hand would be re-asserting what the seam already
     holds, in a second write that can fail on its own.
     """
+    lost = claim.hold()
+    if lost is not None:
+        return refused_regrade_outcome(item=item, outcome=outcome, refusal=lost)
     close_dispatch_item(
         repo=repo,
         item=item,
