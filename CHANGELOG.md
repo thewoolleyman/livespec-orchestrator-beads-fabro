@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.295.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.1...v0.295.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **groom:** a refused intake route is reported by groom and release-spec-tier, never discarded (bd-ib-kk4pjr) ([c14e7ef](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c14e7efd1a09884f40e9a7d58f3c560be8ed09dd))
+* **valves:** a claim-transition-pending refusal names its remedy (bd-ib-j6hjhz) ([b551e81](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b551e81bcf3b13c4b9a432f058ab76e5a98b94a1))
+* **valves:** reject regroom contests the claim token before it reverts (bd-ib-dzb7ux) ([ddd827e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ddd827ee6a9a944a9857086ed04e54a89b191dc7))
+
 ## [0.295.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.0...v0.295.1) (2026-11-06)
 
 
