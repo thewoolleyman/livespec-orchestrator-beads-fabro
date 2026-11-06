@@ -98,6 +98,10 @@ class FakeBeadsClient:
             )
         return dict(record)
 
+    def show_issues(self, *, issue_ids: list[str]) -> list[BeadsRecord]:
+        """Copies of the requested records that exist, as `bd show <id>... --json` returns them."""
+        return [dict(self._issues[issue_id]) for issue_id in issue_ids if issue_id in self._issues]
+
     def seed_comment(
         self, *, issue_id: str, text: str, author: str | None = None, created_at: str | None = None
     ) -> None:

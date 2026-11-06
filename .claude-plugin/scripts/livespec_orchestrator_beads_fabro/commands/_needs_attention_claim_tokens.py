@@ -1,4 +1,4 @@
-"""The attention row for a non-closed item that names no claim token after cutover.
+"""The attention rows for a non-closed item no claim writer can write after cutover.
 
 Once `dispatcher.claim_tokens` is committed `true`, a claim writer that finds no
 current token on a non-closed item writes nothing and reports
@@ -8,6 +8,18 @@ item rests in whatever status it had, no dispatch claims it, no valve moves it,
 and nothing about it is stranded, held or aging. This lane is the surface the
 same clause requires, one row per such item, so the count of unwritable items
 is never something an operator has to infer from writers standing down.
+
+AN ITEM WHOSE TOKEN CHAIN DEAD-ENDS IS THE SAME CASE IN ANOTHER SHAPE. The
+item names a token, but that token is closed and the chain of successors from
+it ends in a closed token naming no successor, so there is no open token any
+writer could win: the item has no current token in the clause's sense, and
+every writer that follows the chain stands down. The protocol no longer
+produces that shape itself (a takeover that stands down names its successor
+instead of discarding it), so a dead end is a trace of a write made outside the
+protocol, and it gets its own row naming the token the chain ends in. A chain
+ending in an OPEN token is an unapplied transition the writers take over
+themselves and is deliberately NOT a row: reporting it would send an operator
+to stop every writer over a state the writers resolve.
 
 IT COMPOSES NOTHING WHILE THE KEY IS FALSE OR ABSENT, and reads nothing either.
 Before the cutover no item names a token and none is refused for it, so a row
@@ -31,6 +43,7 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._store_claim_token_migration import (
     read_work_item_ids_naming_no_claim_token,
+    read_work_items_whose_claim_token_chain_dead_ends,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     resolve_claim_tokens,
@@ -49,6 +62,7 @@ _MIGRATION_WRAPPER = "migrate_claim_tokens.py"
 # refuses nothing, and `build_attention` has already raised on an unreadable
 # `.livespec.jsonc` before reaching it, so the fallback is the quiet one.
 _NOT_CUT_OVER = False
+_REMEDY = "Stop every claim writer of this tenant, then run the claim-token migration pass."
 
 
 def claim_token_missing_items(
@@ -57,27 +71,48 @@ def claim_token_missing_items(
     repo: str,
     config: StoreConfig,
 ) -> list[AttentionItem]:
-    """One row for every non-closed item naming no current token, after cutover."""
+    """One row per non-closed item naming no current token, or a dead-ended chain, after cutover."""
     if not unsafe_perform_io(resolve_claim_tokens(cwd=project_root).value_or(_NOT_CUT_OVER)):
         return []
     context = ConformanceContext(project_root=project_root, repo=repo)
     command = _survey_command(project_root=project_root)
-    return [
-        context.candidate(
-            id=f"hygiene:claim-token-missing:{work_item_id}",
+
+    def _row(*, kind: str, work_item_id: str, summary: str) -> AttentionItem:
+        return context.candidate(
+            id=f"hygiene:claim-token-{kind}:{work_item_id}",
             kind="hygiene",
             urgency="high",
-            summary=(
-                f"Work-item {work_item_id} names no current claim token while "
-                "dispatcher.claim_tokens is true, so every claim writer refuses it "
-                "with claim-token-missing and writes nothing. Stop every claim writer "
-                "of this tenant, then run the claim-token migration pass."
-            ),
+            summary=f"{summary} {_REMEDY}",
             source_ref=SourceRef(repo=repo, work_item=work_item_id),
             handoff=Handoff(kind="shell", command=command),
         )
+
+    missing = [
+        _row(
+            kind="missing",
+            work_item_id=work_item_id,
+            summary=(
+                f"Work-item {work_item_id} names no current claim token while "
+                "dispatcher.claim_tokens is true, so every claim writer refuses it "
+                "with claim-token-missing and writes nothing."
+            ),
+        )
         for work_item_id in read_work_item_ids_naming_no_claim_token(path=config)
     ]
+    dead_ended = [
+        _row(
+            kind="chain-dead-end",
+            work_item_id=work_item_id,
+            summary=(
+                f"Work-item {work_item_id} names a claim token whose chain of successors "
+                f"ends in closed token {token_id}, which names no successor, so no claim "
+                "writer can win an open token for it: every writer follows the chain, "
+                "finds nothing to close, and stands down with claim-changed."
+            ),
+        )
+        for work_item_id, token_id in read_work_items_whose_claim_token_chain_dead_ends(path=config)
+    ]
+    return missing + dead_ended
 
 
 def _survey_command(*, project_root: Path) -> str:

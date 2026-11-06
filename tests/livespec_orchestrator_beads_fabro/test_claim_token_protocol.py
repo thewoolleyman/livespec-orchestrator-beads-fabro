@@ -185,13 +185,15 @@ def test_closed_unapplied_transition_waits_then_takes_over_and_stands_down_if_it
     original_close = client.close_issue_without_verdict
 
     def _land_original(*, issue_id: str, reason: str) -> None:
+        # The takeover's close of the stranded successor is the only close it
+        # makes: a stand-down names its successor instead of discarding it.
+        assert issue_id == stranded_successor
         original_close(issue_id=issue_id, reason=reason)
-        if issue_id == stranded_successor:
-            client.update_issue(
-                issue_id=_ITEM_ID,
-                metadata={CLAIM_TOKEN_METADATA_KEY: stranded_successor},
-                names_claim_token=True,
-            )
+        client.update_issue(
+            issue_id=_ITEM_ID,
+            metadata={CLAIM_TOKEN_METADATA_KEY: stranded_successor},
+            names_claim_token=True,
+        )
 
     monkeypatch.setattr(client, "close_issue_without_verdict", _land_original)
     now[0] = 200.0
@@ -207,8 +209,15 @@ def test_closed_unapplied_transition_waits_then_takes_over_and_stands_down_if_it
     )
 
     assert takeover.outcome == "claim-changed"
-    assert client.show_issue(issue_id=_ITEM_ID)["metadata"][CLAIM_TOKEN_METADATA_KEY] == (
-        stranded_successor
+    # The stand-down names its own successor in a token-only write: the item
+    # stays `active` as the original winner left it, and its chain ends open.
+    named = client.show_issue(issue_id=_ITEM_ID)["metadata"][CLAIM_TOKEN_METADATA_KEY]
+    assert named != stranded_successor
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "active"
+    assert client.show_issue(issue_id=named)["status"] != "closed"
+    assert (
+        json.loads(client.show_issue(issue_id=stranded_successor)["close_reason"])["successor"]
+        == named
     )
 
 
@@ -298,6 +307,58 @@ def test_transition_takeover_stands_down_when_the_item_names_the_stranded_succes
     )
 
     assert outcome.outcome == "claim-changed"
+
+
+def test_a_takeover_that_finds_a_token_outside_its_chain_discards_its_successor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A write made outside the protocol named another token between the close and the re-read.
+
+    The takeover's successor is then reachable from nothing: the item's chain
+    no longer passes through the token it closed, so naming the successor
+    would overwrite the foreign write, and leaving it open would leak it. It
+    is discarded, the item is left exactly as found, and the outcome is
+    claim-changed.
+    """
+    client, old_token = _client_with_current_token()
+    stranded_successor = create_claim_token(client=client)
+    foreign = create_claim_token(client=client)
+    client.close_issue(issue_id=old_token, reason=_transition_reason(successor=stranded_successor))
+    original_show = client.show_issue
+
+    def _name_foreign_once_the_takeover_has_closed(*, issue_id: str) -> dict[str, object]:
+        if (
+            issue_id == _ITEM_ID
+            and original_show(issue_id=stranded_successor)["status"] == "closed"
+        ):
+            client.update_issue(
+                issue_id=_ITEM_ID,
+                metadata={CLAIM_TOKEN_METADATA_KEY: foreign},
+                names_claim_token=True,
+            )
+        return original_show(issue_id=issue_id)
+
+    monkeypatch.setattr(client, "show_issue", _name_foreign_once_the_takeover_has_closed)
+
+    outcome = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="recovery",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+        clock=lambda: 181.0,
+        transition_observations={(_ITEM_ID, old_token, stranded_successor): 0.0},
+    )
+
+    assert outcome.outcome == "claim-changed"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "active"
+    assert client.show_issue(issue_id=_ITEM_ID)["metadata"][CLAIM_TOKEN_METADATA_KEY] == foreign
+    assert client.show_issue(issue_id=foreign)["status"] != "closed"
+    taken = json.loads(client.show_issue(issue_id=stranded_successor)["close_reason"])["successor"]
+    assert json.loads(client.show_issue(issue_id=taken)["close_reason"])["kind"] == (
+        "claim-token-discard"
+    )
 
 
 def test_transition_takeover_stands_down_when_the_close_reason_changes_on_reread(

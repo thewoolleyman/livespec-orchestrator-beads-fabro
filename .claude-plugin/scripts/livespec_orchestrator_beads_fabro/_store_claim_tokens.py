@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client_metadata import CLAIM_TOKEN_METADATA_KEY
+from livespec_orchestrator_beads_fabro._store_claim_token_chain import (
+    discard_claim_token,
+    is_discard_reason,
+    successor_named_by,
+    transition_reason,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import (
     attempt_close,
     token_reading,
@@ -27,8 +31,6 @@ __all__: list[str] = [
 ]
 
 _CLAIM_TOKEN_LABEL = "claim-token"  # noqa: S105 - record label
-_CLOSE_REASON_KIND = "claim-token-transition"
-_DISCARD_REASON_KIND = "claim-token-discard"
 _LEASE_SECONDS = 120.0
 # Public because a one-shot writer waits this long itself before its one retry.
 TRANSITION_WAIT_SECONDS = 180.0
@@ -40,6 +42,19 @@ class ClaimChangeResult:
 
     outcome: str
     successor_token_id: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Takeover:
+    """The token a writer may now contest, the item read with it, and the hops followed.
+
+    `followed` is empty when the token is the one the item names. Otherwise it
+    lists, in order, every stranded successor the writer took over to reach it.
+    """
+
+    token_id: str
+    record: BeadsRecord
+    followed: tuple[str, ...]
 
 
 def create_claim_token(*, client: BeadsClient) -> str:
@@ -96,39 +111,40 @@ def change_claim(  # noqa: PLR0911, PLR0913
         return ClaimChangeResult(outcome="applied")
 
     record = client.show_issue(issue_id=work_item_id)
-    token_id = _current_token(record=record)
-    if token_id is None:
+    named = _current_token(record=record)
+    if named is None:
         return ClaimChangeResult(outcome="claim-token-missing")
     takeover = _takeover_token(
         client=client,
         work_item_id=work_item_id,
-        token_id=token_id,
+        named=named,
         clock=clock,
         observations=transition_observations if transition_observations is not None else {},
     )
     if isinstance(takeover, ClaimChangeResult):
         return takeover
-    token_id, record, taking_over = takeover
+    record = takeover.record
     if still_as_decided is not None and not still_as_decided(record):
         return ClaimChangeResult(outcome="claim-changed")
 
     successor = create_claim_token(client=client)
     started = clock()
-    close_reason = _close_reason(writer=writer, intent=intent, successor=successor)
-    attempt_close(client=client, token_id=token_id, reason=close_reason)
-    verdict = token_reading(client=client, token_id=token_id)
+    close_reason = transition_reason(writer=writer, intent=intent, successor=successor)
+    attempt_close(client=client, token_id=takeover.token_id, reason=close_reason)
+    verdict = token_reading(client=client, token_id=takeover.token_id)
     if verdict.close_reason != close_reason:
-        _discard_claim_token(client=client, token_id=successor, writer=writer)
+        discard_claim_token(client=client, token_id=successor, writer=writer)
         return ClaimChangeResult(
             outcome="claim-unobservable" if verdict.close_reason is None else "claim-changed"
         )
     if clock() - started >= _LEASE_SECONDS:
         return ClaimChangeResult(outcome="claim-lease-expired", successor_token_id=successor)
-    if taking_over:
+    if takeover.followed:
         record = _stand_down_if_original_writer_landed(
             client=client,
             work_item_id=work_item_id,
-            token_id=token_id,
+            named=named,
+            followed=takeover.followed,
             successor=successor,
             writer=writer,
             still_as_decided=still_as_decided,
@@ -145,60 +161,81 @@ def _takeover_token(
     *,
     client: BeadsClient,
     work_item_id: str,
-    token_id: str,
+    named: str,
     clock: Callable[[], float],
     observations: MutableMapping[tuple[str, str, str], float],
-) -> tuple[str, BeadsRecord, bool] | ClaimChangeResult:
-    """Return the current token, or wait/stand down on a stranded transition."""
-    reading = token_reading(client=client, token_id=token_id)
-    record = client.show_issue(issue_id=work_item_id)
-    if not reading.closed:
-        return token_id, record, False
-    successor = _successor_from_reason(reason=reading.close_reason)
-    if successor is None:
-        return ClaimChangeResult(outcome="claim-unobservable")
-    observation_key = (work_item_id, token_id, successor)
-    first_seen = observations.setdefault(observation_key, clock())
-    if clock() - first_seen < TRANSITION_WAIT_SECONDS:
-        return ClaimChangeResult(outcome="claim-transition-pending")
-    if _current_token(record=record) != token_id:
-        return ClaimChangeResult(outcome="claim-changed")
-    reread = token_reading(client=client, token_id=token_id)
-    if not reread.closed or _successor_from_reason(reason=reread.close_reason) != successor:
-        return ClaimChangeResult(outcome="claim-changed")
-    return successor, record, True
+) -> _Takeover | ClaimChangeResult:
+    """Follow the item's chain of unapplied transitions to its first open token.
+
+    Each hop is a stranded transition of its own, observed for the takeover
+    wait before the writer treats its successor as current (step 5 applies to
+    the successor as it applied to the token the item names), so a chain of
+    two closed tokens costs two waits and a writer that follows one hop only
+    would contest a token it can never close. A chain that ends in a token
+    the protocol discarded has no open token to win: the item has no current
+    token, and the writer reports `claim-token-missing` as it would for an
+    item naming none.
+    """
+    token_id = named
+    followed: list[str] = []
+    while True:
+        reading = token_reading(client=client, token_id=token_id)
+        record = client.show_issue(issue_id=work_item_id)
+        if not reading.closed:
+            return _Takeover(token_id=token_id, record=record, followed=tuple(followed))
+        successor = successor_named_by(reason=reading.close_reason)
+        if successor is None:
+            discarded = is_discard_reason(reason=reading.close_reason)
+            return ClaimChangeResult(
+                outcome="claim-token-missing" if discarded else "claim-unobservable"
+            )
+        first_seen = observations.setdefault((work_item_id, token_id, successor), clock())
+        if clock() - first_seen < TRANSITION_WAIT_SECONDS:
+            return ClaimChangeResult(outcome="claim-transition-pending")
+        if _current_token(record=record) != named:
+            return ClaimChangeResult(outcome="claim-changed")
+        reread = token_reading(client=client, token_id=token_id)
+        if not reread.closed or successor_named_by(reason=reread.close_reason) != successor:
+            return ClaimChangeResult(outcome="claim-changed")
+        followed.append(successor)
+        token_id = successor
 
 
-def _stand_down_if_original_writer_landed(
+def _stand_down_if_original_writer_landed(  # noqa: PLR0913
     *,
     client: BeadsClient,
     work_item_id: str,
-    token_id: str,
+    named: str,
+    followed: tuple[str, ...],
     successor: str,
     writer: str,
     still_as_decided: Callable[[BeadsRecord], bool] | None,
 ) -> BeadsRecord | None:
-    """Avoid overwriting the delayed item write that made the transition current.
+    """Avoid overwriting the delayed item write that made a transition current.
 
     The record returned is the one the takeover's write is based on, so the
-    caller's decision is asked of it too. An item that is no longer as the
-    caller decided, while the stranded transition still has not landed, gets no
-    part of the caller's change: the takeover won the stranded successor, so it
-    names its own successor in a write that changes nothing else. Discarding
-    that successor instead would leave the item naming a chain that ends in a
-    closed token, which no later writer could ever win.
+    caller's decision is asked of it too. When the item now names a token the
+    takeover followed, the original winner's write has landed; when the item is
+    no longer as the caller decided, the caller's change has no place. In both
+    the takeover names its own successor in a write that changes nothing else,
+    because it won the token the item's chain now ends in and only it can keep
+    that chain ending in an open token: discarding the successor would leave a
+    chain that ends closed, which no later writer could ever win. An item that
+    names a token outside the chain was written by something this protocol does
+    not fence; the takeover's successor is then unreachable and is discarded.
     """
     record = client.show_issue(issue_id=work_item_id)
-    if _current_token(record=record) == token_id:
-        _discard_claim_token(client=client, token_id=successor, writer=writer)
-        return None
-    if still_as_decided is None or still_as_decided(record):
+    current = _current_token(record=record)
+    if current == named and (still_as_decided is None or still_as_decided(record)):
         return record
-    client.update_issue(
-        issue_id=work_item_id,
-        metadata=_with_successor(record=record, metadata=None, successor=successor),
-        names_claim_token=True,
-    )
+    if current == named or current in followed:
+        client.update_issue(
+            issue_id=work_item_id,
+            metadata=_with_successor(record=record, metadata=None, successor=successor),
+            names_claim_token=True,
+        )
+    else:
+        discard_claim_token(client=client, token_id=successor, writer=writer)
     return None
 
 
@@ -235,45 +272,6 @@ def _with_successor(
 
 def _current_token(*, record: BeadsRecord) -> str | None:
     return _text(value=_metadata_of(record=record).get(CLAIM_TOKEN_METADATA_KEY))
-
-
-def _close_reason(*, writer: str, intent: str, successor: str) -> str:
-    return json.dumps(
-        {
-            "kind": _CLOSE_REASON_KIND,
-            "writer": writer,
-            "intent": intent,
-            "successor": successor,
-            "closed_at": datetime.now(timezone.utc).isoformat(),
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _successor_from_reason(*, reason: str | None) -> str | None:
-    try:
-        parsed = json.loads(reason) if reason is not None else None
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    parsed_mapping = cast("dict[str, object]", parsed)
-    if parsed_mapping.get("kind") != _CLOSE_REASON_KIND:
-        return None
-    return _text(value=parsed_mapping.get("successor"))
-
-
-def _discard_claim_token(*, client: BeadsClient, token_id: str, writer: str) -> None:
-    attempt_close(
-        client=client,
-        token_id=token_id,
-        reason=json.dumps(
-            {"kind": _DISCARD_REASON_KIND, "writer": writer},
-            separators=(",", ":"),
-            sort_keys=True,
-        ),
-    )
 
 
 def _metadata_of(*, record: BeadsRecord) -> dict[str, Any]:

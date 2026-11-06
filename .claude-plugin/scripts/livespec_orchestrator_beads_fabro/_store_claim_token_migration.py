@@ -39,6 +39,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._store_claim_token_chain import (
+    CHAIN_DEAD_END,
+    read_chain_ends,
+)
 from livespec_orchestrator_beads_fabro._store_claim_tokens import (
     CLAIM_TOKEN_METADATA_KEY,
     create_claim_token,
@@ -55,6 +59,7 @@ __all__: list[str] = [
     "claim_token_named_by",
     "migrate_claim_tokens",
     "read_work_item_ids_naming_no_claim_token",
+    "read_work_items_whose_claim_token_chain_dead_ends",
 ]
 
 _CLOSED_STATUS = "closed"
@@ -159,6 +164,37 @@ def read_work_item_ids_naming_no_claim_token(*, path: StoreConfig) -> tuple[str,
             if isinstance(item_id := record.get("id"), str)
             and record.get("status") != _CLOSED_STATUS
             and claim_token_named_by(record=record) is None
+        )
+    )
+
+
+def read_work_items_whose_claim_token_chain_dead_ends(
+    *, path: StoreConfig
+) -> tuple[tuple[str, str], ...]:
+    """`(item id, dead-end token id)` for every non-closed item no claim writer can win, sorted.
+
+    The item names a token whose chain of successors ends in a CLOSED token
+    naming no successor: a token discarded by its creator, or one closed
+    outside the protocol. A writer that follows the chain finds nothing it can
+    close there, so it stands down for ever, while a chain ending in an open
+    token is a transition the writers take over themselves and is not reported.
+    One list read and one show per hop depth (`read_chain_ends`), never a read
+    per item.
+    """
+    client = make_beads_client(config=path)
+    named = {
+        item_id: token_id
+        for record in client.list_issues()
+        if isinstance(item_id := record.get("id"), str)
+        and record.get("status") != _CLOSED_STATUS
+        and (token_id := claim_token_named_by(record=record)) is not None
+    }
+    ends = read_chain_ends(client=client, token_ids=named.values())
+    return tuple(
+        sorted(
+            (item_id, ends[token_id].token_id)
+            for item_id, token_id in named.items()
+            if ends[token_id].state == CHAIN_DEAD_END
         )
     )
 
