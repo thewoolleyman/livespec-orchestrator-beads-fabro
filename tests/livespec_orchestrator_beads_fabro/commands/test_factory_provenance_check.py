@@ -12,6 +12,7 @@ from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths im
     ProductPathPolicy,
 )
 from livespec_orchestrator_beads_fabro.commands._factory_provenance_event import PullRequestEvent
+from livespec_orchestrator_beads_fabro.commands._incident_provenance import IncidentReceipt
 from livespec_orchestrator_beads_fabro.commands.factory_provenance_check import (
     FACTORY_APP_LOGINS,
     decide,
@@ -65,11 +66,32 @@ def _write_event(*, path: Path, login: str, labels: tuple[str, ...] = ()) -> Non
                     "labels": [{"name": name} for name in labels],
                     "base": {"sha": "base1234"},
                     "head": {"sha": "head5678"},
-                }
+                },
+                "repository": {"full_name": "owner/repository"},
+                "number": 73,
             }
         ),
         encoding="utf-8",
     )
+
+
+class ExactReceiptRunner:
+    """The gate's two git reads for a retained, exact incident receipt."""
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        if argv[:3] == ["git", "diff", "--name-only"]:
+            return CommandResult(exit_code=0, stdout=f"{_PRODUCT_PY}\n", stderr="")
+        assert argv[:3] == ["git", "rev-list", "--reverse"]
+        return CommandResult(exit_code=0, stdout="landed1234\n", stderr="")
 
 
 def _repo_with_declaration(*, root: Path) -> Path:
@@ -203,6 +225,32 @@ def test_main_passes_a_factory_authored_pull_request(
     captured = capsys.readouterr()
     assert code == 0
     assert "pass" in captured.out
+    assert captured.err == ""
+
+
+def test_main_passes_only_a_retained_receipt_matching_repository_pr_head_and_commits(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo_with_declaration(root=tmp_path)
+    event_path = tmp_path / "event.json"
+    _write_event(path=event_path, login="thewoolleyman")
+    receipt = IncidentReceipt(
+        repository="owner/repository",
+        item_id="incident-1",
+        phase="repair",
+        pr_number=73,
+        head_sha="head5678",
+        landed_commits=("landed1234",),
+        repayment_required=True,
+    )
+    code = main(
+        argv=["--event-path", str(event_path), "--repo", str(repo)],
+        runner=ExactReceiptRunner(),
+        incident_receipts=(receipt,),
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "retained exact incident receipt" in captured.out
     assert captured.err == ""
 
 
