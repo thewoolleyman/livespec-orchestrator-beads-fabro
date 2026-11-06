@@ -153,6 +153,27 @@ def test_neither_source_available_pushes_nothing_and_says_so(tmp_path: Path) -> 
     assert completed.returncode == 1
 
 
+def test_a_detached_default_head_preserves_the_run_branch_tree(tmp_path: Path) -> None:
+    """A needs-human ref must carry work that only the run branch holds."""
+    assert "needs_human_run_branch [" in _WORKFLOW.read_text(encoding="utf-8")
+    work, origin = _sandbox(tmp_path=tmp_path, dispatch_id=_DISPATCH_ID)
+    run_branch = "fabro/run/01M6WIPNEEDSHUMAN"
+    run_work = "run-branch-work.txt"
+    run_body = "settled work is on the run branch\n"
+    _git(work, "switch", "-c", run_branch)
+    _ = (work / run_work).write_text(run_body, encoding="utf-8")
+    _git(work, "add", run_work)
+    _git(work, "commit", "--quiet", "-m", "settled run work")
+    _git(work, "switch", "--detach", "master")
+
+    prepared = _run_node(work=work, node="needs_human_run_branch", run_id=None)
+    completed = _run_needs_human(work=work, run_id=None)
+
+    assert prepared.returncode == 0, prepared.stderr
+    assert completed.returncode == 1
+    assert _ref_blob(origin=origin, ref=f"{_REF_PREFIX}{_DISPATCH_ID}", path=run_work) == run_body
+
+
 def test_the_primary_source_reads_the_marker_the_dispatcher_declares() -> None:
     """Assertion 1's lockstep: one key name, declared once and read once.
 
@@ -235,6 +256,18 @@ def _run_needs_human(*, work: Path, run_id: str | None) -> subprocess.CompletedP
     )
 
 
+def _run_node(*, work: Path, node: str, run_id: str | None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["sh", "-c", _node_script(node=node)],
+        cwd=str(work),
+        env=_env(),
+        check=False,
+        text=True,
+        capture_output=True,
+        input="" if run_id is None else f"{run_id}\n",
+    )
+
+
 def _preserved_blob(*, origin: Path, ref: str, path: str) -> str:
     completed = subprocess.run(
         ["git", "show", f"{ref}:{path}"],
@@ -244,6 +277,17 @@ def _preserved_blob(*, origin: Path, ref: str, path: str) -> str:
         capture_output=True,
     )
     return completed.stdout
+
+
+def _ref_blob(*, origin: Path, ref: str, path: str) -> str | None:
+    completed = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        cwd=str(origin),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout if completed.returncode == 0 else None
 
 
 def _pushed_refs(*, origin: Path) -> list[str]:
