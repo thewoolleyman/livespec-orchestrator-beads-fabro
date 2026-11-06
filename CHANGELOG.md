@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.292.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.291.0...v0.292.0) (2026-11-06)
+
+
+### Features
+
+* **incident:** publish incident genesis through the claim-token conditional close (bd-ib-dzbwaq) ([adc81fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/adc81fbc824485138b305cf388c366aa1f9ce347))
+
 ## [0.291.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.290.0...v0.291.0) (2026-11-06)
 
 
