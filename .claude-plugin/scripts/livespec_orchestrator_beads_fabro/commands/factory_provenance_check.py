@@ -3,10 +3,11 @@
 R6a of plan `mechanically-enforce-factory-usage`. This is the MERGE-TIME half
 of the pair whose commit-time half is the `Factory-Override` trailer the
 factory-bypass audit already counts: a pull request that changes PRODUCT
-PYTHON must have been authored by the factory GitHub App, or must carry the
-`factory-override` label declaring the exception. Everything else merges
-untouched — spec, plan, docs, workflow and config changes are out of scope by
-construction, exactly as the Red-Green-Replay scope is.
+PYTHON must have been authored by the factory GitHub App, must match an exact
+retained incident receipt, or must carry the `factory-override` label
+declaring the exception. Everything else merges untouched — spec, plan, docs,
+workflow and config changes are out of scope by construction, exactly as the
+Red-Green-Replay scope is.
 
 WHY THIS IS THE HARD WALL. The author identity comes from the forge's own
 event payload, so no local marker can forge it; the commit-time trailer stays
@@ -33,25 +34,29 @@ factory-provenance grounds. Collapsing the two would hide a broken probe
 inside a green result, which is how a scoped guard once passed over an empty
 diff for four review rounds.
 
-Hermetic in the forge sense: the event payload and the diff, never the ledger.
-Wiring this into `ci.yml` and into the `ci-green` aggregate is R6b — a
-workflow edit the maintainer lands by hand, because a factory branch never
-touches `.github/workflows/`.
+THE INCIDENT EXCEPTION IS EXACT AND READ, NEVER DECLARED. Under the
+expedited incident lifecycle contract in `SPECIFICATION/contracts.md`, a
+trusted incident repair receipt admits only the exact authorized carrier. The gate
+locates candidates ONLY through `--incident-item <id>` and authorizes them
+ONLY through the canonical incident-authority reader over the retained ledger
+chain, binding repository, pull request number, head and the complete landed
+commit set (`git rev-list base..head`). A named item whose chain cannot be
+read, an event that names no repository, or a commit range that cannot be
+listed is UNOBSERVABLE (exit 2), never a pass and never "no receipt". The
+ordinary CI invocation names no item and stays hermetic in the forge sense:
+the event payload and the diff, never the ledger.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_scoped_check_vacuity import (
-    ScopedCheckOutcome,
-    gate_exit_code,
-    gate_tally,
     scoped_check_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths import (
@@ -64,6 +69,27 @@ from livespec_orchestrator_beads_fabro.commands._factory_provenance_event import
     diff_range,
     read_changed_paths,
     read_event,
+    read_landed_commits,
+)
+from livespec_orchestrator_beads_fabro.commands._factory_provenance_verdict import (
+    FACTORY_APP_LOGINS,
+    FACTORY_OVERRIDE_LABEL,
+    ProvenanceVerdict,
+    exit_code,
+    permits_merge,
+    render_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._incident_provenance import (
+    IncidentReceipt,
+    matching_incident_receipt,
+    matching_repayment_carrier,
+)
+from livespec_orchestrator_beads_fabro.commands._incident_receipt_source import (
+    IncidentReceiptRefusal,
+    add_incident_item_argument,
+    describe_refusal,
+    incident_authority_client,
+    resolve_incident_receipts,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
@@ -80,31 +106,9 @@ __all__: list[str] = [
     "resolve_product_policy",
 ]
 
-# BOTH spellings the forge uses for the one factory GitHub App. The webhook
-# payload emits the `[bot]`-suffixed form; `gh` emits the `app/`-prefixed one.
-FACTORY_APP_LOGINS = (
-    "app/thewoolleyman-factory-bot",
-    "thewoolleyman-factory-bot[bot]",
-)
-# The declared-exception label. Its REASON belongs in the pull request body,
-# where a reviewer and the bypass audit can both read it.
-FACTORY_OVERRIDE_LABEL = "factory-override"
-
 DEFAULT_RUNNER: CommandRunner = ShellCommandRunner()
 
 _EXIT_UNOBSERVABLE = 2
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProvenanceVerdict:
-    """One pull request's factory-provenance outcome, and the evidence behind it."""
-
-    outcome: ScopedCheckOutcome
-    author_login: str
-    product_paths: tuple[str, ...]
-    judged_path_count: int
-    factory_authored: bool
-    override_labeled: bool
 
 
 def resolve_product_policy(*, repo: Path) -> ProductPathPolicy:
@@ -119,72 +123,37 @@ def decide(
     event: PullRequestEvent,
     changed_paths: tuple[str, ...],
     policy: ProductPathPolicy,
+    landed_commits: tuple[str, ...] = (),
+    incident_receipts: tuple[IncidentReceipt, ...] = (),
 ) -> ProvenanceVerdict:
     """Decide whether this pull request may merge on factory-provenance grounds."""
     product_paths = tuple(path for path in changed_paths if is_product_py(path=path, policy=policy))
     factory_authored = event.author_login in FACTORY_APP_LOGINS
     override_labeled = FACTORY_OVERRIDE_LABEL in event.labels
+    receipt = matching_incident_receipt(
+        receipts=incident_receipts,
+        repository=event.repository,
+        pr_number=event.pr_number,
+        head_sha=event.head_sha,
+        landed_commits=landed_commits,
+    )
+    repayment = matching_repayment_carrier(
+        receipts=incident_receipts,
+        repository=event.repository,
+        pr_number=event.pr_number,
+        head_sha=event.head_sha,
+        landed_commits=landed_commits,
+    )
+    admitted = factory_authored or receipt is not None or (override_labeled and repayment is None)
     return ProvenanceVerdict(
-        outcome=scoped_check_outcome(
-            matched_file_count=len(product_paths),
-            failing=not factory_authored and not override_labeled,
-        ),
+        outcome=scoped_check_outcome(matched_file_count=len(product_paths), failing=not admitted),
         author_login=event.author_login,
         product_paths=product_paths,
         judged_path_count=len(changed_paths),
         factory_authored=factory_authored,
         override_labeled=override_labeled,
-    )
-
-
-def exit_code(*, verdict: ProvenanceVerdict) -> int:
-    """The gate's exit code: non-zero ONLY on observed failing provenance evidence."""
-    return gate_exit_code(tally=gate_tally(outcomes=(verdict.outcome,)))
-
-
-def permits_merge(*, verdict: ProvenanceVerdict) -> bool:
-    """True iff this verdict leaves the pull request mergeable on provenance grounds."""
-    return exit_code(verdict=verdict) == 0
-
-
-def _routes_out() -> str:
-    """The two sanctioned ways past this wall, named in the failure itself."""
-    return (
-        "Two routes out:\n"
-        "1. Dispatch the work item through the factory, so the factory GitHub "
-        f"App ({FACTORY_APP_LOGINS[0]}) authors the pull request.\n"
-        f"2. Apply the `{FACTORY_OVERRIDE_LABEL}` label and record the reason "
-        "for the in-session change in the pull request body."
-    )
-
-
-def render_verdict(*, verdict: ProvenanceVerdict) -> str:
-    """The gate's operator-facing message, naming the evidence it judged."""
-    if verdict.outcome == "vacuous-match":
-        return (
-            f"vacuous-match: the product-Python scope matched zero of the "
-            f"{verdict.judged_path_count} file(s) in this pull request, so this check "
-            "OBSERVED NOTHING. That is not a pass — a gate counts it toward neither "
-            "passing nor failing. The pull request is not blocked on factory-provenance "
-            "grounds."
-        )
-    paths = "\n".join(f"- {path}" for path in verdict.product_paths)
-    if verdict.outcome == "pass":
-        ground = (
-            "its author is the factory GitHub App"
-            if verdict.factory_authored
-            else f"it carries the `{FACTORY_OVERRIDE_LABEL}` label"
-        )
-        return (
-            f"Factory-provenance check: pass — @{verdict.author_login} may change "
-            f"product Python because {ground}.\n{paths}"
-        )
-    return (
-        "Factory-provenance check: FAIL — this pull request may not merge.\n\n"
-        f"Author: @{verdict.author_login} is not the factory GitHub App, and this "
-        f"pull request carries no `{FACTORY_OVERRIDE_LABEL}` label.\n\n"
-        f"Product Python it changes:\n{paths}\n\n"
-        f"{_routes_out()}"
+        incident_receipt=receipt,
+        repayment_carrier=repayment,
     )
 
 
@@ -194,6 +163,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = parser.add_argument("--event-path", dest="event_path", default=None)
     _ = parser.add_argument("--repo", dest="repo", default=".")
     _ = parser.add_argument("--changed-file", dest="changed_files", action="append", default=None)
+    add_incident_item_argument(parser=parser)
     return parser
 
 
@@ -202,27 +172,59 @@ def _resolve_event_path(*, declared: str | None) -> str | None:
     return declared if declared is not None else os.environ.get("GITHUB_EVENT_PATH")
 
 
-def main(*, argv: list[str] | None = None, runner: CommandRunner = DEFAULT_RUNNER) -> int:
+def _unobservable(*, text: str) -> int:
+    """Refuse without a verdict: the gate could not observe what it must judge."""
+    write_stderr(
+        text=f"factory-provenance check {text}; it refuses rather than passing unobserved.\n"
+    )
+    return _EXIT_UNOBSERVABLE
+
+
+def _incident_evidence(
+    *,
+    item_ids: tuple[str, ...],
+    event: PullRequestEvent,
+    repo: Path,
+    runner: CommandRunner,
+    authority_client: BeadsClient | None,
+) -> tuple[tuple[IncidentReceipt, ...], tuple[str, ...]] | str:
+    """The named items' retained receipts and this PR's landed commits, or why not."""
+    if not item_ids:
+        return (), ()
+    if not event.repository:
+        return "cannot bind an incident receipt because the event payload names no repository"
+    resolved = resolve_incident_receipts(
+        client=incident_authority_client(repo=repo, client=authority_client),
+        repository=event.repository,
+        item_ids=item_ids,
+    )
+    if isinstance(resolved, IncidentReceiptRefusal):
+        return describe_refusal(refusal=resolved)
+    landed = read_landed_commits(event=event, repo=repo, runner=runner)
+    if landed is None:
+        return (
+            f"could not read the commits for {diff_range(event=event)}; a shallow "
+            "checkout needs fetch-depth: 0"
+        )
+    return resolved, landed
+
+
+def main(
+    *,
+    argv: list[str] | None = None,
+    runner: CommandRunner = DEFAULT_RUNNER,
+    authority_client: BeadsClient | None = None,
+) -> int:
     """Supervisor for the factory-provenance merge gate. Fails CLOSED, never open."""
     args = _build_parser().parse_args(argv)
     event_path = _resolve_event_path(declared=args.event_path)
     if event_path is None:
-        write_stderr(
-            text=(
-                "factory-provenance check has no event payload to read: pass "
-                "--event-path or set GITHUB_EVENT_PATH.\n"
-            )
+        return _unobservable(
+            text="has no event payload to read: pass --event-path or set GITHUB_EVENT_PATH"
         )
-        return _EXIT_UNOBSERVABLE
     event = read_event(path=Path(event_path))
     if event is None:
-        write_stderr(
-            text=(
-                f"factory-provenance check could not read a pull_request event payload "
-                f"at {event_path}, so it refuses rather than passing unobserved.\n"
-            )
-        )
-        return _EXIT_UNOBSERVABLE
+        return _unobservable(text=f"could not read a pull_request event payload at {event_path}")
     repo = Path(args.repo)
     declared_files: list[str] | None = args.changed_files
     changed_paths = (
@@ -231,18 +233,28 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner = DEFAULT_RUNNE
         else read_changed_paths(event=event, repo=repo, runner=runner)
     )
     if changed_paths is None:
-        write_stderr(
+        return _unobservable(
             text=(
-                f"factory-provenance check could not read the diff for "
-                f"{diff_range(event=event)}; a shallow checkout needs "
-                "fetch-depth: 0.\n"
+                f"could not read the diff for {diff_range(event=event)}; a shallow "
+                "checkout needs fetch-depth: 0"
             )
         )
-        return _EXIT_UNOBSERVABLE
+    evidence = _incident_evidence(
+        item_ids=tuple(args.incident_items or ()),
+        event=event,
+        repo=repo,
+        runner=runner,
+        authority_client=authority_client,
+    )
+    if isinstance(evidence, str):
+        return _unobservable(text=evidence)
+    receipts, landed_commits = evidence
     verdict = decide(
         event=event,
         changed_paths=changed_paths,
         policy=resolve_product_policy(repo=repo),
+        landed_commits=landed_commits,
+        incident_receipts=receipts,
     )
     message = f"{render_verdict(verdict=verdict)}\n"
     if permits_merge(verdict=verdict):
