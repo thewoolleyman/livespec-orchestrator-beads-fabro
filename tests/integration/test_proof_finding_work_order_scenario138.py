@@ -302,7 +302,13 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor_refresh_route", _CAPTURE, _VERIFY, "refresh_repair"}
+    assert producers == {
+        "janitor_failure_route",
+        "janitor_refresh_route",
+        _CAPTURE,
+        _VERIFY,
+        "refresh_repair",
+    }
     backstop = re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node="fix") or "")
     assert backstop is not None
     # AT LEAST two entries per agent-finding producer, not strictly more: the
