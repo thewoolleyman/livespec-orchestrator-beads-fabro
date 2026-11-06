@@ -28,18 +28,46 @@ observation they started from. So the detail rides the journal under a DENSE
 a reader cannot confuse "this dispatch had no trouble" with "this record
 predates the diagnostic" -- and it is written to stderr at the same moment,
 because the journal is durable but nobody watches it live.
+
+THE STAMP IS A CLAIM-CHANGING WRITE (`SPECIFICATION/contracts.md`, "Claim
+tokens": "any write that changes an item's status, its `fabro` assignee or its
+run stamp"). With `dispatcher.claim_tokens` true each of the two stamp writes
+lands only after winning the item's current claim token, in the one write that
+names the successor, and sends its keys as an overlay rather than the whole
+metadata object. With the key false or unset both writes are the ones they
+always were.
+
+A REFUSED STAMP IS FAIL-OPEN LIKE A FAILED ONE, AND IT IS NOT RETRIED. The run
+exists and is doing the work, so the dispatch proceeds; the refusal is
+journaled as `stamped: False` with the protocol's outcome, and warned on
+stderr. A stamp that lost its token means another writer changed the claim
+under this run, so the CLAIM stamp is then not attempted at all: contesting
+again would win the token that other writer named and stamp this run onto a
+claim it no longer holds. The item keeps whatever that writer left, the claim
+(if it still is one) stays stamped pending and is held `attribution-pending`,
+and a run whose item no longer claims it is an orphan the run reconciliation
+of "A factory run never awaits a human" already owns.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._store_dispatch_factory import (
     dispatch_run_ids_for,
+    dispatch_run_metadata,
     record_dispatch_run,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import stamp_run_claim
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import learning_run
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
+    journal_run_claim_stamp,
+    stamp_run_claim,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_stamp_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
@@ -72,6 +100,21 @@ __all__: list[str] = [
 STAMP_JOURNAL_STAGE = "dispatch-run-stamp"
 
 _JOURNAL_SUBPATH = ("tmp", "fabro-dispatch-journal.jsonl")
+_RUN_STAMP_INTENT = "run-stamp"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _StampWrite:
+    """How one run-stamp write ended.
+
+    `refused` separates the claim-token protocol withholding the write from a
+    ledger fault, because the two leave the claim stamp owing different things:
+    after a fault the claim stamp is still attempted, as it always was, while
+    after a refusal it is withheld too.
+    """
+
+    detail: str | None
+    refused: bool = False
 
 
 def stamp_dispatch_run(
@@ -89,7 +132,8 @@ def stamp_dispatch_run(
     when the write itself failed open, because the mapping is a fact about the
     dispatch, not about the ledger.
     """
-    failure_detail = _write_stamp(plan=plan, run_id=run_id)
+    written = _write_stamp(plan=plan, journal=journal, run_id=run_id, dispatch_id=dispatch_id)
+    failure_detail = written.detail
     if failure_detail is not None:
         _ = write_stderr(
             text=_stamp_failure_warning(plan=plan, run_id=run_id, detail=failure_detail)
@@ -114,6 +158,16 @@ def stamp_dispatch_run(
     # unstamped host leaves every claim `owner-elsewhere` and recoverable by
     # nobody. It journals its OWN stage because the two ledger writes fail
     # independently and one `stamped` flag cannot report two outcomes.
+    if written.refused:
+        # The claim moved under this run, so the claim stamp is not contested:
+        # its stage is still journaled, so no dispatch is missing the record.
+        journal_run_claim_stamp(
+            journal=journal,
+            work_item_id=plan.work_item_id,
+            run_id=run_id,
+            detail=f"claim stamp not attempted: {failure_detail}",
+        )
+        return RunAttribution(metadata_run_ids={run_id: plan.work_item_id})
     stamp_run_claim(
         repo=plan.repo,
         work_item_id=plan.work_item_id,
@@ -162,8 +216,10 @@ def repo_run_attribution(*, repo: Path) -> RunAttribution:
     )
 
 
-def _write_stamp(*, plan: DispatchPlan, run_id: str) -> str | None:
-    """WHY no ledger stamp was written, or None when the write landed.
+def _write_stamp(
+    *, plan: DispatchPlan, journal: JournalWriter, run_id: str, dispatch_id: str | None
+) -> _StampWrite:
+    """WHY no ledger stamp was written, or a detail of None when the write landed.
 
     A reason rather than a bool, because both refusals are recoverable states an
     operator acts on differently and the caller is the only seam that can say so.
@@ -173,21 +229,47 @@ def _write_stamp(*, plan: DispatchPlan, run_id: str) -> str | None:
     returned a bare `False`.
     """
     if not (plan.repo / ".livespec.jsonc").is_file():
-        return (
-            f"{plan.repo} carries no .livespec.jsonc, so no beads tenant could be "
-            "resolved to stamp the run onto"
+        return _StampWrite(
+            detail=(
+                f"{plan.repo} carries no .livespec.jsonc, so no beads tenant could be "
+                "resolved to stamp the run onto"
+            )
         )
     try:
-        record_dispatch_run(
-            path=store_config(repo=plan.repo),
-            work_item_id=plan.work_item_id,
-            run_id=run_id,
-            factory_name=plan.fabro_factory_name,
-            factory_server=plan.fabro_factory_server,
+        config = store_config(repo=plan.repo)
+        refusal = claim_stamp_write(
+            repo=plan.repo,
+            path=config,
+            intent=_RUN_STAMP_INTENT,
+            write=lambda: record_dispatch_run(
+                path=config,
+                work_item_id=plan.work_item_id,
+                run_id=run_id,
+                factory_name=plan.fabro_factory_name,
+                factory_server=plan.fabro_factory_server,
+            ),
+            item_id=plan.work_item_id,
+            metadata=dispatch_run_metadata(
+                run_id=run_id,
+                factory_name=plan.fabro_factory_name,
+                factory_server=plan.fabro_factory_server,
+            ),
+            journal=journal,
+            # The run is stamped onto THIS dispatch's claim: still `active`, and
+            # stamped by nothing that names another dispatch or another run.
+            still_as_decided=learning_run(dispatch_id=dispatch_id, run_id=run_id),
         )
     except (BeadsCommandError, BeadsConnectionError, BeadsMappingError) as error:
-        return f"record_dispatch_run raised {type(error).__name__}: {error}"
-    return None
+        return _StampWrite(detail=f"record_dispatch_run raised {type(error).__name__}: {error}")
+    if refusal is not None:
+        return _StampWrite(
+            detail=(
+                f"the claim-token protocol withheld the run stamp ({refusal}); nothing "
+                "was written to the item"
+            ),
+            refused=True,
+        )
+    return _StampWrite(detail=None)
 
 
 def _stamp_failure_warning(*, plan: DispatchPlan, run_id: str, detail: str) -> str:

@@ -24,9 +24,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_admissi
     size_justified_at_admission,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
-    failed_dispatch_outcome,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
     read_dispatcher_config_value,
@@ -34,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_size_route import routed_size_refusal
 from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, parse_iso_datetime
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -247,18 +245,16 @@ def route_factory_size_dispatch_entry(
             )
             audit_started = True
         if decision.disposition == "decompose":
-            reason = cast("str", decision.reason)
-            route_factory_size_decomposition(
-                path=cast("StoreConfig", path),
-                work_item_id=item.id,
-                reason=reason,
-            )
+            # A claim-changing write: `_dispatcher_size_route` makes it, with the
+            # store route handed in so it is called as it always was before the
+            # claim-token cutover.
             refused.append(
-                failed_dispatch_outcome(
+                routed_size_refusal(
+                    path=cast("StoreConfig", path),
+                    item=item,
+                    reason=cast("str", decision.reason),
                     journal=journal,
-                    work_item_id=item.id,
-                    stage="size-decomposition",
-                    detail=reason,
+                    route=route_factory_size_decomposition,
                 )
             )
     return tuple(refused)

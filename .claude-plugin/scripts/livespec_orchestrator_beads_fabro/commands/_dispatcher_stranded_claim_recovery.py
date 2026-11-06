@@ -24,6 +24,14 @@ between that read and the write is ratified as parity with the Dispatcher's own
 terminal path (coordinator ruling R144); closing it needs a server-enforced
 claim generation, which work-item `bd-ib-jjws2` tracks.
 
+THE CLAIM TOKEN DECIDES WHICH WRITER ACTS, NOT WHETHER THIS ONE MAY. With
+`dispatcher.claim_tokens` true the transition is written only after this
+recovery wins the item's current token, and a recovery that loses it writes
+nothing to the item and is held as `claim-changed`. Everything above still
+runs first and unchanged: the fence, the precondition read and the last
+re-read decide whether a recovery may act at all, and the token is asked only
+once they have all permitted it.
+
 A LEDGER READ THAT FAILS IS `effect-unobservable`, not `claim-changed`. The
 fourteen reasons name no "the re-read itself failed" condition, and the two
 candidate readings are not interchangeable: `claim-changed` asserts a positive
@@ -258,8 +266,9 @@ def _write_release_effects(
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
     if not claim_unchanged(row=final, run_id=request.run_id):
         return _held(request=request, reason=HOLD_CLAIM_CHANGED)
-    if not _transition(repo=repo, request=request):
-        return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
+    hold = _transition(repo=repo, request=request)
+    if hold is not None:
+        return _held(request=request, reason=hold)
     return _recovered(
         request=request,
         effects=(
@@ -304,11 +313,13 @@ def _route(*, request: ClaimRecoveryRequest) -> _Route:
     )
 
 
-def _transition(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
-    """The status write each absent-run route owes, through its shared seam."""
+def _transition(*, repo: Path, request: ClaimRecoveryRequest) -> str | None:
+    """The status write each absent-run route owes; the hold when it did not land."""
     if request.action == ACTION_ABSENT_RUN_RELEASE:
-        return release_claim_to_ready(repo=repo, work_item_id=request.item.id)
-    return rest_claim_for_a_human(repo=repo, work_item_id=request.item.id)
+        return release_claim_to_ready(
+            repo=repo, work_item_id=request.item.id, run_id=request.run_id
+        )
+    return rest_claim_for_a_human(repo=repo, work_item_id=request.item.id, run_id=request.run_id)
 
 
 def _comment_body(*, request: ClaimRecoveryRequest) -> str:

@@ -10,6 +10,7 @@ are omitted from the listing exactly as the server's are.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -403,3 +404,69 @@ def test_after_cutover_a_writer_refuses_an_unnamed_item_until_the_pass_names_a_t
     assert client.show_issue(issue_id="bd-item")["status"] == "active"
     assert client.show_issue(issue_id=first_token)["status"] == "closed"
     assert _named(client, item_id="bd-item") == applied.successor_token_id
+
+
+def _chain_ending_in_a_discarded_token(client: FakeBeadsClient) -> str:
+    """A takeover stood down: the item names a closed token whose successor was discarded."""
+    named = create_claim_token(client=client)
+    discarded = create_claim_token(client=client)
+    _seed(client, item_id="bd-item", status="active", token=named)
+    client.close_issue(issue_id=named, reason=_transition_reason(successor=discarded))
+    client.close_issue(issue_id=discarded, reason='{"kind":"claim-token-discard","writer":"w"}')
+    return discarded
+
+
+def _chain_of_two_stranded_transitions(client: FakeBeadsClient) -> str:
+    """Two winners in a row closed a token and never wrote the item."""
+    named = create_claim_token(client=client)
+    first_successor = create_claim_token(client=client)
+    second_successor = create_claim_token(client=client)
+    _seed(client, item_id="bd-item", status="active", token=named)
+    client.close_issue(issue_id=named, reason=_transition_reason(successor=first_successor))
+    client.close_issue(
+        issue_id=first_successor, reason=_transition_reason(successor=second_successor)
+    )
+    return first_successor
+
+
+@pytest.mark.parametrize(
+    "chain", [_chain_ending_in_a_discarded_token, _chain_of_two_stranded_transitions]
+)
+def test_pass_recovers_an_item_whose_token_chain_no_writer_can_win(
+    chain: Callable[[FakeBeadsClient], str],
+) -> None:
+    """Both known unwritable chains are repaired by one applied pass.
+
+    Each chain leaves the item naming a closed token whose named successor is
+    closed too, so a writer that waits out the transition and takes the
+    successor over can never close it. The survey reports the item, the applied
+    pass names a fresh open token on it, and the next writer wins that token.
+    """
+    client = _tenant()
+    taken_over = chain(client)
+    named = _named(client, item_id="bd-item")
+    assert named is not None
+
+    def _release() -> str:
+        return change_claim(
+            client=client,
+            work_item_id="bd-item",
+            writer="recovery",
+            intent="release",
+            claim_tokens=True,
+            status="ready",
+            clock=lambda: 181.0,
+            transition_observations={("bd-item", named, taken_over): 0.0},
+        ).outcome
+
+    refused = _release()
+    surveyed = migrate_claim_tokens(client=client, apply=False)
+    repaired = migrate_claim_tokens(client=client, apply=True)
+    applied = _release()
+
+    assert refused == "claim-changed"
+    assert surveyed.unnamed == ("bd-item",)
+    assert [item_id for item_id, _token in repaired.named] == ["bd-item"]
+    assert repaired.complete is True
+    assert applied == "applied"
+    assert client.show_issue(issue_id="bd-item")["status"] == "ready"

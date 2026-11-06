@@ -23,6 +23,7 @@ from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     ClaimStamp,
     claim_row_for,
     claim_stamp_from_record,
+    claim_stamp_metadata,
     record_claim_stamp,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -234,3 +235,19 @@ def test_claim_token_protocol_disabled_preserves_the_legacy_single_item_write() 
     assert outcome.outcome == "applied"
     assert client.show_issue(issue_id=_ITEM_ID)["status"] == "blocked"
     assert client.no_history_issue_ids() == ()
+
+
+def test_the_stamp_overlay_is_the_one_top_level_key_a_reader_finds_the_stamp_under() -> None:
+    """The overlay a token-guarded admission merges reads back as the stamp it carries."""
+    stamp = ClaimStamp(
+        dispatch_id="01DISPATCH",
+        dispatching_host="hp",
+        run_id=None,
+        factory_name="hp",
+        factory_server="https://hp.example:32276",
+    )
+
+    overlay = claim_stamp_metadata(stamp=stamp)
+
+    assert list(overlay) == [CLAIM_STAMP_METADATA_KEY]
+    assert claim_stamp_from_record(record={"metadata": overlay}) == stamp
