@@ -271,10 +271,22 @@ exact current reading, is refused as `incident-generation-stale`, and
 `commit-transition` applies the same gate before any close. A legacy attempt
 without a carrier cannot select one (`incident-carrier-unsupported`).
 
-Not in this slice: wiring `carrier_selection` into the Dispatcher's
-reconcile-merged and post-host-record calls, returning ownership for normal
-repayment, and the live multi-host proof the contract requires before
-enablement.
+The Dispatcher's two merge-resolving valves take that selector. For an item
+that carries a genesis record, `reconcile-merged` resolves the repository
+through the forge, reads the chain's current generation (`read_incident_head`),
+selects through `carrier_selection`, and resolves the merge of THAT pull
+request with the carrier's head branch as the plan branch, so the forge view
+that validates the selection identifies the merge by the incident carrier
+itself; an operator `--pr` naming another pull request is refused.
+`post-host-record` publishes its record on the pull request the chain names.
+Both refuse, with exit 3 and no effect, a superseded reading as
+`incident-carrier-stale`, a carrier that is not yet `pr-bound` as
+`incident-carrier-unbound`, and an unresolvable repository as
+`incident-repository-unresolved`. An item with no genesis record makes no chain
+or forge read here and resolves exactly as before.
+
+Not in this slice: returning ownership for normal repayment, and the live
+multi-host proof the contract requires before enablement.
 
 The canonical JSON receipt contains `receipt_id`, `hook` (`pre-commit`,
 `commit-msg`, or `pre-push`), the exact Git `tree`, `mode`,
