@@ -57,6 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
     valve_success,
 )
+from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
+    ClaimWriteRefused,
+    valve_claim_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import SPEC_DIRNAME
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
     classify_item_spec_change_tier,
@@ -302,18 +306,29 @@ def _routed_status(*, config: StoreConfig, item: WorkItem, aid: str) -> str | di
     A `rework:pending` item keeps its status and marker, with no intake routing
     and no fresh approval: its execution belongs to the rework route. Every other
     item goes back through intake, which re-grades everything but the hold.
+
+    Intake's route is a claim-changing write. A route the claim-token protocol
+    refused is reported under the protocol's own outcome, as every other valve
+    reports a refused write, and the summary says what this press had already
+    done: the attestation is append-only and the hold it cleared stays cleared.
     """
     if item.status == _ACTIVE:
         return item.status
     routed = apply_intake_dor(path=config, item_id=item.id, checklist=_FILED_ITEM)
-    if not is_successful(routed):
-        return valve_refusal(
+    if is_successful(routed):
+        return unsafe_perform_io(routed.unwrap())
+    failure = unsafe_perform_io(routed.failure())
+    if isinstance(failure, ClaimWriteRefused):
+        return valve_claim_refusal(
             aid=aid,
             wid=item.id,
-            err="intake-routing-failed",
-            msg=(
-                f"intake could not route {item.id} after the release:"
-                f" {unsafe_perform_io(routed.failure())}"
-            ),
+            verb=RELEASE_SPEC_TIER_ACTION,
+            outcome=failure.outcome,
+            already_done="the attestation stands and the hold is cleared",
         )
-    return unsafe_perform_io(routed.unwrap())
+    return valve_refusal(
+        aid=aid,
+        wid=item.id,
+        err="intake-routing-failed",
+        msg=f"intake could not route {item.id} after the release: {failure}",
+    )

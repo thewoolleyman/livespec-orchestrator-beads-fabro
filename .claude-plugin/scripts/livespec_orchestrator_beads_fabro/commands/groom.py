@@ -36,6 +36,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_runtime.work_items.rank import key_between
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro import regroom
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
@@ -74,6 +76,10 @@ from livespec_orchestrator_beads_fabro.commands._groom_types import (
     CrossRepoSlice,
     GroomResult,
     SliceCriteriaParse,
+    SliceRouteRefusal,
+)
+from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
+    ClaimWriteRefused,
 )
 from livespec_orchestrator_beads_fabro.errors import GroomDraftError
 from livespec_orchestrator_beads_fabro.intake_dor import (
@@ -100,6 +106,7 @@ __all__: list[str] = [
     "GroomDoorRefusal",
     "GroomResult",
     "SliceCriteriaParse",
+    "SliceRouteRefusal",
     "file_approved_slices",
     "groom_dispatch",
     "load_groom_context",
@@ -137,6 +144,10 @@ def file_approved_slices(
       model). The slice is returned in `GroomResult.cross_repo_slices` with its
       minted id and its resolved dependency entries for the SKILL.md prose to
       route to the target repo.
+
+    A slice whose intake route the claim-token protocol refused stays filed and
+    unrouted. The filing goes on, and the result names the slice and the
+    protocol's outcome in `refused_slice_routes` and is not `fully_applied`.
 
     After all slices are processed, the original backlog item is explicitly
     closed against the filed LOCAL slice ids and the cross-repo slice ids.
@@ -185,15 +196,17 @@ def file_approved_slices(
         raise GroomDraftError(detail=detail)
     filed_ids: list[str] = []
     parses: list[SliceCriteriaParse] = []
+    refused_routes: list[SliceRouteRefusal] = []
     for planned, item in prepared:
-        parses.append(
-            _file_local_slice(
-                path=path,
-                item=item,
-                approval=approved,
-                size_justification=planned.candidate.size_justification,
-            )
+        parse, refused = _file_local_slice(
+            path=path,
+            item=item,
+            approval=approved,
+            size_justification=planned.candidate.size_justification,
         )
+        parses.append(parse)
+        if refused is not None:
+            refused_routes.append(refused)
         filed_ids.append(planned.slice_id)
     regroom.close_regroomed_out(
         path=path,
@@ -209,6 +222,7 @@ def file_approved_slices(
         spec_change_slices=plan.spec_change,
         cross_repo_slices=plan.cross_repo,
         regroomed_out=True,
+        refused_slice_routes=tuple(refused_routes),
     )
 
 
@@ -237,12 +251,14 @@ def _file_local_slice(
     item: WorkItem,
     approval: GroomApproval,
     size_justification: object,
-) -> SliceCriteriaParse:
+) -> tuple[SliceCriteriaParse, SliceRouteRefusal | None]:
     """File one approved local slice, route it, stamp its approval, parse it.
 
     The three writes are kept in one place because they are one act: a slice
     that is filed but not routed is not ready, and a slice that is filed but
-    not stamped is a slice nobody can attribute later.
+    not stamped is a slice nobody can attribute later. A route the claim-token
+    protocol refused is answered beside the parse; the slice is stamped all
+    the same, because the approval was given whether or not the route landed.
     """
     append_work_item(path=path, item=item)
     if size_justification is not None:
@@ -251,13 +267,13 @@ def _file_local_slice(
             work_item_id=item.id,
             justification=size_justification,
         )
-    _route_approved_slice_intake(path=path, item_id=item.id)
+    refused = _route_approved_slice_intake(path=path, item_id=item.id)
     # Stamped AFTER intake routing: the router rewrites the slice's modeled
     # metadata, so a stamp placed before it would be overlaid by the very
     # write that makes the slice ready.
     record_groom_approval(path=path, work_item_id=item.id, approval=approval)
     # Advisory only: an empty parse is REPORTED, never a refusal.
-    return SliceCriteriaParse(slice_id=item.id, criteria=effective_criteria(item=item))
+    return SliceCriteriaParse(slice_id=item.id, criteria=effective_criteria(item=item)), refused
 
 
 def _work_item_for(
@@ -318,9 +334,14 @@ def _work_item_for(
     )
 
 
-def _route_approved_slice_intake(*, path: StoreConfig, item_id: str) -> None:
-    """Route a freshly filed approved slice through the shared intake primitive."""
-    _ = apply_intake_dor(
+def _route_approved_slice_intake(*, path: StoreConfig, item_id: str) -> SliceRouteRefusal | None:
+    """Route a freshly filed approved slice through the shared intake primitive.
+
+    Answers `None` when the route landed, and the refusal when the claim-token
+    protocol refused it: a refused route wrote nothing, so the slice is still
+    where it was filed and the caller has to say so.
+    """
+    routed = apply_intake_dor(
         path=path,
         item_id=item_id,
         checklist=DefinitionOfReadyChecklist(
@@ -332,6 +353,10 @@ def _route_approved_slice_intake(*, path: StoreConfig, item_id: str) -> None:
             above_floor=True,
         ),
     )
+    failure = None if is_successful(routed) else unsafe_perform_io(routed.failure())
+    if isinstance(failure, ClaimWriteRefused):
+        return SliceRouteRefusal(slice_id=item_id, outcome=failure.outcome)
+    return None
 
 
 def _now_iso() -> str:

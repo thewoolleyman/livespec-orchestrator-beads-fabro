@@ -154,6 +154,14 @@ def file_groom_plan(
             "filed_slice_ids": list(filed.filed_slice_ids),
             "spec_change_slices": [candidate.title for candidate in filed.spec_change_slices],
             "cross_repo_slices": [entry.minted_id for entry in filed.cross_repo_slices],
+            # A slice whose intake route the claim-token protocol refused is
+            # filed and unrouted. The cut is on the ledger, so this is still
+            # `True`; the record is where the refusal is said.
+            "refused_slice_routes": [
+                {"slice_id": refused.slice_id, "outcome": refused.outcome}
+                for refused in filed.refused_slice_routes
+            ],
+            "fully_applied": filed.fully_applied,
         }
     )
     return True

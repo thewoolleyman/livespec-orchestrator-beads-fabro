@@ -201,6 +201,9 @@ result = file_approved_slices(
 #                                 here; each carries `minted_id` (already prefixed for
 #                                 its target tenant) and `dep_entries` (Step 4a).
 # result.regroomed_out is True  — the original backlog item was closed explicitly.
+# result.refused_slice_routes   — filed slices whose intake route the claim-token
+#                                 protocol refused; each carries `slice_id` and `outcome`.
+# result.fully_applied          — False when any slice route was refused.
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
     filing_display,
@@ -236,6 +239,12 @@ is instead surfaced by `needs-attention` while the slice rests in `ready`.
 Either kind is recorded on the filed slice as a ledger comment, so it is
 repaired where it was cut. `result.criteria_parses` still carries the
 per-slice parse for a caller that wants only the one line.
+
+If `result.fully_applied` is False, say so before anything else. For each entry
+of `result.refused_slice_routes`, name the slice id and the outcome (for example
+`claim-changed`). That slice is filed and approved but was not routed: it rests
+at `pending-approval`, and nothing retries the route. The original is closed all
+the same. This happens only while `dispatcher.claim_tokens` is true.
 
 Also read back and display any factory-size decomposition comment on each
 filed slice. A `backlog` slice whose comment names `size_justification` is not
