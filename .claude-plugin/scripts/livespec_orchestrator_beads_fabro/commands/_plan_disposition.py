@@ -42,6 +42,14 @@ THE DEADLOCK THE PARAGRAPHS ABOVE DESCRIBE IS STILL AVOIDED, by a different
 mechanism than before: a plan ANCHOR MARKER rides the same column as a genuine
 commitment and neither is consulted at all now, so an anchored child is disposable
 whenever its own classification says the tier does not hold.
+
+THE CLOSE WINS THE CHILD'S CLAIM TOKEN FIRST. With `dispatcher.claim_tokens`
+true, a close is a claim-changing write (`SPECIFICATION/contracts.md`, "Claim
+tokens"), so `close_plan_child` takes the hold of `_close_claim_hold`
+immediately before the close, after the rationale is recorded, bound to the
+status it read the child at. A lost hold raises `ClaimWriteRefusedError` and
+closes nothing; the recorded rationale then explains an intent that did not
+land, which is the order this module keeps for every failed mutation.
 """
 
 from __future__ import annotations
@@ -51,6 +59,8 @@ from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import EDGE_PARENT_CHILD, make_beads_client
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_statuses import livespec_status_for
+from livespec_orchestrator_beads_fabro.commands._close_claim_hold import hold_before_close
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments import (
     ratified_proposal_topics,
 )
@@ -72,6 +82,7 @@ __all__: list[str] = [
 ]
 
 DISPOSITION_PREFIX = "plan-child-disposition"
+_CLOSE_INTENT = "plan-child-close"
 
 
 class PlanDispositionRefusedError(Exception):
@@ -113,9 +124,16 @@ def close_plan_child(
     author: str,
     now: str,
 ) -> None:
-    """Close one plan child, recording why, with no human valve."""
+    """Close one plan child, recording why, with no human valve.
+
+    Raises `ClaimWriteRefusedError` when, with claim tokens enabled, the hold
+    taken immediately before the close does not win the child's current token;
+    the child is then not closed, and the recorded disposition stands as the
+    explanation of what was attempted.
+    """
     client = make_beads_client(config=config)
     _refuse_spec_change_tier(client=client, child_id=child_id, config=config)
+    read_at = livespec_status_for(status=str(client.show_issue(issue_id=child_id).get("status")))
     _record_disposition(
         client=client,
         epic_id=epic_id,
@@ -125,6 +143,7 @@ def close_plan_child(
         author=author,
         now=now,
     )
+    hold_before_close(path=config, item_id=child_id, intent=_CLOSE_INTENT, status=read_at)
     client.close_issue(issue_id=child_id, reason=rationale)
 
 

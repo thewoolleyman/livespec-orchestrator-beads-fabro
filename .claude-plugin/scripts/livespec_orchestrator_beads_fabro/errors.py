@@ -22,6 +22,7 @@ __all__: list[str] = [
     "BeadsCredentialMissingError",
     "BeadsMappingError",
     "BeadsTenantMissingError",
+    "ClaimWriteRefusedError",
     "ConnectionPrefixMissingError",
     "GroomApprovalRequiredError",
     "GroomDraftError",
@@ -137,6 +138,24 @@ class WorkItemNotFoundError(Exception):
     def __init__(self, *, item_id: str) -> None:
         super().__init__(f"work-item not found in the tenant: {item_id}")
         self.item_id = item_id
+
+
+class ClaimWriteRefusedError(Exception):
+    """A close the claim-token protocol refused, so the item was not closed.
+
+    EXPECTED: with `dispatcher.claim_tokens` true, every operation that closes
+    a work item first wins the item's current claim token (`contracts.md`,
+    "Claim tokens"), and a writer that does not win writes nothing. `outcome`
+    is the protocol's own name for why: `claim-changed` when another writer won
+    the token, or changed the item, first. A caller surfaces `detail`, which
+    says who refused, the outcome and what was not written.
+    """
+
+    def __init__(self, *, item_id: str, outcome: str, detail: str) -> None:
+        super().__init__(detail)
+        self.item_id = item_id
+        self.outcome = outcome
+        self.detail = detail
 
 
 class GroomExitRefusedError(Exception):

@@ -52,7 +52,7 @@ carries no dispatch id.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord, make_beads_client
 from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     blocked_reason_labels,
 )
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
+    CLAIM_TOKEN_METADATA_KEY,
     ClaimRow,
     change_claim,
     claim_row_from_record,
@@ -104,6 +105,7 @@ Decided = Callable[[BeadsRecord], bool]
 TRANSITION_OBSERVATIONS: dict[tuple[str, str, str], float] = {}
 
 _APPLIED = "applied"
+_CLAIM_CHANGED = "claim-changed"
 _ACTIVE_STATUS = "active"
 _READY_STATUS = "ready"
 _BLOCKED_STATUS = "blocked"
@@ -277,10 +279,33 @@ def guarded_hold(
     `bd close` is its own verb, so a close cannot name a successor in the write
     that closes. The winner names its successor in this write and closes
     immediately after it.
+
+    THE CLOSE IS NOT FENCED BY THE TOKEN, SO THE HOLD RE-READS BEFORE IT
+    ANSWERS. The successor this write names is open, and a status write that
+    wins it between this write and the caller's close is the next legitimate
+    write under the protocol; an unconditional `bd close` would land over it.
+    So the item is read again immediately before the hold answers, and a hold
+    whose successor is no longer the item's current token answers
+    `claim-changed`: the later winner's write stands and the caller closes
+    nothing. What remains is the same residual the protocol accepts for every
+    guarded write, a write applied between a re-read and the write it guards.
     """
-    return guarded_write(
-        path=path, item_id=item_id, writer=writer, intent=intent, still_as_decided=still_as_decided
+    client = make_beads_client(config=path)
+    result = change_claim(
+        client=client,
+        work_item_id=item_id,
+        writer=writer,
+        intent=intent,
+        claim_tokens=True,
+        transition_observations=TRANSITION_OBSERVATIONS,
+        still_as_decided=still_as_decided,
     )
+    if result.outcome != _APPLIED:
+        return result.outcome
+    metadata = client.show_issue(issue_id=item_id).get("metadata")
+    named = cast("dict[str, object]", metadata) if isinstance(metadata, dict) else {}
+    current = named.get(CLAIM_TOKEN_METADATA_KEY)
+    return None if current == result.successor_token_id else _CLAIM_CHANGED
 
 
 def guarded_metadata_write(
