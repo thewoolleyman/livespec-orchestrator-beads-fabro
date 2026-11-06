@@ -7962,12 +7962,22 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
      across at least 180 seconds of elapsed time on its own monotonic
      clock, from its first such observation to a fresh read; only then
      MUST it treat S as the item's current token and apply this protocol
-     to S, so a winner that crashed between its close and its
-     item write never leaves the item unwritable. A writer that wins S
-     this way MUST re-read the item immediately before its item write
-     and, when the item now names S, MUST write nothing, MUST discard
-     its own successor and MUST report `claim-changed`, because the original
-     winner's transition has landed.
+     to S, this step included: when S is itself closed naming a successor
+     the item does not name, the writer MUST observe that transition
+     afresh for the same wait before it treats that successor as current,
+     and so follows the chain of closed tokens hop by hop until it
+     reaches an open one. So a winner that crashed between its close and
+     its item write never leaves the item unwritable. A writer that wins
+     S this way MUST re-read the item immediately before its item write
+     and, when the item now names S, MUST make no status, assignee or
+     run-stamp change and MUST report `claim-changed`, because the
+     original winner's transition has landed; but it MUST name its own
+     successor S2 as the item's current token in one write that changes
+     nothing else, and MUST NOT discard S2, so the item names an open
+     current token and the chain stays writable. That token-only write
+     races nothing: the writer closed S itself, and only the writer
+     holding the successor that S's close reason names can advance an
+     item that names S.
   Exactly one writer therefore wins each token, a loser never writes, and
   a writer that reads an earlier, already-closed token loses that token's
   close; the only way an earlier winner's item write can still land after

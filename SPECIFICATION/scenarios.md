@@ -10996,7 +10996,15 @@ Feature: Exactly one writer changes a dispatch claim
     Given a takeover writer that has won successor token S of an item whose closed token T named S
     And the original winner's item write naming S lands before the takeover's re-read
     When the takeover writer re-reads the item immediately before its write
-    Then it writes nothing, discards its own successor and reports claim-changed
+    Then it writes no status change, names its successor as the item's current token, and reports claim-changed
+    And the next claim writer wins that successor and its write lands
+
+  Scenario: A takeover follows a chain of closed tokens to the open one
+    Given an item naming closed token T whose close reason names S, and S is closed naming S2, and S2 is open
+    And a claim writer has observed T closed and S not named for the takeover wait on its own clock
+    When that writer treats S as current and finds it closed naming S2, which the item does not name
+    Then it reports claim-transition-pending until it has observed that state for the takeover wait too
+    And it then wins S2 and its write lands
 
   Scenario: After cutover, an item with no token is refused, not written blind
     Given dispatcher.claim_tokens is committed true
