@@ -432,7 +432,7 @@ def test_forged_observation_cannot_choose_another_token() -> None:
         successor=replace(before.attempt, generation=2, operation_id="next"),
     )
     assert isinstance(result, AuthorityRefusal)
-    assert result.code == "incident-transition-stale-observation"
+    assert result.code == "incident-generation-stale"
 
 
 def test_same_operation_with_conflicting_payload_is_refused() -> None:
@@ -453,7 +453,7 @@ def test_same_operation_with_conflicting_payload_is_refused() -> None:
         client=client, observed=before, successor=replace(successor, operation_id="different")
     )
     assert isinstance(stale, AuthorityRefusal)
-    assert stale.code == "incident-authority-identity-mismatch"
+    assert stale.code == "incident-generation-stale"
 
 
 def test_losing_a_server_close_discards_only_our_unlinked_candidate(

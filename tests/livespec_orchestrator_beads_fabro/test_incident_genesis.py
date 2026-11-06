@@ -134,11 +134,20 @@ def _ledger(
 
 
 def _publish(
-    client: FakeBeadsClient, request: GenesisRequest, clock: Callable[[], float] | None = None
+    client: FakeBeadsClient,
+    request: GenesisRequest,
+    clock: Callable[[], float] | None = None,
+    observations: dict[tuple[str, str, str], float] | None = None,
 ) -> GenesisReceipt | AuthorityRefusal:
     if clock is None:
         return publish_incident_genesis(client=client, request=request, claim_tokens=True)
-    return publish_incident_genesis(client=client, request=request, claim_tokens=True, clock=clock)
+    return publish_incident_genesis(
+        client=client,
+        request=request,
+        claim_tokens=True,
+        clock=clock,
+        observations=observations if observations is not None else {},
+    )
 
 
 def _read(client: FakeBeadsClient, **changes: Any) -> IncidentReading | AuthorityRefusal:
@@ -182,8 +191,14 @@ def test_genesis_wins_the_current_claim_token_and_publishes_one_verified_root() 
     )
     assert claim_successor(reason=closed["close_reason"]) == receipt.successor_claim_token_id
     item = client.show_issue(issue_id=ITEM)
-    assert item["metadata"] == {"rank": "a0", CLAIM_TOKEN_METADATA_KEY: fence.successor}
-    assert item["status"] == "ready"
+    assert (item["metadata"]["rank"], item["metadata"][CLAIM_TOKEN_METADATA_KEY]) == (
+        "a0",
+        fence.successor,
+    )
+    # Entry takes host ownership in the same write; the prior row is retained.
+    assert (item["status"], item["assignee"]) == ("active", PRINCIPAL)
+    assert item["metadata"]["incident_claim"]["prior_claim"] == fence.prior_claim
+    assert fence.prior_claim == {"status": "ready", "assignee": None, "dispatch_claim": None}
     assert "claim-token" in client.show_issue(issue_id=fence.successor)["labels"]
     [comment] = client.list_comments(issue_id=ITEM)
     assert comment["text"] == GENESIS_MARKER + _json(
@@ -270,14 +285,6 @@ def test_an_unfenced_legacy_root_is_an_existing_root_not_a_recoverable_operation
         + _json(dict(schema=1, repository=REPOSITORY, item_id=ITEM, root_token_id=OTHER_ROOT)),
     )
     assert _code(_publish(client, _request(claim=token))) == "incident-authority-ambiguous"
-
-
-def test_a_live_factory_claim_is_refused_until_the_all_writer_fence_lands() -> None:
-    client, token = _ledger(status="active", assignee="fabro")
-    result = _publish(client, _request(claim=token))
-    assert _code(result) == "incident-factory-fence-unavailable"
-    assert client.show_issue(issue_id=token)["status"] == "backlog"
-    assert client.list_comments(issue_id=ITEM) == []
 
 
 def _discarded(client: FakeBeadsClient, token: str) -> None:
@@ -424,16 +431,34 @@ def test_a_won_but_unpublished_close_is_completed_by_the_exact_retry() -> None:
         "incident-genesis-claim-transition-pending"
     )
     assert client.list_comments(issue_id=ITEM) == []
-    receipt = _publish(client, request)
+    # The root is published, but the item still names the closed token: the lost
+    # takeover is remade through the protocol, which first waits the transition out.
+    now = [0.0]
+    observations: dict[tuple[str, str, str], float] = {}
+    pending = _publish(client, request, clock=lambda: now[0], observations=observations)
+    assert _code(pending) == "incident-genesis-claim-transition-pending"
+    assert len(client.list_comments(issue_id=ITEM)) == 1
+    assert client.show_issue(issue_id=ITEM)["metadata"][CLAIM_TOKEN_METADATA_KEY] == token
+    assert client.no_history_issue_ids() == minted
+    now[0] = 200.0
+    receipt = _publish(client, request, clock=lambda: now[0], observations=observations)
     assert isinstance(receipt, GenesisReceipt)
     assert (receipt.recovered, receipt.root_token_id, receipt.claim_token_id) == (
         True,
         root,
         token,
     )
-    assert client.no_history_issue_ids() == minted
+    [taken] = set(client.no_history_issue_ids()) - set(minted)
+    item = client.show_issue(issue_id=ITEM)
+    assert item["metadata"][CLAIM_TOKEN_METADATA_KEY] == taken
+    assert (
+        claim_successor(
+            reason=client.show_issue(issue_id=receipt.successor_claim_token_id)["close_reason"]
+        )
+        == taken
+    )
+    assert (item["status"], item["assignee"]) == ("active", PRINCIPAL)
     assert len(client.list_comments(issue_id=ITEM)) == 1
-    assert client.show_issue(issue_id=ITEM)["metadata"][CLAIM_TOKEN_METADATA_KEY] == token
     assert isinstance(_read(client), IncidentReading)
 
 

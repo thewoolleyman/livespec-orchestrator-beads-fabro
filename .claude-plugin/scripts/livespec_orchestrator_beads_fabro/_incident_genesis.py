@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
 )
 from livespec_orchestrator_beads_fabro._incident_carrier import BranchReserved
+from livespec_orchestrator_beads_fabro._incident_entry import prior_claim_valid
 from livespec_orchestrator_beads_fabro.effects import parse_json
 
 __all__: list[str] = [
@@ -60,6 +61,8 @@ _FENCE_TEXT_KEYS = (
     "expected_claim",
 )
 _FENCE_KEYS = frozenset(("schema", *_FENCE_TEXT_KEYS))
+# A fence written before entry retained the prior claim row has no such key.
+_FENCE_KEY_SETS = (_FENCE_KEYS, _FENCE_KEYS | {"prior_claim"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -83,6 +86,8 @@ class GenesisFence:
     root_token_id: str
     expected_claim: str
     successor: str
+    # The claim row entry found and fenced: status, assignee and whole dispatch stamp.
+    prior_claim: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -167,7 +172,13 @@ def capability_unavailable(*, request: GenesisRequest) -> AuthorityRefusal:
     return AuthorityRefusal(code=GENESIS_CAPABILITY_UNAVAILABLE, detail=detail)
 
 
-def genesis_fence(*, request: GenesisRequest, root_token_id: str, successor: str) -> GenesisFence:
+def genesis_fence(
+    *,
+    request: GenesisRequest,
+    root_token_id: str,
+    successor: str,
+    prior_claim: dict[str, Any] | None = None,
+) -> GenesisFence:
     """The fence one genesis attempt retains on the claim token it closes."""
     return GenesisFence(
         repository=request.attempt.repository,
@@ -178,6 +189,7 @@ def genesis_fence(*, request: GenesisRequest, root_token_id: str, successor: str
         root_token_id=root_token_id,
         expected_claim=request.expected_claim,
         successor=successor,
+        prior_claim=prior_claim,
     )
 
 
@@ -199,6 +211,7 @@ def genesis_fence_reason(*, fence: GenesisFence, closed_at: str) -> str:
                 "request_digest": fence.request_digest,
                 "root_token_id": fence.root_token_id,
                 "expected_claim": fence.expected_claim,
+                "prior_claim": fence.prior_claim,
             },
         }
     )
@@ -231,9 +244,11 @@ def decode_genesis_fence(*, reason: object) -> GenesisFence | None:
     if not isinstance(block, dict):
         return None
     fence = cast("dict[str, Any]", block)
-    if frozenset(fence) != _FENCE_KEYS or fence["schema"] != 1:
+    if frozenset(fence) not in _FENCE_KEY_SETS or fence["schema"] != 1:
         return None
     if not all(_text(value=fence[key]) for key in _FENCE_TEXT_KEYS):
+        return None
+    if not prior_claim_valid(value=fence.get("prior_claim")):
         return None
     return GenesisFence(
         repository=fence["repository"],
@@ -244,6 +259,7 @@ def decode_genesis_fence(*, reason: object) -> GenesisFence | None:
         root_token_id=fence["root_token_id"],
         expected_claim=fence["expected_claim"],
         successor=row["successor"],
+        prior_claim=fence.get("prior_claim"),
     )
 
 
