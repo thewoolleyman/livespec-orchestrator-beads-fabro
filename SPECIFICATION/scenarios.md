@@ -6430,12 +6430,34 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
     Then the run-wall-budget-exceeded record anchors the published head and the new run enters at proof_capture
   Scenario: An export that cannot be read back holds the cancel until it can
     Given a run past the budget whose preserve-by-reference pointer cannot be read back
+    And origin holds no verified preservation ref of the run
     When the watchdog samples the run
     Then it does not cancel the run
     And the journal carries a run-wall-budget-held record naming the run, the elapsed seconds, the budget and the failed measurement
     And the export is re-attempted on the immediately following poll
-    And while that re-attempt's read-back fails the run is still not cancelled
+    And while that re-attempt's read-back fails and no verified preservation ref exists the run is still not cancelled
     And once a re-attempt's read-back succeeds the run is cancelled as run-wall-budget-exceeded
+  Scenario: A verified preservation ref releases a held budget cancel
+    Given a run past the budget whose preserve-by-reference pointer cannot be read back
+    And a remote ref listing of origin shows refs/heads/needs-human/<run-id> at a commit whose tree equals the run branch's committed tip as the run's record reports it
+    When the watchdog samples the run
+    Then the run is cancelled as run-wall-budget-exceeded
+    And the record and the item's ledger comment name that ref and its commit id and state that the export could not be read back
+    And the item rests at blocked with blocked_reason needs-human
+  Scenario: A held budget cancel with no verified copy escalates once and keeps the run
+    Given a run past the budget whose export read-back has failed on three consecutive polls
+    And no remote ref listing of origin shows a verified preservation ref of the run
+    When the Dispatcher journals the third run-wall-budget-held record for the run
+    Then the journal carries one run-wall-budget-hold-escalated record for the run
+    And the item carries one ledger comment naming the run, the factory, the elapsed seconds, the budget, each failed measurement, that no verified preservation ref exists, and the remedy
+    And the run is not cancelled and the item's status is unchanged
+    And a later poll that finds a verified preservation ref cancels the run as run-wall-budget-exceeded without a second escalation
+  Scenario: An unreadable ref listing is not an absent ref
+    Given a run past the budget whose export read-back fails
+    And the remote ref listing of origin cannot be taken on that poll
+    When the watchdog samples the run
+    Then the run-wall-budget-held record names the failed ref listing as a failed measurement
+    And the run is not cancelled on that poll
   Scenario: The budget takes precedence over a simultaneous stall
     Given a run whose slot-holding time exceeds its budget
     And whose heartbeat and event stream have both stayed unchanged for the full stall window with no command node open
@@ -12689,6 +12711,23 @@ Feature: A re-dispatch does not redo a lost run's settled work
     When the seeded run reaches publication in a fresh sandbox
     Then the published branch carries both preserved changes
     And every commit on it passed the repository's commit and pre-push gates
+
+  Scenario: a run a factory restart cancelled before janitor succeeded is seeded from its latest capture
+    Given work item W whose latest run R settled its implement commit, which origin holds at refs/livespec/wip/W/R/1
+    And a factory restart cancelled R during its fix visit, before its janitor stage succeeded, so no preservation ref was published at R's ending
+    And W carries a livespec-preserved-tree comment naming run R and refs/livespec/wip/W/R/1
+    And W is at ready and no newer dispatch has been submitted for it
+    When the Dispatcher next dispatches W
+    Then W is graded by recovery routing before admission
+    And it is routed seeded from refs/livespec/wip/W/R/1, not fresh
+
+  Scenario: a wall-budget cancel stays blocked and is seeded only after a person returns it
+    Given work item W whose latest run R was cancelled by the whole-run wall budget after its implement commit settled at refs/livespec/wip/W/R/1
+    And W carries a livespec-preserved-tree comment naming run R and refs/livespec/wip/W/R/1
+    When the Dispatcher's next pass runs while W rests blocked with blocked_reason needs-human
+    Then W stays blocked and is not dispatched
+    When a person returns W to ready and the Dispatcher next dispatches W
+    Then it is routed seeded from refs/livespec/wip/W/R/1, not fresh
 ```
 
 ## Scenario 320 — Preservation refs are deleted when the Dispatcher closes or collects an item's runs
