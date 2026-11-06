@@ -7,6 +7,21 @@ stage can SUCCEED at reporting a defect while requesting `fix`: its status
 does not mean the implementation passed. A green janitor does not discharge
 a semantic proof finding.
 
+## When `fix_commit_settle` re-enters this node
+
+If `fix_commit_settle` sent you back here, a commit run this turn started
+through the sandbox runner ended FAILED. Before making another change, read its
+brief at `$(git rev-parse --git-path livespec-fix-live-commit)`. The brief names
+the commit run, its failed targets, and the hook error lines. Fix every failure
+it names and retry that commit through the runner; do not treat the later
+janitor as the place to discover or repair it.
+
+That commit may have been recording a conflict resolution while this sandbox's
+rebase remains in progress. Continue that same resolution: do not start another
+rebase, and do not discard the rebase state. Once the runner reports the retry
+passed, use `git rebase --continue` only to replay remaining picks; any later
+conflict follows the runner-backed resolution procedure below.
+
 ## When the incoming finding is a refresh-repair brief
 
 A refreshing stage could not bring this run onto the default branch — the

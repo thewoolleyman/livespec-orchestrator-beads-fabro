@@ -473,7 +473,7 @@ def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_h
 
 
 def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
-    """`fix.max_visits` IS the bound, and three agent-finding nodes route into it.
+    """`fix.max_visits` IS the bound, and four agent-finding nodes route into it.
 
     A node that reaches `max_visits` ABORTS the run at entry
     (`VisitLimitExceeded` on the pinned engine; a firing-budget failure on the
@@ -484,20 +484,20 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
     SINCE plan `fabro-currency` P4 IT IS THE ONLY BOUND. The three guards are
     gone, because `context.internal.node_visit_count` is not populated on the
     Petri-era engine and a guard reading it blocks its route outright there. So
-    the value is sized to exactly what those guards admitted — two entries per
-    producer — which keeps the derived execution budget, and therefore the
-    required credential lifetime, identical to the pre-port graph's. It is NO
+    the value is sized to two entries per producer. A failed settled fix commit
+    is the fourth producer: it returns to fix with its runner brief before
+    janitor can refresh an in-progress integration rebase. It is NO
     LONGER equal to `disposition` and `review_fix`, which bound a different loop
     with a different number of rounds; asserting the three equal would now be
     asserting a coincidence.
 
-    The PRODUCER COUNT is asserted as the tripwire: a fourth agent-finding node
+    The PRODUCER COUNT is asserted as the tripwire: a fifth agent-finding node
     routing into `fix` would silently halve somebody's share, and this is the
     assertion that notices. `janitor_failure_route` is excluded because it only
     classifies the ordinary `janitor_refresh_route` failure; it does not add a
     new fix-loop allocation.
 
-    THE FOURTH PRODUCER IS NOT AN AGENT FINDING and is excluded from the
+    THE FIFTH PRODUCER IS NOT AN AGENT FINDING and is excluded from the
     two-apiece arithmetic deliberately. v134's "Refresh-repair accounting"
     paragraph grants the refresh-repair route a budget of its OWN — two rounds
     across both refreshing stages, in addition to what the other entry paths
@@ -512,6 +512,7 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
     }
 
     assert producers == {
+        "fix_commit_settle",
         "janitor_failure_route",
         "janitor_refresh_route",
         "proof_capture",
