@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.293.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.293.0...v0.293.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* name a first claim token on a reflection finding filed after the cutover (bd-ib-ufot43) ([5771959](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5771959c7c8b10108158a0e78e8ea526a11159a3))
+* name a first claim token on every work item created after the cutover (bd-ib-ufot43) ([8c8f250](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8c8f250f5cee610b3ad760425e23dfff92f54b9a))
+
 ## [0.293.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.292.0...v0.293.0) (2026-11-06)
 
 
