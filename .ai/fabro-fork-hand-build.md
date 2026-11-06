@@ -141,6 +141,15 @@ about 120 s in `profile.ci` and 20 s for `fabro-petri` in
 `profile.default`, which kills healthy tests under load), and
 `bd-ib-gmuxd4` (the stall test's real-clock budget).
 
+Two of those are fixed since 2026-11-06. `bd-ib-aqcgxz` was a Petri
+product defect: the output drain read a stalled log consumer as silence and
+dropped an exited process's output tail (thewoolleyman/petri#4, pinned by
+fork PR #33). `bd-ib-adrhkf` was fixed by fork PR #34 (`c2be004f5`):
+`profile.ci` now flags SLOW at 30 s and terminates no test, through one
+`filter = "all()"` override, because a `profile.default` override outranks
+the `ci` base and would otherwise keep its kill. The fork-gates Test job's
+`timeout-minutes: 120` is the run-level bound.
+
 Work independent fork items in PARALLEL, each in its own worktree on the
 carrier branch, and fold their merges into one engine build. Do not queue
 them one at a time.
@@ -150,6 +159,27 @@ clippy; a different nightly reports different lints and is not evidence.
 Record which gates ran, against which commit, on the ledger item before
 merging, by run id. A gate that was cancelled or superseded before it
 reported is not a gate that ran.
+
+## A fix that lands in the Petri fork
+
+Some fork items are Petri defects. `thewoolleyman/petri`
+`fabro-integration-registered-20261023` is the branch the carrier's
+`[patch]` names, and its `Cargo.lock` pin says which commit serves. That
+fork has NO runner: its pull requests (#3, #4) show no checks. Gate a Petri
+change on `fabro-k3s` instead:
+
+- Push a throwaway branch of `thewoolleyman/fabro` carrying a push-triggered
+  workflow that fetches the Petri commit and runs fmt, clippy and the
+  targeted tests.
+- The attractor step tests launch the host sandbox plugin. Build it with
+  `SANDBOX_DRIVER_PLUGINS=host scripts/plugins-build.sh` and export
+  `PETRI_SANDBOX_HOST_PLUGIN`; without it they fail in about 0.01 s with
+  stage `Failed`.
+- Merge the Petri PR first, then a Fabro PR that moves every Petri entry in
+  `Cargo.lock` to the merge commit; its Fork gates are the Fabro-side merge
+  gate.
+
+The worked example is plan `fabro-currency` research note 024.
 
 ## Carrier builds run on `fabro-k3s`
 
@@ -195,7 +225,7 @@ picked up. Record the fallback, and why it was needed, in the work item's notes
   export CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
   cargo +nightly-2026-04-14 fmt --check --all
   cargo +nightly-2026-04-14 clippy --workspace --all-targets -- -D warnings
-  cargo nextest run --profile ci -p <crate> -E '<the tests the diff adds or changes>'
+  timeout 2h cargo nextest run --profile ci -p <crate> -E '<the tests the diff adds or changes>'
   ```
 
 - Launch a long gate DETACHED through this repository's runner, never as an
