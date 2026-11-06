@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.294.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.294.0...v0.294.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **store:** a metadata write outside the claim-token protocol never carries the token key (bd-ib-tlgq3y) ([911d11d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/911d11d4bb17c36985571a7eda7f5cc08af6eca6))
+
 ## [0.294.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.293.1...v0.294.0) (2026-11-06)
 
 
