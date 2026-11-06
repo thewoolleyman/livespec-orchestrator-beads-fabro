@@ -256,13 +256,6 @@ def _write_release_effects(
     re-reads and transitions, and the effects it reports are the ones it
     actually performed.
     """
-    record_wip_capture_receipt(
-        repo=repo,
-        work_item_id=request.item.id,
-        run_id=request.run_id,
-        factory=request.factory_name,
-        journal=journal,
-    )
     stage = _route(request=request).stage
     recorded = establish_journal_record(
         journal=journal,
@@ -289,6 +282,15 @@ def _write_release_effects(
     if not claim_unchanged(row=final, run_id=request.run_id):
         return _held(request=request, reason=HOLD_CLAIM_CHANGED)
     hold = _transition(repo=repo, request=request)
+    # AFTER the transition: the receipt reads the forge, which may consume its
+    # whole timeout, and the release must never wait on that.
+    record_wip_capture_receipt(
+        repo=repo,
+        work_item_id=request.item.id,
+        run_id=request.run_id,
+        factory=request.factory_name,
+        journal=journal,
+    )
     if hold is not None:
         return _held(request=request, reason=hold)
     return _recovered(
