@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, cast
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro import store
+from livespec_orchestrator_beads_fabro._store_claim_tokens import write_claim_change
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     route_factory_size_decomposition,
 )
@@ -141,7 +141,20 @@ def approve_item(
     held = _definition_of_done_refusal(repo=repo, config=config, item=item, action_id=action_id)
     if held is not None:
         return held
-    store.update_work_item_status(path=config, item_id=item.id, status="ready")
+    changed = write_claim_change(
+        path=config,
+        work_item_id=item.id,
+        writer="approve",
+        intent="approve:ready",
+        status="ready",
+    )
+    if changed.outcome != "applied":
+        return valve_refusal(
+            aid=action_id,
+            wid=item.id,
+            err=changed.outcome,
+            msg=f"approve refused: {changed.outcome}.",
+        )
     return valve_success(
         aid=action_id,
         wid=item.id,

@@ -51,15 +51,13 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
+from livespec_orchestrator_beads_fabro._store_claim_tokens import write_claim_change
 from livespec_orchestrator_beads_fabro._store_description import update_work_item_description
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     EffectiveCriteria,
     effective_criteria,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
-from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
-    write_work_item_status_and_reconcile,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
 )
@@ -276,7 +274,20 @@ def _carry_both_links(
 
 
 def _close(*, config: StoreConfig, item: WorkItem, action_id: str) -> dict[str, Any]:
-    write_work_item_status_and_reconcile(path=config, item_id=item.id, status="done")
+    changed = write_claim_change(
+        path=config,
+        work_item_id=item.id,
+        writer="accept",
+        intent="accept:done",
+        status="done",
+    )
+    if changed.outcome != "applied":
+        return valve_refusal(
+            aid=action_id,
+            wid=item.id,
+            err=changed.outcome,
+            msg=f"accept refused: {changed.outcome}.",
+        )
     return valve_success(
         aid=action_id,
         wid=item.id,

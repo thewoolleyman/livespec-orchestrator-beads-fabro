@@ -6,10 +6,7 @@ from typing import Any
 
 from livespec_orchestrator_beads_fabro import store
 from livespec_orchestrator_beads_fabro._store_cap_mutations import update_work_item_cap
-from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
-    write_blocked_state_and_reconcile,
-    write_work_item_status_and_reconcile,
-)
+from livespec_orchestrator_beads_fabro._store_claim_tokens import write_claim_change
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
     ACCEPTANCE_REWORK_CAP_LABEL,
     MERGE_ON_REVIEW_CAP_LABEL,
@@ -117,12 +114,21 @@ def resolve_blocked_item(
         refusal = deliver_answer(config=config, item=item, aid=aid, delivery=delivery)
         if refusal is not None:
             return refusal
-    write_blocked_state_and_reconcile(
+    changed = write_claim_change(
         path=config,
-        item_id=item.id,
+        work_item_id=item.id,
+        writer="resolve-blocked",
+        intent=f"blocked:{target_status}",
         status=target_status,
-        blocked_reason=None,
+        remove_labels=["blocked-reason:needs-human"],
     )
+    if changed.outcome != "applied":
+        return valve_refusal(
+            aid=aid,
+            wid=item.id,
+            err=changed.outcome,
+            msg=f"resolve-blocked refused: {changed.outcome}.",
+        )
     return valve_success(
         aid=aid,
         wid=item.id,
@@ -257,12 +263,21 @@ def move_item(
                 "acceptance and pending-approval are entered only on their guarded paths."
             ),
         )
-    write_work_item_status_and_reconcile(
+    changed = write_claim_change(
         path=config,
-        item_id=item.id,
+        work_item_id=item.id,
+        writer="move",
+        intent=f"move:{target_status}",
         status=target_status,
         clear_assignee=True,
     )
+    if changed.outcome != "applied":
+        return valve_refusal(
+            aid=aid,
+            wid=item.id,
+            err=changed.outcome,
+            msg=f"move refused: {changed.outcome}.",
+        )
     return valve_success(
         aid=aid,
         wid=item.id,

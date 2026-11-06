@@ -9,6 +9,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, cast
 
+from returns.unsafe import unsafe_perform_io
+
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    resolve_claim_tokens,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import (
     attempt_close,
     token_reading,
@@ -16,12 +22,14 @@ from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import (
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient, BeadsRecord
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "CLAIM_TOKEN_METADATA_KEY",
     "ClaimChangeResult",
     "change_claim",
     "create_claim_token",
+    "write_claim_change",
 ]
 
 CLAIM_TOKEN_METADATA_KEY = "dispatch_claim_token"  # noqa: S105 - metadata key
@@ -31,6 +39,7 @@ _CLOSE_REASON_KIND = "claim-token-transition"
 _DISCARD_REASON_KIND = "claim-token-discard"
 _LEASE_SECONDS = 120.0
 _TRANSITION_WAIT_SECONDS = 180.0
+_CLAIM_TOKENS_DISABLED = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -49,6 +58,41 @@ def create_claim_token(*, client: BeadsClient) -> str:
     )
     client.update_issue(issue_id=token_id, add_labels=[_CLAIM_TOKEN_LABEL])
     return token_id
+
+
+def write_claim_change(  # noqa: PLR0913
+    *,
+    path: StoreConfig,
+    work_item_id: str,
+    writer: str,
+    intent: str,
+    status: str | None = None,
+    assignee: str | None = None,
+    clear_assignee: bool = False,
+    add_labels: list[str] | None = None,
+    remove_labels: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> ClaimChangeResult:
+    """Apply one lifecycle write under the committed claim-token policy."""
+    repo_root = path.repo_root
+    claim_tokens = (
+        _CLAIM_TOKENS_DISABLED
+        if repo_root is None
+        else unsafe_perform_io(resolve_claim_tokens(cwd=repo_root).value_or(_CLAIM_TOKENS_DISABLED))
+    )
+    return change_claim(
+        client=make_beads_client(config=path),
+        work_item_id=work_item_id,
+        writer=writer,
+        intent=intent,
+        claim_tokens=claim_tokens,
+        status=status,
+        assignee=assignee,
+        clear_assignee=clear_assignee,
+        add_labels=add_labels,
+        remove_labels=remove_labels,
+        metadata=metadata,
+    )
 
 
 def change_claim(  # noqa: PLR0911, PLR0913

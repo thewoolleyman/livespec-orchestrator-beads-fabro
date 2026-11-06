@@ -26,9 +26,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
-    update_work_item_blocked_state,
-)
+from livespec_orchestrator_beads_fabro._store_claim_tokens import write_claim_change
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow, claim_row_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -40,7 +38,6 @@ from livespec_orchestrator_beads_fabro.errors import (
     BeadsTenantMissingError,
     WorkItemNotFoundError,
 )
-from livespec_orchestrator_beads_fabro.store import update_work_item_status
 
 __all__: list[str] = [
     "append_claim_comment",
@@ -102,26 +99,30 @@ def append_claim_comment(*, repo: Path, work_item_id: str, body: str) -> bool:
 def release_claim_to_ready(*, repo: Path, work_item_id: str) -> bool:
     """Return the item to `ready` with its `fabro` claim dropped."""
     applied = attempt(
-        action=lambda: update_work_item_status(
+        action=lambda: write_claim_change(
             path=store_config(repo=repo),
-            item_id=work_item_id,
+            work_item_id=work_item_id,
+            writer="stranded-claim-recovery",
+            intent="release:ready",
             status=_READY_STATUS,
             clear_assignee=True,
         ),
         exceptions=_LEDGER_ERRORS,
     )
-    return not isinstance(applied, AttemptFailure)
+    return not isinstance(applied, AttemptFailure) and applied.outcome == "applied"
 
 
 def rest_claim_for_a_human(*, repo: Path, work_item_id: str) -> bool:
     """Rest the item at `blocked` / `needs-human` without changing admission."""
     rested = attempt(
-        action=lambda: update_work_item_blocked_state(
+        action=lambda: write_claim_change(
             path=store_config(repo=repo),
-            item_id=work_item_id,
+            work_item_id=work_item_id,
+            writer="stranded-claim-recovery",
+            intent="rest:blocked",
             status=_BLOCKED_STATUS,
-            blocked_reason=_NEEDS_HUMAN_REASON,
+            add_labels=[f"blocked-reason:{_NEEDS_HUMAN_REASON}"],
         ),
         exceptions=_LEDGER_ERRORS,
     )
-    return not isinstance(rested, AttemptFailure)
+    return not isinstance(rested, AttemptFailure) and rested.outcome == "applied"

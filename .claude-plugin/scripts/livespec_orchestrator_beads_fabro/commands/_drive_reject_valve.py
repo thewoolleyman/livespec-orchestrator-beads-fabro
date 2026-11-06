@@ -17,7 +17,7 @@ from pathlib import Path
 from subprocess import run
 from typing import Any, Protocol, cast
 
-from livespec_orchestrator_beads_fabro import store
+from livespec_orchestrator_beads_fabro._store_claim_tokens import write_claim_change
 from livespec_orchestrator_beads_fabro._store_rework_mutations import (
     update_work_item_rework_pending,
 )
@@ -61,7 +61,20 @@ def reject_item(
         refusal = _revert_merged_change(repo=repo, item=item, aid=aid, runner=runner)
         if refusal is not None:
             return refusal
-    store.update_work_item_status(path=config, item_id=item.id, status=target_status)
+    changed = write_claim_change(
+        path=config,
+        work_item_id=item.id,
+        writer="reject",
+        intent=f"reject:{reject_kind}",
+        status=target_status,
+    )
+    if changed.outcome != "applied":
+        return valve_refusal(
+            aid=aid,
+            wid=item.id,
+            err=changed.outcome,
+            msg=f"reject refused: {changed.outcome}.",
+        )
     if reject_kind == _REWORK_REJECT_KIND:
         # The human rework entry stamps the SAME marker the AI-fail entry does:
         # the two rework entries must not diverge in selectability, so the valve
