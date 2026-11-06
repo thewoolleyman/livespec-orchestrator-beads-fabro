@@ -277,6 +277,53 @@ def _record_stage_cause(*, world: _World, stage: str, cause: str) -> None:
     )
 
 
+def _record_needs_human_reason(*, world: _World, reason: str) -> None:
+    """Give the terminal the fix turn's structured needs-human reason."""
+    _ = world.git_path(name="livespec-needs-human-reason").write_text(
+        f"{reason}\n", encoding="utf-8"
+    )
+
+
+def test_an_inherited_fix_reason_without_default_tree_results_is_marked_unverified(
+    tmp_path: Path,
+) -> None:
+    """A plausible inherited claim cannot become the terminal's durable cause on trust.
+
+    The terminal reads an agent-written reason before every fallback, so this
+    must execute its shipped shell rather than only inspect the reason reader.
+    The control supplies the two per-test results the fix prompt requires; a
+    blanket marker for every inherited attribution would make the positive
+    claim unhelpful and is therefore a different failure.
+    """
+    missing_evidence = _world(
+        root=tmp_path / "missing-evidence",
+        changed={"docs/note.md": "a documentation-only change\n"},
+        message="chore: terminal fixture",
+    )
+    evidenced = _world(
+        root=tmp_path / "evidenced",
+        changed={"docs/note.md": "a documentation-only change\n"},
+        message="chore: terminal fixture",
+    )
+    _record_needs_human_reason(
+        world=missing_evidence,
+        reason="test_default_branch_attribution is inherited from master",
+    )
+    _record_needs_human_reason(
+        world=evidenced,
+        reason=(
+            "test_default_branch_attribution is inherited from master; "
+            "result on default branch's tree: FAIL; result on run's tree: FAIL"
+        ),
+    )
+
+    missing_stderr = _run_terminal(world=missing_evidence)
+    evidenced_stderr = _run_terminal(world=evidenced)
+
+    assert "inherited attribution is unverified" in missing_stderr
+    assert "inherited attribution is unverified" not in evidenced_stderr
+
+
 def test_a_recorded_stage_cause_outranks_the_open_red_commit_reason(tmp_path: Path) -> None:
     """The terminal names the stage that failed and its cause line, not the tree.
 
