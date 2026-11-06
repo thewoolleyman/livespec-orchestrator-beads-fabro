@@ -14,6 +14,7 @@ __all__: list[str] = [
     "CrossRepoSlice",
     "GroomResult",
     "SliceCriteriaParse",
+    "SliceRouteRefusal",
 ]
 
 
@@ -82,12 +83,29 @@ class SliceCriteriaParse:
 
 
 @dataclass(frozen=True, kw_only=True)
+class SliceRouteRefusal:
+    """One filed slice whose intake route the claim-token protocol refused.
+
+    With `dispatcher.claim_tokens` true the routing write lands only after
+    intake wins the slice's current token (`SPECIFICATION/contracts.md`, "Claim
+    tokens"). A route that did not win wrote nothing: the slice is filed and
+    rests at the `pending-approval` it was filed at, unrouted. `outcome` is the
+    protocol's own outcome name, such as `claim-changed`. The route is reported,
+    never retried.
+    """
+
+    slice_id: str
+    outcome: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class GroomResult:
     """The outcome of an approved groom: what was filed, routed, and exited.
 
     - `filed_slice_ids` — the local factory slices filed and then routed by
       the intake Definition-of-Ready primitive (in draft order), with their
-      dependency edges linked.
+      dependency edges linked. A slice whose route was refused is filed too,
+      and is named again in `refused_slice_routes`.
     - `criteria_parses` — each filed local slice's effective-criteria parse
       (the gradeable-assertion count and the resolved source), for the
       front-end to display.
@@ -99,6 +117,12 @@ class GroomResult:
       SKILL.md prose to route to the target repo.
     - `regroomed_out` — True once the original backlog item is explicitly
       closed against the filed factory slices.
+    - `refused_slice_routes` — each filed local slice whose intake route the
+      claim-token protocol refused, with the protocol's outcome. Empty while
+      `dispatcher.claim_tokens` is false or unset: that route never refuses.
+    - `fully_applied` — False when any slice route was refused. The cut is
+      filed and the original is closed either way; a refused slice still
+      waits, unrouted, for a human to move it.
     """
 
     filed_slice_ids: tuple[str, ...] = ()
@@ -106,3 +130,9 @@ class GroomResult:
     spec_change_slices: tuple[CandidateSlice, ...] = ()
     cross_repo_slices: tuple[CrossRepoSlice, ...] = ()
     regroomed_out: bool = False
+    refused_slice_routes: tuple[SliceRouteRefusal, ...] = ()
+
+    @property
+    def fully_applied(self) -> bool:
+        """Whether every filed slice was also routed."""
+        return not self.refused_slice_routes
