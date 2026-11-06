@@ -53,6 +53,38 @@ def test_capture_program_preserves_only_a_work_carrying_run_branch_tip(tmp_path:
     assert f"LIVESPEC_WIP_SKIPPED: {ref} {tip} already captured" in repeated.stderr
 
 
+def test_capture_program_can_report_a_new_ref_without_pushing(tmp_path: Path) -> None:
+    """The needs-human terminal reuses its one authenticated push for this capture."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture"
+    )
+    program = tmp_path / "capture-wip"
+    program.write_text(module.wip_capture_program_source(), encoding="utf-8")
+    program.chmod(0o755)
+
+    origin, work = _repository(tmp_path=tmp_path)
+    run = "01M6WIPREPORT"
+    item = "bd-ib-ofvsr3"
+    _git(work, "switch", "-c", f"fabro/run/{run}")
+    (work / "work.txt").write_text("settled work\n", encoding="utf-8")
+    _git(work, "add", "work.txt")
+    _git(work, "commit", "-m", "settled work")
+    tip = _git_stdout(work, "rev-parse", "HEAD")
+    ref = f"refs/livespec/wip/{item}/{run}/1"
+
+    reported = subprocess.run(
+        [str(program), item, run, "master", "--print-refspec"],
+        cwd=work,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert reported.returncode == 0, reported.stderr
+    assert _refs(origin, prefix=f"refs/livespec/wip/{item}/{run}/") == []
+    assert f"LIVESPEC_WIP_CAPTURE_READY: {ref} {tip}" in reported.stderr
+
+
 def _repository(*, tmp_path: Path) -> tuple[Path, Path]:
     origin = tmp_path / "origin.git"
     work = tmp_path / "work"
