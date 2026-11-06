@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.296.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.3...v0.296.0) (2026-11-06)
+
+
+### Features
+
+* **incident:** canonical incident entry keeps one item and fences the factory claim (bd-ib-dzbwaq) ([c3a2627](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c3a26273d374f122a8bf5d71abefc6010e3bcc7c))
+
 ## [0.295.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.2...v0.295.3) (2026-11-06)
 
 
