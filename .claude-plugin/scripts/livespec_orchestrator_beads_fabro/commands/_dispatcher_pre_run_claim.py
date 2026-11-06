@@ -7,6 +7,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import terminal_claim
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_status_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -42,12 +46,20 @@ def release_pre_run_claim_if_needed(
 ) -> None:
     if not _should_release_pre_run_claim(item=item, outcome=outcome, journal=journal):
         return
-    update_work_item_status(
+    refusal = claim_status_write(
+        repo=repo,
         path=store_config(repo=repo),
+        intent="pre-run-release",
+        write=update_work_item_status,
         item_id=item.id,
         status="ready",
         clear_assignee=True,
+        journal=journal,
+        # No run was ever learned, so the decision rests on the claim alone.
+        still_as_decided=terminal_claim(item=item, run_id=None),
     )
+    if refusal is not None:
+        return
     journal.append(
         record={
             "stage": "ledger-admit-release",

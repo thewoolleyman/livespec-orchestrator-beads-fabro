@@ -91,6 +91,15 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     update_work_item_blocked_state,
 )
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import (
+    Decided,
+    terminal_claim,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    LEDGER_WRITE_ERRORS,
+    claim_blocked_write,
+    claim_status_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_rows import (
@@ -108,13 +117,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_telemetry import STALL_STATUS
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    WorkItemNotFoundError,
-)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -168,14 +170,6 @@ _OUTCOME_STAGE = "outcome"
 # SECOND one is the terminal, so this is the count at which the release arm
 # yields to the needs-human arm rather than a tunable tolerance.
 _CONSECUTIVE_CANCELS_THAT_REST = 2
-
-_LEDGER_WRITE_ERRORS = (
-    WorkItemNotFoundError,
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
 
 
 def consecutive_stall_cancel_rows(
@@ -307,8 +301,11 @@ def dispose_stall_cancel(
     if outcome.status != STALL_STATUS:
         return
     rows = consecutive_stall_cancel_rows(journal=journal, item_id=item.id)
+    # What either arm's ledger write rests on: the claim as this disposition
+    # was handed it, under the run the watchdog cancelled.
+    decided = terminal_claim(item=item, run_id=outcome.fabro_run_id)
     if len(rows) >= _CONSECUTIVE_CANCELS_THAT_REST:
-        _rest_for_human(repo=repo, item=item, journal=journal, rows=rows)
+        _rest_for_human(repo=repo, item=item, journal=journal, rows=rows, decided=decided)
         return
     held = _release_hold_reason(journal=journal, item_id=item.id)
     if held is not None:
@@ -320,7 +317,8 @@ def dispose_stall_cancel(
             }
         )
         return
-    _release_first_cancel(repo=repo, item=item, journal=journal, row=rows[-1] if rows else None)
+    row = rows[-1] if rows else None
+    _release_first_cancel(repo=repo, item=item, journal=journal, row=row, decided=decided)
 
 
 def _release_first_cancel(
@@ -329,6 +327,7 @@ def _release_first_cancel(
     item: WorkItem,
     journal: JournalFile,
     row: Mapping[str, object] | None,
+    decided: Decided,
 ) -> None:
     """Return the item to `ready` with its dispatch claim dropped.
 
@@ -345,16 +344,21 @@ def _release_first_cancel(
             work_item_id=item.id,
             body=release_comment(item_id=item.id, row=row),
         ),
-        exceptions=_LEDGER_WRITE_ERRORS,
+        exceptions=LEDGER_WRITE_ERRORS,
     )
     released = attempt(
-        action=lambda: update_work_item_status(
+        action=lambda: claim_status_write(
+            repo=repo,
             path=store_config(repo=repo),
+            intent="stall-release",
+            write=update_work_item_status,
             item_id=item.id,
             status="ready",
             clear_assignee=True,
+            journal=journal,
+            still_as_decided=decided,
         ),
-        exceptions=_LEDGER_WRITE_ERRORS,
+        exceptions=LEDGER_WRITE_ERRORS,
     )
     if isinstance(released, AttemptFailure):
         journal.append(
@@ -364,6 +368,8 @@ def _release_first_cancel(
                 "reason": f"{type(released.error).__name__}",
             }
         )
+        return
+    if released is not None:
         return
     journal.append(
         record={
@@ -391,6 +397,7 @@ def _rest_for_human(
     item: WorkItem,
     journal: JournalFile,
     rows: tuple[Mapping[str, object], ...],
+    decided: Decided,
 ) -> None:
     """Park the item at `blocked` / `needs-human` on a repeat cancellation.
 
@@ -411,17 +418,21 @@ def _rest_for_human(
             work_item_id=item.id,
             body=needs_human_comment(item_id=item.id, previous=previous, current=current),
         ),
-        exceptions=_LEDGER_WRITE_ERRORS,
+        exceptions=LEDGER_WRITE_ERRORS,
     )
     rested = attempt(
-        action=lambda: update_work_item_blocked_state(
+        action=lambda: claim_blocked_write(
+            repo=repo,
             path=store_config(repo=repo),
+            intent="stall-repeat-rest",
+            write=update_work_item_blocked_state,
             item_id=item.id,
-            status="blocked",
             blocked_reason="needs-human",
             admission_policy="manual",
+            journal=journal,
+            still_as_decided=decided,
         ),
-        exceptions=_LEDGER_WRITE_ERRORS,
+        exceptions=LEDGER_WRITE_ERRORS,
     )
     if isinstance(rested, AttemptFailure):
         journal.append(
@@ -431,6 +442,8 @@ def _rest_for_human(
                 "reason": f"{type(rested.error).__name__}",
             }
         )
+        return
+    if rested is not None:
         return
     journal.append(
         record={

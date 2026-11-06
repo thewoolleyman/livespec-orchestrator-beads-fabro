@@ -128,6 +128,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import (
     read_acp_hold_ledger,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_journal_records import journal_records
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import terminal_claim
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_status_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -361,11 +365,16 @@ def _release_claim(
     never writes a reason onto.
     """
     released = attempt(
-        action=lambda: update_work_item_status(
+        action=lambda: claim_status_write(
+            repo=repo,
             path=store_config(repo=repo),
+            intent="provider-limit-release",
+            write=update_work_item_status,
             item_id=item.id,
             status="ready",
             clear_assignee=True,
+            journal=journal,
+            still_as_decided=terminal_claim(item=item, run_id=release.run_id),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )

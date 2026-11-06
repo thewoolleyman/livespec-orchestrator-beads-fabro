@@ -66,8 +66,21 @@ def change_claim(  # noqa: PLR0911, PLR0913
     metadata: dict[str, Any] | None = None,
     clock: Callable[[], float] = time.monotonic,
     transition_observations: MutableMapping[tuple[str, str, str], float] | None = None,
+    still_as_decided: Callable[[BeadsRecord], bool] | None = None,
 ) -> ClaimChangeResult:
-    """Write an item only after the caller owns its current claim token."""
+    """Write an item only after the caller owns its current claim token.
+
+    `still_as_decided` binds the write to the caller's DECISION. The token is
+    read here, later than the caller's own read of the item, so winning it
+    excludes a writer racing on that one token and nothing more: a writer that
+    decided on an earlier read and writes after another writer finished would
+    win the successor that writer named. The predicate states what the decision
+    rested on. It is asked of the item record read with the token, before a
+    successor is created or the token closed, and a `False` answer writes
+    nothing, closes nothing and reports `claim-changed`. A takeover asks it
+    again of the record its write is finally based on. `None` asks nothing, and
+    it is ignored while claim tokens are off.
+    """
     update = _update_arguments(
         work_item_id=work_item_id,
         status=status,
@@ -95,6 +108,8 @@ def change_claim(  # noqa: PLR0911, PLR0913
     if isinstance(takeover, ClaimChangeResult):
         return takeover
     token_id, record, taking_over = takeover
+    if still_as_decided is not None and not still_as_decided(record):
+        return ClaimChangeResult(outcome="claim-changed")
 
     successor = create_claim_token(client=client)
     started = clock()
@@ -115,6 +130,7 @@ def change_claim(  # noqa: PLR0911, PLR0913
             token_id=token_id,
             successor=successor,
             writer=writer,
+            still_as_decided=still_as_decided,
         )
         if record is None:
             return ClaimChangeResult(outcome="claim-changed")
@@ -153,13 +169,34 @@ def _takeover_token(
 
 
 def _stand_down_if_original_writer_landed(
-    *, client: BeadsClient, work_item_id: str, token_id: str, successor: str, writer: str
+    *,
+    client: BeadsClient,
+    work_item_id: str,
+    token_id: str,
+    successor: str,
+    writer: str,
+    still_as_decided: Callable[[BeadsRecord], bool] | None,
 ) -> BeadsRecord | None:
-    """Avoid overwriting the delayed item write that made the transition current."""
+    """Avoid overwriting the delayed item write that made the transition current.
+
+    The record returned is the one the takeover's write is based on, so the
+    caller's decision is asked of it too. An item that is no longer as the
+    caller decided, while the stranded transition still has not landed, gets no
+    part of the caller's change: the takeover won the stranded successor, so it
+    names its own successor in a write that changes nothing else. Discarding
+    that successor instead would leave the item naming a chain that ends in a
+    closed token, which no later writer could ever win.
+    """
     record = client.show_issue(issue_id=work_item_id)
-    if _current_token(record=record) != token_id:
+    if _current_token(record=record) == token_id:
+        _discard_claim_token(client=client, token_id=successor, writer=writer)
+        return None
+    if still_as_decided is None or still_as_decided(record):
         return record
-    _discard_claim_token(client=client, token_id=successor, writer=writer)
+    client.update_issue(
+        issue_id=work_item_id,
+        metadata=_with_successor(record=record, metadata=None, successor=successor),
+    )
     return None
 
 

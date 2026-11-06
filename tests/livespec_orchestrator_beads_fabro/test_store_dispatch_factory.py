@@ -12,6 +12,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro._store_dispatch_factory import (
     dispatch_run_id_from_record,
     dispatch_run_ids_for,
+    dispatch_run_metadata,
     record_dispatch_run,
 )
 from livespec_orchestrator_beads_fabro.store import (
@@ -171,3 +172,15 @@ def test_dispatch_run_id_from_record_ignores_a_blank_or_absent_stamp() -> None:
 
 def test_dispatch_factory_from_record_ignores_an_object_carrying_no_name() -> None:
     assert dispatch_factory_from_record(record={"metadata": {"dispatch_factory": {}}}) is None
+
+
+def test_the_run_stamp_overlay_is_the_two_top_level_keys_a_reader_finds_the_stamp_under() -> None:
+    """The overlay a token-guarded stamp merges reads back as the run it carries."""
+    overlay = dispatch_run_metadata(run_id="01RUN", factory_name="hp", factory_server=None)
+
+    assert overlay == {
+        "dispatch_fabro_run_id": "01RUN",
+        "dispatch_factory": {"name": "hp", "server": None},
+    }
+    assert dispatch_run_id_from_record(record={"metadata": overlay}) == "01RUN"
+    assert dispatch_factory_from_record(record={"metadata": overlay}) == "hp"

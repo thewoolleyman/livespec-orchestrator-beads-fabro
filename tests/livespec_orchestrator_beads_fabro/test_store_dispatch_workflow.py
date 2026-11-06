@@ -20,6 +20,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro._store_dispatch_workflow import (
     dispatch_workflow_for,
     dispatch_workflow_from_record,
+    dispatch_workflow_metadata,
     record_dispatch_workflow,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -123,3 +124,11 @@ def test_a_malformed_metadata_column_reads_back_as_no_pin() -> None:
 def test_a_blank_pin_reads_back_as_no_pin() -> None:
     """An empty or whitespace-only value is absence, not a variant named ''."""
     assert dispatch_workflow_from_record(record={"metadata": {"dispatch_workflow": "   "}}) is None
+
+
+def test_the_pin_overlay_is_the_one_top_level_key_a_reader_finds_the_pin_under() -> None:
+    """The overlay a token-guarded write merges reads back as the pin it carries."""
+    overlay = dispatch_workflow_metadata(workflow="groom-cut")
+
+    assert overlay == {"dispatch_workflow": "groom-cut"}
+    assert dispatch_workflow_from_record(record={"metadata": overlay}) == "groom-cut"

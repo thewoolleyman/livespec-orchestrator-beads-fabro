@@ -27,6 +27,7 @@ __all__: list[str] = [
     "dispatch_factory_from_record",
     "dispatch_run_id_from_record",
     "dispatch_run_ids_for",
+    "dispatch_run_metadata",
     "read_dispatch_factories",
     "record_dispatch_factory",
     "record_dispatch_run",
@@ -165,12 +166,31 @@ def record_dispatch_run(
     """
     client = make_beads_client(config=path)
     metadata = _metadata_of(record=client.show_issue(issue_id=work_item_id))
-    metadata[_META_DISPATCH_RUN_ID] = run_id
-    metadata[_META_DISPATCH_FACTORY] = {
-        _FACTORY_NAME_KEY: factory_name,
-        _FACTORY_SERVER_KEY: factory_server,
-    }
+    metadata.update(
+        dispatch_run_metadata(
+            run_id=run_id, factory_name=factory_name, factory_server=factory_server
+        )
+    )
     client.update_issue(issue_id=work_item_id, metadata=metadata)
+
+
+def dispatch_run_metadata(
+    *, run_id: str, factory_name: str, factory_server: str | None
+) -> dict[str, Any]:
+    """The run stamp as the two top-level metadata keys it occupies, each whole.
+
+    The overlay a writer merges into an item's metadata. `record_dispatch_run`
+    merges it in a write of its own; a token-guarded run stamp hands it to the
+    one write that wins the item's claim token, so the stamp lands only if that
+    write does and never re-sends a token id it read earlier.
+    """
+    return {
+        _META_DISPATCH_RUN_ID: run_id,
+        _META_DISPATCH_FACTORY: {
+            _FACTORY_NAME_KEY: factory_name,
+            _FACTORY_SERVER_KEY: factory_server,
+        },
+    }
 
 
 def dispatch_run_id_from_record(*, record: BeadsRecord) -> str | None:

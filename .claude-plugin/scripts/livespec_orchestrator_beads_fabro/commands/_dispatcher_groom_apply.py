@@ -24,6 +24,13 @@ failed filing should leave it: re-groomable, unclaimed, with its approved
 draft still on the record. The close follows immediately and is what the
 contract calls the terminal disposition of the original.
 
+THE RELEASE IS A CLAIM-CHANGING WRITE (`SPECIFICATION/contracts.md`, "Claim
+tokens"): it ends a dispatch claim. With `dispatcher.claim_tokens` true it lands
+only after this seam has won the item's current claim token. A release the
+protocol refused wrote nothing to the item, so nothing is filed either: the
+filing would close an original some other writer now holds. It is reported as
+one more refusal, and the claim-token outcome is journaled beside it.
+
 WHY EVERY REFUSAL IS JOURNALED AND NONE OF THEM RAISES. This seam runs inside
 the Dispatcher's post-run sequence, after the run is already dead. An
 exception here would abort the sequence that rests the item somewhere a human
@@ -36,6 +43,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._store_groom_approval import GroomApproval
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import held
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_status_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._groom_filing_plan import parse_groom_filing_plan
 from livespec_orchestrator_beads_fabro.commands.groom import GroomResult, file_approved_slices
@@ -109,7 +120,7 @@ def file_groom_plan(
     re-dispatch re-enters the apply phase rather than starting over.
     """
     filed = attempt(
-        action=lambda: _file_groom_plan(repo=repo, item=item, text=text),
+        action=lambda: _file_groom_plan(repo=repo, item=item, text=text, journal=journal),
         exceptions=_REFUSALS,
     )
     if isinstance(filed, AttemptFailure):
@@ -138,7 +149,9 @@ def file_groom_plan(
     return True
 
 
-def _file_groom_plan(*, repo: Path, item: WorkItem, text: str) -> GroomResult:
+def _file_groom_plan(
+    *, repo: Path, item: WorkItem, text: str, journal: JournalWriter
+) -> GroomResult:
     """Parse, release the claim, then file — in that order, and only that order.
 
     The parse comes first so a malformed plan is refused with the item still
@@ -156,9 +169,26 @@ def _file_groom_plan(*, repo: Path, item: WorkItem, text: str) -> GroomResult:
     plan = parse_groom_filing_plan(text=text)
     config = store_config(repo=repo)
     if item.status != BACKLOG_STATUS:
-        update_work_item_status(
-            path=config, item_id=item.id, status=BACKLOG_STATUS, clear_assignee=True
+        refusal = claim_status_write(
+            repo=repo,
+            path=config,
+            intent="groom-apply-release",
+            write=update_work_item_status,
+            item_id=item.id,
+            status=BACKLOG_STATUS,
+            clear_assignee=True,
+            journal=journal,
+            # The claim this apply run was dispatched under, as the seam read it.
+            still_as_decided=held(status=item.status, assignee=item.assignee),
         )
+        if refusal is not None:
+            raise GroomExitRefusedError(
+                item_id=item.id,
+                detail=(
+                    "its dispatch claim was not released because the claim-token protocol "
+                    f"reported {refusal}; nothing was written to the item and nothing was filed"
+                ),
+            )
     return file_approved_slices(
         path=config,
         regroom_item_id=item.id,

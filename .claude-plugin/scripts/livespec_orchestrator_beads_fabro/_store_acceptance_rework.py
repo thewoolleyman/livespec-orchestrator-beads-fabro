@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "AcceptanceFailureState",
+    "acceptance_failure_metadata",
+    "next_acceptance_failure_state",
     "update_acceptance_failed_ai_passes",
 ]
 
@@ -40,6 +42,29 @@ def update_acceptance_failed_ai_passes(
         failed_ai_passes=failed_ai_passes,
         raw_labels=_raw_labels(record=record),
     )
+
+
+def next_acceptance_failure_state(*, path: StoreConfig, item_id: str) -> AcceptanceFailureState:
+    """The state this item's NEXT failing pass would persist, read without writing it.
+
+    The token-guarded half of `update_acceptance_failed_ai_passes`. Under the
+    claim-token protocol a writer that does not win its token writes nothing to
+    the item, so the count cannot be persisted ahead of the disposition it
+    decides: it is read here and rides the disposition's one won write, through
+    `acceptance_failure_metadata`.
+    """
+    record = make_beads_client(config=path).show_issue(issue_id=item_id)
+    metadata = cast("dict[str, Any]", record.get("metadata", {}))
+    return AcceptanceFailureState(
+        failed_ai_passes=_non_negative_int(value=metadata.get(_META_ACCEPTANCE_FAILED_AI_PASSES))
+        + 1,
+        raw_labels=_raw_labels(record=record),
+    )
+
+
+def acceptance_failure_metadata(*, state: AcceptanceFailureState) -> dict[str, Any]:
+    """The failed-pass count as the one top-level metadata key it occupies."""
+    return {_META_ACCEPTANCE_FAILED_AI_PASSES: state.failed_ai_passes}
 
 
 def _raw_labels(*, record: dict[str, Any]) -> tuple[str, ...]:

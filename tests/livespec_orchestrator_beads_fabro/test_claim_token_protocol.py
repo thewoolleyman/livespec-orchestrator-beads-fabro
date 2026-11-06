@@ -359,3 +359,210 @@ def test_claim_tokens_is_committed_only_boolean_with_a_false_default(tmp_path: P
     assert unsafe_perform_io(resolve_claim_tokens(cwd=tmp_path).unwrap()) is True
     assert unsafe_perform_io(resolve_claim_tokens(cwd=tmp_path / "absent").unwrap()) is False
     assert config_key_by_name(key="claim_tokens") is None
+
+
+def _open_tokens(*, client: FakeBeadsClient) -> list[str]:
+    return [
+        token_id
+        for token_id in client.no_history_issue_ids()
+        if client.show_issue(issue_id=token_id)["status"] != "closed"
+    ]
+
+
+def test_two_writers_deciding_on_one_read_and_writing_in_turn_leave_exactly_one_write() -> None:
+    """The measured defect: the second writer must not win the first's successor.
+
+    Both writers decided to move an `active` item, on one read. They do not
+    race: the second calls only after the first has finished. Without the
+    predicate the second reads the successor the first named, wins it and
+    writes.
+    """
+    client, token = _client_with_current_token()
+    decided = client.show_issue(issue_id=_ITEM_ID)["status"]
+
+    outcomes = [
+        change_claim(
+            client=client,
+            work_item_id=_ITEM_ID,
+            writer=writer,
+            intent="release",
+            claim_tokens=True,
+            status="ready",
+            metadata={"written_by": writer},
+            still_as_decided=lambda record: record["status"] == decided,
+        )
+        for writer in ("first-writer", "second-writer")
+    ]
+
+    item = client.show_issue(issue_id=_ITEM_ID)
+    first_successor = outcomes[0].successor_token_id
+    assert [outcome.outcome for outcome in outcomes] == ["applied", "claim-changed"]
+    assert (item["status"], item["metadata"]["written_by"]) == ("ready", "first-writer")
+    # The second writer closed nothing and created nothing: the item still names
+    # the first writer's successor, and that successor is the one open token.
+    assert item["metadata"][CLAIM_TOKEN_METADATA_KEY] == first_successor
+    assert _open_tokens(client=client) == [first_successor]
+    assert json.loads(client.show_issue(issue_id=token)["close_reason"])["writer"] == (
+        "first-writer"
+    )
+
+
+def test_a_decision_that_no_longer_holds_writes_nothing_closes_nothing_and_mints_nothing() -> None:
+    client, token = _client_with_current_token()
+    before = dict(client.show_issue(issue_id=_ITEM_ID))
+    asked: list[object] = []
+
+    def _no_longer(record: dict[str, object]) -> bool:
+        asked.append(record["status"])
+        return False
+
+    outcome = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="valve",
+        intent="move",
+        claim_tokens=True,
+        status="ready",
+        still_as_decided=_no_longer,
+    )
+
+    assert (outcome.outcome, outcome.successor_token_id) == ("claim-changed", None)
+    # Asked once, of the record read with the token.
+    assert asked == ["active"]
+    assert client.show_issue(issue_id=_ITEM_ID) == before
+    assert client.no_history_issue_ids() == (token,)
+    assert _open_tokens(client=client) == [token]
+
+
+def test_a_decision_that_still_holds_lets_the_winner_write() -> None:
+    client, _ = _client_with_current_token()
+
+    outcome = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="valve",
+        intent="move",
+        claim_tokens=True,
+        status="ready",
+        still_as_decided=lambda record: record["status"] == "active",
+    )
+
+    assert outcome.outcome == "applied"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "ready"
+
+
+def test_the_decision_is_not_asked_while_claim_tokens_are_off() -> None:
+    """Before the cutover the write is the legacy one, whatever the predicate says."""
+    client, token = _client_with_current_token()
+
+    outcome = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="valve",
+        intent="move",
+        claim_tokens=False,
+        status="ready",
+        still_as_decided=lambda _record: pytest.fail("asked before the cutover"),
+    )
+
+    assert outcome.outcome == "applied"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "ready"
+    assert _open_tokens(client=client) == [token]
+
+
+def _stranded_transition() -> tuple[FakeBeadsClient, str, str]:
+    """An item naming a closed token whose named successor it does not name."""
+    client, old_token = _client_with_current_token()
+    stranded_successor = create_claim_token(client=client)
+    client.close_issue(issue_id=old_token, reason=_transition_reason(successor=stranded_successor))
+    return client, old_token, stranded_successor
+
+
+def test_a_takeover_whose_decision_no_longer_holds_does_not_contest_the_stranded_successor() -> (
+    None
+):
+    """Asked before the takeover closes anything, so the stranded successor stays open."""
+    client, old_token, stranded_successor = _stranded_transition()
+
+    outcome = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="recovery",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+        clock=lambda: 181.0,
+        transition_observations={(_ITEM_ID, old_token, stranded_successor): 0.0},
+        still_as_decided=lambda record: record["status"] == "blocked",
+    )
+
+    assert outcome.outcome == "claim-changed"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "active"
+    assert _open_tokens(client=client) == [stranded_successor]
+
+
+def test_a_takeover_asks_the_decision_again_of_the_record_its_write_is_based_on() -> None:
+    """The item moved between the takeover's close and its write: none of its change lands.
+
+    The takeover has by then won the stranded successor, so it names its own
+    successor in a write that changes nothing else. The item keeps an open
+    current token, and the next writer wins it at once.
+    """
+    client, old_token, stranded_successor = _stranded_transition()
+    answers = iter((True, False))
+    asked: list[object] = []
+
+    def _holds_then_does_not(record: dict[str, object]) -> bool:
+        asked.append(record["status"])
+        return next(answers)
+
+    outcome = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="recovery",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+        clock=lambda: 181.0,
+        transition_observations={(_ITEM_ID, old_token, stranded_successor): 0.0},
+        still_as_decided=_holds_then_does_not,
+    )
+
+    assert outcome.outcome == "claim-changed"
+    assert asked == ["active", "active"]
+    item = client.show_issue(issue_id=_ITEM_ID)
+    assert item["status"] == "active"
+    current = item["metadata"][CLAIM_TOKEN_METADATA_KEY]
+    assert current not in {old_token, stranded_successor}
+    assert _open_tokens(client=client) == [current]
+
+    following = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="dispatcher",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+    )
+
+    assert following.outcome == "applied"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "ready"
+
+
+def test_a_takeover_whose_decision_holds_at_both_readings_applies() -> None:
+    client, old_token, stranded_successor = _stranded_transition()
+
+    outcome = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="recovery",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+        clock=lambda: 181.0,
+        transition_observations={(_ITEM_ID, old_token, stranded_successor): 0.0},
+        still_as_decided=lambda record: record["status"] == "active",
+    )
+
+    assert outcome.outcome == "applied"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "ready"
