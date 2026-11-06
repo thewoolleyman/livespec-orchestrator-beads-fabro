@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.291.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.290.0...v0.291.0) (2026-11-06)
+
+
+### Features
+
+* **dispatcher:** claim-token protocol primitive behind dispatcher.claim_tokens (bd-ib-lgwwx7) ([026e115](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/026e115fa3638117d3c1a958d3635c611ea4eb3e))
+
 ## [0.290.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.289.0...v0.290.0) (2026-11-05)
 
 
