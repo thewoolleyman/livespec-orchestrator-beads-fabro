@@ -13,6 +13,8 @@ This module owns the small shared mechanical checks for that flow:
   `backlog` status.
 - `close_regroomed_out` refuses an empty replacement set and then closes the
   original item with a concrete disposition naming the replacement slice ids.
+  A caller whose close is a claim-changing write hands it `hold_for_close`,
+  which is run immediately before the close and can refuse it.
 
 Expected misuse raises `WorkItemNotFoundError`, `GroomTargetNotBacklogError`, or
 `GroomExitRefusedError`; bugs propagate as built-in exceptions.
@@ -20,6 +22,7 @@ Expected misuse raises `WorkItemNotFoundError`, `GroomTargetNotBacklogError`, or
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
@@ -37,11 +40,16 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "BACKLOG_STATUS",
+    "CloseHold",
     "close_regroomed_out",
     "require_backlog_target",
 ]
 
 BACKLOG_STATUS = "backlog"
+
+# A caller's last word before a close: `None` to let it proceed, or the reason
+# it must not.
+CloseHold = Callable[[], str | None]
 _REGROOMED_OUT_RESOLUTION = "no-longer-applicable"
 
 
@@ -61,12 +69,21 @@ def close_regroomed_out(
     item_id: str,
     replacement_slice_ids: list[str],
     cross_repo_slice_ids: list[str] | None = None,
+    hold_for_close: CloseHold | None = None,
 ) -> None:
     """Close a backlog grooming target with an explicit replacement disposition.
 
     `replacement_slice_ids` are the slices filed in this tenant, and at least one
     is required; `cross_repo_slice_ids` are replacements filed in other tenants,
     named in the close reason alongside them but never sufficient on their own.
+
+    `hold_for_close` is the caller's last word before the close. It runs after
+    every check above has passed and immediately before the closing write,
+    answering `None` to let the close proceed or the reason it must not. A
+    Dispatcher under the claim-token protocol wins the item's current token
+    there, because `bd close` cannot name a successor token itself. A refused
+    close raises `GroomExitRefusedError` naming the replacements already filed,
+    and the original stays open in `backlog`.
     """
     require_backlog_target(path=path, item_id=item_id)
     if not replacement_slice_ids:
@@ -75,6 +92,16 @@ def close_regroomed_out(
             detail="no replacement slices were filed (an item is regroomed-out, never dropped)",
         )
     item = materialize_work_items(records=read_work_items(path=path))[item_id]
+    refusal = hold_for_close() if hold_for_close is not None else None
+    if refusal is not None:
+        filed = ", ".join([*replacement_slice_ids, *(cross_repo_slice_ids or [])])
+        raise GroomExitRefusedError(
+            item_id=item_id,
+            detail=(
+                f"the original was not closed because {refusal}; nothing was written to "
+                f"it, and its replacement slices are already filed: {filed}"
+            ),
+        )
     closed = replace(
         item,
         status="done",

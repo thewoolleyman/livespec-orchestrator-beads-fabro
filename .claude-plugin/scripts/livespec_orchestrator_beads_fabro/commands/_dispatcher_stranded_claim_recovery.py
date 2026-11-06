@@ -95,6 +95,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_repla
     establish_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_terminal import (
+    RefusedDisposition,
     TerminalObservation,
     apply_terminal_disposition,
 )
@@ -200,6 +201,11 @@ def _complete_terminal(
     before control leaves this module. It restates no disposition it did not
     decide, which is why it carries the observed terminal STATUS as its reason
     rather than a route name of its own.
+
+    A disposition the claim-token protocol refused is a HOLD, never a recovery:
+    `claim-changed` when another writer won the item's token, and
+    `effect-unobservable` for every other way the guarded write did not land.
+    The announcement row above stays where it is, ahead of the dispositions.
     """
     terminal = request.terminal
     if terminal is None:
@@ -217,6 +223,12 @@ def _complete_terminal(
         journal=journal,
         now_iso=now_iso,
     )
+    if isinstance(applied, RefusedDisposition):
+        # A recovery that lost the item's token wrote nothing to the item, so
+        # it is a hold under the same two reasons the absent-run routes use.
+        lost = applied.outcome == HOLD_CLAIM_CHANGED
+        reason = HOLD_CLAIM_CHANGED if lost else HOLD_EFFECT_UNOBSERVABLE
+        return _held(request=request, reason=reason)
     return _terminal_recovered(
         request=request, terminal=terminal, effects=(EFFECT_JOURNAL_RECORD, *applied)
     )

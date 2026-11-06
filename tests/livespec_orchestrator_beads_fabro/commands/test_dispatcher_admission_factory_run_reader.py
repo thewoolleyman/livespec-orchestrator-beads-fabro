@@ -38,10 +38,14 @@ def test_admission_passes_its_production_factory_reader_to_preflight(
     monkeypatch.setattr(admission, "rework_pending_candidates", lambda **_: ())
     monkeypatch.setattr(admission, "filter_eligible_candidates", lambda **_: ([], []))
     monkeypatch.setattr(
-        admission, "claimed_active_accounting", lambda **_: SimpleNamespace(active_count=0)
+        admission,
+        "claimed_active_accounting",
+        lambda **_: SimpleNamespace(active_count=0, rework_pending_active_ids=()),
     )
     monkeypatch.setattr(
-        admission, "admit_rework", lambda **_: SimpleNamespace(admitted=(), deferred=())
+        admission,
+        "admit_rework",
+        lambda **_: rework_module.ReworkAdmission(admitted=(), deferred=()),
     )
     monkeypatch.setattr(
         admission,

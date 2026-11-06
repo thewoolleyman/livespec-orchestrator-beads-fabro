@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import Ac
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_claims import (
+    planned_claim_rows,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_confirmation import (
     confirmation_for,
 )
@@ -204,6 +207,11 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     on.
     """
     accounting = claimed_active_accounting(repo=repo, items=items, journal=journal)
+    # What this pass decides on for each row it may admit that is ALREADY
+    # `active` (a groom-door claim, a rework re-dispatch), read before its
+    # first ledger write. Empty, with no read, unless claim tokens are on.
+    marked = accounting.rework_pending_active_ids
+    planned = planned_claim_rows(repo=repo, candidates=candidates, items=items, rework_ids=marked)
     rework_pass = rework if rework is not None else ReworkPass()
     verdict, rework_admittable, admittable, refused = _eligible_legs(
         repo=repo,
@@ -228,6 +236,9 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
         journal=journal,
         active_count=accounting.active_count,
         wip_cap=wip_cap,
+        planned=planned,
+        resume_ids=resume_ids,
+        explicit_factory=explicit_factory,
     )
     occupied = accounting.active_count + len(reworked.admitted)
     free_slots = ready_free_slots(
@@ -272,6 +283,7 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
             explicit_factory=explicit_factory,
             stamp=stamp_pending_claim,
             write=update_work_item_status,
+            planned=planned.get(item.id),
         )
         if refusal is not None:
             claim_refused.append((item, refusal))
@@ -281,7 +293,11 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
             record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}
         )
         admitted.append(replace(journal_item, status="active", assignee=assignee))
-    refused.extend(withheld_outcomes(held=plan.held, claim_refused=claim_refused, journal=journal))
+    refused.extend(
+        withheld_outcomes(
+            held=plan.held, claim_refused=[*reworked.refused, *claim_refused], journal=journal
+        )
+    )
     if wip_cap is not None:
         deferred = capacity_deferred_outcomes(
             admittable=admittable,

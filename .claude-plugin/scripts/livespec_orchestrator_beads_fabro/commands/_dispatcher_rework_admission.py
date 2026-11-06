@@ -8,17 +8,33 @@ them capacity admits. It is a cohesive concern of its own rather than more of
 ALREADY holds — it writes no status, resolves no assignee, and deliberately
 leaves the `rework:pending` marker in place until the rework dispatch's
 terminal disposition clears it through the store's lifecycle write seams.
+
+WITH `dispatcher.claim_tokens` TRUE AN ADMISSION CLAIMS THE ROW. The row still
+carries the previous dispatch's claim stamp, and under the claim-token protocol
+a dispatch can neither stamp its run nor write its terminal onto a row stamped
+with another dispatch's run. So each admission first replaces that stamp with a
+pending one naming its own dispatch, in one token-guarded write
+(`_dispatcher_admission_claims.claim_rework_row`). A row whose claim the
+protocol refused is not admitted, takes no dispatch lock, and is reported with
+the outcome. With the key false or unset the leg writes nothing to the ledger,
+as it always has.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from livespec_runtime.work_items.lifecycle import ready_sort_key
 
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_claims import (
+    claim_rework_row,
+    planned_claim_rows,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
     ActiveClaimAccounting,
     claimed_active_projection,
@@ -75,11 +91,15 @@ class ReworkAdmission:
     `admitted` carries the rows this pass re-dispatches; `deferred` carries the
     rows the capacity condition held back, reported with the same
     `capacity-deferred` status the ready side uses so a deferral stays a
-    non-defect in the run's verdict.
+    non-defect in the run's verdict. `refused` carries each row the claim-token
+    protocol would not let this pass claim, beside the protocol's outcome: such
+    a row was not short of capacity, so it is not a deferral, and it is always
+    empty while `dispatcher.claim_tokens` is false or unset.
     """
 
     admitted: tuple[WorkItem, ...]
     deferred: tuple[DispatchOutcome, ...]
+    refused: tuple[tuple[WorkItem, str], ...] = ()
 
 
 def rework_pending_candidates(
@@ -122,13 +142,16 @@ def rework_pending_candidates(
     return tuple(selected[: rework.budget])
 
 
-def admit_rework(
+def admit_rework(  # noqa: PLR0913 — kw-only; the pass's capacity plus what a claim's stamp needs.
     *,
     repo: Path,
     candidates: tuple[WorkItem, ...],
     journal: JournalFile,
     active_count: int,
     wip_cap: int | None,
+    planned: Mapping[str, ClaimRow] | None = None,
+    resume_ids: frozenset[str] = frozenset(),
+    explicit_factory: str | None = None,
 ) -> ReworkAdmission:
     """Admit marked rows into free capacity, in order, touching no status.
 
@@ -150,17 +173,38 @@ def admit_rework(
     that dies before publishing leaves the row marked and (its lock now stale,
     its process gone) lock-less — re-selectable by a later drain rather than
     re-stranded.
+
+    `planned` is the pass's `planned_claim_rows` reading, which the valve takes
+    before its first ledger write; a caller that hands none has it taken here.
+    `resume_ids` and `explicit_factory` are the valve's own, and decide the
+    factory a claim's pending stamp names exactly as they do for a ready
+    admission. All three are read only while `dispatcher.claim_tokens` is true.
     """
+    rows = planned if planned is not None else planned_claim_rows(repo=repo, candidates=candidates)
     occupied = active_count
     admitted: list[WorkItem] = []
     deferred: list[DispatchOutcome] = []
+    refused: list[tuple[WorkItem, str]] = []
     for item in candidates:
         if wip_cap is not None and occupied >= wip_cap:
             outcome = _rework_deferred_outcome(item=item, occupied=occupied, wip_cap=wip_cap)
             journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
             deferred.append(outcome)
             continue
-        _ = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=selfup.run_id())
+        dispatch_id = selfup.run_id()
+        refusal = claim_rework_row(
+            repo=repo,
+            journal=journal,
+            item_id=item.id,
+            dispatch_id=dispatch_id,
+            planned=rows.get(item.id),
+            resume=item.id in resume_ids,
+            explicit_factory=explicit_factory,
+        )
+        if refusal is not None:
+            refused.append((item, refusal))
+            continue
+        _ = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
         journal.append(
             record={
                 "stage": REWORK_ADMIT_STAGE,
@@ -171,7 +215,9 @@ def admit_rework(
         )
         admitted.append(item)
         occupied += 1
-    return ReworkAdmission(admitted=tuple(admitted), deferred=tuple(deferred))
+    return ReworkAdmission(
+        admitted=tuple(admitted), deferred=tuple(deferred), refused=tuple(refused)
+    )
 
 
 def projected_rework_candidates(
