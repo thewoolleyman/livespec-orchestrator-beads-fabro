@@ -439,6 +439,26 @@ wait_for_preflight() {
 # when it is reporting a defect. The two are awaited TOGETHER for the same
 # reason: awaited in turn, the second bound starts only once the first has
 # expired, so the cost is the sum rather than the maximum.
+# stop_launcher <pid>...: TERM each launcher, then KILL any still alive after STOP_GRACE_S.
+# Bash 5.2 can lose a TERM: when the signal lands while the launcher is parsing a $(...)
+# substitution, its `trap 'exit 143' TERM` fails with "trap: line 2: unexpected EOF while
+# looking for matching `)'" and the launcher keeps looping. Reproduced in 1 of 200 TERMs on
+# bash 5.2.37. A bare `kill -TERM; wait` then hangs the harness on a launcher that never exits,
+# which is how run 18 of 30 hung. Callers keep their own `wait` to reap the launcher.
+STOP_GRACE_S=${STOP_GRACE_S:-5}
+stop_launcher() {
+    local pid deadline
+    kill -TERM "$@" 2>/dev/null
+    deadline=$(( $(date +%s) + STOP_GRACE_S ))
+    for pid in "$@"; do
+        while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep "$HARNESS_POLL_S"
+        done
+        kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
+    done
+    return 0
+}
+
 FIRST_RC=""
 SECOND_RC=""
 await_both() {
@@ -449,7 +469,7 @@ await_both() {
         [ "$(date +%s)" -lt "$deadline" ] || break
         sleep "$HARNESS_POLL_S"
     done
-    kill -TERM "$first" "$second" 2>/dev/null
+    stop_launcher "$first" "$second"
     wait "$first"; FIRST_RC=$?
     wait "$second"; SECOND_RC=$?
 }
@@ -758,7 +778,7 @@ younger_pid=$!
 if wait_for_preflight bd-ib-failing-younger 1 60 && [ ! -s "$DRIVE_LOG" ]; then
     wait "$younger_pid"; younger_rc=$?
 else
-    kill -TERM "$younger_pid" 2>/dev/null
+    stop_launcher "$younger_pid"
     wait "$younger_pid"; younger_rc=$?
     fail "the younger failing preflight did not start while its ticket was queued"
 fi
@@ -768,7 +788,7 @@ else
     fail "queued preflight failure did not cleanly exit (rc=$younger_rc ticket=$(test -e "$CASE_DIR/queue/200-harness-seat" && echo present || echo absent) lock=$(test -d "$CASE_DIR/lock" && echo present || echo absent))"
 fi
 touch "$STUB_PREFLIGHT_RELEASE"
-kill -TERM "$older_pid" 2>/dev/null
+stop_launcher "$older_pid"
 wait "$older_pid" || true
 fi
 
@@ -1105,7 +1125,7 @@ else
     fail "a dispatch-scoped hold did not keep only the impl launch parked"
     tail -n 8 "$DISPATCH_LOG" "$RESUME_CASE_LOG" >&2
 fi
-kill -TERM "$dispatch_pid" 2>/dev/null
+stop_launcher "$dispatch_pid"
 wait "$dispatch_pid" 2>/dev/null
 
 new_case repository-hold-resume
@@ -1133,7 +1153,7 @@ else
     fail "a resume-scoped hold did not keep only the resume launch parked"
     tail -n 8 "$RESUME_CASE_LOG" "$IMPL_LOG" >&2
 fi
-kill -TERM "$resume_pid" 2>/dev/null
+stop_launcher "$resume_pid"
 wait "$resume_pid" 2>/dev/null
 
 for hold_shape in no-kinds empty-kinds malformed-kinds; do
@@ -1160,7 +1180,7 @@ for hold_shape in no-kinds empty-kinds malformed-kinds; do
     else
         fail "a $hold_shape repository hold did not hold both launch kinds"
     fi
-    kill -TERM "$impl_pid" "$resume_pid" 2>/dev/null
+    stop_launcher "$impl_pid" "$resume_pid"
     wait "$impl_pid" 2>/dev/null
     wait "$resume_pid" 2>/dev/null
 done
@@ -1185,19 +1205,42 @@ kill "$holder_pid" 2>/dev/null
 wait "$holder_pid" 2>/dev/null
 rm -f "$FLEET_LAUNCH_GMK_LOCK_DIR/holder"
 rmdir "$FLEET_LAUNCH_GMK_LOCK_DIR"
+# The "repository hold present" line is printed before release_lock frees the mutex, and while
+# the hold stands the launcher keeps re-taking and re-yielding the mutex every FLEET_LAUNCH_POLL_S.
+# So the yield is judged from the launcher's state, not from one snapshot taken at that log line
+# (bd-ib-eb5zl5): poll until one instant shows it alive, its ticket kept, no in-flight marker and
+# the mutex free, with nothing driven. The deadline is a liveness guard only; a launcher that never
+# frees the mutex, or that drives, never satisfies the condition.
+hold_yield_settled() {
+    kill -0 "$launch_point_pid" 2>/dev/null \
+        && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] \
+        && [ -z "$(find "$FLEET_LAUNCH_INFLIGHT_DIR" -type f -print -quit)" ] \
+        && [ ! -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ] \
+        && [ ! -s "$DRIVE_LOG" ]
+}
+wait_for_hold_yield_settled() {
+    local limit="$1" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while :; do
+        if hold_yield_settled; then return 0; fi
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
+    done
+}
+hold_yielded=0
 if wait_for_line "$LAUNCH_POINT_LOG" "repository hold present" 5 \
-    && kill -0 "$launch_point_pid" 2>/dev/null \
-    && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] \
-    && [ -z "$(find "$FLEET_LAUNCH_INFLIGHT_DIR" -type f -print -quit)" ] \
-    && [ ! -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ] \
-    && [ ! -s "$DRIVE_LOG" ]; then
+    && wait_for_hold_yield_settled 5; then
+    hold_yielded=1
+fi
+stop_launcher "$launch_point_pid"
+wait "$launch_point_pid" 2>/dev/null
+# Nothing may have been driven at any point, including after the settled instant was observed.
+if [ "$hold_yielded" = 1 ] && [ ! -s "$DRIVE_LOG" ]; then
     pass "a hold created during the mutex wait releases the mutex and marker without driving"
 else
     fail "a launch-point repository hold did not cleanly yield its bound launch"
     tail -10 "$LAUNCH_POINT_LOG" >&2
 fi
-kill -TERM "$launch_point_pid" 2>/dev/null
-wait "$launch_point_pid" 2>/dev/null
 fi
 
 echo
