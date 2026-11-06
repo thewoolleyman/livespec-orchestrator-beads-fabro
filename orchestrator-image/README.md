@@ -394,6 +394,7 @@ in this change.
 | `da6c8015a` (thewoolleyman/fabro#24) | `fabro run` retries the source-branch push on a transient origin rejection, and keeps the push stderr in its "could not be made available" error | one GitHub `Internal Server Error` or `commit_refs` failure on the push failed the whole dispatch, with no reason printed | **YES**, all three gmktec instances and the pinned factory client | `bd-ib-uctbct` (plan `fabro-currency`) |
 | `0a867ce16` (thewoolleyman/fabro#25) | `fabro events -n` reads only the tail pages from the server, prints each page as it arrives, and a node subject no longer carries the node's script | a bounded read of a long run downloaded the whole stream (107 MB) and printed nothing before a timeout, so the stall watchdog made false kills | **YES**, all three gmktec instances and the pinned factory client; on main `-n 30` of a 24,644-item run took 3.5 s | `bd-ib-dmjsmd` (plan `fabro-currency`) |
 | `85af3547e` (thewoolleyman/fabro#26) | the server keeps one sandbox plugin supervisor per provider configuration for its whole life | the server's own `sandbox cp` and `sandbox/describe` calls failed with "plugin response transport closed" | **YES**, all three gmktec instances | `bd-ib-m7lxgn` (plan `fabro-currency`) |
+| `0d5ce5f60` (thewoolleyman/fabro#27; on `factory-integration` as `161890e36`, #28) | carrier-only CI: `.github/workflows/fork-gates.yml` runs Format, Clippy and Test on the `fabro-k3s` ARC scale set for every push to, and pull request against, a `carrier-*` branch or `factory-integration`; `carrier-build.yml` builds the release binary from a named ref on the same runners and publishes it with `VERSION`, `SHA256SUMS` and `BUILD_INFO` | a carrier pull request showed NO checks, so every fork gate and every engine build ran on the shared dev host (`SPECIFICATION/constraints.md`, "Fork gate and build venue") | **N/A**, it changes no engine code; the serving build is unchanged | `bd-ib-dqxcsh` (plan `fabro-currency`) |
 
 **The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
 `fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
@@ -414,7 +415,9 @@ its own plan added.
 | `plugin-sandbox-providers` at `ec1d605cd` | an unbundled provider kind maps to Petri's plugin backend, launched from `[server.sandbox.providers.<kind>]` with `host_address`, `args` and `inherit_env`; the environment's resources reach every container backend, which also gives Docker sandboxes the environment's cpu, memory and disk as container limits; the run worker resolves only `server.sandbox` | superseded upstream (2026-10-20) by draft `fabro-sh/fabro#1048` for `#937`, from topic `plugin-registered-providers` `3022c9922` on upstream `main`, which registers the provider through #122's `register_plugin` and needs a `process_spec`. This topic stays in the carrier until the next carrier moves |
 | `petri-fork-integration` at `a1d991661` | the carrier-only Cargo `[patch]` described above | never upstream |
 
-**Gating a carrier on vps.** Run fmt, clippy AND nextest on the fork's pinned
+**Gating a carrier on vps (fallback only since 2026-11-06).** A carrier is now gated by
+the fork-gates checks on `fabro-k3s` (`.ai/fabro-fork-hand-build.md`); the notes below
+apply only to the dev-host fallback. Run fmt, clippy AND nextest on the fork's pinned
 `nightly-2026-04-14`, and build `fabro-cli` in the same nextest invocation as
 `fabro-server`. The three server graph-render tests (`get_graph_returns_svg`,
 `render_graph_from_manifest_returns_svg`,
