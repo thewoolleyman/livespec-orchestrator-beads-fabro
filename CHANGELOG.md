@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.297.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.296.1...v0.297.0) (2026-11-06)
+
+
+### Features
+
+* **provenance:** incident provenance exceptions are exact and their normal repayment is audited (bd-ib-y7ryj3) ([f7b1df0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f7b1df0257f0c7c26fd4f83dfbf0c62a35db7b91))
+
+
+### Bug Fixes
+
+* **fleet-launch:** avoid duplicate snapshot refresh ([c7cb3c0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c7cb3c0323911aa9a44dc1de4ac1dead7a3a39f5))
+
 ## [0.296.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.296.0...v0.296.1) (2026-11-06)
 
 
