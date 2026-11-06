@@ -201,7 +201,8 @@ def test_main_fails_a_hand_authored_product_python_pull_request(
             str(repo),
             "--changed-file",
             _PRODUCT_PY,
-        ]
+        ],
+        incident_receipts=(),
     )
     captured = capsys.readouterr()
     assert code == 1
@@ -272,6 +273,7 @@ def test_main_reads_the_changed_paths_from_git_when_no_changed_file_is_given(
     code = main(
         argv=["--event-path", str(event_path), "--repo", str(repo)],
         runner=StubRunner(result=CommandResult(exit_code=0, stdout=f"{_PRODUCT_PY}\n", stderr="")),
+        incident_receipts=(),
     )
     assert code == 1
     assert _PRODUCT_PY in capsys.readouterr().err
@@ -284,7 +286,7 @@ def test_main_takes_the_event_path_from_the_actions_environment(
     event_path = tmp_path / "event.json"
     _write_event(path=event_path, login="thewoolleyman", labels=("factory-override",))
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
-    code = main(argv=["--repo", str(repo), "--changed-file", _PRODUCT_PY])
+    code = main(argv=["--repo", str(repo), "--changed-file", _PRODUCT_PY], incident_receipts=())
     assert code == 1
     assert "matches no retained exact incident receipt" in capsys.readouterr().err
 

@@ -19,11 +19,13 @@ from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths im
     ProductPathPolicy,
     product_policy,
 )
-from livespec_orchestrator_beads_fabro.commands.factory_bypass_audit import (
-    DEFAULT_FACTORY_APP_LOGIN,
+from livespec_orchestrator_beads_fabro.commands._factory_bypass_report_types import (
     AuditPolicy,
     BypassFinding,
     RecordedException,
+)
+from livespec_orchestrator_beads_fabro.commands.factory_bypass_audit import (
+    DEFAULT_FACTORY_APP_LOGIN,
     audit_pull_requests,
     carries_factory_override,
     main,

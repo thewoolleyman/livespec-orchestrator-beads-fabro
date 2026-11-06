@@ -68,6 +68,13 @@ from livespec_orchestrator_beads_fabro.commands._incident_provenance import (
     IncidentReceipt,
     matching_incident_receipt,
 )
+from livespec_orchestrator_beads_fabro.commands._incident_receipt_loader import (
+    ReceiptLoader,
+    load_retained_receipts,
+    refusal_text,
+    resolve_receipts,
+)
+from livespec_orchestrator_beads_fabro.incident_authority import AuthorityRefusal
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
@@ -212,9 +219,15 @@ def main(
     *,
     argv: list[str] | None = None,
     runner: CommandRunner = DEFAULT_RUNNER,
-    incident_receipts: tuple[IncidentReceipt, ...] = (),
+    incident_receipts: tuple[IncidentReceipt, ...] | None = None,
+    receipt_loader: ReceiptLoader = load_retained_receipts,
 ) -> int:
-    """Supervisor for the factory-provenance merge gate. Fails CLOSED, never open."""
+    """Supervisor for the factory-provenance merge gate. Fails CLOSED, never open.
+
+    `incident_receipts` None means "read the retained chains": the ledger is
+    consulted only when the verdict could turn on a receipt, so a factory-authored
+    or product-free pull request never depends on a tenant being reachable.
+    """
     args = _build_parser().parse_args(argv)
     event_path = _resolve_event_path(declared=args.event_path)
     if event_path is None:
@@ -250,8 +263,20 @@ def main(
             )
         )
         return _EXIT_UNOBSERVABLE
+    policy = resolve_product_policy(repo=repo)
+    receipts = resolve_receipts(
+        declared=incident_receipts,
+        needed=event.author_login not in FACTORY_APP_LOGINS
+        and any(is_product_py(path=path, policy=policy) for path in changed_paths),
+        loader=receipt_loader,
+        repo=repo,
+        repository=event.repository or None,
+    )
+    if isinstance(receipts, AuthorityRefusal):
+        write_stderr(text=f"factory-provenance check {refusal_text(refusal=receipts)}")
+        return _EXIT_UNOBSERVABLE
     landed_commits = ()
-    if incident_receipts:
+    if receipts:
         landed_commits = read_landed_commits(event=event, repo=repo, runner=runner)
         if landed_commits is None:
             write_stderr(
@@ -265,10 +290,10 @@ def main(
     verdict = decide(
         event=event,
         changed_paths=changed_paths,
-        policy=resolve_product_policy(repo=repo),
+        policy=policy,
         repository=event.repository or None,
         landed_commits=landed_commits,
-        incident_receipts=incident_receipts,
+        incident_receipts=receipts,
     )
     message = f"{render_verdict(verdict=verdict)}\n"
     if permits_merge(verdict=verdict):

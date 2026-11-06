@@ -40,12 +40,19 @@ from livespec_orchestrator_beads_fabro.errors import (
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 
-__all__: list[str] = ["read_authority"]
+__all__: list[str] = ["read_authority", "read_repository_history"]
 _GENESIS_KEYS = frozenset(("schema", "repository", "item_id", "root_token_id"))
 _TRANSITION_KEYS = frozenset(
     ("schema", "repository", "item_id", "prior_token_id", "next_token_id", "attempt")
 )
 _MAX_TOKENS = 256
+_UNAVAILABLE = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 
 def _refuse(*, code: str, detail: str) -> AuthorityRefusal:
@@ -206,11 +213,79 @@ def read_authority(
             query=query,
             historical=historical,
         )
-    except (
-        BeadsCommandError,
-        BeadsConnectionError,
-        BeadsCredentialMissingError,
-        BeadsMappingError,
-        BeadsTenantMissingError,
-    ) as exc:
+    except _UNAVAILABLE as exc:
+        return _refuse(code="incident-authority-unavailable", detail=str(exc))
+
+
+def _history(
+    *, client: BeadsClient, repository: str, item_id: str
+) -> tuple[IncidentReading, ...] | AuthorityRefusal:
+    root = _genesis(client=client, repository=repository, item_id=item_id)
+    if isinstance(root, AuthorityRefusal):
+        return root
+    chain = _walk(client=client, repository=repository, item_id=item_id, root=root)
+    if isinstance(chain, AuthorityRefusal):
+        return chain
+    history, current = chain
+    standing = client.show_issue(issue_id=current)
+    if standing.get("status") != "backlog" or standing.get("title") != TOKEN_TITLE:
+        return _refuse(code="incident-authority-changed", detail=current)
+    operations = tuple(attempt.operation_id for _, attempt in history)
+    return tuple(
+        IncidentReading(
+            attempt=attempt,
+            committed_token_id=token,
+            current_token_id=current,
+            is_current=index == len(history) - 1,
+            operation_ids=operations,
+        )
+        for index, (token, attempt) in enumerate(history)
+    )
+
+
+def _genesis_record(*, text: object) -> dict[str, Any] | None:
+    return decode_record(text=text, marker=GENESIS_MARKER, keys=_GENESIS_KEYS) or decode_record(
+        text=text, marker=GENESIS_MARKER, keys=FENCED_GENESIS_KEYS
+    )
+
+
+def _located_items(*, client: BeadsClient, repository: str | None) -> list[tuple[str, str]]:
+    """Locate incident items from genesis comments; the authenticated walk decides.
+
+    Token records are no-history records that `list_issues` does not return, so the
+    items themselves are the only enumerable locator.
+    """
+    located: set[tuple[str, str]] = set()
+    for record in client.list_issues():
+        item_id = record.get("id")
+        if not isinstance(item_id, str) or record.get("title") == TOKEN_TITLE:
+            continue
+        if record.get("comment_count") == 0:
+            continue
+        for comment in client.list_comments(issue_id=item_id):
+            genesis = _genesis_record(text=comment.get("text"))
+            found = None if genesis is None else genesis["repository"]
+            if isinstance(found, str) and repository in {None, found}:
+                located.add((found, item_id))
+    return sorted(located)
+
+
+def read_repository_history(
+    *, client: BeadsClient, repository: str | None
+) -> tuple[IncidentReading, ...] | AuthorityRefusal:
+    """Every committed attempt of every incident in a tenant, or one named refusal.
+
+    Genesis comments only LOCATE candidate incidents; each candidate is then
+    authenticated through its genesis and token chain. Any unreadable or invalid
+    chain refuses the whole read, so a broken ledger is never an empty one.
+    """
+    try:
+        readings: list[IncidentReading] = []
+        for found, item_id in _located_items(client=client, repository=repository):
+            history = _history(client=client, repository=found, item_id=item_id)
+            if isinstance(history, AuthorityRefusal):
+                return history
+            readings.extend(history)
+        return tuple(readings)
+    except _UNAVAILABLE as exc:
         return _refuse(code="incident-authority-unavailable", detail=str(exc))

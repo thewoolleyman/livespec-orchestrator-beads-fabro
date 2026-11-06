@@ -24,7 +24,10 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentReading,
 )
 from livespec_orchestrator_beads_fabro._incident_genesis import GenesisReceipt, GenesisRequest
-from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
+from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import (
+    read_authority,
+    read_repository_history,
+)
 from livespec_orchestrator_beads_fabro.effects._incident_authority_transition import (
     commit_transition,
 )
@@ -42,6 +45,7 @@ __all__: list[str] = [
     "commit_incident_transition",
     "publish_incident_genesis",
     "read_incident_authority",
+    "read_incident_history",
 ]
 
 
@@ -75,3 +79,10 @@ def publish_incident_genesis(
 ) -> GenesisReceipt | AuthorityRefusal:
     """Publish a first root by winning the item's current claim token, or refuse by name."""
     return publish_genesis(client=client, request=request, claim_tokens=claim_tokens, clock=clock)
+
+
+def read_incident_history(
+    *, client: BeadsClient, repository: str | None
+) -> tuple[IncidentReading, ...] | AuthorityRefusal:
+    """Authenticated historical readings of every incident attempt, never a guessed empty set."""
+    return read_repository_history(client=client, repository=repository)

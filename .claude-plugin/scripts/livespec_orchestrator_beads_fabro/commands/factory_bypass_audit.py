@@ -44,7 +44,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import replace
+from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._factory_bypass_gh import (
     DEFAULT_GH_SEAM,
@@ -58,18 +59,27 @@ from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths im
     is_product_py,
     product_policy,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_bypass_report_types import (
+    AuditPolicy,
+    AuditReport,
+    BypassFinding,
+    RecordedException,
+)
 from livespec_orchestrator_beads_fabro.commands._incident_provenance import (
     IncidentReceipt,
     matching_incident_receipt,
 )
-from livespec_orchestrator_beads_fabro.io import write_stdout
+from livespec_orchestrator_beads_fabro.commands._incident_receipt_loader import (
+    ReceiptLoader,
+    load_retained_receipts,
+    refusal_text,
+    resolve_receipts,
+)
+from livespec_orchestrator_beads_fabro.incident_authority import AuthorityRefusal
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
     "FACTORY_OVERRIDE_TRAILER",
-    "AuditPolicy",
-    "AuditReport",
-    "BypassFinding",
-    "RecordedException",
     "audit_pull_requests",
     "carries_factory_override",
     "main",
@@ -81,50 +91,9 @@ __all__: list[str] = [
 # The discovered factory App login as `gh pr list --json author` renders it.
 DEFAULT_FACTORY_APP_LOGIN = "app/thewoolleyman-factory-bot"
 DEFAULT_LIMIT = 100
+_EXIT_UNOBSERVABLE = 2
 # The git trailer key an author writes to declare an in-session product change.
 FACTORY_OVERRIDE_TRAILER = "Factory-Override:"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AuditPolicy:
-    """The audit's two axes: what counts as product code, and who is never flagged."""
-
-    factory_app_login: str
-    allow_authors: frozenset[str]
-    allow_labels: frozenset[str]
-    product_paths: ProductPathPolicy
-    repository: str = ""
-    incident_receipts: tuple[IncidentReceipt, ...] = ()
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BypassFinding:
-    """A merged PR that changed product code without going through the factory."""
-
-    number: int
-    title: str
-    author_login: str
-    product_paths: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class RecordedException:
-    """A recorded exception, including whether normal repayment remains outstanding."""
-
-    number: int
-    title: str
-    author_login: str
-    item_id: str = ""
-    repayment_outstanding: bool = False
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AuditReport:
-    """The audit outcome: how many PRs were scanned, which were flagged, which were declared."""
-
-    scanned: int
-    findings: tuple[BypassFinding, ...]
-    exceptions: tuple[RecordedException, ...]
 
 
 def carries_factory_override(*, pr: PullRequest) -> bool:
@@ -283,13 +252,30 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _may_need_receipts(*, prs: list[PullRequest], policy: AuditPolicy) -> bool:
+    """Whether any merged product-code PR is neither exempt nor already a declared override."""
+    return any(
+        any(is_product_py(path=path, policy=policy.product_paths) for path in pr.files)
+        and pr.author_login != policy.factory_app_login
+        and pr.author_login not in policy.allow_authors
+        and not any(label in policy.allow_labels for label in pr.labels)
+        for pr in prs
+    )
+
+
 def main(
     *,
     argv: list[str] | None = None,
     seam: GhSeam = DEFAULT_GH_SEAM,
-    incident_receipts: tuple[IncidentReceipt, ...] = (),
+    incident_receipts: tuple[IncidentReceipt, ...] | None = None,
+    receipt_loader: ReceiptLoader = load_retained_receipts,
 ) -> int:
-    """Supervisor for the factory-bypass audit. Always exits 0 (report-only)."""
+    """Supervisor for the factory-bypass audit. Report-only, but never blind to receipts.
+
+    `incident_receipts` None means "read the retained chains", which happens only when
+    a flagged-looking PR exists. An unreadable ledger exits 2 naming why: reporting a
+    PR as a bypass, or as clean, on receipts nobody could read is a wrong answer.
+    """
     args = _build_parser().parse_args(argv)
     policy = AuditPolicy(
         factory_app_login=args.factory_app_login,
@@ -301,7 +287,6 @@ def main(
             seam=seam,
         ),
         repository=args.repo or "",
-        incident_receipts=incident_receipts,
     )
     prs = fetch_merged_prs(
         repo=args.repo,
@@ -309,7 +294,17 @@ def main(
         merged_since=args.merged_since,
         seam=seam,
     )
-    report = audit_pull_requests(prs=prs, policy=policy)
+    receipts = resolve_receipts(
+        declared=incident_receipts,
+        needed=_may_need_receipts(prs=prs, policy=policy),
+        loader=receipt_loader,
+        repo=Path.cwd(),
+        repository=args.repo,
+    )
+    if isinstance(receipts, AuthorityRefusal):
+        write_stderr(text=f"factory-bypass audit {refusal_text(refusal=receipts)}")
+        return _EXIT_UNOBSERVABLE
+    report = audit_pull_requests(prs=prs, policy=replace(policy, incident_receipts=receipts))
     text = (
         render_json(report=report, policy=policy)
         if args.as_json

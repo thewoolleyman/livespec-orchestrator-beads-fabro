@@ -16,12 +16,10 @@ from livespec_orchestrator_beads_fabro.commands._factory_bypass_gh import PullRe
 from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths import (
     ProductPathPolicy,
 )
+from livespec_orchestrator_beads_fabro.commands._factory_bypass_report_types import AuditPolicy
 from livespec_orchestrator_beads_fabro.commands._factory_provenance_event import PullRequestEvent
 from livespec_orchestrator_beads_fabro.commands._incident_provenance import IncidentReceipt
-from livespec_orchestrator_beads_fabro.commands.factory_bypass_audit import (
-    AuditPolicy,
-    audit_pull_requests,
-)
+from livespec_orchestrator_beads_fabro.commands.factory_bypass_audit import audit_pull_requests
 from livespec_orchestrator_beads_fabro.commands.factory_provenance_check import (
     decide,
     main,
