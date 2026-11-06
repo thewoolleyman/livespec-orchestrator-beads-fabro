@@ -584,8 +584,8 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     // written beside the implement and review-fix ones under its own name. A
     // failed settled run re-enters `fix` with that brief before janitor can
     // refresh the sandbox: a commit recording a rebase resolution can fail
-    // while the rebase remains in progress, and a fresh fix turn is the only
-    // node that can repair it.
+    // while the rebase remains in progress, and a fresh fix turn repairs it
+    // before janitor's defensive cleanup is needed.
     fix_commit_settle [
         label="Settle commit runs: wait out any commit run the fix turn left running"
         shape=parallelogram
