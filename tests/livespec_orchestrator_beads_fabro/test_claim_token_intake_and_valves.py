@@ -13,10 +13,12 @@ from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_TOKEN_METADATA_KEY,
     create_claim_token,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import move_item
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
 )
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 from returns.unsafe import unsafe_perform_io
 
@@ -93,4 +95,30 @@ def test_intake_wins_the_current_token_before_its_status_write(tmp_path: Path) -
     assert client.show_issue(issue_id=token)["status"] == "closed"
     successor = client.show_issue(issue_id="bd-claim-intake")["metadata"][CLAIM_TOKEN_METADATA_KEY]
     assert successor != token
+    reset_fake_singleton()
+
+
+def test_move_valve_wins_the_current_token_before_its_status_write(tmp_path: Path) -> None:
+    """A losing or winning move cannot make an unfenced lifecycle transition."""
+    reset_fake_singleton()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _enable_claim_tokens(repo=repo)
+    config = _config(repo_root=repo)
+    token = _seed(config=config, issue_id="bd-claim-move")
+    item = materialize_work_items(records=read_work_items(path=config))["bd-claim-move"]
+
+    result = move_item(
+        config=config,
+        item=item,
+        aid="move:bd-claim-move:ready",
+        target_status="ready",
+    )
+
+    assert result["status"] == "green"
+    client = make_beads_client(config=config)
+    assert client.show_issue(issue_id=token)["status"] == "closed"
+    assert (
+        client.show_issue(issue_id="bd-claim-move")["metadata"][CLAIM_TOKEN_METADATA_KEY] != token
+    )
     reset_fake_singleton()
