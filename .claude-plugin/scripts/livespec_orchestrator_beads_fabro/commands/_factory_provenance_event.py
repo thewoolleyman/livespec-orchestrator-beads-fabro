@@ -55,6 +55,7 @@ class PullRequestEvent:
     labels: tuple[str, ...]
     base_sha: str
     head_sha: str
+    pr_number: int = 0
 
 
 def _mapping(*, value: object) -> dict[str, object]:
@@ -86,15 +87,18 @@ def parse_event(*, payload_text: str) -> PullRequestEvent | None:
         return None
     if not isinstance(parsed, dict):
         return None
-    raw_pull_request = cast("dict[str, object]", parsed).get("pull_request")
+    payload = cast("dict[str, object]", parsed)
+    raw_pull_request = payload.get("pull_request")
     if not isinstance(raw_pull_request, dict):
         return None
     pull_request = cast("dict[str, object]", raw_pull_request)
+    number = payload.get("number")
     return PullRequestEvent(
         author_login=_text(mapping=_mapping(value=pull_request.get("user")), key="login"),
         labels=_label_names(pull_request=pull_request),
         base_sha=_text(mapping=_mapping(value=pull_request.get("base")), key="sha"),
         head_sha=_text(mapping=_mapping(value=pull_request.get("head")), key="sha"),
+        pr_number=number if type(number) is int else 0,
     )
 
 

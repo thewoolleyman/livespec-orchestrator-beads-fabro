@@ -14,7 +14,6 @@ from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths im
 from livespec_orchestrator_beads_fabro.commands._factory_provenance_event import PullRequestEvent
 from livespec_orchestrator_beads_fabro.commands.factory_provenance_check import (
     FACTORY_APP_LOGINS,
-    FACTORY_OVERRIDE_LABEL,
     decide,
     exit_code,
     main,
@@ -98,15 +97,15 @@ def test_both_factory_app_login_spellings_pass(login: str) -> None:
     assert exit_code(verdict=verdict) == 0
 
 
-def test_the_factory_override_label_passes_a_non_factory_author() -> None:
+def test_a_label_does_not_pass_a_non_factory_author() -> None:
     verdict = decide(
-        event=_event(labels=(FACTORY_OVERRIDE_LABEL,)),
+        event=_event(labels=("factory-override",)),
         changed_paths=(_PRODUCT_PY,),
         policy=_POLICY,
     )
-    assert verdict.outcome == "pass"
-    assert verdict.override_labeled is True
-    assert permits_merge(verdict=verdict) is True
+    assert verdict.outcome == "fail"
+    assert verdict.incident_receipt is None
+    assert permits_merge(verdict=verdict) is False
 
 
 def test_a_diff_touching_no_product_python_permits_the_merge() -> None:
@@ -129,21 +128,15 @@ def test_the_failure_message_names_the_author_and_the_product_paths() -> None:
     assert _PRODUCT_PY in message
     assert _SPEC_MD not in message
     assert FACTORY_APP_LOGINS[0] in message
-    assert f"`{FACTORY_OVERRIDE_LABEL}` label" in message
-    assert "pull request body" in message
+    assert "retained exact incident receipt" in message
+    assert "label, trailer, marker" in message
 
 
 def test_the_pass_message_names_which_ground_admitted_the_change() -> None:
     app_verdict = decide(
         event=_event(login=FACTORY_APP_LOGINS[0]), changed_paths=(_PRODUCT_PY,), policy=_POLICY
     )
-    override_verdict = decide(
-        event=_event(labels=(FACTORY_OVERRIDE_LABEL,)),
-        changed_paths=(_PRODUCT_PY,),
-        policy=_POLICY,
-    )
     assert "factory GitHub App" in render_verdict(verdict=app_verdict)
-    assert FACTORY_OVERRIDE_LABEL in render_verdict(verdict=override_verdict)
 
 
 def test_the_vacuous_message_says_it_observed_nothing_and_does_not_block() -> None:
@@ -232,11 +225,11 @@ def test_main_takes_the_event_path_from_the_actions_environment(
 ) -> None:
     repo = _repo_with_declaration(root=tmp_path)
     event_path = tmp_path / "event.json"
-    _write_event(path=event_path, login="thewoolleyman", labels=(FACTORY_OVERRIDE_LABEL,))
+    _write_event(path=event_path, login="thewoolleyman", labels=("factory-override",))
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
     code = main(argv=["--repo", str(repo), "--changed-file", _PRODUCT_PY])
-    assert code == 0
-    assert FACTORY_OVERRIDE_LABEL in capsys.readouterr().out
+    assert code == 1
+    assert "matches no retained exact incident receipt" in capsys.readouterr().err
 
 
 def test_main_refuses_when_no_event_payload_is_named(

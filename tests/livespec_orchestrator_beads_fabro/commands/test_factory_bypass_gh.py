@@ -102,7 +102,7 @@ def test_fetch_merged_prs_default_window_requests_commits() -> None:
     assert prs == []
     args = recorder[0]
     assert args[:6] == ["pr", "list", "--state", "merged", "--limit", "100"]
-    assert args[args.index("--json") + 1] == "number,title,author,labels,files,commits"
+    assert args[args.index("--json") + 1] == "number,title,author,labels,files,commits,headRefOid"
     assert "--repo" not in args
     assert "--search" not in args
 
