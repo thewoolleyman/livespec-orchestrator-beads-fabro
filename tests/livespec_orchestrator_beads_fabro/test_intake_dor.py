@@ -33,6 +33,10 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
+    CLAIM_TOKEN_METADATA_KEY,
+    create_claim_token,
+)
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
@@ -173,6 +177,34 @@ def test_intake_holds_an_out_of_enum_factory_safety_label_with_a_named_finding(
     assert "mutates-host-machinery" in finding
     assert "needs-privileged-host" in finding
     assert "needs-host-only-input" in finding
+
+
+def test_intake_leaves_the_item_unchanged_when_its_claim_token_is_unreadable(
+    tmp_path: Path,
+) -> None:
+    """A closed token without a readable successor never admits intake's write."""
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro":{"dispatcher":{"claim_tokens":true}}}',
+        encoding="utf-8",
+    )
+    issue_id = "li-intake-claim-unreadable"
+    _seed_issue(
+        issue_id=issue_id,
+        description=_description(
+            assertion="The intake route writes only after it wins the token.",
+            references=_RESOLVABLE_HEADING,
+        ),
+    )
+    client = make_beads_client(config=_config(repo_root=repo))
+    token = create_claim_token(client=client)
+    client.update_issue(issue_id=issue_id, metadata={CLAIM_TOKEN_METADATA_KEY: token})
+    client.close_issue_without_verdict(issue_id=token, reason="unreadable")
+
+    verdict = _route(issue_id=issue_id, repo=repo)
+
+    assert verdict == "open"
+    assert _status(issue_id=issue_id) == "open"
 
 
 def test_evaluate_routes_epic_to_backlog() -> None:

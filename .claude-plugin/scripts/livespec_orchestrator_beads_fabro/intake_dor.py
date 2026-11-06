@@ -100,7 +100,7 @@ exceptions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from returns.io import IOFailure, IOResult, IOSuccess
 from returns.pipeline import is_successful
@@ -114,6 +114,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro._intake_factory_size_gate import (
     apply_intake_factory_size_gate,
 )
+from livespec_orchestrator_beads_fabro._store_claim_tokens import change_claim
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     record_size_justification,
 )
@@ -138,6 +139,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
+    resolve_claim_tokens,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ADMISSION_POLICY,
@@ -183,6 +185,7 @@ _READY_STATUS = "ready"
 _BACKLOG_STATUS = "backlog"
 _BLOCKED_STATUS = "blocked"
 _RETIRED_INTAKE_LABELS = ["not-yet-actionable"]
+_CLAIM_TOKENS_DISABLED = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -304,73 +307,13 @@ def apply_intake_dor(
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
     findings = filing_findings(item=item, repo_root=path.repo_root)
     factory_safety_finding = out_of_enum_factory_safety_finding(value=item.factory_safety)
-    if status == _PENDING_APPROVAL_STATUS and not item.depends_on:
-        repo_root = path.repo_root
-        if repo_root is None:
-            msg = "StoreConfig.repo_root is required for intake admission policy resolution"
-            raise TypeError(msg)
-        # An unreadable `.livespec.jsonc` falls back to the safe `manual`
-        # default, visibly and here rather than inside the reader: an item
-        # whose policy cannot be read waits for a human instead of being
-        # routed straight to `ready`. `unsafe_perform_io` is required —
-        # `IOResult.value_or` returns `IO[value]`, not the value.
-        policy = unsafe_perform_io(
-            effective_admission_policy(item=item, cwd=repo_root).value_or(DEFAULT_ADMISSION_POLICY)
-        )
-        # An outstanding MECHANICAL finding stops the approval here. An ADVISORY
-        # one deliberately does not: only the gate can judge a test-existence or
-        # scenario-reference form, and withholding `ready` on a judgement this
-        # surface cannot make would hand the operator a refusal nothing clears.
-        # The SEMANTIC half, which only the judgement can decide, runs last and
-        # only where the mechanical half has already admitted the item: the
-        # judgement is a model call, and spending one on an item a free parse
-        # already holds back buys nothing. A judgement that could not run
-        # reports `holds` False, so the item routes exactly as it did before
-        # this clause existed while the record on it says the judgement did not
-        # happen.
-        # THE SPEC-CHANGE TIER IS CLASSIFIED HERE, which is the clause's FILING
-        # cadence point, and a held item is then withheld from `ready` — "The
-        # item MUST be held out of `ready` until BOTH hold".
-        #
-        # IT RUNS UNCONDITIONALLY rather than as a conjunct of the condition
-        # below, and that is the one thing about its placement worth reading
-        # twice. The clause's cadence is "every implement-kind item MUST be
-        # classified", with no exemption for an item whose admission policy
-        # happens to be `manual` — and the release arm it also serves is stated
-        # for BOTH policies: `auto` routes a released item to `ready` and
-        # `manual` rests it at `pending-approval`. Folded into the condition it
-        # would sit behind `policy == _AUTO_ADMISSION`, so a manual item would
-        # never be classified at all: its tier would never be recorded, the
-        # plan-child disposition and the pre-dispatch wall would both read a
-        # missing datum, and its hold could never be released because nothing
-        # would ever re-judge it. Measured while writing this: the manual case
-        # of Scenario 206 found NO ledger comment on the item.
-        #
-        # The RELEASE needs no pass of its own, which is why there is none: the
-        # classification is reused only while the specification it was taken
-        # against is unchanged, so the revision that ratifies the linked topic
-        # retires the record, the classification is re-taken against the
-        # ratified tree, returns `stated`, and the hold simply stops standing.
-        # The item then routes exactly as its own `admission_policy` decides.
-        #
-        # It is spent even where a MECHANICAL finding already withholds `ready`,
-        # unlike the Definition-of-Done judgement below. The two differ in what
-        # the spend buys: that judgement's verdict is consumed only by this
-        # routing decision, while the tier record is read later by the
-        # pre-dispatch wall and by plan-child disposition — so an item repaired
-        # and re-filed arrives already classified, and the reuse makes the
-        # second filing free.
-        spec_change = classify_and_hold(item=item, repo=repo_root, path=path, stage=STAGE_FILING)
-        if (
-            policy == _AUTO_ADMISSION
-            and not findings.withholds_ready
-            and factory_safety_finding is None
-            and spec_change is None
-            and not judge_item_definition_of_done(
-                item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
-            ).holds
-        ):
-            status = _READY_STATUS
+    status = _auto_admission_status(
+        path=path,
+        item=item,
+        status=status,
+        findings=findings,
+        factory_safety_finding=factory_safety_finding,
+    )
 
     # The triage marker is stamped for EVERY verdict, not just the routed-on
     # ones: it records that the gate SAW this item, which is the only thing
@@ -382,12 +325,23 @@ def apply_intake_dor(
     remove_labels = list(_RETIRED_INTAKE_LABELS)
     if status != _BLOCKED_STATUS:
         remove_labels.append(_BLOCKED_REASON_LABEL)
-    client.update_issue(
-        issue_id=item_id,
+    claim_tokens = _CLAIM_TOKENS_DISABLED
+    if path.repo_root is not None:
+        claim_tokens = unsafe_perform_io(
+            resolve_claim_tokens(cwd=path.repo_root).value_or(_CLAIM_TOKENS_DISABLED)
+        )
+    changed = change_claim(
+        client=client,
+        work_item_id=item_id,
+        writer="intake",
+        intent=f"route:{status}",
+        claim_tokens=claim_tokens,
         status=status,
         add_labels=add_labels,
         remove_labels=remove_labels,
     )
+    if changed.outcome != "applied":
+        return IOSuccess(cast("Verdict", item.status))
     for body in findings.comment_bodies():
         client.add_comment(issue_id=item_id, body=body)
     _record_factory_safety_finding(
@@ -439,6 +393,86 @@ def _routed_status(*, verdict: Verdict, has_dependencies: bool) -> Verdict:
     if has_dependencies and verdict == _PENDING_APPROVAL_STATUS:
         return _PENDING_APPROVAL_STATUS
     return verdict
+
+
+def _auto_admission_status(
+    *,
+    path: StoreConfig,
+    item: WorkItem,
+    status: Verdict,
+    findings: FilingFindings,
+    factory_safety_finding: str | None,
+) -> Verdict:
+    """Apply the post-triage auto-admission walls to one pending item."""
+    if status != _PENDING_APPROVAL_STATUS or item.depends_on:
+        return status
+    repo_root = path.repo_root
+    if repo_root is None:
+        msg = "StoreConfig.repo_root is required for intake admission policy resolution"
+        raise TypeError(msg)
+    # An unreadable `.livespec.jsonc` falls back to the safe `manual`
+    # default, visibly and here rather than inside the reader: an item
+    # whose policy cannot be read waits for a human instead of being
+    # routed straight to `ready`. `unsafe_perform_io` is required —
+    # `IOResult.value_or` returns `IO[value]`, not the value.
+    policy = unsafe_perform_io(
+        effective_admission_policy(item=item, cwd=repo_root).value_or(DEFAULT_ADMISSION_POLICY)
+    )
+    # An outstanding MECHANICAL finding stops the approval here. An ADVISORY
+    # one deliberately does not: only the gate can judge a test-existence or
+    # scenario-reference form, and withholding `ready` on a judgement this
+    # surface cannot make would hand the operator a refusal nothing clears.
+    # The SEMANTIC half, which only the judgement can decide, runs last and
+    # only where the mechanical half has already admitted the item: the
+    # judgement is a model call, and spending one on an item a free parse
+    # already holds back buys nothing. A judgement that could not run
+    # reports `holds` False, so the item routes exactly as it did before
+    # this clause existed while the record on it says the judgement did not
+    # happen.
+    # THE SPEC-CHANGE TIER IS CLASSIFIED HERE, which is the clause's FILING
+    # cadence point, and a held item is then withheld from `ready` — "The
+    # item MUST be held out of `ready` until BOTH hold".
+    #
+    # IT RUNS UNCONDITIONALLY rather than as a conjunct of the condition
+    # below, and that is the one thing about its placement worth reading
+    # twice. The clause's cadence is "every implement-kind item MUST be
+    # classified", with no exemption for an item whose admission policy
+    # happens to be `manual` — and the release arm it also serves is stated
+    # for BOTH policies: `auto` routes a released item to `ready` and
+    # `manual` rests it at `pending-approval`. Folded into the condition it
+    # would sit behind `policy == _AUTO_ADMISSION`, so a manual item would
+    # never be classified at all: its tier would never be recorded, the
+    # plan-child disposition and the pre-dispatch wall would both read a
+    # missing datum, and its hold could never be released because nothing
+    # would ever re-judge it. Measured while writing this: the manual case
+    # of Scenario 206 found NO ledger comment on the item.
+    #
+    # The RELEASE needs no pass of its own, which is why there is none: the
+    # classification is reused only while the specification it was taken
+    # against is unchanged, so the revision that ratifies the linked topic
+    # retires the record, the classification is re-taken against the
+    # ratified tree, returns `stated`, and the hold simply stops standing.
+    # The item then routes exactly as its own `admission_policy` decides.
+    #
+    # It is spent even where a MECHANICAL finding already withholds `ready`,
+    # unlike the Definition-of-Done judgement below. The two differ in what
+    # the spend buys: that judgement's verdict is consumed only by this
+    # routing decision, while the tier record is read later by the
+    # pre-dispatch wall and by plan-child disposition — so an item repaired
+    # and re-filed arrives already classified, and the reuse makes the
+    # second filing free.
+    spec_change = classify_and_hold(item=item, repo=repo_root, path=path, stage=STAGE_FILING)
+    if (
+        policy != _AUTO_ADMISSION
+        or findings.withholds_ready
+        or factory_safety_finding is not None
+        or spec_change is not None
+        or judge_item_definition_of_done(
+            item=item, repo=repo_root, path=path, stage=STAGE_PRE_ADMISSION
+        ).holds
+    ):
+        return status
+    return _READY_STATUS
 
 
 def _record_factory_safety_finding(
