@@ -8,6 +8,7 @@ test pass while the factory ran different bytes.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -88,7 +89,10 @@ def test_repeated_refresh_failure_at_an_unchanged_fix_head_exits_non_converged(
     repo = _repo(tmp_path=tmp_path)
     first = _start_failed_refresh(repo=repo)
     assert first.returncode != 0
-    assert _run(node="janitor_failure_route", repo=repo).returncode == 0
+    first_route = _run(node="janitor_refresh_route", repo=repo)
+    assert first_route.returncode == 0
+    assert json.loads(first_route.stdout) == {"preferred_next_label": "refresh_repair"}
+    assert _run(node="refresh_repair", repo=repo).returncode == 0
 
     unchanged_head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
@@ -96,6 +100,10 @@ def test_repeated_refresh_failure_at_an_unchanged_fix_head_exits_non_converged(
     assert _run(node="fix_progress_route", repo=repo).returncode == 0
     second = _start_failed_refresh(repo=repo)
     assert second.returncode != 0
+    repeated_route = _run(node="janitor_refresh_route", repo=repo)
+
+    assert repeated_route.returncode == 0
+    assert json.loads(repeated_route.stdout) == {"preferred_next_label": "fix"}
     repeated = _run(node="janitor_failure_route", repo=repo)
 
     assert repeated.returncode != 0
