@@ -23,6 +23,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_pin_snapsho
 from livespec_orchestrator_beads_fabro.commands._needs_attention_capacity import (
     capacity_items,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_claim_tokens import (
+    claim_token_missing_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
     composed_conformant,
@@ -69,7 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_ready_aging imp
     ready_aging_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_ready_aging import (
-    utc_now_iso as _ready_aging_utc_now_iso,
+    utc_now_iso as _utc_now_iso,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoption import (
     default_release_adoption_bases,
@@ -130,10 +133,8 @@ def main(*, argv: list[str] | None = None) -> int:
         work_items_path=args.work_items_path,
         include_hygiene=not args.skip_hygiene,
     )
-    if args.as_json:
-        _ = write_stdout(text=render_json(attention=attention))
-    else:
-        _ = write_stdout(text=render_markdown(attention=attention))
+    render = render_json if args.as_json else render_markdown
+    _ = write_stdout(text=render(attention=attention))
     return 0
 
 
@@ -341,12 +342,14 @@ def build_attention(
                 repo=repo_name,
                 records=read_intake_triage_records(path=config.work_items_path),
             )
+            # The row the claim-token cutover owes. Once `dispatcher.claim_tokens`
+            # is true, an item naming no current token is refused by every claim
+            # writer and reported by no lane above: nothing is stranded, held or
+            # aging, the writers simply stand down. Composes nothing, and reads
+            # nothing, while the key is false or absent.
+            + claim_token_missing_items(project_root=project_root, repo=repo_name, config=config)
             + hygiene_scan
         )
-
-
-def _utc_now_iso() -> str:
-    return _ready_aging_utc_now_iso()
 
 
 def render_json(*, attention: list[AttentionItem]) -> str:

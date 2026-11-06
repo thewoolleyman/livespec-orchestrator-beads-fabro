@@ -125,6 +125,27 @@ public module per query-only skill:
   it changed nothing, while an unconfirmed genesis is REFUSED carrying
   its remedy, because another writer may have migrated the epic in the
   same minute and that is state a human resolves.
+- `migrate_claim_tokens.py` — the orchestrator-PRIVATE claim-token
+  migration pass contracts.md's "Claim tokens" rule requires per tenant
+  BEFORE `dispatcher.claim_tokens` is committed `true` there (NOT a
+  contract CLI and NOT a skill surface). It names a fresh open current
+  token on every non-closed item that names no open token (none, a
+  closed one or a discarded one) and leaves every item already naming
+  an open token unchanged, so an interrupted pass is finished by
+  running it again. It WRITES ONLY with
+  `--confirm-claim-writers-stopped`: the pass must run while every
+  claim writer of the tenant is stopped, writers may run on other
+  hosts, and nothing on this host can measure that, so the flag is the
+  operator's attestation. Without it the command surveys and writes
+  nothing. Exit 0 means every non-closed item names an open token, in
+  either mode, which makes the same command the cutover precondition
+  check. The decisions and the writes live in
+  `_store_claim_token_migration.py`; an item whose named token cannot
+  be read is HELD (`claim-token-unobservable`), never renamed.
+  `_needs_attention_claim_tokens.py` is the lane the same rule owes
+  after the cutover: one `hygiene:claim-token-missing:<id>` row per
+  non-closed item naming no current token, composed only while the key
+  is `true`, whose handoff is the SURVEY form of this command.
 
 Each public module exports `main(argv=None) -> int` (the supervisor
 the wrapper calls) plus its named helpers, all enumerated in
