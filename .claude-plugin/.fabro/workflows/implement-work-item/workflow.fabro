@@ -585,6 +585,29 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 1500 --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; exit 0"
     ]
 
+    // A successful fix is useful only when it advances the head that janitor
+    // just rejected. The next failed janitor visit consumes an unchanged-head
+    // marker and takes the existing `non_converged` exit; an advanced head
+    // follows the ordinary route back through janitor.
+    fix_progress_route [
+        label="Fix progress: record an unchanged failed janitor head"
+        shape=parallelogram
+        timeout="60s"
+        max_visits=8
+        script="state=$(git rev-parse --git-path livespec-publication) || exit $?; prior=\"$state/livespec-janitor-failed-head\"; marker=\"$state/livespec-fix-no-progress-head\"; repeat=\"$state/livespec-fix-no-progress-repeated-janitor-failure\"; rm -f \"$repeat\"; if test ! -s \"$prior\"; then rm -f \"$marker\"; exit 0; fi; before=$(cat \"$prior\"); head=$(git rev-parse HEAD) || exit $?; if test \"$head\" = \"$before\"; then printf '%s\\n' \"$head\" > \"$marker\"; echo \"LIVESPEC_FIX_NO_PROGRESS: fix completed without changing the janitor-failed head $head; one repeated janitor failure will take the existing non-converged exit\" >&2; else rm -f \"$marker\"; fi; exit 0"
+    ]
+
+    // A failed janitor visit records the head its fix must advance. A repeated
+    // failure at its unchanged head exits through the existing terminal rather
+    // than paying for another fix turn and another full aggregate.
+    janitor_failure_route [
+        label="Janitor failure: classify repeated unchanged-head failure"
+        shape=parallelogram
+        timeout="60s"
+        max_visits=8
+        script="state=$(git rev-parse --git-path livespec-publication) || exit $?; mkdir -p \"$state\"; failed=\"$state/livespec-janitor-failed-head\"; marker=\"$state/livespec-fix-no-progress-head\"; repeat=\"$state/livespec-fix-no-progress-repeated-janitor-failure\"; head=$(git rev-parse HEAD) || exit $?; if test -s \"$marker\" && test \"$(cat \"$marker\")\" = \"$head\"; then printf '%s\\n' \"$head\" > \"$repeat\"; echo \"LIVESPEC_FIX_LOOP_NON_CONVERGED: janitor failed again after fix left working-branch HEAD unchanged at $head; routing to the existing non-converged exit\" >&2; exit 1; fi; rm -f \"$marker\" \"$repeat\"; printf '%s\\n' \"$head\" > \"$failed\"; exit 0"
+    ]
+
     // Draft publication (S5 / bd-ib-b4u6b7; SPECIFICATION/contracts.md
     // "Definition-of-Done and Proof-of-Done stages", ratified v114): a COMMAND
     // node entered only from a GREEN janitor and exiting only to proof_capture.
@@ -2212,7 +2235,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         label="Non-converged: janitor, review-fix, or recapture cap hit"
         shape=parallelogram
         timeout="1800s"
-        script="review_exhausted=$(git rev-parse --git-path livespec-review-fix-bound-exhausted 2>/dev/null || true); review_count=$(cat \"$review_exhausted\" 2>/dev/null || true); if test \"$review_count\" -ge 3 2>/dev/null; then echo 'LIVESPEC_NON_CONVERGED: LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED: review returned fix after the review-fix bound of 3 rounds was spent; routing to non_converged before entering disposition again, then back to the Dispatcher for needs-regroom' >&2; exit 1; fi; state=$(git rev-parse --git-path livespec-publication 2>/dev/null || true); count=$(cat \"$state/livespec-recapture-verdicts\" 2>/dev/null || echo 0); if test \"$count\" -ge 3 2>/dev/null; then findings=''; branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -n \"$branch\"; then number=$(gh pr list --head \"$branch\" --state all --json number --jq 'map(.number)|max' 2>/dev/null || true); if test -n \"$number\" && test \"$number\" != null; then findings=$(gh pr view \"$number\" --json comments --jq '(.comments | map(select(.body | startswith(\"Review findings\")) | (.body | split(\"\\n\") | map(select(test(\"BLOCKING\") and test(\"proof-record\"))) | unique))) as $r | ($r | add | group_by(.) | map(select(length > 1) | first)) as $rec | (if ($rec | length) > 0 then $rec else ($r | last) end) | join(\" | \")' 2>/dev/null | head -c 600 || true); fi; fi; if test -z \"$findings\"; then findings='none could be read from the review records on the pull request'; fi; printf '%s\\n' \"LIVESPEC_RECAPTURE_EXHAUSTED: recapture cap reached (review ended with a recapture verdict $count times; the cap is two recapture laps); recurring proof-record findings: $findings; the captured Proof of Done record never converged, so it is routed to a human for proof-record repair\" >&2; exit 1; fi; echo 'LIVESPEC_NON_CONVERGED: janitor fix-loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
+        script="state=$(git rev-parse --git-path livespec-publication 2>/dev/null || true); repeated_head=$(cat \"$state/livespec-fix-no-progress-repeated-janitor-failure\" 2>/dev/null || true); if test -n \"$repeated_head\"; then printf '%s\\n' \"LIVESPEC_NON_CONVERGED: janitor failed again after fix left working-branch HEAD unchanged at $repeated_head; routing back to the Dispatcher for needs-regroom\" >&2; exit 1; fi; review_exhausted=$(git rev-parse --git-path livespec-review-fix-bound-exhausted 2>/dev/null || true); review_count=$(cat \"$review_exhausted\" 2>/dev/null || true); if test \"$review_count\" -ge 3 2>/dev/null; then echo 'LIVESPEC_NON_CONVERGED: LIVESPEC_REVIEW_FIX_BOUND_EXHAUSTED: review returned fix after the review-fix bound of 3 rounds was spent; routing to non_converged before entering disposition again, then back to the Dispatcher for needs-regroom' >&2; exit 1; fi; count=$(cat \"$state/livespec-recapture-verdicts\" 2>/dev/null || echo 0); if test \"$count\" -ge 3 2>/dev/null; then findings=''; branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -n \"$branch\"; then number=$(gh pr list --head \"$branch\" --state all --json number --jq 'map(.number)|max' 2>/dev/null || true); if test -n \"$number\" && test \"$number\" != null; then findings=$(gh pr view \"$number\" --json comments --jq '(.comments | map(select(.body | startswith(\"Review findings\")) | (.body | split(\"\\n\") | map(select(test(\"BLOCKING\") and test(\"proof-record\"))) | unique))) as $r | ($r | add | group_by(.) | map(select(length > 1) | first)) as $rec | (if ($rec | length) > 0 then $rec else ($r | last) end) | join(\" | \")' 2>/dev/null | head -c 600 || true); fi; fi; if test -z \"$findings\"; then findings='none could be read from the review records on the pull request'; fi; printf '%s\\n' \"LIVESPEC_RECAPTURE_EXHAUSTED: recapture cap reached (review ended with a recapture verdict $count times; the cap is two recapture laps); recurring proof-record findings: $findings; the captured Proof of Done record never converged, so it is routed to a human for proof-record repair\" >&2; exit 1; fi; echo 'LIVESPEC_NON_CONVERGED: janitor fix-loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
     ]
 
     start -> dod_gate
@@ -2332,13 +2355,16 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     // conflicted or its refreshed head failed the gate (Scenario 305): the janitor then
     // left a `stage: janitor` refresh-repair brief, which the route reads. Any other red
     // janitor still takes the ordinary `fix` arm, the unconditional fallthrough.
-    janitor -> janitor_refresh_route [label="Red", condition="outcome!=succeeded"]
+    janitor -> janitor_failure_route [label="Red", condition="outcome!=succeeded"]
+    janitor_failure_route -> non_converged [label="Repeated unchanged-head failure", condition="outcome=failed"]
+    janitor_failure_route -> janitor_refresh_route
     janitor_refresh_route -> refresh_repair [label="refresh brief recorded", condition="preferred_label=refresh_repair"]
     janitor_refresh_route -> fix
     janitor -> non_converged [label="Exhausted (fix-loop cap)"]
     fix -> needs_human [label="Blocked", condition="outcome=failed"]
     fix -> fix_commit_settle
-    fix_commit_settle -> janitor_admission
+    fix_commit_settle -> fix_progress_route
+    fix_progress_route -> janitor_admission
     janitor_admission -> needs_human [label="Janitor visit bound exhausted", condition="outcome=failed"]
     janitor_admission -> janitor
 
