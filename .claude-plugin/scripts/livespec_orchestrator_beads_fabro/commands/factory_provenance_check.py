@@ -62,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._factory_provenance_event import
     diff_range,
     read_changed_paths,
     read_event,
+    read_landed_commits,
 )
 from livespec_orchestrator_beads_fabro.commands._incident_provenance import (
     IncidentReceipt,
@@ -249,10 +250,24 @@ def main(
             )
         )
         return _EXIT_UNOBSERVABLE
+    landed_commits = ()
+    if incident_receipts:
+        landed_commits = read_landed_commits(event=event, repo=repo, runner=runner)
+        if landed_commits is None:
+            write_stderr(
+                text=(
+                    f"factory-provenance check could not read the commits for "
+                    f"{diff_range(event=event)}; a shallow checkout needs "
+                    "fetch-depth: 0.\n"
+                )
+            )
+            return _EXIT_UNOBSERVABLE
     verdict = decide(
         event=event,
         changed_paths=changed_paths,
         policy=resolve_product_policy(repo=repo),
+        repository=event.repository or None,
+        landed_commits=landed_commits,
         incident_receipts=incident_receipts,
     )
     message = f"{render_verdict(verdict=verdict)}\n"

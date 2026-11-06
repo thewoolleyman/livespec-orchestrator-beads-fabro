@@ -78,6 +78,9 @@ def _write_event(*, path: Path, login: str, labels: tuple[str, ...] = ()) -> Non
 class ExactReceiptRunner:
     """The gate's two git reads for a retained, exact incident receipt."""
 
+    def __init__(self) -> None:
+        self.argvs: list[list[str]] = []
+
     def run(
         self,
         *,
@@ -88,6 +91,7 @@ class ExactReceiptRunner:
         stdin: int | None = None,
     ) -> CommandResult:
         del cwd, timeout_seconds, env, stdin
+        self.argvs.append(argv)
         if argv[:3] == ["git", "diff", "--name-only"]:
             return CommandResult(exit_code=0, stdout=f"{_PRODUCT_PY}\n", stderr="")
         assert argv[:3] == ["git", "rev-list", "--reverse"]
@@ -243,15 +247,20 @@ def test_main_passes_only_a_retained_receipt_matching_repository_pr_head_and_com
         landed_commits=("landed1234",),
         repayment_required=True,
     )
+    runner = ExactReceiptRunner()
     code = main(
         argv=["--event-path", str(event_path), "--repo", str(repo)],
-        runner=ExactReceiptRunner(),
+        runner=runner,
         incident_receipts=(receipt,),
     )
     captured = capsys.readouterr()
     assert code == 0
     assert "retained exact incident receipt" in captured.out
     assert captured.err == ""
+    assert runner.argvs == [
+        ["git", "diff", "--name-only", "base1234...head5678"],
+        ["git", "rev-list", "--reverse", "base1234..head5678"],
+    ]
 
 
 def test_main_reads_the_changed_paths_from_git_when_no_changed_file_is_given(

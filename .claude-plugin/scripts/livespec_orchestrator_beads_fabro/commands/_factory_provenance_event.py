@@ -42,6 +42,7 @@ __all__: list[str] = [
     "parse_event",
     "read_changed_paths",
     "read_event",
+    "read_landed_commits",
 ]
 
 _DIFF_TIMEOUT_SECONDS = 30.0
@@ -56,6 +57,7 @@ class PullRequestEvent:
     base_sha: str
     head_sha: str
     pr_number: int = 0
+    repository: str = ""
 
 
 def _mapping(*, value: object) -> dict[str, object]:
@@ -99,6 +101,7 @@ def parse_event(*, payload_text: str) -> PullRequestEvent | None:
         base_sha=_text(mapping=_mapping(value=pull_request.get("base")), key="sha"),
         head_sha=_text(mapping=_mapping(value=pull_request.get("head")), key="sha"),
         pr_number=number if type(number) is int else 0,
+        repository=_text(mapping=_mapping(value=payload.get("repository")), key="full_name"),
     )
 
 
@@ -131,3 +134,20 @@ def read_changed_paths(
     if diff.exit_code != 0:
         return None
     return tuple(line.strip() for line in diff.stdout.splitlines() if line.strip())
+
+
+def read_landed_commits(
+    *,
+    event: PullRequestEvent,
+    repo: Path,
+    runner: CommandRunner,
+) -> tuple[str, ...] | None:
+    """Read the exact ordered commits proposed by this pull request, or refuse."""
+    commits = runner.run(
+        argv=["git", "rev-list", "--reverse", f"{event.base_sha}..{event.head_sha}"],
+        cwd=repo,
+        timeout_seconds=_DIFF_TIMEOUT_SECONDS,
+    )
+    if commits.exit_code != 0:
+        return None
+    return tuple(line.strip() for line in commits.stdout.splitlines() if line.strip())

@@ -3,22 +3,28 @@
 from __future__ import annotations
 
 import importlib
+import json
+from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._factory_bypass_gh import PullRequest
 from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths import (
     ProductPathPolicy,
 )
 from livespec_orchestrator_beads_fabro.commands._factory_provenance_event import PullRequestEvent
+from livespec_orchestrator_beads_fabro.commands._incident_provenance import IncidentReceipt
 from livespec_orchestrator_beads_fabro.commands.factory_bypass_audit import (
     AuditPolicy,
     audit_pull_requests,
 )
 from livespec_orchestrator_beads_fabro.commands.factory_provenance_check import (
     decide,
+    main,
     permits_merge,
 )
 
@@ -114,3 +120,65 @@ def test_trusted_historical_receipts_are_exact_exceptions_with_repayment_outstan
     assert (
         incident.receipt_from_authority_reading(reading=_reading(phase="repayment-active")) is None
     )
+
+
+class UnreadableReceiptCommitRunner:
+    """The gate must not treat an unavailable exact identity as an exception."""
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        if argv[:3] == ["git", "diff", "--name-only"]:
+            return CommandResult(exit_code=0, stdout=f"{_PRODUCT}\n", stderr="")
+        assert argv == ["git", "rev-list", "--reverse", "base1234..head5678"]
+        return CommandResult(exit_code=128, stdout="", stderr="bad revision")
+
+
+def test_gate_refuses_when_a_candidate_incident_receipt_lacks_commit_provenance(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = [".claude-plugin/scripts"]\n',
+        encoding="utf-8",
+    )
+    event_path = tmp_path / "event.json"
+    _ = event_path.write_text(
+        json.dumps(
+            {
+                "number": 73,
+                "repository": {"full_name": _REPOSITORY},
+                "pull_request": {
+                    "user": {"login": "thewoolleyman"},
+                    "labels": [],
+                    "base": {"sha": "base1234"},
+                    "head": {"sha": "head5678"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    receipt = IncidentReceipt(
+        repository=_REPOSITORY,
+        item_id="incident-1",
+        phase="repair",
+        pr_number=73,
+        head_sha="head5678",
+        landed_commits=("landed1234",),
+        repayment_required=True,
+    )
+
+    code = main(
+        argv=["--event-path", str(event_path), "--repo", str(tmp_path)],
+        runner=UnreadableReceiptCommitRunner(),
+        incident_receipts=(receipt,),
+    )
+
+    assert code == 2
+    assert "could not read the commits" in capsys.readouterr().err
