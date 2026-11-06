@@ -17,6 +17,7 @@ from livespec_orchestrator_beads_fabro._incident_carrier import (
     decode_carrier,
     is_object_id,
 )
+from livespec_orchestrator_beads_fabro._incident_phases import PRE_PR_PHASES
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -117,7 +118,7 @@ def _valid_identity(*, row: dict[str, Any]) -> bool:
 def _pre_pr(*, row: dict[str, Any]) -> bool:
     return (
         row["pr_number"] == 0
-        and row["phase"] == "repair"
+        and row["phase"] in PRE_PR_PHASES
         and row["landed_commits"] == []
         and row["landed_trees"] == []
     )
