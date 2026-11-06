@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.294.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.293.1...v0.294.0) (2026-11-06)
+
+
+### Features
+
+* **dispatcher:** every Dispatcher claim write wins the item's claim token once the cutover key is true (bd-ib-7uue5s) ([696528b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/696528b63b27b1849bbfe99962d54ffbb2edfac3))
+
+
+### Bug Fixes
+
+* restore live amend base before settle ([f56ee86](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f56ee86f27d8e9454d4c4904aa1980d9d0db6b7a))
+* restore live amend base only while the commit is in flight ([90bb572](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/90bb57287e4ff34ee2376cff32792ebecf6c4c89))
+
 ## [0.293.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.293.0...v0.293.1) (2026-11-06)
 
 
