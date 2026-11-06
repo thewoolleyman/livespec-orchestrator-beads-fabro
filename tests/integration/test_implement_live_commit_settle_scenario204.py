@@ -194,6 +194,20 @@ def test_both_settle_nodes_are_command_nodes_that_run_the_runners_settle_operati
         assert attributes.get("max_visits") == str(_SETTLE_VISITS), node
 
 
+def test_only_implement_settle_restores_the_amend_base_and_covers_the_measured_hook() -> None:
+    """Scenario 179: the implement settle owns the checkpoint repair and its 3425 s wait."""
+    implement = _attributes(node=_IMPLEMENT_SETTLE)
+    script = implement.get("script", "")
+    bound = re.search(r"settle --timeout-seconds (\d+)", script)
+
+    assert implement.get("timeout") == "3900s"
+    assert bound is not None, script
+    assert 3425 <= int(bound.group(1)) < 3900
+    assert "--restore-head-before-wait" in script
+    for node in (_FIX_SETTLE, _REVIEW_FIX_SETTLE):
+        assert "--restore-head-before-wait" not in _attributes(node=node).get("script", "")
+
+
 def test_the_settle_node_writes_the_brief_for_a_run_that_ended_without_a_verdict(
     tmp_path: Path,
 ) -> None:

@@ -276,7 +276,15 @@ def start(command, program):
             raise RunnerRefusal("commit run " + path.stem + " is still running; wait on it first")
     run_id = "commit-" + uuid.uuid4().hex
     path = state_path(directory, run_id)
-    write_record(path, {"state": RUNNING, "command": command, "root": root})
+    write_record(
+        path,
+        {
+            "state": RUNNING,
+            "command": command,
+            "root": root,
+            "start_head": git_output("rev-parse", "HEAD"),
+        },
+    )
     with path.with_suffix(".launch.log").open("w", encoding="utf-8") as log:
         worker = subprocess.Popen(
             [sys.executable, program, "worker", run_id],
@@ -410,7 +418,16 @@ def brief_text(run_id, path, record, state, timeout_seconds):
     )
 
 
-def settle(timeout_seconds, brief_file):
+def restore_starting_head(path, record):
+    """Put an in-flight amend back on the commit it began from, keeping its index."""
+    start_head = record.get("start_head")
+    if not isinstance(start_head, str):
+        return
+    if git_output("rev-parse", "HEAD") != start_head:
+        git_output("reset", "--soft", start_head)
+
+
+def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
     """Wait live runs and brief the latest terminal hook refusal exactly once."""
     directory = runs_directory()
     brief = Path(brief_file)
@@ -442,6 +459,11 @@ def settle(timeout_seconds, brief_file):
         )
         print(json.dumps({"settled": [{"run_id": path.stem, "state": "failed"}]}, sort_keys=True))
         return 0
+    if restore_head_before_wait:
+        for path in live:
+            record = read_record(path)
+            if record is not None and recorded_state(record) == RUNNING:
+                restore_starting_head(path, record)
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     outcomes = []
     for path in live:
@@ -674,6 +696,7 @@ def main(argv, program):
     settle_parser = operations.add_parser("settle")
     settle_parser.add_argument("--timeout-seconds", required=True, type=float)
     settle_parser.add_argument("--brief-file", required=True)
+    settle_parser.add_argument("--restore-head-before-wait", action="store_true")
     cut_parser = operations.add_parser("cut-settle")
     cut_parser.add_argument("--timeout-seconds", required=True, type=float)
     worker_parser = operations.add_parser("worker")
@@ -686,7 +709,11 @@ def main(argv, program):
         if args.operation == "wait":
             return wait(args.run_id, args.timeout_seconds)
         if args.operation == "settle":
-            return settle(args.timeout_seconds, args.brief_file)
+            return settle(
+                args.timeout_seconds,
+                args.brief_file,
+                restore_head_before_wait=args.restore_head_before_wait,
+            )
         if args.operation == "cut-settle":
             return cut_settle(args.timeout_seconds)
         return worker(args.run_id)
