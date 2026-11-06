@@ -996,6 +996,35 @@ else
     tail -3 "$CASE_DIR/launcher-1.log" >&2
 fi
 
+# --- 14a. a refresh handoff is re-checked after taking the lock -------------
+# A peer can finish its refresh after this launcher sees the snapshot as stale
+# but before it takes the now-free lock. Make that window deterministic: the
+# first age check says stale while writing the peer's fresh snapshot. The
+# post-lock age check must then read that snapshot without another listing.
+echo "--- 14a. a refresh handoff re-checks the shared board snapshot"
+new_case snapshot-refresh-handoff
+export FLEET_LAUNCH_BOARD_TTL_S=300
+mkdir -p "$SNAPSHOT_DIR"
+. "$LAUNCH_DIR/board-snapshot.sh"
+handoff_snapshot=$(board_snapshot_file "$GMK_URL")
+handoff_age_checks=0
+board_snapshot_age_ok() {
+    handoff_age_checks=$((handoff_age_checks + 1))
+    if [ "$handoff_age_checks" = 1 ]; then
+        printf '%s\n' "$BOARD_HEADER" > "$handoff_snapshot"
+        return 1
+    fi
+    [ -f "$1" ]
+}
+handoff_text=$(board_snapshot_text "$STUB/fabro" "$GMK_URL")
+handoff_rc=$?
+if [ "$handoff_rc" = 0 ] && [ "$handoff_text" = "$BOARD_HEADER" ] \
+    && [ "$(ps_count "$GMK_URL")" = 0 ] && [ ! -d "$handoff_snapshot.refresh.d" ]; then
+    pass "a launcher that takes a refreshed lock reads the peer snapshot without listing"
+else
+    fail "a launcher listed after a peer refreshed the snapshot (rc=$handoff_rc listings=$(ps_count "$GMK_URL"))"
+fi
+
 # --- 15. an old snapshot is refreshed, a young one is not -------------------
 echo "--- 15. a snapshot older than the TTL is refreshed before the count"
 new_case snapshot-ttl
