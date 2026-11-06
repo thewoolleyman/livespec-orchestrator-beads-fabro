@@ -278,7 +278,9 @@ def test_item_that_names_an_open_token_by_the_time_it_is_re_read_is_left_unchang
     stale_listing = client.list_issues()
     open_token = create_claim_token(client=client)
     client.update_issue(
-        issue_id="bd-moved", metadata={"rank": "a1", CLAIM_TOKEN_METADATA_KEY: open_token}
+        issue_id="bd-moved",
+        metadata={"rank": "a1", CLAIM_TOKEN_METADATA_KEY: open_token},
+        names_claim_token=True,
     )
     monkeypatch.setattr(client, "list_issues", lambda: stale_listing)
 
@@ -342,7 +344,11 @@ def test_census_reports_an_item_exactly_when_the_writer_protocol_refuses_it(
     _seed(client, item_id="bd-item")
     record: BeadsRecord = client.show_issue(issue_id="bd-item")
     record["metadata"] = metadata
-    client.update_issue(issue_id="bd-item", metadata={} if metadata is None else metadata)
+    client.update_issue(
+        issue_id="bd-item",
+        metadata={} if metadata is None else metadata,
+        names_claim_token=True,
+    )
 
     refused = (
         change_claim(

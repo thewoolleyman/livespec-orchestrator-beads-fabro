@@ -107,8 +107,12 @@ def _unreadable(*, tmp_path: Path) -> Path:
     return _repo(tmp_path=tmp_path, config_text="{ this is not jsonc")
 
 
-def _claim() -> tuple[FakeBeadsClient, str]:
-    """An `active` item assigned `fabro` that names an open current token."""
+def _claim(*, name_a_token: bool = True) -> tuple[FakeBeadsClient, str]:
+    """An `active` item assigned `fabro` that names an open current token.
+
+    `name_a_token=False` builds the same item naming NO token. A metadata
+    write merges, so a later write cannot take the name away again.
+    """
     client = make_beads_client(config=_config())
     assert isinstance(client, FakeBeadsClient)
     _ = client.create_issue(
@@ -123,7 +127,10 @@ def _claim() -> tuple[FakeBeadsClient, str]:
     )
     token = create_claim_token(client=client)
     client.update_issue(
-        issue_id=_ITEM_ID, status="active", metadata={CLAIM_TOKEN_METADATA_KEY: token}
+        issue_id=_ITEM_ID,
+        status="active",
+        metadata={CLAIM_TOKEN_METADATA_KEY: token} if name_a_token else {},
+        names_claim_token=True,
     )
     return client, token
 
@@ -501,8 +508,7 @@ def test_an_enabled_hold_wins_the_token_and_names_the_successor(tmp_path: Path) 
 
 def test_a_refused_hold_names_no_successor(tmp_path: Path) -> None:
     """An item with no current token is refused, so its close never starts."""
-    client, _ = _claim()
-    client.update_issue(issue_id=_ITEM_ID, metadata={})
+    client, _ = _claim(name_a_token=False)
     journal = _Journal()
 
     refusal = claim_hold(

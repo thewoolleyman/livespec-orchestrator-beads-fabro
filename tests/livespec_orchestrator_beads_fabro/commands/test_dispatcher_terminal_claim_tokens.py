@@ -190,7 +190,7 @@ def _seed(
     merged = dict(client.show_issue(issue_id=_ITEM_ID)["metadata"])
     merged.update(metadata or {})
     merged[CLAIM_TOKEN_METADATA_KEY] = token
-    client.update_issue(issue_id=_ITEM_ID, metadata=merged)
+    client.update_issue(issue_id=_ITEM_ID, metadata=merged, names_claim_token=True)
     return client, token
 
 

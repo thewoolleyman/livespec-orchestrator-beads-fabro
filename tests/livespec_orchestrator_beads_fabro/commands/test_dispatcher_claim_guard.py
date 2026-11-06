@@ -77,9 +77,16 @@ def _config() -> StoreConfig:
 
 
 def _claim(
-    *, labels: tuple[str, ...] = (), metadata: dict[str, object] | None = None
+    *,
+    labels: tuple[str, ...] = (),
+    metadata: dict[str, object] | None = None,
+    name_a_token: bool = True,
 ) -> tuple[FakeBeadsClient, str]:
-    """An `active` item assigned `fabro` that names an open current token."""
+    """An `active` item assigned `fabro` that names an open current token.
+
+    `name_a_token=False` builds the same item naming NO token. A metadata
+    write merges, so a later write cannot take the name away again.
+    """
     client = make_beads_client(config=_config())
     assert isinstance(client, FakeBeadsClient)
     _ = client.create_issue(
@@ -93,11 +100,13 @@ def _claim(
         )
     )
     token = create_claim_token(client=client)
+    named = {CLAIM_TOKEN_METADATA_KEY: token} if name_a_token else {}
     client.update_issue(
         issue_id=_ITEM_ID,
         status="active",
         add_labels=list(labels),
-        metadata={**(metadata or {}), CLAIM_TOKEN_METADATA_KEY: token},
+        metadata={**(metadata or {}), **named},
+        names_claim_token=True,
     )
     return client, token
 
@@ -316,8 +325,7 @@ def _guarded_write(*, write: str) -> str | None:
 
 
 def test_an_item_naming_no_token_is_refused_as_claim_token_missing() -> None:
-    client, _ = _claim()
-    client.update_issue(issue_id=_ITEM_ID, metadata={"rank": "a0"})
+    client, _ = _claim(metadata={"rank": "a0"}, name_a_token=False)
     before = _snapshot(client=client)
 
     refusal = guarded_status_write(

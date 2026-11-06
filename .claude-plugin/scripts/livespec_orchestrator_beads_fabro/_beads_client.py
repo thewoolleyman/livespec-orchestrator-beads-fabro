@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro._beads_client_fake import (
     fake_singleton,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro._beads_client_metadata import metadata_payload
 from livespec_orchestrator_beads_fabro.effects._beads_client_shell import (
     invoke,
     raise_for_status,
@@ -167,6 +168,7 @@ class BeadsClient(Protocol):
         acceptance_criteria: str | None = None,
         notes: str | None = None,
         description: str | None = None,
+        names_claim_token: bool = False,
     ) -> None:
         """Mutate an existing issue's status / assignee / parent / labels / content.
 
@@ -178,6 +180,14 @@ class BeadsClient(Protocol):
         (repeatable); it is the seam used by lifecycle routing to clear retired labels and
         policy labels when an item changes state. Removing a
         label the issue does not carry is a no-op (bd is idempotent here).
+
+        `metadata` is MERGED into the stored object at the top level, as
+        `bd update --metadata` does: a top-level key the payload omits
+        survives, and a nested object the payload carries is replaced whole.
+        The claim-token key is left out of the payload unless
+        `names_claim_token` is true, so only a claim-token protocol write can
+        change which token an item names (`_beads_client_metadata`). A caller
+        outside that protocol leaves the flag alone.
         """
         ...
 
@@ -326,6 +336,7 @@ class ShellBeadsClient:
         acceptance_criteria: str | None = None,
         notes: str | None = None,
         description: str | None = None,
+        names_claim_token: bool = False,
     ) -> None:
         verb_args = build_update_argv(
             issue_id=issue_id,
@@ -335,7 +346,7 @@ class ShellBeadsClient:
             parent_id=parent_id,
             add_labels=add_labels,
             remove_labels=remove_labels,
-            metadata=metadata,
+            metadata=metadata_payload(metadata=metadata, names_claim_token=names_claim_token),
             acceptance_criteria=acceptance_criteria,
             notes=notes,
             description=description,

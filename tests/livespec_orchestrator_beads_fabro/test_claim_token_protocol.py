@@ -23,7 +23,7 @@ from returns.unsafe import unsafe_perform_io
 _ITEM_ID = "bd-ib-claim-token"
 
 
-def _client_with_current_token() -> tuple[FakeBeadsClient, str]:
+def _client_with_item() -> FakeBeadsClient:
     client = FakeBeadsClient()
     _ = client.create_issue(
         draft=IssueDraft(
@@ -36,8 +36,15 @@ def _client_with_current_token() -> tuple[FakeBeadsClient, str]:
         )
     )
     client.update_issue(issue_id=_ITEM_ID, status="active")
+    return client
+
+
+def _client_with_current_token() -> tuple[FakeBeadsClient, str]:
+    client = _client_with_item()
     token = create_claim_token(client=client)
-    client.update_issue(issue_id=_ITEM_ID, metadata={CLAIM_TOKEN_METADATA_KEY: token})
+    client.update_issue(
+        issue_id=_ITEM_ID, metadata={CLAIM_TOKEN_METADATA_KEY: token}, names_claim_token=True
+    )
     return client, token
 
 
@@ -183,6 +190,7 @@ def test_closed_unapplied_transition_waits_then_takes_over_and_stands_down_if_it
             client.update_issue(
                 issue_id=_ITEM_ID,
                 metadata={CLAIM_TOKEN_METADATA_KEY: stranded_successor},
+                names_claim_token=True,
             )
 
     monkeypatch.setattr(client, "close_issue_without_verdict", _land_original)
@@ -205,8 +213,7 @@ def test_closed_unapplied_transition_waits_then_takes_over_and_stands_down_if_it
 
 
 def test_enabled_protocol_refuses_an_item_with_no_current_token() -> None:
-    client, token = _client_with_current_token()
-    client.update_issue(issue_id=_ITEM_ID, metadata={})
+    client = _client_with_item()
 
     outcome = change_claim(
         client=client,
@@ -219,7 +226,7 @@ def test_enabled_protocol_refuses_an_item_with_no_current_token() -> None:
 
     assert outcome.outcome == "claim-token-missing"
     assert client.show_issue(issue_id=_ITEM_ID)["status"] == "active"
-    assert client.no_history_issue_ids() == (token,)
+    assert client.no_history_issue_ids() == ()
 
 
 def test_transition_takeover_applies_after_wait_when_the_original_write_never_lands() -> None:
@@ -274,6 +281,7 @@ def test_transition_takeover_stands_down_when_the_item_names_the_stranded_succes
                 client.update_issue(
                     issue_id=_ITEM_ID,
                     metadata={CLAIM_TOKEN_METADATA_KEY: stranded_successor},
+                    names_claim_token=True,
                 )
         return original_show(issue_id=issue_id)
 
