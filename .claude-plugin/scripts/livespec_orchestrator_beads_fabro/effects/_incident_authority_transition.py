@@ -26,6 +26,9 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
 from livespec_orchestrator_beads_fabro._incident_carrier import carrier_successor_allowed
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
+from livespec_orchestrator_beads_fabro.effects._incident_entry_writer import (
+    require_current_generation,
+)
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -118,13 +121,11 @@ def _commit(
                 code="incident-transition-operation-conflict", detail=decoded.operation_id
             )
         )
-    current = _read(client=client, attempt=observed.attempt, historical=False)
+    # The stale-generation gate: an observation the head has moved past, or one
+    # that is not the exact current reading, is refused by name before any close.
+    current = require_current_generation(client=client, observed=observed)
     if isinstance(current, AuthorityRefusal):
         return current
-    if current != observed or not observed.is_current:
-        return AuthorityRefusal(
-            code="incident-transition-stale-observation", detail=observed.attempt.item_id
-        )
     if decoded.operation_id in current.operation_ids:
         return AuthorityRefusal(
             code="incident-transition-operation-reused", detail=decoded.operation_id

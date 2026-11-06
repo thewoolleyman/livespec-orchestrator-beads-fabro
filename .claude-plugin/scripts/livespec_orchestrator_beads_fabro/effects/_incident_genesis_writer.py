@@ -4,13 +4,18 @@ The exclusion is the item's CURRENT dispatch claim token: closing it is the one
 server-enforced compare-and-swap every claim-changing writer serializes on once
 `dispatcher.claim_tokens` is committed true. Genesis mints its root privately,
 then closes that token with a transition reason naming the root, the successor
-claim token and the request digest. Only a read-back of that reason decides the
-winner; the exit status never does. A loser writes nothing to the item and
-discards its own candidates. The genesis comment is appended, and the item is
-written naming the successor, only inside the protocol's lease.
+claim token, the request digest and the prior claim row. Only a read-back of
+that reason decides the winner; the exit status never does. A loser writes
+nothing to the item and discards its own candidates.
 
-This slice fences no live factory work: an item that is `active` under a
-`fabro` claim is refused by name until the all-writer transfer lands.
+Winning that close IS the factory fence. The one item write made inside the
+protocol's lease moves the item to `active` under the incident owner, replaces
+the factory's dispatch stamp with the incident holder's, and retains the prior
+status, assignee and whole stamp beside the unobserved cancellation: a queued
+admission, a late run stamp, a terminal write or a stranded-claim recovery for
+the old generation finds its decision no longer holds and answers
+`claim-changed`. No factory run is reported cancelled; that result is retained
+as unobserved.
 """
 
 # EXPEDITED_INCIDENT_RESPONSE flag: bd-ib-dzbwaq
@@ -28,6 +33,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     attempt_record,
 )
 from livespec_orchestrator_beads_fabro._incident_authority_types import AuthorityRefusal
+from livespec_orchestrator_beads_fabro._incident_entry import prior_claim, takeover_metadata
 from livespec_orchestrator_beads_fabro._incident_genesis import (
     GenesisReceipt,
     GenesisRequest,
@@ -41,11 +47,13 @@ from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_TOKEN_METADATA_KEY,
     create_claim_token,
 )
+from livespec_orchestrator_beads_fabro._store_statuses import beads_status_for
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import (
     attempt_close,
     token_reading,
 )
 from livespec_orchestrator_beads_fabro.effects._incident_genesis_recovery import (
+    Observations,
     complete_won_close,
     genesis_receipt,
     recover_genesis,
@@ -61,12 +69,11 @@ from livespec_orchestrator_beads_fabro.errors import (
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient, BeadsRecord
 
-__all__: list[str] = ["FACTORY_FENCE_UNAVAILABLE", "publish_genesis"]
+__all__: list[str] = ["publish_genesis"]
 
-FACTORY_FENCE_UNAVAILABLE = "incident-factory-fence-unavailable"
-_FACTORY_ASSIGNEE = "fabro"
 _LEASE_SECONDS = 120.0
 _CLAIM_ABSENT = "incident-genesis-claim-token-missing"
+_ACTIVE = "active"
 
 
 def _refuse(*, code: str, detail: str) -> AuthorityRefusal:
@@ -88,8 +95,6 @@ def _expected_claim(*, request: GenesisRequest, item: BeadsRecord) -> str | Auth
     item_id = request.attempt.item_id
     if item.get("id") != item_id:
         return _refuse(code="incident-authority-item-mismatch", detail=item_id)
-    if item.get("status") == "active" and item.get("assignee") == _FACTORY_ASSIGNEE:
-        return _refuse(code=FACTORY_FENCE_UNAVAILABLE, detail=item_id)
     token = _current_token(record=item)
     if token is None:
         return _refuse(code=_CLAIM_ABSENT, detail=item_id)
@@ -123,6 +128,7 @@ def _fence(
     clock: Callable[[], float],
 ) -> GenesisReceipt | AuthorityRefusal:
     attempt = request.attempt
+    prior = prior_claim(record=item)
     root = client.create_no_history_issue(
         title=TOKEN_TITLE,
         description="Retained immutable incident authority root. Not a work item.",
@@ -145,7 +151,9 @@ def _fence(
         reason=TRANSITION_MARKER + json.dumps(transition, sort_keys=True, separators=(",", ":")),
     )
     started = clock()
-    fence = genesis_fence(request=request, root_token_id=root, successor=successor)
+    fence = genesis_fence(
+        request=request, root_token_id=root, successor=successor, prior_claim=prior
+    )
     reason = genesis_fence_reason(fence=fence, closed_at=datetime.now(timezone.utc).isoformat())
     attempt_close(client=client, token_id=token, reason=reason)
     verdict = token_reading(client=client, token_id=token)
@@ -172,16 +180,37 @@ def _fence(
             claim_token_id=token,
         ),
     )
-    metadata = _metadata_of(record=item)
+    # The winner's one write: host ownership, the holder stamp, the retained
+    # prior claim and the successor token land together or not at all.
+    metadata = _metadata_of(record=item) | takeover_metadata(
+        operation_id=attempt.operation_id,
+        generation=attempt.generation,
+        owner=attempt.owner,
+        principal=request.principal,
+        root_token_id=root,
+        prior=prior,
+    )
     metadata[CLAIM_TOKEN_METADATA_KEY] = successor
-    client.update_issue(issue_id=attempt.item_id, metadata=metadata, names_claim_token=True)
+    client.update_issue(
+        issue_id=attempt.item_id,
+        status=beads_status_for(status=_ACTIVE),
+        assignee=attempt.owner,
+        metadata=metadata,
+        names_claim_token=True,
+    )
     return genesis_receipt(client=client, request=request, fence=fence, recovered=False)
 
 
 def _publish(
-    *, client: BeadsClient, request: GenesisRequest, clock: Callable[[], float]
+    *,
+    client: BeadsClient,
+    request: GenesisRequest,
+    clock: Callable[[], float],
+    observations: Observations | None,
 ) -> GenesisReceipt | AuthorityRefusal:
-    recovered = recover_genesis(client=client, request=request)
+    recovered = recover_genesis(
+        client=client, request=request, clock=clock, observations=observations
+    )
     if recovered is not None:
         return recovered
     item = client.show_issue(issue_id=request.attempt.item_id)
@@ -196,7 +225,13 @@ def _publish(
     if claim_successor(reason=standing.close_reason) is None:
         # A closed token naming no successor is a discarded one: the item names no open token.
         return _refuse(code=_CLAIM_ABSENT, detail=request.attempt.item_id)
-    return complete_won_close(client=client, request=request, reason=standing.close_reason)
+    return complete_won_close(
+        client=client,
+        request=request,
+        reason=standing.close_reason,
+        clock=clock,
+        observations=observations,
+    )
 
 
 def publish_genesis(
@@ -205,12 +240,17 @@ def publish_genesis(
     request: GenesisRequest,
     claim_tokens: bool,
     clock: Callable[[], float] = time.monotonic,
+    observations: Observations | None = None,
 ) -> GenesisReceipt | AuthorityRefusal:
-    """Publish one first root, recover an exact retry, or refuse by name."""
+    """Publish one first root and take host ownership, recover an exact retry, or refuse.
+
+    `observations` is this writer's record of first sightings of an unapplied
+    claim transition, as `change_claim` keeps it; `None` is the process's own.
+    """
     if not claim_tokens:
         return capability_unavailable(request=request)
     try:
-        return _publish(client=client, request=request, clock=clock)
+        return _publish(client=client, request=request, clock=clock, observations=observations)
     except (
         BeadsCommandError,
         BeadsConnectionError,

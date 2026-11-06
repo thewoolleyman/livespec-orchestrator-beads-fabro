@@ -119,9 +119,7 @@ an exact retry from the chain (same operation and identical request bytes return
 the original root with `recovered: true`; changed bytes under the same operation
 refuse `incident-operation-conflict`; another operation's root, or an unfenced
 legacy root, refuses `incident-genesis-root-exists`). It then reads the item:
-an `active` item assigned `fabro` has a live factory claim this build cannot
-fence and refuses `incident-factory-fence-unavailable`; an item naming no open
-token refuses `incident-genesis-claim-token-missing`; a token other than
+an item naming no open token refuses `incident-genesis-claim-token-missing`; a token other than
 `expected_claim` refuses `incident-genesis-claim-mismatch`; an unreadable token
 refuses `incident-genesis-claim-unobservable`; a token another writer closed
 whose successor the item does not yet name refuses
@@ -132,17 +130,25 @@ incident epoch tokens), closes the root privately with the generation-1
 transition, mints a successor claim token, and closes the current claim token
 with a claim-token transition reason (`kind: claim-token-transition`, `intent:
 incident-genesis`, the successor) whose `incident` block binds the repository,
-item, operation, principal, request digest, root token and expected claim. The
+item, operation, principal, request digest, root token, expected claim and
+`prior_claim` (the item's status, assignee and whole `dispatch_claim` stamp as
+entry found them; a fence written before this key is still decoded). The
 read-back reason decides: a foreign reason is `incident-genesis-lost-race` and
 the loser deletes its unlinked root and successor and discards its claim token;
 an open token after the close is `incident-genesis-outcome-unknown` and every
 candidate is kept. A winner past the protocol's 120 s lease refuses
 `incident-genesis-lease-expired` and leaves its successor open. Inside the
 lease the winner appends the genesis comment, which now also names
-`claim_token_id`, then writes the item once, naming the successor as its current
-token; lifecycle state is not changed by this slice. A won close whose
-publication never landed is completed by the exact retry: the comment is
-appended and nothing else is written. Tenant failures are
+`claim_token_id`, then writes the item ONCE: the successor as its current token,
+status `active`, the incident owner as assignee, and the takeover record
+described under "Canonical entry" below. A won close whose publication never
+landed is completed by the exact retry: the comment is appended once, and the
+lost takeover is remade through `change_claim` itself, which reports
+`incident-genesis-claim-transition-pending` until the protocol's takeover wait
+has elapsed on this writer's clock, then takes over the stranded successor
+conditioned on the retained `prior_claim`; a row that moved meanwhile refuses
+`incident-genesis-fence-lost` and the host must not proceed. The one-shot
+command waits that wait once and retries once. Tenant failures are
 `incident-genesis-unavailable`.
 
 The reply is a `GenesisReceipt`: `request_digest`, `root_token_id`,
@@ -154,6 +160,66 @@ authority before acting. The reader verifies a genesis record that names
 and its fence must name the same root, item, repository and token, or the record
 is `incident-authority-invalid-genesis`. Records without `claim_token_id` keep
 their earlier meaning.
+
+## Canonical entry
+
+Entry keeps one canonical item (contracts "Expedited incident lifecycle",
+"Factory transfer and recovery of the initial operation"; bd-ib-dzbwaq).
+
+`file-incident --filing-json <filing>` is the path for a scope no item covers.
+It takes `--repo`, `--repository`, `--operation` and `--owner` and no item
+identity; the filing is canonical JSON with `schema` 1, `repository`,
+`principal`, `operation_id`, `title`, `impact`, `scope` and `behavioral_intent`,
+and must name the same repository, operation and principal as the arguments
+(`incident-filing-invalid-request` otherwise). One `bd create` under a fresh
+tenant-prefixed id names the item's first claim token in the creating write;
+the item rests at `backlog` with label `incident:entry`, metadata
+`incident_filing` (operation id, principal, request digest) and a retained
+`livespec-incident-entry-v1` comment recording `deferred_to_repayment:
+["ordinary-admission", "spec-debt"]`: no model-backed judgement runs at entry,
+and both are owed before normal repayment. The reply is a `FilingReceipt`
+(`item_id`, `claim_token_id`, `request_digest`, `recovered`). An identical retry
+recovers the same item (`recovered: true`); changed bytes under the same
+operation refuse `incident-operation-conflict`; a filed item that names no open
+token refuses `incident-filing-claim-token-missing`; without the committed
+cutover the command refuses `incident-genesis-capability-unavailable` and files
+nothing. Entry then runs `publish-genesis` over the filed item with its first
+token as `expected_claim`. An identified existing item skips the filing.
+
+`publish-genesis` is the sanctioned transition that takes host ownership, for
+an item at rest and for one with queued or live factory work alike. Winning the
+item's current claim token is the fence: it is the same server-enforced
+compare-and-swap every admission, run-stamp, terminal and recovery writer
+serializes on. The winner's one item write moves the item to `active` under the
+incident owner, replaces the whole `dispatch_claim` stamp with the incident
+holder's (`dispatch_id: incident:<operation>`, `dispatching_host: <principal>`,
+`run_id: incident:<root token>`, no factory) so no factory predicate reads the
+row as unstamped, pending or its own, and lands `incident_claim`: `schema`,
+`operation_id`, `generation`, `owner`, `prior_claim` (the retained status,
+assignee and stamp), `factory_cancel: "unobserved"` and the same
+`deferred_to_repayment`. A queued admission (`ready` decided), a late run
+stamp, a terminal write or a stranded-claim recovery of the old generation then
+answers `claim-changed` and lands nothing. No run is reported cancelled: the
+cancellation result is retained as unobserved until a reader observes it.
+
+Every later incident effect binds the exact current identity. An incident claim
+writer hands `change_claim` the predicate `incident_claim_decided(operation_id,
+generation, owner)`, which holds only while that entry still owns the item.
+`carrier_selection(client, reading)` re-reads the chain and returns the exact
+`target_ref`, `remote_head` (once `head-published`) and real positive
+`pr_number` (once `pr-bound`) of the current attempt; it is the explicit
+pull-request selector reconcile-merged and post-host-record take, never a
+branch match or a title mention. `require_current_generation(client, observed)`
+is the gate taken immediately before a proof write, a claim consumption or a
+completion: an observation the head has moved past, or one that is not the
+exact current reading, is refused as `incident-generation-stale`, and
+`commit-transition` applies the same gate before any close. A legacy attempt
+without a carrier cannot select one (`incident-carrier-unsupported`).
+
+Not in this slice: wiring `carrier_selection` into the Dispatcher's
+reconcile-merged and post-host-record calls, returning ownership for normal
+repayment, and the live multi-host proof the contract requires before
+enablement.
 
 The canonical JSON receipt contains `receipt_id`, `hook` (`pre-commit`,
 `commit-msg`, or `pre-push`), the exact Git `tree`, `mode`,
