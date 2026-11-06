@@ -324,6 +324,45 @@ def test_an_inherited_fix_reason_without_default_tree_results_is_marked_unverifi
     assert "inherited attribution is unverified" not in evidenced_stderr
 
 
+def test_an_inherited_from_the_default_branch_reason_is_marked_unverified_too(
+    tmp_path: Path,
+) -> None:
+    """The guard reads the wording "the default branch", not only the resolved branch name.
+
+    A turn that says its failure is inherited "from the default branch"
+    makes the same claim as one naming `master`; keying the guard on the
+    resolved name alone lets that wording record an unevidenced attribution
+    unmarked. The control carries both per-test results and stays unmarked.
+    """
+    missing_evidence = _world(
+        root=tmp_path / "missing-evidence",
+        changed={"docs/note.md": "a documentation-only change\n"},
+        message="chore: terminal fixture",
+    )
+    evidenced = _world(
+        root=tmp_path / "evidenced",
+        changed={"docs/note.md": "a documentation-only change\n"},
+        message="chore: terminal fixture",
+    )
+    _record_needs_human_reason(
+        world=missing_evidence,
+        reason="test_default_branch_attribution is inherited from the default branch",
+    )
+    _record_needs_human_reason(
+        world=evidenced,
+        reason=(
+            "test_default_branch_attribution is inherited from the default branch; "
+            "result on default branch's tree: FAIL; result on run's tree: FAIL"
+        ),
+    )
+
+    missing_stderr = _run_terminal(world=missing_evidence)
+    evidenced_stderr = _run_terminal(world=evidenced)
+
+    assert "inherited attribution is unverified" in missing_stderr
+    assert "inherited attribution is unverified" not in evidenced_stderr
+
+
 def test_a_recorded_stage_cause_outranks_the_open_red_commit_reason(tmp_path: Path) -> None:
     """The terminal names the stage that failed and its cause line, not the tree.
 
