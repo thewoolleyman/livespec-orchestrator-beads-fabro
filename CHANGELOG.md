@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.293.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.292.0...v0.293.0) (2026-11-06)
+
+
+### Features
+
+* **dispatcher:** claim-token migration pass and the missing-token attention lane (bd-ib-ngzg63) ([4b2e455](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4b2e455991fa91136f57e0686d44f8a4cd0a0e7b))
+
+
+### Bug Fixes
+
+* hold claim-token records out of the in-memory client's child enumeration (bd-ib-utwjkf) ([043197e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/043197e224f8f5354b98be7f63096dcac0695675))
+
 ## [0.292.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.291.0...v0.292.0) (2026-11-06)
 
 
