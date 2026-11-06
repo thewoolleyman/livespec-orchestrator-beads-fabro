@@ -149,24 +149,28 @@ def _takeover_token(
     clock: Callable[[], float],
     observations: MutableMapping[tuple[str, str, str], float],
 ) -> tuple[str, BeadsRecord, bool] | ClaimChangeResult:
-    """Return the current token, or wait/stand down on a stranded transition."""
-    reading = token_reading(client=client, token_id=token_id)
-    record = client.show_issue(issue_id=work_item_id)
-    if not reading.closed:
-        return token_id, record, False
-    successor = _successor_from_reason(reason=reading.close_reason)
-    if successor is None:
-        return ClaimChangeResult(outcome="claim-unobservable")
-    observation_key = (work_item_id, token_id, successor)
-    first_seen = observations.setdefault(observation_key, clock())
-    if clock() - first_seen < TRANSITION_WAIT_SECONDS:
-        return ClaimChangeResult(outcome="claim-transition-pending")
-    if _current_token(record=record) != token_id:
-        return ClaimChangeResult(outcome="claim-changed")
-    reread = token_reading(client=client, token_id=token_id)
-    if not reread.closed or _successor_from_reason(reason=reread.close_reason) != successor:
-        return ClaimChangeResult(outcome="claim-changed")
-    return successor, record, True
+    """Follow stranded transitions to the first open token after every wait."""
+    named_token_id = token_id
+    taking_over = False
+    while True:
+        reading = token_reading(client=client, token_id=token_id)
+        record = client.show_issue(issue_id=work_item_id)
+        if not reading.closed:
+            return token_id, record, taking_over
+        successor = _successor_from_reason(reason=reading.close_reason)
+        if successor is None:
+            return ClaimChangeResult(outcome="claim-unobservable")
+        observation_key = (work_item_id, token_id, successor)
+        first_seen = observations.setdefault(observation_key, clock())
+        if clock() - first_seen < TRANSITION_WAIT_SECONDS:
+            return ClaimChangeResult(outcome="claim-transition-pending")
+        if _current_token(record=record) != named_token_id:
+            return ClaimChangeResult(outcome="claim-changed")
+        reread = token_reading(client=client, token_id=token_id)
+        if not reread.closed or _successor_from_reason(reason=reread.close_reason) != successor:
+            return ClaimChangeResult(outcome="claim-changed")
+        token_id = successor
+        taking_over = True
 
 
 def _stand_down_if_original_writer_landed(

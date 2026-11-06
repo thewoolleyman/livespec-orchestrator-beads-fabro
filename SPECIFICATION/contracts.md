@@ -7960,14 +7960,17 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
      MUST write nothing and MUST report `claim-transition-pending` until
      it has itself observed that same state, T closed and S not named,
      across at least 180 seconds of elapsed time on its own monotonic
-     clock, from its first such observation to a fresh read; only then
-     MUST it treat S as the item's current token and apply this protocol
-     to S, so a winner that crashed between its close and its
-     item write never leaves the item unwritable. A writer that wins S
-     this way MUST re-read the item immediately before its item write
-     and, when the item now names S, MUST write nothing, MUST discard
-     its own successor and MUST report `claim-changed`, because the original
-     winner's transition has landed.
+     clock, from its first such observation to a fresh read. It MUST then
+     follow the chain: for every closed successor whose close reason names
+     another successor the item does not name, the writer starts a fresh
+     180-second observation for that hop; only after every observed hop has
+     waited does it treat the first open successor as the item's current token
+     and apply this protocol to it. Thus a winner that crashed between its
+     close and its item write never leaves the item unwritable. A writer that
+     wins a successor this way MUST re-read the item immediately before its
+     item write and, when the item now names that successor, MUST write
+     nothing, MUST leave its own successor open and MUST report
+     `claim-changed`, because the original winner's transition has landed.
   Exactly one writer therefore wins each token, a loser never writes, and
   a writer that reads an earlier, already-closed token loses that token's
   close; the only way an earlier winner's item write can still land after
@@ -8007,7 +8010,9 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   intake, the human valves and reconciliation — is stopped. Once the key
   is `true`, a claim writer that finds no current token on a non-closed
   item MUST write nothing and MUST report `claim-token-missing`, and
-  `needs-attention` MUST surface the item. Under coordinator ruling R144
+  `needs-attention` MUST surface the item. `needs-attention` MUST also surface
+  every non-closed item whose named token chain ends in a closed token whose
+  close reason names no successor. Under coordinator ruling R144
   this bullet states required behaviour; it does not by itself admit its
   implementation.
 - **Absent-run release.** The Dispatcher MUST release the claim when all of the following hold:
