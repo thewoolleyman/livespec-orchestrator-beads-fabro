@@ -24,6 +24,10 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     LABEL_BLOCKED_REASON_PREFIX,
     blocked_reason_label_removals,
 )
+from livespec_orchestrator_beads_fabro._store_claim_token_creation import (
+    claim_tokens_committed,
+    create_issue_naming_first_claim_token,
+)
 from livespec_orchestrator_beads_fabro._store_metadata import (
     rank_metadata,
     work_item_metadata,
@@ -91,7 +95,7 @@ def append_work_item(*, path: StoreConfig, item: WorkItem) -> None:
     if item.status == _LIVESPEC_DONE and client.exists(issue_id=item.id):
         _close_in_place(client=client, item=item)
         return
-    create_work_item(client=client, item=item)
+    create_work_item(client=client, item=item, claim_tokens=claim_tokens_committed(path=path))
 
 
 def update_work_item_rank(*, path: StoreConfig, item: WorkItem) -> None:
@@ -206,14 +210,18 @@ def register_custom_statuses(*, path: StoreConfig) -> None:
     client.register_custom_statuses()
 
 
-def create_work_item(*, client: BeadsClient, item: WorkItem) -> None:
+def create_work_item(*, client: BeadsClient, item: WorkItem, claim_tokens: bool = False) -> None:
     metadata = work_item_metadata(item=item)
     if item.status == "ready":
         metadata = ready_transition_metadata(
             existing_metadata=metadata,
             now_iso=_utc_now_iso(),
         )
-    _ = client.create_issue(
+    # After the claim-token cutover a non-closed item names its first token in
+    # this creating write (`_store_claim_token_creation`).
+    create_issue_naming_first_claim_token(
+        client=client,
+        names_token=claim_tokens and item.status != _LIVESPEC_DONE,
         draft=IssueDraft(
             issue_id=item.id,
             issue_type=item.type,
@@ -232,7 +240,7 @@ def create_work_item(*, client: BeadsClient, item: WorkItem) -> None:
             # epic linkage is expressed via the depends_on/supersedes edges
             # below; no create-time --parent is emitted by this bridge.
             parent_id=None,
-        )
+        ),
     )
     _add_dependency_edges(client=client, item=item)
     # `bd create` cannot land directly in a custom status, so every initial
