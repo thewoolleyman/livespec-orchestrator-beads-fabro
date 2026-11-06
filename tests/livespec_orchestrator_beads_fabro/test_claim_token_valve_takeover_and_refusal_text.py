@@ -168,6 +168,25 @@ def _lose_the_token(
     monkeypatch.setattr(client, "close_issue_without_verdict", _raced)
 
 
+def _lose_the_write(
+    *, client: FakeBeadsClient, intent: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Have an unnamed writer close a token at the instant a write of `intent` closes it.
+
+    A `reject:regroom` press makes two guarded writes, a hold before its revert
+    and the move after it, and each contests the token current then. Naming
+    the intent loses the move and leaves the hold to win.
+    """
+    close = client.close_issue_without_verdict
+
+    def _raced(*, issue_id: str, reason: str) -> None:
+        if json.loads(reason).get("intent") == intent:
+            close(issue_id=issue_id, reason=_ANOTHER_WRITER)
+        close(issue_id=issue_id, reason=reason)
+
+    monkeypatch.setattr(client, "close_issue_without_verdict", _raced)
+
+
 def _press(*, repo: Path, action_id: str, **inputs: object) -> dict[str, object]:
     """One operator press of a valve, through the surface an operator uses."""
     return run_action(
@@ -290,8 +309,8 @@ def test_a_refused_reject_says_whether_it_had_already_reverted_the_merge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
-    client, token = _seed(item=_item(status="acceptance", audit=_merged(merge_sha="feed01")))
-    _lose_the_token(client=client, token=token, monkeypatch=monkeypatch)
+    client, _ = _seed(item=_item(status="acceptance", audit=_merged(merge_sha="feed01")))
+    _lose_the_write(client=client, intent=f"reject:{kind}", monkeypatch=monkeypatch)
     git = _Git()
 
     result = _press(repo=repo, action_id=f"reject:{_ITEM_ID}:{kind}", runner=git)
