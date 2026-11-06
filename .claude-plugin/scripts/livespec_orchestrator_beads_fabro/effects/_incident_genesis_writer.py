@@ -174,7 +174,7 @@ def _fence(
     )
     metadata = _metadata_of(record=item)
     metadata[CLAIM_TOKEN_METADATA_KEY] = successor
-    client.update_issue(issue_id=attempt.item_id, metadata=metadata)
+    client.update_issue(issue_id=attempt.item_id, metadata=metadata, names_claim_token=True)
     return genesis_receipt(client=client, request=request, fence=fence, recovered=False)
 
 

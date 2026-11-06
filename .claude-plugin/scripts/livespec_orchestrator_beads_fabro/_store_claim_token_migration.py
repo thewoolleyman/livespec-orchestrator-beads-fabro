@@ -196,7 +196,7 @@ def _name_fresh_token(*, client: BeadsClient, item_id: str) -> tuple[str | None,
         raw = record.get("metadata")
         metadata = dict(cast("dict[str, Any]", raw)) if isinstance(raw, dict) else {}
         metadata[CLAIM_TOKEN_METADATA_KEY] = token_id
-        client.update_issue(issue_id=item_id, metadata=metadata)
+        client.update_issue(issue_id=item_id, metadata=metadata, names_claim_token=True)
         landed = claim_token_named_by(record=client.show_issue(issue_id=item_id))
     except (BeadsCommandError, BeadsMappingError) as error:
         return None, f"{_WRITE_FAILED}: {error}"

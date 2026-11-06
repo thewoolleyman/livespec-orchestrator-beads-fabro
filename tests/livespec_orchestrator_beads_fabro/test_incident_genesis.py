@@ -125,7 +125,11 @@ def _ledger(
     if not with_token:
         return client, "absent-token"
     token = create_claim_token(client=client)
-    client.update_issue(issue_id=ITEM, metadata={"rank": "a0", CLAIM_TOKEN_METADATA_KEY: token})
+    client.update_issue(
+        issue_id=ITEM,
+        metadata={"rank": "a0", CLAIM_TOKEN_METADATA_KEY: token},
+        names_claim_token=True,
+    )
     return client, token
 
 

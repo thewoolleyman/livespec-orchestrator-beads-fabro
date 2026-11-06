@@ -21,10 +21,17 @@ def backfill_native_content_fields(*, path: StoreConfig) -> int:
     """Move legacy metadata acceptance/notes into native beads fields.
 
     The chosen design makes native `acceptance_criteria` and `notes` the
-    single source for human `bd show` and factory dispatch. This migration is
-    idempotent: it backfills native fields only when absent, and always removes
-    retired metadata copies so already-diverged records stop carrying stale
-    hidden content.
+    single source for human `bd show` and factory dispatch. The native backfill
+    is idempotent: a native field is written only when the record carries none.
+
+    THE RETIRED METADATA COPIES ARE NOT REMOVED, though the payload below is
+    built to remove them (bd-ib-anwf). It sends the metadata object without the
+    two legacy keys, and `bd update --metadata` MERGES top-level keys: a key
+    the payload omits is left as it is. So every migrated record keeps its
+    stale copy, and each later run counts that record again, because the copy
+    it tests for is still there. Its writes change nothing on those runs.
+    Removing a key takes `bd update --unset-metadata <key>`, which this client
+    does not send.
     """
     client = make_beads_client(config=path)
     changed = 0

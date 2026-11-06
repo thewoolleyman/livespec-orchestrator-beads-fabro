@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro._beads_client_metadata import CLAIM_TOKEN_METADATA_KEY
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -210,6 +211,33 @@ def test_shell_update_skips_no_op_but_runs_when_flags_present(
     client.update_issue(issue_id="li-a", status="closed")  # flagged: shells out
     assert len(seen) == 1
     assert seen[0][:2] == ["update", "li-a"]
+
+
+def test_shell_update_sends_the_claim_token_key_only_for_a_protocol_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`names_claim_token` is the one thing that lets the token key into `--metadata`.
+
+    `bd` merges top-level keys, so the first write leaves whatever token the
+    item names untouched, and the second, a protocol write, changes it.
+    """
+    client = ShellBeadsClient(config=_config())
+    seen: list[list[str]] = []
+    monkeypatch.setattr(
+        client,
+        "_run_void",
+        lambda *, verb_args: seen.append(verb_args),
+    )
+    metadata = {"rank": "a0", CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1"}
+
+    client.update_issue(issue_id="li-a", metadata=metadata)
+    client.update_issue(issue_id="li-a", metadata=metadata, names_claim_token=True)
+
+    assert seen == [
+        ["update", "li-a", "--metadata", '{"rank":"a0"}'],
+        ["update", "li-a", "--metadata", '{"dispatch_claim_token":"fake-wisp-1","rank":"a0"}'],
+    ]
+    assert metadata == {"rank": "a0", CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1"}
 
 
 def test_shell_close_with_reason(monkeypatch: pytest.MonkeyPatch) -> None:

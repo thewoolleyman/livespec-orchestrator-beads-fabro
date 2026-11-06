@@ -136,7 +136,9 @@ def _mint_token_dressed_as_the_item() -> str:
     for edge in item["dependencies"]:
         client.add_dependency(from_id=token_id, to_id=edge["depends_on_id"], edge_type=edge["type"])
     client.update_issue(
-        issue_id=_ITEM_ID, metadata={**item["metadata"], CLAIM_TOKEN_METADATA_KEY: token_id}
+        issue_id=_ITEM_ID,
+        metadata={**item["metadata"], CLAIM_TOKEN_METADATA_KEY: token_id},
+        names_claim_token=True,
     )
     return token_id
 

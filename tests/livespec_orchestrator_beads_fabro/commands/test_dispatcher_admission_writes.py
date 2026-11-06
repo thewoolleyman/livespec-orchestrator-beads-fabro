@@ -135,7 +135,7 @@ def _seed(*, item: WorkItem) -> tuple[FakeBeadsClient, str]:
     token = create_claim_token(client=client)
     metadata = dict(client.show_issue(issue_id=item.id)["metadata"])
     metadata[CLAIM_TOKEN_METADATA_KEY] = token
-    client.update_issue(issue_id=item.id, metadata=metadata)
+    client.update_issue(issue_id=item.id, metadata=metadata, names_claim_token=True)
     return client, token
 
 

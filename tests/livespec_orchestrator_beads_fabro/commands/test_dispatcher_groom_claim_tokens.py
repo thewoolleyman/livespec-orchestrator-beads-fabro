@@ -167,7 +167,7 @@ def _filed(
     token = create_claim_token(client=client)
     metadata = dict(client.show_issue(issue_id=_ITEM_ID)["metadata"])
     metadata[CLAIM_TOKEN_METADATA_KEY] = token
-    client.update_issue(issue_id=_ITEM_ID, metadata=metadata)
+    client.update_issue(issue_id=_ITEM_ID, metadata=metadata, names_claim_token=True)
     return item, client, token
 
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_orchestrator_beads_fabro._beads_client_metadata import CLAIM_TOKEN_METADATA_KEY
 from livespec_orchestrator_beads_fabro.commands._plan_epoch_tokens import (
     attempt_close,
     token_reading,
@@ -23,8 +24,6 @@ __all__: list[str] = [
     "change_claim",
     "create_claim_token",
 ]
-
-CLAIM_TOKEN_METADATA_KEY = "dispatch_claim_token"  # noqa: S105 - metadata key
 
 _CLAIM_TOKEN_LABEL = "claim-token"  # noqa: S105 - record label
 _CLOSE_REASON_KIND = "claim-token-transition"
@@ -136,7 +135,7 @@ def change_claim(  # noqa: PLR0911, PLR0913
             return ClaimChangeResult(outcome="claim-changed")
 
     update["metadata"] = _with_successor(record=record, metadata=metadata, successor=successor)
-    client.update_issue(**update)
+    client.update_issue(**update, names_claim_token=True)
     return ClaimChangeResult(outcome="applied", successor_token_id=successor)
 
 
@@ -196,6 +195,7 @@ def _stand_down_if_original_writer_landed(
     client.update_issue(
         issue_id=work_item_id,
         metadata=_with_successor(record=record, metadata=None, successor=successor),
+        names_claim_token=True,
     )
     return None
 
