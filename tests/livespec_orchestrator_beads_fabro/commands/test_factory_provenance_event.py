@@ -58,20 +58,22 @@ def _payload(
     *,
     login: str = "thewoolleyman",
     labels: list[dict[str, str]] | None = None,
+    number: int = 73,
 ) -> str:
     return json.dumps(
         {
+            "number": number,
             "pull_request": {
                 "user": {"login": login},
                 "labels": [] if labels is None else labels,
                 "base": {"sha": "base1234"},
                 "head": {"sha": "head5678"},
-            }
+            },
         }
     )
 
 
-def test_parse_event_reduces_a_pull_request_payload_to_its_four_fields() -> None:
+def test_parse_event_reduces_a_pull_request_payload_to_its_five_fields() -> None:
     module = _module()
     event = module.parse_event(payload_text=_payload(labels=[{"name": "factory-override"}]))
     assert event is not None
@@ -79,6 +81,7 @@ def test_parse_event_reduces_a_pull_request_payload_to_its_four_fields() -> None
     assert event.labels == ("factory-override",)
     assert event.base_sha == "base1234"
     assert event.head_sha == "head5678"
+    assert event.pr_number == 73
 
 
 def test_parse_event_returns_none_for_non_json_text() -> None:

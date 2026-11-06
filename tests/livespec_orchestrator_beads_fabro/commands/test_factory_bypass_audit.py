@@ -234,7 +234,7 @@ def test_render_report_with_findings() -> None:
     assert "Flagged 1 product-code PR(s)" in text
     assert "- PR #7 by @thewoolleyman" in text
     assert f"    - {_PRODUCT}" in text
-    assert "Factory-Override exception" not in text
+    assert "factory exception" not in text
 
 
 def test_render_report_lists_recorded_exceptions() -> None:
@@ -243,7 +243,7 @@ def test_render_report_lists_recorded_exceptions() -> None:
         policy=_policy(),
     )
     text = render_report(report=report, policy=_policy())
-    assert "Recorded 1 Factory-Override exception(s):" in text
+    assert "Recorded 1 factory exception(s):" in text
     assert "- PR #21 by @thewoolleyman" in text
 
 
@@ -276,7 +276,13 @@ def test_render_json_carries_recorded_exceptions() -> None:
     payload = json.loads(render_json(report=report, policy=_policy()))
     assert payload["exception_count"] == 1
     assert payload["exceptions"] == [
-        {"number": 31, "title": "feat: change", "author": "thewoolleyman"}
+        {
+            "author": "thewoolleyman",
+            "item_id": "",
+            "number": 31,
+            "repayment_outstanding": False,
+            "title": "feat: change",
+        }
     ]
 
 
