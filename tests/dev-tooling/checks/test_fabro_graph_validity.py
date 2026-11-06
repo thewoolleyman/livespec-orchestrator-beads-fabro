@@ -169,6 +169,21 @@ def test_a_commit_settling_node_without_wip_capture_is_a_finding(
     assert "livespec-capture-wip" in findings[0]
 
 
+def test_a_wip_capture_check_ignores_settle_nodes_the_graph_does_not_declare(
+    check: ModuleType, tmp_path: Path
+) -> None:
+    """The WIP helper reports only settle nodes that actually exist in this graph."""
+    graph = """digraph Probe {
+    implement_commit_settle [script=\"livespec-capture-wip\"]
+}
+"""
+    _seed_payload(root=tmp_path, graph=graph)
+
+    findings = check.wip_capture_findings(payloads=check.checked_payloads(repo_root=tmp_path))
+
+    assert findings == []
+
+
 def test_a_fork_only_setting_is_stripped_named_and_never_edited_in_place(
     check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
