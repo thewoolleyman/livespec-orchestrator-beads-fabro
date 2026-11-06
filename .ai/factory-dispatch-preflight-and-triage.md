@@ -146,7 +146,13 @@ detected coverage/test failures` while `preferred_label = approve`. Read
 `fabro dump --server <factory>` the `pr` stage before believing the run's own
 account. The ref "preserved on `refs/heads/needs-human/<run>`" exists only in
 the SANDBOX when the push itself failed; check `git ls-remote origin` before
-assuming it is on origin. Rework by resolving the item to `ready` with a rider
+assuming it is on origin. That `<id>` is the 32-hex DISPATCH id (the commit
+trailer `Factory-Run-Id:`), never the item id or the `01M…` Fabro run id, so a
+`git ls-remote origin | grep <item-id>` misses it while `preserve/` refs, which
+do carry the item id, still match. Look it up as
+`git ls-remote origin refs/heads/needs-human/<dispatch-id>` before reporting a
+run left no saved branch (2026-11-06: bd-ib-veyxvz's
+`needs-human/c816d0ea891b4cb3a3e8e6d648da59da` was reported absent this way). Rework by resolving the item to `ready` with a rider
 naming the sibling's call sites, and re-dispatch from current master seeded
 from the preserved implement diff.
 
