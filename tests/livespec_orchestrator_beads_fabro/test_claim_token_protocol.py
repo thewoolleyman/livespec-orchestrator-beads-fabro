@@ -265,6 +265,54 @@ def test_transition_takeover_applies_after_wait_when_the_original_write_never_la
     assert client.show_issue(issue_id=_ITEM_ID)["status"] == "ready"
 
 
+def test_transition_takeover_follows_two_closed_tokens_to_an_open_successor() -> None:
+    client, first_token = _client_with_current_token()
+    second_token = create_claim_token(client=client)
+    open_token = create_claim_token(client=client)
+    client.close_issue(issue_id=first_token, reason=_transition_reason(successor=second_token))
+    client.close_issue(issue_id=second_token, reason=_transition_reason(successor=open_token))
+    observations: dict[tuple[str, str, str], float] = {}
+    now = [0.0]
+
+    first_wait = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="recovery",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+        clock=lambda: now[0],
+        transition_observations=observations,
+    )
+    now[0] = 181.0
+    second_wait = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="recovery",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+        clock=lambda: now[0],
+        transition_observations=observations,
+    )
+    now[0] = 362.0
+    applied = change_claim(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="recovery",
+        intent="release",
+        claim_tokens=True,
+        status="ready",
+        clock=lambda: now[0],
+        transition_observations=observations,
+    )
+
+    assert first_wait.outcome == "claim-transition-pending"
+    assert second_wait.outcome == "claim-transition-pending"
+    assert applied.outcome == "applied"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "ready"
+
+
 def test_transition_takeover_stands_down_when_the_item_names_the_stranded_successor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
