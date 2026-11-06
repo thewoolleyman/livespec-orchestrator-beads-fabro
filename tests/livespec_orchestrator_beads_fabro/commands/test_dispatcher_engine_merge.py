@@ -372,6 +372,8 @@ def test_post_merge_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
         "LIVESPEC_CORE_PLUGIN_ROOT": str(tmp_path / "janitor-co-livespec-core" / ".claude-plugin"),
         "LIVESPEC_FABRO_FACTORY": None,
         "LIVESPEC_INVOKER": None,
+        "EXPEDITED_INCIDENT_RESPONSE": None,
+        "EXPEDITED_INCIDENT_RESPONSE_REVERT": None,
     }
 
 

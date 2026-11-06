@@ -95,16 +95,54 @@ An attempt may carry an explicit `carrier` record (specification v302,
 | `pr-bound` | the same keys as `head-published` | positive |
 
 `target_ref` is a fully qualified `refs/heads/...` name; the other values are
-full lowercase Git object ids. A pre-PR state also requires phase `repair` and no
-landed commit/tree pairs. A PR number exists exactly when the carrier is
-`pr-bound`; a placeholder or a positive number on a pre-PR carrier is invalid.
+full lowercase Git object ids. A pre-PR state also requires a pre-PR phase
+(`repair`, or `repayment-admission`, `repayment-ready` and `repayment-active`
+before the repayment run's own PR exists) and no landed commit/tree pairs. A PR
+number exists exactly when the carrier is `pr-bound`; a placeholder or a
+positive number on a pre-PR carrier is invalid.
 
 A transition may advance a carrier (`branch-reserved` to `head-published` to
 `pr-bound`) but never regress it, drop it once present, change its target ref, or
 rewrite the recorded input parent and staged tree after the reservation was
 published. Only a still-reserved carrier may refresh its boundary. Once bound, the
-PR number is fixed. A record naming an unknown state, an extra key or a malformed
-value is refused as `incident-carrier-unsupported`, never read as normal mode.
+PR number is fixed. The one exception is repayment entry: a `master-observation`
+attempt whose expedited carrier is `pr-bound` may be succeeded by a
+`repayment-admission` attempt on a fresh `branch-reserved` carrier with a
+different target ref, because the repayment run needs its own branch and PR.
+A record naming an unknown state, an extra key or a malformed value is refused
+as `incident-carrier-unsupported`, never read as normal mode.
+
+## Normal repayment
+
+`livespec_orchestrator_beads_fabro.incident_normal_repayment` carries the
+same-item normal factory repayment (specification "Expedited incident
+lifecycle", scenario "a successful incident merge reenters normal factory on
+the same item"). `plan_repayment` derives ONE repayment operation from the
+current `master-observation` attempt and a `MasterCiRun` that is complete,
+`success`, and names one of the attempt's landed commits; anything else is a
+named refusal (`incident-repayment-not-eligible`,
+`incident-repayment-master-ci-outstanding`). The operation id is a digest of
+the successful attempt and the master run, so a restart or duplicate delivery
+derives the same id. `enter_repayment` records `repayment-admission` as the
+next generation and returns the item to `pending-approval` through its claim
+token; `advance_repayment` records `repayment-ready` (only with ordinary
+admission complete), `repayment-active` (only once the item rests `active`,
+assigned `fabro`, under a dispatch claim stamp) and `repayment-acceptance`,
+each only against the lifecycle state the contract table pairs with it
+(`incident-phase-state-mismatch` otherwise). Repeated delivery of any step
+recovers the recorded generation (`recovered: true`) and writes nothing.
+
+`repayment_scope` and `validate_repayment_carrier` name what the repayment
+carrier owes beyond marker removal: every remaining
+`EXPEDITED_INCIDENT_RESPONSE flag: <item>` marker, every cumulative original
+path normal validation did not exercise, and every recorded deferred debt not
+repaid. `scrub_incident_flags` removes both `EXPEDITED_INCIDENT_RESPONSE` and
+`EXPEDITED_INCIDENT_RESPONSE_REVERT` from a normal dispatch's environment at
+the head of `dispatch_preamble`, before provider selection and every sandbox,
+hook or pull-request subprocess, and the janitor's scrub set removes them
+again from its gate runs. `select_incident_pull_request` selects only the
+current attempt's bound PR among merged candidates; an unbound repayment
+attempt refuses rather than falling back to the earlier repair PR.
 
 Migration: schema-1 attempts written before this model carry no `carrier` key.
 They remain readable with their exact earlier meaning, including the repair-only
