@@ -32,6 +32,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch impor
     resolve_default_branch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_pr import (
+    incident_carrier_target,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     livespec_config_text,
 )
@@ -49,8 +52,12 @@ __all__: list[str] = [
 ]
 
 
-def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> int | None:
+def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> int | str | None:
     """The pull request of the item's latest merged run, or `None` when none resolves.
+
+    An item with incident authority answers with the chain's current `pr-bound`
+    carrier, or with the chain's refusal as the string the primitive emits
+    (`incident-carrier-stale` for a superseded reading).
 
     Resolved through the reconcile valve's own authority rather than from a flag, so a
     record cannot be published onto an earlier pull request — where the acceptance pass
@@ -60,6 +67,11 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
     qualifies. A merge that merely MENTIONS the item in its body is a sibling or a
     follow-up, never a pull request a dispatch of the item produced, so it yields `None`.
     """
+    incident = incident_carrier_target(
+        repo=repo, item=item, runner=runner, surface="post-host-record"
+    )
+    if incident is not None:
+        return incident if isinstance(incident, str) else incident.pr_number
     selected = reconciled_pr_selection(repo=repo, item=item)
     if selected is not None:
         return selected

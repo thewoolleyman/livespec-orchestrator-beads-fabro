@@ -37,6 +37,7 @@ from livespec_orchestrator_beads_fabro._incident_genesis import GenesisReceipt, 
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import (
     read_authority,
     read_history,
+    read_incident_head,
 )
 from livespec_orchestrator_beads_fabro.effects._incident_authority_transition import (
     commit_transition,
@@ -68,6 +69,7 @@ __all__: list[str] = [
     "incident_claim_decided",
     "publish_incident_genesis",
     "read_incident_authority",
+    "read_incident_head",
     "read_incident_history",
     "require_current_generation",
 ]
