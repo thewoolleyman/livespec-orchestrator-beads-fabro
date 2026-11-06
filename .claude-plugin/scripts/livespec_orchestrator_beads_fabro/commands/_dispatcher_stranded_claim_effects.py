@@ -26,12 +26,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from returns.unsafe import unsafe_perform_io
+
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
+    blocked_reason_labels,
     update_work_item_blocked_state,
 )
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
-from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow, claim_row_for
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
+    ClaimRow,
+    change_claim,
+    claim_row_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    resolve_claim_tokens,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -41,10 +52,12 @@ from livespec_orchestrator_beads_fabro.errors import (
     WorkItemNotFoundError,
 )
 from livespec_orchestrator_beads_fabro.store import update_work_item_status
+from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "append_claim_comment",
     "claim_row",
+    "claim_transition",
     "claim_unchanged",
     "release_claim_to_ready",
     "rest_claim_for_a_human",
@@ -55,6 +68,7 @@ _FABRO_ASSIGNEE = "fabro"
 _READY_STATUS = "ready"
 _BLOCKED_STATUS = "blocked"
 _NEEDS_HUMAN_REASON = "needs-human"
+_CLAIM_TOKENS_DISABLED = False
 _LEDGER_ERRORS: tuple[type[Exception], ...] = (
     WorkItemNotFoundError,
     BeadsCommandError,
@@ -101,27 +115,92 @@ def append_claim_comment(*, repo: Path, work_item_id: str, body: str) -> bool:
 
 def release_claim_to_ready(*, repo: Path, work_item_id: str) -> bool:
     """Return the item to `ready` with its `fabro` claim dropped."""
-    applied = attempt(
-        action=lambda: update_work_item_status(
-            path=store_config(repo=repo),
-            item_id=work_item_id,
+    return (
+        claim_transition(
+            repo=repo,
+            work_item_id=work_item_id,
             status=_READY_STATUS,
             clear_assignee=True,
-        ),
-        exceptions=_LEDGER_ERRORS,
+        )
+        == "applied"
     )
-    return not isinstance(applied, AttemptFailure)
 
 
 def rest_claim_for_a_human(*, repo: Path, work_item_id: str) -> bool:
     """Rest the item at `blocked` / `needs-human` without changing admission."""
-    rested = attempt(
-        action=lambda: update_work_item_blocked_state(
-            path=store_config(repo=repo),
-            item_id=work_item_id,
+    return (
+        claim_transition(
+            repo=repo,
+            work_item_id=work_item_id,
             status=_BLOCKED_STATUS,
             blocked_reason=_NEEDS_HUMAN_REASON,
+        )
+        == "applied"
+    )
+
+
+def claim_transition(
+    *,
+    repo: Path,
+    work_item_id: str,
+    status: str,
+    clear_assignee: bool = False,
+    blocked_reason: str | None = None,
+) -> str:
+    """Make a recovery transition through the enabled claim-token protocol."""
+    config = store_config(repo=repo)
+    claim_tokens = unsafe_perform_io(
+        resolve_claim_tokens(cwd=repo).value_or(_CLAIM_TOKENS_DISABLED)
+    )
+    if not claim_tokens:
+        return _legacy_transition(
+            config=config,
+            work_item_id=work_item_id,
+            status=status,
+            clear_assignee=clear_assignee,
+            blocked_reason=blocked_reason,
+        )
+    result = attempt(
+        action=lambda: change_claim(
+            client=make_beads_client(config=config),
+            work_item_id=work_item_id,
+            writer="stranded-claim-recovery",
+            intent=f"transition-to-{status}",
+            claim_tokens=True,
+            status=status,
+            clear_assignee=clear_assignee,
+            add_labels=(None if blocked_reason is None else [f"blocked-reason:{blocked_reason}"]),
+            remove_labels=(None if blocked_reason is None else blocked_reason_labels()),
         ),
         exceptions=_LEDGER_ERRORS,
     )
-    return not isinstance(rested, AttemptFailure)
+    return "effect-unobservable" if isinstance(result, AttemptFailure) else result.outcome
+
+
+def _legacy_transition(
+    *,
+    config: StoreConfig,
+    work_item_id: str,
+    status: str,
+    clear_assignee: bool,
+    blocked_reason: str | None,
+) -> str:
+    """Preserve the established multi-write blocked-state behavior before cutover."""
+    try:
+        if blocked_reason is None:
+            update_work_item_status(
+                path=config,
+                item_id=work_item_id,
+                status=status,
+                clear_assignee=clear_assignee,
+            )
+        else:
+            update_work_item_blocked_state(
+                path=config,
+                item_id=work_item_id,
+                status=status,
+                blocked_reason=blocked_reason,
+            )
+    except _LEDGER_ERRORS:
+        return "effect-unobservable"
+    return "applied"

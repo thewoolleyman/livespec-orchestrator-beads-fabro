@@ -56,9 +56,8 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_effects import (
     claim_row,
+    claim_transition,
     claim_unchanged,
-    release_claim_to_ready,
-    rest_claim_for_a_human,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_fence import (
     claim_recovery_fence,
@@ -258,8 +257,12 @@ def _write_release_effects(
         return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
     if not claim_unchanged(row=final, run_id=request.run_id):
         return _held(request=request, reason=HOLD_CLAIM_CHANGED)
-    if not _transition(repo=repo, request=request):
-        return _held(request=request, reason=HOLD_EFFECT_UNOBSERVABLE)
+    transition = _transition(repo=repo, request=request)
+    if transition != "applied":
+        reason = (
+            HOLD_CLAIM_CHANGED if transition == HOLD_CLAIM_CHANGED else HOLD_EFFECT_UNOBSERVABLE
+        )
+        return _held(request=request, reason=reason)
     return _recovered(
         request=request,
         effects=(
@@ -304,11 +307,21 @@ def _route(*, request: ClaimRecoveryRequest) -> _Route:
     )
 
 
-def _transition(*, repo: Path, request: ClaimRecoveryRequest) -> bool:
+def _transition(*, repo: Path, request: ClaimRecoveryRequest) -> str:
     """The status write each absent-run route owes, through its shared seam."""
     if request.action == ACTION_ABSENT_RUN_RELEASE:
-        return release_claim_to_ready(repo=repo, work_item_id=request.item.id)
-    return rest_claim_for_a_human(repo=repo, work_item_id=request.item.id)
+        return claim_transition(
+            repo=repo,
+            work_item_id=request.item.id,
+            status=_READY_STATUS,
+            clear_assignee=True,
+        )
+    return claim_transition(
+        repo=repo,
+        work_item_id=request.item.id,
+        status=_BLOCKED_STATUS,
+        blocked_reason="needs-human",
+    )
 
 
 def _comment_body(*, request: ClaimRecoveryRequest) -> str:

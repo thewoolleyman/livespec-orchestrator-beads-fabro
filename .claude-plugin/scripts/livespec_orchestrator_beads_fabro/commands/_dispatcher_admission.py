@@ -27,11 +27,13 @@ could disagree.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import change_claim
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
 from livespec_orchestrator_beads_fabro.commands._acp_factory_run_reader import (
     FactoryRunReader,
@@ -47,9 +49,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibilit
     filter_eligible_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_slots import (
-    auto_approve_governing_settings,
     budget_left,
     ready_free_slots,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_writes import (
+    approve_ready_items,
+    claim_tokens_enabled,
+    held_outcomes,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_capacity_deferred import (
     CapacitySnapshot,
@@ -61,9 +67,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
     stamp_pending_claim,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
-    auto_disposition_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     write_dispatch_lock,
@@ -91,7 +94,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     resolve_wip_cap,
 )
 from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_aging_order
-from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -101,6 +103,8 @@ __all__: list[str] = [
     "admission_held_outcome",
     "admit_and_select",
 ]
+
+_CLAIM_TOKENS_DISABLED = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -245,17 +249,8 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     admitted: list[WorkItem] = []
     deferred: list[DispatchOutcome] = []
     config = store_config(repo=repo)
-    approved_ids = {item.id for item in plan.approved}
-    for item in plan.approved:
-        update_work_item_status(path=config, item_id=item.id, status="ready")
-        journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
-        journal.append(
-            record=auto_disposition_journal_record(
-                work_item_id=item.id,
-                disposition="auto-approve",
-                governing_settings=auto_approve_governing_settings(item=item),
-            )
-        )
+    claim_tokens = claim_tokens_enabled(repo=repo)
+    approved_ids = approve_ready_items(plan=plan, config=config, journal=journal)
     for item, assignee in plan.admitted:
         journal_item = replace(item, status="ready") if item.id in approved_ids else item
         dispatch_id = selfup.run_id()
@@ -271,19 +266,35 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
             resume=item.id in resume_ids,
             explicit_factory=explicit_factory,
         )
-        update_work_item_status(
-            path=config, item_id=journal_item.id, status="active", assignee=assignee
-        )
+        if claim_tokens:
+            claim = change_claim(
+                client=make_beads_client(config=config),
+                work_item_id=journal_item.id,
+                writer="dispatcher-admission",
+                intent="admit",
+                claim_tokens=True,
+                status="active",
+                assignee=assignee,
+            )
+            if claim.outcome != "applied":
+                journal.append(
+                    record={
+                        "stage": "ledger-admit-refused",
+                        "work_item_id": item.id,
+                        "reason": claim.outcome,
+                    }
+                )
+                continue
+        else:
+            update_work_item_status(
+                path=config, item_id=journal_item.id, status="active", assignee=assignee
+            )
         _ = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
         journal.append(
             record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}
         )
         admitted.append(replace(journal_item, status="active", assignee=assignee))
-    for item, reason in plan.held:
-        held = admission_held_outcome(item=item, reason=reason)
-        journal.append(record={"stage": "outcome", "outcome": asdict(held)})
-        _ = write_stderr(text=f"SURFACE: {admission_held_detail(item_id=item.id, reason=reason)}\n")
-        refused.append(held)
+    refused.extend(held_outcomes(plan=plan, journal=journal))
     if wip_cap is not None:
         deferred = capacity_deferred_outcomes(
             admittable=admittable,
