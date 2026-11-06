@@ -113,6 +113,7 @@ def file_approved_slices(
     slices: list[CandidateSlice],
     local_repo: str,
     approval: GroomApproval | None,
+    hold_for_close: regroom.CloseHold | None = None,
 ) -> GroomResult:
     """File approved local factory slices through intake, then close the original.
 
@@ -139,6 +140,9 @@ def file_approved_slices(
 
     After all slices are processed, the original backlog item is explicitly
     closed against the filed LOCAL slice ids and the cross-repo slice ids.
+    `hold_for_close` is handed to `regroom.close_regroomed_out` unchanged: it
+    runs immediately before that close and can refuse it, which is how the
+    Dispatcher's apply seam wins the original's claim token first.
 
     Raises `GroomApprovalRequiredError` — before any slice is filed — if the
     approval record is absent or names no approver identity or route.
@@ -196,6 +200,7 @@ def file_approved_slices(
         item_id=regroom_item_id,
         replacement_slice_ids=filed_ids,
         cross_repo_slice_ids=[entry.minted_id for entry in plan.cross_repo],
+        hold_for_close=hold_for_close,
     )
     record_groom_approval(path=path, work_item_id=regroom_item_id, approval=approved)
     return GroomResult(

@@ -31,6 +31,15 @@ protocol refused wrote nothing to the item, so nothing is filed either: the
 filing would close an original some other writer now holds. It is reported as
 one more refusal, and the claim-token outcome is journaled beside it.
 
+THE CLOSE IS A CLAIM-CHANGING WRITE TOO, and `bd close` cannot name a successor
+token. So, as the completion valve does, this seam wins the original's current
+token in a hold that names the successor and changes nothing else, and the
+close follows it at once. The hold is taken where the close is, after the
+replacement slices are filed, and it rests on the `backlog` the release left:
+an original some other writer moved while the slices were being filed is not
+closed under them. A refused hold is reported as one more refusal, naming the
+slices already filed.
+
 WHY EVERY REFUSAL IS JOURNALED AND NONE OF THEM RAISES. This seam runs inside
 the Dispatcher's post-run sequence, after the run is already dead. An
 exception here would abort the sequence that rests the item somewhere a human
@@ -45,6 +54,7 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro._store_groom_approval import GroomApproval
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import held
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_hold,
     claim_status_write,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -189,10 +199,28 @@ def _file_groom_plan(
                     f"reported {refusal}; nothing was written to the item and nothing was filed"
                 ),
             )
+    # The release above cleared the assignee; an item handed over at `backlog`
+    # was never released, so it is still held as the seam read it.
+    resting = held(
+        status=BACKLOG_STATUS, assignee=item.assignee if item.status == BACKLOG_STATUS else None
+    )
+
+    def _hold_for_close() -> str | None:
+        refusal = claim_hold(
+            repo=repo,
+            path=config,
+            intent="groom-apply-close",
+            item_id=item.id,
+            journal=journal,
+            still_as_decided=resting,
+        )
+        return None if refusal is None else f"the claim-token protocol reported {refusal}"
+
     return file_approved_slices(
         path=config,
         regroom_item_id=item.id,
         local_repo=repo.name,
         approval=GroomApproval(approver=plan.approver, route=plan.route),
         slices=list(plan.slices),
+        hold_for_close=_hold_for_close,
     )

@@ -17,6 +17,15 @@ stamp. The stamp cannot go first as it does before the cutover: a writer that
 does not win must write nothing to the item, and a stamp written ahead of a
 lost claim would replace the winning dispatch's stamp with the loser's.
 
+AN ADMISSION STATES WHAT IT DECIDED ON. For a `ready` item, or one this pass
+just approved, that is "still `ready`": the claim itself moves the item, so a
+second admission that decided on the same read is refused. A row the GROOM DOOR
+already moved `backlog -> active` reaches the valve `active`, and "still
+`ready`" would refuse it on every pass. Its admission is handed the claim row
+the pass planned on (`_dispatcher_admission_claims.planned_claim_rows`) and
+lands only on a row still carrying it; the write stamps a pending claim, so a
+second admission that planned on the same row is refused there too.
+
 A REFUSED CLAIM IS A FAILED OUTCOME, NOT A DEFERRAL. An item the plan admitted
 and the protocol refused was not short of capacity, so it must not be reported
 as capacity-deferred, and a targeted dispatch of it must not report nothing at
@@ -31,11 +40,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_slots import (
     auto_approve_governing_settings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import (
     guarded_status_write,
+    same_claim_row,
     status_is,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
@@ -132,8 +143,14 @@ def admit_item(  # noqa: PLR0913 — kw-only; one admission's facts plus the val
     explicit_factory: str | None,
     stamp: Callable[..., None],
     write: Callable[..., None],
+    planned: ClaimRow | None = None,
 ) -> str | None:
-    """Claim one admitted item; `None` when it is `active`, else the refusal."""
+    """Claim one admitted item; `None` when it is `active`, else the refusal.
+
+    `planned` is the claim row the pass planned on for a row that was ALREADY
+    `active`, which is a groom-door claim; `None` is a `ready` item. It is read
+    only by a guarded admission.
+    """
     return settle_claim_write(
         repo=repo,
         item_id=item_id,
@@ -161,6 +178,7 @@ def admit_item(  # noqa: PLR0913 — kw-only; one admission's facts plus the val
             dispatch_id=dispatch_id,
             resume=resume,
             explicit_factory=explicit_factory,
+            planned=planned,
         ),
     )
 
@@ -200,6 +218,7 @@ def _admit_guarded(  # noqa: PLR0913 — kw-only; one admission's facts.
     dispatch_id: str,
     resume: bool,
     explicit_factory: str | None,
+    planned: ClaimRow | None,
 ) -> str | None:
     """Win the token, then land status, assignee, successor and stamp together."""
     built = pending_claim_stamp_metadata(
@@ -219,8 +238,12 @@ def _admit_guarded(  # noqa: PLR0913 — kw-only; one admission's facts.
         assignee=assignee,
         metadata=None if isinstance(built, str) else built,
         # Admission is `ready -> active`: an item another dispatch already
-        # moved is not this admission's to claim, whichever token it names.
-        still_as_decided=status_is(status=_READY_STATUS),
+        # moved is not this admission's to claim, whichever token it names. A
+        # groom-door claim is `active` already, so it is held to the claim row
+        # the pass planned on, which this write's pending stamp then changes.
+        still_as_decided=(
+            status_is(status=_READY_STATUS) if planned is None else same_claim_row(row=planned)
+        ),
     )
     if refusal is None:
         journal_pending_claim_stamp(
