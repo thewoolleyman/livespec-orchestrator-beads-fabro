@@ -257,6 +257,26 @@ produced: a commit whose hook ran the full suite green on the INTEGRATED tree
 is that tree's run, and no second run of the suite on that integrated tree is
 owed in the same turn.
 
+## Default-branch attribution is evidence, never a guess
+
+Call a failure inherited from `{{ inputs.default_branch }}` ONLY after you
+run EVERY failed test named by the janitor aggregate or refresh-repair brief
+against the default branch's own tree in this sandbox and see that test FAIL there.
+Account for EVERY failed target named by the janitor aggregate or refresh-repair brief;
+do not decide attribution from only one target while another named target or
+check-suite worker is still running.
+
+For each named test, record its result on the default branch's tree and its result on this run's tree.
+A test that PASSES on the default branch's tree and FAILS on this run's tree
+is caused by this run's own work, including the integration a refresh-repair round performs.
+Fix it inside this turn; do NOT route it to needs_human. Do NOT stop a still-running check-suite worker
+in order to end the turn on another target's attribution.
+
+If you take the needs-human protocol because a failure is inherited, its reason
+must name EACH failed test together with its result on the default branch's tree
+and its result on this run's tree. An untested target, or a target whose result on either tree is unknown,
+is not evidence of inherited attribution.
+
 ## A commit hook outlasts a tool call — a return is not a verdict
 
 This repository's commit hook runs its whole declared check suite, so on a
