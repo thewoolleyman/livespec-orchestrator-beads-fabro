@@ -588,7 +588,10 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     // A successful fix is useful only when it advances the head that janitor
     // just rejected. The next failed janitor visit consumes an unchanged-head
     // marker and takes the existing `non_converged` exit; an advanced head
-    // follows the ordinary route back through janitor.
+    // follows the ordinary route back through janitor. This runs before the
+    // commit-run settle, but the failure classifier compares the marker with
+    // janitor's actual next head, so a settled commit that advances the branch
+    // cannot be mistaken for no progress.
     fix_progress_route [
         label="Fix progress: record an unchanged failed janitor head"
         shape=parallelogram
@@ -2355,16 +2358,18 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     // conflicted or its refreshed head failed the gate (Scenario 305): the janitor then
     // left a `stage: janitor` refresh-repair brief, which the route reads. Any other red
     // janitor still takes the ordinary `fix` arm, the unconditional fallthrough.
-    janitor -> janitor_failure_route [label="Red", condition="outcome!=succeeded"]
-    janitor_failure_route -> non_converged [label="Repeated unchanged-head failure", condition="outcome=failed"]
-    janitor_failure_route -> janitor_refresh_route
+    janitor -> janitor_refresh_route [label="Red", condition="outcome!=succeeded"]
     janitor_refresh_route -> refresh_repair [label="refresh brief recorded", condition="preferred_label=refresh_repair"]
+    janitor_refresh_route -> janitor_failure_route [label="ordinary janitor failure", condition="preferred_label=fix"]
     janitor_refresh_route -> fix
+    janitor_failure_route -> non_converged [label="Repeated unchanged-head failure", condition="outcome=failed"]
+    janitor_failure_route -> fix
     janitor -> non_converged [label="Exhausted (fix-loop cap)"]
     fix -> needs_human [label="Blocked", condition="outcome=failed"]
+    fix -> fix_progress_route [label="Succeeded", condition="outcome=succeeded"]
     fix -> fix_commit_settle
-    fix_commit_settle -> fix_progress_route
-    fix_progress_route -> janitor_admission
+    fix_progress_route -> fix_commit_settle
+    fix_commit_settle -> janitor_admission
     janitor_admission -> needs_human [label="Janitor visit bound exhausted", condition="outcome=failed"]
     janitor_admission -> janitor
 
