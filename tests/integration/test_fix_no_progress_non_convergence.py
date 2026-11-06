@@ -9,6 +9,7 @@ test pass while the factory ran different bytes.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -142,3 +143,43 @@ def test_a_fix_head_change_keeps_the_next_janitor_failure_in_the_repair_loop(
     assert ("fix_progress_route", "fix_commit_settle", "") in edges
     assert ("fix_commit_settle", "janitor_admission", "") in edges
     assert ("janitor_failure_route", "non_converged", "outcome=failed") in edges
+
+
+def test_a_green_janitor_visit_clears_the_no_progress_marker(tmp_path: Path) -> None:
+    """A later failure at the same head after an intervening green visit is not a repeat."""
+    repo = _repo(tmp_path=tmp_path)
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    _ = (plugins / "livespec-run-plugin-gate.py").write_text("", encoding="utf-8")
+    state = Path(
+        subprocess.run(
+            ["git", "rev-parse", "--git-path", "livespec-publication"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    state = repo / state
+    state.mkdir(parents=True, exist_ok=True)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    for name in ("livespec-fix-no-progress-head", "livespec-janitor-failed-head"):
+        _ = (state / name).write_text(f"{head}\n", encoding="utf-8")
+
+    green = subprocess.run(
+        ["sh", "-c", _script(node="janitor").replace("{{ inputs.sandbox_check_suite }}", "true")],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=os.environ | {"LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins)},
+    )
+
+    assert green.returncode == 0, green.stderr
+    assert not (state / "livespec-fix-no-progress-head").exists()
+    assert not (state / "livespec-janitor-failed-head").exists()
+    later_failure = _run(node="janitor_failure_route", repo=repo)
+    assert later_failure.returncode == 0
+    assert (state / "livespec-janitor-failed-head").read_text(encoding="utf-8").strip() == head
