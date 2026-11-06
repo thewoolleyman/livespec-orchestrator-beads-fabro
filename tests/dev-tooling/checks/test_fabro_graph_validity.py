@@ -150,6 +150,25 @@ def test_this_repositorys_real_graphs_pass_an_engine_that_refuses_fork_only_sett
     assert found.findings == []
 
 
+def test_a_commit_settling_node_without_wip_capture_is_a_finding(
+    check: ModuleType, tmp_path: Path
+) -> None:
+    """Scenario 317: the graph gate names the exact settling node that omits capture."""
+    graph = """digraph Probe {
+    implement_commit_settle [script=\"echo settle\"]
+    fix_commit_settle [script=\"livespec-capture-wip\"]
+    review_fix_commit_settle [script=\"livespec-capture-wip\"]
+}
+"""
+    _seed_payload(root=tmp_path, graph=graph)
+
+    findings = check.wip_capture_findings(payloads=check.checked_payloads(repo_root=tmp_path))
+
+    assert len(findings) == 1
+    assert "implement_commit_settle" in findings[0]
+    assert "livespec-capture-wip" in findings[0]
+
+
 def test_a_fork_only_setting_is_stripped_named_and_never_edited_in_place(
     check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

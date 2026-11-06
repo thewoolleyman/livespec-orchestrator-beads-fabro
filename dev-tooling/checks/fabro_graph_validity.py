@@ -106,6 +106,7 @@ if str(_DT_VENDOR) not in sys.path:
 
 import structlog  # noqa: E402
 from _checked_workflow_payloads import (  # noqa: E402  — sibling private import
+    BUNDLE_RELPATH,
     CheckedPayload,
     checked_payloads,
     incompleteness,
@@ -118,6 +119,9 @@ from _fork_only_settings import (  # noqa: E402  — sibling private import
     settings_failures,
 )
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin  # noqa: E402
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (  # noqa: E402
+    parse_dot_graph,
+)
 
 __all__: list[str] = [
     "FAIL_WHEN_ABSENT",
@@ -140,6 +144,7 @@ __all__: list[str] = [
     "unenumerated_graphs",
     "validate_graph",
     "validation_findings",
+    "wip_capture_findings",
 ]
 
 GRAPH_NAME = "workflow.fabro"
@@ -162,6 +167,13 @@ _CONTROL_CONDITION = 'condition="outcome=succeeded"'
 _EDGE_RE = re.compile(
     r"^[ \t]*(?P<src>[A-Za-z_][A-Za-z0-9_]*)[ \t]*->[ \t]*[A-Za-z_][A-Za-z0-9_]*(?P<attrs>.*)$"
 )
+
+_SETTLE_NODES = (
+    "implement_commit_settle",
+    "fix_commit_settle",
+    "review_fix_commit_settle",
+)
+_WIP_CAPTURE_PROGRAM = "livespec-capture-wip"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -285,6 +297,28 @@ def control_failures(*, binary: str, payloads: list[CheckedPayload]) -> list[str
     return failures
 
 
+def wip_capture_findings(*, payloads: list[CheckedPayload]) -> list[str]:
+    """Name every commit-settling node that omits the required WIP capture."""
+    findings: list[str] = []
+    for payload in payloads:
+        if payload.where != "/".join(BUNDLE_RELPATH):
+            continue
+        graph = payload.directory / GRAPH_NAME
+        if not graph.is_file():
+            continue
+        parsed = parse_dot_graph(text=graph.read_text(encoding="utf-8"))
+        if isinstance(parsed, str):
+            continue
+        for node in _SETTLE_NODES:
+            if node not in parsed.nodes:
+                continue
+            script = parsed.nodes.get(node, {}).get("script", "")
+            if _WIP_CAPTURE_PROGRAM not in script:
+                detail = f"{payload.where}: {node} settles agent commits without"
+                findings.append(f"{detail} {_WIP_CAPTURE_PROGRAM} preservation")
+    return findings
+
+
 def _matcher_failures(*, binary: str, payload: CheckedPayload, graph: Path) -> list[str]:
     """That an all-conditional-edges mutant of THIS graph still reaches a rejection."""
     mutant = mutant_text(text=graph.read_text(encoding="utf-8"))
@@ -356,6 +390,7 @@ def report(*, repo_root: Path) -> Report:
     ]
     settings_findings, notes = _settings_review(payloads=payloads)
     findings.extend(settings_findings)
+    findings.extend(wip_capture_findings(payloads=payloads))
     lever = os.environ.get(LEVER, WARN_WHEN_ABSENT)
     if lever not in LEVER_VALUES:
         space = f"outside the closed value space {', '.join(LEVER_VALUES)}"
