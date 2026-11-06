@@ -125,9 +125,12 @@ named refusal (`incident-repayment-not-eligible`,
 the successful attempt and the master run, so a restart or duplicate delivery
 derives the same id. `enter_repayment` records `repayment-admission` as the
 next generation and returns the item to `pending-approval` through its claim
-token; `advance_repayment` records `repayment-ready` (only with ordinary
+token, in the same write releasing the incident holder's `dispatch_claim` stamp
+that canonical entry left on the item (the retained `incident_claim` record
+stays); `advance_repayment` records `repayment-ready` (only with ordinary
 admission complete), `repayment-active` (only once the item rests `active`,
-assigned `fabro`, under a dispatch claim stamp) and `repayment-acceptance`,
+assigned `fabro`, under a factory dispatch claim stamp; an incident holder's
+stamp is refused `incident-repayment-claim-missing` like a missing one) and `repayment-acceptance`,
 each only against the lifecycle state the contract table pairs with it
 (`incident-phase-state-mismatch` otherwise). Repeated delivery of any step
 recovers the recorded generation (`recovered: true`) and writes nothing.

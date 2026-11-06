@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro._incident_entry import HOLDER_DISPATCH_PREFIX
 from livespec_orchestrator_beads_fabro._incident_phases import REPAYMENT_PHASES, lifecycle_state_for
 from livespec_orchestrator_beads_fabro._incident_repayment_plan import (
     REPAYMENT_ENTRY_FROM,
@@ -44,7 +45,10 @@ from livespec_orchestrator_beads_fabro._incident_repayment_scope import (
     validate_repayment_carrier,
 )
 from livespec_orchestrator_beads_fabro._store_claim_tokens import change_claim
-from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_stamp_from_record
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
+    CLAIM_STAMP_METADATA_KEY,
+    claim_stamp_from_record,
+)
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
 from livespec_orchestrator_beads_fabro.effects._incident_authority_transition import (
     commit_transition,
@@ -132,8 +136,10 @@ def enter_repayment(
 
     The phase is committed through the authority chain's conditional close and
     the lifecycle move through the item's claim token: the same canonical
-    boundaries every other writer uses. A repeated delivery recovers the
-    recorded generation and writes nothing more.
+    boundaries every other writer uses. The lifecycle write also releases the
+    incident holder's `dispatch_claim` stamp canonical entry left in place of a
+    factory claim; the retained `incident_claim` record stays. A repeated
+    delivery recovers the recorded generation and writes nothing more.
     """
     plan = plan_repayment(reading=reading, master_ci=master_ci, target_ref=target_ref)
     if isinstance(plan, AuthorityRefusal):
@@ -152,6 +158,7 @@ def enter_repayment(
             claim_tokens=True,
             status=plan.lifecycle_state,
             clear_assignee=True,
+            metadata={CLAIM_STAMP_METADATA_KEY: None},
             still_as_decided=lambda row: row.get("status") == _HOST_STATE,
         )
         if result.outcome != "applied":
@@ -178,10 +185,16 @@ def _phase_refusal(
             detail=f"{phase} pairs with {state}, item rests at {record.get('status')}",
         )
     if phase == REPAYMENT_PHASES[2] and (
-        record.get("assignee") != REPAYMENT_OWNER or claim_stamp_from_record(record=record) is None
+        record.get("assignee") != REPAYMENT_OWNER or not _factory_claimed(record=record)
     ):
         return _refuse(code="incident-repayment-claim-missing", detail=attempt.item_id)
     return None
+
+
+def _factory_claimed(*, record: BeadsRecord) -> bool:
+    """Whether the item carries a factory dispatch stamp, not none and not an incident holder's."""
+    stamp = claim_stamp_from_record(record=record)
+    return stamp is not None and not (stamp.dispatch_id or "").startswith(HOLDER_DISPATCH_PREFIX)
 
 
 def advance_repayment(
