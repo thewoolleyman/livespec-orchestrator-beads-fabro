@@ -35,6 +35,14 @@ stderr, waits out the takeover wait (`TakeoverWait`, about three minutes) and
 makes the write again, once. The second answer is final. Nothing waits while
 the key is `false`, or for any other outcome.
 
+A REFUSAL THAT IS STILL PENDING NAMES ITS REMEDY. A second answer of
+`claim-transition-pending` means the wait ended on a transition this process
+had only just seen: another writer stranded the item again while it waited.
+The bare outcome does not say how the item gets written after all, which is a
+Dispatcher pass on it: the Dispatcher loop keeps its sightings from one pass
+to the next. The valve's refusal summary and the text of intake's refusal
+value both say so, in one wording (`_refusal_text`).
+
 EVERY WRITE STATES WHAT ITS DECISION RESTED ON. The token alone excludes two
 writers that contest it at the same instant. It does not stop a writer that
 decided on an earlier read and writes after another writer has finished: that
@@ -66,6 +74,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+
+from typing_extensions import override
 
 from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord, make_beads_client
 from livespec_orchestrator_beads_fabro._store_blocked_mutations import blocked_reason_labels
@@ -118,6 +128,14 @@ _WAITING = (
     "claim-transition-pending. Waiting {seconds:.0f} seconds, the protocol's takeover "
     "wait, and then making this write once more.\n"
 )
+# What a refusal that is still pending adds, for a valve and for intake alike:
+# that the one-shot writer already waited, and what gets the item written.
+_WAITED = ", after this {attempt} waited out the takeover wait and tried once more"
+_PENDING_REMEDY = (
+    " Remedy: wait for or trigger a Dispatcher pass on {wid}. A Dispatcher loop keeps "
+    "its first sighting of an unapplied transition from one pass to the next, and takes the "
+    "transition over on a pass made after the takeover wait."
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -127,12 +145,26 @@ class ClaimWriteRefused:
     Intake answers on a result track, so its refusal is a failure value and not
     a routed status: the item was not routed, and a caller reading a status
     here would report a transition that never happened.
+
+    A caller that prints this value prints `str` of it, so that is a sentence
+    in the valve refusal's own wording, with the same remedy when the outcome
+    is `claim-transition-pending`.
     """
 
     work_item_id: str
     writer: str
     intent: str
     outcome: str
+
+    @override
+    def __str__(self) -> str:
+        return _refusal_text(
+            who=f"{self.writer} ({self.intent})",
+            attempt="call",
+            outcome=self.outcome,
+            written=f"the status and claim of {self.work_item_id} were not written",
+            wid=self.work_item_id,
+        )
 
 
 def resting_at(*, status: str, labels: tuple[str, ...] = ()) -> Callable[[BeadsRecord], bool]:
@@ -371,14 +403,27 @@ def valve_claim_refusal(
     the valve wrote nothing at all, and the summary says so.
 
     A `claim-transition-pending` reported here has already been waited out and
-    retried once by `ClaimWrite`, so the summary says that too.
+    retried once by `ClaimWrite`, so the summary says that too, and then names
+    the remedy.
     """
-    refused = f"{verb} refused: the claim-token protocol reported {outcome}"
-    if outcome == _TRANSITION_PENDING:
-        refused += ", after this press waited out the takeover wait and tried once more"
     written = (
         f"nothing was written to {wid}"
         if already_done is None
         else f"{already_done}; the status and claim of {wid} were not written"
     )
-    return valve_refusal(aid=aid, wid=wid, err=outcome, msg=f"{refused}; {written}.")
+    msg = _refusal_text(who=verb, attempt="press", outcome=outcome, written=written, wid=wid)
+    return valve_refusal(aid=aid, wid=wid, err=outcome, msg=msg)
+
+
+def _refusal_text(*, who: str, attempt: str, outcome: str, written: str, wid: str) -> str:
+    """One refused write as a sentence: who, the outcome, and what was not written.
+
+    A refusal that is still `claim-transition-pending` also says that this
+    `attempt` (a valve press, an intake call) already waited and retried, and
+    ends on the remedy. No other outcome has one: a writer that lost its token
+    has nothing to wait for.
+    """
+    pending = outcome == _TRANSITION_PENDING
+    waited = _WAITED.format(attempt=attempt) if pending else ""
+    remedy = _PENDING_REMEDY.format(wid=wid) if pending else ""
+    return f"{who} refused: the claim-token protocol reported {outcome}{waited}; {written}.{remedy}"

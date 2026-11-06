@@ -730,7 +730,10 @@ def test_a_refusal_that_is_still_pending_says_the_press_already_waited() -> None
     assert refusal["summary"] == (
         "move refused: the claim-token protocol reported claim-transition-pending, "
         "after this press waited out the takeover wait and tried once more; "
-        f"nothing was written to {_ITEM_ID}."
+        f"nothing was written to {_ITEM_ID}. "
+        f"Remedy: wait for or trigger a Dispatcher pass on {_ITEM_ID}. A Dispatcher loop keeps "
+        "its first sighting of an unapplied transition from one pass to the next, and takes the "
+        "transition over on a pass made after the takeover wait."
     )
 
 
@@ -759,3 +762,26 @@ def test_an_intake_refusal_names_the_item_the_writer_its_intent_and_the_outcome(
         work_item_id=_ITEM_ID, writer="intake", intent="route:ready", outcome="claim-changed"
     )
     assert (WRITER_INTAKE, WRITER_HUMAN_VALVE) == ("intake", "human-valve")
+
+
+def test_an_intake_refusal_prints_as_a_sentence_and_names_the_remedy_only_when_pending() -> None:
+    """`str` of the refusal is what a caller prints, in the valve refusal's own wording."""
+    lost = _claim(repo=None, writer=WRITER_INTAKE, intent="route:ready").refused(
+        outcome="claim-changed"
+    )
+    pending = _claim(repo=None, writer=WRITER_INTAKE, intent="route:backlog").refused(
+        outcome="claim-transition-pending"
+    )
+
+    assert str(lost) == (
+        "intake (route:ready) refused: the claim-token protocol reported claim-changed; "
+        f"the status and claim of {_ITEM_ID} were not written."
+    )
+    assert str(pending) == (
+        "intake (route:backlog) refused: the claim-token protocol reported "
+        "claim-transition-pending, after this call waited out the takeover wait and tried "
+        f"once more; the status and claim of {_ITEM_ID} were not written. "
+        f"Remedy: wait for or trigger a Dispatcher pass on {_ITEM_ID}. A Dispatcher loop keeps "
+        "its first sighting of an unapplied transition from one pass to the next, and takes the "
+        "transition over on a pass made after the takeover wait."
+    )
