@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro._incident_repayment_scope import scrub_incident_flags
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_factory_bin as factory_bin
 from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
@@ -234,6 +235,12 @@ def dispatch_preamble(
     extensible by ratification: a fourth step should change the gate's own
     sequence, not this function.
     """
+    # A normal dispatch is never an incident execution: both incident flags
+    # leave this process's environment here, ahead of every provider selection
+    # and every sandbox, hook or pull-request subprocess, whatever value an
+    # inherited copy held. Removal is not parsing, so a malformed value is
+    # removed too rather than becoming a configuration error of a normal run.
+    _ = scrub_incident_flags(environ=os.environ)
     invoker_refusal = require_invoker_refusal(args=args, repo=repo)
     if invoker_refusal is not None:
         _ = write_stderr(text=invoker_refusal)

@@ -373,8 +373,15 @@ def test_janitor_env_delta_adds_the_core_root_and_removes_every_scrubbed_name() 
         "LIVESPEC_CORE_PLUGIN_ROOT": "/janitor-co/.livespec-core/.claude-plugin",
         "LIVESPEC_FABRO_FACTORY": None,
         "LIVESPEC_INVOKER": None,
+        "EXPEDITED_INCIDENT_RESPONSE": None,
+        "EXPEDITED_INCIDENT_RESPONSE_REVERT": None,
     }
-    assert JANITOR_REMOVED_ENV_VARS == ("LIVESPEC_FABRO_FACTORY", "LIVESPEC_INVOKER")
+    assert JANITOR_REMOVED_ENV_VARS == (
+        "LIVESPEC_FABRO_FACTORY",
+        "LIVESPEC_INVOKER",
+        "EXPEDITED_INCIDENT_RESPONSE",
+        "EXPEDITED_INCIDENT_RESPONSE_REVERT",
+    )
 
 
 def test_janitor_removed_env_vars_reports_only_the_names_the_environment_carries(

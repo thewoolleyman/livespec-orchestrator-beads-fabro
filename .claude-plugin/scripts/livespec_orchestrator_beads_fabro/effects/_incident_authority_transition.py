@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentReading,
 )
 from livespec_orchestrator_beads_fabro._incident_carrier import carrier_successor_allowed
+from livespec_orchestrator_beads_fabro._incident_phases import fresh_repayment_carrier
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
 from livespec_orchestrator_beads_fabro.errors import (
@@ -64,11 +65,16 @@ def _valid_successor(*, before: IncidentAttempt, after: IncidentAttempt) -> bool
         and after.generation == before.generation + 1
         and before.operation_id != after.operation_id
         and set(before.original_paths).issubset(after.original_paths)
-        and carrier_successor_allowed(
-            before=before.carrier,
-            after=after.carrier,
-            before_pr=before.pr_number,
-            after_pr=after.pr_number,
+        and (
+            # The merged expedited carrier stays recorded under master-observation;
+            # the one same-item repayment opens on its own fresh reserved branch.
+            fresh_repayment_carrier(before=before, after=after)
+            or carrier_successor_allowed(
+                before=before.carrier,
+                after=after.carrier,
+                before_pr=before.pr_number,
+                after_pr=after.pr_number,
+            )
         )
     )
 
