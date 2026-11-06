@@ -1345,13 +1345,6 @@
   },
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: incident provenance exceptions remain exact and repayable",
-    "work_item": "bd-ib-y7ryj3",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "heading": "## Dispatcher policy settings",
     "work_item": "bd-ib-heat",

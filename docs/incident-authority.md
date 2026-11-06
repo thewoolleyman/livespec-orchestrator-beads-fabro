@@ -42,6 +42,20 @@ does not lock arbitrary later effects: a canonical writer must commit its own
 server conditional transition. Historical records remain provenance after labels,
 environment, owner, or phase have changed, and never become normal factory proof.
 
+The factory-provenance merge gate and the retrospective factory-bypass audit
+consume this history through `read_incident_history`. Each locates a candidate
+only by an explicit `--incident-item <id>` (repeatable) and binds the exact
+repository, pull request number, head and complete landed commit set the retained
+attempt recorded; a title mention, label, trailer, marker or environment variable
+locates nothing and authorizes nothing. Only a `repair` or `reverting` attempt
+whose verification was deferred admits its carrier, and the audit reports that
+exception with its normal repayment outstanding until the chain reaches `closed`.
+A carrier the chain records in a repayment phase must earn normal factory
+provenance: the gate refuses it the `factory-override` label. A named item whose
+chain cannot be read is unobservable to the gate (exit 2) and a reported refusal
+in the audit, whose carriers stay flagged. The audit reaches the ledger through
+`--project-root`, the checkout whose store configuration names the tenant.
+
 An authenticated installed controller can commit an existing chain through the
 same process entrance using `commit-transition`, the complete prior identity
 arguments above, and `--successor-json`. The successor is the full immutable

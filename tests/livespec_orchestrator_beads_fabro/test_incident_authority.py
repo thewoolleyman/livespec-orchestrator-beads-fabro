@@ -11,6 +11,7 @@ from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, Iss
 from livespec_orchestrator_beads_fabro.incident_authority import (
     AuthorityRefusal,
     read_incident_authority,
+    read_incident_history,
 )
 
 REPOSITORY = "owner/repository"
@@ -74,3 +75,10 @@ def test_environment_markers_and_metadata_do_not_establish_incident_authority(
     )
     assert isinstance(result, AuthorityRefusal)
     assert result.code == "incident-authority-missing"
+
+
+def test_history_is_provenance_for_every_retained_attempt_and_refuses_an_unarmed_item() -> None:
+    client = _ledger()
+    refusal = read_incident_history(client=client, repository=REPOSITORY, item_id=ITEM)
+    assert isinstance(refusal, AuthorityRefusal)
+    assert refusal.code == "incident-authority-missing"

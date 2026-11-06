@@ -102,7 +102,7 @@ def test_fetch_merged_prs_default_window_requests_commits() -> None:
     assert prs == []
     args = recorder[0]
     assert args[:6] == ["pr", "list", "--state", "merged", "--limit", "100"]
-    assert args[args.index("--json") + 1] == "number,title,author,labels,files,commits"
+    assert args[args.index("--json") + 1] == "number,title,author,labels,files,commits,headRefOid"
     assert "--repo" not in args
     assert "--search" not in args
 
@@ -152,3 +152,29 @@ def test_fetch_repo_pyproject_is_fail_soft_on_a_missing_file() -> None:
     recorder: list[list[str]] = []
     assert fetch_repo_pyproject(repo="o/r", seam=_failing_seam(recorder=recorder)) is None
     assert recorder[0][0] == "api"
+
+
+def test_parse_pr_list_carries_the_head_and_the_landed_commit_oids() -> None:
+    stdout = json.dumps(
+        [
+            {
+                "number": 73,
+                "title": "repair",
+                "author": {"login": "thewoolleyman"},
+                "files": [{"path": _PRODUCT}],
+                "labels": [],
+                "headRefOid": "b" * 40,
+                "commits": [
+                    {"oid": "c" * 40, "messageHeadline": "one", "messageBody": ""},
+                    {"messageHeadline": "no oid", "messageBody": ""},
+                    {"oid": "", "messageHeadline": "empty oid", "messageBody": ""},
+                    {"oid": "d" * 40, "messageHeadline": "two", "messageBody": ""},
+                ],
+            },
+            {"number": 74, "title": "bare", "files": [], "labels": [], "commits": []},
+        ]
+    )
+    bound, bare = parse_pr_list(stdout=stdout)
+    assert bound.head_sha == "b" * 40
+    assert bound.landed_commits == ("c" * 40, "d" * 40)
+    assert (bare.head_sha, bare.landed_commits) == ("", ())

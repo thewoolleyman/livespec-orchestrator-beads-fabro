@@ -40,7 +40,7 @@ from livespec_orchestrator_beads_fabro.errors import (
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 
-__all__: list[str] = ["read_authority"]
+__all__: list[str] = ["read_authority", "read_history"]
 _GENESIS_KEYS = frozenset(("schema", "repository", "item_id", "root_token_id"))
 _TRANSITION_KEYS = frozenset(
     ("schema", "repository", "item_id", "prior_token_id", "next_token_id", "attempt")
@@ -189,6 +189,15 @@ def _select(
     )
 
 
+_OUTAGES = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
+
+
 def read_authority(
     *,
     client: BeadsClient,
@@ -206,11 +215,28 @@ def read_authority(
             query=query,
             historical=historical,
         )
-    except (
-        BeadsCommandError,
-        BeadsConnectionError,
-        BeadsCredentialMissingError,
-        BeadsMappingError,
-        BeadsTenantMissingError,
-    ) as exc:
+    except _OUTAGES as exc:
         return _refuse(code="incident-authority-unavailable", detail=str(exc))
+
+
+def read_history(
+    *, client: BeadsClient, repository: str, item_id: str
+) -> tuple[IncidentAttempt, ...] | AuthorityRefusal:
+    """Every committed attempt of the retained chain, oldest first, or a named refusal.
+
+    History authorizes no current effect: it is the provenance a consumer binds
+    exact PR, head and landed identities against after labels and environment
+    are gone. A chain that cannot be walked refuses by name; an outage is
+    unavailable, never an empty history.
+    """
+    try:
+        root = _genesis(client=client, repository=repository, item_id=item_id)
+        if isinstance(root, AuthorityRefusal):
+            return root
+        chain = _walk(client=client, repository=repository, item_id=item_id, root=root)
+    except _OUTAGES as exc:
+        return _refuse(code="incident-authority-unavailable", detail=str(exc))
+    if isinstance(chain, AuthorityRefusal):
+        return chain
+    history, _current = chain
+    return tuple(attempt for _, attempt in history)
