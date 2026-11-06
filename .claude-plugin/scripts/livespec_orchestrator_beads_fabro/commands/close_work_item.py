@@ -25,9 +25,19 @@ In two halves, mirroring the other front-ends:
 - `main` — the thin CLI surface (`close-work-item <id> [--resolution …]
   [--reason …] [--project-root …]`) skills and recipes shell to.
 
+THE CLOSE WINS THE ITEM'S CLAIM TOKEN FIRST. With `dispatcher.claim_tokens`
+true, a close is a claim-changing write (`SPECIFICATION/contracts.md`, "Claim
+tokens"), and `bd close` cannot name a successor token, so `close_with_resolution`
+takes the hold of `_close_claim_hold` immediately before the close, bound to the
+status it read the item at. A lost hold raises `ClaimWriteRefusedError` and
+closes nothing; `main` reports it on stderr with the protocol's outcome
+(`claim-changed`) and exits `4`. An item already closed is outside the protocol,
+which fences only non-closed items, so a re-close takes no hold.
+
 Per SPECIFICATION/constraints.md (the
-Result-vs-bugs split), the one EXPECTED misuse — closing an id that was
-never filed — raises the typed `WorkItemNotFoundError`; genuine bugs
+Result-vs-bugs split), the EXPECTED misuses — closing an id that was never
+filed, and a close another writer won the item's token ahead of — raise the
+typed `WorkItemNotFoundError` and `ClaimWriteRefusedError`; genuine bugs
 propagate as raised built-in exceptions.
 """
 
@@ -38,8 +48,9 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, get_args
 
+from livespec_orchestrator_beads_fabro.commands._close_claim_hold import hold_before_close
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.errors import ClaimWriteRefusedError, WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -54,7 +65,10 @@ if TYPE_CHECKING:
 __all__: list[str] = ["close_completed", "close_with_resolution", "main"]
 
 _RESOLUTION_COMPLETED: Resolution = "completed"
+_LIVESPEC_DONE = "done"
+_CLOSE_INTENT = "close-work-item"
 _EXIT_NOT_FOUND = 3
+_EXIT_CLAIM_REFUSED = 4
 
 
 def close_with_resolution(
@@ -73,12 +87,17 @@ def close_with_resolution(
 
     Returns the closed WorkItem. Raises `WorkItemNotFoundError` if
     `item_id` is not present in the tenant (an expected misuse — a typo,
-    or an id closed and pruned between read and write).
+    or an id closed and pruned between read and write), and
+    `ClaimWriteRefusedError` when, with claim tokens enabled, the hold
+    taken immediately before the close does not win the item's current
+    token: nothing is then written to the item.
     """
     index = materialize_work_items(records=read_work_items(path=path))
     existing = index.get(item_id)
     if existing is None:
         raise WorkItemNotFoundError(item_id=item_id)
+    if existing.status != _LIVESPEC_DONE:
+        hold_before_close(path=path, item_id=item_id, intent=_CLOSE_INTENT, status=existing.status)
     closed = dataclasses.replace(
         existing,
         status="done",
@@ -126,5 +145,8 @@ def main(*, argv: list[str] | None = None) -> int:
     except WorkItemNotFoundError as exc:
         _ = write_stderr(text=f"ERROR: {exc}\n")
         return _EXIT_NOT_FOUND
+    except ClaimWriteRefusedError as exc:
+        _ = write_stderr(text=f"ERROR: {exc.detail}\n")
+        return _EXIT_CLAIM_REFUSED
     _ = write_stdout(text=f"closed {closed.id} resolution:{closed.resolution}\n")
     return 0

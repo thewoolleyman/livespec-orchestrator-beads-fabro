@@ -79,7 +79,10 @@ from livespec_orchestrator_beads_fabro.commands._groom_types import (
     SliceRouteRefusal,
 )
 from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
+    WRITER_HUMAN_VALVE,
+    ClaimWrite,
     ClaimWriteRefused,
+    resting_at,
 )
 from livespec_orchestrator_beads_fabro.errors import GroomDraftError
 from livespec_orchestrator_beads_fabro.intake_dor import (
@@ -91,6 +94,10 @@ from livespec_orchestrator_beads_fabro.types import DependsOnRaw, WorkItem
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+# The intent the front-end's hold on the original is recorded under in the
+# token's close reason; the Dispatcher's apply seam records `groom-apply-close`.
+_GROOM_CLOSE_INTENT = "groom-close"
 
 # `GroomDispatch` / `GroomDoorRefusal` / `groom_dispatch` are RE-EXPORTS of the
 # groom door, whose mechanism lives beside the Dispatcher's own claim and pin
@@ -153,7 +160,10 @@ def file_approved_slices(
     closed against the filed LOCAL slice ids and the cross-repo slice ids.
     `hold_for_close` is handed to `regroom.close_regroomed_out` unchanged: it
     runs immediately before that close and can refuse it, which is how the
-    Dispatcher's apply seam wins the original's claim token first.
+    Dispatcher's apply seam wins the original's claim token first. A caller
+    that hands none gets the front-end's own hold: with the key true, the
+    original's current token is won, as a human valve's write, immediately
+    before the close, and a lost hold refuses the close the same way.
 
     Raises `GroomApprovalRequiredError` — before any slice is filed — if the
     approval record is absent or names no approver identity or route.
@@ -213,7 +223,11 @@ def file_approved_slices(
         item_id=regroom_item_id,
         replacement_slice_ids=filed_ids,
         cross_repo_slice_ids=[entry.minted_id for entry in plan.cross_repo],
-        hold_for_close=hold_for_close,
+        hold_for_close=(
+            _front_end_close_hold(path=path, item_id=regroom_item_id)
+            if hold_for_close is None
+            else hold_for_close
+        ),
     )
     record_groom_approval(path=path, work_item_id=regroom_item_id, approval=approved)
     return GroomResult(
@@ -224,6 +238,28 @@ def file_approved_slices(
         regroomed_out=True,
         refused_slice_routes=tuple(refused_routes),
     )
+
+
+def _front_end_close_hold(*, path: StoreConfig, item_id: str) -> regroom.CloseHold:
+    """The front-end's own last word before the original's close: win its token.
+
+    `close_regroomed_out` has already required the original to be `backlog`,
+    so the hold rests on that. Its refusal is the sentence
+    `close_regroomed_out` puts into `GroomExitRefusedError`.
+    """
+    write = ClaimWrite(
+        path=path,
+        item_id=item_id,
+        writer=WRITER_HUMAN_VALVE,
+        intent=_GROOM_CLOSE_INTENT,
+        still_as_decided=resting_at(status=regroom.BACKLOG_STATUS),
+    )
+
+    def _hold() -> str | None:
+        refusal = write.hold()
+        return None if refusal is None else f"the claim-token protocol reported {refusal}"
+
+    return _hold
 
 
 def _prepare_local_slices(
