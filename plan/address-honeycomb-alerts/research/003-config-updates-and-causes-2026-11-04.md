@@ -7,8 +7,8 @@ saved in `data/trigger-<id>-before-2026-11-04.json`.
 
 | Trigger | Change | Authority |
 |---|---|---|
-| `2K4wKhXN2SL` node CPU saturation (livespec) | Deleted | livespec-dev-tooling spec v131 (revise of `alert-thresholds-match-packed-fleet`, PR livespec-dev-tooling#3413). The same PR removed `ci-runner/observability/triggers/k8s-node-cpu-saturation.json`. |
-| `nBJML2UAgbm` factory ResourceQuota (livespec) | Window 15 min to 2 h (`time_range` 7200, frequency 1800), with the measurement recorded in its description | Spec v131. The committed JSON landed in #3413. The live trigger was updated in place by id, because applying by name would have created a duplicate after the name change. |
+| `2K4wKhXN2SL` node CPU saturation (livespec) | Deleted | Revise of `alert-thresholds-match-packed-fleet`. CORRECTED 2026-11-06 (see 006): PR livespec-dev-tooling#3413 merged only the propose commit, so the v131 revision and the JSON removal never reached master. Both landed as spec v144 via livespec-dev-tooling#3562 (merged 2026-11-06T04:56:12Z; commits e97bb101 and c5522046). |
+| `nBJML2UAgbm` factory ResourceQuota (livespec) | Window 15 min to 2 h (`time_range` 7200, frequency 1800), with the measurement recorded in its description | Same revision. CORRECTED 2026-11-06 (see 006): the committed JSON first landed in #3562 (spec v144), not #3413. The live trigger was updated in place by id, because applying by name would have created a duplicate after the name change. |
 | `byh8SSQRjFe` Kueue webhook no ready endpoints (livespec) | MAX over 5 min changed to MIN over 10 min (frequency 300) | Measured cause below. No spec clause fixes its window. |
 | `bEVsU9BQw22` RAM floor (agent-activity) | Re-pointed to per-host `system.linux.memory.available` | 002 |
 | `m82yfeYR2GX` CI runner fleet dead (agent-activity) | Deleted | 002, plan assertion 4 |
