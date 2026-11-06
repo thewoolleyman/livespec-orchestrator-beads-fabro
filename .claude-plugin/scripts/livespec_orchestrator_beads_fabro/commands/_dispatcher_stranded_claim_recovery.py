@@ -99,6 +99,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_termi
     TerminalObservation,
     apply_terminal_disposition,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture_receipt import (
+    record_wip_capture_receipt,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -253,6 +256,13 @@ def _write_release_effects(
     re-reads and transitions, and the effects it reports are the ones it
     actually performed.
     """
+    record_wip_capture_receipt(
+        repo=repo,
+        work_item_id=request.item.id,
+        run_id=request.run_id,
+        factory=request.factory_name,
+        journal=journal,
+    )
     stage = _route(request=request).stage
     recorded = establish_journal_record(
         journal=journal,
