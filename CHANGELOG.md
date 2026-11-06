@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.295.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.294.1...v0.295.0) (2026-11-06)
+
+
+### Features
+
+* **intake:** intake and the human valves win the item's claim token once the cutover key is true (bd-ib-5nkxfz) ([826945a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/826945ac8b2a04938e4dd183c61f63c7c9e19284))
+
 ## [0.294.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.294.0...v0.294.1) (2026-11-06)
 
 
