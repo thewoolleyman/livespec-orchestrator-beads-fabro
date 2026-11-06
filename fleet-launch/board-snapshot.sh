@@ -64,6 +64,13 @@ board_snapshot_text() {
     fi
     if mkdir "$lock" 2>/dev/null; then
       echo "pid=$$" > "$lock/holder"
+      # Another launcher can finish its refresh after our stale check and before
+      # this launcher takes the lock. Re-check while holding it so that handoff
+      # is read from the shared snapshot instead of issuing a second listing.
+      if board_snapshot_age_ok "$file" "$FLEET_LAUNCH_BOARD_TTL_S"; then
+        rm -f "$lock/holder"; rmdir "$lock" 2>/dev/null
+        cat "$file" 2>/dev/null; return
+      fi
       if "$fabro" ps -a --server "$server" > "$tmp" 2>/dev/null && mv -f "$tmp" "$file"; then
         rm -f "$lock/holder"; rmdir "$lock" 2>/dev/null
         cat "$file" 2>/dev/null; return
