@@ -277,7 +277,7 @@ def test_review_remains_the_capture_nodes_only_unconditional_route() -> None:
 
 
 def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
-    """`fix.max_visits` is THE bound now, and it is shared by three producers.
+    """`fix.max_visits` is THE bound now, and it is shared by four producers.
 
     Until plan `fabro-currency` P4 each producer carried its own graceful `< 3`
     edge guard and this attribute was the abort backstop sitting strictly above
@@ -292,7 +292,9 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
     tripwire — a fifth node routing into `fix` would re-open this silently, and
     this is the assertion that notices.
 
-    `refresh_repair` is the fourth producer and is excluded from the arithmetic:
+    `fix_commit_settle` is the fourth agent-finding producer: a failed runner
+    verdict returns its brief to fix before janitor can refresh its in-progress
+    rebase. `refresh_repair` is the fifth producer and is excluded from the arithmetic:
     v134's "Refresh-repair accounting" paragraph grants the refresh-repair route
     its own two rounds in addition to what the other entry paths allow, so it
     takes no share of the per-finding allowance.
@@ -302,7 +304,13 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor_refresh_route", _CAPTURE, _VERIFY, "refresh_repair"}
+    assert producers == {
+        "fix_commit_settle",
+        "janitor_refresh_route",
+        _CAPTURE,
+        _VERIFY,
+        "refresh_repair",
+    }
     backstop = re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node="fix") or "")
     assert backstop is not None
     # AT LEAST two entries per agent-finding producer, not strictly more: the
