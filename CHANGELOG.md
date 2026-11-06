@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.296.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.296.0...v0.296.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **store:** a claim-token takeover follows the chain to an open token and a stand-down leaves the item writable (bd-ib-kseatc) ([dd1eb0e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dd1eb0eadfbe4ceed0f5099f18bea4ac204df2f5))
+
 ## [0.296.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.3...v0.296.0) (2026-11-06)
 
 
