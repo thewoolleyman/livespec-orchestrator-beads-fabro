@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.295.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.0...v0.295.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **dispatcher:** a groom-door claim, a rework re-dispatch, a terminal recovery and the regroom close hold under claim tokens (bd-ib-7uue5s) ([cf303a6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cf303a6b89aa5233a49aaeaca3347ecf892c151c))
+
 ## [0.295.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.294.1...v0.295.0) (2026-11-06)
 
 
