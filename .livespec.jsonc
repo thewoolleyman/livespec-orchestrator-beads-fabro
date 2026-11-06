@@ -283,6 +283,17 @@
       // (correct stream route) ships with a real quiet reading AND bd-ib-xdhe5z (a stall
       // cancel pushes a preserve ref) is live.
       "stall_timeout_seconds": 21600,
+      // CUTOVER (2026-11-06, bd-ib-4eeefv, S5 of bd-ib-jjws2). With this key true every
+      // claim writer of this tenant (every Dispatcher, intake, the human valves and
+      // reconciliation) changes an item's status, `fabro` assignee or run stamp only
+      // after winning the item's current claim token, and names the successor in that
+      // one write (contracts.md, "Dispatcher policy settings", the Claim tokens bullet).
+      // It was committed only after `migrate_claim_tokens.py` named an open token on
+      // every non-closed item of this tenant with every claim writer stopped, and a
+      // survey then exited 0. Committed-configuration only: the drive configuration
+      // API cannot set it. A tenant that runs with it false again needs that migration
+      // pass re-run, with writers stopped, before it returns to true.
+      "claim_tokens": true,
       "auto_approve_ready": true,
       // wip_cap: 16 matches the factory's 16-run cap (coordinator R99:
       // max_concurrent_runs 16, quota 64/32). Raised from 10 to 12 on
