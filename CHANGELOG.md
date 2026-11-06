@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.295.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.2...v0.295.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* preserve published ancestry during janitor refresh ([d56050d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d56050dc0d34bafb292e67c62028a492141174a0))
+* **store:** every operation that closes a work item wins its claim token first (bd-ib-tshx4h) ([9b2de4f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9b2de4fe41b4397d62a64c0bd75cde84897bbb27))
+
 ## [0.295.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.295.1...v0.295.2) (2026-11-06)
 
 
