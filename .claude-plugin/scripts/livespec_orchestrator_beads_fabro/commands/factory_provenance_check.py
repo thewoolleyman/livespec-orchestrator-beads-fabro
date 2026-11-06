@@ -1,12 +1,10 @@
 """factory-provenance merge gate — the server-side factory-App authorship wall.
 
-R6a of plan `mechanically-enforce-factory-usage`. This is the MERGE-TIME half
-of the pair whose commit-time half is the `Factory-Override` trailer the
-factory-bypass audit already counts: a pull request that changes PRODUCT
-PYTHON must have been authored by the factory GitHub App, or must carry the
-`factory-override` label declaring the exception. Everything else merges
-untouched — spec, plan, docs, workflow and config changes are out of scope by
-construction, exactly as the Red-Green-Replay scope is.
+R6a of plan `mechanically-enforce-factory-usage`. A pull request that changes
+PRODUCT PYTHON must have been authored by the factory GitHub App, or match an
+exact receipt returned by the canonical incident-authority reader. Everything
+else merges untouched — spec, plan, docs, workflow and config changes are out
+of scope by construction, exactly as the Red-Green-Replay scope is.
 
 WHY THIS IS THE HARD WALL. The author identity comes from the forge's own
 event payload, so no local marker can forge it; the commit-time trailer stays
@@ -65,12 +63,15 @@ from livespec_orchestrator_beads_fabro.commands._factory_provenance_event import
     read_changed_paths,
     read_event,
 )
+from livespec_orchestrator_beads_fabro.commands._incident_provenance import (
+    IncidentReceipt,
+    matching_incident_receipt,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
     "DEFAULT_RUNNER",
     "FACTORY_APP_LOGINS",
-    "FACTORY_OVERRIDE_LABEL",
     "ProvenanceVerdict",
     "decide",
     "exit_code",
@@ -86,10 +87,6 @@ FACTORY_APP_LOGINS = (
     "app/thewoolleyman-factory-bot",
     "thewoolleyman-factory-bot[bot]",
 )
-# The declared-exception label. Its REASON belongs in the pull request body,
-# where a reviewer and the bypass audit can both read it.
-FACTORY_OVERRIDE_LABEL = "factory-override"
-
 DEFAULT_RUNNER: CommandRunner = ShellCommandRunner()
 
 _EXIT_UNOBSERVABLE = 2
@@ -104,7 +101,7 @@ class ProvenanceVerdict:
     product_paths: tuple[str, ...]
     judged_path_count: int
     factory_authored: bool
-    override_labeled: bool
+    incident_receipt: IncidentReceipt | None
 
 
 def resolve_product_policy(*, repo: Path) -> ProductPathPolicy:
@@ -119,21 +116,30 @@ def decide(
     event: PullRequestEvent,
     changed_paths: tuple[str, ...],
     policy: ProductPathPolicy,
+    repository: str | None = None,
+    landed_commits: tuple[str, ...] = (),
+    incident_receipts: tuple[IncidentReceipt, ...] = (),
 ) -> ProvenanceVerdict:
     """Decide whether this pull request may merge on factory-provenance grounds."""
     product_paths = tuple(path for path in changed_paths if is_product_py(path=path, policy=policy))
     factory_authored = event.author_login in FACTORY_APP_LOGINS
-    override_labeled = FACTORY_OVERRIDE_LABEL in event.labels
+    receipt = matching_incident_receipt(
+        receipts=incident_receipts,
+        repository=repository,
+        pr_number=event.pr_number,
+        head_sha=event.head_sha,
+        landed_commits=landed_commits,
+    )
     return ProvenanceVerdict(
         outcome=scoped_check_outcome(
             matched_file_count=len(product_paths),
-            failing=not factory_authored and not override_labeled,
+            failing=not factory_authored and receipt is None,
         ),
         author_login=event.author_login,
         product_paths=product_paths,
         judged_path_count=len(changed_paths),
         factory_authored=factory_authored,
-        override_labeled=override_labeled,
+        incident_receipt=receipt,
     )
 
 
@@ -148,13 +154,12 @@ def permits_merge(*, verdict: ProvenanceVerdict) -> bool:
 
 
 def _routes_out() -> str:
-    """The two sanctioned ways past this wall, named in the failure itself."""
+    """The sanctioned ordinary route, named in the failure itself."""
     return (
-        "Two routes out:\n"
-        "1. Dispatch the work item through the factory, so the factory GitHub "
-        f"App ({FACTORY_APP_LOGINS[0]}) authors the pull request.\n"
-        f"2. Apply the `{FACTORY_OVERRIDE_LABEL}` label and record the reason "
-        "for the in-session change in the pull request body."
+        "Dispatch the work item through the factory, so the factory GitHub "
+        f"App ({FACTORY_APP_LOGINS[0]}) authors the pull request. An arbitrary "
+        "label, trailer, marker, or invocation environment cannot authorize an "
+        "incident exception."
     )
 
 
@@ -173,7 +178,7 @@ def render_verdict(*, verdict: ProvenanceVerdict) -> str:
         ground = (
             "its author is the factory GitHub App"
             if verdict.factory_authored
-            else f"it carries the `{FACTORY_OVERRIDE_LABEL}` label"
+            else "it matches a retained exact incident receipt"
         )
         return (
             f"Factory-provenance check: pass — @{verdict.author_login} may change "
@@ -182,7 +187,7 @@ def render_verdict(*, verdict: ProvenanceVerdict) -> str:
     return (
         "Factory-provenance check: FAIL — this pull request may not merge.\n\n"
         f"Author: @{verdict.author_login} is not the factory GitHub App, and this "
-        f"pull request carries no `{FACTORY_OVERRIDE_LABEL}` label.\n\n"
+        "pull request matches no retained exact incident receipt.\n\n"
         f"Product Python it changes:\n{paths}\n\n"
         f"{_routes_out()}"
     )
@@ -202,7 +207,12 @@ def _resolve_event_path(*, declared: str | None) -> str | None:
     return declared if declared is not None else os.environ.get("GITHUB_EVENT_PATH")
 
 
-def main(*, argv: list[str] | None = None, runner: CommandRunner = DEFAULT_RUNNER) -> int:
+def main(
+    *,
+    argv: list[str] | None = None,
+    runner: CommandRunner = DEFAULT_RUNNER,
+    incident_receipts: tuple[IncidentReceipt, ...] = (),
+) -> int:
     """Supervisor for the factory-provenance merge gate. Fails CLOSED, never open."""
     args = _build_parser().parse_args(argv)
     event_path = _resolve_event_path(declared=args.event_path)
@@ -243,6 +253,7 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner = DEFAULT_RUNNE
         event=event,
         changed_paths=changed_paths,
         policy=resolve_product_policy(repo=repo),
+        incident_receipts=incident_receipts,
     )
     message = f"{render_verdict(verdict=verdict)}\n"
     if permits_merge(verdict=verdict):

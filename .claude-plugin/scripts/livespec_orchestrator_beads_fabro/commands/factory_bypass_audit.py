@@ -58,6 +58,10 @@ from livespec_orchestrator_beads_fabro.commands._factory_bypass_product_paths im
     is_product_py,
     product_policy,
 )
+from livespec_orchestrator_beads_fabro.commands._incident_provenance import (
+    IncidentReceipt,
+    matching_incident_receipt,
+)
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = [
@@ -89,6 +93,8 @@ class AuditPolicy:
     allow_authors: frozenset[str]
     allow_labels: frozenset[str]
     product_paths: ProductPathPolicy
+    repository: str = ""
+    incident_receipts: tuple[IncidentReceipt, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -103,11 +109,13 @@ class BypassFinding:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RecordedException:
-    """A product-code PR whose author DECLARED the bypass via a `Factory-Override` trailer."""
+    """A recorded exception, including whether normal repayment remains outstanding."""
 
     number: int
     title: str
     author_login: str
+    item_id: str = ""
+    repayment_outstanding: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -154,6 +162,24 @@ def audit_pull_requests(*, prs: list[PullRequest], policy: AuditPolicy) -> Audit
             continue
         if any(label in policy.allow_labels for label in pr.labels):
             continue
+        receipt = matching_incident_receipt(
+            receipts=policy.incident_receipts,
+            repository=policy.repository or None,
+            pr_number=pr.number,
+            head_sha=pr.head_sha,
+            landed_commits=pr.landed_commits,
+        )
+        if receipt is not None:
+            exceptions.append(
+                RecordedException(
+                    number=pr.number,
+                    title=pr.title,
+                    author_login=pr.author_login,
+                    item_id=receipt.item_id,
+                    repayment_outstanding=receipt.repayment_required,
+                )
+            )
+            continue
         if carries_factory_override(pr=pr):
             exceptions.append(
                 RecordedException(number=pr.number, title=pr.title, author_login=pr.author_login)
@@ -174,9 +200,13 @@ def _exception_lines(*, report: AuditReport) -> list[str]:
     """Render the recorded-exception block, which is empty when none were declared."""
     if not report.exceptions:
         return []
-    lines = ["", f"Recorded {len(report.exceptions)} Factory-Override exception(s):"]
+    lines = ["", f"Recorded {len(report.exceptions)} factory exception(s):"]
     for recorded in report.exceptions:
-        lines.append(f"- PR #{recorded.number} by @{recorded.author_login} — {recorded.title}")
+        repayment = (
+            "normal repayment outstanding" if recorded.repayment_outstanding else "unverified"
+        )
+        heading = f"- PR #{recorded.number} by @{recorded.author_login} — {recorded.title}"
+        lines.append(f"{heading} ({repayment})")
     return lines
 
 
@@ -226,6 +256,8 @@ def render_json(*, report: AuditReport, policy: AuditPolicy) -> str:
                 "number": recorded.number,
                 "title": recorded.title,
                 "author": recorded.author_login,
+                "item_id": recorded.item_id,
+                "repayment_outstanding": recorded.repayment_outstanding,
             }
             for recorded in report.exceptions
         ],
@@ -251,7 +283,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(*, argv: list[str] | None = None, seam: GhSeam = DEFAULT_GH_SEAM) -> int:
+def main(
+    *,
+    argv: list[str] | None = None,
+    seam: GhSeam = DEFAULT_GH_SEAM,
+    incident_receipts: tuple[IncidentReceipt, ...] = (),
+) -> int:
     """Supervisor for the factory-bypass audit. Always exits 0 (report-only)."""
     args = _build_parser().parse_args(argv)
     policy = AuditPolicy(
@@ -263,6 +300,8 @@ def main(*, argv: list[str] | None = None, seam: GhSeam = DEFAULT_GH_SEAM) -> in
             overrides=tuple(args.product_prefixes or ()),
             seam=seam,
         ),
+        repository=args.repo or "",
+        incident_receipts=incident_receipts,
     )
     prs = fetch_merged_prs(
         repo=args.repo,

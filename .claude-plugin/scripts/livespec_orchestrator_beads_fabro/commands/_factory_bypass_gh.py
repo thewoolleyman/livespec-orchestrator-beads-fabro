@@ -48,6 +48,8 @@ class PullRequest:
     files: tuple[str, ...]
     labels: tuple[str, ...]
     commit_messages: tuple[str, ...]
+    head_sha: str = ""
+    landed_commits: tuple[str, ...] = ()
 
 
 class GhRunner(Protocol):
@@ -98,6 +100,12 @@ def parse_pr_list(*, stdout: str) -> list[PullRequest]:
                     + str(commit.get("messageBody", ""))
                     for commit in entry.get("commits", ())
                 ),
+                head_sha=str(entry.get("headRefOid", "")),
+                landed_commits=tuple(
+                    oid
+                    for commit in entry.get("commits", ())
+                    if isinstance((oid := commit.get("oid")), str) and oid
+                ),
             )
         )
     return prs
@@ -119,7 +127,7 @@ def fetch_merged_prs(
         "--limit",
         str(limit),
         "--json",
-        "number,title,author,labels,files,commits",
+        "number,title,author,labels,files,commits,headRefOid",
     ]
     if repo is not None:
         args += ["--repo", repo]
