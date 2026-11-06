@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "CLAIM_TOKEN_METADATA_KEY",
+    "TRANSITION_WAIT_SECONDS",
     "ClaimChangeResult",
     "change_claim",
     "create_claim_token",
@@ -29,7 +30,8 @@ _CLAIM_TOKEN_LABEL = "claim-token"  # noqa: S105 - record label
 _CLOSE_REASON_KIND = "claim-token-transition"
 _DISCARD_REASON_KIND = "claim-token-discard"
 _LEASE_SECONDS = 120.0
-_TRANSITION_WAIT_SECONDS = 180.0
+# Public because a one-shot writer waits this long itself before its one retry.
+TRANSITION_WAIT_SECONDS = 180.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -157,7 +159,7 @@ def _takeover_token(
         return ClaimChangeResult(outcome="claim-unobservable")
     observation_key = (work_item_id, token_id, successor)
     first_seen = observations.setdefault(observation_key, clock())
-    if clock() - first_seen < _TRANSITION_WAIT_SECONDS:
+    if clock() - first_seen < TRANSITION_WAIT_SECONDS:
         return ClaimChangeResult(outcome="claim-transition-pending")
     if _current_token(record=record) != token_id:
         return ClaimChangeResult(outcome="claim-changed")

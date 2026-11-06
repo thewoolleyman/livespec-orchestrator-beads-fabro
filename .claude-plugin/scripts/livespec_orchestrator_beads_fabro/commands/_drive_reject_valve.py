@@ -28,6 +28,12 @@ from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
     valve_success,
 )
+from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
+    WRITER_HUMAN_VALVE,
+    ClaimWrite,
+    resting_at,
+    valve_claim_refusal,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = ["journal_rework_return", "reject_item"]
@@ -43,6 +49,13 @@ class HumanValveCommandRun(Protocol):
 
 HumanValveRunner = Callable[..., object]
 _REWORK_REJECT_KIND = "rework"
+_REGROOM_REJECT_KIND = "regroom"
+# What a `regroom` press has done by the time its status write is refused. The
+# revert precedes the write, and a refused write does not undo it.
+_REVERTED = (
+    "the merged change was already reverted in the repository checkout (git revert) "
+    "and that revert stands, so a second press would run the revert again"
+)
 
 
 def reject_item(
@@ -57,11 +70,31 @@ def reject_item(
     if item.status != "acceptance":
         return invalid_source_state(aid=aid, item=item, expected="acceptance")
     target_status = "active" if reject_kind == "rework" else "backlog"
-    if reject_kind == "regroom":
+    if reject_kind == _REGROOM_REJECT_KIND:
         refusal = _revert_merged_change(repo=repo, item=item, aid=aid, runner=runner)
         if refusal is not None:
             return refusal
-    store.update_work_item_status(path=config, item_id=item.id, status=target_status)
+    lost = ClaimWrite(
+        repo=repo,
+        path=config,
+        item_id=item.id,
+        writer=WRITER_HUMAN_VALVE,
+        intent=f"reject:{reject_kind}",
+        still_as_decided=resting_at(status="acceptance"),
+    ).write_status(
+        status=target_status,
+        unguarded=lambda: store.update_work_item_status(
+            path=config, item_id=item.id, status=target_status
+        ),
+    )
+    if lost is not None:
+        return valve_claim_refusal(
+            aid=aid,
+            wid=item.id,
+            verb="reject",
+            outcome=lost,
+            already_done=_REVERTED if reject_kind == _REGROOM_REJECT_KIND else None,
+        )
     if reject_kind == _REWORK_REJECT_KIND:
         # The human rework entry stamps the SAME marker the AI-fail entry does:
         # the two rework entries must not diverge in selectability, so the valve

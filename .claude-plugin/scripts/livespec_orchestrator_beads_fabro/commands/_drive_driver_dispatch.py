@@ -50,6 +50,12 @@ from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
     valve_success,
 )
+from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
+    WRITER_HUMAN_VALVE,
+    ClaimWrite,
+    resting_at,
+    valve_claim_refusal,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -65,6 +71,8 @@ DRIVER_DISPATCH_STAGE = "human-valve-driver-dispatch"
 
 _SOURCE_STATUS = "ready"
 _TARGET_STATUS = "active"
+# The raw label the store materializes `factory_safety` from.
+_FACTORY_SAFETY_LABEL = "factory-safety:"
 
 # The one journal the Dispatcher and the drive valves already append to, so a
 # driver dispatch and a factory dispatch of the same item are readable from one
@@ -115,6 +123,15 @@ def run_driver_dispatch(
     other way round: every refusal is decided BEFORE anything is written, so an
     ineligible press leaves the item exactly where it was and the operator can
     re-run the identical action once the item qualifies.
+
+    THE TRANSITION IS A CLAIM-CHANGING WRITE (`SPECIFICATION/contracts.md`,
+    "Claim tokens"). The eligibility predicate excludes a race with the
+    Dispatcher, not one with another operator verb on the same `ready` item, so
+    once `dispatcher.claim_tokens` is true the door writes only after winning
+    the item's current token, and only while the item is still the eligible one
+    it read. The journal record follows the status write, as
+    it always did, so a press that loses the token returns before it and no
+    dispatch that did not happen is journaled.
     """
     item_id = action_id.removeprefix(DRIVER_DISPATCH_PREFIX)
     config = resolve_store_config(cwd=repo, work_items_arg=None)
@@ -129,7 +146,25 @@ def run_driver_dispatch(
     if refusal is not None:
         return refusal
     session = driver_session_reference(driver_session=driver_session, identity=identity)
-    write_work_item_status_and_reconcile(path=config, item_id=item.id, status=_TARGET_STATUS)
+    lost = ClaimWrite(
+        repo=repo,
+        path=config,
+        item_id=item.id,
+        writer=WRITER_HUMAN_VALVE,
+        intent="driver-dispatch",
+        # Both halves of the eligibility predicate, as the ledger stores them.
+        still_as_decided=resting_at(
+            status=_SOURCE_STATUS, labels=(f"{_FACTORY_SAFETY_LABEL}{item.factory_safety}",)
+        ),
+    ).write_status(
+        status=_TARGET_STATUS,
+        reconcile=True,
+        unguarded=lambda: write_work_item_status_and_reconcile(
+            path=config, item_id=item.id, status=_TARGET_STATUS
+        ),
+    )
+    if lost is not None:
+        return valve_claim_refusal(aid=action_id, wid=item.id, verb="driver-dispatch", outcome=lost)
     record = _journal_driver_dispatch(repo=repo, identity=identity, item=item, session=session)
     return valve_success(
         aid=action_id,

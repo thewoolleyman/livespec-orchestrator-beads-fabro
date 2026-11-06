@@ -33,6 +33,12 @@ from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
     valve_success,
 )
+from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
+    WRITER_HUMAN_VALVE,
+    ClaimWrite,
+    resting_at,
+    valve_claim_refusal,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
@@ -76,6 +82,14 @@ CAP_ACTION_VERBS: frozenset[str] = frozenset(_CAP_ACTIONS)
 # command carries `value: null`.
 _CLEAR_SENTINEL = "clear"
 
+# What an answering `resolve-blocked` press has done by the time its transition
+# is refused. The answer is written first (see `resolve_blocked_item`), and a
+# refused transition does not remove it.
+_ANSWER_DELIVERED = (
+    "the answer was already written to the item as a ledger comment and journaled, "
+    "and it stays there"
+)
+
 
 def resolve_blocked_item(
     *,
@@ -117,12 +131,26 @@ def resolve_blocked_item(
         refusal = deliver_answer(config=config, item=item, aid=aid, delivery=delivery)
         if refusal is not None:
             return refusal
-    write_blocked_state_and_reconcile(
+    lost = ClaimWrite(
         path=config,
         item_id=item.id,
+        writer=WRITER_HUMAN_VALVE,
+        intent=f"resolve-blocked:{target_status}",
+        still_as_decided=resting_at(status="blocked", labels=("blocked-reason:needs-human",)),
+    ).write_cleared_block(
         status=target_status,
-        blocked_reason=None,
+        unguarded=lambda: write_blocked_state_and_reconcile(
+            path=config, item_id=item.id, status=target_status, blocked_reason=None
+        ),
     )
+    if lost is not None:
+        return valve_claim_refusal(
+            aid=aid,
+            wid=item.id,
+            verb="resolve-blocked",
+            outcome=lost,
+            already_done=None if delivery is None else _ANSWER_DELIVERED,
+        )
     return valve_success(
         aid=aid,
         wid=item.id,
@@ -257,12 +285,22 @@ def move_item(
                 "acceptance and pending-approval are entered only on their guarded paths."
             ),
         )
-    write_work_item_status_and_reconcile(
+    lost = ClaimWrite(
         path=config,
         item_id=item.id,
+        writer=WRITER_HUMAN_VALVE,
+        intent=f"move:{target_status}",
+        still_as_decided=resting_at(status=item.status),
+    ).write_status(
         status=target_status,
         clear_assignee=True,
+        reconcile=True,
+        unguarded=lambda: write_work_item_status_and_reconcile(
+            path=config, item_id=item.id, status=target_status, clear_assignee=True
+        ),
     )
+    if lost is not None:
+        return valve_claim_refusal(aid=aid, wid=item.id, verb="move", outcome=lost)
     return valve_success(
         aid=aid,
         wid=item.id,
