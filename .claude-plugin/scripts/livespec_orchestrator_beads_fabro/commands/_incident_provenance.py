@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__: list[str] = ["IncidentReceipt", "matches_receipt"]
+__all__: list[str] = ["IncidentReceipt", "matches_receipt", "permits_incident_exception"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -19,6 +19,7 @@ class IncidentReceipt:
 
     repository: str
     item_id: str
+    phase: str
     pr_number: int
     head_sha: str
     landed_commits: tuple[str, ...]
@@ -40,4 +41,22 @@ def matches_receipt(
         and receipt.pr_number == pr_number
         and receipt.head_sha == head_sha
         and receipt.landed_commits == landed_commits
+    )
+
+
+def permits_incident_exception(
+    *,
+    receipt: IncidentReceipt,
+    repository: str,
+    pr_number: int,
+    head_sha: str,
+    landed_commits: tuple[str, ...],
+) -> bool:
+    """Permit only exact expedited repair/revert carriers, never repayment work."""
+    return receipt.phase in {"repair", "reverting"} and matches_receipt(
+        receipt=receipt,
+        repository=repository,
+        pr_number=pr_number,
+        head_sha=head_sha,
+        landed_commits=landed_commits,
     )
