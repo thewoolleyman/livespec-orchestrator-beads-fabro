@@ -306,8 +306,106 @@ def test_a_start_launches_the_commit_unchanged_in_its_own_session_and_prints_its
 
     program["git_output"] = git_output
     program["group_alive"] = passes_after_restore
+    program["commit_in_flight"] = lambda run_path: run_path == path
+    program["is_ancestor"] = lambda commit: commit == "0123abc"
 
     assert program["settle"](0, str(tmp_path / "brief"), restore_head_before_wait=True) == 0
+
+
+def _restore_attempt(
+    tmp_path: Path, *, in_flight: bool, descends: bool, head: str = "checkpoint-head"
+) -> list[tuple[str, ...]]:
+    """Run settle with a restore requested; return every `git reset` it issued."""
+    program = _program(tmp_path)
+    path = _record(
+        tmp_path,
+        _RUN_ID,
+        {"state": "running", "start_head": "0123abc", "command": ["git", "commit"]},
+        4242,
+    )
+    resets: list[tuple[str, ...]] = []
+
+    def git_output(*argv: str) -> str:
+        if argv[:1] == ("reset",):
+            resets.append(argv)
+            return ""
+        return {
+            ("rev-parse", "--git-path", "livespec-commit-runs"): str(tmp_path / "runs"),
+            ("rev-parse", "HEAD"): head,
+        }[argv]
+
+    program["git_output"] = git_output
+    program["group_alive"] = _gone
+    program["commit_in_flight"] = lambda run_path: in_flight and run_path == path
+    program["is_ancestor"] = lambda commit: descends and commit == "0123abc"
+
+    assert program["settle"](0, str(tmp_path / "brief"), restore_head_before_wait=True) == 0
+    return resets
+
+
+def test_settle_restores_the_starting_head_only_while_the_commit_is_verifiably_in_flight(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: a commit that already finished is never moved off the branch."""
+    assert _restore_attempt(tmp_path / "live", in_flight=True, descends=True) == [
+        ("reset", "--soft", "0123abc")
+    ]
+    assert _restore_attempt(tmp_path / "done", in_flight=False, descends=True) == []
+
+
+def test_settle_never_moves_a_head_that_no_longer_descends_from_the_starting_commit(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: a completed amend's own commit does not descend from its starting HEAD."""
+    assert _restore_attempt(tmp_path / "amended", in_flight=True, descends=False) == []
+    assert (
+        _restore_attempt(tmp_path / "unmoved", in_flight=True, descends=True, head="0123abc") == []
+    )
+
+
+def test_a_commit_is_in_flight_only_while_a_live_git_commit_process_is_in_its_session(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: the worker being alive does not by itself mean the commit is running."""
+    program = _program(tmp_path)
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    commands = {4242: ["python3", "runner.py", "worker"], 4243: ["git", "commit", "--amend"]}
+    program["argv_of"] = lambda _root, pid: commands.get(pid, [])
+
+    def table(*, commit_state: str) -> dict[int, tuple[str, int, int, int, int]]:
+        return {
+            4242: ("S", 1, 4242, 4242, 1),
+            4243: (commit_state, 4242, 4242, 4242, 2),
+        }
+
+    program["process_table"] = lambda _root: table(commit_state="S")
+    assert program["commit_in_flight"](path) is True
+    program["process_table"] = lambda _root: table(commit_state="Z")
+    assert program["commit_in_flight"](path) is False
+    program["process_table"] = lambda _root: {4242: ("S", 1, 4242, 4242, 1)}
+    assert program["commit_in_flight"](path) is False
+    program["process_table"] = lambda _root: {}
+    assert program["commit_in_flight"](path) is False
+    path.with_suffix(".pid").unlink()
+    assert program["commit_in_flight"](path) is False
+
+
+def test_head_ancestry_asks_git_whether_the_starting_commit_is_behind_head(tmp_path: Path) -> None:
+    """Scenario 179: the ancestry reading is git's own merge-base answer."""
+    fake = _FakeSubprocess()
+    program = _program(tmp_path, fake)
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: Any) -> SimpleNamespace:
+        calls.append(command)
+        assert kwargs["capture_output"] is True
+        return SimpleNamespace(returncode=0 if command[-2] == "base" else 1)
+
+    program["subprocess"] = SimpleNamespace(run=run)
+
+    assert program["is_ancestor"]("base") is True
+    assert program["is_ancestor"]("other") is False
+    assert calls[0] == ["git", "merge-base", "--is-ancestor", "base", "HEAD"]
 
 
 @pytest.mark.parametrize(
