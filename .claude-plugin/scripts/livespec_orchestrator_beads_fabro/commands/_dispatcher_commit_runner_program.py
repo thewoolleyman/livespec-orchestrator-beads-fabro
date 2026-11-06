@@ -418,13 +418,48 @@ def brief_text(run_id, path, record, state, timeout_seconds):
     )
 
 
+def commit_in_flight(path, proc_root="/proc"):
+    """True while a `git commit` of this run is itself still executing.
+
+    The worker outlives its commit by the instant it takes to write the verdict, so the
+    worker being alive does not mean the commit is still running.
+    """
+    try:
+        group = int(path.with_suffix(".pid").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    table = process_table(proc_root)
+    if group not in table:
+        return False
+    return any(
+        table[pid][0] != "Z" and git_operation(argv_of(proc_root, pid)) == "commit"
+        for pid in (group, *descendants(table, group))
+    )
+
+
+def is_ancestor(commit):
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, "HEAD"], capture_output=True, check=False
+    )
+    return result.returncode == 0
+
+
 def restore_starting_head(path, record):
-    """Put an in-flight amend back on the commit it began from, keeping its index."""
+    """Put an in-flight amend back on the commit it began from, keeping its index.
+
+    Only while the commit is verifiably still running and HEAD still descends from the
+    commit it began from: a finished amend leaves a HEAD that does not, so its own
+    commit is never moved off the branch.
+    """
     start_head = record.get("start_head")
     if not isinstance(start_head, str):
         return
-    if git_output("rev-parse", "HEAD") != start_head:
-        git_output("reset", "--soft", start_head)
+    if git_output("rev-parse", "HEAD") == start_head or not is_ancestor(start_head):
+        return
+    fresh = read_record(path)
+    if fresh is None or recorded_state(fresh) != RUNNING or not commit_in_flight(path):
+        return
+    git_output("reset", "--soft", start_head)
 
 
 def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
