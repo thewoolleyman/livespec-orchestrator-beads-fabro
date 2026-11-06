@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro._incident_genesis import decode_genesis_r
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_TOKEN_METADATA_KEY,
     ClaimStamp,
+    claim_stamp_from_record,
     claim_stamp_metadata,
     create_claim_token,
 )
@@ -208,6 +209,21 @@ def _stamped_active(client: FakeBeadsClient) -> None:
     )
 
 
+def _assert_the_active_phase_needs_a_factory_claim(
+    client: FakeBeadsClient, reading: IncidentReading, holder: ClaimStamp
+) -> None:
+    """An unstamped claim, or the incident holder's stamp, is not a factory claim."""
+    client.update_issue(issue_id=ITEM, status="active", assignee=REPAYMENT_OWNER)
+    assert _code(advance_repayment(client=client, reading=reading, phase="repayment-active")) == (
+        "incident-repayment-claim-missing"
+    )
+    # An incident holder's stamp is not a factory claim, whoever the item is assigned to.
+    client.update_issue(issue_id=ITEM, metadata=claim_stamp_metadata(stamp=holder))
+    assert _code(advance_repayment(client=client, reading=reading, phase="repayment-active")) == (
+        "incident-repayment-claim-missing"
+    )
+
+
 def test_a_successful_complete_normal_master_run_makes_one_normal_repayment_operation_eligible_after_ordinary_admission() -> (
     None
 ):
@@ -226,6 +242,9 @@ def test_a_successful_complete_normal_master_run_makes_one_normal_repayment_oper
         refusal = plan_repayment(reading=observed, master_ci=broken, target_ref=REPAYMENT_REF)
         assert _code(refusal) == "incident-repayment-master-ci-outstanding"
         assert "outstanding obligation" in refusal.detail
+    # Canonical entry left the incident holder's stamp on the item in place of a factory claim.
+    holder = claim_stamp_from_record(record=client.show_issue(issue_id=ITEM))
+    assert holder is not None and (holder.dispatch_id or "").startswith("incident:")
     # A complete success derives ONE repayment operation from the recorded attempt.
     operation_id = repayment_operation_id(attempt=observed.attempt, master_ci=GREEN)
     entry = _entry(
@@ -250,6 +269,8 @@ def test_a_successful_complete_normal_master_run_makes_one_normal_repayment_oper
     )
     item = client.show_issue(issue_id=ITEM)
     assert (item["status"], item.get("assignee") or None) == ("pending-approval", None)
+    # Returning the item to ordinary admission releases the incident holder's stamp.
+    assert claim_stamp_from_record(record=item) is None
     # Ordinary admission is owed before the phase may read as ready.
     assert _code(
         advance_repayment(client=client, reading=entry.reading, phase="repayment-ready")
@@ -276,10 +297,7 @@ def test_a_successful_complete_normal_master_run_makes_one_normal_repayment_oper
     assert _code(
         advance_repayment(client=client, reading=ready.reading, phase="repayment-acceptance")
     ) == ("incident-repayment-phase-order")
-    client.update_issue(issue_id=ITEM, status="active", assignee=REPAYMENT_OWNER)
-    assert _code(
-        advance_repayment(client=client, reading=ready.reading, phase="repayment-active")
-    ) == ("incident-repayment-claim-missing")
+    _assert_the_active_phase_needs_a_factory_claim(client, ready.reading, holder)
     _stamped_active(client)
     active = _entry(
         advance_repayment(client=client, reading=ready.reading, phase="repayment-active")
@@ -495,7 +513,9 @@ def test_an_ineligible_or_stale_repayment_reading_is_refused_by_name_and_records
         client=fresh, reading=_read(fresh, _attempt()), master_ci=GREEN, target_ref=REPAYMENT_REF
     )
     assert _code(unmerged) == "incident-repayment-not-eligible"
-    assert fresh.show_issue(issue_id=ITEM)["status"] == "ready"
+    # The item still rests where canonical entry put it: active under the incident owner.
+    item = fresh.show_issue(issue_id=ITEM)
+    assert (item["status"], item.get("assignee")) == ("active", PRINCIPAL)
 
 
 def test_a_half_landed_repayment_step_completes_on_the_next_delivery_and_an_outage_is_unavailable(
@@ -523,13 +543,13 @@ def test_a_half_landed_repayment_step_completes_on_the_next_delivery_and_an_outa
         "pending-approval",
     )
     # A different master run under the stale pre-entry snapshot is a second operation the
-    # chain refuses by the reader's name; it never becomes another repayment.
+    # chain refuses as a stale generation; it never becomes another repayment.
     other_run = replace(GREEN, run_id="master-run-2")
     minted = client.no_history_issue_ids()
     second = enter_repayment(
         client=client, reading=observed, master_ci=other_run, target_ref=REPAYMENT_REF
     )
-    assert _code(second) == "incident-authority-identity-mismatch"
+    assert _code(second) == "incident-generation-stale"
     assert client.no_history_issue_ids() == minted
     # A tenant outage while the chain is read is unavailable at either step, never
     # absence or a blind write.
