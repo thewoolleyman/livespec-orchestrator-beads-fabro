@@ -175,6 +175,10 @@ def test_scenario305_refreshes_before_janitor_and_pushes_that_exact_green_head(
     green_head = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
     advanced = _git("rev-parse", "HEAD", cwd=default).stdout.strip()
     assert _git("merge-base", "--is-ancestor", advanced, green_head, cwd=run).returncode == 0
+    assert _git("rev-list", "--parents", "-n", "1", green_head, cwd=run).stdout.split() == [
+        green_head,
+        advanced,
+    ]
     assert checked.read_text(encoding="utf-8").strip() == green_head
     marker = run / _STATE_DIRECTORY / "livespec-janitor-passed-head"
     assert marker.read_text(encoding="utf-8").strip() == green_head
@@ -229,6 +233,29 @@ def test_scenario305_conflicting_pre_aggregate_refresh_restores_and_briefs_for_f
     run, _ = _world(root=tmp_path, conflicting=True)
     plugins = _plugins(root=tmp_path)
     before = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+
+    janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+
+    assert janitor.returncode != 0
+    assert _git("rev-parse", "HEAD", cwd=run).stdout.strip() == before
+    brief = _brief(run=run)
+    assert f"pre-refresh-head: {before}" in brief
+    assert "conflicted-paths: shared.txt" in brief
+    assert "LIVESPEC_REFRESH_REPAIR" in janitor.stderr
+
+
+def test_scenario305_conflicting_merge_refresh_restores_and_briefs_for_fix(
+    *, tmp_path: Path
+) -> None:
+    run, _ = _world(root=tmp_path, conflicting=True)
+    plugins = _plugins(root=tmp_path)
+    before = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    _ = _git(
+        "push",
+        "origin",
+        f"HEAD:refs/heads/{_PUBLISH_BRANCH}",
+        cwd=run,
+    )
 
     janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
 
