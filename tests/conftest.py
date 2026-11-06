@@ -37,6 +37,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -608,6 +609,11 @@ _COMMITTED_ROUTING_MESSAGE = (
     "model a factory node runs is an operator dial and no test may depend on it -- "
     "give the test its own fixture .livespec.jsonc naming the agent and model it is about"
 )
+_COMMITTED_CAPACITY_OR_TIMEOUT_MESSAGE = (
+    "this test reads the repository's COMMITTED dispatcher capacity or timeout value; "
+    "these are operator dials and no test may depend on them -- give the test its own "
+    "fixture .livespec.jsonc"
+)
 
 
 def _committed_acp_nodes() -> object:
@@ -617,6 +623,19 @@ def _committed_acp_nodes() -> object:
     return (
         config.get("livespec-orchestrator-beads-fabro", {}).get("dispatcher", {}).get("acp_nodes")
     )
+
+
+def _committed_capacity_or_timeout_values() -> dict[str, object]:
+    from livespec_orchestrator_beads_fabro.commands._jsonc import loads
+
+    config = loads(text=(_REPO_ROOT / ".livespec.jsonc").read_text(encoding="utf-8"))
+    dispatcher = config.get("livespec-orchestrator-beads-fabro", {}).get("dispatcher", {})
+    assert isinstance(dispatcher, dict)
+    return {
+        key: value
+        for key, value in dispatcher.items()
+        if key.endswith("_cap") or "timeout" in key or "capacity" in key
+    }
 
 
 class _CommittedRoutingTripwire(dict[str, Any]):
@@ -630,6 +649,26 @@ class _CommittedRoutingTripwire(dict[str, Any]):
 
     def _trip(self, *_args: object, **_kwargs: object) -> Any:
         pytest.fail(_COMMITTED_ROUTING_MESSAGE, pytrace=False)
+
+    __getitem__ = __iter__ = __len__ = __contains__ = __eq__ = __ne__ = _trip
+    __bool__ = __repr__ = get = items = keys = values = copy = _trip
+
+
+class _CommittedCapacityOrTimeoutValueTripwire(int):
+    """Stands in for a committed numeric capacity or timeout and fails on use."""
+
+    def _trip(self, *_args: object, **_kwargs: object) -> Any:
+        pytest.fail(_COMMITTED_CAPACITY_OR_TIMEOUT_MESSAGE, pytrace=False)
+
+    __bool__ = __eq__ = __ne__ = __lt__ = __le__ = __gt__ = __ge__ = _trip
+    __repr__ = __str__ = __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = _trip
+
+
+class _CommittedCapacityOrTimeoutTableTripwire(dict[str, Any]):
+    """Stands in for a committed capacity or timeout table and fails on any read."""
+
+    def _trip(self, *_args: object, **_kwargs: object) -> Any:
+        pytest.fail(_COMMITTED_CAPACITY_OR_TIMEOUT_MESSAGE, pytrace=False)
 
     __getitem__ = __iter__ = __len__ = __contains__ = __eq__ = __ne__ = _trip
     __bool__ = __repr__ = get = items = keys = values = copy = _trip
@@ -696,6 +735,69 @@ def _no_test_reads_the_committed_acp_routing(
         return block
 
     monkeypatch.setattr(_config, "_sub_block", guarded)
+
+
+@pytest.fixture(autouse=True)
+def _no_test_reads_the_committed_dispatcher_capacity_or_timeouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail any test that reads this repository's committed capacity or timeout dials.
+
+    Dispatcher capacity and timeout values are operator-owned controls. A test
+    that uses the committed value makes a safe operational adjustment fail the
+    suite, so tests that exercise a value must declare it in their own fixture
+    `.livespec.jsonc`. The guard runs at `_config._sub_block`, the shared read
+    seam used by every dispatcher-block consumer, mirroring the committed ACP
+    routing guard above.
+    """
+    from livespec_orchestrator_beads_fabro.commands import _config
+
+    committed = _committed_capacity_or_timeout_values()
+    real = _config._sub_block  # noqa: SLF001 -- shared dispatcher-block read seam
+
+    def guarded(*, root: dict[str, Any], key: str) -> dict[str, Any]:
+        block = real(root=root, key=key)
+        guarded_block = dict(block)
+        for name, value in committed.items():
+            if dict.get(block, name) != value:
+                continue
+            guarded_block[name] = (
+                _CommittedCapacityOrTimeoutTableTripwire(value)
+                if isinstance(value, dict)
+                else _CommittedCapacityOrTimeoutValueTripwire(value)
+            )
+        return guarded_block
+
+    monkeypatch.setattr(_config, "_sub_block", guarded)
+
+
+_CREDENTIAL_POLICY_TEST_FILES = frozenset(
+    {
+        "test_dispatcher_codex_cred_refresh_command.py",
+        "test_dispatcher_codex_identity_observation.py",
+        "test_dispatcher_codex_refresh.py",
+        "test_dispatcher_credential_requirement_explicit_workflow.py",
+    }
+)
+
+
+@pytest.fixture(autouse=True)
+def _credential_policy_tests_use_a_fixture_repository(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Keep credential-policy tests off this repository's dispatcher dials."""
+    if request.path.name not in _CREDENTIAL_POLICY_TEST_FILES:
+        return
+    source = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
+    destination = tmp_path / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
+    _ = shutil.copytree(source, destination)
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": {}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture(autouse=True)
