@@ -170,6 +170,29 @@ def test_list_issues_passes_limit_zero_for_unbounded_enumeration() -> None:
     assert captured["verb_args"] == ["list", "--status", "all", "--limit", "0", "--json"]
 
 
+def test_show_issues_reads_many_ids_in_one_show_and_none_without_ids() -> None:
+    """`show_issues` is ONE `bd show <id>... --json` for the whole batch.
+
+    A chain walk across every item of a tenant reads its tokens this way, so
+    the verb must not fall back to one show per id. With no ids it runs nothing:
+    `bd show --json` without an id exits 1.
+    """
+    calls: list[list[str]] = []
+
+    class _Recording(ShellBeadsClient):
+        def _run_json(self, *, verb_args: list[str]) -> Any:
+            calls.append(verb_args)
+            return [{"id": "li-a", "status": "closed"}, {"id": "li-c", "status": "open"}]
+
+    client = _Recording(config=_config())
+    records = client.show_issues(issue_ids=["li-a", "li-b", "li-c"])
+    nothing = client.show_issues(issue_ids=[])
+
+    assert calls == [["show", "li-a", "li-b", "li-c", "--json"]]
+    assert [record["id"] for record in records] == ["li-a", "li-c"]
+    assert nothing == []
+
+
 def test_register_custom_statuses_emits_config_set_argv() -> None:
     """The shell client registers the 5 custom statuses via the verified
     `bd config set status.custom` CSV form. Capture the `verb_args` handed

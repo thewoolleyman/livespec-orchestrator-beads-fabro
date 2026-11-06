@@ -16,6 +16,10 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
     make_beads_client,
 )
+from livespec_orchestrator_beads_fabro._store_claim_token_chain import (
+    discard_claim_token,
+    transition_reason,
+)
 from livespec_orchestrator_beads_fabro._store_claim_token_migration import (
     migrate_claim_tokens,
 )
@@ -32,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands.needs_attention import build_att
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _ROW_PREFIX = "hygiene:claim-token-missing:"
+_DEAD_END_PREFIX = "hygiene:claim-token-chain-dead-end:"
 
 
 def _config() -> StoreConfig:
@@ -105,6 +110,42 @@ def test_after_cutover_every_non_closed_item_naming_no_token_gets_one_row(
     assert "/bin/migrate_claim_tokens.py " in first.handoff.command
     assert first.handoff.command.endswith(f"--project-root {tmp_path}")
     assert CONFIRM_FLAG not in first.handoff.command
+
+
+def test_an_item_whose_token_chain_dead_ends_gets_its_own_row_and_a_live_transition_none(
+    tmp_path: Path,
+) -> None:
+    """The dead end names the token the chain ends in; a chain ending open is the writers' business."""
+    _write_config(tmp_path, claim_tokens=True)
+    client = _tenant()
+    stranded, discarded = create_claim_token(client=client), create_claim_token(client=client)
+    _seed(item_id="bd-dead-ended", status="active", token=stranded)
+    client.close_issue(
+        issue_id=stranded,
+        reason=transition_reason(writer="w", intent="i", successor=discarded),
+    )
+    discard_claim_token(client=client, token_id=discarded, writer="takeover")
+    waiting, waiting_successor = (
+        create_claim_token(client=client),
+        create_claim_token(client=client),
+    )
+    _seed(item_id="bd-waiting", status="ready", token=waiting)
+    client.close_issue(
+        issue_id=waiting,
+        reason=transition_reason(writer="w", intent="i", successor=waiting_successor),
+    )
+    _seed(item_id="bd-closed-dead", status="closed", token=stranded)
+
+    rows = claim_token_missing_items(project_root=tmp_path, repo="repo", config=_config())
+
+    assert [row.id for row in rows] == [f"{_DEAD_END_PREFIX}bd-dead-ended"]
+    row = rows[0]
+    assert (row.kind, row.urgency, row.source_ref.work_item) == ("hygiene", "high", "bd-dead-ended")
+    assert f"ends in closed token {discarded}" in row.summary
+    assert "claim-changed" in row.summary
+    assert row.summary.endswith("then run the claim-token migration pass.")
+    assert row.handoff.command.endswith(f"--project-root {tmp_path}")
+    assert CONFIRM_FLAG not in row.handoff.command
 
 
 @pytest.mark.parametrize("claim_tokens", [False, None])

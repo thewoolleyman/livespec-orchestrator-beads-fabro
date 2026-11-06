@@ -10,7 +10,6 @@ are omitted from the listing exactly as the server's are.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -24,6 +23,7 @@ from livespec_orchestrator_beads_fabro._store_claim_token_migration import (
     claim_token_named_by,
     migrate_claim_tokens,
     read_work_item_ids_naming_no_claim_token,
+    read_work_items_whose_claim_token_chain_dead_ends,
 )
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_TOKEN_METADATA_KEY,
@@ -435,21 +435,16 @@ def _chain_of_two_stranded_transitions(client: FakeBeadsClient) -> str:
     return first_successor
 
 
-@pytest.mark.parametrize(
-    "chain", [_chain_ending_in_a_discarded_token, _chain_of_two_stranded_transitions]
-)
-def test_pass_recovers_an_item_whose_token_chain_no_writer_can_win(
-    chain: Callable[[FakeBeadsClient], str],
-) -> None:
-    """Both known unwritable chains are repaired by one applied pass.
+def test_pass_recovers_an_item_whose_token_chain_no_writer_can_win() -> None:
+    """A chain ending in a discarded token is repaired by one applied pass.
 
-    Each chain leaves the item naming a closed token whose named successor is
-    closed too, so a writer that waits out the transition and takes the
-    successor over can never close it. The survey reports the item, the applied
+    The item names a closed token whose named successor was discarded, so a
+    writer that waits out the transition finds no open token to win and
+    refuses as `claim-token-missing`. The survey reports the item, the applied
     pass names a fresh open token on it, and the next writer wins that token.
     """
     client = _tenant()
-    taken_over = chain(client)
+    taken_over = _chain_ending_in_a_discarded_token(client)
     named = _named(client, item_id="bd-item")
     assert named is not None
 
@@ -467,12 +462,53 @@ def test_pass_recovers_an_item_whose_token_chain_no_writer_can_win(
 
     refused = _release()
     surveyed = migrate_claim_tokens(client=client, apply=False)
+    dead_ended = read_work_items_whose_claim_token_chain_dead_ends(path=_config())
     repaired = migrate_claim_tokens(client=client, apply=True)
     applied = _release()
 
-    assert refused == "claim-changed"
+    assert refused == "claim-token-missing"
     assert surveyed.unnamed == ("bd-item",)
+    assert dead_ended == (("bd-item", taken_over),)
     assert [item_id for item_id, _token in repaired.named] == ["bd-item"]
     assert repaired.complete is True
+    assert applied == "applied"
+    assert client.show_issue(issue_id="bd-item")["status"] == "ready"
+    assert read_work_items_whose_claim_token_chain_dead_ends(path=_config()) == ()
+
+
+def test_a_chain_of_two_stranded_transitions_is_won_without_the_pass() -> None:
+    """Two stranded transitions in a row are followed hop by hop, one takeover wait each.
+
+    The survey still lists the item, because it names a closed token, but no
+    pass is needed: the writer that has observed both unapplied transitions
+    wins the open token at the end of the chain. The dead-end census does not
+    report it, because its chain ends open.
+    """
+    client = _tenant()
+    first_successor = _chain_of_two_stranded_transitions(client)
+    named = _named(client, item_id="bd-item")
+    assert named is not None
+    observations: dict[tuple[str, str, str], float] = {("bd-item", named, first_successor): 0.0}
+    now = [181.0]
+
+    def _release() -> str:
+        return change_claim(
+            client=client,
+            work_item_id="bd-item",
+            writer="recovery",
+            intent="release",
+            claim_tokens=True,
+            status="ready",
+            clock=lambda: now[0],
+            transition_observations=observations,
+        ).outcome
+
+    second_hop_pending = _release()
+    now[0] = 362.0
+    applied = _release()
+
+    assert second_hop_pending == "claim-transition-pending"
+    assert migrate_claim_tokens(client=client, apply=False).unnamed == ()
+    assert read_work_items_whose_claim_token_chain_dead_ends(path=_config()) == ()
     assert applied == "applied"
     assert client.show_issue(issue_id="bd-item")["status"] == "ready"

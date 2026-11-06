@@ -58,6 +58,20 @@ def test_fake_show_missing_raises() -> None:
         _ = fake.show_issue(issue_id="li-absent")
 
 
+def test_fake_show_issues_returns_copies_of_the_present_ids_only() -> None:
+    """As `bd show <id>... --json` does: an absent id is left out, never an error."""
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
+    token = fake.create_no_history_issue(title="t", description="d")
+
+    records = fake.show_issues(issue_ids=["li-x", "li-absent", token])
+    records[0]["status"] = "mutated"
+
+    assert [record["id"] for record in records] == ["li-x", token]
+    assert fake.show_issue(issue_id="li-x")["status"] == "open"
+    assert fake.show_issues(issue_ids=[]) == []
+
+
 def test_fake_update_missing_raises() -> None:
     fake = FakeBeadsClient()
     with pytest.raises(BeadsMappingError):

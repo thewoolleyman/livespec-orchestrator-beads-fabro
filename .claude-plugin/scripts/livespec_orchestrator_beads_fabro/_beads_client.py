@@ -102,6 +102,16 @@ class BeadsClient(Protocol):
         """Return one issue by id (`bd show <id> --json`)."""
         ...
 
+    def show_issues(self, *, issue_ids: list[str]) -> list[BeadsRecord]:
+        """Return the records of `issue_ids` that exist (`bd show <id>... --json`).
+
+        One invocation for many ids, which is how a reader walks every claim
+        token chain of a tenant without a read per item. An id the tenant does
+        not hold is simply not returned: `bd show` reports it on stderr and
+        exits 0 with the rest. No ids reads nothing.
+        """
+        ...
+
     def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
         """Return an issue's comments (`bd comments <id> --json`).
 
@@ -272,6 +282,12 @@ class ShellBeadsClient:
     def show_issue(self, *, issue_id: str) -> BeadsRecord:
         parsed = self._run_json(verb_args=["show", issue_id, "--json"])
         return coerce_issue_record(parsed=parsed, issue_id=issue_id)
+
+    def show_issues(self, *, issue_ids: list[str]) -> list[BeadsRecord]:
+        if not issue_ids:
+            return []
+        parsed = self._run_json(verb_args=["show", *issue_ids, "--json"])
+        return coerce_record_list(parsed=parsed)
 
     def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
         """Return an issue's comments (`bd comments <id> --json`)."""
