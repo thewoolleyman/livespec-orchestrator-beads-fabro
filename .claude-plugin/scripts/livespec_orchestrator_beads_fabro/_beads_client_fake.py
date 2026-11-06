@@ -51,9 +51,9 @@ class FakeBeadsClient:
     `bd close`'s `WHERE status != 'closed'` guarantees. `create_issue` with an
     id that already exists is an UPSERT that reopens the record and erases its
     close reason, which is why nothing may ever re-create a token id. And a
-    no-history record is omitted from `list_issues` (and therefore from
-    `exists`, which the shell client resolves through that same listing) while
-    `show_issue` still returns it.
+    no-history record is omitted from `list_issues` and from `children` (and
+    therefore from `exists`, which the shell client resolves through that same
+    listing) while `show_issue` still returns it.
     """
 
     def __init__(self) -> None:
@@ -120,10 +120,17 @@ class FakeBeadsClient:
         return [dict(record) for record in self._comments.get(issue_id, [])]
 
     def children(self, *, parent_id: str) -> list[BeadsRecord]:
+        """Return the parent's children as the LIST surface sees them.
+
+        `bd children <id>` is `bd list --parent <id> --status all`, so it omits
+        every no-history record exactly as `list_issues` does. A fake answering
+        from its backing dict would return a token record that carried a parent
+        edge, where the live tenant returns none.
+        """
         return [
             dict(record)
-            for record in self._issues.values()
-            if _is_child_of(record=record, parent_id=parent_id)
+            for issue_id, record in self._issues.items()
+            if issue_id not in self._no_history and _is_child_of(record=record, parent_id=parent_id)
         ]
 
     def exists(self, *, issue_id: str) -> bool:

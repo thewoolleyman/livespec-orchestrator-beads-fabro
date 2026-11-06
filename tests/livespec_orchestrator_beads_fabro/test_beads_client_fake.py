@@ -166,6 +166,17 @@ def test_fake_children_returns_immediate_dotted_child_only() -> None:
     assert [record["id"] for record in fake.children(parent_id="x.1")] == ["x.1.2"]
 
 
+def test_fake_children_omits_a_no_history_record_carrying_a_parent_edge() -> None:
+    """`bd children` is `bd list --parent`, a list surface: no-history records are absent."""
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-epic", parent_id=None))
+    _ = fake.create_issue(draft=_draft(issue_id="li-child", parent_id="li-epic"))
+    token = fake.create_no_history_issue(title="token", description="single-use")
+    fake.add_dependency(from_id=token, to_id="li-epic", edge_type=EDGE_PARENT_CHILD)
+
+    assert [record["id"] for record in fake.children(parent_id="li-epic")] == ["li-child"]
+
+
 def test_fake_seed_and_list_comments_roundtrip() -> None:
     fake = FakeBeadsClient()
     _ = fake.create_issue(draft=_draft(issue_id="li-x"))
