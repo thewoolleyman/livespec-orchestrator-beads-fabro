@@ -11,6 +11,10 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
 )
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro._store_claim_token_creation import (
+    claim_tokens_committed,
+    create_issue_naming_first_claim_token,
+)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import scrub as _scrub
 from livespec_orchestrator_beads_fabro.commands._reflector_findings_parse import ReflectorFinding
@@ -57,7 +61,13 @@ def file_new(
     title = f"[reflection] {finding.category}: {_scrub(value=finding.subject)}"
     body = _scrub(value=finding.detail) if finding.detail else _scrub(value=finding.subject)
     issue_id = new_work_item_id(prefix=config.prefix)
-    _ = client.create_issue(
+    # The reflector files outside the store's `append_work_item` seam, so it
+    # names the item's first claim token here, in the creating write, exactly
+    # as that seam does (`_store_claim_token_creation`). The item is born
+    # non-closed, so it always names one once the repository is cut over.
+    create_issue_naming_first_claim_token(
+        client=client,
+        names_token=claim_tokens_committed(path=config),
         draft=IssueDraft(
             issue_id=issue_id,
             issue_type="bug" if finding.severity == "critical" else "task",
@@ -70,7 +80,7 @@ def file_new(
             metadata={},
             spec_id=None,
             parent_id=None,
-        )
+        ),
     )
     # `bd create` cannot land directly in a custom lifecycle status (v1.0.5
     # has no `bd create --status`), so filing is a 2-step: create (lands
