@@ -323,12 +323,27 @@ def test_genesis_rejects_requests_that_are_not_one_exact_initial_snapshot(text: 
     )
 
 
-def _cli(action: str, *extra: str) -> list[str]:
+# The repository a case names when the verb under test never reads its
+# configuration. No case may name this checkout: its committed
+# `dispatcher.claim_tokens` is a tenant's cutover state, not a test fixture.
+_UNREAD_REPO = Path("a-repository-no-case-reads")
+
+
+def _configured(*, tmp_path: Path, claim_tokens: bool) -> Path:
+    """A repository whose committed configuration states the cutover key."""
+    block = {"dispatcher": {"claim_tokens": claim_tokens}}
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps({"livespec-orchestrator-beads-fabro": block}), encoding="utf-8"
+    )
+    return tmp_path
+
+
+def _cli(action: str, *extra: str, repo: Path = _UNREAD_REPO) -> list[str]:
     return [
         action,
         *extra,
         "--repo",
-        str(Path.cwd()),
+        str(repo),
         "--repository",
         REPOSITORY,
         "--item",
@@ -355,16 +370,39 @@ def _cli(action: str, *extra: str) -> list[str]:
     ],
 )
 def test_the_genesis_verb_touches_no_ledger_and_exits_78(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], text: str, code: str
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    text: str,
+    code: str,
 ) -> None:
+    """Before a repository's cutover the verb refuses without opening the ledger."""
     factory = Mock(return_value=FakeBeadsClient())
     monkeypatch.setattr(command, "make_beads_client", factory)
     monkeypatch.setattr(command, "store_config", Mock(return_value=None))
-    status = command.main(argv=_cli("publish-genesis", "--genesis-json", text))
+    repo = _configured(tmp_path=tmp_path, claim_tokens=False)
+    status = command.main(argv=_cli("publish-genesis", "--genesis-json", text, repo=repo))
     reply = json.loads(capsys.readouterr().out)
     assert (status, reply["status"], reply["result"]["code"]) == (78, "refused", code)
     assert reply["authorizes_current_effects"] is False
     assert factory.call_count == 0
+
+
+def test_the_genesis_verb_reads_the_ledger_once_its_repository_is_cut_over(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """The same request, in a cut-over repository, gets as far as the item it names."""
+    factory = Mock(return_value=FakeBeadsClient())
+    monkeypatch.setattr(command, "make_beads_client", factory)
+    monkeypatch.setattr(command, "store_config", Mock(return_value=None))
+    repo = _configured(tmp_path=tmp_path, claim_tokens=True)
+    argv = _cli("publish-genesis", "--genesis-json", _genesis_text(), repo=repo)
+    status = command.main(argv=argv)
+    reply = json.loads(capsys.readouterr().out)
+    assert (status, reply["status"]) == (78, "refused")
+    assert reply["result"]["code"] == "incident-authority-unavailable"
+    assert reply["authorizes_current_effects"] is False
+    assert factory.call_count == 1
 
 
 @pytest.mark.parametrize(
