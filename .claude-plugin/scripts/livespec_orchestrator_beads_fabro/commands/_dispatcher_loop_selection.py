@@ -278,7 +278,6 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     # at all -- the event it looked for does not exist.
     record_dead_implementer_truncation_if_observed(outcome=outcome, journal=journal)
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-    _record_wip_capture_receipt(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
     # BEFORE the escalation below, which is the blocked transition: the tree
     # clause requires its ledger comment written "before the item's blocked
     # transition", because that comment is the only durable pointer at the
@@ -324,6 +323,10 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     dispose_terminal_routing(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=utc_now_iso()
     )
+    # AFTER all lifecycle routing: the receipt reads the forge, which may take
+    # its whole timeout. An ending receipt must never hold up a cancellation,
+    # removal, or item state transition.
+    _record_wip_capture_receipt(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
     emit_calibration(
         args=args,
         repo=repo,
