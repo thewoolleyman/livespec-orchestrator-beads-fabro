@@ -154,6 +154,72 @@ bytes do not change. A successor of such an attempt may introduce a carrier. Thi
 change models and validates the state only: it neither pushes, observes a forge,
 binds a PR nor fences a factory.
 
+## Regression recovery
+
+`livespec_orchestrator_beads_fabro.incident_regression_recovery` (planning in
+`_incident_recovery_plan` and `_incident_recovery_correction`) carries what
+happens when an incident change turns out to be wrong after it merged
+(specification "Expedited incident lifecycle"; scenarios "an attributable
+regression fences repayment and reopens the same incident" and "a
+deferred-proof-only finding is repaired without reverting healthy master";
+bd-ib-k5teti). A `Finding` names its `surface` (`trunk` for the repository's
+default branch, `pull-request`, `consumer` or `deferred-proof`), the subject and failing run it was observed
+on, the head that run evaluated, the landed incident commit its change
+evidence names, and whether deployed master is healthy.
+
+`reopen_for_regression` takes the current reading of a live repayment
+(`repayment-admission` through `repayment-acceptance`) or of a `closed`
+incident, the attributed attempt and the finding. The attributed attempt is
+re-read from the retained chain, so caller bytes confer nothing
+(`incident-reopen-attribution-mismatch`). The finding must be a trunk,
+pull-request or consumer failure whose attributed commit is one of that
+attempt's landed commits (`incident-regression-unattributed` otherwise). The
+same item is reopened as the next generation in phase `reverting`, bound to
+the attributed merged carrier and PR, with `repayment_required` kept true. The
+transition writer admits that one carrier change at a reopen, and a corrected
+repair's fresh branch after the revert receipt; every other carrier rule is
+unchanged. The item then returns to `active` under the incident owner through
+its claim token, the incident holder's stamp replacing the factory's (the
+factory stamp is retained as `prior_claim`), so the superseded run's terminal,
+proof or cleanup write answers `claim-changed`. The operation id is a digest
+of the superseded generation and the finding, so a repeated delivery recovers
+the recorded generation and writes nothing more. A
+`livespec-incident-recovery-v1` comment records the recovery request: the
+superseded and attributed generations, the attributed PR, the retained
+failures and `repayment_owed: true`. The revert itself stays the trusted
+controller's.
+
+`require_repayment_current(client, observed, effect)` is the gate a repayment
+merge, proof or closure takes immediately before its side effect. A repayment
+generation the chain has moved past is refused `incident-repayment-superseded`,
+naming the effect. Any other stale observation keeps
+`incident-generation-stale`.
+
+A `deferred-proof` finding while master is healthy never reopens
+(`incident-finding-deferred-proof-only`). `record_deferred_finding` records it
+as `deferred-finding:<run>` debt on the live repayment generation (admission,
+ready or active), so `validate_repayment_carrier` names it outstanding until
+the repayment pull request repays it. Item lifecycle, claim and master stay
+as they are. A deferred finding with master unhealthy is
+`incident-finding-not-isolated`, and a trunk, pull-request or consumer finding
+is `incident-finding-requires-recovery`.
+
+`record_revert_receipt` reconciles the controller's `RevertReceipt` and moves
+`reverting` to `collecting-failures`. `enter_corrected_attempt` then opens a
+corrected `repair` attempt on its own `branch-reserved` carrier, only from
+`collecting-failures` (`incident-correction-not-eligible`) and only while the
+original failures stay retained (`incident-correction-failures-missing`). Its
+`Correction` must be fresh. A `repair` whose head is a failed or already
+landed head, or any correction that reuses a failing run as its evidence, is
+`incident-correction-unchanged-reland`. A `measured-resolution` may keep the
+original head when its measurement is new. Any other kind, or empty evidence,
+is `incident-correction-evidence-missing`. The corrected attempt keeps its
+deferred debt and `repayment_required`, so final normal repayment stays owed,
+and its retained record carries the original failures beside the correction.
+`retained_failures` and `recovery_attempts` read those records. Recovery is
+counted there, apart from ordinary acceptance rework and nonconvergence
+budgets.
+
 ## Genesis
 
 `publish-genesis --genesis-json <request>` takes the same identity arguments and
