@@ -24,7 +24,9 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client, reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
+    CLAIM_TOKEN_METADATA_KEY,
     ClaimStamp,
+    create_claim_token,
     record_claim_stamp,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
@@ -310,6 +312,44 @@ def test_a_transition_that_fails_leaves_the_records_standing(
         for entry in make_beads_client(config=_config()).list_comments(issue_id=_ITEM_ID)
     ]
     assert any(body.startswith(RELEASE_COMMENT_MARKER) for body in bodies)
+    assert next(iter(read_work_items(path=_config()))).status == "active"
+
+
+def test_recovery_that_loses_its_token_reports_claim_changed_without_a_status_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recovery fence and stamp re-read do not replace the token CAS."""
+    module = _module()
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro":{"connection":{"prefix":"bd-ib"},'
+        '"dispatcher":{"claim_tokens":true}}}',
+        encoding="utf-8",
+    )
+    item = _item()
+    _seed(item=item)
+    client = make_beads_client(config=_config())
+    token = create_claim_token(client=client)
+    record = client.show_issue(issue_id=_ITEM_ID)
+    metadata = dict(record["metadata"])
+    metadata[CLAIM_TOKEN_METADATA_KEY] = token
+    client.update_issue(issue_id=_ITEM_ID, metadata=metadata)
+    journal = _journal(repo=repo)
+    close = client.close_issue_without_verdict
+
+    def _lose(*, issue_id: str, reason: str) -> None:
+        if issue_id == token:
+            close(issue_id=issue_id, reason="another writer won")
+            return
+        close(issue_id=issue_id, reason=reason)
+
+    monkeypatch.setattr(client, "close_issue_without_verdict", _lose)
+
+    outcome = module.recover_claim(
+        repo=repo, journal=journal, request=_request(module=module, item=item), now_iso=_NOW
+    )
+
+    assert outcome.hold_reason == "claim-changed"
     assert next(iter(read_work_items(path=_config()))).status == "active"
 
 
