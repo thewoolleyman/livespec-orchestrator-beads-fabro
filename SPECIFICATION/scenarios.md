@@ -12898,3 +12898,132 @@ Feature: Run-age-bounded recovery preference
     When recovery routing grades the item
     Then the item is not routed held for publishing-run-unobservable
 ```
+
+## Scenario 324 — A hold recorded only in the dispatch journal reaches needs-attention
+
+Governing clause: `contracts.md` §"The skill surface" → "Orchestrator-owned attention facts" → "Journal-recorded holds".
+
+```gherkin
+Feature: Journal-recorded holds reach needs-attention
+  As the operator of a repository dispatched through the factory
+  I want a hold that only the dispatch journal records to appear in needs-attention
+  So that a held item never reads as idle or dispatchable and a stall never goes silent
+
+  Scenario: a current hold composes one fact naming every reason
+    Given the dispatch journal's newest record for item I is a recovery-held record carrying one measurement and one refusal
+    And that record was appended within the last seven days and item I is not closed
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:I fact naming I, recovery-held, that measurement and that refusal
+    And its handoff inspects the recorded stage in the dispatch journal
+    And it advertises no valve
+
+  Scenario: a hold that names only a run takes the run as its subject
+    Given the dispatch journal's newest record for run R is an orphan-run-reconcile-held record naming no work-item
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:R fact
+
+  Scenario: a later route record retires the hold
+    Given item I has a recovery-held record
+    And a later recovery-route record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: a record that carries no retiring stage leaves the hold current
+    Given item I has a recovery-held record appended today
+    And a later pr-view record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact
+
+  Scenario: a hold older than seven days retires without reading as resolved
+    Given the newest hold record for item I was appended eight days ago and nothing later names I
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+    And nothing in the snapshot reports that hold as resolved
+
+  Scenario: a closed item's hold retires
+    Given item I has a recovery-held record appended today
+    And item I is closed
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: an unreadable journal is unobservable, not empty
+    Given the dispatch journal cannot be read
+    When needs-attention composes its snapshot
+    Then the snapshot carries one hygiene:journal-hold:unobservable fact
+    And it does not report that no holds exist
+    And it carries no idle-factory fact
+
+  Scenario: an excluded record of one stage does not hide a hold of another
+    Given item I has a recovery-held record appended today
+    And a later stranded-claim-hold record of item I carrying the reason run-succeeded
+    And a later stranded-claim-hold record of item I carrying the reason run-live
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:I fact
+    And it names recovery-held
+
+  Scenario: a lifted launcher hold ends only the launcher hold
+    Given item I has a recovery-held record appended today
+    And a later launcher-hold record of item I
+    And a later launcher-hold-lifted record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact naming recovery-held
+    And item I still does not count as admission-eligible for the idle-factory fact
+
+  Scenario: a launcher hold composes from the journal and never from the launcher's files
+    Given a launcher appended one launcher-hold record to this repository's dispatch journal naming item I
+    And the launcher also keeps a hold file and a ticket naming item J
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact
+    And the snapshot carries no journal-hold fact for J
+
+  Scenario: a launcher hold without an item composes under its hold name and retires when lifted
+    Given a launcher appended one launcher-hold record carrying hold H and no work_item_id
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:H fact
+    When the launcher appends a launcher-hold-lifted record carrying hold H
+    And needs-attention composes its snapshot again
+    Then the snapshot carries no journal-hold fact for H
+
+  Scenario: a stranded-claim hold whose owner is live composes nothing
+    Given item I's newest stranded-claim-hold record carries the reason run-live
+    And an earlier stranded-claim-hold record of item I carries the reason factory-unobservable
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: two held stages on one subject compose one fact from the newest
+    Given item I is ready and has a recovery-held record appended today
+    And a later stranded-claim-hold record of item I carrying the reason run-succeeded
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:I fact
+    And it names stranded-claim-hold and run-succeeded
+    And item I still does not count as admission-eligible for the idle-factory fact
+
+  Scenario: a run's terminal record retires its wall-budget hold
+    Given item I has a run-wall-budget-held record
+    And a later fabro-terminal-events record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: a sandbox container held for a live run composes nothing
+    Given run R's newest sandbox-container-held record carries the hold_reason run-live
+    And an earlier sandbox-container-held record of run R carries the hold_reason run-unobserved
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for R
+
+  Scenario: a recovery-held item is not reported idle
+    Given item I is ready and otherwise admission-eligible and carries a live recovery-held
+    And item I is a child of an epic the idle-slot audit is configured to read
+    And no other ready item is admission-eligible and the repository holds zero counted claims
+    And every admission-required ACP node has an eligible candidate
+    When needs-attention composes its snapshot
+    Then the snapshot carries no idle-factory fact naming I
+    And the idle-slot audit classifies I as HELD with recovery-held named as the reason
+
+  Scenario: a reclaim-held item still counts as eligible
+    Given item I is ready and otherwise admission-eligible and its current hold is publish-branch-reclaim-held
+    And no other ready item is admission-eligible and the repository holds zero counted claims
+    And every admission-required ACP node has an eligible candidate
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact
+    And the snapshot carries an idle-factory fact whose handoff names impl:I
+```
