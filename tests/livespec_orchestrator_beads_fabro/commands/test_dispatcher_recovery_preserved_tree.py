@@ -184,6 +184,25 @@ def test_an_earlier_needs_human_ref_does_not_outrank_a_later_published_head() ->
     assert seed.preservation_ref == f"{_PREFIX}/{_PUBLISHED_HEAD}"
 
 
+def test_a_competing_ref_with_an_unattributable_published_head_is_unobservable() -> None:
+    """Attribution uncertainty holds recovery rather than reclaiming the branch."""
+    runner = _Runner(
+        answers={
+            _REF: _ls_remote(ref=_REF, commit=_PRESERVED_COMMIT),
+            _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
+        }
+    )
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            _row(ref=_REF, base=_OLDER_BASE, run_id=_OLDER_RUN),
+            {"work_item_id": _ITEM_ID, "published_head": _PUBLISHED_HEAD},
+        ),
+    )
+    assert isinstance(seed, PreservedWorkUnobservable)
+    assert "publishing-run-unobservable" in seed.detail
+
+
 def test_a_ref_origin_no_longer_carries_falls_through_to_the_next_source() -> None:
     # Origin is ASKED rather than the journal believed, so a pruned ref is absence
     # at this source and not a seed naming a ref the sandbox could never fetch.

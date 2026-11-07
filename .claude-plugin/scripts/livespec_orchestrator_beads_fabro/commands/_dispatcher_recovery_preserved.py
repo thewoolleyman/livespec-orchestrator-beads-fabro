@@ -69,7 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_checkpoint 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age import (
-    published_head_is_later,
+    published_head_relation,
 )
 
 __all__: list[str] = [
@@ -342,7 +342,7 @@ def _newer_published_head_seed(
     work_item_id: str,
     terminal: RecoverySeed,
     records: tuple[dict[str, object], ...],
-) -> RecoverySeed | None:
+) -> RecoverySeed | PreservedWorkUnobservable | None:
     """Return a head a later dispatch published, or ``None`` when none was recorded.
 
     A terminal ref normally wins because it is the complete tree the failed run
@@ -362,15 +362,20 @@ def _newer_published_head_seed(
     )
     if published is None or isinstance(published, PreservedWorkUnobservable):
         return None
-    return (
-        published
-        if published_head_is_later(
-            records=records,
-            preserved_run_id=terminal.source_run_id,
-            published_head=published.commit_sha,
-        )
-        else None
+    relation = published_head_relation(
+        records=records,
+        preserved_run_id=terminal.source_run_id,
+        published_head=published.commit_sha,
     )
+    if relation is None:
+        return PreservedWorkUnobservable(
+            detail=(
+                "publishing-run-unobservable: the recovery branch head and a"
+                " competing preserved ref are both readable, but the journal cannot"
+                " attribute one of them to a publishing run; neither tree is reclaimed"
+            )
+        )
+    return published if relation else None
 
 
 def _published_head_seed(
