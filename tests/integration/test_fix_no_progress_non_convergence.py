@@ -24,6 +24,8 @@ _GRAPH = (
     / "implement-work-item"
     / "workflow.fabro"
 )
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_JANITOR_REFRESH = _REPO_ROOT / "dev-tooling" / "refresh-before-janitor.sh"
 
 
 def _script(*, node: str) -> str:
@@ -64,6 +66,10 @@ def _repo(*, tmp_path: Path) -> Path:
     _git("remote", "add", "origin", str(origin), repo=repo)
     _git("push", "--quiet", "origin", "HEAD:master", repo=repo)
     _git("fetch", "--quiet", "origin", "master", repo=repo)
+    helper = repo / _JANITOR_REFRESH.relative_to(_REPO_ROOT)
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_bytes(_JANITOR_REFRESH.read_bytes())
+    helper.chmod(0o755)
     return repo
 
 

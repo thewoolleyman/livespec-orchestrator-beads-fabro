@@ -8,6 +8,10 @@ set -uo pipefail
 
 default_branch="$1"
 check_suite="$2"
+if [[ "${check_suite:0:1}" == "'" && "${check_suite: -1}" == "'" ]]; then
+    check_suite="${check_suite#\'}"
+    check_suite="${check_suite%\'}"
+fi
 pre_refresh="$(git rev-parse HEAD)" || exit $?
 state="$(git rev-parse --git-path livespec-publication)" || exit $?
 mkdir -p "$state"
