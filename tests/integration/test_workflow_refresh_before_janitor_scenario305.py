@@ -124,7 +124,20 @@ def _plugins(*, root: Path) -> Path:
         encoding="utf-8",
     )
     gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+    just = bin_dir / "just"
+    just.write_text(
+        "#!/bin/sh\n"
+        'echo "$LIVESPEC_FACTORY_REFRESH_MERGE $*" >> "$(dirname "$0")/just-calls"\n'
+        'exit "$(cat "$(dirname "$0")/just-exit" 2>/dev/null || echo 0)"\n',
+        encoding="utf-8",
+    )
+    just.chmod(just.stat().st_mode | stat.S_IXUSR)
     return plugins
+
+
+def _just_calls(*, plugins: Path) -> list[str]:
+    log = plugins / "bin" / "just-calls"
+    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
 
 def _environment(*, plugins: Path) -> dict[str, str]:
@@ -224,6 +237,7 @@ def test_scenario305_preserves_an_existing_publish_branch_during_janitor_refresh
 
     assert janitor.returncode == 0, janitor.stderr
     janitor_passed_head = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    assert _just_calls(plugins=plugins) == ["true check-refresh-merge-pre-commit"]
     assert (
         subprocess.run(
             ["git", "merge-base", "--is-ancestor", published_anchor, janitor_passed_head],
@@ -238,6 +252,40 @@ def test_scenario305_preserves_an_existing_publish_branch_during_janitor_refresh
     assert pushed.returncode == 0, pushed.stderr
     remote = _git("ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}", cwd=run)
     assert remote.stdout.split()[0] == janitor_passed_head
+
+
+def test_scenario305_janitor_refresh_merge_refused_by_evidence_restores_and_briefs(
+    *, tmp_path: Path
+) -> None:
+    """A merged index the evidence gate refuses is never committed."""
+    run, _ = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+    _ = (plugins / "bin" / "just-exit").write_text("3", encoding="utf-8")
+    before = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    _ = _git("push", "origin", f"HEAD:refs/heads/{_PUBLISH_BRANCH}", cwd=run)
+
+    janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+
+    assert janitor.returncode == 3
+    assert _git("rev-parse", "HEAD", cwd=run).stdout.strip() == before
+    assert f"pre-refresh-head: {before}" in _brief(run=run)
+    assert "LIVESPEC_REFRESH_REPAIR" in janitor.stderr
+
+
+def test_scenario305_noop_janitor_refresh_skips_evidence_and_merge_commit(
+    *, tmp_path: Path
+) -> None:
+    """A contained default branch leaves the janitor no merge to evidence or commit."""
+    run, _ = _world(root=tmp_path, default_advances=False)
+    plugins = _plugins(root=tmp_path)
+    before = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    _ = _git("push", "origin", f"HEAD:refs/heads/{_PUBLISH_BRANCH}", cwd=run)
+
+    janitor = _run(node="janitor", cwd=run, plugins=plugins, check_suite="true")
+
+    assert janitor.returncode == 0, janitor.stderr
+    assert _git("rev-parse", "HEAD", cwd=run).stdout.strip() == before
+    assert _just_calls(plugins=plugins) == []
 
 
 def test_scenario305_noop_preserved_refresh_skips_evidence_and_merge_commit(
@@ -318,11 +366,12 @@ def test_scenario305_refresh_merge_reuses_its_pre_merge_aggregate_evidence() -> 
     workflow = _WORKFLOW.read_text(encoding="utf-8")
     lefthook = _LEFTHOOK.read_text(encoding="utf-8")
 
-    assert workflow.count("LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-commit --no-ff") == 1
+    assert workflow.count("LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-commit --no-ff") == 2
     assert (
         workflow.count("LIVESPEC_FACTORY_REFRESH_MERGE=true just check-refresh-merge-pre-commit")
-        == 1
+        == 2
     )
+    assert "git merge --no-edit" not in workflow
     assert "GIT_EDITOR=true LIVESPEC_FACTORY_REFRESH_MERGE=true git commit --no-edit" in workflow
     assert "pre-merge-commit:" not in lefthook
 
