@@ -9644,17 +9644,21 @@ otherwise retain the existing no-gate posture.
 ## ACP node timeouts
 
 Every node timeout of the `implement-work-item` workflow, and the run's stall
-watchdog, MUST resolve from configuration rather than from literals hard-coded
-in the workflow graph.
+watchdog, MUST resolve through the resolution layers of this section. A timeout
+attribute in the workflow graph is that workflow's declared default for the node:
+it is the lowest layer and never overrides configuration.
 
 **Keys.** `dispatcher.node_timeouts` is a table keyed by node name
 (`dod_gate`, `implement`, `commit_red`, `commit_green`, `fix`, `review_fix`, `proof_capture`, `review`,
 `disposition`, `proof_verify`, `proof_grade`, `publish_draft`, `pr_refresh`, `pr`, `janitor`) whose values are positive
 integers of seconds; `dispatcher.stall_timeout_seconds`
-is a positive integer of seconds for the run-level stall watchdog. A node with
-no configured value MUST resolve to **1800** seconds; the stall watchdog with
-no configured value MUST resolve to **7200** seconds. A non-positive or
-non-integer value MUST be rejected before any run exists, naming the key. Both
+is a positive integer of seconds for the run-level stall watchdog. A node that
+no repository table entry and no per-dispatch argument names MUST resolve to the
+timeout its workflow graph declares for it. A node that declares none MUST
+resolve to **1800** seconds. The stall watchdog with no configured value MUST
+resolve to **7200** seconds. The table MAY name any node of the graph; the names
+above are the ones the shipped configuration most often sets, not a closed set.
+A non-positive or non-integer value MUST be rejected before any run exists, naming the key. Both
 keys are committed-configuration-only, alongside `dispatcher.acp_nodes`,
 `dispatcher.agent_catalog` and `dispatcher.model_catalog`, and do not trigger
 the console Settings lockstep.
@@ -9678,7 +9682,9 @@ console Settings lockstep.
 adapter configuration" apply: the workflow's own declared defaults, the
 dispatch target's `.livespec.jsonc`, then a per-dispatch
 `--node-timeout <node>=<seconds>` argument that MUST be journaled on the
-dispatch record; the record MUST name the supplying layer per node.
+dispatch record. The record MUST name the supplying layer per node, and MUST
+name the workflow for a node that renders its declared value and the built-in
+default for a node that declares none.
 
 **Rendering, literally.** The pinned Fabro build types a quoted duration
 attribute at parse time and its template expansion never re-types a rendered
@@ -9689,17 +9695,36 @@ payload's workflow graph as a literal duration (`timeout="1800s"`,
 `stall_timeout="7200s"`) before invoking `fabro run`, and a test MUST assert
 that no timeout attribute in the rendered graph contains a template opener.
 
-**The subprocess ceiling follows the graph.** The Dispatcher's `fabro run`
+**The run's budgets follow the graph.** The Dispatcher's `fabro run`
 subprocess ceiling MUST be derived from the resolved node timeouts and the
 resolved stall timeout — the graph's worst-case path plus a fixed margin —
 rather than from a hard-coded constant, so that lengthening a node cannot
-outrun the poller and shortening one is not masked.
+outrun the poller and shortening one is not masked. The ceiling and the
+execution allowance MUST read the same per-node values the rendered graph
+carries, so a value that reaches the run cannot be billed at a different one.
+
+**A commit settle node ends its own wait first.** The commit settle nodes are
+`implement_commit_settle`, `fix_commit_settle` and `review_fix_commit_settle`.
+The wait a commit settle node's script performs MUST end before that node's
+rendered timeout, by the rendered timeout less a fixed margin of 300 seconds, so
+the script's failure handling runs rather than the engine ending the node. The
+Dispatcher MUST write that bound into the rendered graph as a literal, as it
+writes the timeout. A resolved timeout of 300 seconds or less for a commit settle
+node leaves no wait, so it MUST be rejected before any run exists, naming the key
+or argument and the value.
 
 **The 30-minute default is a deliberate reduction.** It lowers `implement`
 from the previously shipped 14400 seconds and `janitor`/`fix` from 3600
-seconds, against recorded legitimate turns near 120 minutes. A repository that
-needs longer turns sets them; the default is the maintainer's ruling and the
+seconds, against recorded legitimate turns near 120 minutes. The workflow graph
+therefore MUST declare no more than 1800 seconds for those nodes. A repository
+that needs longer turns sets them; the default is the maintainer's ruling and the
 reduction is recorded in the implementing item's triage record.
+
+**A low declaration rests on a measurement.** A node's declared timeout below
+1800 seconds MUST rest on a recorded run's measured duration for that node, named
+in a comment beside the declaration. A node with no such measurement MUST declare
+at least 1800 seconds, because a declared value that has never been in force and
+is too tight fails in every repository at once.
 
 **Codex compaction limit.** A Codex-backed node's `model_auto_compact_token_limit`
 is an adapter argument and rides the node's `args` under §"ACP node adapter

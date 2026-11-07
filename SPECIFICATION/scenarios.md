@@ -2549,18 +2549,19 @@ Feature: Per-node timeouts are configuration, rendered literally
   I want each node's timeout to be a configured value with a 30-minute default
   So that the node timeout is the only ceiling and it is always a decision
 
-Scenario: A default target renders every node at 1800 seconds
+Scenario: A default target renders each node's declared timeout, or 1800 seconds when it declares none
   Given a dispatch target with no "dispatcher.node_timeouts" table
   When the Dispatcher renders the dispatch payload's workflow graph
-  Then every node's timeout attribute is the literal duration 1800s
+  Then every node that declares a timeout carries that declared value as a literal duration
+  And every node that declares none carries the literal duration 1800s
   And the run's stall_timeout attribute is the literal duration 7200s
   And no timeout attribute contains a template opener
 
-Scenario: A configured node keeps its value and the others keep the default
+Scenario: A configured node keeps its value and the others resolve through the lower layers
   Given a dispatch target whose "dispatcher.node_timeouts" sets implement to 7200
   When the Dispatcher renders the dispatch payload's workflow graph
   Then the implement node's timeout attribute is the literal duration 7200s
-  And every other node's timeout attribute is the literal duration 1800s
+  And every other node's timeout attribute is the literal duration its workflow graph declares, or 1800s when it declares none
   And the dispatch record names the repository layer for the implement timeout
 
 Scenario: The subprocess ceiling follows the resolved graph
@@ -13026,4 +13027,71 @@ Feature: Journal-recorded holds reach needs-attention
     When needs-attention composes its snapshot
     Then the snapshot carries a hygiene:journal-hold:I fact
     And the snapshot carries an idle-factory fact whose handoff names impl:I
+```
+
+## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node
+
+Governing clause: `contracts.md` §"ACP node timeouts" → "Keys.", "A commit settle node ends its own wait first.", "The 30-minute default is a deliberate reduction." and "A low declaration rests on a measurement."
+
+```gherkin
+Feature: A node timeout the workflow declares reaches the run unless configuration names that node
+  As the maintainer of a repository dispatched through the factory
+  I want a node's declared timeout to be the value its run renders when nothing configures it
+  So that a timeout a change adds to the workflow applies on a dispatched run
+
+  Background:
+    Given a workflow graph declaring timeout "3900s" on fix_commit_settle and "600s" on pr_route
+    And a workflow graph node undeclared_node carrying no timeout attribute
+
+  Scenario: a node no configuration names renders its declared value
+    Given a repository whose dispatcher.node_timeouts does not name fix_commit_settle
+    When the Dispatcher renders the dispatch's workflow graph
+    Then fix_commit_settle carries the literal timeout "3900s"
+    And the dispatch record names the workflow as the layer supplying fix_commit_settle
+
+  Scenario: a repository's table outranks the workflow's declared value
+    Given a repository whose dispatcher.node_timeouts sets pr_route to 900
+    When the Dispatcher renders the dispatch's workflow graph
+    Then pr_route carries the literal timeout "900s"
+    And the dispatch record names the repository as the layer supplying pr_route
+
+  Scenario: a per-dispatch argument outranks both
+    Given a repository whose dispatcher.node_timeouts sets pr_route to 900
+    And a dispatch carrying --node-timeout pr_route=1200
+    When the Dispatcher renders the dispatch's workflow graph
+    Then pr_route carries the literal timeout "1200s"
+
+  Scenario: a node nothing declares or names takes the default
+    Given a repository whose dispatcher.node_timeouts does not name undeclared_node
+    When the Dispatcher renders the dispatch's workflow graph
+    Then undeclared_node carries the literal timeout "1800s"
+    And the dispatch record names the built-in default as the layer supplying undeclared_node
+
+  Scenario: the run's budgets read the values the graph carries
+    Given a repository whose dispatcher.node_timeouts does not name fix_commit_settle
+    When the Dispatcher derives the dispatch's execution allowance and its subprocess ceiling
+    Then each bills fix_commit_settle at 3900 seconds per visit
+
+  Scenario: a settle node below its declared timeout ends its own wait first
+    Given a repository whose dispatcher.node_timeouts sets fix_commit_settle to 1800
+    And a fix turn that left a commit run still running past 1500 seconds
+    When fix_commit_settle runs
+    Then its wait ends at 1500 seconds
+    And the node runs its failure handling
+    And the engine does not end the node on its timeout
+
+  Scenario: a settle node timeout that leaves no wait is refused
+    Given a repository whose dispatcher.node_timeouts sets fix_commit_settle to 300
+    When the Dispatcher prepares the dispatch
+    Then it refuses before any run exists naming dispatcher.node_timeouts.fix_commit_settle and the value 300
+
+  Scenario: the shipped graph keeps the deliberate reduction
+    Given the shipped implement-work-item workflow graph
+    When its declared timeouts are read
+    Then implement, janitor and fix each declare no more than 1800 seconds
+
+  Scenario: a low declaration names its measurement
+    Given the shipped implement-work-item workflow graph
+    When its declared timeouts are read
+    Then every declaration below 1800 seconds carries beside it a comment naming a recorded run's measured duration for that node
 ```

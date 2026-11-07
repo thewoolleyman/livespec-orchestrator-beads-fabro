@@ -2963,5 +2963,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-5xogp4 composes hygiene:journal-hold facts from this repository's dispatch journal, retires them on the closed retiring list or at seven days, and excludes an item carrying a live recovery-held from the idle-factory fact and the idle-slot audit.",
     "work_item": "bd-ib-5xogp4"
+  },
+  {
+    "heading": "## Scenario 325 \u2014 A workflow-declared node timeout stands unless configuration names the node",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-2eyiwy renders a workflow-declared node timeout unless configuration names the node, names the supplying layer on the dispatch record, has the ceiling and the execution allowance read the rendered values, ends a commit settle node's wait 300 seconds before its rendered timeout, and refuses a settle timeout that leaves no wait.",
+    "work_item": "bd-ib-2eyiwy"
   }
 ]
