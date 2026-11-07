@@ -8,6 +8,10 @@ attempt the shared `--item`, `--attempt`, `--phase`, `--operation`,
 - `enter-repayment` observes the named master run on the forge and calls
   `enter_repayment`, so the run's own completion and conclusion are the gate.
 - `advance-repayment` calls `advance_repayment` for the named next phase.
+- `bind-repayment-acceptance` reads the merged repayment PR and its landed
+  history from the forge and git and records the `pr-bound`
+  `repayment-acceptance` successor (`bind_repayment_acceptance`), the binding
+  `advance-repayment` cannot make.
 - `reopen-regression` calls `reopen_for_regression`.
 - `record-deferred-finding` calls `record_deferred_finding`.
 - `record-revert-receipt` calls `record_revert_receipt`, the step that makes a
@@ -28,9 +32,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections.abc import Callable
 from dataclasses import fields
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from livespec_orchestrator_beads_fabro._incident_authority_payload import (
@@ -42,21 +46,20 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro.commands._incident_authority_binding import (
+    bind_repayment_acceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._incident_authority_completion import (
     ATTESTATION_FIELDS,
-    completion_reply,
+    MASTER_CI_UNOBSERVABLE,
+    CompletionRequest,
+    complete_from_forge,
     decode_attestation,
-    observe_marker_paths,
-    observe_repayment_merge,
+    observe_master_run,
 )
 from livespec_orchestrator_beads_fabro.effects import parse_json
-from livespec_orchestrator_beads_fabro.incident_completion import (
-    IncidentCompletion,
-    IncidentCompletionEvidence,
-    complete_incident,
-)
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
-    MasterCiRun,
     RepaymentEntry,
     advance_repayment,
     enter_repayment,
@@ -90,6 +93,7 @@ __all__: list[str] = [
 LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "enter-repayment": ("master_run", "target_ref"),
     "advance-repayment": ("to_phase",),
+    "bind-repayment-acceptance": ("pr",),
     "reopen-regression": ("attributed_json", "finding_json", "principal"),
     "record-deferred-finding": ("finding_json",),
     "record-revert-receipt": ("revert_receipt_json",),
@@ -97,12 +101,9 @@ LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "complete-incident": ("master_run", "completion_json"),
 }
 INVALID_PAYLOAD = "incident-action-invalid-payload"
-MASTER_CI_UNOBSERVABLE = "incident-repayment-master-ci-unobservable"
-_RUN_FIELDS = "headSha,status,conclusion"
-_COMPLETED = "completed"
-_GH_TIMEOUT_SECONDS = 60.0
 _SCALARS: dict[str, type] = {"str": str, "bool": bool}
 _T = TypeVar("_T")
+_PR_NUMBER = re.compile(r"[1-9][0-9]*")
 
 LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | AuthorityRefusal
 _Handler = Callable[..., LifecycleReply]
@@ -137,29 +138,6 @@ def _attempt(*, text: str) -> IncidentAttempt | AuthorityRefusal:
     return attempt
 
 
-def observe_master_run(
-    *, runner: CommandRunner, repo: Path, repository: str, run_id: str
-) -> MasterCiRun | AuthorityRefusal:
-    """The named master run exactly as the forge reports it now; unreadable is a refusal."""
-    result = runner.run(
-        argv=["gh", "run", "view", run_id, "--repo", repository, "--json", _RUN_FIELDS],
-        cwd=repo,
-        timeout_seconds=_GH_TIMEOUT_SECONDS,
-    )
-    raw = parse_json(text=result.stdout) if result.exit_code == 0 else None
-    value = cast("dict[str, object]", raw) if isinstance(raw, dict) else {}
-    head, status, conclusion = (value.get(k) for k in ("headSha", "status", "conclusion"))
-    if not (isinstance(head, str) and isinstance(status, str) and isinstance(conclusion, str)):
-        reason = result.stderr.strip() or "no headSha, status and conclusion in the reply"
-        return AuthorityRefusal(code=MASTER_CI_UNOBSERVABLE, detail=f"run {run_id}: {reason}")
-    return MasterCiRun(
-        run_id=run_id,
-        head=head,
-        conclusion=conclusion or status,
-        complete=status == _COMPLETED,
-    )
-
-
 def _enter(
     *,
     args: argparse.Namespace,
@@ -185,6 +163,25 @@ def _advance(
         reading=reading,
         phase=args.to_phase,
         admission_complete=args.admission_complete,
+    )
+
+
+def _bind(
+    *,
+    args: argparse.Namespace,
+    client: BeadsClient,
+    reading: IncidentReading,
+    runner: CommandRunner,
+) -> LifecycleReply:
+    if _PR_NUMBER.fullmatch(args.pr) is None:
+        return _invalid(flag="--pr", detail="not a positive pull request number")
+    return bind_repayment_acceptance(
+        client=client,
+        reading=reading,
+        runner=runner,
+        repo=args.repo,
+        repository=args.repository,
+        pr_number=int(args.pr),
     )
 
 
@@ -244,42 +241,25 @@ def _complete(
     reading: IncidentReading,
     runner: CommandRunner,
 ) -> LifecycleReply:
-    """Gather the completion evidence from the forge and the tree, then call `complete_incident`."""
+    """Decode the attestation, then gather the forge and tree evidence and complete."""
     attestation = decode_attestation(text=args.completion_json)
     if attestation is None:
         detail = f"needs exactly {list(ATTESTATION_FIELDS)} as one canonical JSON object"
         return _invalid(flag="--completion-json", detail=detail)
-    attempt = reading.attempt
-    repo, repository = args.repo, args.repository
-    master_ci = observe_master_run(
-        runner=runner, repo=repo, repository=repository, run_id=args.master_run
+    return complete_from_forge(
+        client=client,
+        reading=reading,
+        runner=runner,
+        repo=args.repo,
+        repository=args.repository,
+        completion=CompletionRequest(run_id=args.master_run, attestation=attestation),
     )
-    if isinstance(master_ci, AuthorityRefusal):
-        return master_ci
-    merged = observe_repayment_merge(
-        runner=runner, repo=repo, repository=repository, pr_number=attempt.pr_number
-    )
-    if isinstance(merged, AuthorityRefusal):
-        return merged
-    markers = observe_marker_paths(
-        runner=runner, repo=repo, head=master_ci.head, item_id=attempt.item_id
-    )
-    evidence = IncidentCompletionEvidence(
-        merged_pr_number=merged,
-        master_ci=master_ci,
-        marker_paths=markers,
-        validated_paths=attestation.validated_paths,
-        repaid_debt=attestation.repaid_debt,
-        manual_outcome=attestation.manual_outcome,
-        undisposed_failures=attestation.undisposed_failures,
-    )
-    completion = complete_incident(client=client, item_id=attempt.item_id, evidence=evidence)
-    return completion_reply(completion=completion)
 
 
 _HANDLERS: dict[str, _Handler] = {
     "enter-repayment": _enter,
     "advance-repayment": _advance,
+    "bind-repayment-acceptance": _bind,
     "reopen-regression": _reopen,
     "record-deferred-finding": _defer,
     "record-revert-receipt": _revert,

@@ -13,8 +13,8 @@ caller-typed result:
 - the manual outcome, the validated original paths, the repaid debt and the
   related failures still undisposed are one canonical operator attestation.
 
-The master run itself is read by the lifecycle module's `observe_master_run`,
-the same forge read `enter-repayment` takes.
+The master run is read by `observe_master_run`, the same forge read
+`enter-repayment` takes.
 """
 
 from __future__ import annotations
@@ -26,29 +26,43 @@ from typing import TYPE_CHECKING, cast
 from livespec_orchestrator_beads_fabro._incident_authority_types import AuthorityRefusal
 from livespec_orchestrator_beads_fabro._incident_repayment_scope import incident_marker
 from livespec_orchestrator_beads_fabro.effects import parse_json
-from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
+from livespec_orchestrator_beads_fabro.incident_completion import (
+    IncidentCompletion,
+    IncidentCompletionEvidence,
+    complete_incident,
+)
+from livespec_orchestrator_beads_fabro.incident_normal_repayment import MasterCiRun
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
+    from livespec_orchestrator_beads_fabro._incident_authority_types import IncidentReading
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandRunner
 
 __all__: list[str] = [
     "ATTESTATION_FIELDS",
     "COMPLETION_OUTSTANDING",
+    "MASTER_CI_UNOBSERVABLE",
     "REPAYMENT_PR_UNOBSERVABLE",
     "CompletionAttestation",
+    "CompletionRequest",
+    "complete_from_forge",
     "completion_reply",
     "decode_attestation",
     "observe_marker_paths",
+    "observe_master_run",
     "observe_repayment_merge",
 ]
 
 COMPLETION_OUTSTANDING = "incident-completion-outstanding"
+MASTER_CI_UNOBSERVABLE = "incident-repayment-master-ci-unobservable"
 REPAYMENT_PR_UNOBSERVABLE = "incident-completion-repayment-pr-unobservable"
 _LISTS = ("repaid_debt", "undisposed_failures", "validated_paths")
 ATTESTATION_FIELDS: tuple[str, ...] = tuple(sorted(("manual_outcome", *_LISTS)))
 _PR_FIELDS = "number,state"
+_RUN_FIELDS = "headSha,status,conclusion"
+_COMPLETED = "completed"
 _MERGED = "MERGED"
 _NO_MATCH = 1
 _TIMEOUT_SECONDS = 60.0
@@ -69,6 +83,37 @@ def _strings(*, value: object) -> tuple[str, ...] | None:
         return None
     items = cast("list[object]", value)
     return tuple(cast("list[str]", items)) if all(type(v) is str for v in items) else None
+
+
+@dataclass(frozen=True, kw_only=True)
+class CompletionRequest:
+    """What the operator names: the master run to read and the attestation."""
+
+    run_id: str
+    attestation: CompletionAttestation
+
+
+def observe_master_run(
+    *, runner: CommandRunner, repo: Path, repository: str, run_id: str
+) -> MasterCiRun | AuthorityRefusal:
+    """The named master run exactly as the forge reports it now; unreadable is a refusal."""
+    result = runner.run(
+        argv=["gh", "run", "view", run_id, "--repo", repository, "--json", _RUN_FIELDS],
+        cwd=repo,
+        timeout_seconds=_TIMEOUT_SECONDS,
+    )
+    raw = parse_json(text=result.stdout) if result.exit_code == 0 else None
+    value = cast("dict[str, object]", raw) if isinstance(raw, dict) else {}
+    head, status, conclusion = (value.get(k) for k in ("headSha", "status", "conclusion"))
+    if not (isinstance(head, str) and isinstance(status, str) and isinstance(conclusion, str)):
+        reason = result.stderr.strip() or "no headSha, status and conclusion in the reply"
+        return AuthorityRefusal(code=MASTER_CI_UNOBSERVABLE, detail=f"run {run_id}: {reason}")
+    return MasterCiRun(
+        run_id=run_id,
+        head=head,
+        conclusion=conclusion or status,
+        complete=status == _COMPLETED,
+    )
 
 
 def decode_attestation(*, text: str) -> CompletionAttestation | None:
@@ -144,3 +189,40 @@ def completion_reply(
         code=COMPLETION_OUTSTANDING,
         detail=f"{completion.item_id}: {'; '.join(completion.outstanding)}",
     )
+
+
+def complete_from_forge(
+    *,
+    client: BeadsClient,
+    reading: IncidentReading,
+    runner: CommandRunner,
+    repo: Path,
+    repository: str,
+    completion: CompletionRequest,
+) -> IncidentCompletion | AuthorityRefusal:
+    """Read the master run, the bound PR and the run head's tree, then call `complete_incident`."""
+    attempt = reading.attempt
+    master_ci = observe_master_run(
+        runner=runner, repo=repo, repository=repository, run_id=completion.run_id
+    )
+    if isinstance(master_ci, AuthorityRefusal):
+        return master_ci
+    merged = observe_repayment_merge(
+        runner=runner, repo=repo, repository=repository, pr_number=attempt.pr_number
+    )
+    if isinstance(merged, AuthorityRefusal):
+        return merged
+    attestation = completion.attestation
+    evidence = IncidentCompletionEvidence(
+        merged_pr_number=merged,
+        master_ci=master_ci,
+        marker_paths=observe_marker_paths(
+            runner=runner, repo=repo, head=master_ci.head, item_id=attempt.item_id
+        ),
+        validated_paths=attestation.validated_paths,
+        repaid_debt=attestation.repaid_debt,
+        manual_outcome=attestation.manual_outcome,
+        undisposed_failures=attestation.undisposed_failures,
+    )
+    completed = complete_incident(client=client, item_id=attempt.item_id, evidence=evidence)
+    return completion_reply(completion=completed)
