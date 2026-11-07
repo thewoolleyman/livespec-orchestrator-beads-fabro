@@ -99,6 +99,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
     resume_checkout_prepare_steps_block,
+    seeded_lineage_env_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
     review_guard_prepare_steps_block,
@@ -431,6 +432,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
             if resume_checkout is None
             else f"LIVESPEC_RESUME_PUBLISHED_HEAD = {json.dumps(resume_checkout.head)}\n"
         )
+        + seeded_lineage_env_lines(checkout=resume_checkout)
         # The rendered pull-request TITLE, beside the publish branch the same
         # stage reads. Both are facts about this dispatch that a command node
         # cannot read off the rendered goal, which is why this table is the

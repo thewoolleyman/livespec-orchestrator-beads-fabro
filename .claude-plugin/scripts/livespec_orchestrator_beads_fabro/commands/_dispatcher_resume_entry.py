@@ -65,6 +65,7 @@ tree nobody proved.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shlex
 from dataclasses import dataclass
@@ -87,6 +88,7 @@ __all__: list[str] = [
     "proof_only_graph",
     "resume_checkout_for",
     "resume_checkout_prepare_steps_block",
+    "seeded_lineage_env_lines",
 ]
 
 # The `argparse.Namespace` attributes a resume or a seeded recovery carries into
@@ -153,6 +155,11 @@ _NODE_NAME = re.compile(r"^\w+$")
 # reachability walk starts from, so asking whether it is reachable from itself is
 # not a question the derivation has.
 _START_NODE = "start"
+_SEEDED_LINEAGE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_seeded_lineage"
+_SEEDED_LINEAGE_COMMAND = (
+    f"PYTHONPATH=.claude-plugin/scripts python3 -c 'from {_SEEDED_LINEAGE_MODULE} import main; "
+    'raise SystemExit(main(argv=["prepare"]))\''
+)
 
 # The terminal `exit` is engine structure rather than a stage: the arm's graph may
 # carry an edge to it, which is how a run ends, and to no other stage outside the
@@ -411,6 +418,8 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
         f"git fetch --no-tags origin {shlex.quote(ref)}",
         f"git checkout --detach {head}",
     ]
+    if checkout.fetch_ref is not None:
+        commands.append(_SEEDED_LINEAGE_COMMAND)
     if checkout.read_only:
         # The head the sandbox lands on must be exactly the one asked for (never
         # the default-branch merge commit), and the clone must have nowhere to push.
@@ -419,13 +428,22 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
             "git remote set-url --push origin no-push-proof-only-arm",
         ]
     script = " && ".join(commands)
-    resume_step = (
-        "\n# --- Dispatcher-materialized recovery checkout: the ref the recorded\n"
-        "# --- head lives on, at that head ---\n"
-        "[[run.prepare.steps]]\n"
-        f"script = {_toml_basic_string(value=script)}\n"
+    resume_step = "".join(
+        (
+            "\n# --- Dispatcher-materialized recovery checkout: the ref the recorded\n",
+            "# --- head lives on, at that head ---\n",
+            "[[run.prepare.steps]]\n",
+            f"script = {_toml_basic_string(value=script)}\n",
+        )
     )
     return resume_step + pyright_cache_prepare_steps_block()
+
+
+def seeded_lineage_env_lines(*, checkout: ResumeCheckout | None) -> str:
+    """Render the immutable seed only for preservation-ref recoveries."""
+    if checkout is None or checkout.fetch_ref is None:
+        return ""
+    return "LIVESPEC_SEEDED_LINEAGE_SEED = " + json.dumps(checkout.head) + "\n"
 
 
 def resume_checkout_for(*, args: argparse.Namespace, branch: str) -> ResumeCheckout | None:

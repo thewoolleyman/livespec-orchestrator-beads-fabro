@@ -424,7 +424,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         shape=parallelogram
         timeout="3900s"
         max_visits=3
-        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-implement-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; exit 0"
+        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-implement-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; if test -n \"${LIVESPEC_SEEDED_LINEAGE_SEED:-}\"; then PYTHONPATH=.claude-plugin/scripts python3 -c 'from livespec_orchestrator_beads_fabro.commands._dispatcher_seeded_lineage import main; raise SystemExit(main(argv=[\\\"settle\\\"]))'; fi"
     ]
 
     // Dead-implementer circuit breaker (C5 / bd-ib-vdpb): after the
@@ -588,7 +588,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         shape=parallelogram
         timeout="3900s"
         max_visits=8
-        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; exit 0"
+        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; if test -n \"${LIVESPEC_SEEDED_LINEAGE_SEED:-}\"; then PYTHONPATH=.claude-plugin/scripts python3 -c 'from livespec_orchestrator_beads_fabro.commands._dispatcher_seeded_lineage import main; raise SystemExit(main(argv=[\\\"settle\\\"]))'; fi"
     ]
 
     // A successful fix is useful only when it advances the head that janitor
@@ -1862,7 +1862,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         shape=parallelogram
         timeout="3900s"
         max_visits=3
-        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-review-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; exit 0"
+        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-review-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; if test -n \"${LIVESPEC_SEEDED_LINEAGE_SEED:-}\"; then PYTHONPATH=.claude-plugin/scripts python3 -c 'from livespec_orchestrator_beads_fabro.commands._dispatcher_seeded_lineage import main; raise SystemExit(main(argv=[\\\"settle\\\"]))'; fi"
     ]
 
     // THE RECAPTURE ROUTE (v175 "proof-record findings"; SPECIFICATION/
