@@ -275,10 +275,13 @@ transition. A repayment generation a regression reopen superseded is refused
 `incident-generation-stale`; the refusal is journaled or reported like any
 other outstanding obligation and nothing is written.
 
-Not in this slice: binding the repayment PR as `repayment-acceptance` from the
-Dispatcher and gathering the completion evidence automatically. Until a
-controller records both, an incident item parks in acceptance with its
-obligations named.
+The operator entrance that gathers the completion evidence and calls
+`complete_incident` is the `complete-incident` action (section "Lifecycle
+actions" below). Not in this slice: binding the repayment PR as
+`repayment-acceptance` from the Dispatcher and gathering the completion
+evidence automatically. Until the repayment is bound and an operator runs
+`complete-incident`, an incident item parks in acceptance with its obligations
+named.
 
 ## Lifecycle actions
 
@@ -300,6 +303,7 @@ usage error (exit 2).
 | `record-deferred-finding` | `--finding-json <finding>` | `record_deferred_finding` |
 | `record-revert-receipt` | `--revert-receipt-json <receipt>` | `record_revert_receipt` |
 | `correct-attempt` | `--correction-json <correction> --target-ref <ref>` | `enter_corrected_attempt` |
+| `complete-incident` | `--master-run <run-id> --completion-json <attestation>` | `complete_incident` |
 
 `enter-repayment` does not take the master result from its caller. It reads
 the named run with `gh run view <run-id> --repo <repository> --json
@@ -312,6 +316,35 @@ unchanged incident Definition of Done; only `advance-repayment` accepts it.
 `--principal` names the incident owner a reopened item returns to.
 `record-revert-receipt` records the trusted controller's receipt. It is the
 step that makes `correct-attempt` eligible.
+
+`complete-incident` is the operator entrance that records `closed` (bd-ib-pqz3nw).
+Name the current `repayment-acceptance` attempt. The action gathers what
+`complete_incident` needs, and takes none of it from the caller as a result:
+
+- The repayment merge comes from `gh pr view <pr> --repo <repository> --json
+  number,state` of the PR the named attempt binds. Only `MERGED` counts as
+  observed. A repayment with no bound PR is not read at all.
+- The master result comes from the same `gh run view` read that
+  `enter-repayment` takes, for `--master-run`. The run must be complete and
+  successful, and its head must be one of the repayment's landed commits.
+- The marker scan fetches that run head (`git fetch origin <head>` in `--repo`)
+  and runs `git grep -l -F` for `incident_marker(<item>)` over its tree. A tree
+  that cannot be read stays `marker-removal-unobserved`.
+- `--completion-json` is the operator's attestation. It is the canonical
+  encoding of exactly `manual_outcome` (a boolean), `repaid_debt`,
+  `undisposed_failures` and `validated_paths` (each a list of strings), for
+  example `{"manual_outcome":true,"repaid_debt":["normal-factory-proof"],"undisposed_failures":[],"validated_paths":["app.py"]}`.
+
+When anything is still owed, the reply is `incident-completion-outstanding`,
+naming the item and every obligation in order (for example
+`repayment-master-ci-incomplete:<run>`, `marker-present:<path>`,
+`deferred-debt-outstanding:<work>` or `manual-outcome-missing`), and nothing is
+written. A PR the forge cannot report is
+`incident-completion-repayment-pr-unobservable`, and a run it cannot report is
+`incident-repayment-master-ci-unobservable`. On success, `result.recorded` is
+true and `result.reading.attempt` is the `closed` generation. Repeating the
+action after `closed` returns `recovered: true` with no reading and writes
+nothing more.
 
 Every JSON payload must be the canonical encoding (sorted keys, compact
 separators) of exactly its record's fields with their types: a `Finding`, a

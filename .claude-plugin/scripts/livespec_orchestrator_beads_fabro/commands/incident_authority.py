@@ -55,6 +55,7 @@ from livespec_orchestrator_beads_fabro.incident_authority import (
     publish_incident_genesis,
     read_incident_authority,
 )
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import RepaymentEntry
 from livespec_orchestrator_beads_fabro.incident_regression_recovery import RecoveryEntry
 from livespec_orchestrator_beads_fabro.io import write_stdout
@@ -70,6 +71,7 @@ _Reply = (
     | FilingReceipt
     | RepaymentEntry
     | RecoveryEntry
+    | IncidentCompletion
 )
 
 # Each writing action and the payload arguments it alone requires.
@@ -235,7 +237,7 @@ def _result_body(*, result: _Reply) -> dict[str, object]:
     body = asdict(result)
     if isinstance(result, IncidentReading | GenesisReceipt):
         body["attempt"] = attempt_record(attempt=result.attempt)
-    if isinstance(result, RepaymentEntry | RecoveryEntry):
+    if isinstance(result, RepaymentEntry | RecoveryEntry | IncidentCompletion):
         lifecycle_body(result=result, body=body)
     return body
 

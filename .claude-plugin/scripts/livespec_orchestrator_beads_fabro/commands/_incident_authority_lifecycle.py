@@ -13,6 +13,11 @@ attempt the shared `--item`, `--attempt`, `--phase`, `--operation`,
 - `record-revert-receipt` calls `record_revert_receipt`, the step that makes a
   corrected attempt eligible.
 - `correct-attempt` calls `enter_corrected_attempt`.
+- `complete-incident` observes the bound repayment PR and the named master run
+  on the forge, scans that run head's tree for the incident marker, takes the
+  rest as one canonical operator attestation and calls `complete_incident`; a
+  completion that records nothing is the refusal `incident-completion-outstanding`
+  naming every obligation.
 
 Every JSON payload must be the canonical encoding (sorted keys, compact
 separators) of exactly its record's fields; anything else is the named refusal
@@ -37,7 +42,19 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro.commands._incident_authority_completion import (
+    ATTESTATION_FIELDS,
+    completion_reply,
+    decode_attestation,
+    observe_marker_paths,
+    observe_repayment_merge,
+)
 from livespec_orchestrator_beads_fabro.effects import parse_json
+from livespec_orchestrator_beads_fabro.incident_completion import (
+    IncidentCompletion,
+    IncidentCompletionEvidence,
+    complete_incident,
+)
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
     MasterCiRun,
     RepaymentEntry,
@@ -77,6 +94,7 @@ LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "record-deferred-finding": ("finding_json",),
     "record-revert-receipt": ("revert_receipt_json",),
     "correct-attempt": ("correction_json", "target_ref"),
+    "complete-incident": ("master_run", "completion_json"),
 }
 INVALID_PAYLOAD = "incident-action-invalid-payload"
 MASTER_CI_UNOBSERVABLE = "incident-repayment-master-ci-unobservable"
@@ -86,7 +104,7 @@ _GH_TIMEOUT_SECONDS = 60.0
 _SCALARS: dict[str, type] = {"str": str, "bool": bool}
 _T = TypeVar("_T")
 
-LifecycleReply = RepaymentEntry | RecoveryEntry | AuthorityRefusal
+LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | AuthorityRefusal
 _Handler = Callable[..., LifecycleReply]
 
 
@@ -219,6 +237,46 @@ def _correct(
     )
 
 
+def _complete(
+    *,
+    args: argparse.Namespace,
+    client: BeadsClient,
+    reading: IncidentReading,
+    runner: CommandRunner,
+) -> LifecycleReply:
+    """Gather the completion evidence from the forge and the tree, then call `complete_incident`."""
+    attestation = decode_attestation(text=args.completion_json)
+    if attestation is None:
+        detail = f"needs exactly {list(ATTESTATION_FIELDS)} as one canonical JSON object"
+        return _invalid(flag="--completion-json", detail=detail)
+    attempt = reading.attempt
+    repo, repository = args.repo, args.repository
+    master_ci = observe_master_run(
+        runner=runner, repo=repo, repository=repository, run_id=args.master_run
+    )
+    if isinstance(master_ci, AuthorityRefusal):
+        return master_ci
+    merged = observe_repayment_merge(
+        runner=runner, repo=repo, repository=repository, pr_number=attempt.pr_number
+    )
+    if isinstance(merged, AuthorityRefusal):
+        return merged
+    markers = observe_marker_paths(
+        runner=runner, repo=repo, head=master_ci.head, item_id=attempt.item_id
+    )
+    evidence = IncidentCompletionEvidence(
+        merged_pr_number=merged,
+        master_ci=master_ci,
+        marker_paths=markers,
+        validated_paths=attestation.validated_paths,
+        repaid_debt=attestation.repaid_debt,
+        manual_outcome=attestation.manual_outcome,
+        undisposed_failures=attestation.undisposed_failures,
+    )
+    completion = complete_incident(client=client, item_id=attempt.item_id, evidence=evidence)
+    return completion_reply(completion=completion)
+
+
 _HANDLERS: dict[str, _Handler] = {
     "enter-repayment": _enter,
     "advance-repayment": _advance,
@@ -226,6 +284,7 @@ _HANDLERS: dict[str, _Handler] = {
     "record-deferred-finding": _defer,
     "record-revert-receipt": _revert,
     "correct-attempt": _correct,
+    "complete-incident": _complete,
 }
 
 
@@ -241,7 +300,14 @@ def run_lifecycle_action(
     return handler(args=args, client=client, reading=reading, runner=runner)
 
 
-def lifecycle_body(*, result: RepaymentEntry | RecoveryEntry, body: dict[str, Any]) -> None:
-    """Serialize the recorded attempt with its carrier exactly as the chain retains it."""
+def lifecycle_body(
+    *, result: RepaymentEntry | RecoveryEntry | IncidentCompletion, body: dict[str, Any]
+) -> None:
+    """Serialize the recorded attempt with its carrier exactly as the chain retains it.
+
+    A completion that recovered an earlier `closed` carries no reading.
+    """
+    if result.reading is None:
+        return
     reading = cast("dict[str, Any]", body["reading"])
     reading["attempt"] = attempt_record(attempt=result.reading.attempt)
