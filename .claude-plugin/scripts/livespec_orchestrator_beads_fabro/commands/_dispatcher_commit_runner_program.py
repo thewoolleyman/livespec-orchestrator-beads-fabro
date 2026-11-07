@@ -55,7 +55,9 @@ __all__: list[str] = [
     "COMMIT_RUNNER_PROGRAM_FILENAME",
     "HOOK_BANNER_PATTERN",
     "REPORT_EXIT_CODE_KEY",
+    "REPORT_GIT_REFUSAL_LINE_KEY",
     "REPORT_HEAD_KEY",
+    "REPORT_HOOK_PASSED_KEY",
     "REPORT_HOOK_RAN_KEY",
     "REPORT_OUTPUT_TAIL_KEY",
     "REPORT_RUN_ID_KEY",
@@ -78,6 +80,8 @@ REPORT_STATE_KEY = "state"
 REPORT_EXIT_CODE_KEY = "exit_code"
 REPORT_HEAD_KEY = "head"
 REPORT_HOOK_RAN_KEY = "hook_ran"
+REPORT_HOOK_PASSED_KEY = "hook_passed"
+REPORT_GIT_REFUSAL_LINE_KEY = "git_refusal_line"
 REPORT_FAILED_TARGETS_KEY = "failed_targets"
 REPORT_OUTPUT_TAIL_KEY = "output_tail"
 
@@ -111,6 +115,8 @@ VALUE_SHORT_OPTIONS = "mFCct"
 ATTACHED_VALUE_SHORT_OPTIONS = "uS"
 # The repository hook's own banner; a commit whose output lacks it ran no hook.
 HOOK_BANNER = re.compile(__HOOK_BANNER__)
+# The aggregate's terminal passing verdict, which Git may follow with its own refusal.
+HOOK_PASSED = re.compile(r"^All [0-9]+ targets passed\.?$", re.MULTILINE)
 # The two lines `cut-settle` prints for the host to read; one spelling, substituted.
 CUT_RUN_SENTINEL = "__CUT_RUN_SENTINEL__"
 CUT_HOOK_SENTINEL = "__CUT_HOOK_SENTINEL__"
@@ -327,6 +333,11 @@ def worker(run_id):
     terminal = {"state": "passed" if result.returncode == 0 else "failed"}
     terminal["exit_code"] = result.returncode
     terminal["hook_ran"] = HOOK_BANNER.search(text) is not None
+    if terminal["hook_ran"] and HOOK_PASSED.search(text) is not None:
+        terminal["hook_passed"] = True
+        refusal = git_refusal_line(text)
+        if refusal is not None:
+            terminal["git_refusal_line"] = refusal
     if result.returncode != 0:
         terminal["failed_targets"] = failed_targets(text)
     if result.returncode == 0:
@@ -342,10 +353,16 @@ def report(run_id, path, record):
         payload["exit_code"] = record.get("exit_code")
         payload["head"] = record.get("head")
         payload["hook_ran"] = record.get("hook_ran") is True
+        output = full_output(path)
+        if hook_passed(record, output):
+            payload["hook_passed"] = True
+            refusal = recorded_git_refusal(record, output)
+            if refusal is not None:
+                payload["git_refusal_line"] = refusal
         if state == "failed":
             targets = record.get("failed_targets")
             payload["failed_targets"] = (
-                targets if isinstance(targets, list) else failed_targets(full_output(path))
+                targets if isinstance(targets, list) else failed_targets(output)
             )
         payload["output_tail"] = output_tail(path)
     print(json.dumps(payload, sort_keys=True))
@@ -385,6 +402,29 @@ def failed_targets(text):
     return targets
 
 
+def git_refusal_line(text):
+    """The first nonblank line Git printed after the aggregate's passing verdict."""
+    passed = HOOK_PASSED.search(text)
+    if passed is None:
+        return None
+    for line in text[passed.end() :].splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def hook_passed(record, output):
+    return record.get("hook_passed") is True or (
+        record.get("hook_ran") is True and HOOK_PASSED.search(output) is not None
+    )
+
+
+def recorded_git_refusal(record, output):
+    refusal = record.get("git_refusal_line")
+    return refusal if isinstance(refusal, str) else git_refusal_line(output)
+
+
 def brief_text(run_id, path, record, state, timeout_seconds):
     """The re-entry brief for the least settled commit run: what it is and what it showed."""
     named = "Commit run " + run_id + ", which the previous turn started through the commit runner"
@@ -408,6 +448,22 @@ def brief_text(run_id, path, record, state, timeout_seconds):
     output = full_output(path)
     targets = failed_targets(output)
     tail = "\n".join(output.splitlines()[-BRIEF_TAIL_LINES:])
+    if hook_passed(record, output):
+        refusal = recorded_git_refusal(record, output)
+        refusal_text = refusal if refusal is not None else "Git's refusal line was not captured"
+        return (
+            "failed targets: none\n\n"
+            + named
+            + "ended FAILED with exit status "
+            + str(record.get("exit_code"))
+            + "; the repository commit hook passed, and Git then refused the commit: "
+            + refusal_text
+            + "; no commit was made. Its own error lines (the tail of its recorded output at "
+            + str(path.with_suffix(".output"))
+            + "):\n\n"
+            + tail
+            + "\n"
+        )
     return (
         "failed targets: " + (" ".join(targets) if targets else "none") + "\n\n"
         + named + "ended FAILED with exit status " + str(record.get("exit_code"))
