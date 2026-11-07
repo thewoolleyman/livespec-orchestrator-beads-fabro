@@ -13,7 +13,7 @@ whose every outgoing edge carries a condition is rejected outright by the pinned
 engine (`all_conditional_edges`) — the defect that took the whole factory down
 twice. So each inserted node names its exceptional routes by condition and leaves
 the ordinary route as the unconditional fallthrough that conditional edges
-outrank, exactly as `implement -> implementation_diff -> dead_implementer` and
+outrank, exactly as `implement -> implementation_diff -> already_satisfied` and
 `dod_gate -> implement` already do.
 
 WHY THE SCRIPT BODY IS READ FOR ITS IDEMPOTENCE GUARD. `publish_draft` is a

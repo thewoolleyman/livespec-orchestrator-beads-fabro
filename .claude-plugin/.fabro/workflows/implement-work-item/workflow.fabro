@@ -445,6 +445,18 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         script="git diff --quiet origin/{{ inputs.default_branch }}...HEAD; status=$?; if test \"$status\" -eq 0; then echo 'LIVESPEC_DEAD_IMPLEMENTER: implementer terminated without changing the worktree relative to dispatch base origin/{{ inputs.default_branch }}...HEAD; stop before janitor/review/disposition' >&2; exit 1; fi; if test \"$status\" -eq 1; then exit 0; fi; echo 'LIVESPEC_DEAD_IMPLEMENTER_CHECK_FAILED: git diff against origin/{{ inputs.default_branch }}...HEAD failed; fail closed before review' >&2; exit \"$status\""
     ]
 
+    // A complete no-op is not an implementer failure.  The completion gate
+    // admitted only a turn that declared the Definition of Done complete; this
+    // node re-proves the tree is unchanged and prints the base the Dispatcher
+    // must carry into its distinct terminal outcome.  An unprovable re-check
+    // remains fail-closed through dead_implementer.
+    already_satisfied [
+        label="Already satisfied: complete implementation with no tree diff"
+        shape=parallelogram
+        timeout="1800s"
+        script="git diff --quiet origin/{{ inputs.default_branch }}...HEAD; status=$?; if test \"$status\" -eq 0; then echo \"LIVESPEC_ALREADY_SATISFIED: base=$(git rev-parse \"origin/{{ inputs.default_branch }}\") implementer declared the Definition of Done complete on the unchanged dispatch base\" >&2; exit 0; fi; echo 'LIVESPEC_DEAD_IMPLEMENTER_CHECK_FAILED: already-satisfied tree re-check failed; fail closed before review' >&2; exit 1"
+    ]
+
     // Janitor hard gate: the governed repository's IN-SANDBOX check
     // suite, rendered from `inputs.sandbox_check_suite` — the resolved
     // `dispatcher.janitor.check_suite` field at its in-sandbox-gate venue
@@ -2312,7 +2324,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     // Non-zero means either a byte-identical tree or an inability to
     // prove the tree changed; both fail closed before review.
     implementation_diff -> janitor_admission [label="changed", condition="outcome=succeeded"]
-    implementation_diff -> dead_implementer [label="unchanged or unprovable"]
+    implementation_diff -> already_satisfied [label="unchanged or unprovable"]
 
     // Janitor outcome routing: exit 0 -> Green -> publish_draft; non-zero ->
     // Red -> fix, bounded by `fix.max_visits`.

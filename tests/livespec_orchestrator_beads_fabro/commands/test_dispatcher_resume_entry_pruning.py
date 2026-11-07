@@ -24,9 +24,9 @@ tokenizes the grammar, so it is a second instrument and not the same answer
 read twice.
 
 THE SUBJECT IS THE COMMITTED GRAPH. The four nodes the live engine named —
-`dod_gate`, `implement`, `implementation_diff`, `dead_implementer` — are
+`dod_gate`, `implement`, `implementation_diff`, `already_satisfied`, `dead_implementer` — are
 orphaned only through that graph's real edge set, including the
-`implementation_diff -> dead_implementer` branch that no tidier fixture
+`implementation_diff -> already_satisfied` branch that no tidier fixture
 carries, so a hand-authored stand-in cannot fail for the reason the dispatch
 did.
 """
