@@ -1405,5 +1405,12 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node",
+    "work_item": "bd-ib-2eyiwy",
+    "first_seen": "2026-11-07"
   }
 ]

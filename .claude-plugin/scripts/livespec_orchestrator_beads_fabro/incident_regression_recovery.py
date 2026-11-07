@@ -7,10 +7,11 @@ healthy master". Each step is a generation of the item's incident authority
 chain committed through the retained conditional-close writer, plus one
 retained `livespec-incident-recovery-v1` record for inspection:
 
-- `reopen_for_regression` reopens the same item (a live repayment or a closed
-  one) into `reverting` for a failure attributed to a landed incident commit,
-  requests recovery, and takes the item back from the factory through its claim
-  token with the incident holder's stamp, so the superseded run lands nothing.
+- `reopen_for_regression` reopens the same item (a merged attempt whose master
+  run failed, a live repayment or a closed one) into `reverting` for a failure
+  attributed to a landed incident commit, requests recovery, and takes the item
+  back from the factory through its claim token with the incident holder's
+  stamp, so the superseded run lands nothing.
 - `require_repayment_current` is the gate a repayment merge, proof or closure
   takes immediately before its side effect; a superseded repayment is refused.
 - `record_deferred_finding` owes a deferred-proof-only defect in the live

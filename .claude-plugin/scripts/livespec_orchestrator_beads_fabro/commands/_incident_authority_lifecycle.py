@@ -5,6 +5,9 @@ is a thin adapter over a released library function, run against the exact
 attempt the shared `--item`, `--attempt`, `--phase`, `--operation`,
 `--generation` and `--owner` identity names:
 
+- `record-merge` reads the merged repair PR the chain names and its landed
+  history from the forge and git and records `master-observation`
+  (`record_merge`).
 - `enter-repayment` observes the named master run on the forge and calls
   `enter_repayment`, so the run's own completion and conclusion are the gate.
 - `advance-repayment` calls `advance_repayment` for the named next phase.
@@ -57,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._incident_authority_completion i
     decode_attestation,
     observe_master_run,
 )
+from livespec_orchestrator_beads_fabro.commands._incident_authority_merge import record_merge
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
@@ -91,6 +95,7 @@ __all__: list[str] = [
 
 # Each lifecycle action and the payload arguments it alone requires.
 LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
+    "record-merge": (),
     "enter-repayment": ("master_run", "target_ref"),
     "advance-repayment": ("to_phase",),
     "bind-repayment-acceptance": ("pr",),
@@ -136,6 +141,18 @@ def _attempt(*, text: str) -> IncidentAttempt | AuthorityRefusal:
     if attempt is None or text != _canonical(value=attempt_record(attempt=attempt)):
         return _invalid(flag="--attributed-json", detail="not one canonical attempt record")
     return attempt
+
+
+def _record_merge(
+    *,
+    args: argparse.Namespace,
+    client: BeadsClient,
+    reading: IncidentReading,
+    runner: CommandRunner,
+) -> LifecycleReply:
+    return record_merge(
+        client=client, reading=reading, runner=runner, repo=args.repo, repository=args.repository
+    )
 
 
 def _enter(
@@ -257,6 +274,7 @@ def _complete(
 
 
 _HANDLERS: dict[str, _Handler] = {
+    "record-merge": _record_merge,
     "enter-repayment": _enter,
     "advance-repayment": _advance,
     "bind-repayment-acceptance": _bind,
