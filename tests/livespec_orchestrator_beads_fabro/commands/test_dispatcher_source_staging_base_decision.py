@@ -285,3 +285,32 @@ def test_a_head_no_origin_ref_reaches_is_refused_before_any_staging(
     assert len(unpushed_commits) == 1
     assert "unpublished work" in unpushed_commits[0]
     assert "refs/heads/master" in _git(repo=repo, args=["ls-remote", "--heads", "origin"])
+
+
+@pytest.mark.parametrize(
+    ("ancestor", "target"),
+    [(True, "example/source@master"), (False, "example/source@feat/bd-ib-x")],
+)
+def test_the_launch_target_names_the_branch_the_selected_staging_base_came_from(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ancestor: bool, target: str
+) -> None:
+    """A stale tracking ref must not outvote the freshly fetched staging base.
+
+    The preflight proves HEAD only on `origin/feat/bd-ib-x`, because the local
+    `origin/master` is stale. When the fresh fetch shows master already holds
+    HEAD, staging moves to that master head, and the remote launch must name
+    master too, or Petri clones the older feature tip instead of the staged tree.
+    """
+    monkeypatch.setattr(
+        staging,
+        "source_checkout_preflight",
+        lambda **_: pass_outcome(
+            head=_HEAD, origin_refs=("origin/feat/bd-ib-x",), origin_ref="origin/feat/bd-ib-x"
+        ),
+    )
+    runner = _Runner(ancestor=ancestor)
+
+    assert _staged(runner=runner, journal=_Journal(), tmp_path=tmp_path).exit_code == 0
+
+    launch = next(call for call in runner.calls if call[:2] == ["fabro", "run"])
+    assert launch == ["fabro", "run", "--target", target]
