@@ -26,21 +26,24 @@ declared GENERATED record file, the brief also carries one
 the default branch into this run's work inside this turn and resolve the
 conflict or the gate failure:
 
-1. `git fetch origin {{ inputs.default_branch }}`, then REBASE this run's own
-   commits onto `origin/{{ inputs.default_branch }}` yourself
-   (`git rebase origin/{{ inputs.default_branch }}`), resolving each conflicted
-   path on its merits, so the repaired head carries no merge commit. Never
-   integrate with `git merge`: `publish_draft` and `pr_refresh` refresh by
-   rebase, which DROPS a merge commit and replays the run's own commits, so a
-   merge-based repair reproduces the original conflicts at the next refresh (the
-   measured instance: a scratch rebase of a merge-based repair conflicted on the
-   same two paths). Do NOT resolve by taking one side wholesale — a conflict
-   means both sides changed something, and discarding either loses work
-   somebody shipped.
+1. `git fetch origin {{ inputs.default_branch }}`, then identify this run's
+   publish branch from `$LIVESPEC_PUBLISH_BRANCH` and look up its origin tip.
+   When `origin/$LIVESPEC_PUBLISH_BRANCH` exists and its tip is an ancestor of
+   `HEAD`, MERGE `origin/{{ inputs.default_branch }}` into `HEAD` with
+   `git merge --no-commit --no-ff `origin/{{ inputs.default_branch }}``,
+   resolving each conflicted path on its merits, so the origin tip remains an
+   ancestor of the repaired head. Do NOT use `git merge --no-edit`: it creates
+   the merge commit outside the sandbox commit runner. When the publish branch
+   does not exist on origin, REBASE this run's own commits onto
+   `origin/{{ inputs.default_branch }}` yourself
+   (`git rebase origin/{{ inputs.default_branch }}`). Do NOT resolve by taking
+   one side wholesale — a conflict means both sides changed something, and
+   discarding either loses work somebody shipped.
 
    **Every commit the integration creates goes through the sandbox commit
-   runner**, including the commit that records a conflict resolution. When the
-   rebase stops on a conflict, resolve the paths, `git add` each one, then run
+   runner**, including the commit that records a conflict resolution or the
+   no-commit merge. When the rebase stops on a conflict, or when the no-commit
+   merge has staged its result, resolve the paths, `git add` each one, then run
    `python3 "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py" start -- git commit --no-edit`
    and repeat
    `python3 "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py" wait <run-id> --timeout-seconds 300`
