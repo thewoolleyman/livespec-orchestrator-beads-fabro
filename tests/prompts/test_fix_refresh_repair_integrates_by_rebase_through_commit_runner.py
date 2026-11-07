@@ -45,7 +45,7 @@ _RUNNER = "livespec-commit-runner.py"
 
 _PUBLISHED_BRANCH = "`origin/$LIVESPEC_PUBLISH_BRANCH` exists and its tip is an ancestor of `HEAD`"
 _MERGE_DIRECTIVE = "MERGE `origin/{{ inputs.default_branch }}` into `HEAD`"
-_MERGE_COMMAND = "git merge --no-commit --no-ff `origin/{{ inputs.default_branch }}`"
+_MERGE_COMMAND = "`git merge --no-commit --no-ff origin/{{ inputs.default_branch }}`"
 _PRESERVE_ANCESTRY = "so the origin tip remains an ancestor of the repaired head"
 _NO_PUBLISHED_BRANCH = "When the publish branch does not exist on origin"
 _REBASE_DIRECTIVE = "REBASE this run's own commits onto `origin/{{ inputs.default_branch }}`"

@@ -30,7 +30,7 @@ conflict or the gate failure:
    publish branch from `$LIVESPEC_PUBLISH_BRANCH` and look up its origin tip.
    When `origin/$LIVESPEC_PUBLISH_BRANCH` exists and its tip is an ancestor of
    `HEAD`, MERGE `origin/{{ inputs.default_branch }}` into `HEAD` with
-   `git merge --no-commit --no-ff `origin/{{ inputs.default_branch }}``,
+   `git merge --no-commit --no-ff origin/{{ inputs.default_branch }}`,
    resolving each conflicted path on its merits, so the origin tip remains an
    ancestor of the repaired head. Do NOT use `git merge --no-edit`: it creates
    the merge commit outside the sandbox commit runner. When the publish branch
