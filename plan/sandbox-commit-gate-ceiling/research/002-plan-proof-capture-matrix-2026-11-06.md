@@ -113,7 +113,14 @@ Consequences:
   2026-11-07 ~00:0xZ: the v0.297.0 14-clone roll waits for a natural one, and
   bd-ib-gusugi's seeded relaunch at the freeze lift is the named candidate.
 
-## Open issue for the capture: the plan assertions name `hp`
+## Resolved for the capture: the plan assertions name `hp`
+
+RESOLVED 2026-11-07T02:14:14Z (scope event of that time): legacy-coordinator-agent
+ruled option (a) under R301, to be reported to the maintainer for objection.
+"On hp" in plan assertions 1 and 2 reads as "on the configured default
+factory" (`dispatcher.default_factory`; petri on gmktec today). Nothing is
+reworded, and the carrier map is unchanged. The capture MUST name the factory
+host and the build it exercised explicitly. The question as it was raised:
 
 Plan assertions 1 and 2 begin "On hp, …". The committed `.livespec.jsonc` now
 sets `dispatcher.default_factory` to `petri` (gmktec), and `hp` is no longer
