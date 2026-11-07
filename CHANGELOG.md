@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.301.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.300.0...v0.301.0) (2026-11-07)
+
+
+### Features
+
+* red ([450b6b0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/450b6b0d4f4053a1060d6e4fbc1908f4f56d4b6d))
+
 ## [0.300.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.299.0...v0.300.0) (2026-11-07)
 
 
