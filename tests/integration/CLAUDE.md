@@ -410,7 +410,7 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   containment". The whole `loop` invocation is production code — the real
   `dispatcher.main(argv=["loop", ...])` CLI, the real store/client seam, a real
   on-disk journal, the real `.livespec.jsonc` cadence read and the real
-  `time.sleep` — with only the two seams that leave the process stood in: the
+  wait handed a no-op sleeper — with only the two seams that leave the process stood in: the
   bounded Messages API probe and the factory launch. Driving the whole
   invocation is what makes the positive case mean anything, because "resumes
   WITHOUT HAVING EXITED" is a property of what the invocation does AFTER the
@@ -423,9 +423,9 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   else. The exhaustion-record case reads BOTH the re-probe stage and the
   provider-exhaustion refusal stage, because an empty launch list alone cannot
   separate "the record still governs" from "nothing happened at all". The
-  fixture commits a one-second cadence and the wait sleeps for real, so elapsed
-  time is evidence the committed dial was read — a stubbed sleep would prove
-  only that some number reached some stand-in.
+  fixture commits a one-second cadence and the refusal record carries it, so the
+  committed dial is read off production's own journal; the wait is handed a
+  no-op sleeper, so no case blocks on the cadence.
 
 - `test_ledger_adoption_rank_scenario126.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 126 — Ledger normalization adopts a

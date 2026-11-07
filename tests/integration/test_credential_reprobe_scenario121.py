@@ -10,7 +10,7 @@ instruction".
 The whole `loop` invocation runs as production code — the real
 `dispatcher.main(argv=["loop", ...])` CLI, the real store/client seam against
 the in-memory `FakeBeadsClient`, the real on-disk journal, the real
-`.livespec.jsonc` cadence read, and the injected sleeper the wait calls. Only
+`.livespec.jsonc` cadence read, and the wait itself, handed a no-op sleeper. Only
 the two seams that leave the process are stood in: the bounded Messages API
 probe and the factory launch.
 
@@ -53,15 +53,19 @@ from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_credential_env,
     _dispatcher_loop,
+    _dispatcher_loop_wave,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     ClaudeProbeObservation,
     classify_claude_probe,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_reprobe import (
     CREDENTIAL_REPROBE_STAGE,
+    await_usable_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     dispatch_provider_exhaustion,
@@ -249,6 +253,25 @@ def _loop(
 ) -> tuple[int, list[str]]:
     """Drive one real `loop` invocation; report its exit code and what it launched."""
     calls: list[str] = []
+
+    def _wait_without_sleeping(
+        *,
+        repo: Path,
+        journal: JournalFile,
+        budget: int,
+        preflight: AcpPreflightVerdict | None,
+    ) -> None:
+        # The wait's `sleep` default is bound at definition, so the seam is the
+        # wave's call: hand the production wait a no-op sleeper.
+        await_usable_credential(
+            repo=repo,
+            journal=journal,
+            budget=budget,
+            preflight=preflight,
+            sleep=lambda _seconds: None,
+        )
+
+    monkeypatch.setattr(_dispatcher_loop_wave, "await_usable_credential", _wait_without_sleeping)
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _recording_run_dispatch(calls=calls))
     monkeypatch.setattr(
         _dispatcher_credential_env,
