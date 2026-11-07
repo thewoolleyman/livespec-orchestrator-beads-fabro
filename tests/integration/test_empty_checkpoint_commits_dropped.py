@@ -206,6 +206,12 @@ def _forge_bin(*, root: Path) -> Path:
     gh = bin_dir / "gh"
     _ = gh.write_text("\n".join(_GH_DOUBLE_LINES), encoding="utf-8")
     gh.chmod(0o755)
+    just = bin_dir / "just"
+    just.write_text(
+        "#!/bin/sh\n" 'test "$1" = "check-refresh-merge-pre-commit"\n',
+        encoding="utf-8",
+    )
+    just.chmod(0o755)
     return bin_dir
 
 
