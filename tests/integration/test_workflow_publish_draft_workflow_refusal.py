@@ -73,8 +73,10 @@ def _sandbox(*, tmp_path: Path) -> tuple[Path, Path]:
     _git(work, "add", _WORKFLOW_PATH)
     _git(work, "commit", "-m", "run changes workflow")
     hook = origin / "hooks" / "pre-receive"
+    attempts = tmp_path / "needs-human-pushes"
     hook.write_text(
         "#!/bin/sh\n"
+        f"printf x >> {attempts}\n"
         "while read -r old_revision new_revision ref; do\n"
         '    if test "$ref" = refs/heads/master; then continue; fi\n'
         '    workflow_files=$(git diff --name-only refs/heads/master "$new_revision"'
@@ -181,6 +183,7 @@ def test_run_owned_workflow_edit_is_preserved_and_blocks_with_its_permission_rea
     assert "workflows permission" in terminal.stderr
     assert "LIVESPEC_NEEDS_HUMAN_WORKFLOWS_RESET" in terminal.stderr
     assert "LIVESPEC_NEEDS_HUMAN_PUSH_FAILED" not in terminal.stderr
+    assert (tmp_path / "needs-human-pushes").read_text(encoding="utf-8") == "xx"
     ref = f"refs/heads/needs-human/{_RUN_ID}"
     assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: {ref}" in terminal.stderr
     preserved = _git(origin, "rev-parse", ref).stdout.strip()
