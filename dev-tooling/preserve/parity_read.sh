@@ -72,10 +72,15 @@ envshown=0
 for p in $(sshn "$node" "sudo -n cat $base/*/cgroup.procs" 2>/dev/null); do
   um=$(sshn "$node" "sudo -n cat /proc/$p/status 2>/dev/null" | awk '$1=="Umask:"{print $2}')
   [ -n "$um" ] || continue
-  argv=$(sshn "$node" "sudo -n cat /proc/$p/cmdline 2>/dev/null" | tr '\0' ' ' | cut -c1-120)
+  argv=$(sshn "$node" "sudo -n cat /proc/$p/cmdline 2>/dev/null" | tr '\0\n' '  ' | cut -c1-120)
   printf '%s %s %s\n' "$p" "$um" "$argv"
   if [ "$envshown" = 0 ] && [ "$um" = 0022 ] && [ "${argv#/pause}" = "$argv" ]; then
-    names=$(sshn "$node" "sudo -n cat /proc/$p/environ 2>/dev/null" | tr '\0' '\n' | sed 's/=.*//' | sort -u | tr '\n' ' ')
+    # Split on NUL locally and keep only the text before the first '=': a value may contain newlines
+    # (LIVESPEC_CREDENTIAL_USE_GUARD_SCRIPT carries a whole script), and a newline split prints value text.
+    names=$(sshn "$node" "sudo -n cat /proc/$p/environ 2>/dev/null" | python3 -I -c '
+import sys
+recs = [r for r in sys.stdin.buffer.read().split(b"\0") if r]
+print(" ".join(sorted({r.split(b"=", 1)[0].decode("utf-8", "replace") for r in recs})))')
     echo "    env NAMES of pid $p: $names"
     envshown=1
   fi
