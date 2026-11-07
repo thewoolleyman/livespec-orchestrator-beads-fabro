@@ -26,6 +26,7 @@ _ORIGIN_HEAD = "b" * 40
 @dataclass(kw_only=True)
 class _Runner:
     origin_head: str = _ORIGIN_HEAD
+    origin_url: str = "https://github.com/example/source.git"
     fetch_exit: int = 0
     observed_exit: int = 0
     ancestor: bool = True
@@ -42,6 +43,8 @@ class _Runner:
     ) -> CommandResult:
         del cwd, timeout_seconds, env, stdin
         self.calls.append(argv)
+        if argv == ["git", "config", "--get", "remote.origin.url"]:
+            return CommandResult(exit_code=0, stdout=f"{self.origin_url}\n", stderr="")
         if argv[:2] == ["git", "fetch"]:
             return CommandResult(exit_code=self.fetch_exit, stdout="", stderr="fetch refused")
         if argv[:2] == ["git", "rev-parse"]:
@@ -73,6 +76,7 @@ def _plan(*, repo: Path, root: Path) -> DispatchPlan:
         janitor=None,
         janitor_checkout=root / "janitor",
         default_branch="master",
+        fabro_version="fabro 0.393.0 (fixture)",
     )
 
 
@@ -110,6 +114,19 @@ def test_only_a_checkout_strictly_behind_origin_stages_at_the_fetched_head(
     added = next(call for call in runner.calls if call[:3] == ["git", "worktree", "add"])
     behind = origin_head != _HEAD and ancestor
     assert added[-1] == (origin_head if behind else _HEAD)
+
+
+@pytest.mark.usefixtures("proven_head")
+def test_petri_source_staging_launches_the_proven_remote_default_branch_directly(
+    *, tmp_path: Path
+) -> None:
+    """An explicit target avoids Fabro's client-side push of the disposable branch."""
+    runner = _Runner()
+
+    assert _staged(runner=runner, journal=_Journal(), tmp_path=tmp_path).exit_code == 0
+
+    launch = next(call for call in runner.calls if call[:2] == ["fabro", "run"])
+    assert launch == ["fabro", "run", "--target", "example/source@master"]
 
 
 @pytest.mark.parametrize("unobservable", ["fetch-failed", "unreadable-head"])
