@@ -183,15 +183,19 @@ def verified_preserved_seed(
     journal silently reports the answer of one that did not — here, "this item
     has no preserved tree" for an item whose tree was published minutes ago.
     """
-    asked: list[str] = []
-    # The terminal ref is per RUN, so with no identifier to name there is no ref
-    # it could exist at and the round trip would ask about a pattern that matches
-    # nothing.
-    if earlier_run_ids:
-        asked.append(PRESERVED_SOURCE_TERMINAL_TREE)
-        terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
-        if terminal is not None:
-            return terminal
+    if not earlier_run_ids:
+        return PreservedWorkUnobservable(
+            detail=(
+                f"{PRESERVED_SOURCE_TERMINAL_TREE} could not be asked because no earlier "
+                "run identifier was observed from the anchor, dispatch journal, or ledger "
+                "claim; preserved work is not confirmed absent and the publish branch is "
+                "left exactly as it stands"
+            )
+        )
+    asked: list[str] = [PRESERVED_SOURCE_TERMINAL_TREE]
+    terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
+    if terminal is not None:
+        return terminal
     # The published tree is named by this item's OWN journal, so with no row
     # naming one there is no ref that source could stand at and the round trip
     # would ask origin about nothing.
