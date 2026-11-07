@@ -285,24 +285,15 @@ def test_scenario305_red_refreshed_aggregate_restores_and_briefs_for_fix(*, tmp_
 
 
 def test_scenario305_refresh_merge_reuses_its_pre_merge_aggregate_evidence() -> None:
-    """The merge hook gates the merged index once before commit-msg replays it."""
+    """The workflow gates the merged index before its ordinary commit hooks run."""
     workflow = _WORKFLOW.read_text(encoding="utf-8")
     lefthook = _LEFTHOOK.read_text(encoding="utf-8")
 
-    assert workflow.count("LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-edit") == 1
-    assert "GIT_EDITOR=true LIVESPEC_FACTORY_REFRESH_MERGE=true git commit --no-edit" in workflow
-    assert "pre-merge-commit:" in lefthook
-    assert "    00-refresh-merge-pre-commit-evidence:" in lefthook
-    assert "      run: just check-refresh-merge-pre-commit" in lefthook
-
-
-def test_scenario305_refresh_merge_survives_the_commit_refuse_hook_install_order() -> None:
-    """The workflow owns merge evidence because hook installation removes extra wrappers."""
-    workflow = _WORKFLOW.read_text(encoding="utf-8")
-    lefthook = _LEFTHOOK.read_text(encoding="utf-8")
-
-    assert "LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-commit --no-ff" in workflow
-    assert "LIVESPEC_FACTORY_REFRESH_MERGE=true just check-refresh-merge-pre-commit" in workflow
+    assert workflow.count("LIVESPEC_FACTORY_REFRESH_MERGE=true git merge --no-commit --no-ff") == 1
+    assert (
+        workflow.count("LIVESPEC_FACTORY_REFRESH_MERGE=true just check-refresh-merge-pre-commit")
+        == 1
+    )
     assert "GIT_EDITOR=true LIVESPEC_FACTORY_REFRESH_MERGE=true git commit --no-edit" in workflow
     assert "pre-merge-commit:" not in lefthook
 

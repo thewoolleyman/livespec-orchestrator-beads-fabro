@@ -49,15 +49,6 @@ pre-commit:
     03-check-pre-commit:
       run: just check-pre-commit
 
-# A refresh that must retain an already-published branch ancestry creates a
-# merge commit. Its pre-merge hook validates the merged index once and records
-# same-tree evidence for the commit-msg replay hook; ordinary merges leave the
-# refresh-only marker unset and retain their existing hook behavior.
-pre-merge-commit:
-  commands:
-    00-refresh-merge-pre-commit-evidence:
-      run: just check-refresh-merge-pre-commit
-
 commit-msg:
   commands:
     00-no-commit-on-master:
