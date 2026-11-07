@@ -19,6 +19,7 @@ __all__: list[str] = [
     "RECOVERY_PHASE",
     "REOPEN_FROM",
     "REPAYMENT_PHASES",
+    "closure_successor_allowed",
     "fresh_repayment_carrier",
     "lifecycle_state_for",
     "recovery_carrier",
@@ -54,6 +55,7 @@ _REPAYMENT_ENTRY_FROM = "master-observation"
 REOPEN_FROM: tuple[str, ...] = (*REPAYMENT_PHASES, "closed")
 RECOVERY_PHASE = "reverting"
 CORRECTED_FROM = "collecting-failures"
+_CLOSED_PHASE = "closed"
 
 
 def lifecycle_state_for(*, phase: str) -> str | None:
@@ -101,3 +103,13 @@ def recovery_carrier(*, before: IncidentAttempt, after: IncidentAttempt) -> bool
         and after.carrier.target_ref != before.carrier.target_ref
     )
     return reopen or corrected
+
+
+def closure_successor_allowed(*, before: IncidentAttempt, after: IncidentAttempt) -> bool:
+    """Whether `after` may follow `before` as far as the terminal `closed` phase goes.
+
+    `closed` follows only `repayment-acceptance`: the current normal repayment
+    carrier merged and its final proof was judged. No writer may record it from
+    an expedited merge, an unmerged repayment or an earlier `closed` generation.
+    """
+    return after.phase != _CLOSED_PHASE or before.phase == REPAYMENT_PHASES[-1]

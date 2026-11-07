@@ -28,6 +28,7 @@ __all__: list[str] = [
     "GroomDraftError",
     "GroomExitRefusedError",
     "GroomTargetNotBacklogError",
+    "IncidentClosureRefusedError",
     "LivespecConfigUnreadableError",
     "MalformedRecordLineError",
     "SchemaViolationError",
@@ -155,6 +156,22 @@ class ClaimWriteRefusedError(Exception):
         super().__init__(detail)
         self.item_id = item_id
         self.outcome = outcome
+        self.detail = detail
+
+
+class IncidentClosureRefusedError(Exception):
+    """A close refused because the item is an incident whose final normal proof is owed.
+
+    EXPECTED: `contracts.md`, "Expedited incident lifecycle" forbids any close
+    path from discharging an incident from its expedited merge alone. The item
+    closes only once its retained chain records `closed`. `outstanding` names
+    every obligation still holding it open, and nothing was written.
+    """
+
+    def __init__(self, *, item_id: str, outstanding: tuple[str, ...], detail: str) -> None:
+        super().__init__(detail)
+        self.item_id = item_id
+        self.outstanding = outstanding
         self.detail = detail
 
 

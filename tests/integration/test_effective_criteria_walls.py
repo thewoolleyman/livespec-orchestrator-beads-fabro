@@ -62,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands.groom import (
     GroomApproval,
     file_approved_slices,
 )
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -280,6 +281,7 @@ def _real_acceptance_pass() -> Callable[..., AcceptancePassResult]:
         outcome: DispatchOutcome,
         raw_labels: Sequence[str] = (),
         journal_path: Path | None = None,
+        incident: IncidentAcceptanceScope | None = None,
     ) -> AcceptancePassResult:
         return run_acceptance_pass(
             repo=repo,
@@ -288,6 +290,7 @@ def _real_acceptance_pass() -> Callable[..., AcceptancePassResult]:
             runner=runner,
             raw_labels=raw_labels,
             journal_path=journal_path,
+            incident=incident,
         )
 
     return _call

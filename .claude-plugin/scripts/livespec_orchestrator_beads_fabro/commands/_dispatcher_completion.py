@@ -46,6 +46,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only_refusal import (
     host_only_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    incident_acceptance_for,
+    incident_decision,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
     read_dispatch_labels,
@@ -62,15 +66,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     is_non_convergence_outcome,
     item_sizing_warnings,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer_write import (
-    write_proof_pointer,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
     resolve_stall_window,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
-    acceptance_decision,
     effective_acceptance_policy,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -143,6 +143,9 @@ def complete_and_accept(  # noqa: PLR0911, PLR0915 — one return per dispositio
     # An unreadable label set is NOT a declaration, so it fails closed to the
     # empty marker set and the pass classifies the item change-implying.
     labels = read_dispatch_labels(repo=repo, item=item)
+    # An expedited incident is graded on its cumulative original change plus the
+    # current repayment carrier, and closes only once its chain records `closed`.
+    incident = incident_acceptance_for(config=config, item_id=item.id, merged_pr=outcome.pr_number)
     acceptance_pass = run_acceptance_pass(
         repo=repo,
         item=item,
@@ -152,20 +155,24 @@ def complete_and_accept(  # noqa: PLR0911, PLR0915 — one return per dispositio
         # identifiers: the dispatch id lives only in the `dispatch-id` record, and
         # the reconcile valve reaches here with an outcome carrying no run id.
         journal_path=journal.path,
+        incident=incident.scope,
     )
     journal.append(record=acceptance_pass.journal_record(work_item_id=item.id, policy=policy))
     # The pointer is written BEFORE any disposition branch, because every branch
     # is a possible end state for the item and the pointer is provenance of the
     # merge rather than of the verdict: an item that parks keeps the record its
-    # pass read, and one that closes carries the pointer into `done`.
-    write_proof_pointer(
+    # pass read, and one that closes carries the pointer into `done`. A merge the
+    # incident chain does not bind as its current carrier gets no pointer, and
+    # neither close below may discharge an incident that still owes anything.
+    decision = incident_decision(
         repo=repo,
         item=item,
         outcome=outcome,
         proof=acceptance_pass.proof,
         journal=journal,
+        incident=incident,
+        policy=policy,
     )
-    decision = acceptance_decision(policy=policy)
     if acceptance_pass.verdict == NEEDS_ATTENTION_VERDICT:
         # A cannot-judge verdict NEVER disposes, under EVERY acceptance_policy
         # including `ai-only`: the delegation `ai-only` grants is the authority

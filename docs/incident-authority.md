@@ -220,6 +220,65 @@ and its retained record carries the original failures beside the correction.
 counted there, apart from ordinary acceptance rework and nonconvergence
 budgets.
 
+## Incident completion
+
+`livespec_orchestrator_beads_fabro.incident_completion` carries final normal
+proof (specification "Expedited incident lifecycle", scenario "incident
+completion requires final normal proof rather than an old repair merge").
+
+`read_incident_standing` locates an incident only by the item's own genesis
+comment and walks the chain the genesis names. A `normal` item has no genesis
+and closes as before. An `incident` standing carries every obligation the chain
+still owes with nothing observed, which is empty only once the chain records
+`closed`. An `unreadable` standing (comments unreadable, a malformed or
+ambiguous genesis, a chain that refuses) is an obligation too, never a normal
+item.
+
+Every closure route reads the standing immediately before it closes and holds
+the item while anything is outstanding: the Dispatcher's completion valve
+(which `reconcile-merged` and a proof-only resume reach) parks the item instead
+of taking its completed or no-change-needed close; `reconcile-merged --regrade`
+parks a PASS; the `accept:<id>` valve refuses `incident-obligation-outstanding`;
+`close-work-item` refuses every resolution with `IncidentClosureRefusedError`
+and exit 5. Each hold is journaled as `incident-obligation-outstanding` with its
+route and the named obligations.
+
+Acceptance grades the original expedited carrier PRs together with the current
+repayment carrier: the merged-diff leg is every original PR's diff followed by
+the current one. A merge the chain does not bind as the current repayment
+carrier (the earlier repair PR resumed for proof, or a repayment not yet bound
+as `repayment-acceptance`) is ungradeable, so the pass parks at
+NEEDS_ATTENTION, and no proof pointer is written for it
+(`incident-proof-pointer-refused`). A marker-removal diff alone never grades.
+
+`complete_incident` takes the observed `IncidentCompletionEvidence` and records
+`closed` only when nothing is outstanding: the current phase is
+`repayment-acceptance` with its PR bound, merged and landed; that PR's normal
+master run is complete, `success` and names a repayment landed commit; the head
+tree carries no marker; every cumulative original path was validated; every
+deferred verification and spec debt was repaid; the manual outcome is recorded;
+and no related consumer or PR failure lacks a disposition. Missing, cancelled,
+incomplete or unreadable evidence is a named obligation
+(`repayment-master-ci-missing`, `repayment-master-ci-cancelled:<run>`,
+`marker-removal-unobserved`, ...). A repeated delivery after `closed` recovers
+it. The transition writer refuses any `closed` successor that does not follow
+`repayment-acceptance`, whoever commits it.
+
+Each standing also carries the chain head it observed, and every effect site
+revalidates that generation through `require_repayment_current` (bd-ib-k5teti)
+immediately before its side effect: the proof pointer write (effect `proof`),
+the completion valve's and the regrade arm's close, the `accept:<id>` valve and
+`close-work-item` (effect `closure`), and `complete_incident`'s `closed`
+transition. A repayment generation a regression reopen superseded is refused
+`incident-repayment-superseded`, any other moved generation
+`incident-generation-stale`; the refusal is journaled or reported like any
+other outstanding obligation and nothing is written.
+
+Not in this slice: binding the repayment PR as `repayment-acceptance` from the
+Dispatcher and gathering the completion evidence automatically. Until a
+controller records both, an incident item parks in acceptance with its
+obligations named.
+
 ## Genesis
 
 `publish-genesis --genesis-json <request>` takes the same identity arguments and

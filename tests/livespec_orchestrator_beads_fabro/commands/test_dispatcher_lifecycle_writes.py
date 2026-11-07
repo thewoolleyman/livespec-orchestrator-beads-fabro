@@ -18,6 +18,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_completion_close,
+    _drive_accept_valve,
     _drive_policy_valves,
     _drive_valves,
 )
@@ -25,6 +26,10 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_lifecycle_writes as lifecycle_writes,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    IncidentAcceptance,
+)
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentStanding
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _MODULE_PATH = Path(
@@ -152,6 +157,11 @@ def test_the_reconcile_merged_completion_reaches_the_chokepoint(
     written = _stub_store_writes(monkeypatch=monkeypatch)
     monkeypatch.setattr(_dispatcher_completion, "store_config", lambda **_: _config())
     monkeypatch.setattr(_dispatcher_completion, "close_dispatch_item", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "incident_acceptance_for",
+        lambda **_: IncidentAcceptance(standing=_NORMAL, scope=None, config=_config()),
+    )
     monkeypatch.setattr(_dispatcher_completion, "read_dispatch_labels", lambda **_: ())
     monkeypatch.setattr(
         _dispatcher_completion, "run_acceptance_pass", lambda **_: _AcceptancePass()
@@ -241,6 +251,13 @@ def _stub_valve_store(*, monkeypatch: pytest.MonkeyPatch, item: WorkItem) -> Non
     monkeypatch.setattr(_drive_valves, "resolve_store_config", lambda **_: _config())
     monkeypatch.setattr(_drive_valves.store, "read_work_items", lambda **_: [])
     monkeypatch.setattr(_drive_valves, "_find_item", lambda **_: item, raising=False)
+    # The item exists only in the stubbed store; the incident closure gate is stood in.
+    monkeypatch.setattr(_drive_accept_valve, "closure_obligations_for", lambda **_: ())
+
+
+_NORMAL = IncidentStanding(
+    item_id="bd-ib-1", kind="normal", repository=None, history=(), outstanding=()
+)
 
 
 def _config() -> StoreConfig:

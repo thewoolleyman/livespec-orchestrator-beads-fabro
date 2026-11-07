@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _drive_accept_valve as accept_valve
 from livespec_orchestrator_beads_fabro.commands import _drive_reject_valve as reject_valve
 from livespec_orchestrator_beads_fabro.commands import _drive_valves as drive_valves
 from livespec_orchestrator_beads_fabro.commands import drive
@@ -139,6 +140,9 @@ def _install_valve_store(
     monkeypatch.setattr(
         drive_valves, "resolve_store_config", fake_resolve_store_config, raising=False
     )
+    # These items exist only in the stubbed store, so no tenant holds their comments:
+    # the incident closure gate (exercised in test_incident_completion) is stood in.
+    monkeypatch.setattr(accept_valve, "closure_obligations_for", lambda **_: ())
     monkeypatch.setattr(drive_valves.store, "read_work_items", fake_read_work_items, raising=False)
     monkeypatch.setattr(
         drive_valves.store, "update_work_item_status", fake_update_work_item_status, raising=False
