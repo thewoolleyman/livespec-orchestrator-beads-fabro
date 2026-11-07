@@ -1,14 +1,11 @@
-"""Test support for starting a dispatcher-argv fixture and waiting until it has exec'd."""
+"""Test support for confirming a fixture payload has exec'd."""
 
 from __future__ import annotations
 
 import subprocess
-import time
 from pathlib import Path
 
 _PROC = Path("/proc")
-_EXEC_TIMEOUT_SECONDS = 30.0
-_POLL_SECONDS = 0.01
 
 
 def _has_execd(*, cmdline: Path, entry: Path) -> bool:
@@ -24,28 +21,25 @@ def wait_for_dispatcher_exec(
     process: subprocess.Popen[bytes],
     entry: Path,
     proc: Path = _PROC,
-    timeout_seconds: float = _EXEC_TIMEOUT_SECONDS,
-    poll_seconds: float = _POLL_SECONDS,
+    timeout_seconds: float | None = None,
+    poll_seconds: float | None = None,
 ) -> None:
-    """Wait, within a fixed budget, for `/proc` to expose the payload argv."""
-    deadline = time.monotonic() + timeout_seconds
-    cmdline = proc / str(process.pid) / "cmdline"
-    while not _has_execd(cmdline=cmdline, entry=entry):
-        if time.monotonic() >= deadline:
-            raise AssertionError(f"dispatcher fixture process {process.pid} did not exec {entry}")
-        time.sleep(poll_seconds)
+    """Confirm `/proc` exposes the payload argv, with no waiting.
+
+    `subprocess.Popen` returns only after the child's exec has completed, so the
+    payload argv is already visible and one read settles it. The two budget
+    arguments remain accepted for callers that still pass them; neither is read.
+    """
+    _ = (timeout_seconds, poll_seconds)
+    if not _has_execd(cmdline=proc / str(process.pid) / "cmdline", entry=entry):
+        raise AssertionError(f"dispatcher fixture process {process.pid} did not exec {entry}")
 
 
 def start_dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
-    """A real live process whose own argv names `<build>/scripts/bin/dispatcher.py`.
+    """Start a fixture whose argv names `<build>/scripts/bin/dispatcher.py`.
 
-    That argv IS what identifies a running Dispatcher — every invocation of it
-    goes through that one entry point — so the fixture only has to be a real
-    process carrying it, and deliberately is NOT a Python child:
-    `check-tests-no-subprocess-spawn` asks tests not to spawn one, and a real
-    Dispatcher would need a factory and a tenant to get past its first argument.
-    Returns only once `/proc` exposes that argv, so a scan of `/proc` never runs
-    against a child that has forked but not yet exec'd.
+    `wait_for_dispatcher_exec` performs a single post-`Popen` inspection, so
+    this compatibility helper preserves its callers without polling or sleeping.
     """
     entry = build / "scripts" / "bin" / "dispatcher.py"
     entry.parent.mkdir(parents=True, exist_ok=True)
