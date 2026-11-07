@@ -141,8 +141,8 @@ def test_an_unreadable_terminal_reference_is_unobservable_and_stops_the_search()
     assert not _asked(runner=runner, needle=_BRANCH_REF)
 
 
-def test_an_item_with_no_earlier_identifier_skips_the_terminal_source_entirely() -> None:
-    """With no run to name, that ref cannot exist, so no round trip is spent on it."""
+def test_an_item_with_no_earlier_identifier_holds_the_unaskable_terminal_source() -> None:
+    """Without a run id, terminal preservation cannot be established as absent."""
     runner = _Runner(
         answers={
             f"ls-remote {SEED_REMOTE} {_BRANCH_REF}": CommandResult(
@@ -153,9 +153,8 @@ def test_an_item_with_no_earlier_identifier_skips_the_terminal_source_entirely()
 
     found = _seed(runner=runner, earlier_run_ids=())
 
-    assert isinstance(found, RecoverySeed)
-    # The seed names no source run, because the ref it was read off names none.
-    assert found.source_run_id == ""
+    assert isinstance(found, PreservedWorkUnobservable)
+    assert PRESERVED_SOURCE_TERMINAL_TREE in found.detail
     assert not _asked(runner=runner, needle=NEEDS_HUMAN_REF_PREFIX)
 
 
