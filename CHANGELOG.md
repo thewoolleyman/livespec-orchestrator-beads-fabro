@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.299.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.298.0...v0.299.0) (2026-11-07)
+
+
+### Features
+
+* **incident:** every acceptance and closure path requires final normal incident proof (bd-ib-mnny4v) ([73d7925](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/73d7925b263ca9a2209c2b62cc788119cdf8c334))
+* **incident:** expose repayment, regression reopen, deferred finding and corrected attempt as incident-authority actions (bd-ib-nabx3u) ([32c688b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/32c688b47175d5bb86f87bf32313f3bb50132b1f))
+
+
+### Bug Fixes
+
+* refresh the sandbox worktree pack before checks ([e333ac2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e333ac25211b3679ea647680cf05783658ad2c15))
+
 ## [0.298.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.297.0...v0.298.0) (2026-11-07)
 
 
