@@ -711,9 +711,8 @@ def test_recovery_refuses_forged_stale_or_half_landed_inputs_by_name(
         )
     ) == ("incident-reopen-stale-observation")
     assert _code(
-        reopen_for_regression(
-            client=client,
-            reading=observed,
+        plan_reopen(
+            reading=replace(observed, attempt=replace(observed.attempt, phase="repair")),
             attributed=observed.attempt,
             finding=_finding(),
             owner=PRINCIPAL,

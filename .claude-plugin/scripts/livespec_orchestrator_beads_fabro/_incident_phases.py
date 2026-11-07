@@ -14,6 +14,7 @@ from livespec_orchestrator_beads_fabro._incident_carrier import BranchReserved, 
 
 __all__: list[str] = [
     "CORRECTED_FROM",
+    "MERGED_PHASE",
     "PHASE_LIFECYCLE_STATES",
     "PRE_PR_PHASES",
     "RECOVERY_PHASE",
@@ -49,10 +50,13 @@ REPAYMENT_PHASES: tuple[str, ...] = (
 # carrier has not been bound: the host repair before its PR, and the fresh
 # repayment carrier between its reservation and the factory run's own PR.
 PRE_PR_PHASES: frozenset[str] = frozenset(("repair", *REPAYMENT_PHASES[:3]))
-_REPAYMENT_ENTRY_FROM = "master-observation"
-# An attributable regression reopens a live repayment or a closed item into
-# `reverting`; a corrected repair opens only after the revert receipt.
-REOPEN_FROM: tuple[str, ...] = (*REPAYMENT_PHASES, "closed")
+MERGED_PHASE = "master-observation"
+_REPAYMENT_ENTRY_FROM = MERGED_PHASE
+# A current incident failure moves a merged attempt, a live repayment or a closed
+# item into `reverting`: the first master failure of a merged attempt takes the
+# same route as a later regression. A corrected repair opens only after the
+# revert receipt.
+REOPEN_FROM: tuple[str, ...] = (MERGED_PHASE, *REPAYMENT_PHASES, "closed")
 RECOVERY_PHASE = "reverting"
 CORRECTED_FROM = "collecting-failures"
 _CLOSED_PHASE = "closed"
@@ -84,8 +88,8 @@ def fresh_repayment_carrier(*, before: IncidentAttempt, after: IncidentAttempt) 
 def recovery_carrier(*, before: IncidentAttempt, after: IncidentAttempt) -> bool:
     """Whether `after` is a recovery boundary that may name a different carrier.
 
-    A reopen binds the merged carrier the regression is attributed to, which is
-    not the repayment carrier it supersedes; a corrected repair after the
+    A reopen binds the merged carrier the failure is attributed to, which is not
+    any repayment carrier it supersedes; a corrected repair after the
     revert receipt opens its own fresh reserved branch. Everything else about
     the attempt still has to agree, which the transition writer checks.
     """

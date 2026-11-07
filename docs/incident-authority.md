@@ -47,8 +47,8 @@ consume this history through `read_incident_history`. Each locates a candidate
 only by an explicit `--incident-item <id>` (repeatable) and binds the exact
 repository, pull request number, head and complete landed commit set the retained
 attempt recorded; a title mention, label, trailer, marker or environment variable
-locates nothing and authorizes nothing. Only a `repair` or `reverting` attempt
-whose verification was deferred admits its carrier, and the audit reports that
+locates nothing and authorizes nothing. Only a `repair`, `master-observation` or
+`reverting` attempt whose verification was deferred admits its carrier, and the audit reports that
 exception with its normal repayment outstanding until the chain reaches `closed`.
 A carrier the chain records in a repayment phase must earn normal factory
 provenance: the gate refuses it the `factory-override` label. A named item whose
@@ -82,6 +82,29 @@ its authority generation or lifecycle state. A pre-PR snapshot may carry
 `pr_number: 0` only during repair and only with no landed commit/tree pairs.
 Other phases still require an identified PR. This permits pre-commit evidence
 on a previously provisioned chain; it does not create the chain.
+
+## Recording the merge
+
+`record-merge` is the named writer of `master-observation`. It takes only the
+shared identity arguments, naming the current `repair` attempt with a `pr-bound`
+carrier. It reads the PR the chain names through `gh pr view`, refuses one that
+has not merged or whose head differs from the carrier, and reads the landed
+commits and trees from git over the merge commit's first-parent history. The
+successor keeps the attempt, head and carrier; only its phase, operation,
+generation and landed pairs change. An exact retry recovers the recorded
+generation, with `recovered: true`.
+
+The script that merges runs it right after `POST /bind`. It is never a
+precondition of the first-failure revert: the observer acts on its retained arm
+with no ledger read, and a required leaf can fail about 90 seconds after the
+merge. The action reads the merge commit rather than the tip of master, so it
+still records correctly after the revert landed. `reopen-regression`,
+`enter-repayment` and original-run `collect` all need this generation, so whoever
+runs the first of those runs `record-merge` first if the script did not.
+
+`reopen-regression` accepts a `master-observation` head as well as a repayment
+phase or `closed`, so a merged attempt's first master failure reaches
+`reverting` and a corrected attempt on the same route as a later regression.
 
 ## Carrier state
 
