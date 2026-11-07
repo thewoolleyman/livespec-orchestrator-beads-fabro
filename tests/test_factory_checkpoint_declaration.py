@@ -310,6 +310,7 @@ lifetime is a constant of the host and not a bound.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -337,6 +338,23 @@ _ALLOWANCE_BOUND_SECONDS = 1_350_000
 # is what the host mints at renewal, so a requirement past it is a fact about
 # whether a dispatch can run at all rather than a threshold anyone may move.
 _FRESH_CODEX_CREDENTIAL_LIFETIME_SECONDS = 864_000
+
+
+def _credential_fixture_repo(*, tmp_path: Path) -> Path:
+    """Provision the shipped workflow with test-owned timeout policy."""
+    workflow = tmp_path / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
+    _ = shutil.copytree(_PAYLOAD, workflow)
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "dispatcher": {"node_timeouts": {"publish_draft": 3600, "pr_refresh": 3600}}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
 
 
 def _checkpoint() -> dict[str, Any]:
@@ -418,7 +436,8 @@ def test_the_checkpoint_budget_holds_the_execution_allowance_under_the_bound(
     `str.replace` that matched nothing would leave the control resolving the
     shipped value and reporting agreement with itself.
     """
-    resolved = resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
+    repo = _credential_fixture_repo(tmp_path=tmp_path)
+    resolved = resolve_credential_lifetime_requirement(repo=repo)
     assert hasattr(resolved, "execution_allowance_seconds"), resolved
     shipped = resolved.execution_allowance_seconds
     assert shipped <= _ALLOWANCE_BOUND_SECONDS, (
@@ -430,8 +449,7 @@ def test_the_checkpoint_budget_holds_the_execution_allowance_under_the_bound(
         f"fresh-credential lifetime"
     )
 
-    copied = tmp_path / _PAYLOAD.name
-    _ = shutil.copytree(_PAYLOAD, copied)
+    copied = repo / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
     committed = copied / _SHIPPED_WORKFLOW.name
     shipped_text = committed.read_text(encoding="utf-8")
     assert shipped_text.count('commit_timeout = "5m"') == 1, "the budget is not declared once"
@@ -440,7 +458,7 @@ def test_the_checkpoint_budget_holds_the_execution_allowance_under_the_bound(
     )
 
     retired = credential_lifetime_requirement_for(
-        committed=committed, block=dispatcher_block(cwd=_REPO_ROOT)
+        committed=committed, block=dispatcher_block(cwd=repo)
     )
     assert hasattr(retired, "execution_allowance_seconds"), retired
     retired_allowance = retired.execution_allowance_seconds
@@ -457,7 +475,7 @@ def test_the_checkpoint_budget_holds_the_execution_allowance_under_the_bound(
     )
 
 
-def test_the_shipped_freshness_requirement_fits_a_fresh_codex_credential() -> None:
+def test_a_fixture_freshness_requirement_fits_a_fresh_codex_credential(tmp_path: Path) -> None:
     """The gate asks of a credential no more than a fresh one carries (864000 seconds).
 
     This is the case the module was missing when v175 widened the graph. The
@@ -485,7 +503,9 @@ def test_the_shipped_freshness_requirement_fits_a_fresh_codex_credential() -> No
     following the smaller-of-two rule. A widened graph alone cannot, because the
     window absorbs it; the allowance bound in the case above guards the graph.
     """
-    resolved = resolve_credential_lifetime_requirement(repo=_REPO_ROOT)
+    resolved = resolve_credential_lifetime_requirement(
+        repo=_credential_fixture_repo(tmp_path=tmp_path)
+    )
     assert hasattr(resolved, "required_seconds"), resolved
 
     allowance = resolved.execution_allowance_seconds

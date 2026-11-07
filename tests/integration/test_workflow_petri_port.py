@@ -31,6 +31,7 @@ TEXT's properties, which is the half a sandbox can check.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -681,7 +682,9 @@ def test_the_generator_writes_only_the_implement_work_item_graph() -> None:
     assert _ROLLBACK.name not in committed
 
 
-def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one() -> None:
+def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
+    tmp_path: Path,
+) -> None:
     """The port changes HOW the loop budget is expressed, not how large it is.
 
     THIS IS THE CASE THAT GUARDS THE FACTORY. `_dispatcher_execution_budget`
@@ -718,7 +721,17 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
     distinguishable from these routes.
     """
     toml = (_PAYLOAD / "workflow.toml").read_text(encoding="utf-8")
-    timeouts = resolve_node_timeouts(cwd=_REPO_ROOT)
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "livespec-orchestrator-beads-fabro": {
+                    "dispatcher": {"node_timeouts": {"publish_draft": 3600, "pr_refresh": 3600}}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    timeouts = resolve_node_timeouts(cwd=tmp_path)
     assert not isinstance(timeouts, str), timeouts
     commit_timeout = commit_timeout_seconds(committed_text=toml)
     assert not isinstance(commit_timeout, str), commit_timeout

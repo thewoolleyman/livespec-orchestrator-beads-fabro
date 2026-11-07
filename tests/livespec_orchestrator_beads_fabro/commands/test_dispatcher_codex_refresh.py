@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
 )
 
 _NOW = 1_000_000
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # THIS FILE'S OWN run budget, not production's. The dispatch requirement is
 # resolved per workflow now, so there is no module constant to read; 14400 is
@@ -60,7 +61,7 @@ def _operator_requirement() -> CredentialLifetimeRequirement:
     return requirement
 
 
-_MODULE_PATH = Path(
+_MODULE_PATH = _REPO_ROOT / Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_refresh.py"
 )

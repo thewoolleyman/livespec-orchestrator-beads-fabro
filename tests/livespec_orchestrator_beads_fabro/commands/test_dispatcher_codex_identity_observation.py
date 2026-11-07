@@ -13,23 +13,24 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 _NOW = 1_000_000
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 # Far enough out that the alarm stays quiet, so an observation assertion is
 # never confused with the pre-existing alarm exit code.
 _FRESH_EXP = _NOW + 900_000
 
-_CLAIMS_MODULE_PATH = Path(
+_CLAIMS_MODULE_PATH = _REPO_ROOT / Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_identity_claims.py"
 )
-_STATE_MODULE_PATH = Path(
+_STATE_MODULE_PATH = _REPO_ROOT / Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_identity_state.py"
 )
-_OBSERVATION_MODULE_PATH = Path(
+_OBSERVATION_MODULE_PATH = _REPO_ROOT / Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_identity_observation.py"
 )
-_COMMAND_MODULE_PATH = Path(
+_COMMAND_MODULE_PATH = _REPO_ROOT / Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_identity_command.py"
 )
