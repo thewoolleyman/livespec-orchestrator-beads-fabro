@@ -215,6 +215,36 @@ def test_a_forge_server_error_retries_the_preservation_push_before_reporting_fai
     assert _PRESERVED not in completed.stderr
 
 
+def test_a_commit_refs_rejection_retries_before_reporting_preservation_failure(
+    tmp_path: Path,
+) -> None:
+    """A transient ``commit_refs`` refusal spends the bounded retry budget."""
+    origin = _bare_origin(tmp_path=tmp_path)
+    work = _sandbox(tmp_path=tmp_path, origin_url=str(origin))
+    attempts = tmp_path / "preservation-push-attempts"
+    helper_root = tmp_path / "push-helper"
+    helper = helper_root / "bin" / "push_origin"
+    helper.parent.mkdir(parents=True)
+    _ = helper.write_text(
+        "#!/bin/sh\n"
+        f"printf x >> {attempts}\n"
+        "printf '%s\\n' 'remote: fatal error in commit_refs' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    helper.chmod(0o700)
+
+    completed = _run_needs_human(
+        work=work,
+        run_id=_RUN_ID,
+        extra_env={"LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(helper_root)},
+    )
+
+    assert attempts.read_text(encoding="utf-8") == "xxx"
+    assert _PUSH_FAILED in completed.stderr
+    assert _PRESERVED not in completed.stderr
+
+
 def _node_script(*, node: str) -> str:
     """The node's OWN script, unescaped from the DOT attribute — never a paraphrase."""
     text = _WORKFLOW.read_text(encoding="utf-8")
