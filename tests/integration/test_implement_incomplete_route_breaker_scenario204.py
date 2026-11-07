@@ -80,7 +80,7 @@ def test_three_incomplete_visits_are_successful_routes_to_needs_human_with_faile
     (git_dir / "livespec-implement-live-commit").write_text(
         "failed\n"
         "failed targets: check-types\n\n"
-        "Commit run commit-123 ended FAILED with exit status 17.\n"
+        "Commit run commit-123 ended FAILED with exit status 17; hook rejected changes.\n"
         "module.py:3:1 - error: broken\n",
         encoding="utf-8",
     )
