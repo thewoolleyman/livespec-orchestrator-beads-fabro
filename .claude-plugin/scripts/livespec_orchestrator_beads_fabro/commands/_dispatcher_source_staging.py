@@ -185,7 +185,9 @@ class SourceStagingRunner:
         try:
             if created.exit_code != 0:
                 return created
-            return launch(cwd=checkout, argv=self._launch_argv(argv=argv, outcome=outcome))
+            return launch(
+                cwd=checkout, argv=self._launch_argv(argv=argv, outcome=outcome, base=base)
+            )
         finally:
             self._cleanup(checkout=checkout, branch=branch, head=base.commit)
 
@@ -253,14 +255,25 @@ class SourceStagingRunner:
         merge_base = self._git(argv=["merge-base", "--is-ancestor", head, origin_head])
         return merge_base.exit_code == 0
 
-    def _launch_argv(self, *, argv: list[str], outcome: SourceCheckoutOutcome) -> list[str]:
-        """Project this origin-proven staging result into the engine launch."""
+    def _launch_argv(
+        self, *, argv: list[str], outcome: SourceCheckoutOutcome, base: _StagingBase
+    ) -> list[str]:
+        """Project this origin-proven staging result into the engine launch.
+
+        The target names the branch the SELECTED staging base came from. When the
+        fresh fetch moved the base to the default-branch head, the preflight's
+        tracking ref can be a stale feature branch, and naming it would send the
+        engine to an older tree than the one staged.
+        """
         origin = self._git(argv=["config", "--get", "remote.origin.url"])
+        origin_ref = str(outcome.record["origin_ref"])
+        if base.origin_head != "" and base.commit == base.origin_head:
+            origin_ref = f"origin/{self.plan.integration.contract.default_branch}"
         return explicit_source_target_argv(
             argv=argv,
             fabro_version=self.plan.fabro_version,
             origin_url=origin.stdout,
-            origin_ref=str(outcome.record["origin_ref"]),
+            origin_ref=origin_ref,
             resume_branch=self.plan.branch if self.resume_head else None,
         )
 
