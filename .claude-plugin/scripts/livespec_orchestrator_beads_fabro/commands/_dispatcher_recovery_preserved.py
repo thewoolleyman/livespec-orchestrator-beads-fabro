@@ -56,6 +56,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_refs import (
+    NeedsHumanRefsUnobservable,
+    newest_needs_human_ref,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
     PRESERVED_PUBLISH_REF_PREFIX,
     preserved_publish_ref,
@@ -229,47 +233,37 @@ def _needs_human_seed(
 ) -> RecoverySeed | PreservedWorkUnobservable | None:
     """The terminal tree a needs-human ending preserved, for the newest run naming one.
 
-    ONE `ls-remote` for every identifier the earlier run answers to, because the
-    cost of asking about an identifier that was never a run id is a pattern that
-    matches nothing, while a call per identifier would be a round trip per
-    identifier. The identifiers arrive newest-first — the anchoring record's own
-    run leads — so the FIRST one origin answered for is the newest preserved tree.
+    ONE `ls-remote` lists the namespace once, then a ref suffix or its tip
+    trailers establishes the source run. The identifiers arrive newest-first —
+    the anchoring record's own run leads — so the first matching identifier is
+    the newest preserved tree.
 
     Called only for a non-empty identifier list, which its caller establishes for
     the reason that function's docstring gives.
     """
-    result = runner.run(
-        argv=[
-            "git",
-            "ls-remote",
-            SEED_REMOTE,
-            *(f"{NEEDS_HUMAN_REF_PREFIX}/{one}" for one in earlier_run_ids),
-        ],
-        cwd=repo,
+    found = newest_needs_human_ref(
+        runner=runner,
+        repo=repo,
+        run_ids=earlier_run_ids,
+        ref_prefix=NEEDS_HUMAN_REF_PREFIX,
+        remote=SEED_REMOTE,
         timeout_seconds=_GIT_TIMEOUT_SECONDS,
     )
-    if result.exit_code != 0:
+    if isinstance(found, NeedsHumanRefsUnobservable):
         return PreservedWorkUnobservable(
             detail=(
-                f"git ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/<run> exited"
-                f" {result.exit_code} for {len(earlier_run_ids)} earlier-run"
-                " identifier(s); whether the failed run preserved its terminal tree"
-                " could not be established, so no seed was taken and the publish"
-                " branch is left exactly as it stands"
+                f"{found.detail}, so no seed was taken and the publish branch is left"
+                " exactly as it stands"
             )
         )
-    found = _refs_by_name(stdout=result.stdout)
-    for one in earlier_run_ids:
-        ref = f"{NEEDS_HUMAN_REF_PREFIX}/{one}"
-        commit = found.get(ref)
-        if commit is not None:
-            return RecoverySeed(
-                source_run_id=one,
-                remote=SEED_REMOTE,
-                commit_sha=commit,
-                preservation_ref=ref,
-            )
-    return None
+    if found is None:
+        return None
+    return RecoverySeed(
+        source_run_id=found.run_id,
+        remote=SEED_REMOTE,
+        commit_sha=found.commit_sha,
+        preservation_ref=found.ref,
+    )
 
 
 def _preserved_tree_seed(

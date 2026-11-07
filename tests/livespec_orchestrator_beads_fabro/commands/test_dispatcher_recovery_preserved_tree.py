@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved i
     PreservedWorkUnobservable,
     verified_preserved_seed,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 
 _ITEM_ID = "bd-ib-na2xvm"
 _RUN = "01M4YJGC55V86C9V1X07QG3Y2H"
@@ -48,6 +49,8 @@ _PREFIX = f"refs/livespec/preserved-publish/{_ITEM_ID}"
 _REF = f"{_PREFIX}/{_PRESERVED_COMMIT}"
 _OLDER_REF = f"{_PREFIX}/{_OLDER_PRESERVED_COMMIT}"
 _BRANCH_REF = f"refs/heads/feat/{_ITEM_ID}"
+_TRAILER_NEEDS_HUMAN_REF = "refs/heads/needs-human/opaque-preservation-name"
+_TRAILER_NEEDS_HUMAN_COMMIT = "e" * 40
 
 
 @dataclass(kw_only=True)
@@ -149,7 +152,7 @@ def test_the_newest_published_tree_wins_over_an_earlier_one() -> None:
             _row(),
         ),
     )
-    assert seed is not None and not isinstance(seed, PreservedWorkUnobservable)
+    assert isinstance(seed, RecoverySeed)
     assert seed.preservation_ref == _REF
     assert seed.commit_sha == _BASE
 
@@ -201,6 +204,30 @@ def test_a_competing_ref_with_an_unattributable_published_head_is_unobservable()
     )
     assert isinstance(seed, PreservedWorkUnobservable)
     assert "publishing-run-unobservable" in seed.detail
+
+
+def test_a_needs_human_ref_is_attributed_from_its_tip_trailer() -> None:
+    """A ref suffix is not the only durable record of its publishing run."""
+    runner = _Runner(
+        answers={
+            "refs/heads/needs-human/": _ls_remote(
+                ref=_TRAILER_NEEDS_HUMAN_REF,
+                commit=_TRAILER_NEEDS_HUMAN_COMMIT,
+            ),
+            f"show -s --format=%B {_TRAILER_NEEDS_HUMAN_COMMIT}": CommandResult(
+                exit_code=0,
+                stdout=f"preserved work\n\nFactory-Run-Id: {_RUN}\n",
+                stderr="",
+            ),
+        }
+    )
+
+    seed = _seed(runner=runner, journal_records=())
+
+    assert isinstance(seed, RecoverySeed)
+    assert seed.source_run_id == _RUN
+    assert seed.commit_sha == _TRAILER_NEEDS_HUMAN_COMMIT
+    assert seed.preservation_ref == _TRAILER_NEEDS_HUMAN_REF
 
 
 def test_a_ref_origin_no_longer_carries_falls_through_to_the_next_source() -> None:
