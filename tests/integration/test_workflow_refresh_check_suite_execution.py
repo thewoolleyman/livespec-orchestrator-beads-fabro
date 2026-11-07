@@ -79,6 +79,7 @@ _WORKFLOW = (
     / "implement-work-item"
     / "workflow.fabro"
 )
+_GROOM_WORKFLOW = _REPO_ROOT / ".fabro" / "workflows" / "groom-work-item" / "workflow.fabro"
 
 _CHECK_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
 _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
@@ -164,7 +165,9 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
-def _node_script(*, node: str, check_suite: str, shell_quoted_input: bool) -> str:
+def _node_script(
+    *, node: str, check_suite: str, shell_quoted_input: bool, workflow: Path = _WORKFLOW
+) -> str:
     """One shipped node's script with ONLY the engine's own two tokens bound.
 
     The bytes are read through `parse_dot_graph`, the same reader the
@@ -174,7 +177,7 @@ def _node_script(*, node: str, check_suite: str, shell_quoted_input: bool) -> st
     Petri-era frontend quotes the interpolated value, the pinned engine does
     not.
     """
-    graph = parse_dot_graph(text=_WORKFLOW.read_text(encoding="utf-8"))
+    graph = parse_dot_graph(text=workflow.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     script: str = graph.nodes[node]["script"]
     assert script.count(_CHECK_SUITE_TOKEN) == 1, node
@@ -418,12 +421,18 @@ def _run(
     world: _World,
     check_suite: str,
     shell_quoted_input: bool,
+    workflow: Path = _WORKFLOW,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             "bash",
             "-c",
-            _node_script(node=node, check_suite=check_suite, shell_quoted_input=shell_quoted_input),
+            _node_script(
+                node=node,
+                check_suite=check_suite,
+                shell_quoted_input=shell_quoted_input,
+                workflow=workflow,
+            ),
         ],
         cwd=world.clone,
         check=False,
@@ -568,3 +577,47 @@ def test_pr_refresh_bounds_its_post_rebase_gate_below_its_node_timeout(*, tmp_pa
     assert "failed-gate-targets: check-unit" in brief
     assert "last-completed-gate-target: check-unit" in brief
     assert "expired-gate-budget-seconds: 1" in brief
+
+
+@pytest.mark.parametrize(
+    ("workflow", "workflow_name"),
+    [
+        pytest.param(_WORKFLOW, "implement", id="implement-work-item"),
+        pytest.param(_GROOM_WORKFLOW, "groom", id="groom-work-item"),
+    ],
+)
+def test_pr_refresh_carries_a_matching_janitor_verdict_to_its_push(
+    *, tmp_path: Path, workflow: Path, workflow_name: str
+) -> None:
+    """A clean refresh reuses the janitor's green aggregate for the same tree.
+
+    The first rebase establishes the tree the janitor would have passed.  The
+    reset restores the published head, so the shipped ``pr_refresh`` script
+    performs that rebase itself and must decide from tree identity rather than
+    commit identity.  The recording suite is deliberately green: its absence,
+    not a non-zero exit, proves that the carried verdict skipped the aggregate.
+    """
+    world = _world(root=tmp_path)
+    published = _published(world=world, root=tmp_path)
+    _ = _advance_default(world=world)
+    _ = _git("fetch", "--quiet", "origin", _DEFAULT_BRANCH, cwd=world.clone)
+    _ = _git("rebase", "--quiet", f"origin/{_DEFAULT_BRANCH}", cwd=world.clone)
+    janitor_passed_head = world.head()
+    _ = (world.state_dir() / "livespec-janitor-passed-head").write_text(
+        janitor_passed_head, encoding="utf-8"
+    )
+    _ = _git("reset", "--hard", "--quiet", published, cwd=world.clone)
+    record = tmp_path / f"{workflow_name}-gate-record"
+    suite = _check_suite(root=tmp_path, record=record, status=0)
+
+    result = _run(
+        node="pr_refresh",
+        world=world,
+        check_suite=_declared_command_line(suite=suite),
+        shell_quoted_input=False,
+        workflow=workflow,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not record.exists(), "the carried janitor verdict should skip the declared suite"
+    assert "LIVESPEC_PR_REFRESH_GATE_CARRIED" in result.stderr
