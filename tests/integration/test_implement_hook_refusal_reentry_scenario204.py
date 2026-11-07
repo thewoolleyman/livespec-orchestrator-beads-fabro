@@ -164,15 +164,15 @@ def _recorded_suite(*, repo: Path, output: str) -> None:
 
 
 def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_implement() -> None:
-    """The completion gate's failure edge leads to the route, and the route back to implement.
+    """The completion gate's routing label leads to the route, and the route back to implement.
 
     The route's fallthrough is `needs_human`, unconditional, so the ending every
     non-qualifying turn reached before v208 is unchanged. `max_visits` cuts the
     new cycle for the execution-budget derivation, at the re-entry budget plus
     the visit that refuses.
     """
-    assert (_ROUTE, "outcome=failed") in _targets(source=_GATE)
-    assert (_NEEDS_HUMAN, "outcome=failed") not in _targets(source=_GATE)
+    assert (_ROUTE, "preferred_label=incomplete") in _targets(source=_GATE)
+    assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_GATE)
     route = _targets(source=_ROUTE)
     assert (_IMPLEMENT, "outcome=succeeded") in route, route
     assert (_NEEDS_HUMAN, "") in route, route
