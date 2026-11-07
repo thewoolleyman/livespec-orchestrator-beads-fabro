@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from livespec_orchestrator_beads_fabro.commands._fabro_client import (
     fabro_uses_workflow_package,
 )
@@ -9,6 +11,8 @@ from livespec_orchestrator_beads_fabro.commands._fabro_client import (
 __all__: list[str] = ["explicit_source_target_argv"]
 
 _GITHUB_REPOSITORY_PARTS = 2
+_GITHUB_HOST = "github.com"
+_SCP_GITHUB_PREFIX = "git@github.com:"
 
 
 def explicit_source_target_argv(
@@ -40,10 +44,10 @@ def explicit_source_target_argv(
 def _github_repository(*, origin: str) -> str | None:
     """Return an ``owner/repository`` identity from a supported GitHub origin."""
     trimmed = origin.strip().rstrip("/").removesuffix(".git")
-    if trimmed.startswith("git@github.com:"):
-        path = trimmed.removeprefix("git@github.com:")
-    elif "github.com/" in trimmed:
-        path = trimmed.split("github.com/", maxsplit=1)[1]
+    if trimmed.startswith(_SCP_GITHUB_PREFIX):
+        path = trimmed.removeprefix(_SCP_GITHUB_PREFIX)
+    elif urlsplit(trimmed).hostname == _GITHUB_HOST:
+        path = urlsplit(trimmed).path.removeprefix("/")
     else:
         return None
     parts = path.split("/")
