@@ -32,8 +32,8 @@ conflict or the gate failure:
    `HEAD`, MERGE `origin/{{ inputs.default_branch }}` into `HEAD` with
    `git merge --no-edit origin/{{ inputs.default_branch }}`, resolving each
    conflicted path on its merits, so the origin tip remains an ancestor of the
-   repaired head. Otherwise, REBASE this run's own commits onto
-   `origin/{{ inputs.default_branch }}` yourself
+   repaired head. When the publish branch does not exist on origin, REBASE this
+   run's own commits onto `origin/{{ inputs.default_branch }}` yourself
    (`git rebase origin/{{ inputs.default_branch }}`). Do NOT resolve by taking
    one side wholesale — a conflict means both sides changed something, and
    discarding either loses work somebody shipped.
