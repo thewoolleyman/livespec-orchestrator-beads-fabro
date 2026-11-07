@@ -29,6 +29,7 @@ import time
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 
 import pytest
 
@@ -44,6 +45,14 @@ _PANE_STATES = frozenset({"working", "idle", "done", "blocked", "unknown"})
 # `herdr-client.sock` is the longer of the two sockets herdr binds.
 _SUN_PATH_LIMIT = 107
 _LONGEST_HERDR_SOCKET_NAME = "herdr-client.sock"
+
+# The server's own bound on `agent.wait`, in milliseconds.
+_STATUS_WAIT_MS = 30_000
+# How long the fixture blocks for the server to announce itself, as a failure
+# bound only: the announcement is the event the wait ends on.
+_SERVER_ANNOUNCE_SECONDS = 90.0
+# The first line `herdr server` prints once it is serving its API socket.
+_SERVER_BANNER = b"herdr server running"
 
 _requires_herdr = pytest.mark.skipif(
     shutil.which("herdr") is None,
@@ -173,9 +182,11 @@ def _cli_seams(*, repository: Path):
 class _HerdrServer:
     socket_path: Path
 
-    def call(self, *, method: str, params: dict[str, object]) -> dict[str, object]:
+    def call(
+        self, *, method: str, params: dict[str, object], timeout: float = 30.0
+    ) -> dict[str, object]:
         channel = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        channel.settimeout(30.0)
+        channel.settimeout(timeout)
         try:
             channel.connect(str(self.socket_path))
             request = {"id": "test", "method": method, "params": params}
@@ -219,11 +230,23 @@ class _HerdrServer:
         return str(observed["result"]["agent"]["agent_status"])
 
     def await_status(self, *, pane_id: str, state: str) -> None:
-        observed = ""
-        deadline = time.monotonic() + 30.0
-        while observed != state and time.monotonic() < deadline:
-            observed = self.agent_status(pane_id=pane_id)
-            time.sleep(0.05)
+        """Block INSIDE the live server until it reports the state, or give up.
+
+        `agent.wait` is the server's own blocking wait: it answers when the
+        agent reaches one of the `until` states, or with a `timeout` error when
+        `timeout_ms` passes first. This process reads no clock and sleeps no
+        time, and the reply IS the event. The bound is a failure bound rather
+        than an assertion — the case asserts the state, never the duration —
+        and the socket timeout sits above it so the server's verdict, not a
+        local read timeout, is what a stuck pane reports.
+        """
+        reply = self.call(
+            method="agent.wait",
+            params={"target": pane_id, "until": [state], "timeout_ms": _STATUS_WAIT_MS},
+            timeout=_STATUS_WAIT_MS / 1000 + 30.0,
+        )
+        assert "result" in reply, f"pane {pane_id} never reached {state!r}: {reply}"
+        observed = str(reply["result"]["agent"]["agent_status"])
         assert observed == state, f"pane {pane_id} settled at {observed!r}, not {state!r}"
 
     def session_is_live(self) -> bool:
@@ -273,6 +296,30 @@ def _readiness_diagnostic(
     )
 
 
+def _drain_launch_output(
+    *,
+    stream: IO[bytes],
+    launch_log: Path,
+    announced: threading.Event,
+    settled: threading.Event,
+) -> None:
+    """Copy the server's output to its launch log, flagging its announcement.
+
+    `settled` is set when the server announces itself OR when its output
+    closes, so a server that died before announcing wakes the waiter at once
+    instead of after the failure bound. Draining until EOF also keeps a chatty
+    server from blocking on a full pipe.
+    """
+    with launch_log.open("wb") as sink:
+        for line in stream:
+            _ = sink.write(line)
+            sink.flush()
+            if _SERVER_BANNER in line:
+                announced.set()
+                settled.set()
+    settled.set()
+
+
 @contextmanager
 def _isolated_herdr_server(*, directory: Path):
     """A real herdr server bound under one owned short root.
@@ -303,24 +350,35 @@ def _isolated_herdr_server(*, directory: Path):
         " sun_path limit; herdr would exit before binding"
     )
     launch_log = directory / "launch.log"
-    with launch_log.open("wb") as sink:
-        process = subprocess.Popen(
-            ["herdr", "server"],
-            env=environment,
-            stdout=sink,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+    process = subprocess.Popen(
+        ["herdr", "server"],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    announced = threading.Event()
+    settled = threading.Event()
+    drain = threading.Thread(
+        target=_drain_launch_output,
+        kwargs={
+            "stream": process.stdout,
+            "launch_log": launch_log,
+            "announced": announced,
+            "settled": settled,
+        },
+        daemon=True,
+    )
+    drain.start()
     try:
         server = _HerdrServer(socket_path=socket_path)
         # BOUNDED, and the bound FAILS rather than yielding an unready server.
-        # Readiness is the session actor answering, never the socket merely
-        # existing or `ping` replying — see `session_is_live`.
-        live = False
-        deadline = time.monotonic() + 90.0
-        while not live and time.monotonic() < deadline:
-            live = socket_path.exists() and server.session_is_live()
-            time.sleep(0.02)
+        # The wait ends on the server's own announcement (or on its output
+        # closing, which means it died), never on a socket merely existing or
+        # `ping` replying — see `session_is_live`, which still has to confirm
+        # the session actor once the announcement has arrived.
+        _ = settled.wait(timeout=_SERVER_ANNOUNCE_SECONDS)
+        live = announced.is_set() and server.session_is_live()
         assert live, _readiness_diagnostic(
             socket_path=socket_path,
             process=process,
@@ -336,6 +394,7 @@ def _isolated_herdr_server(*, directory: Path):
         with suppress(ProcessLookupError):
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         _ = process.wait(timeout=90)
+        drain.join(timeout=30.0)
 
 
 def _wait_argv(
