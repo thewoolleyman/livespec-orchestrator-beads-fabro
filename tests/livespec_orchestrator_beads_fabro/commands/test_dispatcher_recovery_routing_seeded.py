@@ -145,7 +145,7 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     _Shell.answers = {
         f"gh pr list --head {_BRANCH}": CommandResult(exit_code=0, stdout="[]", stderr=""),
-        "ls-remote origin refs/heads/needs-human/": CommandResult(
+        "ls-remote --sort=-committerdate origin refs/heads/needs-human/": CommandResult(
             exit_code=0, stdout=f"{_PRESERVED_COMMIT}\t{_PRESERVED_REF}\n", stderr=""
         ),
         "ps -a --json": CommandResult(exit_code=0, stdout="[]", stderr=""),
@@ -341,7 +341,7 @@ def test_an_unanchorable_released_item_is_seeded_from_its_preserved_commit(
         _BRANCH
     ]
     assert (
-        _first_index(needle="ls-remote origin refs/heads/needs-human/")
+        _first_index(needle="ls-remote --sort=-committerdate origin refs/heads/needs-human/")
         < _first_index(needle="gh api --method POST")
         < _first_index(needle="gh api --method DELETE")
         < _first_index(needle="launched the run")

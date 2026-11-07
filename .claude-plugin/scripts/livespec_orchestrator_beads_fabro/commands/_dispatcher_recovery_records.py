@@ -93,6 +93,12 @@ def recovery_route_record(
         "remote": None if seed is None else seed.remote,
         "commit_sha": None if seed is None else seed.commit_sha,
         "preservation_ref": None if seed is None else seed.preservation_ref,
+        "passed_over_needs_human": []
+        if seed is None
+        else [
+            {"ref": one.preservation_ref, "commit": one.commit_sha}
+            for one in seed.passed_over_needs_human
+        ],
         "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
     }
 

@@ -38,6 +38,7 @@ _RUN = "01M509HNX5KGKSRV04VQEYVWH6"
 _OLDER_RUN = "01M4WYNGFMKM0000000000000Z"
 
 _TERMINAL_COMMIT = "216c811200000000000000000000000000000002"
+_NEWER_TERMINAL_COMMIT = "316c811200000000000000000000000000000003"
 _PUBLISHED_HEAD = "f3f139b28469c7efaae32dcb897d73518edbaadd"
 _EARLIER_HEAD = "1e9b31ba00000000000000000000000000000003"
 
@@ -97,7 +98,7 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
     """
     runner = _Runner(
         answers={
-            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+            f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=0,
                 stdout=(
                     f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_RUN}\n"
@@ -118,6 +119,35 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
     assert not _asked(runner=runner, needle=_PRESERVED_PUBLISH_PREFIX)
 
 
+def test_the_newest_terminal_ref_wins_over_the_pull_request_runs_older_ref() -> None:
+    """The remote's committer-date order, not identifier order, selects the seed.
+
+    `_RUN` leads because the pull-request record names it, which remains the
+    operator-facing resume order.  The later run's dispatch identifier carries
+    the newer terminal commit, so taking the leading identifier would recover
+    older work even though origin supplied the newer ref first.
+    """
+    runner = _Runner(
+        answers={
+            f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+                exit_code=0,
+                stdout=(
+                    f"{_NEWER_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}\n"
+                    f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_RUN}\n"
+                ),
+                stderr="",
+            )
+        }
+    )
+
+    seed = _seed(runner=runner)
+
+    assert isinstance(seed, RecoverySeed)
+    assert seed.source_run_id == _OLDER_RUN
+    assert seed.commit_sha == _NEWER_TERMINAL_COMMIT
+    assert "--sort=-committerdate" in runner.calls[0]
+
+
 def test_an_unreadable_terminal_reference_is_unobservable_and_stops_the_search() -> None:
     """ "An unreadable reference is not confirmed absence."
 
@@ -128,7 +158,7 @@ def test_an_unreadable_terminal_reference_is_unobservable_and_stops_the_search()
     """
     runner = _Runner(
         answers={
-            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+            f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=128, stdout="", stderr="fatal: unable to access"
             )
         }

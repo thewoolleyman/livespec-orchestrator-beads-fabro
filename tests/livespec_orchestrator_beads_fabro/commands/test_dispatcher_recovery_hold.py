@@ -208,7 +208,7 @@ def _drive_wave(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Wave:
         # order is scripted, which the seam turns into a failure — so a build
         # that proceeded past an unreadable reference is caught rather than
         # quietly seeding from a lower-preference source.
-        "ls-remote origin refs/heads/needs-human/": CommandResult(
+        "ls-remote --sort=-committerdate origin refs/heads/needs-human/": CommandResult(
             exit_code=128, stdout="", stderr="fatal: unable to access"
         ),
     }

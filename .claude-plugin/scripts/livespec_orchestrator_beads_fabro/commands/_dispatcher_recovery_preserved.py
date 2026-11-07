@@ -67,7 +67,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_recla
     PublishBranchUnobservable,
     surviving_publish_branch,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
+    NeedsHumanRef,
+    RecoverySeed,
+)
 
 __all__: list[str] = [
     "NEEDS_HUMAN_REF_PREFIX",
@@ -221,13 +224,15 @@ def verified_preserved_seed(
 def _needs_human_seed(
     *, runner: CommandRunner, repo: Path, earlier_run_ids: tuple[str, ...]
 ) -> RecoverySeed | PreservedWorkUnobservable | None:
-    """The terminal tree a needs-human ending preserved, for the newest run naming one.
+    """The terminal tree a needs-human ending preserved, ranked by committer time.
 
     ONE `ls-remote` for every identifier the earlier run answers to, because the
     cost of asking about an identifier that was never a run id is a pattern that
     matches nothing, while a call per identifier would be a round trip per
-    identifier. The identifiers arrive newest-first — the anchoring record's own
-    run leads — so the FIRST one origin answered for is the newest preserved tree.
+    identifier. Origin sorts the matching tips by descending committer time: a
+    journal is per checkout and cannot rank a run another Dispatcher observed.
+    The identifiers retain their existing order for resume attribution; selection
+    deliberately does not reuse that operator-facing order.
 
     Called only for a non-empty identifier list, which its caller establishes for
     the reason that function's docstring gives.
@@ -236,6 +241,7 @@ def _needs_human_seed(
         argv=[
             "git",
             "ls-remote",
+            "--sort=-committerdate",
             SEED_REMOTE,
             *(f"{NEEDS_HUMAN_REF_PREFIX}/{one}" for one in earlier_run_ids),
         ],
@@ -252,17 +258,22 @@ def _needs_human_seed(
                 " branch is left exactly as it stands"
             )
         )
-    found = _refs_by_name(stdout=result.stdout)
-    for one in earlier_run_ids:
-        ref = f"{NEEDS_HUMAN_REF_PREFIX}/{one}"
-        commit = found.get(ref)
-        if commit is not None:
-            return RecoverySeed(
-                source_run_id=one,
-                remote=SEED_REMOTE,
-                commit_sha=commit,
-                preservation_ref=ref,
-            )
+    names = {f"{NEEDS_HUMAN_REF_PREFIX}/{one}": one for one in earlier_run_ids}
+    found = tuple(
+        (ref, commit) for ref, commit in _refs_in_order(stdout=result.stdout) if ref in names
+    )
+    if found:
+        ref, commit = found[0]
+        return RecoverySeed(
+            source_run_id=names[ref],
+            remote=SEED_REMOTE,
+            commit_sha=commit,
+            preservation_ref=ref,
+            passed_over_needs_human=tuple(
+                NeedsHumanRef(preservation_ref=other_ref, commit_sha=other_commit)
+                for other_ref, other_commit in found[1:]
+            ),
+        )
     return None
 
 
@@ -445,6 +456,15 @@ def _refs_by_name(*, stdout: str) -> dict[str, str]:
         if len(fields) == _LS_REMOTE_FIELDS:
             named[fields[1]] = fields[0]
     return named
+
+
+def _refs_in_order(*, stdout: str) -> tuple[tuple[str, str], ...]:
+    """Every well-formed remote ref in the order origin returned it."""
+    return tuple(
+        (fields[1], fields[0])
+        for line in stdout.splitlines()
+        if len(fields := line.split()) == _LS_REMOTE_FIELDS
+    )
 
 
 def _leading(*, identifiers: tuple[str, ...]) -> str:

@@ -140,7 +140,7 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
             stdout=json.dumps([{"run_id": _RUN, "status": _LIVE_STATUS}]),
             stderr="",
         ),
-        "ls-remote origin refs/heads/needs-human/": CommandResult(
+        "ls-remote --sort=-committerdate origin refs/heads/needs-human/": CommandResult(
             exit_code=0,
             stdout=f"{_PRESERVED_COMMIT}\trefs/heads/needs-human/{_RUN}\n",
             stderr="",

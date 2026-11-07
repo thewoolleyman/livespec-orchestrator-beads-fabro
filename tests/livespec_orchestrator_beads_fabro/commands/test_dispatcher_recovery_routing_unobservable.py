@@ -125,7 +125,7 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
     _Shell.answers = {
         f"gh pr list --head {_BRANCH}": CommandResult(exit_code=0, stdout="[]", stderr=""),
         "ps -a --json": CommandResult(exit_code=1, stdout="", stderr="dial tcp: refused"),
-        "ls-remote origin refs/heads/needs-human/": CommandResult(
+        "ls-remote --sort=-committerdate origin refs/heads/needs-human/": CommandResult(
             exit_code=0,
             stdout=f"{_TERMINAL_COMMIT}\trefs/heads/needs-human/{_RUN}\n",
             stderr="",

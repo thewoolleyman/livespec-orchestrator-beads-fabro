@@ -33,13 +33,14 @@ half, and two paths re-deriving one thing is how they come to disagree.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 __all__: list[str] = [
     "ROUTE_FRESH",
     "ROUTE_HELD",
     "ROUTE_RESUME",
     "ROUTE_SEEDED",
+    "NeedsHumanRef",
     "RecoveryHold",
     "RecoveryLoss",
     "RecoveryMeasurement",
@@ -85,12 +86,21 @@ class RecoveryHold:
 
 @dataclass(frozen=True, kw_only=True)
 class RecoverySeed:
-    """The four things a seed record must name, resolved from one origin read."""
+    """The seed and each terminal ref whose newer work it did not take."""
 
     source_run_id: str
     remote: str
     commit_sha: str
     preservation_ref: str
+    passed_over_needs_human: tuple[NeedsHumanRef, ...] = field(default=(), compare=False)
+
+
+@dataclass(frozen=True, kw_only=True)
+class NeedsHumanRef:
+    """One terminal-tree ref observed while recovery chose another one."""
+
+    preservation_ref: str
+    commit_sha: str
 
 
 @dataclass(frozen=True, kw_only=True)

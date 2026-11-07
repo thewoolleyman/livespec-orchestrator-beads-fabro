@@ -91,6 +91,7 @@ _ROUTE_ROW_KEYS = (
     "remote",
     "commit_sha",
     "preservation_ref",
+    "passed_over_needs_human",
     "preservation_sources_asked",
 )
 
@@ -249,6 +250,7 @@ def test_a_fresh_route_after_confirmed_absence_names_the_lost_run_and_every_aske
         "remote": None,
         "commit_sha": None,
         "preservation_ref": None,
+        "passed_over_needs_human": [],
         "preservation_sources_asked": list(_asked()),
     }
 

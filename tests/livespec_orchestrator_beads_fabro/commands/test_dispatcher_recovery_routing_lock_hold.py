@@ -171,7 +171,7 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch, repo: Path) -> None:
     _Shell.answers = {
         f"gh pr list --head {_BRANCH}": CommandResult(exit_code=0, stdout="[]", stderr=""),
         "ps -a --json": CommandResult(exit_code=0, stdout="[]", stderr=""),
-        "ls-remote origin refs/heads/needs-human/": CommandResult(
+        "ls-remote --sort=-committerdate origin refs/heads/needs-human/": CommandResult(
             exit_code=0,
             stdout=f"{_PRESERVED_COMMIT}\trefs/heads/needs-human/{_RUN}\n",
             stderr="",

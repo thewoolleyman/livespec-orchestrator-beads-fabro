@@ -177,7 +177,7 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
             stderr="",
         ),
         "ps -a --json": CommandResult(exit_code=0, stdout="[]", stderr=""),
-        f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+        f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
             exit_code=0, stdout=f"{_PRESERVED_COMMIT}\t{_PRESERVED_REF}\n", stderr=""
         ),
     }

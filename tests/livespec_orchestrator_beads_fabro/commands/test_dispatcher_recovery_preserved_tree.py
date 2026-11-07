@@ -29,9 +29,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_recor
     PRESERVED_TREE_UNPRESERVED_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
+    NEEDS_HUMAN_REF_PREFIX,
     SEED_REMOTE,
     PreservedWorkUnobservable,
     verified_preserved_seed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
+    recovery_route_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
+    NeedsHumanRef,
+    RecoverySeed,
 )
 
 _ITEM_ID = "bd-ib-na2xvm"
@@ -204,3 +212,60 @@ def test_rows_that_name_no_published_tree_are_passed_over() -> None:
     assert seed is not None and not isinstance(seed, PreservedWorkUnobservable)
     assert seed.commit_sha == _PUBLISHED_HEAD
     assert not _asked(runner=runner, needle=_PREFIX + "/")
+
+
+def test_a_seeded_route_records_each_terminal_ref_committer_date_passed_over() -> None:
+    """The route records the discarded terminal tree with its immutable commit.
+
+    The run identifier leads its resume history but its terminal ref is older;
+    the remote listing is already in descending committer-date order.  Reading
+    the field back from the route record proves selection carries its competing
+    refs all the way to the durable recovery-route row.
+    """
+    newer = "e" * 40
+    selected_ref = f"{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}"
+    passed_ref = f"{NEEDS_HUMAN_REF_PREFIX}/{_RUN}"
+    runner = _Runner(
+        answers={
+            f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+                exit_code=0,
+                stdout=f"{newer}\t{selected_ref}\n{_BASE}\t{passed_ref}\n",
+                stderr="",
+            )
+        }
+    )
+
+    seed = verified_preserved_seed(
+        runner=runner,
+        repo=Path("/repo"),
+        work_item_id=_ITEM_ID,
+        earlier_run_ids=(_RUN, _OLDER_RUN),
+        journal_records=(),
+    )
+
+    assert isinstance(seed, RecoverySeed)
+    assert seed.source_run_id == _OLDER_RUN
+    assert seed.passed_over_needs_human == (
+        NeedsHumanRef(preservation_ref=passed_ref, commit_sha=_BASE),
+    )
+    record = recovery_route_record(
+        work_item_id=_ITEM_ID,
+        route="seeded",
+        seed=seed,
+        preserved_work="verified",
+    )
+    assert record["passed_over_needs_human"] == [{"ref": passed_ref, "commit": _BASE}]
+    assert (
+        recovery_route_record(
+            work_item_id=_ITEM_ID,
+            route="seeded",
+            seed=RecoverySeed(
+                source_run_id=_RUN,
+                remote=SEED_REMOTE,
+                commit_sha=_BASE,
+                preservation_ref=passed_ref,
+            ),
+            preserved_work="verified",
+        )["passed_over_needs_human"]
+        == []
+    )
