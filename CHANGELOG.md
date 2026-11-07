@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.300.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.299.0...v0.300.0) (2026-11-07)
+
+
+### Features
+
+* **incident:** bind the merged repayment PR as the incident-authority bind-repayment-acceptance action (bd-ib-pqz3nw) ([5264e9b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5264e9b6b1c7082822901b563414563080959dd6))
+* **incident:** expose incident completion as the incident-authority complete-incident action (bd-ib-pqz3nw) ([83393b0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/83393b0a8871c5b4db7a6df6f2fcef3005556a2d))
+
 ## [0.299.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.298.0...v0.299.0) (2026-11-07)
 
 
