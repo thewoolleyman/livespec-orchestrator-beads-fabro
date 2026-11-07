@@ -16,6 +16,7 @@ Run from the control node (the VPS) with this host's own GitHub auth:
 dev-tooling/preserve/preserve_runs.sh [RUN_ULID ...]   # no args: every Running pod in the factory namespace
 dev-tooling/preserve/represerve.sh <UTC HH:MM> <RUN_ULID> <alias>
 dev-tooling/preserve/preserve_dispatch.sh [--dry-run] <DISPATCH_ID> [<factory-url>]
+dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <namespace> <pod>
 ```
 
 - `preserve_runs.sh` prints one TSV row per run: `RUN NODE REPO SHA REF VERDICT SECONDS`.
@@ -28,6 +29,13 @@ dev-tooling/preserve/preserve_dispatch.sh [--dry-run] <DISPATCH_ID> [<factory-ur
   `RESOLVE_FAILED` (zero or several runs carry that id), `NO_POD` (no Running sandbox pod, as for any terminal run),
   `MARKER_MISMATCH` (the pod's clone names another dispatch) or `NO_CLIENT` (no fabro client). The client defaults to
   `.livespec.jsonc`'s petri `bin`, the client of the build petri serves; override it with `FABRO_BIN`.
+- `parity_read.sh` is the sandbox canary's exec-environment parity read (livespec-dev-tooling
+  `.ai/coordinator-duties.md`, "A sandbox driver bump's canary checks environment parity"). For one live sandbox
+  pod it prints the QoS class, container requests and limits, pod- and container-level `cpu.max` and `memory.max`,
+  every process's Umask with its argv, and the environment variable NAMES (never values) of one exec'd command.
+  Compare that against the previous driver's baseline, which the script's header records. It resolves a dispatch
+  id exactly as `preserve_dispatch.sh` does, and adds the refusal `NODE_UNREACHABLE` when the pod's node is not an
+  ssh alias from here.
 - `PRESERVE_WORK` sets the local working directory. The default is
   `${XDG_STATE_HOME:-~/.local/state}/livespec-preserve`.
 - For many runs, start one `represerve.sh` per run in parallel. Each process uses its own ssh master
