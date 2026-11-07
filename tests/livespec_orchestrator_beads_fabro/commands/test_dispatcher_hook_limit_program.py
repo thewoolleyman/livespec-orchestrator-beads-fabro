@@ -27,6 +27,7 @@ import sys
 import time
 from pathlib import Path
 
+import livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program as hook_limit_program
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     HOOK_LIMIT_LIMITS_FILENAME,
     HOOK_LIMIT_PROGRAM_FILENAME,
@@ -349,6 +350,11 @@ def test_the_limit_is_read_off_the_graph_and_withheld_when_it_cannot_be(
         'digraph g {\n  publish_draft [\n timeout="soon"\n ]\n}\n', encoding="utf-8"
     )
     assert publish_draft_limit_from_graph(graph=unparseable) is None
+
+
+def test_the_pr_refresh_limit_is_available_to_the_sandbox_prepare_step() -> None:
+    """The refresh gate derives its bound from its own rendered node limit."""
+    assert hasattr(hook_limit_program, "PR_REFRESH_NODE")
 
 
 def test_the_prepare_step_lands_the_program_and_withholds_unknown_figures() -> None:

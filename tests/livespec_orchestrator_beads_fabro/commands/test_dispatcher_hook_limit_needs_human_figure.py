@@ -17,12 +17,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program i
     hook_limit_graph_prepare_steps_block,
     hook_limit_prepare_steps_block,
     resolve_needs_human_limit,
+    resolve_pr_refresh_limit,
 )
 
 _GRAPH = """digraph g {
     needs_human [
         label="Needs human"
         timeout="1800s"
+    ]
+    pr_refresh [
+        label="Refresh"
+        timeout="3600s"
     ]
     publish_draft [
         label="Publish"
@@ -41,6 +46,10 @@ def test_the_limit_is_read_off_the_absolute_graph_the_run_will_use(tmp_path: Pat
         graph_artifact=graph, written_graph=Path("workflow.fabro")
     ) == (1800)
     assert resolve_needs_human_limit(graph_artifact=None, written_graph=graph) == 1800
+    assert (
+        resolve_pr_refresh_limit(graph_artifact=graph, written_graph=Path("workflow.fabro")) == 3600
+    )
+    assert resolve_pr_refresh_limit(graph_artifact=None, written_graph=graph) == 3600
 
 
 def test_a_relative_or_unreadable_graph_withholds_the_limit(tmp_path: Path) -> None:
@@ -53,6 +62,13 @@ def test_a_relative_or_unreadable_graph_withholds_the_limit(tmp_path: Path) -> N
     )
     assert (
         resolve_needs_human_limit(graph_artifact=tmp_path / "absent.fabro", written_graph=graph)
+        is None
+    )
+    assert (
+        resolve_pr_refresh_limit(graph_artifact=None, written_graph=Path("workflow.fabro")) is None
+    )
+    assert (
+        resolve_pr_refresh_limit(graph_artifact=tmp_path / "absent.fabro", written_graph=graph)
         is None
     )
 
@@ -83,3 +99,5 @@ def test_the_graph_block_renders_both_figures_from_one_graph(tmp_path: Path) -> 
 
     assert "LIVESPEC_NEEDS_HUMAN_LIMIT_SECONDS=1800" in block
     assert "LIVESPEC_PUBLISH_DRAFT_LIMIT_SECONDS=3600" in block
+    assert "LIVESPEC_PR_REFRESH_LIMIT_SECONDS=3600" in block
+    assert "LIVESPEC_PR_REFRESH_GATE_BUDGET_SECONDS=3480" in block
