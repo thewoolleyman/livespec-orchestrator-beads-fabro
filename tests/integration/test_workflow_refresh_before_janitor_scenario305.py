@@ -70,7 +70,9 @@ def _script(*, node: str, check_suite: str) -> str:
     )
 
 
-def _world(*, root: Path, conflicting: bool = False) -> tuple[Path, Path]:
+def _world(
+    *, root: Path, conflicting: bool = False, default_advances: bool = True
+) -> tuple[Path, Path]:
     origin = root / "origin.git"
     _ = _git("init", "--bare", "--initial-branch=master", str(origin), cwd=root)
     seed = root / "seed"
@@ -94,9 +96,10 @@ def _world(*, root: Path, conflicting: bool = False) -> tuple[Path, Path]:
     _ = _git("clone", str(origin), str(default), cwd=root)
     _ = _git("config", "user.name", "Test", cwd=default)
     _ = _git("config", "user.email", "test@example.invalid", cwd=default)
-    default_path = "shared.txt"
-    _ = _commit(cwd=default, path=default_path, text="default\n", subject="feat: default move")
-    _ = _git("push", "origin", _DEFAULT_BRANCH, cwd=default)
+    if default_advances:
+        default_path = "shared.txt"
+        _ = _commit(cwd=default, path=default_path, text="default\n", subject="feat: default move")
+        _ = _git("push", "origin", _DEFAULT_BRANCH, cwd=default)
     return run, default
 
 
@@ -235,6 +238,23 @@ def test_scenario305_preserves_an_existing_publish_branch_during_janitor_refresh
     assert pushed.returncode == 0, pushed.stderr
     remote = _git("ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}", cwd=run)
     assert remote.stdout.split()[0] == janitor_passed_head
+
+
+def test_scenario305_noop_preserved_refresh_skips_evidence_and_merge_commit(
+    *, tmp_path: Path
+) -> None:
+    """A contained default branch leaves no merge to evidence or commit."""
+    run, _ = _world(root=tmp_path, default_advances=False)
+    plugins = _plugins(root=tmp_path)
+    before = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
+    _ = _git("push", "origin", f"HEAD:refs/heads/{_PUBLISH_BRANCH}", cwd=run)
+
+    pushed = _run(node="publish_draft", cwd=run, plugins=plugins, check_suite="false")
+
+    assert pushed.returncode == 0, pushed.stderr
+    assert _git("rev-parse", "HEAD", cwd=run).stdout.strip() == before
+    remote = _git("ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}", cwd=run)
+    assert remote.stdout.split()[0] == before
 
 
 def test_scenario305_conflicting_pre_aggregate_refresh_restores_and_briefs_for_fix(
