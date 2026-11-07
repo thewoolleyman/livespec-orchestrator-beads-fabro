@@ -407,7 +407,7 @@ def test_a_commit_run_that_ended_without_a_verdict_is_briefed_as_having_made_no_
 
 
 def test_a_failed_commit_run_with_the_budget_exhausted_fails_the_stage(tmp_path: Path) -> None:
-    """A failed commit run is an ordinary incomplete turn once the budget is spent."""
+    """A failed commit run exhausts through the attributable hook-refusal terminal."""
     repo = _clone(tmp_path)
     _ = _git_file(repo=repo, name=_REENTRIES_GIT_PATH).write_text("1\n", encoding="utf-8")
     _ = _git_file(repo=repo, name=_LIVE_GIT_PATH).write_text(
@@ -417,7 +417,7 @@ def test_a_failed_commit_run_with_the_budget_exhausted_fails_the_stage(tmp_path:
     result = _routed(repo=repo)
 
     assert result.returncode != 0, result.stderr
-    assert _REENTRY_EXHAUSTED in result.stderr
+    assert "LIVESPEC_IMPLEMENT_HOOK_REFUSED_BUDGET_EXHAUSTED" in result.stderr
 
 
 def test_the_implement_prompt_tells_a_reentered_turn_about_a_commit_run_brief() -> None:

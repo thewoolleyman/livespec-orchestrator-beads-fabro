@@ -32,6 +32,7 @@ module owns the mechanism it feeds.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -174,10 +175,9 @@ def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_sp
     the run that motivated it. So the fallthrough out of `implement` must be this
     node, and `implement` must reach neither the breaker nor the janitor directly.
 
-    The gate's own fallthrough is asserted UNCONDITIONAL in the same breath,
-    because a node whose every outgoing edge carries a condition is rejected
-    before anything runs (`all_conditional_edges`), which took the whole factory
-    down twice.
+    The gate emits a successful routing label, so its unmatched fallthrough is
+    still required: a node whose every outgoing edge carries a condition is
+    rejected before anything runs (`all_conditional_edges`).
     """
     onward = _targets(source=_IMPLEMENT)
     gate_onward = _targets(source=_GATE)
@@ -185,7 +185,9 @@ def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_sp
     assert (_SETTLE, "") in onward, onward
     assert (_GATE, "") in _targets(source=_SETTLE)
     assert [target for target, _ in onward if target in (_GATE, _DIFF, _JANITOR)] == []
-    assert (_DIFF, "") in gate_onward, gate_onward
+    assert (_HOOK_ROUTE, "preferred_label=incomplete") in gate_onward, gate_onward
+    assert (_DIFF, "preferred_label=complete") in gate_onward, gate_onward
+    assert (_NEEDS_HUMAN, "outcome=failed") in gate_onward, gate_onward
     assert [condition for _, condition in gate_onward if condition == ""] == [""]
 
 
@@ -200,7 +202,7 @@ def test_an_explicit_failed_outcome_reaches_the_completion_gate_unless_it_is_an_
     implement = _targets(source=_IMPLEMENT)
     amendment = _targets(source=_AMENDMENT_ROUTE)
 
-    assert (_HOOK_ROUTE, "outcome=failed") in _targets(source=_GATE)
+    assert (_HOOK_ROUTE, "preferred_label=incomplete") in _targets(source=_GATE)
     assert (_NEEDS_HUMAN, "") in _targets(source=_HOOK_ROUTE)
     assert (_AMENDMENT_ROUTE, "outcome=failed") in implement
     assert (_SETTLE, "") in implement
@@ -274,22 +276,20 @@ def test_the_completion_gate_is_billed_into_the_fabro_subprocess_ceiling() -> No
     )
 
 
-def test_a_turn_whose_field_reports_the_work_incomplete_fails_the_stage(tmp_path: Path) -> None:
-    """Sub-scenario one: a stated incomplete exits NON-ZERO with a partial-progress cause.
+def test_a_turn_whose_field_reports_the_work_incomplete_routes_to_the_hook(tmp_path: Path) -> None:
+    """Sub-scenario one: a stated incomplete emits the successful incomplete route.
 
-    The exit code is the routing — non-zero is the `outcome=failed` edge — and the
-    cause is asserted on BOTH surfaces the ending needs it on: the stderr line the
-    Dispatcher carries onto the dispatch outcome detail, and the stage-cause file
-    the `needs_human` terminal renders as the recorded question. The stage it
-    names is `implement`, not this gate: the fault is the turn's, and a question
-    naming the gate would send a human to read the wrong stage.
+    The route itself exits zero so repeated incomplete turns do not form Petri's
+    deterministic failure cycle. The partial-progress cause remains for the
+    hook route's exhausted-budget terminal, and continues to name `implement`.
     """
     repo = _clone(tmp_path=tmp_path)
     _recorded(repo=repo, field=_INCOMPLETE_FIELD)
 
     result = _graded(repo=repo)
 
-    assert result.returncode != 0, result.stderr
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"preferred_next_label": "incomplete"}
     assert _PARTIAL_PROGRESS in result.stderr
     assert _stage_cause(repo=repo).startswith(f"stage: {_IMPLEMENT}\n")
     assert _PARTIAL_PROGRESS in _stage_cause(repo=repo)
@@ -312,7 +312,8 @@ def test_a_turn_that_states_no_completion_field_is_treated_as_incomplete(tmp_pat
     for name, repo in (("absent", absent), ("empty", empty)):
         result = _graded(repo=repo)
 
-        assert result.returncode != 0, (name, result.stderr)
+        assert result.returncode == 0, (name, result.stderr)
+        assert json.loads(result.stdout) == {"preferred_next_label": "incomplete"}, name
         assert _PARTIAL_PROGRESS in result.stderr, name
         assert _PARTIAL_PROGRESS in _stage_cause(repo=repo), name
 
@@ -366,7 +367,8 @@ def test_a_structured_reply_that_only_mentions_the_field_is_not_a_completion_rec
 
     result = _graded(repo=repo, response='{"note": "definition_of_done_complete"}')
 
-    assert result.returncode != 0, result.stderr
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"preferred_next_label": "incomplete"}
     assert "stated no completion field" in result.stderr
 
 
@@ -415,8 +417,10 @@ def test_a_nonempty_reply_without_the_field_falls_back_to_the_completion_record(
 
     assert passed.returncode == 0, passed.stderr
     assert _COMPLETE_SENTINEL in passed.stderr
-    assert failed.returncode != 0, failed.stderr
+    assert failed.returncode == 0, failed.stderr
+    assert json.loads(failed.stdout) == {"preferred_next_label": "incomplete"}
     assert "does not state the work-item Definition of Done complete" in failed.stderr
     assert '"definition_of_done_complete": false' in failed.stderr
-    assert neither.returncode != 0, neither.stderr
+    assert neither.returncode == 0, neither.stderr
+    assert json.loads(neither.stdout) == {"preferred_next_label": "incomplete"}
     assert "stated no completion field" in neither.stderr
