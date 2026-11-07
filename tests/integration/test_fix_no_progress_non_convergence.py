@@ -67,19 +67,26 @@ def _repo(*, tmp_path: Path) -> Path:
     return repo
 
 
+def _prepare_refresh_conflict(*, repo: Path) -> None:
+    """Make the run and default heads conflict when janitor rebases the run."""
+    _ = (repo / "work.txt").write_text("run work\n", encoding="utf-8")
+    _git("add", "work.txt", repo=repo)
+    _git("commit", "--quiet", "-m", "run work", repo=repo)
+    default = repo.parent / "default"
+    _git("clone", "--quiet", str(repo.parent / "origin.git"), str(default), repo=repo.parent)
+    _git("config", "user.name", "Test User", repo=default)
+    _git("config", "user.email", "test@example.test", repo=default)
+    _ = (default / "work.txt").write_text("default work\n", encoding="utf-8")
+    _git("add", "work.txt", repo=default)
+    _git("commit", "--quiet", "-m", "default work", repo=default)
+    _git("push", "--quiet", "origin", "HEAD:master", repo=default)
+
+
 def _start_failed_refresh(*, repo: Path) -> subprocess.CompletedProcess[str]:
-    """Cause the measured pre-aggregate rebase-start failure without running a suite."""
-    git_dir = subprocess.run(
-        ["git", "rev-parse", "--git-dir"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    (repo / git_dir / "rebase-merge").mkdir(parents=True, exist_ok=True)
+    """Cause a real pre-aggregate refresh conflict without running a suite."""
     result = _run(node="janitor", repo=repo)
     assert result.returncode != 0
-    assert "rebase-merge" in result.stderr
+    assert "CONFLICT" in result.stderr
     return result
 
 
@@ -88,6 +95,7 @@ def test_repeated_refresh_failure_at_an_unchanged_fix_head_exits_non_converged(
 ) -> None:
     """A no-op fix sends the next identical janitor failure to the existing exit."""
     repo = _repo(tmp_path=tmp_path)
+    _prepare_refresh_conflict(repo=repo)
     first = _start_failed_refresh(repo=repo)
     assert first.returncode != 0
     first_route = _run(node="janitor_refresh_route", repo=repo)
@@ -120,6 +128,7 @@ def test_a_fix_head_change_keeps_the_next_janitor_failure_in_the_repair_loop(
 ) -> None:
     """A progress-making fix still returns to janitor instead of the terminal."""
     repo = _repo(tmp_path=tmp_path)
+    _prepare_refresh_conflict(repo=repo)
     _start_failed_refresh(repo=repo)
     assert _run(node="janitor_failure_route", repo=repo).returncode == 0
     _ = (repo / "work.txt").write_text("fixed\n", encoding="utf-8")
