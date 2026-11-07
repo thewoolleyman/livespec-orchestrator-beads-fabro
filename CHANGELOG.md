@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.302.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.301.0...v0.302.0) (2026-11-07)
+
+
+### Features
+
+* **dispatcher:** measure overtaken arming conflicts ([e5097eb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e5097eb969875d7f002aed00d8b929aeb23eab35))
+* reuse drift verdicts for unchanged specs ([bb6714c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb6714c20345e4b40a1d4c2b58df398c9b9626b3))
+
+
+### Bug Fixes
+
+* carry git_refusal_line only on a non-zero commit after a passing hook ([2ac872b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2ac872be95fd00c19d9b423f471f7785d980f9b9))
+* distinguish git refusal after a passing hook ([f94b7ae](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f94b7ae54a6d163409723a2edc8cc6ad045e991d))
+
 ## [0.301.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.300.0...v0.301.0) (2026-11-07)
 
 
