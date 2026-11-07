@@ -31,24 +31,25 @@ coverage subprocess hooks exactly as an allowlisted spawn must.
 
 import json
 import os
+import select
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PLUGIN_ROOT = _REPO_ROOT / ".claude-plugin"
 
-# How long the parent waits for the child's startup handshake, and how long it
-# then allows the deferred work to finish. Bounded so a wedged child fails the
-# test instead of hanging the suite.
+# Failure bounds, never assertions: how long the parent blocks for the child's
+# startup handshake, and how long it then allows the deferred work to finish. A
+# wedged child fails the test instead of hanging the suite.
 _HANDSHAKE_TIMEOUT_SECONDS = 120.0
 _DEFERRED_TIMEOUT_SECONDS = 180.0
-_POLL_SECONDS = 0.05
 
 # Runs inside the spawned child. argv is
-# [install_root, ready_path, go_path, result_path].
+# [install_root, ready_fd, go_fd, result_path]: the child WRITES a byte down the
+# ready pipe once the launcher has finished, then BLOCKS reading the go pipe
+# until the parent has deleted the installation.
 #
 # The launcher under test is `bin/_bootstrap.bootstrap()` — the one chokepoint
 # every `bin/*.py` wrapper calls before any packaged import. Everything after
@@ -58,12 +59,12 @@ _PROBE = """
 import argparse
 import importlib
 import json
+import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
-install_root, ready_path, go_path, result_path = sys.argv[1:5]
+install_root, ready_fd, go_fd, result_path = sys.argv[1:5]
 
 bin_dir = str(Path(install_root) / "scripts" / "bin")
 if bin_dir not in sys.path:
@@ -72,12 +73,9 @@ import _bootstrap
 
 _bootstrap.bootstrap()
 
-Path(ready_path).write_text("ready", encoding="utf-8")
-deadline = time.monotonic() + 300.0
-while not Path(go_path).exists():
-    if time.monotonic() > deadline:
-        raise SystemExit("child timed out waiting for the eviction handshake")
-    time.sleep(0.05)
+os.write(int(ready_fd), b"ready")
+if not os.read(int(go_fd), 1):
+    raise SystemExit("the parent closed the eviction handshake without releasing the child")
 
 drive = importlib.import_module("livespec_orchestrator_beads_fabro.commands.drive")
 dispatcher = importlib.import_module("livespec_orchestrator_beads_fabro.commands.dispatcher")
@@ -135,16 +133,57 @@ def _child_env(*, install_root: Path) -> dict[str, str]:
     return env
 
 
-def _wait_for(*, path: Path, timeout: float, process: subprocess.Popen[str]) -> None:
-    deadline = time.monotonic() + timeout
-    while not path.exists():
-        if process.poll() is not None:
-            stdout, stderr = process.communicate()
-            message = f"child exited early (rc={process.returncode})\n{stdout}\n{stderr}"
-            raise AssertionError(message)
-        if time.monotonic() > deadline:
-            raise AssertionError(f"timed out after {timeout}s waiting for {path}")
-        time.sleep(_POLL_SECONDS)
+def _wait_for(*, ready_fd: int, timeout: float, process: subprocess.Popen[str]) -> None:
+    """Block until the child signals readiness down `ready_fd`, or fail.
+
+    The signal is a byte the child writes into a pipe, so the wait is a single
+    blocking `select` on that pipe: nothing is polled and no clock is read. A
+    child that DIES closes its end of the pipe, which this side reads as EOF,
+    so an early exit is reported as the child's own output rather than as a
+    timeout. The `timeout` is only the bound that keeps a silent child from
+    hanging the suite.
+    """
+    readable, _, _ = select.select([ready_fd], [], [], timeout)
+    if not readable:
+        raise AssertionError(f"timed out after {timeout}s waiting for the child's readiness signal")
+    if not os.read(ready_fd, 16):
+        stdout, stderr = process.communicate(timeout=timeout)
+        message = f"child exited early (rc={process.returncode})\n{stdout}\n{stderr}"
+        raise AssertionError(message)
+
+
+def _launch_probe(
+    *, install_root: Path, result_path: Path, cwd: Path
+) -> tuple[subprocess.Popen[str], int, int]:
+    """Start the probe child; return it with this side's ends of the two handshake pipes.
+
+    The child's ends are closed here once it has them, so a child that dies
+    closes the last copy of its write end and the parent reads EOF.
+    """
+    ready_read, ready_write = os.pipe()
+    go_read, go_write = os.pipe()
+    try:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                _PROBE,
+                str(install_root),
+                str(ready_write),
+                str(go_read),
+                str(result_path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=_child_env(install_root=install_root),
+            cwd=str(cwd),
+            pass_fds=(ready_write, go_read),
+        )
+    finally:
+        os.close(ready_write)
+        os.close(go_read)
+    return process, ready_read, go_write
 
 
 def test_deferred_work_runs_from_the_retained_payload_after_the_install_is_removed(
@@ -152,33 +191,19 @@ def test_deferred_work_runs_from_the_retained_payload_after_the_install_is_remov
 ) -> None:
     install_root = tmp_path / "install"
     shutil.copytree(_PLUGIN_ROOT, install_root, ignore=shutil.ignore_patterns("__pycache__"))
-    ready_path = tmp_path / "ready"
-    go_path = tmp_path / "go"
     result_path = tmp_path / "result.json"
-
-    process = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            _PROBE,
-            str(install_root),
-            str(ready_path),
-            str(go_path),
-            str(result_path),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=_child_env(install_root=install_root),
-        cwd=str(tmp_path),
+    process, ready_read, go_write = _launch_probe(
+        install_root=install_root, result_path=result_path, cwd=tmp_path
     )
     try:
-        _wait_for(path=ready_path, timeout=_HANDSHAKE_TIMEOUT_SECONDS, process=process)
+        _wait_for(ready_fd=ready_read, timeout=_HANDSHAKE_TIMEOUT_SECONDS, process=process)
         shutil.rmtree(install_root)
         assert not install_root.exists(), "the fixture installation was not actually removed"
-        go_path.write_text("go", encoding="utf-8")
+        _ = os.write(go_write, b"go")
         stdout, stderr = process.communicate(timeout=_DEFERRED_TIMEOUT_SECONDS)
     finally:
+        os.close(ready_read)
+        os.close(go_write)
         if process.poll() is None:
             process.kill()
             _ = process.communicate()
