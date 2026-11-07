@@ -25,12 +25,4 @@ if ! just check >"$output_file" 2>&1; then
 fi
 cat "$output_file"
 
-tree_hash="$(git write-tree)"
-output_checksum="$(uv run --no-sync python -c '
-from pathlib import Path
-from livespec_dev_tooling.checks._red_green_replay_suite import canonical_output_checksum
-import sys
-print(canonical_output_checksum(output=Path(sys.argv[1]).read_text(encoding="utf-8")))
-' "$output_file")"
-uv run --no-sync python -m livespec_dev_tooling.green_token write-pre-commit \
-    "factory-refresh-merge:${tree_hash}" "$output_checksum"
+bash dev-tooling/record-refresh-merge-evidence.sh "$output_file"
