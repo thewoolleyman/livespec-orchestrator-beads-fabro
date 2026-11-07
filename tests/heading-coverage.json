@@ -2947,5 +2947,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-it2d adds dispatcher.py supersede-contaminated, which files one successor through the capture filing seam, copies instruction comments with a provenance line and neutralized openers while keeping a FOR-stage scope line first, re-points blocks edges, closes the original as duplicate, and refuses closed, uncontaminated or field-poisoned items with no writes.",
     "work_item": "bd-ib-it2d"
+  },
+  {
+    "heading": "## Scenario 323 \u2014 An earlier run's preserved ref never outranks a newer run's published head",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-so6fef makes recovery routing refuse to prefer an earlier run's needs-human or failed-checkpoint preservation ref over a later run's published head, prefer the same or a later run's ref, and route held with the measurement publishing-run-unobservable when a ref's or the head's publishing run cannot be established.",
+    "work_item": "bd-ib-so6fef"
   }
 ]

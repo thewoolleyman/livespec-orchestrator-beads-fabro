@@ -12841,3 +12841,60 @@ Feature: A permanently poisoned item is replaced, not abandoned
     Then the command exits non-zero naming S and the step it reached
     And W is still open
 ```
+
+## Scenario 323 — An earlier run's preserved ref never outranks a newer run's published head
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: Run-age-bounded recovery preference
+  As the maintainer of a repository dispatched through the factory
+  I want recovery routing never to prefer an older run's tree over a newer run's published head
+  So that a re-dispatch never starts from older work than the item already published
+
+  Scenario: an earlier run's needs-human ref does not outrank a later run's published head
+    Given an item whose latest run published head H to its publish branch
+    And an earlier run of the item holds needs-human ref N
+    When recovery routing grades the item
+    Then the route names H, or a needs-human or preservation ref the run that published H wrote, as the tree the next dispatch starts from
+    And the route never names N
+
+  Scenario: an earlier run's failed-checkpoint preservation ref does not outrank a later run's published head
+    Given an item whose latest run published head H to its publish branch
+    And an earlier run of the item holds failed-checkpoint preservation ref P
+    When recovery routing grades the item
+    Then the route never names P
+
+  Scenario: the same run's needs-human ref is preferred over its own published head
+    Given an item whose latest run published head H and, at its ending, needs-human ref N
+    When recovery routing grades the item
+    Then the route is seeded from N
+
+  Scenario: a later run's needs-human ref is preferred over an earlier run's published head
+    Given an item whose earlier run published head H
+    And a later run of the item, which published no head, ended with needs-human ref N
+    When recovery routing grades the item
+    Then the route is seeded from N
+
+  Scenario: a needs-human ref is attributed to the run its trailer carries
+    Given an item whose earlier run published head H
+    And a later run of the item ended with a needs-human ref whose name names no run but whose tip commit carries a Fabro-Run trailer naming that later run
+    When recovery routing grades the item
+    Then the route is seeded from that needs-human ref
+    And the item is not held
+
+  Scenario: a ref whose publishing run cannot be established holds the item
+    Given an item whose latest run published head H
+    And a needs-human ref N of the item whose name names no run and whose tip commit carries no run trailer
+    When recovery routing grades the item
+    Then the item is routed held and stays ready
+    And the recovery-held record names the measurement publishing-run-unobservable
+    And no publish branch is reclaimed
+
+  Scenario: an item with no competing ref is not held for attribution
+    Given an item whose latest run published head H, whose run no record names
+    And the item's only other ref is the preserved-publish ref the stale publish-branch reclaim wrote for H
+    And the item holds no needs-human ref and no failed-checkpoint preservation ref
+    When recovery routing grades the item
+    Then the item is not routed held for publishing-run-unobservable
+```
