@@ -69,6 +69,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_row_for
 from livespec_orchestrator_beads_fabro._store_merge_hold import merge_hold_from_labels
 from livespec_orchestrator_beads_fabro._store_rework_mutations import LABEL_REWORK_PENDING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
@@ -81,6 +82,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
     read_dispatch_labels,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
 )
@@ -222,7 +224,7 @@ def gather_resume(
         ),
         anchor=anchor,
         branch=branch,
-        earlier_run_ids=_earlier_run_ids(records=journaled, item=item, anchor=anchor),
+        earlier_run_ids=_earlier_run_ids(records=journaled, item=item, anchor=anchor, repo=repo),
         workflow_name=earlier_workflow_name(records=journaled, work_item_id=item.id),
     )
 
@@ -289,7 +291,11 @@ def _changed_assertions(*, item: WorkItem, anchor: ResumeAnchor | None) -> tuple
 
 
 def _earlier_run_ids(
-    *, records: tuple[dict[str, object], ...], item: WorkItem, anchor: ResumeAnchor | None
+    *,
+    records: tuple[dict[str, object], ...],
+    item: WorkItem,
+    anchor: ResumeAnchor | None,
+    repo: Path,
 ) -> tuple[str, ...]:
     """Every identifier the earlier run answers to, the record's own leading.
 
@@ -307,6 +313,10 @@ def _earlier_run_ids(
     named = [] if anchor is None else [anchor.run_id]
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
+    if not named and (repo / ".livespec.jsonc").is_file():
+        claim = claim_row_for(path=store_config(repo=repo), work_item_id=item.id).stamp
+        if claim is not None:
+            named.extend(one for one in (claim.run_id, claim.dispatch_id) if one is not None)
     return tuple(dict.fromkeys(named))
 
 

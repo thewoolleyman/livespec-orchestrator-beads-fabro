@@ -149,7 +149,7 @@ class RecoveryRouting:
         then delete the very branch the resumed run was about to check out.
         """
         route = self.route_for(work_item_id=work_item_id)
-        return route is None or route.route != ROUTE_RESUME
+        return route is None or route.route in {ROUTE_FRESH, ROUTE_SEEDED}
 
     def offered(self, *, candidates: list[WorkItem]) -> list[WorkItem]:
         """The candidates the admission valve is offered, which excludes every hold.
