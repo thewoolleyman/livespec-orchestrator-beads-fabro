@@ -114,6 +114,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_VERIFIED,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -776,6 +777,7 @@ def _acceptance_pass_over(*, runner: _Forge) -> Callable[..., AcceptancePassResu
         outcome: DispatchOutcome,
         raw_labels: Sequence[str] = (),
         journal_path: Path | None = None,
+        incident: IncidentAcceptanceScope | None = None,
     ) -> AcceptancePassResult:
         return run_acceptance_pass(
             repo=repo,
@@ -784,6 +786,7 @@ def _acceptance_pass_over(*, runner: _Forge) -> Callable[..., AcceptancePassResu
             runner=runner,
             raw_labels=raw_labels,
             journal_path=journal_path,
+            incident=incident,
         )
 
     return _call

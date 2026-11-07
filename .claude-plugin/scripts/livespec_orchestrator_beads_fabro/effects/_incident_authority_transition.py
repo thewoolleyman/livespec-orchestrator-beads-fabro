@@ -25,6 +25,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
 )
 from livespec_orchestrator_beads_fabro._incident_carrier import carrier_successor_allowed
 from livespec_orchestrator_beads_fabro._incident_phases import (
+    closure_successor_allowed,
     fresh_repayment_carrier,
     recovery_carrier,
 )
@@ -71,6 +72,8 @@ def _valid_successor(*, before: IncidentAttempt, after: IncidentAttempt) -> bool
         and after.generation == before.generation + 1
         and before.operation_id != after.operation_id
         and set(before.original_paths).issubset(after.original_paths)
+        # No writer discharges the incident from anything but a merged repayment.
+        and closure_successor_allowed(before=before, after=after)
         and (
             # The merged expedited carrier stays recorded under master-observation;
             # the one same-item repayment opens on its own fresh reserved branch.

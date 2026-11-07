@@ -56,6 +56,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    INCIDENT_OBLIGATION_ERR,
+    closure_obligations_for,
+    incident_refusal_detail,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
     write_work_item_status_and_reconcile,
@@ -142,6 +147,17 @@ def accept_item(
     """Accept one parked item, or refuse it while a host or human leg is outstanding."""
     if item.status != _ACCEPTANCE_STATUS:
         return invalid_source_state(aid=action_id, item=item, expected=_ACCEPTANCE_STATUS)
+    # An expedited incident is accepted only once its chain records `closed`:
+    # a human press is not final normal proof, and an expedited merge is not one.
+    incident = closure_obligations_for(config=config, item_id=item.id)
+    if incident:
+        detail = incident_refusal_detail(item_id=item.id, outstanding=incident)
+        return valve_refusal(
+            aid=action_id,
+            wid=item.id,
+            err=INCIDENT_OBLIGATION_ERR,
+            msg=f"accept refused: {detail}.",
+        )
     criteria = effective_criteria(item=item)
     if not criteria.pending_leg_assertions:
         return _close(repo=repo, config=config, item=item, action_id=action_id)

@@ -50,7 +50,15 @@ from typing import TYPE_CHECKING, get_args
 
 from livespec_orchestrator_beads_fabro.commands._close_claim_hold import hold_before_close
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.errors import ClaimWriteRefusedError, WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    closure_obligations_for,
+    incident_refusal_detail,
+)
+from livespec_orchestrator_beads_fabro.errors import (
+    ClaimWriteRefusedError,
+    IncidentClosureRefusedError,
+    WorkItemNotFoundError,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -69,6 +77,7 @@ _LIVESPEC_DONE = "done"
 _CLOSE_INTENT = "close-work-item"
 _EXIT_NOT_FOUND = 3
 _EXIT_CLAIM_REFUSED = 4
+_EXIT_INCIDENT_OUTSTANDING = 5
 
 
 def close_with_resolution(
@@ -90,13 +99,24 @@ def close_with_resolution(
     or an id closed and pruned between read and write), and
     `ClaimWriteRefusedError` when, with claim tokens enabled, the hold
     taken immediately before the close does not win the item's current
-    token: nothing is then written to the item.
+    token: nothing is then written to the item. Raises
+    `IncidentClosureRefusedError`, also writing nothing, when the item is an
+    expedited incident whose retained chain has not recorded `closed`.
     """
     index = materialize_work_items(records=read_work_items(path=path))
     existing = index.get(item_id)
     if existing is None:
         raise WorkItemNotFoundError(item_id=item_id)
     if existing.status != _LIVESPEC_DONE:
+        # Every resolution, `no-longer-applicable` included, is a close: an
+        # incident whose chain has not recorded `closed` refuses all of them.
+        incident = closure_obligations_for(config=path, item_id=item_id)
+        if incident:
+            raise IncidentClosureRefusedError(
+                item_id=item_id,
+                outstanding=incident,
+                detail=incident_refusal_detail(item_id=item_id, outstanding=incident),
+            )
         hold_before_close(path=path, item_id=item_id, intent=_CLOSE_INTENT, status=existing.status)
     closed = dataclasses.replace(
         existing,
@@ -148,5 +168,8 @@ def main(*, argv: list[str] | None = None) -> int:
     except ClaimWriteRefusedError as exc:
         _ = write_stderr(text=f"ERROR: {exc.detail}\n")
         return _EXIT_CLAIM_REFUSED
+    except IncidentClosureRefusedError as exc:
+        _ = write_stderr(text=f"ERROR: {exc.detail}\n")
+        return _EXIT_INCIDENT_OUTSTANDING
     _ = write_stdout(text=f"closed {closed.id} resolution:{closed.resolution}\n")
     return 0
