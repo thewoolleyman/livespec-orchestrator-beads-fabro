@@ -277,11 +277,10 @@ other outstanding obligation and nothing is written.
 
 The operator entrance that gathers the completion evidence and calls
 `complete_incident` is the `complete-incident` action (section "Lifecycle
-actions" below). Not in this slice: binding the repayment PR as
-`repayment-acceptance` from the Dispatcher and gathering the completion
-evidence automatically. Until the repayment is bound and an operator runs
-`complete-incident`, an incident item parks in acceptance with its obligations
-named.
+actions" below), and `bind-repayment-acceptance` binds the merged repayment
+PR first. Not in this slice: doing either from the Dispatcher automatically.
+Until an operator binds the repayment and runs `complete-incident`, an incident
+item parks in acceptance with its obligations named.
 
 ## Lifecycle actions
 
@@ -299,6 +298,7 @@ usage error (exit 2).
 | --- | --- | --- |
 | `enter-repayment` | `--master-run <run-id> --target-ref <ref>` | `enter_repayment` |
 | `advance-repayment` | `--to-phase <phase> [--admission-complete]` | `advance_repayment` |
+| `bind-repayment-acceptance` | `--pr <number>` | `bind_repayment_acceptance` |
 | `reopen-regression` | `--attributed-json <attempt> --finding-json <finding> --principal <owner>` | `reopen_for_regression` |
 | `record-deferred-finding` | `--finding-json <finding>` | `record_deferred_finding` |
 | `record-revert-receipt` | `--revert-receipt-json <receipt>` | `record_revert_receipt` |
@@ -316,6 +316,30 @@ unchanged incident Definition of Done; only `advance-repayment` accepts it.
 `--principal` names the incident owner a reopened item returns to.
 `record-revert-receipt` records the trusted controller's receipt. It is the
 step that makes `correct-attempt` eligible.
+
+`bind-repayment-acceptance` records `repayment-acceptance` once the factory
+run's repayment PR has merged (bd-ib-pqz3nw). `advance-repayment --to-phase
+repayment-acceptance` cannot do this. It changes only the phase and generation,
+so the transition writer refuses it once the carrier has a PR. Name the current
+`repayment-active` attempt while the item rests in `acceptance`
+(`incident-repayment-phase-order`, `incident-repayment-stale-observation` or
+`incident-phase-state-mismatch` otherwise). The action reads the PR with
+`gh pr view <pr> --repo <repository> --json
+number,state,headRefName,headRefOid,mergeCommit,commits`:
+
+- A PR that is not `MERGED` is `incident-repayment-pr-unmerged`.
+- A PR the forge cannot report is `incident-repayment-pr-unobservable`.
+- A head branch that is not the carrier's reserved ref is
+  `incident-repayment-carrier-mismatch`.
+
+It then fetches the merge commit and reads its first-parent history with
+`git log`. A rebase merge (one commit per PR commit, with the same subjects)
+binds every landed commit and its tree, oldest first. A squash or merge commit
+binds the merge commit alone. History that cannot be read is
+`incident-repayment-landed-unobservable`. The successor binds the PR number,
+the PR head and a `pr-bound` carrier whose remote head is that head. It is
+committed through the canonical transition writer, and nothing is written on
+any refusal.
 
 `complete-incident` is the operator entrance that records `closed` (bd-ib-pqz3nw).
 Name the current `repayment-acceptance` attempt. The action gathers what
