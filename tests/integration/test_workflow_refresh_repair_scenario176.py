@@ -1020,9 +1020,9 @@ def _refuse_pr_refresh_commit(*, world: _World) -> None:
     hook.chmod(0o755)
 
 
-def test_a_hook_refused_pr_refresh_restores_and_records_the_hook_only_tail(tmp_path: Path) -> None:
-    """A clean hook refusal takes the same repair route as a refresh conflict."""
-    world = _world(root=tmp_path)
+def _hook_refused_pr_refresh_world(*, root: Path) -> tuple[_World, str, str]:
+    """Build a published run whose clean rebase will reach its commit hook."""
+    world = _world(root=root)
     published = _commit(
         cwd=world.clone,
         path=_SHARED_FILE,
@@ -1034,6 +1034,12 @@ def test_a_hook_refused_pr_refresh_restores_and_records_the_hook_only_tail(tmp_p
     _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
     advanced = _advance_default(world=world, path=_OWNED_FILE, text="the default's own file\n")
     _refuse_pr_refresh_commit(world=world)
+    return world, published, advanced
+
+
+def test_a_hook_refused_pr_refresh_restores_and_records_the_hook_only_tail(tmp_path: Path) -> None:
+    """A clean hook refusal takes the same repair route as a refresh conflict."""
+    world, published, advanced = _hook_refused_pr_refresh_world(root=tmp_path)
 
     result = subprocess.run(
         ["bash", "-c", _pr_refresh_script(check_suite="true")],
