@@ -369,3 +369,66 @@ def test_a_git_refusal_after_a_passing_hook_is_not_reported_as_a_hook_refusal(
     cause = _cause(repo=repo)
     assert refusal in cause
     assert "repository commit hook refused" not in cause
+
+
+def test_a_passing_commit_after_a_passing_hook_carries_no_git_refusal_line(
+    tmp_path: Path,
+) -> None:
+    """Git's refusal line belongs only to a non-zero commit; a commit that exited 0 has none."""
+    hook = "#!/bin/sh\nprintf 'lefthook hook: pre-commit\\nAll 3 targets passed\\n'\nexit 0\n"
+    repo = _clone(tmp_path=tmp_path, hook=hook)
+    runner = tmp_path / COMMIT_RUNNER_PROGRAM_FILENAME
+    _ = runner.write_text(commit_runner_program_source(), encoding="utf-8")
+    commit = ["git", "commit", "-m", "feat: a passing commit"]
+    environment = {
+        **_child_environment(),
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+    }
+
+    _ = subprocess.run(
+        ["git", "commit", "--quiet", "-m", "chore: base"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env=environment,
+    )
+    _ = (repo / "module.py").write_text("x = 2\n", encoding="utf-8")
+    _ = subprocess.run(["git", "add", "module.py"], cwd=repo, check=True)
+
+    started = subprocess.run(
+        [sys.executable, str(runner), "start", "--", *commit],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    waited = subprocess.run(
+        [
+            sys.executable,
+            str(runner),
+            "wait",
+            started.stdout.strip(),
+            "--timeout-seconds",
+            "60",
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    report = json.loads(waited.stdout)
+
+    assert report["state"] == "passed"
+    assert report["hook_passed"] is True
+    assert "git_refusal_line" not in report
+    record = json.loads(
+        (repo / ".git" / "livespec-commit-runs" / f"{started.stdout.strip()}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "git_refusal_line" not in record

@@ -335,7 +335,7 @@ def worker(run_id):
     terminal["hook_ran"] = HOOK_BANNER.search(text) is not None
     if terminal["hook_ran"] and HOOK_PASSED.search(text) is not None:
         terminal["hook_passed"] = True
-        refusal = git_refusal_line(text)
+        refusal = git_refusal_line(text) if result.returncode != 0 else None
         if refusal is not None:
             terminal["git_refusal_line"] = refusal
     if result.returncode != 0:
@@ -356,7 +356,7 @@ def report(run_id, path, record):
         output = full_output(path)
         if hook_passed(record, output):
             payload["hook_passed"] = True
-            refusal = recorded_git_refusal(record, output)
+            refusal = recorded_git_refusal(record, output) if state == "failed" else None
             if refusal is not None:
                 payload["git_refusal_line"] = refusal
         if state == "failed":
