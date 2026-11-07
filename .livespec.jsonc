@@ -966,8 +966,22 @@
       // above that measurement and matches `review_fix`. The root fix is the
       // commit node not re-running the whole suite, at which point these two
       // entries come back down.
+      //
+      // The three `*_commit_settle` nodes are declared UPWARD as an interim dial
+      // (plan bd-ib-qy5wol; legacy-coordinator-agent R301, 2026-11-07). The
+      // workflow declares 3900 s for each and its settle script waits up to
+      // 3600 s, but the Dispatcher renders a node no table names at the 1800 s
+      // default, so the engine killed the script before its failure handling
+      // (measured: run 01M6V85A0CM5 renders 1800 s; a hook here measured 3425 s).
+      // These restore the declared value and cost the allowance 16800 s; the
+      // credential-use window, not the allowance, governs the freshness floor.
+      // END CONDITION: delete all three once bd-ib-2eyiwy is released and pinned
+      // here, because the Dispatcher then honours the declared value itself.
       "node_timeouts": {
         "implement": 14400,
+        "implement_commit_settle": 3900,
+        "fix_commit_settle": 3900,
+        "review_fix_commit_settle": 3900,
         "implement_completion": 600,
         "commit_red": 7200,
         "commit_green": 7200,
