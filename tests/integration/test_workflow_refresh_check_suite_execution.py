@@ -212,12 +212,16 @@ def _check_suite(*, root: Path, record: Path, status: int) -> Path:
     return path
 
 
+_COMPLETED_TARGET_LINE = "::: just check-unit [passed, wall: 0.1s]"
+_UNFINISHED_TARGET_LINE = "trailing output of an unfinished target"
+
+
 def _slow_check_suite(*, root: Path, record: Path) -> Path:
     """A gate which names one completed target before it outlives its budget."""
     quoted_record = shlex.quote(str(record))
     lines = (
         "#!/usr/bin/env bash",
-        f'printf "%s\\n" check-unit | tee {quoted_record}',
+        f'printf "%s\\n" "{_COMPLETED_TARGET_LINE}" "{_UNFINISHED_TARGET_LINE}" | tee {quoted_record}',
         "sleep 2",
         "",
     )
@@ -552,7 +556,16 @@ def test_a_failing_pr_refresh_suite_puts_its_own_output_in_the_repair_brief(
     assert _COMMAND_NOT_FOUND not in targets[0]
 
 
-def test_pr_refresh_bounds_its_post_rebase_gate_below_its_node_timeout(*, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "workflow",
+    [
+        pytest.param(_WORKFLOW, id="implement-work-item"),
+        pytest.param(_GROOM_WORKFLOW, id="groom-work-item"),
+    ],
+)
+def test_pr_refresh_bounds_its_post_rebase_gate_below_its_node_timeout(
+    *, tmp_path: Path, workflow: Path
+) -> None:
     """A slow gate returns through refresh repair rather than consuming the node timeout."""
     world = _world(root=tmp_path)
     _ = _published(world=world, root=tmp_path)
@@ -568,14 +581,15 @@ def test_pr_refresh_bounds_its_post_rebase_gate_below_its_node_timeout(*, tmp_pa
         world=world,
         check_suite=str(suite),
         shell_quoted_input=False,
+        workflow=workflow,
     )
 
     assert result.returncode == 1, result.stderr
     assert "LIVESPEC_REFRESH_REPAIR" in result.stderr
     brief = world.state(name=_BRIEF_FILENAME)
     assert brief is not None, "the timed-out gate recorded no refresh-repair brief"
-    assert "failed-gate-targets: check-unit" in brief
-    assert "last-completed-gate-target: check-unit" in brief
+    assert "failed-gate-targets: ::: just check-unit" in brief
+    assert "last-completed-gate-target: check-unit\n" in brief
     assert "expired-gate-budget-seconds: 1" in brief
 
 
