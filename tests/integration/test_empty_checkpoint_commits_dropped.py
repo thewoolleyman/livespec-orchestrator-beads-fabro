@@ -250,7 +250,8 @@ def _advance_default(*, world: _World, path: str = _SHARED_FILE, text: str = "mo
     the stage's own fetch, which is the state a real dispatch is in when the
     default branch advances underneath it.
     """
-    mover = world.clone.parent / f"mover-{path.replace(chr(47), chr(45))}"
+    mover_name = "-".join((path.replace(chr(47), chr(45)), text.strip().replace(" ", "-")))
+    mover = world.clone.parent / f"mover-{mover_name}"
     _ = _git("clone", "--quiet", str(world.origin), str(mover), cwd=world.clone.parent)
     advanced = _commit(cwd=mover, path=path, text=text, subject=f"feat: advance {path}")
     _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=mover)
@@ -545,6 +546,51 @@ def test_a_review_fix_republish_drops_the_empties_above_the_published_tip(
         _git("show", f"{republished}:{_OWNED_FILE}", cwd=world.clone).stdout
         == "the reviewer's fix\n"
     )
+
+
+def test_a_checkpoint_cleanup_preserves_merged_default_ancestry_for_a_later_refresh(
+    tmp_path: Path,
+) -> None:
+    """Drop the checkpoint without replaying the default branch as copied commits.
+
+    A published run receives the moved default branch through janitor's merge,
+    then an engine checkpoint.  The cleanup must retain the merged commits at
+    their original object identities: a later default-branch commit that edits
+    the same line can then merge through its real ancestry instead of
+    conflicting with a copied version of the earlier default commit.
+    """
+    world = _world(root=tmp_path)
+    _ = _commit(cwd=world.clone, path=_OWNED_FILE, text="run work\n", subject="feat: run work")
+    first = _run_publish_draft(world=world)
+    assert first.returncode == 0, first.stderr
+    published = world.remote_head(ref=_BRANCH)
+
+    default_original = _advance_default(world=world, path=_SHARED_FILE, text="default one\n")
+    default_companion = _advance_default(world=world, path="default.txt", text="default two\n")
+    _ = _git("fetch", "--quiet", "origin", _DEFAULT_BRANCH, cwd=world.clone)
+    _ = _git("merge", "--no-edit", f"origin/{_DEFAULT_BRANCH}", cwd=world.clone)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / "livespec-janitor-passed-head").write_text(
+        f"{world.head()}\n", encoding="utf-8"
+    )
+    checkpoint = _checkpoint(cwd=world.clone, subject="fabro(run): janitor (succeeded)")
+
+    republished_result = _run_publish_draft(world=world)
+
+    assert republished_result.returncode == 0, republished_result.stderr
+    republished = world.remote_head(ref=_BRANCH)
+    assert _ancestor_of(world=world, earlier=published, later=republished)
+    assert _ancestor_of(world=world, earlier=default_original, later=republished)
+    assert _ancestor_of(world=world, earlier=default_companion, later=republished)
+    assert not _ancestor_of(world=world, earlier=checkpoint, later=republished)
+    assert _published_empties(world=world) == []
+
+    _ = (world.state_dir() / "livespec-janitor-passed-head").unlink()
+    rewritten_default = _advance_default(world=world, path=_SHARED_FILE, text="default rewritten\n")
+    refreshed = _run_publish_draft(world=world)
+
+    assert refreshed.returncode == 0, refreshed.stderr
+    assert _ancestor_of(world=world, earlier=rewritten_default, later=world.head())
 
 
 def _anchored_run(*, root: Path) -> tuple[_World, str]:
