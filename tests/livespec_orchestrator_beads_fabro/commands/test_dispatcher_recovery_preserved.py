@@ -39,6 +39,8 @@ _OLDER_RUN = "01M4WYNGFMKM0000000000000Z"
 
 _TERMINAL_COMMIT = "216c811200000000000000000000000000000002"
 _NEWER_TERMINAL_COMMIT = "316c811200000000000000000000000000000003"
+_OLDER_COMMITTER_TIME = "1700000000"
+_NEWER_COMMITTER_TIME = "1700000001"
 _PUBLISHED_HEAD = "f3f139b28469c7efaae32dcb897d73518edbaadd"
 _EARLIER_HEAD = "1e9b31ba00000000000000000000000000000003"
 
@@ -98,14 +100,21 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
     """
     runner = _Runner(
         answers={
-            f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=0,
                 stdout=(
                     f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_RUN}\n"
                     f"{_EARLIER_HEAD}\t{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}\n"
                 ),
                 stderr="",
-            )
+            ),
+            "fetch --quiet --no-tags origin": CommandResult(exit_code=0, stdout="", stderr=""),
+            f"show --no-patch --format=%ct {_TERMINAL_COMMIT}": CommandResult(
+                exit_code=0, stdout=f"{_NEWER_COMMITTER_TIME}\n", stderr=""
+            ),
+            f"show --no-patch --format=%ct {_EARLIER_HEAD}": CommandResult(
+                exit_code=0, stdout=f"{_OLDER_COMMITTER_TIME}\n", stderr=""
+            ),
         }
     )
 
@@ -120,7 +129,7 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
 
 
 def test_the_newest_terminal_ref_wins_over_the_pull_request_runs_older_ref() -> None:
-    """The remote's committer-date order, not identifier order, selects the seed.
+    """The fetched tips' committer dates, not identifier order, select the seed.
 
     `_RUN` leads because the pull-request record names it, which remains the
     operator-facing resume order.  The later run's dispatch identifier carries
@@ -129,14 +138,21 @@ def test_the_newest_terminal_ref_wins_over_the_pull_request_runs_older_ref() -> 
     """
     runner = _Runner(
         answers={
-            f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=0,
                 stdout=(
-                    f"{_NEWER_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}\n"
                     f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_RUN}\n"
+                    f"{_NEWER_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}\n"
                 ),
                 stderr="",
-            )
+            ),
+            "fetch --quiet --no-tags origin": CommandResult(exit_code=0, stdout="", stderr=""),
+            f"show --no-patch --format=%ct {_TERMINAL_COMMIT}": CommandResult(
+                exit_code=0, stdout=f"{_OLDER_COMMITTER_TIME}\n", stderr=""
+            ),
+            f"show --no-patch --format=%ct {_NEWER_TERMINAL_COMMIT}": CommandResult(
+                exit_code=0, stdout=f"{_NEWER_COMMITTER_TIME}\n", stderr=""
+            ),
         }
     )
 
@@ -145,7 +161,11 @@ def test_the_newest_terminal_ref_wins_over_the_pull_request_runs_older_ref() -> 
     assert isinstance(seed, RecoverySeed)
     assert seed.source_run_id == _OLDER_RUN
     assert seed.commit_sha == _NEWER_TERMINAL_COMMIT
-    assert "--sort=-committerdate" in runner.calls[0]
+    assert "--sort=-committerdate" not in runner.calls[0]
+    assert any("fetch --quiet --no-tags origin" in call for call in runner.calls)
+    assert any(
+        f"show --no-patch --format=%ct {_NEWER_TERMINAL_COMMIT}" in call for call in runner.calls
+    )
 
 
 def test_an_unreadable_terminal_reference_is_unobservable_and_stops_the_search() -> None:
@@ -158,7 +178,7 @@ def test_an_unreadable_terminal_reference_is_unobservable_and_stops_the_search()
     """
     runner = _Runner(
         answers={
-            f"ls-remote --sort=-committerdate {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=128, stdout="", stderr="fatal: unable to access"
             )
         }
