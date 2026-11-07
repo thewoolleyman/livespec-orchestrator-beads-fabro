@@ -150,9 +150,10 @@ attempt refuses rather than falling back to the earlier repair PR.
 Migration: schema-1 attempts written before this model carry no `carrier` key.
 They remain readable with their exact earlier meaning, including the repair-only
 `pr_number: 0` case, and they serialize back without the key, so their receipt
-bytes do not change. A successor of such an attempt may introduce a carrier. This
-change models and validates the state only: it neither pushes, observes a forge,
-binds a PR nor fences a factory.
+bytes do not change. A successor of such an attempt may introduce a carrier. The library
+models and validates the state only: it neither pushes, observes a forge,
+binds a PR nor fences a factory. The process boundary's lifecycle actions
+(section "Lifecycle actions" below) are its operator entrance.
 
 ## Regression recovery
 
@@ -278,6 +279,46 @@ Not in this slice: binding the repayment PR as `repayment-acceptance` from the
 Dispatcher and gathering the completion evidence automatically. Until a
 controller records both, an incident item parks in acceptance with its
 obligations named.
+
+## Lifecycle actions
+
+The `incident_authority.py` process boundary exposes repayment, regression
+recovery and correction as actions (bd-ib-nabx3u). Each is a thin adapter over
+the released function above. Each takes the same `--repo`, `--repository`,
+`--item`, `--attempt`, `--phase`, `--operation`, `--generation` and `--owner`
+identity as the other actions, naming the CURRENT attempt it acts on, and
+prints one schema-1 reply. A success carries the recorded generation under
+`result.reading.attempt`; a refusal exits 78 and names the library's code. A
+payload argument is valid only for its own action, and a missing one is a
+usage error (exit 2).
+
+| Action | Payload | Calls |
+| --- | --- | --- |
+| `enter-repayment` | `--master-run <run-id> --target-ref <ref>` | `enter_repayment` |
+| `advance-repayment` | `--to-phase <phase> [--admission-complete]` | `advance_repayment` |
+| `reopen-regression` | `--attributed-json <attempt> --finding-json <finding> --principal <owner>` | `reopen_for_regression` |
+| `record-deferred-finding` | `--finding-json <finding>` | `record_deferred_finding` |
+| `record-revert-receipt` | `--revert-receipt-json <receipt>` | `record_revert_receipt` |
+| `correct-attempt` | `--correction-json <correction> --target-ref <ref>` | `enter_corrected_attempt` |
+
+`enter-repayment` does not take the master result from its caller. It reads
+the named run with `gh run view <run-id> --repo <repository> --json
+headSha,status,conclusion`, so the run's own completion and conclusion gate
+the repayment. A run the forge cannot report is
+`incident-repayment-master-ci-unobservable`. A run still in progress, or one
+that failed, is `incident-repayment-master-ci-outstanding`, and nothing is
+recorded. `--admission-complete` asserts that ordinary admission approved the
+unchanged incident Definition of Done; only `advance-repayment` accepts it.
+`--principal` names the incident owner a reopened item returns to.
+`record-revert-receipt` records the trusted controller's receipt. It is the
+step that makes `correct-attempt` eligible.
+
+Every JSON payload must be the canonical encoding (sorted keys, compact
+separators) of exactly its record's fields with their types: a `Finding`, a
+`RevertReceipt`, a `Correction`, or for `--attributed-json` a complete attempt
+record as the chain retains it. Anything else is
+`incident-action-invalid-payload`, naming the argument, and nothing is
+written.
 
 ## Genesis
 
