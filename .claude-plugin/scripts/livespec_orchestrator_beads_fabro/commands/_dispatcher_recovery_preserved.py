@@ -56,9 +56,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
-from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_record import (
-    PRESERVED_TREE_STAGE,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
     PRESERVED_PUBLISH_REF_PREFIX,
     preserved_publish_ref,
@@ -67,7 +64,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_recla
     PublishBranchUnobservable,
     surviving_publish_branch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_checkpoint import (
+    newest_preserved_tree_row,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age import (
+    published_head_is_later,
+)
 
 __all__: list[str] = [
     "NEEDS_HUMAN_REF_PREFIX",
@@ -118,11 +121,6 @@ _LS_REMOTE_FIELDS = 2
 # base` gives about the staging row: a reader spelling a key differently from
 # its writer finds nothing and reports no preserved tree, which at every
 # surface is indistinguishable from a run that never published one.
-_STAGE_KEY = "stage"
-_WORK_ITEM_KEY = "work_item_id"
-_REF_KEY = "preservation_ref"
-_BASE_COMMIT_KEY = "base_commit"
-_RUN_ID_KEY = "run_id"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -184,23 +182,31 @@ def verified_preserved_seed(
     has no preserved tree" for an item whose tree was published minutes ago.
     """
     asked: list[str] = []
+    preserved: RecoverySeed | PreservedWorkUnobservable | None = None
     # The terminal ref is per RUN, so with no identifier to name there is no ref
     # it could exist at and the round trip would ask about a pattern that matches
     # nothing.
     if earlier_run_ids:
         asked.append(PRESERVED_SOURCE_TERMINAL_TREE)
-        terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
-        if terminal is not None:
-            return terminal
+        preserved = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
     # The published tree is named by this item's OWN journal, so with no row
     # naming one there is no ref that source could stand at and the round trip
     # would ask origin about nothing.
-    published_tree = _newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
-    if published_tree is not None:
+    published_tree = newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
+    if preserved is None and published_tree is not None:
         asked.append(PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE)
-        tree = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
-        if tree is not None:
-            return tree
+        preserved = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
+    if preserved is not None:
+        if isinstance(preserved, PreservedWorkUnobservable):
+            return preserved
+        newer_head = _newer_published_head_seed(
+            runner=runner,
+            repo=repo,
+            work_item_id=work_item_id,
+            terminal=preserved,
+            records=journal_records,
+        )
+        return preserved if newer_head is None else newer_head
     asked.append(PRESERVED_SOURCE_PUBLISHED_HEAD)
     published = _published_head_seed(
         runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
@@ -329,35 +335,42 @@ def _preserved_tree_seed(
     )
 
 
-def _newest_preserved_tree_row(
-    *, records: tuple[dict[str, object], ...], work_item_id: str
-) -> tuple[str, str, str] | None:
-    """This item's newest published-tree row, as (ref, base commit, run id).
+def _newer_published_head_seed(
+    *,
+    runner: CommandRunner,
+    repo: Path,
+    work_item_id: str,
+    terminal: RecoverySeed,
+    records: tuple[dict[str, object], ...],
+) -> RecoverySeed | None:
+    """Return a head a later dispatch published, or ``None`` when none was recorded.
 
-    The LATEST matching row wins, for the reason `run_base_commit` gives about
-    the staging row it reads: one journal accumulates every dispatch this
-    checkout ever made, so an earlier re-dispatch's preservation would otherwise
-    seed a run from a tree the item has already moved past.
-
-    A row missing ANY of the three is passed over rather than part-used, and so
-    cannot mask an earlier row that carries all three. Every key is written on
-    both arms of `preserved_tree_journal_record`, nulls included, so a row whose
-    `preservation_ref` is null is a publication that FAILED — not a sparse record
-    — and seeding from its base alone would name a ref that was never created.
+    A terminal ref normally wins because it is the complete tree the failed run
+    preserved.  The journal is the exception's evidence: when it names the
+    branch tip as a later run's publication, choosing the older terminal tree
+    would discard the item's newer work.  Rows without a published-head field
+    predate this measurement, so they leave the established terminal-ref
+    behaviour intact rather than manufacturing an attribution from their order.
     """
-    for record in reversed(records):
-        if record.get(_STAGE_KEY) != PRESERVED_TREE_STAGE:
-            continue
-        if record.get(_WORK_ITEM_KEY) != work_item_id:
-            continue
-        ref = record.get(_REF_KEY)
-        base = record.get(_BASE_COMMIT_KEY)
-        run_id = record.get(_RUN_ID_KEY)
-        if not (isinstance(ref, str) and isinstance(base, str) and isinstance(run_id, str)):
-            continue
-        if ref.strip() and base.strip() and run_id.strip():
-            return ref.strip(), base.strip(), run_id.strip()
-    return None
+    if not any(record.get("published_head") is not None for record in records):
+        return None
+    published = _published_head_seed(
+        runner=runner,
+        repo=repo,
+        work_item_id=work_item_id,
+        earlier_run_ids=(),
+    )
+    if published is None or isinstance(published, PreservedWorkUnobservable):
+        return None
+    return (
+        published
+        if published_head_is_later(
+            records=records,
+            preserved_run_id=terminal.source_run_id,
+            published_head=published.commit_sha,
+        )
+        else None
+    )
 
 
 def _published_head_seed(

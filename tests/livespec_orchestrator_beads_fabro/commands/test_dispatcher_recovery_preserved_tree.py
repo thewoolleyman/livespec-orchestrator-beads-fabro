@@ -154,6 +154,36 @@ def test_the_newest_published_tree_wins_over_an_earlier_one() -> None:
     assert seed.commit_sha == _BASE
 
 
+def test_an_earlier_needs_human_ref_does_not_outrank_a_later_published_head() -> None:
+    """Run age beats the terminal-ref preference when the branch moved on.
+
+    The competing ref is durable and readable, so returning it is an apparently
+    healthy seed.  The dispatch journal is the independent ordering evidence:
+    its later publication proves the branch tree belongs to a later run.
+    """
+    runner = _Runner(
+        answers={
+            _REF: _ls_remote(ref=_REF, commit=_PRESERVED_COMMIT),
+            _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
+        }
+    )
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            _row(ref=_REF, base=_OLDER_BASE, run_id=_OLDER_RUN),
+            {
+                "stage": "watchdog-stall-cancel",
+                "work_item_id": _ITEM_ID,
+                "run_id": _RUN,
+                "published_head": _PUBLISHED_HEAD,
+            },
+        ),
+    )
+    assert seed is not None and not isinstance(seed, PreservedWorkUnobservable)
+    assert seed.commit_sha == _PUBLISHED_HEAD
+    assert seed.preservation_ref == f"{_PREFIX}/{_PUBLISHED_HEAD}"
+
+
 def test_a_ref_origin_no_longer_carries_falls_through_to_the_next_source() -> None:
     # Origin is ASKED rather than the journal believed, so a pruned ref is absence
     # at this source and not a seed naming a ref the sandbox could never fetch.
