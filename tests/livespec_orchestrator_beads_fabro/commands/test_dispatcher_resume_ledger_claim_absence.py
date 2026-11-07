@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimRow, ClaimStamp
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_resume_observation as observation,
 )
@@ -97,3 +97,39 @@ def test_a_readable_ledger_row_without_a_claim_adds_no_earlier_run_id(
     )
 
     assert gather.earlier_run_ids == ()
+
+
+def test_a_journaled_dispatch_id_alone_still_consults_the_ledger_claim_run_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dispatch id is not a run id, so it must not suppress the ledger's run id."""
+    _write_config(repo=tmp_path)
+    journal = ({"stage": "dispatch-id", "work_item_id": _ITEM_ID, "dispatch_id": "local-dispatch"},)
+    stamp = ClaimStamp(
+        dispatch_id="ledger-dispatch",
+        dispatching_host="other-host",
+        run_id="01LEDGERRUNID",
+        factory_name=None,
+        factory_server=None,
+    )
+    monkeypatch.setattr(observation, "publish_branch_for", lambda **_: "feat/bd-ib-oknwxm")
+    monkeypatch.setattr(observation, "branch_pull_request", lambda **_: _ForgeReading())
+    monkeypatch.setattr(observation, "read_journal_records", lambda **_: journal)
+    monkeypatch.setattr(observation, "cancel_anchor", lambda **_: None)
+    monkeypatch.setattr(observation, "resume_anchor", lambda **_: None)
+    monkeypatch.setattr(observation, "factory_reading", lambda **_: _FactoryReading())
+    monkeypatch.setattr(
+        observation,
+        "claim_row_for",
+        lambda **_: ClaimRow(status="ready", assignee=None, stamp=stamp),
+    )
+
+    gather = observation.gather_resume(
+        args=argparse.Namespace(),
+        repo=tmp_path,
+        item=_item(),
+        journal_path=tmp_path / "journal.jsonl",
+        runner=ShellCommandRunner(),
+    )
+
+    assert "01LEDGERRUNID" in gather.earlier_run_ids
