@@ -312,8 +312,9 @@ def _earlier_run_ids(
     """
     named = [] if anchor is None else [anchor.run_id]
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
+    run_id_named = bool(named)
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
-    if not named and (repo / ".livespec.jsonc").is_file():
+    if not run_id_named and (repo / ".livespec.jsonc").is_file():
         claim = claim_row_for(path=store_config(repo=repo), work_item_id=item.id).stamp
         if claim is not None:
             named.extend(one for one in (claim.run_id, claim.dispatch_id) if one is not None)
