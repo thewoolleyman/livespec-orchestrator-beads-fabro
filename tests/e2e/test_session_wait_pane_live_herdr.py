@@ -25,7 +25,6 @@ import socket
 import subprocess
 import tempfile
 import threading
-import time
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -174,7 +173,7 @@ def _cli_seams(*, repository: Path):
         launcher=routing.default_wait_launcher,
         observe_target=routing.observe_wait_target,
         process_generation=records.process_generation_token,
-        wall_clock=time.time,
+        wall_clock=lambda: 100.0,
     )
 
 

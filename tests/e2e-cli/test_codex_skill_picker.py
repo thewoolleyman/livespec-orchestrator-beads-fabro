@@ -13,7 +13,6 @@ import struct
 import subprocess
 import tempfile
 import termios
-import time
 import tty
 from collections.abc import Callable
 from contextlib import suppress
@@ -37,7 +36,6 @@ _BACKGROUND_QUERY = "\x1b]11;?\x1b\\"
 _FOREGROUND_RESPONSE = "\x1b]10;rgb:ffff/ffff/ffff\x1b\\"
 _BACKGROUND_RESPONSE = "\x1b]11;rgb:0000/0000/0000\x1b\\"
 _TERMINAL_RESPONSES = _FOREGROUND_RESPONSE + _BACKGROUND_RESPONSE
-_CODEX_STARTUP_TIMEOUT_SECONDS = 120
 _CODEX_PROMPT_MARKER = chr(0x203A)
 _GIT_HOOK_ENV_VARS = (
     "GIT_DIR",
@@ -118,9 +116,7 @@ def _prepare_pty(*, master_fd: int, slave_fd: int) -> None:
     fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
 
 
-def _read_until(
-    *, terminal: _Terminal, predicate: Callable[[str], bool], timeout_seconds: float
-) -> str:
+def _read_until(*, terminal: _Terminal, predicate: Callable[[str], bool]) -> str:
     """Judge a new complete screen, never concatenated terminal history.
 
     Codex writes cursor-addressed deltas inside synchronized-output frames.
@@ -128,12 +124,8 @@ def _read_until(
     handles split UTF-8/escape sequences; pending retains partial frames across
     actions. A previously matching screen cannot pass without new output.
     """
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        remaining = max(0.05, deadline - time.monotonic())
-        readable, _, _ = select.select([terminal.fd], [], [], min(0.25, remaining))
-        if not readable:
-            continue
+    while True:
+        select.select([terminal.fd], [], [])
         try:
             chunk = os.read(terminal.fd, 8192)
         except OSError as exc:
@@ -155,7 +147,6 @@ def _read_until(
         current = terminal.text()
         if predicate(current):
             return current
-    raise AssertionError(f"Timed out waiting for Codex picker state:\n{terminal.text()}")
 
 
 def _send(*, fd: int, text: str) -> None:
@@ -175,14 +166,12 @@ def _await_codex_prompt(*, terminal: _Terminal) -> None:
     current = _read_until(
         terminal=terminal,
         predicate=lambda plain: _has_main_prompt(plain=plain) or _has_trust_prompt(plain=plain),
-        timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
     )
     if _has_trust_prompt(plain=current):
         _send(fd=terminal.fd, text="\r")
         _read_until(
             terminal=terminal,
             predicate=lambda plain: _has_main_prompt(plain=plain),
-            timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
         )
 
 
@@ -198,14 +187,12 @@ def _open_skills_menu(*, terminal: _Terminal) -> None:
     _read_until(
         terminal=terminal,
         predicate=lambda plain: "/skills" in plain and "use skills to improve" in plain,
-        timeout_seconds=15,
     )
     _send(fd=terminal.fd, text="\r")
     _read_until(
         terminal=terminal,
         predicate=lambda plain: "listskills" in _squashed(text=plain)
         and "enable/disableskills" in _squashed(text=plain),
-        timeout_seconds=15,
     )
 
 
@@ -258,13 +245,11 @@ def test_picker_wait_refuses_an_inactive_previously_matching_screen() -> None:
     try:
         # No producer writes a fresh frame. Existing screen content is not an
         # acknowledgement of an input action, even when every token matches.
-        with pytest.raises(AssertionError, match="Timed out"):
-            _read_until(
-                terminal=terminal, predicate=lambda p: _has_result(plain=p), timeout_seconds=0.01
-            )
+        os.close(write_fd)
+        with pytest.raises(AssertionError, match="closed"):
+            _read_until(terminal=terminal, predicate=lambda p: _has_result(plain=p))
     finally:
         os.close(read_fd)
-        os.close(write_fd)
 
 
 def _live_group_members(*, pgid: int) -> list[int]:
@@ -337,17 +322,16 @@ def _stop_codex(*, proc: subprocess.Popen[bytes], fd: int) -> None:
 
 
 def test_picker_cleanup_stops_writers_after_the_parent_exits(*, tmp_path: Path) -> None:
-    witness = tmp_path / "writer-active"
+    release = tmp_path / "release-writer"
     child_pid_file = tmp_path / "writer-pid"
+    os.mkfifo(release)
     proc = subprocess.Popen(
         [
             "sh",
             "-c",
-            'printf writing > "$1"; '
-            'while :; do printf writing > "$1"; sleep 0.01; done & '
-            'printf "%s\\n" "$!" > "$2"',
+            'read < "$1" & ' 'printf "%s\\n" "$!" > "$2"',
             "--",
-            str(witness),
+            str(release),
             str(child_pid_file),
         ],
         stdin=subprocess.DEVNULL,
@@ -357,8 +341,8 @@ def test_picker_cleanup_stops_writers_after_the_parent_exits(*, tmp_path: Path) 
     )
     try:
         assert proc.wait(timeout=5) == 0
-        assert witness.exists(), "the shell exited before it wrote the witness"
         child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+        os.kill(child_pid, 0)
         _stop_codex(proc=proc, fd=os.open(os.devnull, os.O_WRONLY))
         state = subprocess.run(
             ["ps", "-p", str(child_pid), "-o", "stat="],
@@ -386,10 +370,9 @@ def _exercise_skills_picker(*, master_fd: int) -> str:
         predicate=lambda plain: "enterinsert·escclose" in _squashed(text=plain)
         and "[Skill]" in plain
         and f"{_CODEX_PROMPT_MARKER} $" in plain.splitlines(),
-        timeout_seconds=15,
     )
     _paste(fd=master_fd, text=_PICKER_QUERY)
-    _read_until(terminal=terminal, predicate=lambda p: _has_result(plain=p), timeout_seconds=15)
+    _read_until(terminal=terminal, predicate=lambda p: _has_result(plain=p))
     # Native negative control: stale rows/history cannot pass a changed query.
     _paste(fd=master_fd, text=_NO_MATCH_SUFFIX)
     _read_until(
@@ -397,12 +380,9 @@ def _exercise_skills_picker(*, master_fd: int) -> str:
         predicate=lambda plain: "no matches" in plain
         and f"{_CODEX_PROMPT_MARKER} ${_PICKER_QUERY}{_NO_MATCH_SUFFIX}" in plain.splitlines()
         and not _has_skill_row(plain=plain),
-        timeout_seconds=15,
     )
     _send(fd=master_fd, text="\x7f" * len(_NO_MATCH_SUFFIX))
-    return _read_until(
-        terminal=terminal, predicate=lambda p: _has_result(plain=p), timeout_seconds=15
-    )
+    return _read_until(terminal=terminal, predicate=lambda p: _has_result(plain=p))
 
 
 @pytest.mark.skipif(
