@@ -218,6 +218,11 @@ def _anchor_bodies() -> list[str]:
     ]
 
 
+def _held_anchor_bodies() -> list[str]:
+    """Return only the finding-hold records, not drift verdict receipts."""
+    return [body for body in _anchor_bodies() if "livespec-drift-verdict: " not in body]
+
+
 def test_below_the_cap_a_finding_is_filed_and_not_held(tmp_path: Path) -> None:
     assert (_COMMANDS / "_drift_run_held.py").is_file()
     spec_root = _project(root=tmp_path, cap=5, open_proposals=4)
@@ -228,7 +233,7 @@ def test_below_the_cap_a_finding_is_filed_and_not_held(tmp_path: Path) -> None:
     assert len(_open_queue(spec_root=spec_root)) == 5
     assert len(outcome.filed) == 1
     assert outcome.held == ()
-    assert _anchor_bodies() == []
+    assert _held_anchor_bodies() == []
 
 
 def test_at_the_cap_the_finding_is_held_with_its_identity_and_nothing_is_filed(
@@ -255,7 +260,7 @@ def test_a_retried_pass_records_the_hold_once(tmp_path: Path) -> None:
     second = _run(root=tmp_path)
 
     assert first.held == second.held
-    assert len(_anchor_bodies()) == 1
+    assert len(_held_anchor_bodies()) == 1
 
 
 def test_a_held_finding_is_filed_once_a_queue_slot_frees_and_the_frontier_advances(
@@ -286,7 +291,7 @@ def test_a_held_finding_is_filed_once_a_queue_slot_frees_and_the_frontier_advanc
     # adjudicated one: an archived proposal has been filed and is never re-filed.
     assert [path.name for path in _open_queue(spec_root=spec_root)] == [f"{held.held[0]}.md"]
     # And the hold record was not re-appended while it was being promoted.
-    assert len(_anchor_bodies()) == 1
+    assert len(_held_anchor_bodies()) == 1
 
 
 def test_needs_attention_lists_a_held_finding_with_a_revise_handoff(tmp_path: Path) -> None:
