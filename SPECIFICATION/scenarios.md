@@ -13095,3 +13095,37 @@ Feature: A node timeout the workflow declares reaches the run unless configurati
     When its declared timeouts are read
     Then every declaration below 1800 seconds carries beside it a comment naming a recorded run's measured duration for that node
 ```
+
+## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "A tree a factory run resumes or seeds can pass under the harness judging it".
+
+```gherkin
+Feature: A tree a factory run resumes or seeds can pass under the harness judging it
+  As the maintainer of a repository dispatched to the factory
+  I want a recovered tree judged on what it contains
+  So that a recovery route does not spend the work it exists to keep
+
+  Scenario: A tree with no fixture clearing the stage variable passes its own commit hook
+    Given a factory run resumed or seeded from a tree whose test suite exercises the workflow's push helper and carries no fixture clearing LIVESPEC_AGENT_STAGE
+    And that suite passes on a developer host
+    When an agent stage's commit runs that suite through the commit hook
+    Then no case of the suite reports LIVESPEC_AGENT_PUBLICATION_DENIED
+    And the seeded tree's bytes are unchanged by the harness
+
+  Scenario: The requirement holds in a repository that has changed nothing
+    Given a factory run dispatched against a fleet repository other than this one
+    And that repository has merged no change for this requirement
+    When an agent stage's commit runs that repository's suite through the commit hook
+    Then no case of the suite reports LIVESPEC_AGENT_PUBLICATION_DENIED
+
+  Scenario: A test case that sets the variable itself still observes the refusal
+    Given a test case that sets LIVESPEC_AGENT_STAGE to an agent stage in its own child environment
+    When that child calls the projected push_origin
+    Then the call exits non-zero and prints LIVESPEC_AGENT_PUBLICATION_DENIED
+
+  Scenario: An agent stage's own publication attempt stays refused
+    Given an implement, fix or review_fix turn
+    When the turn itself calls the projected push_origin or a publication action of the projected gh wrapper
+    Then the call exits non-zero and prints LIVESPEC_AGENT_PUBLICATION_DENIED with the stage and the refused action
+```

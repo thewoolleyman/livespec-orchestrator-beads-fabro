@@ -2971,5 +2971,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-2eyiwy renders a workflow-declared node timeout unless configuration names the node, names the supplying layer on the dispatch record, has the ceiling and the execution allowance read the rendered values, ends a commit settle node's wait 300 seconds before its rendered timeout, and refuses a settle timeout that leaves no wait.",
     "work_item": "bd-ib-2eyiwy"
+  },
+  {
+    "heading": "## Scenario 326 \u2014 A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-s754le keeps LIVESPEC_AGENT_STAGE out of a tree's test processes through a harness-owned means, so a resumed or seeded tree with no fixture clearing it passes its own commit hook, while an agent stage's own publication call is still refused.",
+    "work_item": "bd-ib-s754le"
   }
 ]

@@ -1412,5 +1412,12 @@
     "heading": "## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node",
     "work_item": "bd-ib-2eyiwy",
     "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused",
+    "work_item": "bd-ib-s754le",
+    "first_seen": "2026-11-07"
   }
 ]
