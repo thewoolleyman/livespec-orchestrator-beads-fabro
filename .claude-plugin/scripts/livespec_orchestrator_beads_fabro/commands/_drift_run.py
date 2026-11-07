@@ -43,6 +43,9 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro.commands._detection_coverage import (
     detection_coverage_anchor,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    spec_tree_identity,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
@@ -60,6 +63,10 @@ from livespec_orchestrator_beads_fabro.commands._drift_run_findings import (
 from livespec_orchestrator_beads_fabro.commands._drift_run_merges import (
     merge_under_judgement,
     merges_after,
+)
+from livespec_orchestrator_beads_fabro.commands._drift_run_verdicts import (
+    record_drift_verdict,
+    recorded_drift_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     judge_within_ceiling,
@@ -134,6 +141,15 @@ class DriftRunSeams:
 
 
 @dataclass(frozen=True, kw_only=True)
+class _VerdictCache:
+    """The anchor and specification identity that key this pass's receipts."""
+
+    path: StoreConfig | None
+    anchor: str | None
+    spec_revision: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class MergeOutcome:
     """What the pass made of ONE merge.
 
@@ -193,9 +209,20 @@ def run_drift_pass(
     context = _disposition_context(
         project_root=project_root, spec_root=spec_root, spec_tree=spec_tree, seams=seams
     )
+    cache = _VerdictCache(
+        path=context.config,
+        anchor=context.anchor,
+        spec_revision="tree:" + spec_tree_identity(cwd=project_root),
+    )
     judged: list[MergeOutcome] = []
     for sha in merges:
-        one = _judge_one(project_root=project_root, seams=seams, spec_tree=spec_tree, sha=sha)
+        one = _judge_one(
+            project_root=project_root,
+            seams=seams,
+            spec_tree=spec_tree,
+            sha=sha,
+            cache=cache,
+        )
         judged.append(_disposed(one=one, context=context))
     return DriftRunOutcome(
         merges=merges,
@@ -283,6 +310,7 @@ def _judge_one(
     seams: DriftRunSeams,
     spec_tree: dict[str, str],
     sha: str,
+    cache: _VerdictCache,
 ) -> MergeOutcome:
     """One merge put to the shared judgement, or the reason it could not be.
 
@@ -296,10 +324,28 @@ def _judge_one(
     if merge is None:
         return MergeOutcome(merge=sha, statement="", verdict=None, failure=CAUSE_MERGE_UNREADABLE)
     statement = behaviour_statement(merge=merge)
-    judged = judge_within_ceiling(spec_tree=spec_tree, statement=statement, run_model=seams.judge)
+    verdict = recorded_drift_verdict(
+        path=cache.path,
+        anchor=cache.anchor,
+        merge=sha,
+        spec_revision=cache.spec_revision,
+    )
+    if verdict is None:
+        judged = judge_within_ceiling(
+            spec_tree=spec_tree, statement=statement, run_model=seams.judge
+        )
+        verdict = judged.value_or(None)
+        if verdict is not None:
+            record_drift_verdict(
+                path=cache.path,
+                anchor=cache.anchor,
+                merge=sha,
+                spec_revision=cache.spec_revision,
+                verdict=verdict,
+            )
     return MergeOutcome(
         merge=sha,
         statement=statement,
-        verdict=judged.value_or(None),
-        failure=None if judged.value_or(None) is not None else CAUSE_JUDGEMENT_UNREADABLE,
+        verdict=verdict,
+        failure=None if verdict is not None else CAUSE_JUDGEMENT_UNREADABLE,
     )
