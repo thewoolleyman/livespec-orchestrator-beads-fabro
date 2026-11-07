@@ -338,7 +338,8 @@ test_lifecycle_controls() {
         [ "$(field_of_object native.json status)" = "in_progress" ] \
             || fail "warn-mode native status did not pass through"
 
-        LIVESPEC_BD_GUARD_MODE=fail run_guard update q-life --defer 2026-08-27 \
+        defer_date="$(date -u -d ' +7 days' +%F)"
+        LIVESPEC_BD_GUARD_MODE=fail run_guard update q-life --defer "$defer_date" \
             --json >defer-flag.json 2>defer-flag.err
         [ ! -s defer-flag.err ] || fail "modeled update --defer emitted a guard warning"
         [ "$(field_of_object defer-flag.json status)" = "deferred" ] \
