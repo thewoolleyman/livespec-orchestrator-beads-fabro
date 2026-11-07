@@ -76,9 +76,14 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
     # GitHub can lag a just-pushed ref by a few seconds: re-read before calling it a mismatch.
     for _ in 1 2 3 4 5; do got=$(git ls-remote "$repo" "$ref" | cut -f1); [ "$got" = "$sha" ] && break; sleep 3; done
     v=$([ "$got" = "$sha" ] && echo VERIFIED || echo "MISMATCH:$got")
-    # route_recovery seeds ONLY from refs/heads/needs-human/<run ULID> (coordinator, 2026-11-05):
-    # write it CREATE-ONLY at the verified sha; never move an existing one (report it instead).
-    if [ "$v" = VERIFIED ]; then
+    # A run's needs-human ref SEEDS its recovery, and a run-keyed ref leads the seed list, so a
+    # mid-run copy written here pre-empts the tree the run's own ending later pushes. Measured
+    # 2026-11-07 on bd-ib-azhnw5 and livespec-dev-tooling-t5ct2q. So only a preserve at the
+    # 330-minute wall-budget line or right before a cancel writes one: set
+    # PRESERVE_WRITE_NEEDS_HUMAN=1. CREATE-ONLY at the verified sha; never move an existing one.
+    # TEMPORARY (legacy-coordinator-agent, 2026-11-07): remove this flag and restore one behaviour
+    # when bd-ib-qshcwc ships.
+    if [ "$v" = VERIFIED ] && [ "${PRESERVE_WRITE_NEEDS_HUMAN:-0}" = 1 ]; then
       nh=refs/heads/needs-human/$run; nold=$(git ls-remote "$repo" "$nh" | cut -f1)
       if [ -z "$nold" ]; then
         for pa in 1 2 3 4 5; do git -C "$D" push -q "$repo" "${sha}:${nh}" 2>"$D.nh.err" && break; sleep $((pa * 7 + RANDOM % 7)); done
