@@ -1015,6 +1015,7 @@ def _refuse_pr_refresh_commit(*, world: _World) -> None:
         "printf '  - check-types\n' >&2",
     ]
     lines.extend(f"printf 'hook-line-{number}\n' >&2" for number in range(1, 101))
+    lines.append("printf 'error: hook-own-error-line\n' >&2")
     lines.extend(("exit 1", ""))
     _ = hook.write_text("\n".join(lines), encoding="utf-8")
     hook.chmod(0o755)
@@ -1067,10 +1068,10 @@ def test_a_hook_refused_pr_refresh_restores_and_records_the_hook_only_tail(tmp_p
     brief = world.state(name=_BRIEF_FILENAME)
     assert brief is not None
     hook_tail = brief.split("hook-output-last-80-lines:\n", maxsplit=1)[1].splitlines()
-    assert hook_tail[0] == "hook-line-21"
-    assert hook_tail[-1] == "hook-line-100"
+    assert hook_tail[0] == "hook-line-22"
+    assert hook_tail[-1] == "error: hook-own-error-line"
     assert "hook-line-1" not in hook_tail
-    assert "hook-line-20" not in hook_tail
+    assert "hook-line-21" not in hook_tail
     assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
     assert world.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
 
