@@ -8,7 +8,7 @@ author_llm: claude-opus-5-5
 
 ## Decision and Rationale
 
-The maintainer chose Option Scrub on 2026-11-07 (verbatim, relayed by legacy-coordinator-agent from its session at about 21:5xZ: "I choose scrub. Go with your recommendation."), recorded on bd-ib-s754le and livespec-dev-tooling-6tgd2z. The requirement section and Option Scrub are accepted and Option Refresh is rejected, as the proposal required: a revise accepts the requirement and exactly one option. This is the maintainer's decision, not a delegated one. The plan seat factory-run-work-preservation drafted the bytes.
+The maintainer chose Option Scrub on 2026-11-07 (verbatim, said in the legacy-coordinator-agent session at about 21:40Z and relayed by that session: "I choose scrub. Go with your recommendation."; the time "about 21:5xZ" first given here came from the coordinator's relay, which corrected it to about 21:40Z, matching the verbatim record on bd-ib-s754le stamped 21:40:33Z), recorded on bd-ib-s754le and livespec-dev-tooling-6tgd2z. The requirement section and Option Scrub are accepted and Option Refresh is rejected, as the proposal required: a revise accepts the requirement and exactly one option. This is the maintainer's decision, not a delegated one. The plan seat factory-run-work-preservation drafted the bytes.
 
 ## Modifications
 
