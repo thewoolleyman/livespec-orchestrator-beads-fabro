@@ -15,11 +15,19 @@ Run from the control node (the VPS) with this host's own GitHub auth:
 ```bash
 dev-tooling/preserve/preserve_runs.sh [RUN_ULID ...]   # no args: every Running pod in the factory namespace
 dev-tooling/preserve/represerve.sh <UTC HH:MM> <RUN_ULID> <alias>
+dev-tooling/preserve/preserve_dispatch.sh [--dry-run] <DISPATCH_ID> [<factory-url>]
 ```
 
 - `preserve_runs.sh` prints one TSV row per run: `RUN NODE REPO SHA REF VERDICT SECONDS`.
 - `represerve.sh` waits until `HH:MM` UTC (a past time means now), runs one preserve, and on success also
   writes `refs/heads/preserve/<alias>`, for example `bd-ib-<item>-<RUN12>`, in the run's own repository.
+- `preserve_dispatch.sh` takes the Dispatcher's DISPATCH ID, the id the dispatcher and coordinator quote, instead of
+  the run ULID. It resolves the run through the factory server's `livespec.dispatch.id` run label, checks that the
+  sandbox clone's `livespec.factoryRunId` git-config marker names the same dispatch id, then runs
+  `preserve_runs.sh <RUN_ULID>`. `--dry-run` resolves and locates without pushing. It refuses, pushing nothing, with
+  `RESOLVE_FAILED` (zero or several runs carry that id), `NO_POD` (no Running sandbox pod, as for any terminal run),
+  `MARKER_MISMATCH` (the pod's clone names another dispatch) or `NO_CLIENT` (no fabro client). The client defaults to
+  `.livespec.jsonc`'s petri `bin`, the client of the build petri serves; override it with `FABRO_BIN`.
 - `PRESERVE_WORK` sets the local working directory. The default is
   `${XDG_STATE_HOME:-~/.local/state}/livespec-preserve`.
 - For many runs, start one `represerve.sh` per run in parallel. Each process uses its own ssh master
