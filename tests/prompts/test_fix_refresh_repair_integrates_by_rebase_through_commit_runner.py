@@ -46,6 +46,7 @@ _PUBLISHED_BRANCH = "`origin/$LIVESPEC_PUBLISH_BRANCH` exists and its tip is an 
 _MERGE_DIRECTIVE = "MERGE `origin/{{ inputs.default_branch }}` into `HEAD`"
 _MERGE_COMMAND = "`git merge --no-edit origin/{{ inputs.default_branch }}`"
 _PRESERVE_ANCESTRY = "so the origin tip remains an ancestor of the repaired head"
+_NO_PUBLISHED_BRANCH = "When the publish branch does not exist on origin"
 _REBASE_DIRECTIVE = "REBASE this run's own commits onto `origin/{{ inputs.default_branch }}`"
 _RUNNER_START = f'{_RUNNER}" start -- git commit'
 _RUNNER_WAIT = f'{_RUNNER}" wait <run-id> --timeout-seconds 300'
@@ -78,6 +79,7 @@ def test_the_implement_fix_prompt_merges_when_the_published_tip_is_an_ancestor()
 def test_the_implement_fix_prompt_retains_the_rebase_path() -> None:
     section = _repair_section(prose=_normalised(_IMPLEMENT_FIX))
 
+    assert _NO_PUBLISHED_BRANCH in section
     assert _REBASE_DIRECTIVE in section
 
 
