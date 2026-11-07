@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.298.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.297.0...v0.298.0) (2026-11-07)
+
+
+### Features
+
+* **incident:** a successful incident merge reenters normal factory on the same item (bd-ib-riguvj) ([c433232](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c433232e6d8380dd0448c6216255e66735c7da46))
+* **incident:** an attributable regression fences repayment and reopens the same incident (bd-ib-k5teti) ([bc0209a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bc0209a3dc7bb587b9ae887ba4165a50c75a63de))
+
+
+### Bug Fixes
+
+* classify repeated refresh failures ([e784209](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e784209ae405c3d1f5e14b4e31349171fc944b5e))
+* **dispatcher:** reconcile-merged and post-host-record select an incident item's pull request through the chain (bd-ib-xbxmuo) ([01f0062](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/01f00629d97ac9e917e189f738fc412597f14266))
+* **incident:** repayment entry releases the incident holder stamp, and a holder stamp is no factory claim (bd-ib-riguvj) ([e7309f7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e7309f75be9140ad346bbba7aa50bec5bfa3766c))
+* mark inherited-from-the-default-branch fix reasons unverified ([5723490](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5723490a39e7f91cc700c73e09572043313ea905))
+* mark unevidenced inherited fix reasons ([e51a88b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e51a88bb57932ef2c4b8c07b21ff2842c34ac462))
+* preserve pinned no-progress loop routes ([764d4da](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/764d4da06ea44bb3ce7a35ca07bab3e8bd984d3b))
+* stop unchanged fix loops at non-convergence ([f0b2246](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f0b2246d5a43a3acfc4e87365aa09c98610ecc0b))
+* verify inherited fix failures against both trees ([7c6d6d2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7c6d6d2c89e61ff3e1243018f97b30a3986ed209))
+* **workflow:** clear the fix no-progress marker on a green janitor visit ([f7d2db5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f7d2db582698d8f08f26fb27d4763b1038ac7ff3))
+
 ## [0.297.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.296.1...v0.297.0) (2026-11-06)
 
 
