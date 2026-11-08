@@ -13129,3 +13129,96 @@ Feature: A tree a factory run resumes or seeds can pass under the harness judgin
     When the turn itself calls the projected push_origin or a publication action of the projected gh wrapper
     Then the call exits non-zero and prints LIVESPEC_AGENT_PUBLICATION_DENIED with the stage and the refused action
 ```
+
+## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: Operator fresh ruling for a recovery-released item
+  As the operator of a repository dispatched through the factory
+  I want to rule that a released item's next dispatch starts fresh
+  So that a stale or wrong preserved tree never seeds a dispatch I have judged it must not seed
+
+  Scenario: a fresh ruling routes a released item fresh past a verified needs-human ref
+    Given an item released for recovery that holds verified needs-human ref N
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh
+    And the recovery-route record names the ruling's instant
+    And its passed_over_needs_human field lists N with its commit
+    And needs-human ref N still exists at its commit
+
+  Scenario: a fresh ruling routes fresh when preserved work is not confirmed absent
+    Given an item released for recovery whose earlier-run identifiers name no run
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh
+    And no recovery-held record names preserved work not confirmed absent
+
+  Scenario: a fresh ruling takes precedence over a resume
+    Given an item released for recovery that passes every precondition of resume --item
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh, not resume
+
+  Scenario: an untaken needs-human listing holds a fresh-ruled item
+    Given an item released for recovery that carries a current fresh ruling
+    And the needs-human ref listing cannot be taken
+    When recovery routing grades the item
+    Then the route is held for the unobservable measurement, not fresh
+    And the fresh ruling stays current
+
+  Scenario: a fresh-ruled item's stale publish branch is preserved before it is reclaimed
+    Given an item routed fresh by a current fresh ruling
+    And the item's publish branch survives with no live run
+    When the stale publish-branch reclaim runs for the dispatch
+    Then a preserved-publish ref of the branch's head exists before the branch is deleted
+    And no needs-human or preservation ref of the item is deleted or moved
+
+  Scenario: the fresh-ruling command writes and journals one ruling
+    Given an item and a reason that passes the shared template-opener detector
+    When an operator runs dispatcher.py fresh-ruling for the item with that reason
+    Then the item carries one livespec-fresh-ruling comment naming the invoker, the reason and the UTC instant
+    And the journal carries one fresh-ruling record with the same fields
+
+  Scenario: the fresh-ruling command refuses a reason the template-opener detector flags
+    Given an item and a reason that fails the shared template-opener detector
+    When an operator runs dispatcher.py fresh-ruling for the item with that reason
+    Then the command exits 3
+    And no livespec-fresh-ruling comment or fresh-ruling record is written
+
+  Scenario: the newer of a seed ruling and a fresh ruling governs
+    Given an item released for recovery that carries a seed ruling naming ref R at commit C
+    And a later fresh ruling for the same item
+    When recovery routing grades the item
+    Then the route is fresh
+    And the seed ruling is not current
+
+  Scenario: a later seed ruling replaces a current fresh ruling
+    Given an item released for recovery that carries a fresh ruling
+    And a later seed ruling for the same item naming ref R at commit C, where R exists at C
+    When recovery routing grades the item
+    Then the route is seeded from R at C
+    And the fresh ruling is not current
+
+  Scenario: a non-fallback refusal keeps its precedence over a fresh ruling
+    Given an item released for recovery that carries a current fresh ruling
+    And a non-fallback refusal applies to the item
+    When recovery routing grades the item
+    Then the route is held naming that refusal
+    And the fresh ruling stays current
+
+  Scenario: a consumed fresh ruling does not govern a later dispatch
+    Given an item whose dispatch routed fresh by a ruling has a run
+    When that dispatch records the run
+    Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
+    And the next recovery routing of the item does not route it fresh by that ruling
+
+  Scenario: reconciliation adds a missing consumed comment
+    Given a run launched from a dispatch routed fresh by a ruling
+    And the item carries no livespec-fresh-ruling-consumed comment naming that ruling
+    When a reconciliation pass runs
+    Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
+    And the fresh ruling is not current
+```
