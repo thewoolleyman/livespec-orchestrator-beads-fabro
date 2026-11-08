@@ -191,7 +191,7 @@ def reconcile_for(*, repo: Path, args: argparse.Namespace) -> Callable[..., int]
     drove the plain valve would strand the item until an operator re-ran it by hand.
     """
 
-    def drive(*, work_item_id: str) -> int:
+    def drive(*, work_item_id: str, pull_request: int) -> int:
         item = ledger_item(repo=repo, work_item_id=work_item_id)
         return reconcile_merged_for_item(
             args=argparse.Namespace(
@@ -202,6 +202,7 @@ def reconcile_for(*, repo: Path, args: argparse.Namespace) -> Callable[..., int]
                 invoker=getattr(args, "invoker", None),
                 force=False,
                 regrade=item is not None and item.rework_pending,
+                pr=pull_request,
                 as_json=False,
             )
         )
