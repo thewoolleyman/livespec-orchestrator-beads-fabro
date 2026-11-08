@@ -13,16 +13,24 @@ blocked-exporter control).
 
 from __future__ import annotations
 
+import json
 import socket
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from http import HTTPStatus
 from pathlib import Path
 from typing import cast
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _session_wait_cli, session_wait
+from livespec_orchestrator_beads_fabro.commands import (
+    _otel_receive,
+    _session_wait_cli,
+    session_wait,
+)
+from livespec_orchestrator_beads_fabro.commands._otel_http_handler import HttpPostHandler
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -65,18 +73,40 @@ def hermetic_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @dataclass(kw_only=True)
+class _TelemetryTracker:
+    telemetry: list[SessionTelemetry] = field(default_factory=list)
+
+    def __call__(self, *, environ: dict[str, str]) -> SessionTelemetry:
+        instance = SessionTelemetry.from_environ(environ=environ)
+        self.telemetry.append(instance)
+        return instance
+
+    def settle(self) -> None:
+        for instance in self.telemetry:
+            instance.wait_for_delivery()
+
+
+@dataclass(kw_only=True)
 class _CapturingExporter:
     calls: list[tuple[tuple[dict[str, object], ...], str]] = field(default_factory=list)
+    telemetry: _TelemetryTracker = field(default_factory=_TelemetryTracker)
 
     def export(self, *, spans: tuple[dict[str, object], ...], dataset: str) -> bool:
         self.calls.append((spans, dataset))
         return True
 
+    def settled_events(self) -> list[tuple[str, Decoded, str]]:
+        self.telemetry.settle()
+        return self.events()
+
     def events(self) -> list[tuple[str, Decoded, str]]:
+        unique: dict[str, dict[str, object]] = {}
+        for spans, _ in self.calls:
+            for span in spans:
+                unique.update({json.dumps(span, sort_keys=True): span})
         return [
             (cast("str", span["name"]), _decode(span=span), cast("str", span["traceId"]))
-            for spans, _ in self.calls
-            for span in spans
+            for span in unique.values()
         ]
 
 
@@ -112,6 +142,7 @@ def _receiver(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_C
     try:
         yield exporter
     finally:
+        exporter.telemetry.settle()
         receiver.stop()
 
 
@@ -176,6 +207,7 @@ def _seams(
     script: Callable[[WaitTarget], list[GateObservation]] = _ends_after_two_running_polls,
     clock: Callable[[], float] = time.time,
     waiter_alive: bool = True,
+    telemetry_factory: Callable[..., SessionTelemetry] | None = None,
 ) -> session_wait.SessionWaitCliSeams:
     def observe(*, target: WaitTarget, observed_at: float) -> GateObservation:
         return GateObservation.finished(
@@ -186,13 +218,17 @@ def _seams(
         del pid
         return "gen" if waiter_alive else None
 
-    return session_wait.SessionWaitCliSeams(
+    seams = session_wait.SessionWaitCliSeams(
         primary_repository=_own_root,
         launcher=_launcher_factory(script=script),
         observe_target=observe,
         process_generation=generation,
         wall_clock=clock,
     )
+    if telemetry_factory is None:
+        return seams
+    assert hasattr(seams, "telemetry_factory")
+    return replace(seams, telemetry_factory=telemetry_factory)
 
 
 def _repository(*, tmp_path: Path) -> Path:
@@ -230,7 +266,10 @@ def test_arming_observation_changes_and_return_publish_typed_identity_linked_eve
     for name, value in _ASSOCIATION_ENV.items():
         monkeypatch.setenv(name, value)
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        code = session_wait.main(argv=_wait_argv(repository=repository), seams=_seams())
+        code = session_wait.main(
+            argv=_wait_argv(repository=repository),
+            seams=_seams(telemetry_factory=exporter.telemetry),
+        )
 
     assert code == 0
     assert _names(exporter=exporter) == [
@@ -272,12 +311,59 @@ def test_arming_observation_changes_and_return_publish_typed_identity_linked_eve
     assert leaked == []
 
 
+def test_late_export_reply_does_not_change_the_wait_event_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = _repository(tmp_path=tmp_path)
+    reply_seen = threading.Event()
+    release_reply = threading.Event()
+    command_finished = threading.Event()
+    results: list[int] = []
+    original_reply = _otel_receive.reply
+
+    def delayed_reply(*, handler: HttpPostHandler, status: HTTPStatus) -> None:
+        if not reply_seen.is_set():
+            reply_seen.set()
+            assert release_reply.wait(timeout=10.0)
+        original_reply(handler=handler, status=status)
+
+    monkeypatch.setattr(_otel_receive, "reply", delayed_reply)
+    with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
+        seams = _seams()
+        assert hasattr(seams, "telemetry_factory")
+        controlled_seams = replace(seams, telemetry_factory=exporter.telemetry)
+
+        def run_command() -> None:
+            results.append(
+                session_wait.main(argv=_wait_argv(repository=repository), seams=controlled_seams)
+            )
+            command_finished.set()
+
+        command = threading.Thread(target=run_command)
+        command.start()
+        assert reply_seen.wait(timeout=10.0)
+        assert command_finished.wait(timeout=10.0)
+        release_reply.set()
+        command.join()
+
+    assert results == [0]
+    assert _names(exporter=exporter) == [
+        "session.wait.armed",
+        "session.wait.observed",
+        "session.wait.observed",
+        "session.wait.returned",
+    ]
+
+
 def test_unknown_work_associations_are_not_invented(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repository = _repository(tmp_path=tmp_path)
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        _ = session_wait.main(argv=_wait_argv(repository=repository), seams=_seams())
+        _ = session_wait.main(
+            argv=_wait_argv(repository=repository),
+            seams=_seams(telemetry_factory=exporter.telemetry),
+        )
 
     assert _names(exporter=exporter)[:1] == ["session.wait.armed"]
     armed = exporter.events()[0][1]
@@ -291,14 +377,19 @@ def test_acknowledgement_is_receipt_only_and_joins_the_wait_trace(
     repository = _repository(tmp_path=tmp_path)
     ack = ["--repo", str(repository), "--wait-id", "wait-1"]
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        _ = session_wait.main(argv=_wait_argv(repository=repository), seams=_seams())
-        before = len(exporter.events())
-        refused = session_wait.main(
-            argv=["ack", *ack, "--session-id", "someone-else"], seams=_seams()
+        _ = session_wait.main(
+            argv=_wait_argv(repository=repository),
+            seams=_seams(telemetry_factory=exporter.telemetry),
         )
-        assert len(exporter.events()) == before
+        before = len(exporter.settled_events())
+        refused = session_wait.main(
+            argv=["ack", *ack, "--session-id", "someone-else"],
+            seams=_seams(telemetry_factory=exporter.telemetry),
+        )
+        assert len(exporter.settled_events()) == before
         accepted = session_wait.main(
-            argv=["ack", *ack, "--session-id", "session-1"], seams=_seams()
+            argv=["ack", *ack, "--session-id", "session-1"],
+            seams=_seams(telemetry_factory=exporter.telemetry),
         )
 
     assert (refused, accepted) == (1, 0)
@@ -318,11 +409,20 @@ def test_an_empty_inventory_publishes_a_timestamped_zero_count_summary_once_a_mi
     clock = _Clock()
     argv = ["inventory", "--repo", str(repository)]
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        _ = session_wait.main(argv=argv, seams=_seams(clock=clock))
+        _ = session_wait.main(
+            argv=argv,
+            seams=_seams(clock=clock, telemetry_factory=exporter.telemetry),
+        )
         clock.now += 10.0
-        _ = session_wait.main(argv=argv, seams=_seams(clock=clock))
+        _ = session_wait.main(
+            argv=argv,
+            seams=_seams(clock=clock, telemetry_factory=exporter.telemetry),
+        )
         clock.now += 61.0
-        _ = session_wait.main(argv=argv, seams=_seams(clock=clock))
+        _ = session_wait.main(
+            argv=argv,
+            seams=_seams(clock=clock, telemetry_factory=exporter.telemetry),
+        )
 
     events = exporter.events()
     assert _names(exporter=exporter) == ["session.wait.inventory", "session.wait.inventory"]
@@ -342,18 +442,25 @@ def test_inventory_publishes_per_wait_observations_that_stay_distinct_per_snapsh
     repository = _repository(tmp_path=tmp_path)
     clock = _Clock()
     argv = ["inventory", "--repo", str(repository)]
-    seams = _seams(clock=clock, waiter_alive=False)
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        _ = session_wait.main(argv=_wait_argv(repository=repository), seams=_seams())
-        armed_events = len(exporter.events())
+        seams = _seams(
+            clock=clock,
+            waiter_alive=False,
+            telemetry_factory=exporter.telemetry,
+        )
+        _ = session_wait.main(
+            argv=_wait_argv(repository=repository),
+            seams=_seams(telemetry_factory=exporter.telemetry),
+        )
+        armed_events = len(exporter.settled_events())
         _ = session_wait.main(argv=argv, seams=seams)
-        first = exporter.events()[armed_events:]
+        first = exporter.settled_events()[armed_events:]
         clock.now += 10.0
         _ = session_wait.main(argv=argv, seams=seams)
-        unchanged = exporter.events()[armed_events + len(first) :]
+        unchanged = exporter.settled_events()[armed_events + len(first) :]
         clock.now += 61.0
         _ = session_wait.main(argv=argv, seams=seams)
-        later = exporter.events()[armed_events + len(first) :]
+        later = exporter.settled_events()[armed_events + len(first) :]
 
     assert [name for name, _, _ in first] == ["session.wait.inventory", "session.wait.observed"]
     summary, observed = first[0][1], first[1][1]
@@ -379,7 +486,10 @@ def test_an_unreadable_record_is_published_as_unavailable_never_as_healthy(
     store.mkdir()
     _ = (store / "broken.json").write_text("{not json", encoding="utf-8")
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        _ = session_wait.main(argv=["inventory", "--repo", str(repository)], seams=_seams())
+        _ = session_wait.main(
+            argv=["inventory", "--repo", str(repository)],
+            seams=_seams(telemetry_factory=exporter.telemetry),
+        )
 
     assert _names(exporter=exporter) == ["session.wait.inventory", "session.wait.observed"]
     summary, observed = exporter.events()[0][1], exporter.events()[1][1]
