@@ -41,7 +41,9 @@ def _run(
     cwd: Path,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    run_env = os.environ.copy()
+    # The delegated gate Job exports SKIP_TARGETS to the suite it runs; each case
+    # here names its own skips, so an inherited value never leaks into one.
+    run_env = {name: value for name, value in os.environ.items() if name != "SKIP_TARGETS"}
     if env is not None:
         run_env.update(env)
     return subprocess.run(
@@ -97,7 +99,9 @@ def _init_repo(*, tmp_path: Path, baseline_message: str) -> tuple[Path, dict[str
 
 
 def _stage(*, repo: Path, relative_path: str, body: str) -> None:
-    _ = (repo / relative_path).write_text(body, encoding="utf-8")
+    path = repo / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _ = path.write_text(body, encoding="utf-8")
     _ = _run(argv=["git", "add", relative_path], cwd=repo)
 
 
@@ -177,6 +181,52 @@ def test_doc_only_amend_on_a_red_only_head_keeps_the_doc_only_arm(*, tmp_path: P
     invocation = _invoke_pre_commit(repo=repo, env=env)
 
     assert invocation.splitlines() == ["check-pre-commit-doc-only"]
+
+
+def test_green_amend_of_workflow_payload_runs_staged_tests_and_the_gate(*, tmp_path: Path) -> None:
+    """A workflow payload is implementation, not documentation, during a Green amend."""
+    workflow_path = ".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro"
+
+    refusing_repo, refusing_env = _make_green_amend_shape(tmp_path=tmp_path / "refusing")
+    _ = _run(
+        argv=["git", "reset", "--quiet", ".claude-plugin/scripts/widget.py"],
+        cwd=refusing_repo,
+    )
+    _stage(repo=refusing_repo, relative_path=workflow_path, body="workflow: changed\n")
+    refused = _run(
+        argv=["bash", str(_SCRIPT)],
+        cwd=refusing_repo,
+        env={
+            **refusing_env,
+            "FAKE_JUST_FAILURE_TARGET": "check-staged-tests tests/test_placeholder.py",
+            "FAKE_JUST_FAILURE_OUTPUT": (
+                "tests/integration/test_workflow_petri_port.py: graph pinning failed"
+            ),
+        },
+    )
+
+    assert refused.returncode == 1
+    assert "staged tests" in refused.stderr
+    assert "tests/integration/test_workflow_petri_port.py" in refused.stderr
+    assert (refusing_repo / "just.log").read_text(encoding="utf-8").splitlines() == [
+        "check-staged-precheck",
+        "check-staged-tests tests/test_placeholder.py",
+    ]
+
+    passed_repo, passed_env = _make_green_amend_shape(tmp_path=tmp_path / "passed")
+    _ = _run(
+        argv=["git", "reset", "--quiet", ".claude-plugin/scripts/widget.py"],
+        cwd=passed_repo,
+    )
+    _stage(repo=passed_repo, relative_path=workflow_path, body="workflow: changed\n")
+
+    invocation = _invoke_pre_commit(repo=passed_repo, env=passed_env)
+
+    assert invocation.splitlines() == [
+        "check-staged-precheck",
+        "check-staged-tests tests/test_placeholder.py",
+        "check-skipping check-red-green-replay check-codex-skill-picker",
+    ]
 
 
 def test_red_mode_arm_skips_the_incremental_coverage_gate(*, tmp_path: Path) -> None:
@@ -273,3 +323,20 @@ def test_checkout_without_the_marker_still_runs_the_master_ci_green_gate(*, tmp_
         "check-codex-skill-picker",
     ]
     assert _MASTER_CI_GATE not in invocation
+
+
+def test_the_delegated_gate_skip_targets_reach_every_check_skipping_call(*, tmp_path: Path) -> None:
+    """The gate Job's SKIP_TARGETS joins the skip list, as pre-push already reads it."""
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(repo=repo, relative_path="tests/test_placeholder.py", body="def test_green(): pass\n")
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+    skip = "check-branch-protection-alignment check-no-workflow-edits"
+
+    invocation = _invoke_pre_commit(repo=repo, env={**env, "SKIP_TARGETS": skip})
+
+    assert invocation.split() == [
+        "check-skipping",
+        "check-codex-skill-picker",
+        "check-branch-protection-alignment",
+        "check-no-workflow-edits",
+    ]

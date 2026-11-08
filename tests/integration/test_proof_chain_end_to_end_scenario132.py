@@ -565,6 +565,24 @@ def _always_succeeded(*, node: str, visit: int) -> tuple[str, str | None]:
     return _SUCCEEDED, None
 
 
+def _reported_outcome(*, node: str, visit: int) -> tuple[str, str | None]:
+    """Return the routing state a successful proof-chain node reports."""
+    if node == _REVIEW:
+        return _SUCCEEDED, (_LABEL_FIX if visit == 1 else _LABEL_APPROVE)
+    if node == _DISPOSITION:
+        return _SUCCEEDED, _LABEL_FIX
+    if node == "implement_completion":
+        return _SUCCEEDED, "complete"
+    if node == _PROOF_VERIFY:
+        return _SUCCEEDED, _LABEL_APPROVE
+    if node in {
+        _PUBLISH_MERGED_RECONCILE_ROUTE,
+        _PR_REFRESH_MERGED_RECONCILE_ROUTE,
+    }:
+        return _FAILED, None
+    return _SUCCEEDED, None
+
+
 def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | None]]:
     """What each node of the reserved workflow does to the forge, and what it reports.
 
@@ -600,18 +618,7 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
         elif node == _PR:
             forge.mark_ready_and_merge()
         forge.snapshot()
-        if node == _REVIEW:
-            return _SUCCEEDED, (_LABEL_FIX if visit == 1 else _LABEL_APPROVE)
-        if node == _DISPOSITION:
-            return _SUCCEEDED, _LABEL_FIX
-        if node == _PROOF_VERIFY:
-            return _SUCCEEDED, _LABEL_APPROVE
-        if node in {
-            _PUBLISH_MERGED_RECONCILE_ROUTE,
-            _PR_REFRESH_MERGED_RECONCILE_ROUTE,
-        }:
-            return _FAILED, None
-        return _SUCCEEDED, None
+        return _reported_outcome(node=node, visit=visit)
 
     return _act
 

@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.305.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.305.0...v0.305.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* cover tracks plan edge in groom filing ([21d6749](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21d67496c062f2ead5ed12d7e8bfc1c93d7e71d0))
+* preserve plan parent during groom filing ([ddab33f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ddab33f95992d8d67d3e111feb192e4e45a9753f))
+
+## [0.305.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.304.0...v0.305.0) (2026-11-08)
+
+
+### Features
+
+* direct repair stages to wait once ([e3cef76](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3cef76b104e0aefc629843092201dc6e39f4783))
+* guard pipefail pipeline readers ([ac3158e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac3158e1c990d4565b81f0c33dd396405b1f86cb))
+* refuse repeated running commit waits ([1163e81](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1163e81354d741ffe85f196ebc5748475cd81662))
+
+
+### Bug Fixes
+
+* list each condensation-models export on its own line (Red) ([181abc4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/181abc4d8394abdce4b2354af4be6a7d044500f8))
+* retain scenario governing clauses in groom prompts ([13bb54e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/13bb54ec3570990484836778d7d1513d5efd9f3f))
+
+## [0.304.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.303.0...v0.304.0) (2026-11-08)
+
+
+### Features
+
+* repair hook-refused pre-janitor refresh ([1e91c27](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1e91c27fb4ebf5e0f21cccf4ba056b3fa1d1694d))
+
+
+### Bug Fixes
+
+* a seeded launch targets its staging base, not an unpublished branch ([7eba833](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7eba833030b1760d004c64ddf55446c71f92a325))
+* brief the hook's whole output tail, not only its Failed targets block ([e873845](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e873845b95eb14a35e93ca712737f3cc68aa0611))
+* keep the hook's own error lines in the refresh-repair brief ([da72376](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da72376dab1956ccfd4ddd9e2bf173b735df0444))
+
+## [0.303.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.302.0...v0.303.0) (2026-11-08)
+
+
+### Features
+
+* avoid Fabro source pre-run push ([81fc3a5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/81fc3a526278533d533242b9cd55b4e91dcadcf7))
+* detect landed preservation refs ([5c08c82](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c08c8205e479385cbd21def12c9c20875edd9ec))
+* record an expedited merge and let its first failure reach a corrected attempt (bd-ib-7i2bta) ([b5490de](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b5490deebe2defa9f86439a8b038f8606543531e))
+* retry commit refs preservation errors ([0414990](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0414990fd5f68e13816871d5b7bc113cd6738cca))
+
+
+### Bug Fixes
+
+* preserve published refresh repair ancestry ([9bcd0ca](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9bcd0ca5d3d64b75a8769a491327d10dbde9f987))
+* require the exact github.com host for the explicit source target ([de7e38b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/de7e38bc6c7381ab00150aa770ca236790fe9ddd))
+* target the selected staging base in the Petri source launch ([19a9419](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/19a94190e536ac2cbdef236f8eaf1b9f7fbc4cc4))
+
 ## [0.302.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.301.0...v0.302.0) (2026-11-07)
 
 

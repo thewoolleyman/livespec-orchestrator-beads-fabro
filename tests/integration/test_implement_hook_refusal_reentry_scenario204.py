@@ -37,7 +37,9 @@ import os
 import subprocess
 from pathlib import Path
 
+import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import render_run_config_overlay
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_NODE_TIMEOUT_SECONDS,
     derive_fabro_timeout_seconds,
@@ -48,6 +50,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _GRAPH = _PAYLOAD / "workflow.fabro"
 _PROMPT = _PAYLOAD / "prompts" / "implement.md"
+_RUN_CONFIG = _PAYLOAD / "workflow.toml"
 
 _GATE = "implement_completion"
 _ROUTE = "implement_hook_route"
@@ -67,6 +70,14 @@ _SUITE_REENTER = "LIVESPEC_IMPLEMENT_CHECK_SUITE_FAILED_REENTER"
 _INCOMPLETE_REENTER = "LIVESPEC_IMPLEMENT_INCOMPLETE_REENTER"
 _REENTRY_EXHAUSTED = "LIVESPEC_IMPLEMENT_REENTRY_BUDGET_EXHAUSTED"
 _NO_RECORDED_GATE = "ended incomplete with no recorded failing gate"
+_QUOTED_CHECK_SUITE = "mise exec -- sh -c 'bun install --frozen-lockfile && bun run check'"
+_CHECK_SUITE_ARGV = (
+    "exec",
+    "--",
+    "sh",
+    "-c",
+    "bun install --frozen-lockfile && bun run check",
+)
 
 # The incident's own refusal, in the check aggregate's own output shape.
 _FAILED_TARGET = "check-types"
@@ -163,16 +174,91 @@ def _recorded_suite(*, repo: Path, output: str) -> None:
     _ = _git_file(repo=repo, name=_SUITE_VERDICT_GIT_PATH).write_text(output, encoding="utf-8")
 
 
+def _check_suite_runner_prepare_script() -> str:
+    """Render and locate the committed prepare step that writes the suite runner."""
+    rendered = render_run_config_overlay(
+        committed_text=_RUN_CONFIG.read_text(encoding="utf-8"),
+        workflow_dir=_RUN_CONFIG.parent,
+        token="",
+        github_token="",
+        siblings=None,
+        prepare_inputs={"sandbox_check_suite": _QUOTED_CHECK_SUITE},
+    )
+    assert rendered is not None
+    steps = tomli.loads(rendered)["run"]["prepare"]["steps"]
+    return next(
+        step["script"] for step in steps if "livespec-implement-check-suite" in step["script"]
+    )
+
+
+def test_the_quoted_check_suite_runner_is_inert_until_its_own_invocation(tmp_path: Path) -> None:
+    """A quoted shell command is copied into the runner, never evaluated by prepare."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _ = subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    trace = tmp_path / "suite-argv"
+    calls = tmp_path / "suite-calls"
+    mise = commands / "mise"
+    _ = mise.write_text(
+        "#!/bin/sh\n"
+        "printf 'run\\n' >> \"$CHECK_SUITE_CALLS\"\n"
+        ': > "$CHECK_SUITE_TRACE"\n'
+        'for argument do printf \'%s\\n\' "$argument" >> "$CHECK_SUITE_TRACE"; done\n'
+        "printf 'declared suite output\\n'\n"
+        "exit 17\n",
+        encoding="utf-8",
+    )
+    mise.chmod(0o755)
+    plugins_root = tmp_path / "plugins"
+    environment = {
+        **os.environ,
+        "CHECK_SUITE_CALLS": str(calls),
+        "CHECK_SUITE_TRACE": str(trace),
+        "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
+        "PATH": f"{commands}:{os.environ['PATH']}",
+    }
+
+    prepared = subprocess.run(
+        ["sh", "-c", _check_suite_runner_prepare_script()],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    runner = plugins_root / "livespec-implement-check-suite"
+    assert runner.is_file()
+    assert not calls.exists(), "prepare must not invoke the declared check suite"
+
+    invoked = subprocess.run(
+        [str(runner)],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert invoked.returncode == 17
+    assert calls.read_text(encoding="utf-8") == "run\n"
+    assert trace.read_text(encoding="utf-8").splitlines() == list(_CHECK_SUITE_ARGV)
+    assert invoked.stdout == "declared suite output\n"
+
+
 def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_implement() -> None:
-    """The completion gate's failure edge leads to the route, and the route back to implement.
+    """The completion gate's routing label leads to the route, and the route back to implement.
 
     The route's fallthrough is `needs_human`, unconditional, so the ending every
     non-qualifying turn reached before v208 is unchanged. `max_visits` cuts the
     new cycle for the execution-budget derivation, at the re-entry budget plus
     the visit that refuses.
     """
-    assert (_ROUTE, "outcome=failed") in _targets(source=_GATE)
-    assert (_NEEDS_HUMAN, "outcome=failed") not in _targets(source=_GATE)
+    assert (_ROUTE, "preferred_label=incomplete") in _targets(source=_GATE)
+    assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_GATE)
     route = _targets(source=_ROUTE)
     assert (_IMPLEMENT, "outcome=succeeded") in route, route
     assert (_NEEDS_HUMAN, "") in route, route

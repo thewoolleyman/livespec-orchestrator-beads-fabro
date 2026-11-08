@@ -199,6 +199,7 @@ def test_length_normalisation_prefers_the_short_distinctive_clause_over_a_tenfol
     ordered = _relevance_order(
         sections=[section for path in tree for section in _sections_of(path=path, text=tree[path])],
         statement=statement,
+        term_pattern=_TERM,
     )
 
     assert len(long_body) > len(short_body) * 10
@@ -355,9 +356,14 @@ def test_uq2ocd_overflow_keeps_the_whole_deep_refresh_repair_paragraph() -> None
             "and routes to refresh repair.\n"
         ),
     )
+    # The ceiling below was measured against the tree current when this shape was
+    # reported, so the tree is pinned to that immutable snapshot (v283) rather than
+    # to the live specification, whose every growth would silently move the edge.
     tree = {
         path.name: path.read_text()
-        for path in sorted(Path(__file__).parents[3].joinpath("SPECIFICATION").glob("*.md"))
+        for path in sorted(
+            Path(__file__).parents[3].joinpath("SPECIFICATION", "history", "v283").glob("*.md")
+        )
     }
     self_contained = _body(tree=tree, heading="## Self-contained plugin dispatch")
     refresh_start = self_contained.index("**Refresh repair.**")

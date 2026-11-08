@@ -31,6 +31,10 @@ for c in json.load(sys.stdin)["containers"]:
   pid=$(sshn "$node" "sudo -n k3s crictl inspect $cid" | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["pid"])')
   G=/proc/$pid/root/workspace/.git
   url=$(sshn "$node" "sudo -n git config --file $G/config --get remote.origin.url" 2>/dev/null)
+  # The Dispatcher's dispatch id, from the clone's livespec.factoryRunId marker (the same marker
+  # preserve_dispatch.sh checks). The factory's own needs-human ending keys its ref by THIS id, and
+  # pods carry no dispatch-id label, so the marker is the only source on the node.
+  did=$(sshn "$node" "sudo -n git config --file $G/config --get livespec.factoryRunId" 2>/dev/null)
   for _ in 1 2 3; do
     head=$(sshn "$node" "sudo -n cat $G/HEAD")
     D=$WORK/$run.git; rm -rf "$D" "$D.push.err"; mkdir -p "$D/refs/tags" "$D/refs/remotes"
@@ -76,16 +80,31 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
     # GitHub can lag a just-pushed ref by a few seconds: re-read before calling it a mismatch.
     for _ in 1 2 3 4 5; do got=$(git ls-remote "$repo" "$ref" | cut -f1); [ "$got" = "$sha" ] && break; sleep 3; done
     v=$([ "$got" = "$sha" ] && echo VERIFIED || echo "MISMATCH:$got")
-    # route_recovery seeds ONLY from refs/heads/needs-human/<run ULID> (coordinator, 2026-11-05):
-    # write it CREATE-ONLY at the verified sha; never move an existing one (report it instead).
-    if [ "$v" = VERIFIED ]; then
-      nh=refs/heads/needs-human/$run; nold=$(git ls-remote "$repo" "$nh" | cut -f1)
-      if [ -z "$nold" ]; then
-        for pa in 1 2 3 4 5; do git -C "$D" push -q "$repo" "${sha}:${nh}" 2>"$D.nh.err" && break; sleep $((pa * 7 + RANDOM % 7)); done
-        for _ in 1 2 3 4 5; do nold=$(git ls-remote "$repo" "$nh" | cut -f1); [ "$nold" = "$sha" ] && break; sleep 3; done
-        [ "$nold" = "$sha" ] && v="VERIFIED+NH" || v="VERIFIED+NH_FAILED"
-      elif [ "$nold" = "$sha" ]; then v="VERIFIED+NH"
-      else v="VERIFIED+NH_KEPT:${nold:0:12}"; fi
+    # A run's needs-human ref SEEDS its recovery, and a run-keyed ref leads the seed list, so a
+    # mid-run copy written here pre-empts the tree the run's own ending later pushes. Measured
+    # 2026-11-07 on bd-ib-azhnw5 and livespec-dev-tooling-t5ct2q. So only a preserve at the
+    # 330-minute wall-budget line or right before a cancel writes one: set
+    # PRESERVE_WRITE_NEEDS_HUMAN=1. CREATE-ONLY at the verified sha; never move an existing one.
+    # The ref is keyed by the DISPATCH id, the name the factory's own needs-human ending writes and
+    # every seed lookup reads; keying it by the run ULID left two refs per run and lookups finding
+    # none (bd-ib-mfl2qa, 2026-11-08). An existing dispatch-id ref at another sha (the run ended on
+    # its own) is never overwritten: this pass goes to a SHA-suffixed sibling and the row says so.
+    # No marker means no needs-human ref at all, never a fallback to the run ULID.
+    # TEMPORARY (legacy-coordinator-agent, 2026-11-07): remove this flag and restore one behaviour
+    # when bd-ib-qshcwc ships.
+    if [ "$v" = VERIFIED ] && [ "${PRESERVE_WRITE_NEEDS_HUMAN:-0}" = 1 ]; then
+      if [ -z "$did" ]; then v="VERIFIED+NH_NO_DISPATCH_ID"
+      else
+        nh=refs/heads/needs-human/$did; nold=$(git ls-remote "$repo" "$nh" | cut -f1); kept=""
+        if [ -n "$nold" ] && [ "$nold" != "$sha" ]; then kept=$nold; nh=$nh-${sha:0:12}; nold=$(git ls-remote "$repo" "$nh" | cut -f1); fi
+        if [ -z "$nold" ]; then
+          for pa in 1 2 3 4 5; do git -C "$D" push -q "$repo" "${sha}:${nh}" 2>"$D.nh.err" && break; sleep $((pa * 7 + RANDOM % 7)); done
+          for _ in 1 2 3 4 5; do nold=$(git ls-remote "$repo" "$nh" | cut -f1); [ "$nold" = "$sha" ] && break; sleep 3; done
+        fi
+        if [ "$nold" != "$sha" ]; then v="VERIFIED+NH_FAILED:${nh#refs/heads/}"
+        elif [ -n "$kept" ]; then v="VERIFIED+NH_KEPT:${kept:0:12}+NH_SUFFIX:${nh#refs/heads/}"
+        else v="VERIFIED+NH:${nh#refs/heads/}"; fi
+      fi
     fi
   else v="FAILED(fail=$fail sha=${sha:-none} $(tail -1 "$D.push.err" 2>/dev/null))"; fi
   printf "$out\t%s\t%s\t%s\t%s\t%s\n" "$repo" "${sha:-none}" "$ref" "$v" $(( $(date +%s)-t0 ))

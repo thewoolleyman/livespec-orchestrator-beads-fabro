@@ -910,6 +910,15 @@
       // 7200 follows once the Codex freshness gate applies only to dispatches
       // that route a node to Codex.
       //
+      // Raised 4340 -> 4800 on 2026-11-08 (plan sandbox-commit-gate-ceiling,
+      // on legacy-coordinator-agent's ruling). Petri janitor visits measured by
+      // ci-runtime-and-cost (livespec-dev-tooling-6e5pyj): the worst was
+      // ohlkz7@1 at 4204 s, 136 s short of the 4340 s kill, and the worst
+      // no-merge visit was fxrx5u@1 at 4100 s. A killed janitor ends the whole
+      // run, so 4800 is that worst visit plus about 14%. No visit has been seen
+      // to end at the timeout. Lower it only after those visits are joined to
+      // sandbox nodes.
+      //
       // Both PUBLICATION stages run this repository's declared check suite
       // inside a push hook, so each needs the suite's whole wall clock plus the
       // push itself. Measured on hp, four runs lost a GREEN janitor's work at
@@ -987,11 +996,19 @@
         "commit_green": 7200,
         "dod_gate": 600,
         "janitor_admission": 600,
-        "janitor": 4340,
+        "janitor": 4800,
         "fix": 3600,
         "review_fix": 7200,
         "publish_draft": 3600,
-        "pr_refresh": 3600,
+        // TEMPORARY DIAL (plan bd-ib-qy5wol; legacy-coordinator-agent R301,
+        // 2026-11-08): pr_refresh raised 3600 -> 5400. Its post-rebase gate runs
+        // the full aggregate with no output, and bd-ib-oixyzp run 01M6VZQJG3GQ
+        // lost a green, reviewed run when that gate hit 3600000 ms at 01:13:12Z
+        // after a clean rebase. Full-aggregate visits measured 2535-3800 s on
+        // 2026-11-07 (bd-ib-hap62u run 01M6VBZF4371 janitor@1/@2).
+        // END CONDITION: return it to 3600 once bd-ib-hap62u is released and
+        // pinned here, or once measured suite time is back under 3000 s.
+        "pr_refresh": 5400,
         "proof_grade": 600,
         "proof_grade_route": 600,
         "recapture_route": 600

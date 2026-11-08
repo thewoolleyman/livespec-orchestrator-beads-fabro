@@ -999,6 +999,95 @@ def _published_run(*, root: Path) -> tuple[_World, str, str]:
     return world, published, advanced
 
 
+def _refuse_pr_refresh_commit(*, world: _World) -> None:
+    """Make the rebase's own commit hook refuse with a target summary.
+
+    The pr_refresh stage must classify this positively from the hook's output.
+    A non-zero rebase with no conflicted path alone is deliberately
+    insufficient: an identity or signing failure still fails closed rather than
+    entering the repair loop.
+    """
+    hook = world.clone / ".git" / "hooks" / "prepare-commit-msg"
+    lines = [
+        "#!/bin/sh",
+    ]
+    lines.extend(f"printf 'hook-line-{number}\n' >&2" for number in range(1, 101))
+    lines.extend(
+        (
+            "printf 'error: hook-own-error-line\n' >&2",
+            "printf 'Failed targets (2):\n' >&2",
+            "printf '  - check-format\n' >&2",
+            "printf '  - check-types\n' >&2",
+            "exit 1",
+            "",
+        )
+    )
+    _ = hook.write_text("\n".join(lines), encoding="utf-8")
+    hook.chmod(0o755)
+
+
+def _hook_refused_pr_refresh_world(*, root: Path) -> tuple[_World, str, str]:
+    """Build a published run whose clean rebase will reach its commit hook."""
+    world = _world(root=root)
+    published = _commit(
+        cwd=world.clone,
+        path=_SHARED_FILE,
+        text="this run's edit\n",
+        subject="feat: edit the shared file",
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_BRANCH}", cwd=world.clone)
+    world.state_dir().mkdir(parents=True, exist_ok=True)
+    _ = (world.state_dir() / PUBLISH_HEAD_STATE_FILENAME).write_text(published, encoding="utf-8")
+    advanced = _advance_default(world=world, path=_OWNED_FILE, text="the default's own file\n")
+    _refuse_pr_refresh_commit(world=world)
+    return world, published, advanced
+
+
+def test_a_hook_refused_pr_refresh_restores_and_records_the_hook_only_tail(tmp_path: Path) -> None:
+    """A clean hook refusal takes the same repair route as a refresh conflict."""
+    world, published, advanced = _hook_refused_pr_refresh_world(root=tmp_path)
+
+    result = subprocess.run(
+        ["bash", "-c", _pr_refresh_script(check_suite="true")],
+        cwd=world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{_unarmed_forge_bin(world=world)}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
+        },
+    )
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_REFRESH_REPAIR" in result.stderr, result.stderr
+    fields = _brief_fields(world=world)
+    assert world.head() == published
+    assert not (world.clone / ".git" / "rebase-merge").exists()
+    assert not (world.clone / ".git" / "rebase-apply").exists()
+    assert fields.get("stage") == "pr_refresh"
+    assert fields.get("pre-refresh-head") == published
+    assert fields.get("refresh-target") == advanced
+    assert fields.get("failed-hook-targets") == "check-format check-types"
+    brief = world.state(name=_BRIEF_FILENAME)
+    assert brief is not None
+    hook_tail = brief.split("hook-output-last-80-lines:\n", maxsplit=1)[1].splitlines()
+    assert hook_tail[0] == "hook-line-25"
+    assert hook_tail[-1] == "  - check-types"
+    assert len(hook_tail) == 80
+    assert "hook-line-100" in hook_tail
+    assert "error: hook-own-error-line" in hook_tail
+    assert "hook-line-24" not in hook_tail
+    assert "hook-line-1" not in hook_tail
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+    assert world.state(name=REFRESH_COUNT_STATE_FILENAME) == "1\n"
+
+    classifier = _run_refresh_repair(world=world)
+    assert classifier.returncode == 0, classifier.stderr
+    assert "LIVESPEC_REFRESH_REPAIR_PENDING" in classifier.stderr
+
+
 def test_a_conflicted_pr_refresh_restores_its_published_head_and_counts_a_refresh(
     tmp_path: Path,
 ) -> None:

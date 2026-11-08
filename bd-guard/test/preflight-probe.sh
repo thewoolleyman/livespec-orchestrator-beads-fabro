@@ -154,7 +154,7 @@ check_tenant() {   # $1=repo path
         failed=1
         return
     fi
-    row=$(grep -E '^[0-9]+ *\|' <<<"$out" | head -1)
+    row=$(grep -E '^[0-9]+ *\|' <<<"$out" | sed -n '1p')
     if [[ -z "$row" ]]; then
         # A directory whose .beads/config.yaml declares server mode but which
         # resolves to NO DATABASE is not a tenant at all — skip it. This is

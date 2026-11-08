@@ -59,10 +59,24 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
    repository. Each push retries 5 times with backoff.
 6. **ls-remote verify.** A row reads `VERIFIED` only after `git ls-remote` returns the pushed sha. It
    re-reads up to 5 times, because GitHub can lag.
-7. **Create-only needs-human ref.** After VERIFIED, the script writes `refs/heads/needs-human/<RUN_ULID>`
-   at the same sha, which is the only ref `route_recovery` seeds from. If that ref already exists at
-   another sha, it is never moved and the row reads `VERIFIED+NH_KEPT:<sha12>`. The `preserve/` ref
-   remains the audit copy.
+7. **Needs-human ref only at the wall-budget line or before a cancel (temporary).** Every caller: pass
+   `PRESERVE_WRITE_NEEDS_HUMAN=1` on a preserve at the 330-minute wall-budget line or right before a
+   cancel, and on no other. A routine preserve writes only the `preserve/` ref, because a run-keyed
+   `refs/heads/needs-human/<RUN_ULID>` seeds recovery and can lead the seed list, so a mid-run copy
+   pre-empts the tree the run's own ending later pushes. `preserve_dispatch.sh` and `represerve.sh`
+   inherit the variable. With it set, the ref is `refs/heads/needs-human/<DISPATCH ID>`: the dispatch id
+   is read from the sandbox clone's `livespec.factoryRunId` marker, because that is the name the factory's
+   own needs-human ending writes and every seed lookup reads (a run-ULID-keyed ref left two names per run
+   and lookups finding neither; bd-ib-mfl2qa, 2026-11-08). It is written create-only at the verified sha,
+   and the row reads `VERIFIED+NH:needs-human/<dispatch id>`. If it already exists at another sha (the run
+   ended on its own) it is never moved: this pass is written to `needs-human/<dispatch id>-<sha12>` and the
+   row reads `VERIFIED+NH_KEPT:<old sha12>+NH_SUFFIX:<that ref>`. A clone with no marker gets no
+   needs-human ref, and the row reads `VERIFIED+NH_NO_DISPATCH_ID`. The `preserve/run-<RUN ULID>` ref
+   stays the run-keyed copy.
+   - **Known cost, accepted by legacy-coordinator-agent on 2026-11-07:** a run preserved at 330 minutes
+     that then ends on its own still gets a stale seed. The dispatcher's route read catches that before
+     any ticket, whereas a wall-budget ending with no seed is caught by nothing.
+   - **This rule is temporary.** When bd-ib-qshcwc ships, remove the variable and restore one behaviour.
 8. **The pod must still be Running.** A run whose sandbox has already been torn down has no tree to copy.
    Its row reads `FAILED(... sha=none)`.
 
