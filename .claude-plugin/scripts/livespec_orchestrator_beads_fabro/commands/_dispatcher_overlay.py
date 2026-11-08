@@ -38,7 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config im
     codex_otel_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import (
-    commit_runner_prepare_steps_block,
+    commit_helpers_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
     CredentialUseDeclaration,
@@ -99,9 +99,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
     resume_checkout_prepare_steps_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
-    review_guard_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     COMMITTED_RUN_CONFIG_IMAGE,
@@ -340,9 +337,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
             graph_artifact=graph_artifact, written_graph=resolved_graph, warn=warn
         )
     )
-    # The review-turn guard rides the commit runner's slot: both are small stdlib
-    # programs written below the same plugins root before any ACP stage runs.
-    commit_runner_steps = commit_runner_prepare_steps_block() + review_guard_prepare_steps_block()
+    commit_runner_steps = commit_helpers_prepare_steps_block()
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     # Rendered FIRST among the Dispatcher-materialized steps, which puts it
     # immediately after the committed `git fetch --unshallow` whose single-branch
