@@ -9558,7 +9558,7 @@ Feature: A publication refusal sends triage to the right remedy
     Given a publish_draft push the repository pre-push hook refuses with a Failed targets summary naming lint and format
     When publish_draft reports the failure
     Then its output names the pre-push hook as the cause and names lint and format
-    And the run fails closed before proof capture
+    And the run routes to fix with a repair brief naming lint and format
 
   Scenario: A non-fast-forward rejection points at the stale branch
     Given a publish_draft push origin rejects as non-fast-forward
@@ -9569,6 +9569,11 @@ Feature: A publication refusal sends triage to the right remedy
     Given a publish_draft push that cannot reach origin
     When publish_draft reports the failure
     Then its output names the unreachable origin as the cause
+
+  Scenario: A GH001 rejection names each oversize path
+    Given a publish_draft push origin refuses with GitHub's GH001 large-file error naming path P at 119 MB
+    When publish_draft reports the failure
+    Then its output names the GH001 rejection, path P and its size
 ```
 
 ## Scenario 225 — The publish-branch reclaim finds an earlier dispatch journaled in another worktree
@@ -13335,4 +13340,47 @@ Feature: Factory sandbox turns carry the Driver guards
     When a materialized Codex hook definition or hook entrypoint differs from that Driver release tag
     Then the run's prepare step fails, naming the plugin and the hook
     And no implement turn starts
+```
+
+## Scenario 329 — A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "Publish repair".
+
+```gherkin
+Feature: Publish repair for a repairable push refusal
+  As the operator of a repository dispatched through the factory
+  I want a push refusal the run itself can repair to reach the fix node
+  So that a green run is not lost to an oversize file or a hook failure
+
+  Scenario: a GH001 rejection reaches fix with a brief naming the oversize path
+    Given a run whose publish_draft push origin refuses with GH001 naming path P at 119 MB
+    And the run has taken no refresh-repair round
+    When publish_draft fails
+    Then the run routes to fix with a repair brief naming publish_draft, the refused head, path P and its size
+    And the run does not end at needs_human with LIVESPEC_REFRESH_REPAIR_ABSENT
+
+  Scenario: the fix turn removes the oversize path and the run republishes
+    Given a fix turn entered with a publish-repair brief naming path P
+    When the fix turn completes
+    Then no commit of the run that origin does not hold carries path P
+    And no commit origin already held was rewritten
+    And the run re-enters janitor, then publish_draft, then proof_capture
+
+  Scenario: a pre-push hook refusal reaches fix with its failed targets
+    Given a run whose publish_draft push the repository pre-push hook refuses naming failed target lint
+    When publish_draft fails
+    Then the run routes to fix with a repair brief naming lint and the last 80 lines of the hook output
+
+  Scenario: a protected-branch refusal stays fail-closed
+    Given a run whose publish_draft push origin refuses because the branch is protected
+    When publish_draft fails
+    Then the run fails closed before proof capture with its output naming the protected-branch refusal
+    And the run does not route to fix
+
+  Scenario: a publish repair counts toward the refresh-repair budget
+    Given a run that has taken two refresh-repair rounds
+    And its publish_draft push origin refuses with GH001
+    When publish_draft fails
+    Then the run fails closed to needs_human with the named cause refresh-repair-exhausted
+    And its recovery artifact pointer names the head whose push was refused
 ```

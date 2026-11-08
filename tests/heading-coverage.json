@@ -2996,5 +2996,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-v75dlb makes the factory prepare step materialize the pinned livespec-driver-codex release into each Codex sandbox turn's per-run CODEX_HOME with its hooks trusted only on a byte match to that release tag, fail the prepare step naming the plugin and hook on a mismatch, and carry the livespec-driver-claude PreToolUse hooks into each Claude sandbox turn, so a forbidden command is blocked in either runtime.",
     "work_item": "bd-ib-v75dlb"
+  },
+  {
+    "heading": "## Scenario 329 \u2014 A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-7owmkq makes publish_draft route a GH001 large-file rejection or a pre-push hook refusal of its push to fix with a repair brief naming the refused head and the oversize paths or failed hook targets, inside the shared two-round refresh-repair budget, while protected-branch, non-fast-forward, unreachable-origin and authentication refusals stay fail-closed and no publish refusal ends at LIVESPEC_REFRESH_REPAIR_ABSENT.",
+    "work_item": "bd-ib-7owmkq"
   }
 ]
