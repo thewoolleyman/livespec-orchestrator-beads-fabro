@@ -64,6 +64,34 @@ def test_projection_uses_the_dump_stage_ordinal_not_its_event_sequence(tmp_path:
     assert actual == {"stages/055-implement@1/diff.patch": dump_patch}
 
 
+def test_projection_derives_the_dump_ordinal_from_the_ordered_stage_projection(
+    tmp_path: Path,
+) -> None:
+    """The captured `/state` mapping has no dump_ordinal but preserves stage order.
+
+    The dump for the captured run writes ``055-implement@1``.  Its event
+    sequence is 239551, so using that sequence as a directory rank produces
+    the wrong pointer path.  The 54 earlier (diff-less) stage entries still
+    occupy dump ordinals and must be counted.
+    """
+    dump_patch = b"diff --git a/app.py b/app.py\n+print('implemented')\n"
+    stages = {
+        **{
+            f"prior-{index:03d}@1": {"first_event_seq": index, "diff": None}
+            for index in range(1, 55)
+        },
+        "implement@1": {"first_event_seq": 239551, "diff": dump_patch.decode()},
+    }
+
+    stage_diffs = stage_diffs_from_run_state(run_state={"stages": stages})
+
+    artifacts = write_stage_diffs(stage_diffs=stage_diffs, output_dir=tmp_path)
+
+    assert {
+        artifact.relative_to(tmp_path).as_posix(): artifact.read_bytes() for artifact in artifacts
+    } == {"stages/055-implement@1/diff.patch": dump_patch}
+
+
 def test_unreadable_or_diff_less_projection_yields_no_artifacts(tmp_path: Path) -> None:
     assert stage_diffs_from_run_state(run_state=None) == ()
     assert stage_diffs_from_run_state(run_state={"stages": []}) == ()
