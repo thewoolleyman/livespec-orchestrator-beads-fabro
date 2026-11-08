@@ -325,6 +325,8 @@ usage error (exit 2).
 | `reopen-regression` | `--attributed-json <attempt> --finding-json <finding> --principal <owner>` | `reopen_for_regression` |
 | `record-deferred-finding` | `--finding-json <finding>` | `record_deferred_finding` |
 | `record-revert-receipt` | `--revert-receipt-json <receipt>` | `record_revert_receipt` |
+| `record-rollback-conflict` | `--rollback-conflict-json <conflict>` | `record_rollback_conflict` |
+| `resolve-rollback-conflict` | `--rollback-resolution-json <resolution>` | `resolve_rollback_conflict` |
 | `correct-attempt` | `--correction-json <correction> --target-ref <ref>` | `enter_corrected_attempt` |
 | `complete-incident` | `--master-run <run-id> --completion-json <attestation>` | `complete_incident` |
 
@@ -339,6 +341,13 @@ unchanged incident Definition of Done; only `advance-repayment` accepts it.
 `--principal` names the incident owner a reopened item returns to.
 `record-revert-receipt` records the trusted controller's receipt. It is the
 step that makes `correct-attempt` eligible.
+`record-rollback-conflict` records an owned inverse-patch conflict for the
+current `reverting` attempt with its release condition, writing the
+`rollback-conflict` phase and the `blocked` lifecycle status in one transition;
+`resolve-rollback-conflict` releases it by that condition into `reverting` while
+the inverse recovery is still owed, or `collecting-failures` once the resolution
+carries a revert receipt. An exact retry of either recovers the recorded
+transition.
 
 `bind-repayment-acceptance` records `repayment-acceptance` once the factory
 run's repayment PR has merged (bd-ib-pqz3nw). `advance-repayment --to-phase
