@@ -281,6 +281,13 @@ class _CapturingExporter:
         ]
 
 
+def test_recovery_capture_deduplicates_retried_transport_batch() -> None:
+    span: dict[str, object] = {"name": "session.recovery.coverage", "attributes": []}
+    exporter = _CapturingExporter(calls=[((span,), "livespec-dispatcher")] * 2)
+
+    assert [name for name, _ in exporter.attributes()] == ["session.recovery.coverage"]
+
+
 @dataclass(kw_only=True)
 class _TelemetryTracker:
     telemetry: list[SessionTelemetry] = field(default_factory=list)
