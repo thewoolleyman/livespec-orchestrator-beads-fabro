@@ -19,20 +19,46 @@ checkpoint_commit() {
     [[ "$subject" =~ $CHECKPOINT_SUBJECT ]] && grep -q '^Fabro-Run: ' <<<"$message"
 }
 
+checkpoint_run_id() {
+    local ref="$1"
+    local message=""
+    message="$(git log -1 --format=%B "$ref" 2>/dev/null)" || return 0
+    awk '!found && sub(/^Fabro-Run: /, "") { print; found = 1 }' <<<"$message"
+}
+
+checkpoint_for_run() {
+    local ref="$1"
+    local run_id="$2"
+    checkpoint_commit "$ref" && [[ "$(checkpoint_run_id "$ref")" == "$run_id" ]]
+}
+
+red_commit_for_current_run() {
+    local ref="$1"
+    local run_id=""
+    local subject=""
+    local message=""
+    subject="$(git log -1 --format=%s "$ref" 2>/dev/null)" || return 1
+    message="$(git log -1 --format=%B "$ref" 2>/dev/null)" || return 1
+    run_id="$(git config --local --get livespec.factoryRunId 2>/dev/null || true)"
+    [[ -n "$run_id" ]] \
+        && [[ "$subject" == "feat: red" ]] \
+        && grep -qxF "Factory-Run-Id: $run_id" <<<"$message"
+}
+
 fold_checkpoints() {
     local depth=0
     local ref="HEAD"
-    local red_message=""
-    while (( depth < CHECKPOINT_LIMIT )) && checkpoint_commit "$ref"; do
+    local checkpoint_run=""
+    checkpoint_run="$(checkpoint_run_id "$ref")"
+    while (( depth < CHECKPOINT_LIMIT )) && checkpoint_for_run "$ref" "$checkpoint_run"; do
         ((depth += 1))
         ref="HEAD~${depth}"
     done
-    if (( depth == 0 )); then
-        return
+    if ! red_commit_for_current_run "$ref"; then
+        printf '%s\n' "current run's own Red commit was not found beneath checkpoint commits"
+        return 2
     fi
-    red_message="$(git log -1 --format=%B "$ref" 2>/dev/null || true)"
-    if grep -q '^TDD-Red-Test-File-Checksum: ' <<<"$red_message" \
-        && ! grep -q '^TDD-Green-Verified-At: ' <<<"$red_message"; then
+    if (( depth > 0 )); then
         git reset --soft "HEAD~${depth}"
     fi
 }
@@ -54,10 +80,13 @@ append_verdict() {
     local handoff="$1"
     local status="$2"
     local output="$3"
+    local cause="${4:-}"
     {
         printf '\n## commit_green\n\n'
         printf 'Exit status: %s\n' "$status"
-        if (( status != 0 )); then
+        if [[ -n "$cause" ]]; then
+            printf 'Cause: %s\n' "$cause"
+        elif (( status != 0 )); then
             append_failure_details "$output"
         fi
     } >> "$handoff"
@@ -67,9 +96,19 @@ main() {
     local handoff=""
     local output=""
     local status=0
+    local cause=""
     handoff="$(git rev-parse --git-path "$HANDOFF_NAME")"
     output="$(git rev-parse --git-path "$OUTPUT_NAME")"
-    fold_checkpoints
+    set +e
+    cause="$(fold_checkpoints)"
+    status=$?
+    set -e
+    if (( status != 0 )); then
+        : > "$output"
+        printf '%s\n' "commit_green: $cause" >&2
+        append_verdict "$handoff" "$status" "$output" "$cause"
+        return "$status"
+    fi
     set +e
     git commit --amend --no-edit >"$output" 2>&1
     status=$?
