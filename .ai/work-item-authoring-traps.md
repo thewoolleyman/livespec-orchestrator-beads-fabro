@@ -131,3 +131,17 @@ private notations. It matters most in LEDGER COMMENTS, because a comment cannot
 be repaired after the fact.
 `bd-ib-ai9a` is the live P1 carrying the mechanism and Fabro-side fix, and
 `bd-ib-pgne` is the orchestrator-side pre-flight refusal.
+
+**An "advisory" References finding still blocks the launch.** When the filing
+display reports, as `(advisory)`, that the Definition of Done's `References:`
+line does not name a heading the spec-stated judgement returned as governing,
+the item still reaches `ready`. But the fleet launcher's
+`dev-tooling/dod-preflight.sh`, which `fleet-launch/dispatch-dual.sh` runs before
+it takes a slot, refuses that same omission ("no slot, no launch"), and the
+ticket is lost. So at filing, name EVERY heading the judgement returns, separated
+by commas (`References: ## <first heading>, ## <second heading>`). Then run
+`with-livespec-env.sh -- ./dev-tooling/dod-preflight.sh <item-id>` from the
+repository root, and confirm it prints `{"outcome": "passed"}` before you hand
+the item to the dispatcher. (Measured 2026-11-08T23:06:33Z on `bd-ib-ysgz56`: it
+was filed with the advisory left in place, reached `ready`, and was refused at
+launch. Adding the second heading made the preflight pass.)
