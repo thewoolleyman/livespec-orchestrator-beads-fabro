@@ -2979,5 +2979,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-s754le keeps LIVESPEC_AGENT_STAGE out of a tree's test processes through a harness-owned means, so a resumed or seeded tree with no fixture clearing it passes its own commit hook, while an agent stage's own publication call is still refused.",
     "work_item": "bd-ib-s754le"
+  },
+  {
+    "heading": "## Scenario 327 \u2014 A fresh ruling routes a released item fresh past its preserved trees",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-xz35zu adds dispatcher.py fresh-ruling and makes recovery routing route a recovery-released item fresh past every preserved tree it holds while a fresh ruling is current, still grading the pre-claim refusal first, holding on a non-fallback refusal or an untaken needs-human listing, recording passed-over needs-human refs, letting the newer of a seed ruling and a fresh ruling govern, and consuming the ruling once.",
+    "work_item": "bd-ib-xz35zu"
   }
 ]
