@@ -32,7 +32,7 @@ readonly TIMER_TEMPLATE="${HERE}/reconcile-runs.timer"
 # repeated here: a second copy of the path is a second thing to keep in sync,
 # and the one that drifts is always the one nobody reads.
 default_env_wrapper() {
-  sed -n 's|^ExecStart=\([^ ]*\) --.*|\1|p' "${SERVICE_TEMPLATE}" | head -n 1
+  sed -n 's|^ExecStart=\([^ ]*\) --.*|\1|p' "${SERVICE_TEMPLATE}" | sed -n '1p'
 }
 
 usage() {

@@ -48,9 +48,8 @@ if output="$(CAPTURE_SERVER_FAIL_STATUS=23 \
     echo "FAIL: a failed capture server did not fail the harness" >&2
     exit 1
 fi
-if printf '%s\n' "$output" \
-        | grep -qF 'telemetry: capture server did not start (9.1): exit status 23; stderr=synthetic capture startup failure' \
-        && ! printf '%s\n' "$output" | grep -qF 'still running at 30-second bound'; then
+if grep -qF 'telemetry: capture server did not start (9.1): exit status 23; stderr=synthetic capture startup failure' <<<"$output" \
+        && ! grep -qF 'still running at 30-second bound' <<<"$output"; then
     printf '%s\n' "ok: failed capture server names its exit status and stderr before the 30-second startup bound"
 else
     printf '%s\n' "$output" >&2

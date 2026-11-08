@@ -188,7 +188,7 @@ for argument in "$@"; do
                 # drive, so a following launcher may legitimately acquire it
                 # first.  Record both items: only the driving launcher's own
                 # held mutex violates the launcher's narrow mutex scope.
-                holder_item=$(grep -oE 'item=[^ ]+' "$STUB_LOCK_DIR/holder" 2>/dev/null | head -1 | cut -d= -f2)
+                holder_item=$(grep -oE 'item=[^ ]+' "$STUB_LOCK_DIR/holder" 2>/dev/null | sed -n '1p' | cut -d= -f2)
                 if [ -n "$holder_item" ]; then
                     printf 'held driver=%s holder=%s\n' "$item" "$holder_item" >> "$STUB_DRIVE_MUTEX_LOG"
                 else
@@ -214,7 +214,7 @@ for argument in "$@"; do
             done
             printf '%s\n' "$item" >> "$STUB_RESUME_LOG"
             marker_state=missing
-            if find "$STUB_INFLIGHT_DIR" -type f -print -quit | grep -q .; then marker_state=present; fi
+            if find "$STUB_INFLIGHT_DIR" -type f -print -quit | grep . >/dev/null; then marker_state=present; fi
             lock_state=released
             if [ -d "$STUB_LOCK_DIR" ]; then lock_state=held; fi
             printf '%s marker=%s mutex=%s\n' "$item" "$marker_state" "$lock_state" >> "$STUB_RESUME_OBSERVATION_LOG"
@@ -1106,8 +1106,8 @@ run_launcher bd-ib-stamp "$CASE_DIR/impl-stamp.log"
 printf '3\n' > "$CAP_FILE"
 "$RESUME_LAUNCHER" bd-ib-stamp-resume > "$CASE_DIR/resume-stamp.log" 2>&1
 stamp_pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z '
-if grep -qE "$stamp_pattern" "$CASE_DIR/impl-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/impl-stamp.log" | grep -q . \
-    && grep -qE "$stamp_pattern" "$CASE_DIR/resume-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/resume-stamp.log" | grep -q .; then
+if grep -qE "$stamp_pattern" "$CASE_DIR/impl-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/impl-stamp.log" | grep . >/dev/null \
+    && grep -qE "$stamp_pattern" "$CASE_DIR/resume-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/resume-stamp.log" | grep . >/dev/null; then
     pass "both launchers stamp every line with a date, not a time of day alone"
 else
     fail "a launcher line carried a time of day without its date"
