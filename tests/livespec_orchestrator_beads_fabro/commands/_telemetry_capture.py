@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 
 
 def unique_spans(*, batches: Iterable[tuple[dict[str, object], ...]]) -> list[dict[str, object]]:
-    """Return every captured span while the Red test describes deduplication."""
+    """Collapse retried transport batches without changing first-arrival order."""
 
-    return [span for spans in batches for span in spans]
+    unique: dict[str, dict[str, object]] = {}
+    for spans in batches:
+        for span in spans:
+            _ = unique.setdefault(json.dumps(span, sort_keys=True), span)
+    return list(unique.values())
