@@ -14,11 +14,19 @@ changing anything.
    The test must fail on a genuine assertion rather than during collection or
    import.
 3. Run only that test and capture its failure output. Do not make a commit.
-4. Resolve the handoff path with:
+4. Before ending, run
+
+       "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-implement-gate-preview.py" red
+
+   to preview the checks the Red commit will run over its staged test. Fix every
+   failed target the preview names that is within this turn's scope, then run the
+   preview again after each fix. The preview does not decide whether a commit
+   succeeds.
+5. Resolve the handoff path with:
 
        git rev-parse --git-path livespec-implement-handoff.md
 
-   Append, never rewrite an earlier section, using a `## red` section that names the Test file, the Definition of Done assertion it proves, the command that ran the test with its failure output, what the test verifies and does not verify, and the code locations for the change.
+   Append, never rewrite an earlier section, using a `## red` section that names the Test file, the Definition of Done assertion it proves, the command that ran the test with its failure output, what the test verifies and does not verify, the code locations for the change, and the exit status and failed target names of the last gate preview run. If no preview ran, state that and why.
 
 The handoff is append-only: append your new section to the resolved file and
 never rewrite an earlier section.
