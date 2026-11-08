@@ -13271,3 +13271,28 @@ Feature: Operator fresh ruling for a recovery-released item
     Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
     And the fresh ruling is not current
 ```
+
+## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes
+
+Governing clause: `constraints.md` §"Codex full-access runtime constraints" → "Factory sandbox turns carry the Driver guards".
+
+```gherkin
+Feature: Factory sandbox turns carry the Driver guards
+  As the maintainer of a repository dispatched to the factory
+  I want every sandbox agent turn to run its Driver's PreToolUse guards from release-verified bytes
+  So that a full-access sandbox turn cannot run a command those guards forbid
+
+  Scenario: Hooks that byte-match the pinned Driver release are trusted and block a forbidden command
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When the materialized Codex hook definitions and hook entrypoints byte-match that Driver release tag
+    Then the hooks are recorded as trusted in the per-run CODEX_HOME without Codex's hook-trust bypass
+    And an implement turn's attempt to run a command the guard forbids is blocked by the materialized guard
+
+  Scenario: A materialized hook that differs from the pinned Driver release fails the prepare step
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When a materialized Codex hook definition or hook entrypoint differs from that Driver release tag
+    Then the run's prepare step fails, naming the plugin and the hook
+    And no implement turn starts
+```
