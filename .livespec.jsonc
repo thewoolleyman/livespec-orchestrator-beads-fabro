@@ -910,6 +910,15 @@
       // 7200 follows once the Codex freshness gate applies only to dispatches
       // that route a node to Codex.
       //
+      // Raised 4340 -> 4800 on 2026-11-08 (plan sandbox-commit-gate-ceiling,
+      // on legacy-coordinator-agent's ruling). Petri janitor visits measured by
+      // ci-runtime-and-cost (livespec-dev-tooling-6e5pyj): the worst was
+      // ohlkz7@1 at 4204 s, 136 s short of the 4340 s kill, and the worst
+      // no-merge visit was fxrx5u@1 at 4100 s. A killed janitor ends the whole
+      // run, so 4800 is that worst visit plus about 14%. No visit has been seen
+      // to end at the timeout. Lower it only after those visits are joined to
+      // sandbox nodes.
+      //
       // Both PUBLICATION stages run this repository's declared check suite
       // inside a push hook, so each needs the suite's whole wall clock plus the
       // push itself. Measured on hp, four runs lost a GREEN janitor's work at
@@ -987,7 +996,7 @@
         "commit_green": 7200,
         "dod_gate": 600,
         "janitor_admission": 600,
-        "janitor": 4340,
+        "janitor": 4800,
         "fix": 3600,
         "review_fix": 7200,
         "publish_draft": 3600,
