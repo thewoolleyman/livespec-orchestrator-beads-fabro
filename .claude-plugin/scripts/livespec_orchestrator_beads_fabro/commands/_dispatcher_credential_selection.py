@@ -63,6 +63,7 @@ def selection_credential_requirement(
         policy_inputs=effective_policy_inputs(
             review_fix_cap=_widest_review_fix_cap(repo=repo, items=items)
         ),
+        node_timeout_arguments=tuple(getattr(args, "node_timeout", None) or ()),
     )
 
 

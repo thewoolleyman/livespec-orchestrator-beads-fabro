@@ -105,6 +105,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     git_author: GitAuthor,
     review_fix_visit_cap: int,
     graph_override: Path | None = None,
+    node_timeout_arguments: tuple[str, ...] = (),
     prepare_inputs: Mapping[str, str] | None = None,
     proof_rendering: str = "",
     adapter_inputs: frozenset[str] = frozenset(),
@@ -280,6 +281,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         sandbox_otel_endpoint=sandbox_otel_endpoint,
         work_item_id=work_item_id,
         dispatch_id=dispatch_id,
+        node_timeout_arguments=node_timeout_arguments,
     )
     if isinstance(codex_leg, str):
         return codex_leg
