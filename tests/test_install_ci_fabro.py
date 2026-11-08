@@ -71,6 +71,11 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
             [[ "$url" == *api.github.com* ]] || exit 97
             cp "$CURL_FIXTURE" "$output"
             ;;
+          api-fail-fallback-success)
+            [[ "$url" == *api.github.com* ]] && exit 97
+            [[ "$url" == *github.com/fabro-sh/fabro/releases/download* ]] || exit 97
+            cp "$CURL_FIXTURE" "$output"
+            ;;
           *) exit 97 ;;
         esac
         """,
@@ -143,3 +148,26 @@ def test_uses_api_asset_when_warm_seed_is_unavailable(
     assert "Accept: application/octet-stream" in curl_arguments
     assert "Authorization: Bearer test-token" in curl_arguments
     assert "https://github.com/fabro-sh/fabro/releases/download/" not in curl_arguments
+
+
+def test_falls_back_to_release_download_after_api_asset_failure(
+    *, installer_environment: tuple[dict[str, str], Path, Path], tmp_path: Path
+) -> None:
+    """An API error tries the direct release URL next."""
+    environment, fixture_asset, curl_log = installer_environment
+    environment.update(
+        {
+            "CURL_LOG": str(curl_log),
+            "CURL_MODE": "api-fail-fallback-success",
+            "CURL_FIXTURE": str(fixture_asset),
+        }
+    )
+    WARM_ASSET.unlink(missing_ok=True)
+
+    result = _run_installer(environment=environment, target=tmp_path / "fabro")
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "fabro").is_file()
+    curl_arguments = curl_log.read_text()
+    assert "https://api.github.com/repos/fabro-sh/fabro/releases/assets/438318077" in curl_arguments
+    assert "https://github.com/fabro-sh/fabro/releases/download/v0.254.0/" in curl_arguments
