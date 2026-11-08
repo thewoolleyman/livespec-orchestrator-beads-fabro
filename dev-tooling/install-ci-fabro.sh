@@ -45,6 +45,9 @@ if [[ -f "$warm_asset" ]]; then
         "$target" --version
         exit 0
     fi
+    printf 'install-ci-fabro: warm seed %s had a sha256 mismatch; trying GitHub releases API asset route\n' "$warm_asset" >&2
+else
+    printf 'install-ci-fabro: warm seed %s was absent; trying GitHub releases API asset route\n' "$warm_asset" >&2
 fi
 
 api_headers=(-H 'Accept: application/octet-stream')
@@ -62,9 +65,18 @@ if curl --fail --silent --show-error --location --retry 5 --output "${scratch}/$
     install -m 0755 "${scratch}/fabro-x86_64-unknown-linux-musl/fabro" "$target"
     "$target" --version
     exit 0
+else
+    api_status=$?
+    printf 'install-ci-fabro: GitHub releases API asset route failed with curl exit status %s; trying GitHub release download URL\n' "$api_status" >&2
 fi
 
-curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "$fallback_url"
+if curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "$fallback_url"; then
+    :
+else
+    fallback_status=$?
+    printf 'install-ci-fabro: GitHub release download URL failed with curl exit status %s\n' "$fallback_status" >&2
+    exit 1
+fi
 
 if ! verify_asset "${scratch}/${asset}"; then
     echo "install-ci-fabro: sha256 mismatch for GitHub release download (expected ${sha256})" >&2

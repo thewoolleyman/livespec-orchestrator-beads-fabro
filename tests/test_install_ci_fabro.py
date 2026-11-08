@@ -46,7 +46,7 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
         #!/usr/bin/env bash
         input="$(cat)"
         path="${input##*  }"
-        if [[ "$path" == /__w/_warm/release-assets/* ]] && [[ "$(head -c 3 "$path")" == bad ]]; then
+        if [[ "$(head -c 3 "$path")" == bad ]]; then
           exit 1
         fi
         """,
@@ -75,6 +75,10 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
             [[ "$url" == *api.github.com* ]] && exit 97
             [[ "$url" == *github.com/fabro-sh/fabro/releases/download* ]] || exit 97
             cp "$CURL_FIXTURE" "$output"
+            ;;
+          api-bad)
+            [[ "$url" == *api.github.com* ]] || exit 97
+            printf bad > "$output"
             ;;
           *) exit 97 ;;
         esac
@@ -171,3 +175,35 @@ def test_falls_back_to_release_download_after_api_asset_failure(
     curl_arguments = curl_log.read_text()
     assert "https://api.github.com/repos/fabro-sh/fabro/releases/assets/438318077" in curl_arguments
     assert "https://github.com/fabro-sh/fabro/releases/download/v0.254.0/" in curl_arguments
+
+
+def test_rejects_a_downloaded_asset_with_the_wrong_sha256(
+    *, installer_environment: tuple[dict[str, str], Path, Path], tmp_path: Path
+) -> None:
+    """A bad downloaded archive never installs a Fabro binary."""
+    environment, _fixture_asset, curl_log = installer_environment
+    environment.update({"CURL_LOG": str(curl_log), "CURL_MODE": "api-bad"})
+    target = tmp_path / "fabro"
+    WARM_ASSET.unlink(missing_ok=True)
+
+    result = _run_installer(environment=environment, target=target)
+
+    assert result.returncode != 0
+    assert not target.exists()
+    assert "sha256 mismatch for GitHub releases API asset" in result.stderr
+
+
+def test_reports_each_failed_source_when_no_asset_can_be_fetched(
+    *, installer_environment: tuple[dict[str, str], Path, Path], tmp_path: Path
+) -> None:
+    """The terminal failure says which source in the ordered chain failed."""
+    environment, _fixture_asset, curl_log = installer_environment
+    environment.update({"CURL_LOG": str(curl_log), "CURL_MODE": "all-fail"})
+    WARM_ASSET.unlink(missing_ok=True)
+
+    result = _run_installer(environment=environment, target=tmp_path / "fabro")
+
+    assert result.returncode != 0
+    assert "warm seed" in result.stderr
+    assert "GitHub releases API asset route failed" in result.stderr
+    assert "GitHub release download URL failed" in result.stderr
