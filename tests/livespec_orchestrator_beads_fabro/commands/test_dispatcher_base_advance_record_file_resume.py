@@ -52,3 +52,34 @@ def test_the_eligible_resume_is_journaled_with_every_required_measurement() -> N
             "conflicted_paths": ["record.json", "notes.md"],
         }
     ]
+
+
+def test_an_eligible_record_file_conflict_is_journaled_then_released_and_resumed() -> None:
+    """Scenario 184's automatic arm does all three acts in order, once."""
+    module = importlib.import_module(_MODULE)
+    assert hasattr(module, "resume_record_file_conflict")
+    journal = _Journal()
+    events: list[tuple[str, object]] = []
+
+    def resolve_ready(*, work_item_id: str) -> None:
+        events.append(("ready", work_item_id))
+
+    def resume(*, work_item_id: str) -> str:
+        events.append(("resume", work_item_id))
+        return "resumed-outcome"
+
+    outcome = module.resume_record_file_conflict(
+        journal=journal,
+        work_item_id="bd-ib-mfl2qa",
+        run_id="01M6W31BSSE1P8Z43EGGY9XVNF",
+        pr_number=184,
+        pr_head="head1111",
+        default_branch_tip="base2222",
+        conflicted_paths=("record.json", "notes.md"),
+        resolve_ready=resolve_ready,
+        resume=resume,
+    )
+
+    assert outcome == "resumed-outcome"
+    assert events == [("ready", "bd-ib-mfl2qa"), ("resume", "bd-ib-mfl2qa")]
+    assert journal.records[0]["stage"] == "base-advanced-record-files-resume"

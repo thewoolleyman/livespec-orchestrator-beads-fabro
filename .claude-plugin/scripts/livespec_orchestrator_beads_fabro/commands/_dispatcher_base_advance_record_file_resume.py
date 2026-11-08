@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Protocol, cast
+from collections.abc import Callable
+from typing import Protocol, TypeVar, cast
 
-__all__: list[str] = ["journal_record_file_resume"]
+__all__: list[str] = ["journal_record_file_resume", "resume_record_file_conflict"]
+
+_ResumeOutcome = TypeVar("_ResumeOutcome")
 
 
 class _JournalWriter(Protocol):
@@ -43,3 +46,34 @@ def journal_record_file_resume(
             "conflicted_paths": list(conflicted_paths),
         }
     )
+
+
+def resume_record_file_conflict(  # noqa: PLR0913 -- each field is a separately measured contract requirement.
+    *,
+    journal: _JournalWriter,
+    work_item_id: str,
+    run_id: str | None,
+    pr_number: int | None,
+    pr_head: str,
+    default_branch_tip: str,
+    conflicted_paths: tuple[str, ...],
+    resolve_ready: Callable[..., None],
+    resume: Callable[..., _ResumeOutcome],
+) -> _ResumeOutcome:
+    """Journal, release, and resume the one record-file-only conflict arm.
+
+    The callbacks keep the ordering here while their callers keep ownership of
+    the lifecycle and resume mechanisms.  In particular, this function cannot
+    accidentally resume before the durable row and ready transition exist.
+    """
+    journal_record_file_resume(
+        journal=journal,
+        work_item_id=work_item_id,
+        run_id=run_id,
+        pr_number=pr_number,
+        pr_head=pr_head,
+        default_branch_tip=default_branch_tip,
+        conflicted_paths=conflicted_paths,
+    )
+    resolve_ready(work_item_id=work_item_id)
+    return resume(work_item_id=work_item_id)
