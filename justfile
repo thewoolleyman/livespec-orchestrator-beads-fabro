@@ -1281,6 +1281,13 @@ reap-e2e-repos *ARGS:
 check-pre-commit:
     bash dev-tooling/just-check-pre-commit.sh
 
+# A factory refresh that preserves an already-published ancestry creates a
+# merge commit. The pre-merge hook runs this target against the merged index;
+# its successful full aggregate is recorded for commit-msg to reuse, avoiding
+# a second suite-green replay of the exact same tree.
+check-refresh-merge-pre-commit:
+    bash dev-tooling/refresh-merge-pre-commit.sh
+
 check-pre-commit-gated-tree:
     bash dev-tooling/check-pre-commit-gated-tree.sh
 
