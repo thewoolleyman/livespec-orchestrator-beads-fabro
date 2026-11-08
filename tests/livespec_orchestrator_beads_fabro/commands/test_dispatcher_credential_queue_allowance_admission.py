@@ -38,8 +38,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
     prepare_workflow_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     REPOSITORY_LAYER,
-    WORKFLOW_DEFAULT_LAYER,
 )
 
 _COMMITTED_WORKFLOW_TOML = '_version = 1\n\n[workflow]\ngraph = "workflow.fabro"\n'
@@ -147,5 +147,5 @@ def test_a_target_declaring_nothing_journals_the_documented_default(tmp_path: Pa
 
     assert journal.records[0][_QUEUE_ALLOWANCE_RECORD_KEY] == {
         "seconds": DEFAULT_CREDENTIAL_QUEUE_ALLOWANCE_SECONDS,
-        "layer": WORKFLOW_DEFAULT_LAYER,
+        "layer": BUILT_IN_DEFAULT_LAYER,
     }

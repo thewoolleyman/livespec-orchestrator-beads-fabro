@@ -23,7 +23,10 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from livespec_orchestrator_beads_fabro.commands._node_timeouts import NodeTimeouts
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    NodeTimeouts,
+    positive_int_seconds,
+)
 
 __all__: list[str] = [
     "RenderedGraph",
@@ -47,6 +50,11 @@ _TIMEOUT_ATTR_RE = re.compile(r'(?<![\w.])timeout[ \t]*=[ \t]*"[^"]*"')
 _STALL_ATTR_RE = re.compile(r'(?<![\w.])stall_timeout[ \t]*=[ \t]*"[^"]*"')
 
 _GRAPH_BLOCK_NAME = "graph"
+_COMMIT_SETTLE_NODES = frozenset(
+    {"implement_commit_settle", "fix_commit_settle", "review_fix_commit_settle"}
+)
+_SETTLE_MARGIN_SECONDS = 300
+_SETTLE_WAIT_RE = re.compile(r"(settle --timeout-seconds )\d+")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -61,6 +69,8 @@ class RenderedGraph:
     text: str
     node_seconds: Mapping[str, int]
     stall_seconds: int
+    timeouts: NodeTimeouts
+    declared_timeout_count: int
 
 
 def render_workflow_graph(*, committed_text: str, timeouts: NodeTimeouts) -> RenderedGraph | str:
@@ -86,11 +96,13 @@ def render_workflow_graph(*, committed_text: str, timeouts: NodeTimeouts) -> Ren
             f"stall_timeout attribute, found {expected_stalls}"
         )
     rendered = _rewrite_blocks(committed_text=committed_text, timeouts=timeouts)
-    if len(rendered.node_seconds) != expected_nodes:
+    if isinstance(rendered, str):
+        return rendered
+    if rendered.declared_timeout_count != expected_nodes:
         return (
             "workflow graph is not renderable: "
             f"{expected_nodes} timeout attributes are declared but "
-            f"{len(rendered.node_seconds)} resolved to a node"
+            f"{rendered.declared_timeout_count} resolved to a node"
         )
     return rendered
 
@@ -122,9 +134,13 @@ def node_timeout_seconds(*, graph_text: str, node: str) -> int | None:
     return None
 
 
-def _rewrite_blocks(*, committed_text: str, timeouts: NodeTimeouts) -> RenderedGraph:
+def _rewrite_blocks(*, committed_text: str, timeouts: NodeTimeouts) -> RenderedGraph | str:
     """Splice each node block's rewritten body back into the graph text."""
     pieces: list[str] = []
+    declared_seconds = _declared_timeouts(committed_text=committed_text)
+    if isinstance(declared_seconds, str):
+        return declared_seconds
+    resolved = timeouts.with_workflow_defaults(nodes=declared_seconds)
     node_seconds: dict[str, int] = {}
     stall_seconds = timeouts.stall_seconds
     cursor = 0
@@ -134,9 +150,11 @@ def _rewrite_blocks(*, committed_text: str, timeouts: NodeTimeouts) -> RenderedG
         if name == _GRAPH_BLOCK_NAME:
             body = _STALL_ATTR_RE.sub(f'stall_timeout="{stall_seconds}s"', body)
         else:
-            seconds = timeouts.seconds_for(node=name)
-            body, applied = _TIMEOUT_ATTR_RE.subn(f'timeout="{seconds}s"', body)
-            if applied:
+            rewritten = _rewritten_node_body(name=name, body=body, timeouts=resolved)
+            if isinstance(rewritten, str):
+                return rewritten
+            body, seconds = rewritten
+            if seconds is not None:
                 node_seconds[name] = seconds
         pieces.append(committed_text[cursor : match.start("body")])
         pieces.append(body)
@@ -146,4 +164,43 @@ def _rewrite_blocks(*, committed_text: str, timeouts: NodeTimeouts) -> RenderedG
         text="".join(pieces),
         node_seconds=node_seconds,
         stall_seconds=stall_seconds,
+        timeouts=resolved,
+        declared_timeout_count=len(declared_seconds),
     )
+
+
+def _declared_timeouts(*, committed_text: str) -> dict[str, int] | str:
+    """Read the workflow layer without accepting an unparseable duration."""
+    declared: dict[str, int] = {}
+    for match in _NODE_BLOCK_RE.finditer(committed_text):
+        name = match.group("name")
+        attribute = _TIMEOUT_ATTR_RE.search(match.group("body"))
+        if name == _GRAPH_BLOCK_NAME or attribute is None:
+            continue
+        raw = attribute.group(0).partition('"')[2].rstrip('"').removesuffix("s")
+        seconds = positive_int_seconds(value=int(raw)) if raw.isdigit() else None
+        if seconds is None:
+            return f"workflow graph node {name!r} declares an invalid timeout {raw!r}"
+        declared[name] = seconds
+    return declared
+
+
+def _rewritten_node_body(
+    *, name: str, body: str, timeouts: NodeTimeouts
+) -> tuple[str, int | None] | str:
+    """Write one node's resolved timeout and, for settles, its safe wait."""
+    seconds = timeouts.seconds_for(node=name)
+    rewritten, applied = _TIMEOUT_ATTR_RE.subn(f'timeout="{seconds}s"', body)
+    if not applied and name not in {"start", "exit"}:
+        rewritten = f'{rewritten}\n        timeout="{seconds}s"\n    '
+        applied = 1
+    if not applied:
+        return rewritten, None
+    if name not in _COMMIT_SETTLE_NODES:
+        return rewritten, seconds
+    if seconds <= _SETTLE_MARGIN_SECONDS:
+        return (
+            f"workflow graph node {name!r} resolves to {seconds} seconds; "
+            "a commit settle timeout must exceed 300 seconds"
+        )
+    return _SETTLE_WAIT_RE.sub(rf"\g<1>{seconds - _SETTLE_MARGIN_SECONDS}", rewritten), seconds

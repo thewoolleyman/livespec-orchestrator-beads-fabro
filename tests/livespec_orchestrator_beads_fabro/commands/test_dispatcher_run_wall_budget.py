@@ -21,8 +21,8 @@ from typing import Any, cast
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _node_timeouts
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     REPOSITORY_LAYER,
-    WORKFLOW_DEFAULT_LAYER,
 )
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget"
@@ -49,7 +49,7 @@ def test_an_unconfigured_budget_resolves_to_the_built_in_default() -> None:
     assert module.DEFAULT_RUN_WALL_BUDGET_SECONDS == 21600
     budget = module.run_wall_budget_from_block(block={})
     assert budget.seconds == 21600.0
-    assert budget.layer == WORKFLOW_DEFAULT_LAYER
+    assert budget.layer == BUILT_IN_DEFAULT_LAYER
     assert budget == module.DEFAULT_RUN_WALL_BUDGET
 
 
@@ -65,7 +65,7 @@ def test_the_journal_record_names_the_resolved_budget_and_its_layer() -> None:
     record = module.run_wall_budget_journal_record(
         budget=module.run_wall_budget_from_block(block={})
     )
-    assert record == {"run_wall_budget": {"seconds": 21600.0, "layer": WORKFLOW_DEFAULT_LAYER}}
+    assert record == {"run_wall_budget": {"seconds": 21600.0, "layer": BUILT_IN_DEFAULT_LAYER}}
 
 
 def test_a_configured_budget_resolves_from_the_repository_layer() -> None:
