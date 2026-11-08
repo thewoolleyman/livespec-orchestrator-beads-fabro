@@ -82,3 +82,45 @@ That is about 70 non-feature filings a day. A spec-reading host judgement costs 
 ## What this note does not decide
 
 It files no proposal and changes no specification. It does not release or re-route bd-ib-yqjaut, which its owner is handling, or bd-ib-x366dh, which stays held. The volume figures use stored type, not judged class. The reviewer's unverified findings are listed so the decision accounts for them, not adopted as fact.
+
+## Addendum, 2026-11-08: the measure-first step
+
+Run on legacy-coordinator-agent's go (session 8e04c5e0, R301), under the terms recorded on epic bd-ib-ax3rds: a hard $10 cap, nothing written to the ledger, and no tier record changed. A separate agent of this session ran it.
+
+**Sample rule.** The 50 most recently created non-epic bd-ib items whose NEWEST spec-change tier record has classification `bug`, `chore` or `non_functional`, in any status, found by scanning the 79 newest non-epic items. They are 45 `bug`, 4 `chore` and 1 `non_functional`, all recorded at tier `none`. bd-ib-yqjaut qualified under the rule itself, so it is one of the 50.
+
+**Method.**
+1. Each item was first labelled BLIND, before any verdict, by reading its Definition of Done against this repository's ratified specification. The label was `breaks` (its requested resulting behaviour contradicts a binding MUST, MUST NOT or SHALL clause), `does-not-break` (a bug fix that restores a clause counts here), or `unsure`.
+2. Each item's `asked_for_behaviour` statement then got today's production verdict call, `judge_within_ceiling` with `CONFIGURATION_RUBRIC`. That is the call the classifier makes for a `feature`, with caller `measure_x366dh`.
+
+**Cost.** $6.04 over 51 judge calls, all claude-acp claude-sonnet-5-5: one call per item, plus one retry after an unparseable reply.
+
+**Counts under option B** ("hold when the verdict is `partial` or `unstated`"):
+
+| Label | Held (partial) | Held (unstated) | Passed (stated) | Total |
+|---|---:|---:|---:|---:|
+| breaks | 1 | 0 | 0 | 1 |
+| does-not-break | 27 | 12 | 7 | 46 |
+| unsure | 2 | 1 | 0 | 3 |
+
+- True holds 1, false holds 39 of 46 (85%), misses 0, correct passes 7.
+- A stricter rule that holds only on `unstated` would hold 0 of the 1 breaking item and 12 of the 46 non-breaking ones.
+
+**Why.** Today's verdict answers "does the specification state this?", not "would this break the specification?". Most bug fixes ask for behaviour more specific than any clause, so they read as `partial`. Conformance fixes are held even when the verdict's own rationale quotes the clause they restore; bd-ib-bomy33 is an example.
+
+bd-ib-yqjaut itself was held for "unstated detail", NOT for its conflict with this repository's janitor clause. So option B's one true hold was an accident of the same mechanism that produces the false holds.
+
+**Base rate.** One of the 50 recent non-feature filings would break a clause, and that one is the instance that started this note.
+
+**Limits.**
+- One agent wrote every label; there was no second labeller.
+- The specification moved from v315 to v316 between labelling and judging. The only change was a new paragraph and Scenario 326 for bd-ib-s754le, and no label changed.
+- The sample is one tenant's 50 most recent filings, not the fleet.
+- Per-item detail is in `data/007-addendum-measure-report.md`, `-labels.json`, `-verdicts.json` and `-sample.json` beside this note.
+
+**What this changes in the recommendation.**
+- Option B is ruled out: an 85% false-hold rate would stop most bug fixes behind a proposal they do not need.
+- Option C is the only machine route that could work, because it asks the conflict question directly. But nothing has measured whether a combined judgement detects conflicts, and the measured base rate is about 1 in 50.
+- Revised recommendation: choose option A (hand-written holds) now, together with bd-ib-bomy33 and bd-ib-ax6bxj.
+- Reconsider option C if breaking non-feature filings recur. Count them by the hand-written HOLD comments that seats add, as on bd-ib-yqjaut.
+- If option C is chosen anyway, its first deliverable should be this same measurement run with a combined judgement, before any contract change.
