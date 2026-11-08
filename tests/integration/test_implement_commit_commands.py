@@ -61,6 +61,18 @@ def _handoff(*, repo: Path, text: str) -> Path:
     return path
 
 
+def _factory_provenance_hook(*, repo: Path, run_id: str) -> None:
+    """Configure a scratch commit-msg hook to stamp this repository's run id."""
+    _git(repo=repo, argv=["config", "livespec.factoryRunId", run_id])
+    hook = repo / ".git" / "hooks" / "commit-msg"
+    _ = hook.write_text(
+        "#!/bin/sh\ngit interpret-trailers --in-place --trailer "
+        f"'Factory-Run-Id: {run_id}' \"$1\"\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+
 def test_commit_red_folds_checkpoints_stages_only_the_named_red_test_and_runs_hooks(
     tmp_path: Path,
 ) -> None:
@@ -98,6 +110,7 @@ def test_commit_green_folds_checkpoints_and_amends_the_unpaired_red_with_hooks(
     assert _GREEN.is_file()
     repo = _initialize_repository(tmp_path=tmp_path)
     base = _git(repo=repo, argv=["rev-parse", "HEAD"])
+    _git(repo=repo, argv=["config", "livespec.factoryRunId", "current-run"])
     test_file = repo / "tests" / "test_feature.py"
     test_file.parent.mkdir()
     _ = test_file.write_text("def test_feature() -> None:\n    assert True\n", encoding="utf-8")
@@ -107,7 +120,8 @@ def test_commit_green_folds_checkpoints_and_amends_the_unpaired_red_with_hooks(
     hook = repo / ".git" / "hooks" / "commit-msg"
     _ = hook.write_text(
         "#!/bin/sh\ngit interpret-trailers --in-place --trailer "
-        "'TDD-Red-Test-File-Checksum: red' \"$1\"\n",
+        "'TDD-Red-Test-File-Checksum: red' \"$1\"\n"
+        "git interpret-trailers --in-place --trailer 'Factory-Run-Id: current-run' \"$1\"\n",
         encoding="utf-8",
     )
     hook.chmod(0o755)
@@ -129,6 +143,38 @@ def test_commit_green_folds_checkpoints_and_amends_the_unpaired_red_with_hooks(
     message = _git(repo=repo, argv=["log", "-1", "--format=%B"])
     assert "TDD-Red-Test-File-Checksum: red" in message
     assert "TDD-Green-Verified-At: green" in message
+
+
+def test_commit_green_refuses_a_red_without_current_run_provenance(tmp_path: Path) -> None:
+    """Replay trailers alone never authorize an amend of a Fabro checkpoint."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    test_file = repo / "tests" / "test_feature.py"
+    test_file.parent.mkdir()
+    _ = test_file.write_text("def test_feature() -> None:\n    assert True\n", encoding="utf-8")
+    _git(repo=repo, argv=["add", "tests/test_feature.py"])
+    _git(
+        repo=repo,
+        argv=[
+            "commit",
+            "--quiet",
+            "-m",
+            "feat: red",
+            "-m",
+            "TDD-Red-Test-File-Checksum: red",
+        ],
+    )
+    _ = (repo / "implementation.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _checkpoint(repo=repo, name="green")
+    before = _git(repo=repo, argv=["rev-parse", "HEAD"])
+    handoff = _handoff(repo=repo, text="## green\nImplementation changed.\n")
+
+    completed = _run(repo=repo, argv=["bash", str(_GREEN)], check=False)
+
+    assert completed.returncode != 0
+    assert _git(repo=repo, argv=["rev-parse", "HEAD"]) == before
+    assert "Cause: current run's own Red commit was not found" in handoff.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_commit_green_folds_current_shell_red_without_replay_trailers(tmp_path: Path) -> None:
@@ -170,6 +216,7 @@ def test_refused_commands_append_failed_targets_and_the_recorded_output_tail(
     _ = (repo / "implementation.py").write_text("VALUE = 2\n", encoding="utf-8")
     _checkpoint(repo=repo, name="red")
     handoff = _handoff(repo=repo, text="## red\nRed test file: tests/test_feature.py\n")
+    _factory_provenance_hook(repo=repo, run_id="current-run")
     hook = repo / ".git" / "hooks" / "pre-commit"
     _ = hook.write_text(
         "#!/bin/sh\nprintf 'Failed targets (1):\\n  - check-example\\n'\n"
