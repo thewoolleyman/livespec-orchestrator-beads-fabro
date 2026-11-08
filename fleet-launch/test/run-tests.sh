@@ -314,7 +314,8 @@ HOLD_FILE=""
 # new_case <name>: a fresh set of throwaway directories and fixtures, and the
 # environment every launcher invocation of this case inherits.
 new_case() {
-    CASE_DIR="$WORK/case/$1"
+    CASE_NAME="$1"
+    CASE_DIR="$WORK/case/$CASE_NAME"
     mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven,resumed}
     rmdir "$CASE_DIR/lock"
     CASE_LOG="$CASE_DIR/launcher.log"
@@ -416,16 +417,36 @@ ps_count() { grep -cxF -- "$1" "$PS_LOG" 2>/dev/null || true; }
 drive_log_items() { tr '\n' ' ' < "$DRIVE_LOG" | sed 's/ *$//'; }
 preflight_count() { grep -c " $1$" "$PREFLIGHT_LOG" 2>/dev/null || true; }
 
-# wait_for_preflight <item> <count> <seconds>: wait until the stub recorded a
-# particular number of Definition-of-Done preflights for an item.
+# This protects the harness from a hung launcher. It is not a startup budget:
+# each Scenario 297 launcher normally reaches the stub preflight in milliseconds.
+HARNESS_PREFLIGHT_HANG_GUARD_S=${HARNESS_PREFLIGHT_HANG_GUARD_S:-300}
+PREFLIGHT_FAILURE_DETAIL=""
+
+# wait_for_preflight <case> <launcher> <pid> <log> <item> <count>: wait until
+# the stub recorded the requested number of Definition-of-Done preflights. A
+# launcher that exits first is a verdict immediately; the shared guard exists
+# only to stop a genuinely hung launcher from holding the harness forever.
 wait_for_preflight() {
-    local item="$1" count="$2" limit="$3" deadline
-    deadline=$(( $(date +%s) + limit ))
+    local case_name="$1" launcher="$2" pid="$3" log="$4" item="$5" count="$6"
+    local deadline launcher_rc log_tail reason
+    deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))
     while :; do
         if [ "$(preflight_count "$item")" -ge "$count" ]; then return 0; fi
-        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid"; launcher_rc=$?
+            reason="exited rc=$launcher_rc"
+            break
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            reason="hung past ${HARNESS_PREFLIGHT_HANG_GUARD_S}s guard"
+            break
+        fi
         sleep "$HARNESS_POLL_S"
     done
+    log_tail=$(tail -8 "$log" 2>&1 || true)
+    PREFLIGHT_FAILURE_DETAIL="case=$case_name launcher=$launcher did not reach preflight ($reason); tail of $log:
+${log_tail:-<no launcher log output>}"
+    return 1
 }
 
 # await_both <pid> <pid> <seconds>: wait for two launchers to exit, terminating
@@ -689,14 +710,16 @@ export STUB_PREFLIGHT_SLOW_S=120
 printf '8\n' > "$CAP_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-older > "$CASE_DIR/older.log" 2>&1 &
 older_pid=$!
-if ! wait_for_preflight bd-ib-older 1 10; then
-    fail "the older launcher did not start its preflight"
+if ! wait_for_preflight "$CASE_NAME" older "$older_pid" "$CASE_DIR/older.log" bd-ib-older 1; then
+    fail "$PREFLIGHT_FAILURE_DETAIL"
 fi
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
 # The older preflight is held, so the older launcher cannot bind until the
 # release below: a younger preflight seen first ran while it was queued.
-if wait_for_preflight bd-ib-younger 1 60 && [ ! -s "$DRIVE_LOG" ]; then
+if ! wait_for_preflight "$CASE_NAME" younger "$younger_pid" "$CASE_DIR/younger.log" bd-ib-younger 1; then
+    fail "$PREFLIGHT_FAILURE_DETAIL"
+elif [ ! -s "$DRIVE_LOG" ]; then
     pass "the younger queued launcher starts its preflight before the older binds"
 else
     fail "the younger launcher waited for the FIFO head before starting its preflight"
@@ -742,10 +765,13 @@ export STUB_PREFLIGHT_SLOW_S=120
 printf '8\n' > "$CAP_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-stale-older > "$CASE_DIR/older.log" 2>&1 &
 older_pid=$!
-wait_for_preflight bd-ib-stale-older 1 10 || fail "the stale-case older launcher did not preflight"
+wait_for_preflight "$CASE_NAME" older "$older_pid" "$CASE_DIR/older.log" bd-ib-stale-older 1 \
+    || fail "$PREFLIGHT_FAILURE_DETAIL"
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-stale-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
-if ! wait_for_preflight bd-ib-stale-younger 1 60 || [ -s "$DRIVE_LOG" ]; then
+if ! wait_for_preflight "$CASE_NAME" younger "$younger_pid" "$CASE_DIR/younger.log" bd-ib-stale-younger 1; then
+    fail "$PREFLIGHT_FAILURE_DETAIL"
+elif [ -s "$DRIVE_LOG" ]; then
     fail "the stale-case younger launcher did not preflight while queued"
 fi
 # A zero-second reuse window makes the observed queued pass stale as soon as
@@ -772,10 +798,15 @@ export STUB_PREFLIGHT_FAIL_ITEM=bd-ib-failing-younger
 printf '8\n' > "$CAP_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-failing-older > "$CASE_DIR/older.log" 2>&1 &
 older_pid=$!
-wait_for_preflight bd-ib-failing-older 1 10 || fail "the failure-case older launcher did not preflight"
+wait_for_preflight "$CASE_NAME" older "$older_pid" "$CASE_DIR/older.log" bd-ib-failing-older 1 \
+    || fail "$PREFLIGHT_FAILURE_DETAIL"
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-failing-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
-if wait_for_preflight bd-ib-failing-younger 1 60 && [ ! -s "$DRIVE_LOG" ]; then
+if ! wait_for_preflight "$CASE_NAME" younger "$younger_pid" "$CASE_DIR/younger.log" bd-ib-failing-younger 1; then
+    stop_launcher "$younger_pid"
+    wait "$younger_pid"; younger_rc=$?
+    fail "$PREFLIGHT_FAILURE_DETAIL"
+elif [ ! -s "$DRIVE_LOG" ]; then
     wait "$younger_pid"; younger_rc=$?
 else
     stop_launcher "$younger_pid"
