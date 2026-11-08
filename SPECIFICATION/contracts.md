@@ -3431,8 +3431,15 @@ output MUST name which cause refused it. A pre-push hook refusal MUST name
 the hook's failed targets, by the structured-summary rule of
 §"Failed post-merge janitor target attribution". A non-fast-forward rejection MUST
 direct the operator to reconcile the stale publish branch. An origin that
-cannot be reached MUST be named as such. In every case the node still fails
-closed before `proof_capture`. Scenario 224 in `scenarios.md` exercises
+cannot be reached MUST be named as such. A GH001 rejection, origin refusing the
+push with GitHub's GH001 large-file error, MUST name each path the rejection
+names together with the size it reports. A pre-push hook refusal and a GH001
+rejection MUST instead take the publish-repair route of "Publish repair" below
+while the refresh-repair budget lasts. Every other refusal, including a
+protected-branch refusal, a non-fast-forward rejection, an origin that cannot
+be reached and an authentication failure, still fails closed before
+`proof_capture`, and so does a pre-push hook refusal or a GH001 rejection once
+that budget is spent. Scenario 224 in `scenarios.md` exercises
 these sentences. It MUST also carry the command node `proof_grade`, entered
 only from a `verified` outcome of `proof_verify`. `proof_grade` MUST read the
 newest `verified` record on the pull request whose run identifier the Dispatcher
@@ -3649,7 +3656,8 @@ target's failure names a generated record file, the brief MUST carry the same
 `regenerate:` line for that file beside the failed target. The stage MUST distinguish a refreshed head that the
 gate rejected from a push that origin refused or could not reach, and from an
 authentication failure; only a conflict, a commit-hook refusal of the refresh's own
-commit, or a gate rejection takes this route, and every other cause keeps its
+commit, or a gate rejection takes this route, a `publish_draft` push refusal
+takes it only as "Publish repair" below states, and every other cause keeps its
 existing fail-closed behaviour. A commit-hook refusal of the refresh's own
 commit MUST NOT end the run at `needs_human` with
 `LIVESPEC_REFRESH_REPAIR_ABSENT`. The `fix` turn
@@ -3659,6 +3667,29 @@ turn MUST NOT use `--no-verify`, bare force, or a rewrite of any ref. After a
 refresh-repair round the run re-enters `janitor`, then `publish_draft`, then
 `proof_capture`, exactly as an accepted fix round does, so only proof for the
 repaired head can reach publication.
+
+**Publish repair.** When origin refuses a `publish_draft` push with GitHub's GH001
+large-file error, or the repository's pre-push hook refuses it, `publish_draft`
+MUST record a repair brief and MUST route to the existing `fix` agent node, as a
+refresh-repair round does. The brief MUST name the stage, the head whose push
+was refused, and the cause. For a GH001 rejection, the cause is each path the
+rejection names together with the size it reports. For a hook refusal, it is
+each target the hook names as failed together with the last 80 lines of the
+hook's own output. The `fix` turn MUST remove each named path from every commit
+of the run that origin does not already hold, or repair each named target. It
+MUST NOT rewrite a commit origin already holds, MUST let hooks run normally, and
+MUST NOT use `--no-verify` or bare force. A publish-repair round is a
+refresh-repair round for every other rule of this section: it is counted by
+"Refresh-repair accounting", the run then re-enters `janitor`, then
+`publish_draft`, then `proof_capture`, and the `publish_draft` visit after it
+follows a refresh-repair round. When the refused push would need a third
+round, the recovery artifact pointer that "Refresh-repair accounting" requires
+names the head whose push was refused. A protected-branch refusal, a
+non-fast-forward rejection, an origin that cannot be reached and an
+authentication failure MUST NOT take this route. Whichever route a
+`publish_draft` push refusal takes, it MUST NOT end the run at `needs_human`
+with `LIVESPEC_REFRESH_REPAIR_ABSENT`; a refusal that fails closed names its own
+cause. Scenario 329 in `scenarios.md` exercises this paragraph.
 
 **A fix turn grades each tree once, through its commit hook.** This paragraph governs only a `fix` turn that completes successfully and routes to `janitor`, whether it was a fix round or a refresh-repair round. A `fix` turn that ends through the needs-human protocol, by its node's resolved timeout, or by any other failure keeps its existing handling, which this paragraph does not change. A successful `fix` turn MUST leave the run's working branch at a head whose last commit in that turn passed the gate its commit hook ran under the next paragraph: the affected-tests gate's scoped tests and their coverage, or the full check aggregate when that gate cannot scope the change. The `fix` prompt MUST NOT direct a run of the full check suite beyond what its commit hook runs, because the `janitor` visit that follows a successful `fix` turn runs the full check aggregate on the run's tree. A hook run that did not grade the committed tree, such as a Red commit on the hook's fast path, does not satisfy the obligation. A change to the tree after the last passing hook run MUST be committed through the commit hook again before a successful turn ends. Measured 2026-11-07: the check-per-file-coverage leg of the full aggregate took 3654.8 s in a fix turn's commit hook on bd-ib-tcfwol run 01M6VRQMXSRD, and 3765 s on bd-ib-akxkza, both longer than the fix node's 3600 s limit. Scenario 199 in `scenarios.md` exercises this paragraph.
 
@@ -3695,7 +3726,7 @@ publish branch.
 
 **Refresh-repair accounting.** A refresh-repair round is counted once, at the
 moment a stage routes to `fix` with a brief. A run MAY take at most two
-refresh-repair rounds in total across the janitor's pre-aggregate refresh and `pr_refresh`; when a
+refresh-repair rounds in total across the janitor's pre-aggregate refresh, `pr_refresh` and `publish_draft`; when a
 third refresh would need repair, the stage MUST fail closed to `needs_human`
 with the named cause `refresh-repair-exhausted` and a recovery artifact pointer
 naming that stage's pre-refresh head. A refresh-repair round MUST NOT consume
