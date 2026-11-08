@@ -230,6 +230,12 @@ class SessionTelemetry:
             self.reporter(text=text)
         return report
 
+    def wait_for_delivery(self) -> None:
+        """Wait for a closed worker when an observer has arranged for its delivery."""
+        thread = self._thread
+        if thread is not None:
+            thread.join()
+
     def _export_counts(self) -> dict[str, object]:
         with self._lock:
             return {
