@@ -1,9 +1,9 @@
-"""Scenario 199's hook-green exemption in the dispatched fix prompt.
+"""Scenario 199's grade-once-through-the-commit-hook rule in the dispatched fix prompt.
 
-The source-prompt test establishes the once-per-tree rule in the committed
-prose.  This test crosses the materialization and input-binding seam: a fix
-turn follows the prompt copied into its per-dispatch payload, so the exemption
-must survive there and constrain each directive that names the full suite.
+The source-prompt test establishes the rule in the committed prose.  This test
+crosses the materialization and input-binding seam: a fix turn follows the
+prompt copied into its per-dispatch payload, so the rule must survive there and
+no numbered instruction may direct a run of the bound full check suite.
 """
 
 from __future__ import annotations
@@ -36,9 +36,13 @@ _NODE_BLOCK = re.compile(
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
 _LIST_ITEM = re.compile(r"^\s*\d+\.\s")
 
-_HOOK_GREEN_GUARD = (
-    "If a commit's pre-commit hook already passed the full suite on its exact "
-    "committed tree, do NOT start it yourself."
+_RULE_SENTENCES = (
+    "This turn directs no run of the full check suite beyond what its commit hook runs.",
+    "Do NOT start a full run of the check suite while `HEAD` and the working tree",
+    "failing tests that target's own output names",
+    "A command whose tool call returned WITHOUT an exit status is STILL RUNNING",
+    "Do NOT start a full run of the check suite while another full run you started is still live.",
+    "commit that tree through the commit hook to a passing result before the turn ends.",
 )
 
 
@@ -72,6 +76,11 @@ def _dispatched_fix_prompt(*, payload_dir: Path) -> str:
     return prompt.read_text(encoding="utf-8").replace(_CHECK_SUITE_TOKEN, _CHECK_SUITE)
 
 
+def _fix_steps(*, prompt: str) -> tuple[str, ...]:
+    """Return each numbered instruction of the rendered fix prompt."""
+    return tuple(line for line in prompt.splitlines() if _LIST_ITEM.match(line) is not None)
+
+
 def _suite_directives(*, prompt: str) -> tuple[str, ...]:
     """Return each numbered fix instruction that directs the full suite."""
     directives: list[list[str]] = []
@@ -88,22 +97,14 @@ def _suite_directives(*, prompt: str) -> tuple[str, ...]:
     return tuple(item for item in rendered if _CHECK_SUITE in item)
 
 
-def test_dispatched_fix_prompt_forbids_a_second_self_started_suite_on_hook_green_tree(
+def test_dispatched_fix_prompt_directs_no_suite_run_beyond_the_commit_hook(
     tmp_path: Path,
 ) -> None:
-    """A hook-green commit satisfies Scenario 199 before the prompt is rendered."""
+    """The rendered prompt carries the rule and no numbered step directs the bound suite."""
     prompt = _dispatched_fix_prompt(payload_dir=tmp_path / "payload")
-    directives = _suite_directives(prompt=prompt)
 
-    assert (
-        len(directives) == 2
-    ), f"found {len(directives)} dispatched suite directives; expected the repair and fix steps"
-    for directive in directives:
-        assert _HOOK_GREEN_GUARD in directive, (
-            "a dispatched suite directive does not forbid a self-started duplicate on a "
-            f"hook-green tree: {directive}"
-        )
-        assert "yourself until it is green" not in directive, (
-            "a dispatched suite directive still directs an unconditional self-started run: "
-            f"{directive}"
-        )
+    assert len(_fix_steps(prompt=prompt)) >= 6, "the numbered-step scan found too few steps"
+    assert _suite_directives(prompt=prompt) == ()
+    for sentence in _RULE_SENTENCES:
+        assert sentence in prompt, f"the dispatched fix prompt omits {sentence!r}"
+    assert _CHECK_SUITE in prompt, "the rendered section no longer names the bound check suite"
