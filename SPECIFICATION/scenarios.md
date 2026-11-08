@@ -7400,17 +7400,57 @@ Feature: Recovery routing for an automatically released item
     When a reconciliation pass reads that run
     Then the item gains one livespec-seed-ruling-consumed comment naming the ruling, the dispatch and the run
 
-  Scenario: Of two needs-human refs carrying one run, the one named under a run identifier is taken
-    Given an earlier run U of the item carried by needs-human/U and by needs-human/A
+  Scenario: Of two needs-human refs carrying one run, the tip that descends from the other is taken whatever the refs are named
+    Given an earlier run U of the item carried by needs-human/U at commit S1 and by needs-human/A at commit S2
+    And S2 descends from S1
     When the Dispatcher grades the item's recovery route
-    Then the route is seeded from needs-human/U
-    And the recovery-route record lists needs-human/A in passed_over_needs_human
+    Then the route is seeded from needs-human/A at S2
+    And the recovery-route record lists needs-human/U with S1 in passed_over_needs_human
 
-  Scenario: Of two needs-human refs carrying one run under other names, the newer tip is taken
-    Given an earlier run U of the item carried by needs-human/A and needs-human/B and by no ref named under a run identifier
+  Scenario: Of two needs-human refs carrying one run on diverged tips, the newer tip is taken
+    Given an earlier run U of the item carried by needs-human/A and needs-human/B
+    And neither tip commit descends from the other
     And B's tip commit is newer by committer time than A's
     When the Dispatcher grades the item's recovery route
     Then the route is seeded from needs-human/B
+
+  Scenario: Of three needs-human refs carrying one run, an ancestor is never taken over a tip that descends from it
+    Given an earlier run U of the item carried by needs-human/A, needs-human/B and needs-human/C
+    And B's tip commit descends from A's tip commit
+    And C's tip commit descends from neither and neither descends from it
+    And by committer time A's tip is the newest, C's is older than A's, and B's is older than C's
+    When the Dispatcher grades the item's recovery route
+    Then routing takes needs-human/C
+    And the recovery-route record lists needs-human/A and needs-human/B in passed_over_needs_human
+
+  Scenario: Of two diverged needs-human tips with equal committer time, the ref whose full name sorts first is taken
+    Given an earlier run U of the item carried by needs-human/X and needs-human/Y
+    And neither tip commit descends from the other
+    And both tip commits have the same committer time
+    And refs/heads/needs-human/X sorts before refs/heads/needs-human/Y in byte order
+    When the Dispatcher grades the item's recovery route
+    Then routing takes needs-human/X
+
+  Scenario: Of two needs-human refs carrying one run at the same commit, the one named under a run identifier is taken
+    Given an earlier run U of the item carried by needs-human/U and by needs-human/A, both at commit S
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded from needs-human/U at S
+    And the recovery-route record lists needs-human/A with S in passed_over_needs_human
+
+  Scenario: A run-id-named ancestor does not outrank a dispatch-id-named descendant of the same run
+    Given bd-ib-ofvsr3's earlier run 01M6S83KZH54MR6N8NECJN86Z8 carried by needs-human/01M6S83KZH54MR6N8NECJN86Z8 at d7f0102e1 and by needs-human/4d5104454d7b406a80014d6d2acc139e at 578a981c2
+    And both tip commits hold the trailer Fabro-Run: 01M6S83KZH54MR6N8NECJN86Z8
+    And 578a981c2 descends from d7f0102e1
+    When the Dispatcher grades bd-ib-ofvsr3's recovery route
+    Then the route is seeded from needs-human/4d5104454d7b406a80014d6d2acc139e at 578a981c2
+    And the recovery-route record lists needs-human/01M6S83KZH54MR6N8NECJN86Z8 with d7f0102e1 in passed_over_needs_human
+
+  Scenario: An unreadable ancestry between refs carrying one run holds the route, even when one is named under a run identifier
+    Given an earlier run U of the item carried by needs-human/U and by needs-human/A on different tip commits
+    And whether either tip descends from the other cannot be read
+    When the Dispatcher grades the item's recovery route
+    Then the route is held and the recovery-held record names that measurement
+    And the route is not seeded from needs-human/U
 
   Scenario: A recovery route with nothing passed over records an empty list
     Given an item released for recovery whose only needs-human tree is the one its route takes
@@ -13270,4 +13310,29 @@ Feature: Operator fresh ruling for a recovery-released item
     When a reconciliation pass runs
     Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
     And the fresh ruling is not current
+```
+
+## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes
+
+Governing clause: `constraints.md` §"Codex full-access runtime constraints" → "Factory sandbox turns carry the Driver guards".
+
+```gherkin
+Feature: Factory sandbox turns carry the Driver guards
+  As the maintainer of a repository dispatched to the factory
+  I want every sandbox agent turn to run its Driver's PreToolUse guards from release-verified bytes
+  So that a full-access sandbox turn cannot run a command those guards forbid
+
+  Scenario: Hooks that byte-match the pinned Driver release are trusted and block a forbidden command
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When the materialized Codex hook definitions and hook entrypoints byte-match that Driver release tag
+    Then the hooks are recorded as trusted in the per-run CODEX_HOME without Codex's hook-trust bypass
+    And an implement turn's attempt to run a command the guard forbids is blocked by the materialized guard
+
+  Scenario: A materialized hook that differs from the pinned Driver release fails the prepare step
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When a materialized Codex hook definition or hook entrypoint differs from that Driver release tag
+    Then the run's prepare step fails, naming the plugin and the hook
+    And no implement turn starts
 ```

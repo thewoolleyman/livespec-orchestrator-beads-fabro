@@ -43,9 +43,9 @@ conflict or the gate failure:
    merge or rebase stops on a conflict, resolve the paths, `git add` each one,
    then run
    `python3 "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py" start -- git commit --no-edit`
-   and repeat
+   and wait once with
    `python3 "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py" wait <run-id> --timeout-seconds 300`
-   until it reports a terminal state. Never run a foreground `git commit`, or a
+   in a later tool call. Wait at most once on each commit run you start. If that wait reports `running`, do not call `wait` again and do not stop it. End the turn and leave it for `fix_commit_settle` to wait out. A terminal report lets you continue. Never run a foreground `git commit`, or a
    foreground `git rebase --continue` while a resolution is staged: the commit
    hook runs the whole check suite and outlasts both the ten-minute tool-call
    limit and the turn's own limit, which killed the measured instance's hook and
@@ -177,9 +177,9 @@ Make every commit through the sandbox commit runner, which this stage prompt
 names. Start the commit with
 `python3 "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py" start -- git commit ...`
 (the same `git commit` you would run in the foreground, with its own
-arguments), which prints a run id at once, then repeat
+arguments), which prints a run id at once, then wait once
 `python3 "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py" wait <run-id> --timeout-seconds 300`
-in later tool calls until it reports a terminal state. The runner invokes the
+in a later tool call. Wait at most once on each commit run you start. If that wait reports `running`, do not call `wait` again and do not stop it. End the turn and leave it for `fix_commit_settle` to wait out. The runner invokes the
 commit unchanged, so the repository hooks still run exactly as they would in
 the foreground. A `running` report is not a failed commit. Only `passed` is a
 commit; `failed` is the hook's refusal, with its exit status and output, and
@@ -321,7 +321,10 @@ So, for every commit in this stage:
   ends failed, takes `fix -> needs_human`, `fix_commit_settle` never runs, and
   the commit's verdict is lost. The graph's `fix_commit_settle` node waits that
   commit run out and hands the janitor its verdict. This commit run is the
-  exception to the turn-end rule below; do not stop it.
+  exception to the turn-end rule below; do not stop it. Wait at most once on
+  each commit run you start. If that wait reports `running`, do not call `wait`
+  again and do not stop it. End the turn and leave it for `fix_commit_settle`
+  to wait out.
 
 ## When the failure is not auto-resolvable (needs-human protocol)
 

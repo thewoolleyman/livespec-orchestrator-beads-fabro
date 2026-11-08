@@ -285,7 +285,9 @@ orchestrator depends on for factory operation: the Codex companion plugin's
 interactive review/rescue paths (`codex:codex-rescue`, `/codex:review`,
 `/codex:adversarial-review`) and the orchestrator-owned raw `codex exec`
 credential-refresh invocation. These constraints govern when those surfaces MUST
-run with Codex `danger-full-access`.
+run with Codex `danger-full-access`. The bullet "Factory sandbox turns carry the
+Driver guards" separately governs factory sandbox agent turns, which are not
+among those surfaces.
 
 - **Gate evaluation is local and hook-time.** Codex full access is decided at
   hook time (SessionStart, and the raw `codex exec` credential-refresh command)
@@ -331,6 +333,17 @@ run with Codex `danger-full-access`.
   `codex exec` reads additional prompt text from stdin until EOF even when a
   prompt argument is present, and an inherited open socket therefore stalls the
   process indefinitely before it does any work.
+- **Factory sandbox turns carry the Driver guards.** A factory Codex sandbox
+  turn's per-run `CODEX_HOME` MUST carry the `livespec-driver-codex` plugin at
+  the Driver release the run pins, with its hooks enabled. The materialized
+  Driver hooks MUST be recorded as trusted in that `CODEX_HOME` only when the
+  materialized hook definitions and hook entrypoints byte-match that Driver
+  release tag, and a mismatch MUST fail the run's prepare step, naming the
+  plugin and the hook. Codex's hook-trust bypass MUST NOT be used to establish
+  that trust. A factory Claude sandbox turn's materialized plugin cache MUST
+  carry the `livespec-driver-claude` plugin's PreToolUse hooks at the release
+  the run pins. A command that a materialized PreToolUse guard forbids MUST be
+  blocked when a sandbox turn of either runtime attempts it.
 - **Out of scope — operator dogfooding.** Manually-typed
   `codex exec <plugin>:<op>` dogfooding commands are NOT gated by this contract.
   Their posture comes from the operator's own host-wide `~/.codex/config.toml`,
@@ -345,7 +358,10 @@ run with Codex `danger-full-access`.
   full-access flag and the stdin EOF redirect. Marker provenance is decided by
   re-running the `refresh` operation against the current manifest and diffing the
   resulting marker: any difference means the committed marker has drifted from
-  the manifest it claims to derive from. Review-time verification MUST check
+  the manifest it claims to derive from. The factory sandbox guard rule is
+  decided by a real dispatched factory run on the released orchestrator, in
+  which an implement turn of each runtime attempts a command its guard forbids
+  and the guard blocks it. Review-time verification MUST check
   those deciding signals whenever the hook, canary, gate, Codex invocation
   wrapper, or Codex dogfooding instructions change.
 

@@ -102,6 +102,7 @@ from pathlib import Path
 
 RUNNING = "running"
 NO_VERDICT = "no-verdict"
+STAGE_SETTLES = {"fix": "fix_commit_settle", "review_fix": "review_fix_commit_settle"}
 TAIL_LINES = 60
 BRIEF_TAIL_LINES = 80
 # Worst first: a settled set is described by its least settled run.
@@ -148,6 +149,33 @@ def runs_directory():
 
 def state_path(directory, run_id):
     return directory / (run_id + ".json")
+
+
+def waited_running_path(directory, stage):
+    return directory / "waited-running" / (stage + ".json")
+
+
+def waited_running_runs(directory, stage):
+    path = waited_running_path(directory, stage)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return value if isinstance(value, list) and all(isinstance(item, str) for item in value) else []
+
+
+def remember_running_wait(directory, stage, run_id):
+    runs = waited_running_runs(directory, stage)
+    if run_id not in runs:
+        runs.append(run_id)
+    path = waited_running_path(directory, stage)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(runs) + "\n", encoding="utf-8")
+
+
+def reset_running_waits(directory, stage):
+    if stage in STAGE_SETTLES:
+        waited_running_path(directory, stage).unlink(missing_ok=True)
 
 
 def read_record(path):
@@ -346,7 +374,7 @@ def worker(run_id):
     return 0
 
 
-def report(run_id, path, record):
+def report_payload(run_id, path, record):
     record, state = settled(path, record)
     payload = {"run_id": run_id, "state": state}
     if state != RUNNING:
@@ -365,19 +393,40 @@ def report(run_id, path, record):
                 targets if isinstance(targets, list) else failed_targets(output)
             )
         payload["output_tail"] = output_tail(path)
+    return payload, state
+
+
+def report(run_id, path, record):
+    payload, _ = report_payload(run_id, path, record)
     print(json.dumps(payload, sort_keys=True))
     return 0
 
 
 def wait(run_id, timeout_seconds):
-    path = state_path(runs_directory(), run_id)
+    directory = runs_directory()
+    path = state_path(directory, run_id)
+    stage = os.environ.get("LIVESPEC_AGENT_STAGE")
+    settle_node = STAGE_SETTLES.get(stage)
+    if settle_node is not None and run_id in waited_running_runs(directory, stage):
+        record = read_record(path)
+        if record is None:
+            raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
+        state = current_state(path, record)
+        raise RunnerRefusal(
+            "commit run " + run_id + " already reported running during " + stage
+            + " stage visit; current state is " + state + "; " + settle_node + " will wait on it"
+        )
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     while True:
         record = read_record(path)
         if record is None:
             raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
         if current_state(path, record) != RUNNING or time.monotonic() >= deadline:
-            return report(run_id, path, record)
+            payload, state = report_payload(run_id, path, record)
+            if settle_node is not None and state == RUNNING:
+                remember_running_wait(directory, stage, run_id)
+            print(json.dumps(payload, sort_keys=True))
+            return 0
         time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
 
@@ -518,7 +567,7 @@ def restore_starting_head(path, record):
     git_output("reset", "--soft", start_head)
 
 
-def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
+def settle(timeout_seconds, brief_file, restore_head_before_wait=False, stage=None):
     """Wait live runs and brief the latest terminal hook refusal exactly once."""
     directory = runs_directory()
     brief = Path(brief_file)
@@ -533,6 +582,7 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
     if not live:
         if not records:
             brief.unlink(missing_ok=True)
+            reset_running_waits(directory, stage)
             return 0
         path, record = max(records, key=lambda item: item[0].stat().st_mtime_ns)
         if (
@@ -541,6 +591,7 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
             or record.get("settled") is True
         ):
             brief.unlink(missing_ok=True)
+            reset_running_waits(directory, stage)
             return 0
         write_record(path, {**record, "settled": True})
         brief.parent.mkdir(parents=True, exist_ok=True)
@@ -549,6 +600,7 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
             encoding="utf-8",
         )
         print(json.dumps({"settled": [{"run_id": path.stem, "state": "failed"}]}, sort_keys=True))
+        reset_running_waits(directory, stage)
         return 0
     if restore_head_before_wait:
         for path in live:
@@ -578,6 +630,7 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
     )
     settled_runs = [{"run_id": one.stem, "state": status} for one, _, status in outcomes]
     print(json.dumps({"settled": settled_runs}, sort_keys=True))
+    reset_running_waits(directory, stage)
     return 0
 
 
@@ -788,6 +841,7 @@ def main(argv, program):
     settle_parser.add_argument("--timeout-seconds", required=True, type=float)
     settle_parser.add_argument("--brief-file", required=True)
     settle_parser.add_argument("--restore-head-before-wait", action="store_true")
+    settle_parser.add_argument("--stage", choices=tuple(STAGE_SETTLES))
     cut_parser = operations.add_parser("cut-settle")
     cut_parser.add_argument("--timeout-seconds", required=True, type=float)
     worker_parser = operations.add_parser("worker")
@@ -804,6 +858,7 @@ def main(argv, program):
                 args.timeout_seconds,
                 args.brief_file,
                 restore_head_before_wait=args.restore_head_before_wait,
+                stage=args.stage,
             )
         if args.operation == "cut-settle":
             return cut_settle(args.timeout_seconds)

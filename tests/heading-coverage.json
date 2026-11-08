@@ -2988,5 +2988,13 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-xz35zu adds dispatcher.py fresh-ruling and makes recovery routing route a recovery-released item fresh past every preserved tree it holds while a fresh ruling is current, still grading the pre-claim refusal first, holding on a non-fallback refusal or an untaken needs-human listing, recording passed-over needs-human refs, letting the newer of a seed ruling and a fresh ruling govern, and consuming the ruling once.",
     "work_item": "bd-ib-xz35zu"
+  },
+  {
+    "heading": "## Scenario 328 \u2014 A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-v75dlb makes the factory prepare step materialize the pinned livespec-driver-codex release into each Codex sandbox turn's per-run CODEX_HOME with its hooks trusted only on a byte match to that release tag, fail the prepare step naming the plugin and hook on a mismatch, and carry the livespec-driver-claude PreToolUse hooks into each Claude sandbox turn, so a forbidden command is blocked in either runtime.",
+    "work_item": "bd-ib-v75dlb"
   }
 ]
