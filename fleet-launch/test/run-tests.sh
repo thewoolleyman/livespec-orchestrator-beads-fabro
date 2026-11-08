@@ -43,9 +43,9 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario297|scenario316) ;;
+    all|scenario242|scenario297|scenario316) ;;
     *)
-        echo "usage: run-tests.sh [scenario297|scenario316]" >&2
+        echo "usage: run-tests.sh [scenario242|scenario297|scenario316]" >&2
         exit 2
         ;;
 esac
@@ -1145,6 +1145,63 @@ else
     head -4 "$CASE_DIR/impl-stamp.log" "$CASE_DIR/resume-stamp.log" >&2
 fi
 
+fi
+
+# --- 18a. a marker released after its listed run leaves the board -----------
+# Scenario 242 — The provisional fleet launch check fails the build on a broken
+# launcher. A dead launcher may leave its marker behind while its drive
+# merge-polls. Once another launcher has observed that marker's run on a board,
+# the marker must no longer hold a slot after the run leaves that board. A
+# never-listed marker remains counted while that drive is alive.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario242 ]; then
+echo "--- 18a. releases a listed-and-finished drive's stale marker"
+new_case listed-marker-left-board
+export FLEET_LAUNCH_MAX_WAIT_S=4
+write_board "$BOARD_GMK" 7 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+bash -c 'exec -a "$1" sleep 600' bash "python3 drive.py --action impl:bd-ib-ended" &
+ended_drive_pid=$!
+ended_marker="$FLEET_LAUNCH_INFLIGHT_DIR/100-stopped-seat-bd-ib-ended"
+echo "owner=stopped-seat pid=999999 item=bd-ib-ended factory=petri" > "$ended_marker"
+printf '%s %s\n' "$GMK_URL" bd-ib-ended > "$CASE_DIR/driven/bd-ib-ended"
+ONLY_GMK=1 "$LAUNCHER" bd-ib-observer > "$CASE_DIR/observer.log" 2>&1 &
+observer_pid=$!
+if wait_for_line "$ended_marker" "listed=1" 10; then
+    pass "a board observer records that the dead launcher's run listed"
+else
+    fail "the observed listed run was not recorded on its in-flight marker"
+fi
+stop_launcher "$observer_pid"
+wait "$observer_pid" 2>/dev/null || true
+rm -f "$CASE_DIR/driven/bd-ib-ended"
+run_launcher bd-ib-after-ended "$CASE_DIR/after-ended.log"
+if [ "$RC" = 0 ] && [ "$(drive_log_items)" = bd-ib-after-ended ]; then
+    pass "a listed-and-finished run's merge-polling drive no longer holds a fleet slot"
+else
+    fail "a listed-and-finished run still held a fleet slot (rc=$RC dispatches: $(drive_log_items))"
+    tail -6 "$CASE_DIR/after-ended.log" >&2
+fi
+kill "$ended_drive_pid" 2>/dev/null; wait "$ended_drive_pid" 2>/dev/null
+
+new_case unlisted-marker-stays-counted
+export FLEET_LAUNCH_MAX_WAIT_S=4
+write_board "$BOARD_GMK" 7 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+bash -c 'exec -a "$1" sleep 600' bash "python3 drive.py --action impl:bd-ib-unlisted" &
+unlisted_drive_pid=$!
+echo "owner=stopped-seat pid=999999 item=bd-ib-unlisted factory=petri" \
+    > "$FLEET_LAUNCH_INFLIGHT_DIR/100-stopped-seat-bd-ib-unlisted"
+run_launcher bd-ib-must-wait "$CASE_DIR/unlisted.log"
+if [ "$RC" = 75 ] && [ ! -s "$DRIVE_LOG" ] \
+    && log_has "$CASE_DIR/unlisted.log" "fleet=8 cap=8"; then
+    pass "an unlisted marker remains counted while its dead launcher has a live drive"
+else
+    fail "an unlisted marker did not hold the fleet slot (rc=$RC dispatches: $(drive_log_items))"
+    tail -6 "$CASE_DIR/unlisted.log" >&2
+fi
+kill "$unlisted_drive_pid" 2>/dev/null; wait "$unlisted_drive_pid" 2>/dev/null
 fi
 
 # --- 19. repository holds scope themselves to their named launch kinds ------
