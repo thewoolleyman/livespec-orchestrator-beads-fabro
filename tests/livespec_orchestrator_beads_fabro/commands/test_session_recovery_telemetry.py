@@ -58,6 +58,8 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
     observe_wait_target,
 )
 
+from tests.livespec_orchestrator_beads_fabro.commands._telemetry_capture import unique_spans
+
 _ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
 _DEADLINE = "2026-10-21T02:00:00Z"
 _DUE = datetime(2026, 10, 21, 2, 0, tzinfo=timezone.utc).timestamp()
@@ -276,8 +278,7 @@ class _CapturingExporter:
                     for entry in cast("list[dict[str, object]]", span["attributes"])
                 },
             )
-            for spans, _ in self.calls
-            for span in spans
+            for span in unique_spans(batches=(spans for spans, _ in self.calls))
         ]
 
 
