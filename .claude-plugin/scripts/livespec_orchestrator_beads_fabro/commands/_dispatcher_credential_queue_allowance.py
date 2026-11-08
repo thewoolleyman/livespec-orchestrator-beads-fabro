@@ -47,8 +47,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     REPOSITORY_LAYER,
-    WORKFLOW_DEFAULT_LAYER,
     positive_int_seconds,
 )
 
@@ -97,7 +97,7 @@ class CredentialQueueAllowance:
 # reader branch on an absence with a perfectly good answer.
 DEFAULT_CREDENTIAL_QUEUE_ALLOWANCE = CredentialQueueAllowance(
     seconds=DEFAULT_CREDENTIAL_QUEUE_ALLOWANCE_SECONDS,
-    layer=WORKFLOW_DEFAULT_LAYER,
+    layer=BUILT_IN_DEFAULT_LAYER,
 )
 
 

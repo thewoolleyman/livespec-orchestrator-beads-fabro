@@ -47,8 +47,8 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_node_timeouts
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     DEFAULT_STALL_TIMEOUT_SECONDS,
-    WORKFLOW_DEFAULT_LAYER,
     NodeTimeouts,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -85,7 +85,7 @@ class StallWindow:
 # apart the way they already did once.
 DEFAULT_STALL_WINDOW = StallWindow(
     seconds=float(DEFAULT_STALL_TIMEOUT_SECONDS),
-    layer=WORKFLOW_DEFAULT_LAYER,
+    layer=BUILT_IN_DEFAULT_LAYER,
 )
 
 
