@@ -38,6 +38,7 @@ __all__: list[str] = [
     "REASON_RUN_ABSENT_REPEATED",
     "RELEASE_COMMENT_MARKER",
     "REPEATED_COMMENT_MARKER",
+    "STRANDED_CLAIM_HANDOFF_STAGE",
     "STRANDED_CLAIM_HOLD_STAGE",
     "STRANDED_CLAIM_RELEASE_STAGE",
     "STRANDED_CLAIM_REPEATED_STAGE",
@@ -70,6 +71,12 @@ STRANDED_CLAIM_REPEATED_STAGE = "stranded-claim-run-absent-repeated"
 # restates a disposition it did not decide.
 STRANDED_CLAIM_TERMINAL_STAGE = "stranded-claim-terminal-completion"
 
+# The announcement of a handed-off merge wait's completion. Its own stage, for the
+# reason the terminal completion has one: the dispositions it delegates write
+# their own records, so this row says only that reconciliation finished what the
+# handoff left, and the reason it carries names what the forge reported.
+STRANDED_CLAIM_HANDOFF_STAGE = "stranded-claim-merge-wait-handoff"
+
 # Every held claim's row, carrying the reason of its first failing condition.
 STRANDED_CLAIM_HOLD_STAGE = "stranded-claim-hold"
 
@@ -92,6 +99,11 @@ class HeldClaim:
     and is `None` elsewhere rather than carrying generic advice: a remedy on
     every row would make the one row that genuinely needs reading look like
     boilerplate.
+
+    `detail` names what else the entry owes a reader: the `run-succeeded` hold of a
+    handed-off merge wait names `merge-wait-handed-off` and what the forge said, so
+    a person reading the held list can tell a claim awaiting its own CI from one
+    nobody is looking after. It is `None` on every other hold.
     """
 
     work_item_id: str
@@ -101,6 +113,7 @@ class HeldClaim:
     dispatching_host: str | None
     hold_reason: str
     remedy: str | None
+    detail: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -156,7 +169,7 @@ def recovery_journal_record(*, stage: str, recovered: RecoveredClaim) -> dict[st
 
 def hold_journal_record(*, held: HeldClaim) -> dict[str, object]:
     """The journal row one held claim leaves."""
-    return {
+    record: dict[str, object] = {
         "stage": STRANDED_CLAIM_HOLD_STAGE,
         "work_item_id": held.work_item_id,
         "run_id": held.run_id,
@@ -166,6 +179,9 @@ def hold_journal_record(*, held: HeldClaim) -> dict[str, object]:
         "reason": held.hold_reason,
         "remedy": held.remedy,
     }
+    if held.detail is not None:
+        record["detail"] = held.detail
+    return record
 
 
 def release_comment_body(

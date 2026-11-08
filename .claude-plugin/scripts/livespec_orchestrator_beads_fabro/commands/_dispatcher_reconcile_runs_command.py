@@ -282,11 +282,12 @@ def _reconciled_entries(*, summary: ReconcileRunsSummary) -> list[dict[str, obje
 def _claim_hold_line(*, held: HeldClaim) -> str:
     """One held claim's line, naming a remedy only where the clause owes one."""
     remedy = "" if held.remedy is None else f" remedy={held.remedy}"
+    detail = "" if held.detail is None else f" detail={held.detail}"
     return (
         f"CLAIM   {held.work_item_id}  {_named(value=held.run_id)}  "
         f"factory={_named(value=held.factory_name)} "
         f"host={_named(value=held.dispatching_host)} "
-        f"reason={held.hold_reason}{remedy}\n"
+        f"reason={held.hold_reason}{remedy}{detail}\n"
     )
 
 
