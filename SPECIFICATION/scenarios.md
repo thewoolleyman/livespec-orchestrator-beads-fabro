@@ -6880,6 +6880,21 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     Then the runner refuses the wait and leaves the commit run untouched
     And the refusal reports the commit run as still running
     And the refusal names the stage's commit-run settle as what will wait on it
+
+  Scenario: A wait is refused while another wait on the same commit run is open
+    Given a commit started through the sandbox commit runner that is still running
+    And a wait on that commit run that has not yet returned
+    When the agent starts a second wait on the same commit run
+    Then the runner refuses the second wait at once with a non-zero exit status
+    And the refusal reports the commit run's current state and that another wait on it is open
+    And the commit run is left untouched and later reports its own terminal state
+
+  Scenario: A wait after a returned or killed wait is not refused for concurrency
+    Given a commit started through the sandbox commit runner that is still running
+    And an earlier wait on that commit run that either returned or was killed before returning
+    When the agent waits on that commit run
+    Then the wait blocks for no longer than its bound
+    And it reports running or the commit run's terminal state
 ```
 
 ## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
