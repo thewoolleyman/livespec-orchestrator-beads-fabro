@@ -14,10 +14,19 @@ had stopped reporting anything would satisfy the handed-off case alone.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
+    claimed_active_projection,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
+    release_dispatch_lock,
+    write_dispatch_lock,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import emit_outcomes
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff import (
     MergeWaitHandedOff,
@@ -168,3 +177,23 @@ def test_a_failed_outcome_for_the_same_item_is_still_reported_as_stranded(tmp_pa
     assert _attention(root=tmp_path, outcome_status="failed") == [
         f"host-only:stranded-dispatch:{_ITEM}"
     ]
+
+
+def test_a_handed_off_item_is_not_a_counted_claim_once_its_dispatching_process_ends(
+    tmp_path: Path,
+) -> None:
+    item = _active_item()
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    journal.append(record={"stage": "ledger-admit", "work_item_id": _ITEM})
+    journal.append(record={"stage": "outcome", "outcome": asdict(_handed_off())})
+
+    lock = write_dispatch_lock(repo=tmp_path, work_item_id=_ITEM, dispatch_id="01DISPATCH")
+    while_the_process_runs = claimed_active_projection(repo=tmp_path, items=[item], journal=journal)
+    release_dispatch_lock(path=lock)
+    after_it_ends = claimed_active_projection(repo=tmp_path, items=[item], journal=journal)
+
+    assert while_the_process_runs.live_lock_active_ids == (_ITEM,)
+    assert while_the_process_runs.active_count == 1
+    assert after_it_ends.active_count == 0
+    assert after_it_ends.live_lock_active_ids == ()
+    assert after_it_ends.journal_unreadable_active_ids == ()

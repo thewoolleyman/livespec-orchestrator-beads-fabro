@@ -3156,6 +3156,43 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   heading is the REST of the action id, since a specification title may carry a
   colon.
 
+- The HANDED-OFF MERGE WAIT of `contracts.md`'s "Armed pull request overtaken by
+  the default branch" paragraph (`bd-ib-bacahf`, Scenario 220) — what a merge wait
+  does when its poll budget ends on a pull request the forge is still going to
+  merge. Before it, such an item rested at `blocked / needs-human` and a person ran
+  `reconcile-merged` by hand once CI finished. Five cohesive modules, and the
+  dependency direction reads bottom-up: `_dispatcher_merge_wait_handoff` (PURE: the
+  `handed-off` status, the typed account of one handoff, the outcome detail and the
+  one journal row, whose stage and keys are the written contract between the two
+  passes below) → `_dispatcher_engine_exhaustion` (the final read, and the one
+  decision between merged, handed off and rested; `_dispatcher_engine_merge`
+  composes it and measures the seconds the wait spent on `PollPolicy.clock`) and
+  `_dispatcher_merge_wait_handoff_record` (the durable ledger comment) →
+  `_dispatcher_stranded_claim_handoff` (the OBSERVATION: which pull request the
+  claim's newest dispatch handed off, and what the forge now says) →
+  `_dispatcher_stranded_claim_handoff_recovery` (the pass that completes it).
+  Seven properties an editor must not invert. The status is `handed-off` and NEVER
+  `green`, because green means the pull request merged and the acceptance valve, the
+  self-update canary, calibration and the cost gate all act on that meaning; it is
+  not `blocked` either, which rests the item for a human. It is an exit-0 status
+  (`dispatch_exit_code`, `exit_code_for_status`), a non-alarm status, and it clears
+  the stranded-dispatch attention row, because an `active` item with no live lock
+  is exactly the shape that lane reports and its handoff would tell a person to
+  undo the handoff. The handoff is decided only when the forge's REQUIRED-check
+  list could be read: an unreadable list rests the item, since a handoff on a pull
+  request nobody could grade is a guess. A failed required check at the final read
+  is the ordinary required-check failure, built by the SAME
+  `required_check_failure_outcome` the poll uses and the stranded-claim pass reuses,
+  so the three surfaces cannot record different outcomes. The row is trusted only
+  in the claim's own newest dispatch segment and only when it names the claim's own
+  run, and a pull request the forge answers unreadably, or in a state the reading
+  does not recognise, HOLDS the claim. The recovery drives `reconcile-merged`
+  through its own command function with `force` set, because the fence it holds IS
+  the dispatch lock that valve's preflight refuses on; the ladder's `dispatch-live`
+  hold has already established that no other live owner exists. And nothing here
+  re-runs a failed check: any automatic re-run belongs to the failed-check recovery,
+  at most once per head, and this pass records the attempt the forge reports.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`

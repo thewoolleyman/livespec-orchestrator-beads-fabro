@@ -57,7 +57,7 @@ if TYPE_CHECKING:
         JournalWriter,
     )
 
-__all__: list[str] = ["outcome_at_exhaustion"]
+__all__: list[str] = ["exhausted_rest_outcome", "outcome_at_exhaustion"]
 
 _CONFLICTING = "DIRTY"
 
@@ -88,20 +88,13 @@ def outcome_at_exhaustion(  # noqa: PLR0913 — kw-only disposition; each field 
             )
             if settled is not None:
                 return settled
-        return outcome_type(
-            work_item_id=plan.work_item_id,
-            status="blocked",
-            stage="merge-poll",
-            pr_number=view.number,
-            merge_sha=None,
-            detail=merge_poll_budget_exhausted_detail(work_item_id=plan.work_item_id),
-            fabro_run_id=run_id,
-            base_advanced=BaseAdvancedAfterArming(
-                factory=plan.fabro_factory_name,
-                pr_head=view.head,
-                default_branch_tip=view.base,
-                cause=MERGE_POLL_BUDGET_EXHAUSTED,
-            ),
+        return exhausted_rest_outcome(
+            outcome_type=outcome_type,
+            plan=plan,
+            number=view.number,
+            pr_head=view.head,
+            default_branch_tip=view.base,
+            run_id=run_id,
         )
     return outcome_type(
         work_item_id=plan.work_item_id,
@@ -111,6 +104,38 @@ def outcome_at_exhaustion(  # noqa: PLR0913 — kw-only disposition; each field 
         merge_sha=None,
         detail="PR did not reach MERGED within the poll budget",
         fabro_run_id=run_id,
+    )
+
+
+def exhausted_rest_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    number: int,
+    pr_head: str | None,
+    default_branch_tip: str | None,
+    run_id: str | None,
+) -> DispatchOutcome:
+    """The ending that rests the item at `blocked / needs-human`, built in one place.
+
+    ONE builder for the merge wait's own final read and for the stranded-claim
+    pass that completes a handed-off wait whose pull request the forge will not
+    merge, so both record the same cause, detail and measurements.
+    """
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status="blocked",
+        stage="merge-poll",
+        pr_number=number,
+        merge_sha=None,
+        detail=merge_poll_budget_exhausted_detail(work_item_id=plan.work_item_id),
+        fabro_run_id=run_id,
+        base_advanced=BaseAdvancedAfterArming(
+            factory=plan.fabro_factory_name,
+            pr_head=pr_head,
+            default_branch_tip=default_branch_tip,
+            cause=MERGE_POLL_BUDGET_EXHAUSTED,
+        ),
     )
 
 
