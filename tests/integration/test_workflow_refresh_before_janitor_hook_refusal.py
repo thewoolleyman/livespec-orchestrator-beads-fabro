@@ -23,6 +23,7 @@ _WORKFLOW = (
     / "implement-work-item"
     / "workflow.fabro"
 )
+_REFRESH_SCRIPT = _REPO_ROOT / "dev-tooling" / "refresh-before-janitor.sh"
 _DEFAULT_BRANCH = "master"
 _STATE_DIRECTORY = ".git/livespec-publication"
 
@@ -55,6 +56,7 @@ def _janitor_script() -> str:
         .replace("{{ inputs.sandbox_check_suite }}", "true")
         .replace("{{ inputs.conformance_hook_install }}", "")
         .replace(r"\"", '"')
+        .replace("dev-tooling/refresh-before-janitor.sh", str(_REFRESH_SCRIPT))
     )
 
 

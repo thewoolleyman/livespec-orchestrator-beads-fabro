@@ -54,6 +54,40 @@ fi
 # nothing extra is skipped.
 read -ra delegated_skip_targets <<< "${SKIP_TARGETS:-}"
 
+# The factory refresh runs its required aggregate explicitly after Git has
+# prepared the merge index.  The commit-refuse installer owns the hooks
+# directory and removes Lefthook's extra merge wrapper, so this must not rely
+# on `pre-merge-commit`.  Reuse only complete evidence for this exact index;
+# a missing, malformed, or stale record falls through to the normal gate.
+if [[ "${LIVESPEC_FACTORY_REFRESH_MERGE:-}" == true ]] \
+    && [[ -f "$(git rev-parse --git-path MERGE_HEAD)" ]] \
+    && python3 - "$(git rev-parse --git-path livespec-green-token.json)" "$(git write-tree)" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+try:
+    token = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    evidence = token["pre_commit_aggregate"]
+    expected = sys.argv[2]
+    valid = (
+        token.get("mode") == "normal"
+        and token.get("scope") == "full-suite"
+        and token.get("tree_hash") == expected
+        and evidence.get("tree_hash") == expected
+        and all(isinstance(evidence.get(field), str) and evidence[field] for field in (
+            "run_id", "output_checksum", "captured_at"
+        ))
+    )
+except (KeyError, OSError, TypeError, json.JSONDecodeError):
+    valid = False
+raise SystemExit(0 if valid else 1)
+PY
+then
+    echo ":: refresh merge reuses its explicit same-index aggregate evidence"
+    exit 0
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
@@ -124,6 +158,21 @@ if [[ "$impl_count" -ge 1 ]] \
     exit $?
 fi
 echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
+if [[ "${LIVESPEC_FACTORY_REFRESH_MERGE:-}" == true ]] \
+    && [[ -f "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+    merge_output="$(mktemp)"
+    cleanup_refresh_merge_output() {
+        rm -f "$merge_output"
+    }
+    trap cleanup_refresh_merge_output EXIT
+    if ! just check-skipping check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}" >"$merge_output" 2>&1; then
+        cat "$merge_output"
+        exit 1
+    fi
+    cat "$merge_output"
+    bash dev-tooling/record-refresh-merge-evidence.sh "$merge_output"
+    exit $?
+fi
 aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
 staged_tree=$(git write-tree)
 set +e

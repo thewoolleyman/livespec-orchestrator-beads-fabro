@@ -97,6 +97,7 @@ _CHECK_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
 _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
 _CONFORMANCE_HOOK_INSTALL_TOKEN = "{{ inputs.conformance_hook_install }}"
 _DEFAULT_BRANCH = "master"
+_JANITOR_REFRESH = _REPO_ROOT / "dev-tooling" / "refresh-before-janitor.sh"
 
 # The gate program's own filename, as the NODE SCRIPTS spell it. Asserted
 # against the materialized name rather than imported into the rendering, because
@@ -288,6 +289,10 @@ def _sandbox(*, tmp_path: Path, exit_status: int = 0) -> _Sandbox:
     git.chmod(0o755)
     home = tmp_path / "home"
     home.mkdir()
+    helper = home / _JANITOR_REFRESH.relative_to(_REPO_ROOT)
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_bytes(_JANITOR_REFRESH.read_bytes())
+    helper.chmod(0o755)
     marker = tmp_path / "suite-ran"
     return _Sandbox(
         plugins_root=plugins_root,
@@ -400,9 +405,10 @@ def test_the_janitor_refuses_before_the_declared_suite_when_the_gate_cannot_repa
 def test_the_janitor_names_the_materialized_gate_program() -> None:
     """The janitor re-enters the program the prepare pass lands, before the suite."""
     script = _node_script(node="janitor")
-    assert _GATE_PROGRAM in script
-
-    assert script.index(_GATE_PROGRAM) < script.index(_CHECK_SUITE_TOKEN)
+    assert "bash dev-tooling/refresh-before-janitor.sh" in script
+    helper = _JANITOR_REFRESH.read_text(encoding="utf-8")
+    assert _GATE_PROGRAM in helper
+    assert helper.index(_GATE_PROGRAM) < helper.index('eval "$check_suite"')
 
 
 def test_pr_refresh_re_enters_the_plugin_gate_before_it_runs_the_declared_suite() -> None:

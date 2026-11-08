@@ -141,6 +141,10 @@ def _node_script(*, node: str, check_suite: str) -> str:
         script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
         .replace("{{ inputs.sandbox_check_suite }}", check_suite)
         .replace("{{ inputs.conformance_hook_install }}", "")
+        .replace(
+            "dev-tooling/refresh-before-janitor.sh",
+            str(_REPO_ROOT / "dev-tooling" / "refresh-before-janitor.sh"),
+        )
     )
 
 

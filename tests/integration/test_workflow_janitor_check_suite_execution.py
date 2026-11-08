@@ -48,6 +48,7 @@ _CHECK_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
 _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
 _CONFORMANCE_HOOK_INSTALL_TOKEN = "{{ inputs.conformance_hook_install }}"
 _DEFAULT_BRANCH = "master"
+_JANITOR_REFRESH = _REPO_ROOT / "dev-tooling" / "refresh-before-janitor.sh"
 
 
 def _janitor_script() -> str:
@@ -138,6 +139,10 @@ def _run(
     extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     plugins_root = _plugins_root(tmp_path=tmp_path)
+    helper = tmp_path / _JANITOR_REFRESH.relative_to(_REPO_ROOT)
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_bytes(_JANITOR_REFRESH.read_bytes())
+    helper.chmod(0o755)
     return subprocess.run(
         [
             "bash",

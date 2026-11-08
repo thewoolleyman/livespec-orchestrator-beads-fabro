@@ -158,6 +158,12 @@ def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
         encoding="utf-8",
     )
     gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+    just = bin_dir / "just"
+    just.write_text(
+        "#!/bin/sh\n" 'test "$1" = "check-refresh-merge-pre-commit"\n',
+        encoding="utf-8",
+    )
+    just.chmod(just.stat().st_mode | stat.S_IXUSR)
     if push_refusal is not None:
         real_git = shutil.which("git")
         assert real_git is not None
