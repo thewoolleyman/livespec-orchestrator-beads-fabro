@@ -518,6 +518,37 @@ def test_the_worker_records_the_commit_s_own_exit_status_and_head(tmp_path: Path
     assert "check-types" in path.with_suffix(".output").read_text(encoding="utf-8")
 
 
+def test_a_commit_msg_refusal_after_a_passing_pre_commit_hook_names_its_recipe(
+    tmp_path: Path,
+) -> None:
+    """A later hook refusal is not Git refusing a commit after every hook passed."""
+    program = _program(tmp_path)
+    path = _record(
+        tmp_path,
+        _RUN_ID,
+        {"state": "failed", "exit_code": 1, "hook_ran": True},
+        None,
+    )
+    refusal = "error: Recipe `check-red-green-replay` failed with exit code 1"
+    _ = path.with_suffix(".output").write_text(
+        "│ lefthook v1.13.6  hook: pre-commit │\n"
+        "All 95 targets passed.\n"
+        "│ lefthook v1.13.6  hook: commit-msg │\n" + refusal + "\n",
+        encoding="utf-8",
+    )
+
+    report, state = program["report_payload"](_RUN_ID, path, json.loads(path.read_text()))
+    brief = program["brief_text"](_RUN_ID, path, json.loads(path.read_text()), state, 300)
+
+    assert state == "failed"
+    assert report["failed_targets"] == ["check-red-green-replay"]
+    assert "hook_passed" not in report
+    assert "git_refusal_line" not in report
+    assert "failed targets: check-red-green-replay" in brief
+    assert "repository commit hook passed" not in brief
+    assert refusal in brief
+
+
 def test_a_commit_ended_by_a_signal_records_no_verdict(tmp_path: Path) -> None:
     """Scenario 179: a commit process ended by a signal is not a failed commit."""
     program = _program(tmp_path, _FakeSubprocess(returncode=-15))
