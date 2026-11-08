@@ -12,6 +12,7 @@ import argparse
 from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 from livespec_runtime.cross_repo.types import CrossRepoManifest, RefStatus
@@ -24,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance_record import (
     record_base_advanced_after_arming,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance_record_file_resume import (
+    resume_overtaken_record_files,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
@@ -44,6 +48,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_park import re
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import invoker_from_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
+    write_blocked_state_and_reconcile,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
     record_needs_human_cause,
 )
@@ -225,6 +232,7 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     wall_clock_seconds: float,
     dispatch_context_size: int,
     token_supplier: Callable[[], str],
+    resume: Callable[..., DispatchOutcome] | None = None,
 ) -> DispatchOutcome:
     """Run the machine-path dispositions after a dispatch reaches its terminal.
 
@@ -258,6 +266,20 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
                 journal=journal,
             ),
         )
+    # An armed pull request the default branch overtook only in declared record
+    # files is journaled, resolved to `ready` and resumed in this invocation, so
+    # it never rests at needs-human and the steps below belong to the resumed
+    # dispatch, which runs them for its own terminal.
+    if resume is not None:
+        resumed = resume_overtaken_record_files(
+            outcome=outcome,
+            config_text=livespec_config_text(repo=repo),
+            journal=journal,
+            resolve_ready=partial(_release_for_resume, repo=repo, outcome=outcome, journal=journal),
+            resume=resume,
+        )
+        if resumed is not None:
+            return resumed
     record_provider_exhaustion_if_observed(
         outcome=outcome,
         journal=journal,
@@ -331,3 +353,20 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         token_supplier=token_supplier,
     )
     return outcome
+
+
+def _release_for_resume(
+    *, repo: Path, work_item_id: str, outcome: DispatchOutcome, journal: JournalFile
+) -> None:
+    """Journal the ended run's terminal, then resolve the item to `ready`.
+
+    The terminal row lands first because the resume's gather reads this journal
+    for the earlier run, and the ready write is what makes the item resumable.
+    """
+    journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+    write_blocked_state_and_reconcile(
+        repo=repo,
+        item_id=work_item_id,
+        status="ready",
+        blocked_reason=None,
+    )
