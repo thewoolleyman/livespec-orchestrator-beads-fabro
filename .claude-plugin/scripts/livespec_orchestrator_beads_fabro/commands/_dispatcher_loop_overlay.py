@@ -141,6 +141,10 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # The node timeouts that graph was rendered with, so the setup nodes the
         # overlay adds to it take their durations from the same resolution.
         node_timeouts=overlay.recorded.payload.timeouts,
+        # The dispatch's own `--node-timeout` layer, so the credential allowance
+        # reads the per-node values the rendered graph carries. Read defensively:
+        # only a dispatching subcommand declares the flag.
+        node_timeout_arguments=tuple(getattr(overlay.args, "node_timeout", None) or ()),
         # The client build the record MEASURED for this plan's factory binary,
         # which decides how the written config may name that graph: a Petri-era
         # client collects the package the config sits in, and refuses an
