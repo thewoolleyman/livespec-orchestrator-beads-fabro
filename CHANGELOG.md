@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.305.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.304.0...v0.305.0) (2026-11-08)
+
+
+### Features
+
+* direct repair stages to wait once ([e3cef76](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3cef76b104e0aefc629843092201dc6e39f4783))
+* guard pipefail pipeline readers ([ac3158e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac3158e1c990d4565b81f0c33dd396405b1f86cb))
+* refuse repeated running commit waits ([1163e81](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1163e81354d741ffe85f196ebc5748475cd81662))
+
+
+### Bug Fixes
+
+* list each condensation-models export on its own line (Red) ([181abc4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/181abc4d8394abdce4b2354af4be6a7d044500f8))
+* retain scenario governing clauses in groom prompts ([13bb54e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/13bb54ec3570990484836778d7d1513d5efd9f3f))
+
 ## [0.304.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.303.0...v0.304.0) (2026-11-08)
 
 
