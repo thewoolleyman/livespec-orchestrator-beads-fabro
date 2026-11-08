@@ -314,3 +314,41 @@ def test_the_launch_target_names_the_branch_the_selected_staging_base_came_from(
 
     launch = next(call for call in runner.calls if call[:2] == ["fabro", "run"])
     assert launch == ["fabro", "run", "--target", target]
+
+
+@pytest.mark.parametrize(
+    ("resume_head", "resume_fetch_ref", "target"),
+    [
+        (_HEAD, "refs/heads/needs-human/9f126677", "example/source@master"),
+        (_ORIGIN_HEAD, None, "example/source@feat/bd-ib-xavjhz"),
+    ],
+    ids=["seeded", "resumed"],
+)
+@pytest.mark.usefixtures("proven_head")
+def test_a_seeded_launch_targets_its_staging_base_and_a_resume_its_publish_branch(
+    *, tmp_path: Path, resume_head: str, resume_fetch_ref: str | None, target: str
+) -> None:
+    """A seed's publish branch is not on origin, so naming it fails the launch.
+
+    A SEEDED route sets both `resume_head` and `resume_fetch_ref`: it stages on
+    the fresh default-branch base and the sandbox overlay fetches the seed from
+    its preservation ref later. Targeting the item's publish branch for it is the
+    0.303.0 regression, where every seeded `fabro run` ended with "target branch
+    was not found". Only a RESUME, which sets the head alone, owns a published
+    branch to target.
+    """
+    runner = _Runner()
+    staging_runner = staging.SourceStagingRunner(
+        inner=runner,
+        plan=_plan(repo=tmp_path, root=tmp_path),
+        journal=_Journal(),
+        worktree_root=tmp_path / ".worktrees",
+        resume_head=resume_head,
+        resume_fetch_ref=resume_fetch_ref,
+    )
+
+    result = staging_runner.run(argv=["fabro", "run"], cwd=tmp_path, timeout_seconds=30)
+
+    assert result.exit_code == 0
+    launch = next(call for call in runner.calls if call[:2] == ["fabro", "run"])
+    assert launch == ["fabro", "run", "--target", target]
