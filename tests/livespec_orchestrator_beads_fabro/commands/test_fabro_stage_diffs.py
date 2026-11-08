@@ -29,8 +29,8 @@ def test_projection_diffs_have_the_same_paths_bytes_sizes_and_digests_as_a_dump(
     artifacts = write_stage_diffs(stage_diffs=stage_diffs, output_dir=tmp_path)
 
     expected = {
+        "stages/001-fix@1/diff.patch": repair.encode(),
         "stages/002-implement@1/diff.patch": implement.encode(),
-        "stages/006-fix@1/diff.patch": repair.encode(),
     }
     actual = {
         artifact.relative_to(tmp_path).as_posix(): artifact.read_bytes() for artifact in artifacts
