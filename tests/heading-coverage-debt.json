@@ -709,7 +709,7 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
+    "heading": "## Scenario 255 — A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
     "work_item": "bd-ib-72hvx5",
     "first_seen": "2026-10-26"
   },
@@ -1425,6 +1425,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees",
     "work_item": "bd-ib-xz35zu",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
+    "work_item": "bd-ib-fde4ie",
     "first_seen": "2026-11-08"
   }
 ]

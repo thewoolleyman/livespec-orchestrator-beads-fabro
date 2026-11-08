@@ -1912,11 +1912,12 @@
     "work_item": "bd-ib-dpkip6"
   },
   {
-    "heading": "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run",
+    "heading": "## Scenario 199 \u2014 A fix turn grades each tree once, through its commit hook",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.prompts.test_fix_check_suite_once_per_tree_scenario199.test_every_directive_to_run_the_suite_carries_the_once_per_tree_rule",
-    "reason": "Prompt-tier acceptance for this heading, completed by bd-ib-k6dwyv. The tier is tests.prompts (a declared scenario tier) because the deliverable IS the prose: the obligation is discharged by the agent out of the fix prompt and is rendered by no Python caller, so nothing host-side can observe whether a turn chose to run the suite twice, and the engine reports the resulting timeout as an ordinary node failure. The bound node id is the DIRECTIVE-SITE enumeration rather than a case reading the new section, because the defect was never a missing paragraph: each site that directs a run of the suite said to re-run it until green with no exemption, so a rule stated in a section the directive never references leaves the directive saying the thing that cost run 01M56YAEWMS8 its turn. That case collects every list item carrying the check-suite workflow input and requires the rule AT each of them, which fails for a third directive added later without it, and its count control asserts the enumeration reached both known sites so a splitter that matched nothing fails rather than reporting clean. The heading's three gherkin scenarios are sibling cases in the same module, each asserted POSITIVELY as the sentences that grant the arm rather than by probing for the absence of a phrase: the hook-run-counts scenario (test_a_hook_green_full_suite_run_is_counted_as_the_turn_s_run_for_that_tree), the partial-run-or-later-change scenario (test_a_partial_hook_run_or_a_later_change_still_owes_a_full_run), and the refresh-repair integrated-tree scenario (test_the_rule_reaches_the_refresh_repair_steps_integrated_tree); two further siblings pin that the rule relaxes neither the obligation nor the janitor re-run behind it, and that the section is read before the turn-finishing guidance. The graph control (test_the_graph_scan_names_one_fix_prompt_that_is_on_disk) is what makes the prompt under test the file the fix node actually dispatches."
+    "test": "TODO",
+    "reason": "Revised at v319 (proposal fix-turn-commits-run-the-affected-tests-gate): a fix turn now grades each tree once, through its commit hook, and the fix prompt directs no full-suite run beyond what that hook runs. The earlier prompt-tier test (tests.prompts.test_fix_check_suite_once_per_tree_scenario199) asserts the superseded once-per-tree rule, so a test of the revised rule is owed by work-item bd-ib-fde4ie.",
+    "work_item": "bd-ib-fde4ie"
   },
   {
     "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",
@@ -2335,11 +2336,11 @@
     "work_item": "bd-ib-6zy3zd"
   },
   {
-    "heading": "## Scenario 255 \u2014 A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
+    "heading": "## Scenario 255 \u2014 A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal in-turn-commits-run-the-affected-tests-gate, and the owning work-item bd-ib-72hvx5 makes the commit hook of implement and review_fix turns run the affected-tests gate with a full-aggregate fallback, together with the test that binds this entry.",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal in-turn-commits-run-the-affected-tests-gate, and the owning work-item bd-ib-72hvx5 makes the commit hook of implement and review_fix turns run the affected-tests gate with a full-aggregate fallback, together with the test that binds this entry. Extended at v319 (proposal fix-turn-commits-run-the-affected-tests-gate) to fix turns and to workflow.fabro graph-reading test selection; those cases are owed by work-item bd-ib-fde4ie.",
     "work_item": "bd-ib-72hvx5"
   },
   {
@@ -2731,7 +2732,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_workflow_refresh_before_janitor_scenario305",
-    "reason": "Integration-tier execution against a real throwaway origin: the janitor refreshes before its declared aggregate and records the exact passed head; publish_draft then pushes that head unchanged after a further default-branch move; conflict and aggregate-red refreshes restore the agent head and record their refresh-repair brief for the existing fix route.",
+    "reason": "Integration-tier execution against a real throwaway origin: the janitor refreshes before its declared aggregate and records the exact passed head; publish_draft then pushes that head unchanged after a further default-branch move; conflict and aggregate-red refreshes restore the agent head and record their refresh-repair brief for the existing fix route. The three refresh-merge cases added at v319 (proposal janitor-refresh-merge-grades-once) are owed by work-item bd-ib-yqjaut.",
     "work_item": "bd-ib-fvgkw4"
   },
   {
