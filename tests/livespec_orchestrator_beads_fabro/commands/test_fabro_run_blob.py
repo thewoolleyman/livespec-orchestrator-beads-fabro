@@ -1,4 +1,4 @@
-"""Tests for blob-backed dump-compatible stage diffs."""
+"""Tests for the verified reader behind blob-backed stage diffs."""
 
 from __future__ import annotations
 
