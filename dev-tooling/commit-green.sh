@@ -21,7 +21,9 @@ checkpoint_commit() {
 
 checkpoint_run_id() {
     local ref="$1"
-    git log -1 --format=%B "$ref" 2>/dev/null | sed -n 's/^Fabro-Run: //p' | head -n 1
+    local message=""
+    message="$(git log -1 --format=%B "$ref" 2>/dev/null)" || return 0
+    awk '!found && sub(/^Fabro-Run: /, "") { print; found = 1 }' <<<"$message"
 }
 
 checkpoint_for_run() {
@@ -38,12 +40,9 @@ red_commit_for_current_run() {
     subject="$(git log -1 --format=%s "$ref" 2>/dev/null)" || return 1
     message="$(git log -1 --format=%B "$ref" 2>/dev/null)" || return 1
     run_id="$(git config --local --get livespec.factoryRunId 2>/dev/null || true)"
-    if [[ -n "$run_id" ]]; then
-        [[ "$subject" == "feat: red" ]] && grep -qxF "Factory-Run-Id: $run_id" <<<"$message"
-        return
-    fi
-    grep -q '^TDD-Red-Test-File-Checksum: ' <<<"$message" \
-        && ! grep -q '^TDD-Green-Verified-At: ' <<<"$message"
+    [[ -n "$run_id" ]] \
+        && [[ "$subject" == "feat: red" ]] \
+        && grep -qxF "Factory-Run-Id: $run_id" <<<"$message"
 }
 
 fold_checkpoints() {
