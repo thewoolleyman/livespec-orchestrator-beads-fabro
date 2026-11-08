@@ -343,6 +343,11 @@ def _executing(*, pid: int) -> bool:
     return raw[raw.rfind(")") + 2 :].split()[0] != "Z"
 
 
+def test_a_missing_process_is_not_executing() -> None:
+    """A vanished pid holds no credential, so the liveness reading is false."""
+    assert not _executing(pid=999_999_999)
+
+
 def _close_rig(*, rig: _Rig) -> None:
     """Close this case's descriptors and stop every process the case started.
 
@@ -367,6 +372,42 @@ def _close_rig(*, rig: _Rig) -> None:
             os.killpg(agent_group, signal.SIGKILL)
     with contextlib.suppress(subprocess.TimeoutExpired):
         _ = rig.guarded.wait(timeout=_SETTLE_SECONDS)
+
+
+def test_cleanup_kills_an_agent_group_other_than_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cleanup reaches the separate agent session without signalling this test's group."""
+
+    class _Guarded:
+        pid = 101
+
+        @staticmethod
+        def wait(*, timeout: float) -> None:
+            assert timeout == _SETTLE_SECONDS
+
+    pid_file = tmp_path / "pid"
+    _ = pid_file.write_text("202\n", encoding="utf-8")
+    closed = tuple(os.open(os.devnull, os.O_RDONLY) for _ in range(5))
+    killed: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr(os, "getpgid", lambda pid: 303 if pid == 202 else 0)
+    monkeypatch.setattr(os, "getpgrp", lambda: 404)
+    monkeypatch.setattr(os, "killpg", lambda group, sig: killed.append((group, sig)))
+    rig = _Rig(
+        guarded=_Guarded(),  # type: ignore[arg-type]
+        pid_file=pid_file,
+        clock=tmp_path / "clock",
+        deadline=0,
+        armed_fd=closed[0],
+        ready_fd=closed[1],
+        release_fd=closed[2],
+        holder_read=closed[3],
+        holder_write=closed[4],
+    )
+
+    _close_rig(rig=rig)
+
+    assert killed == [(101, signal.SIGKILL), (303, signal.SIGKILL)]
 
 
 def test_a_sufficiently_fresh_deadline_lets_an_ordinary_command_finish(
