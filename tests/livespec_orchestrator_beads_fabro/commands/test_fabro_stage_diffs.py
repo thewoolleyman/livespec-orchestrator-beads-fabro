@@ -29,8 +29,8 @@ def test_projection_diffs_have_the_same_paths_bytes_sizes_and_digests_as_a_dump(
     artifacts = write_stage_diffs(stage_diffs=stage_diffs, output_dir=tmp_path)
 
     expected = {
-        "stages/002-implement@1/diff.patch": implement.encode(),
-        "stages/006-fix@1/diff.patch": repair.encode(),
+        "stages/001-implement@1/diff.patch": implement.encode(),
+        "stages/003-fix@1/diff.patch": repair.encode(),
     }
     actual = {
         artifact.relative_to(tmp_path).as_posix(): artifact.read_bytes() for artifact in artifacts
@@ -41,18 +41,23 @@ def test_projection_diffs_have_the_same_paths_bytes_sizes_and_digests_as_a_dump(
     ]
 
 
-def test_projection_uses_the_dump_stage_ordinal_not_its_event_sequence(tmp_path: Path) -> None:
-    """A captured state projection's event sequence is not its dump directory ordinal."""
+def test_projection_derives_the_dump_stage_ordinal_from_all_state_stages(tmp_path: Path) -> None:
+    """Dump ranks every state stage, including stages without a diff artifact."""
     dump_patch = b"diff --git a/app.py b/app.py\n+print('implemented')\n"
+    captured_state_stages: dict[str, object] = {
+        f"prior-{ordinal:03d}@1": {
+            "first_event_seq": 100_000 + ordinal,
+            "diff": None,
+        }
+        for ordinal in range(1, 55)
+    }
+    captured_state_stages["implement@1"] = {
+        "first_event_seq": 239_551,
+        "diff": dump_patch.decode(),
+    }
     stage_diffs = stage_diffs_from_run_state(
         run_state={
-            "stages": {
-                "implement@1": {
-                    "first_event_seq": 239551,
-                    "dump_ordinal": 55,
-                    "diff": dump_patch.decode(),
-                }
-            }
+            "stages": captured_state_stages,
         }
     )
 
