@@ -32,6 +32,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     refreshing_gh_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
+from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture import (
+    WIP_CAPTURE_PROGRAM_FILENAME,
+    wip_capture_program_source,
+)
 
 from tests.prepare_step_support import runnable_script, steps_in
 
@@ -201,7 +205,10 @@ def test_the_installed_gh_wrapper_still_runs_the_bundles_mint_helper(
     )
 
     mint_helper = bundle_root / "bin" / "mint_app_token.py"
+    capture_program = bundle_root / "bin" / WIP_CAPTURE_PROGRAM_FILENAME
     assert mint_helper.is_file()
+    assert capture_program.read_bytes() == wip_capture_program_source().encode("utf-8")
+    assert capture_program.stat().st_mode & 0o777 == 0o755
     assert (bundle_root / "_vendor" / "livespec_runtime" / "__init__.py").is_file()
     # The wrapper ran THAT helper, and the token it minted reached the
     # real `gh` -- which is the whole job of the bundle.
