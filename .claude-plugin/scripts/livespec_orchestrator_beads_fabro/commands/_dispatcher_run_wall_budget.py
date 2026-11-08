@@ -48,8 +48,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     REPOSITORY_LAYER,
-    WORKFLOW_DEFAULT_LAYER,
     positive_int_seconds,
 )
 
@@ -100,7 +100,7 @@ class RunWallBudget:
 # None and make every reader branch on an absence with a perfectly good answer.
 DEFAULT_RUN_WALL_BUDGET = RunWallBudget(
     seconds=float(DEFAULT_RUN_WALL_BUDGET_SECONDS),
-    layer=WORKFLOW_DEFAULT_LAYER,
+    layer=BUILT_IN_DEFAULT_LAYER,
 )
 
 

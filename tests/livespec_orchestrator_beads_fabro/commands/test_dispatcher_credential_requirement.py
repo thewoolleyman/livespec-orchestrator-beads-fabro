@@ -48,6 +48,7 @@ _COMMANDS_DIR = (
 )
 _DEADLINE_PATH = _COMMANDS_DIR / "_dispatcher_credential_deadline.py"
 _REQUIREMENT_PATH = _COMMANDS_DIR / "_dispatcher_credential_requirement.py"
+_REQUIREMENT_TYPES_PATH = _COMMANDS_DIR / "_dispatcher_credential_requirement_types.py"
 _SHIPPED_WORKFLOW = (
     _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
 )
@@ -136,6 +137,14 @@ def _resolve(
     )
 
 
+def test_the_workflow_fault_type_has_a_dedicated_module_and_public_reexport() -> None:
+    """The requirement module exposes the one fault type its callers inspect."""
+    assert _REQUIREMENT_TYPES_PATH.is_file(), f"{_REQUIREMENT_TYPES_PATH} does not exist"
+    requirement = importlib.import_module(_REQUIREMENT_MODULE)
+    types = importlib.import_module(f"{_PACKAGE}._dispatcher_credential_requirement_types")
+    assert requirement.WorkflowFaultDeferral is types.WorkflowFaultDeferral
+
+
 def _access_token(*, exp: int) -> str:
     payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
     return f"header.{payload}.signature"
@@ -178,6 +187,19 @@ def test_a_larger_configured_node_timeout_raises_the_requirement(tmp_path: Path)
     assert not isinstance(default, str), default
     assert not isinstance(raised, str), raised
     assert raised.required_seconds > default.required_seconds
+
+
+def test_an_invalid_workflow_timeout_defers_to_the_timeout_validator(tmp_path: Path) -> None:
+    """A graph timeout fault is carried to its owning dispatch stage."""
+    module = importlib.import_module(_REQUIREMENT_MODULE)
+    refusal = _resolve(
+        repo=_write_repo(
+            tmp_path=tmp_path,
+            graph=_FIXTURE_GRAPH.replace('timeout="1800s"', 'timeout="bad"', 1),
+        )
+    )
+    assert isinstance(refusal, module.WorkflowFaultDeferral)
+    assert "invalid timeout" in refusal.message
 
 
 def test_a_wider_retry_budget_raises_the_requirement(tmp_path: Path) -> None:

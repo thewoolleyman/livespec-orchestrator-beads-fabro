@@ -34,8 +34,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget impo
     RunWallBudget,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     REPOSITORY_LAYER,
-    WORKFLOW_DEFAULT_LAYER,
 )
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget"
@@ -118,7 +118,7 @@ def _prepared(
 def test_a_budget_at_or_above_every_node_timeout_does_not_conflict() -> None:
     """Equality passes: a budget EQUAL to the longest node is not smaller than it."""
     conflict = _conflict()
-    budget = RunWallBudget(seconds=3600.0, layer=WORKFLOW_DEFAULT_LAYER)
+    budget = RunWallBudget(seconds=3600.0, layer=BUILT_IN_DEFAULT_LAYER)
     assert conflict(budget=budget, nodes={"implement": 3600, "janitor": 1800}) is None
     assert conflict(budget=budget, nodes={}) is None
 
@@ -192,7 +192,7 @@ def test_preparing_the_payload_journals_the_budget_beside_the_node_timeouts(
     assert len(journal.records) == 1
     assert journal.records[0]["run_wall_budget"] == {
         "seconds": 21600.0,
-        "layer": WORKFLOW_DEFAULT_LAYER,
+        "layer": BUILT_IN_DEFAULT_LAYER,
     }
     # Beside, not instead of: one read of the file resolved both.
     assert "node_timeouts" in journal.records[0]
