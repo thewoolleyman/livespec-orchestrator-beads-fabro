@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.303.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.302.0...v0.303.0) (2026-11-08)
+
+
+### Features
+
+* avoid Fabro source pre-run push ([81fc3a5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/81fc3a526278533d533242b9cd55b4e91dcadcf7))
+* detect landed preservation refs ([5c08c82](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c08c8205e479385cbd21def12c9c20875edd9ec))
+* record an expedited merge and let its first failure reach a corrected attempt (bd-ib-7i2bta) ([b5490de](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b5490deebe2defa9f86439a8b038f8606543531e))
+* retry commit refs preservation errors ([0414990](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0414990fd5f68e13816871d5b7bc113cd6738cca))
+
+
+### Bug Fixes
+
+* preserve published refresh repair ancestry ([9bcd0ca](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9bcd0ca5d3d64b75a8769a491327d10dbde9f987))
+* require the exact github.com host for the explicit source target ([de7e38b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/de7e38bc6c7381ab00150aa770ca236790fe9ddd))
+* target the selected staging base in the Petri source launch ([19a9419](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/19a94190e536ac2cbdef236f8eaf1b9f7fbc4cc4))
+
 ## [0.302.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.301.0...v0.302.0) (2026-11-07)
 
 
