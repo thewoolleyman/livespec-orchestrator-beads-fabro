@@ -43,9 +43,9 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario297|scenario316) ;;
+    all|scenario242|scenario297|scenario316) ;;
     *)
-        echo "usage: run-tests.sh [scenario297|scenario316]" >&2
+        echo "usage: run-tests.sh [scenario242|scenario297|scenario316]" >&2
         exit 2
         ;;
 esac
@@ -188,7 +188,7 @@ for argument in "$@"; do
                 # drive, so a following launcher may legitimately acquire it
                 # first.  Record both items: only the driving launcher's own
                 # held mutex violates the launcher's narrow mutex scope.
-                holder_item=$(grep -oE 'item=[^ ]+' "$STUB_LOCK_DIR/holder" 2>/dev/null | head -1 | cut -d= -f2)
+                holder_item=$(grep -oE 'item=[^ ]+' "$STUB_LOCK_DIR/holder" 2>/dev/null | sed -n '1p' | cut -d= -f2)
                 if [ -n "$holder_item" ]; then
                     printf 'held driver=%s holder=%s\n' "$item" "$holder_item" >> "$STUB_DRIVE_MUTEX_LOG"
                 else
@@ -214,7 +214,7 @@ for argument in "$@"; do
             done
             printf '%s\n' "$item" >> "$STUB_RESUME_LOG"
             marker_state=missing
-            if find "$STUB_INFLIGHT_DIR" -type f -print -quit | grep -q .; then marker_state=present; fi
+            if find "$STUB_INFLIGHT_DIR" -type f -print -quit | grep . >/dev/null; then marker_state=present; fi
             lock_state=released
             if [ -d "$STUB_LOCK_DIR" ]; then lock_state=held; fi
             printf '%s marker=%s mutex=%s\n' "$item" "$marker_state" "$lock_state" >> "$STUB_RESUME_OBSERVATION_LOG"
@@ -314,7 +314,8 @@ HOLD_FILE=""
 # new_case <name>: a fresh set of throwaway directories and fixtures, and the
 # environment every launcher invocation of this case inherits.
 new_case() {
-    CASE_DIR="$WORK/case/$1"
+    CASE_NAME="$1"
+    CASE_DIR="$WORK/case/$CASE_NAME"
     mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven,resumed}
     rmdir "$CASE_DIR/lock"
     CASE_LOG="$CASE_DIR/launcher.log"
@@ -416,16 +417,36 @@ ps_count() { grep -cxF -- "$1" "$PS_LOG" 2>/dev/null || true; }
 drive_log_items() { tr '\n' ' ' < "$DRIVE_LOG" | sed 's/ *$//'; }
 preflight_count() { grep -c " $1$" "$PREFLIGHT_LOG" 2>/dev/null || true; }
 
-# wait_for_preflight <item> <count> <seconds>: wait until the stub recorded a
-# particular number of Definition-of-Done preflights for an item.
+# This protects the harness from a hung launcher. It is not a startup budget:
+# each Scenario 297 launcher normally reaches the stub preflight in milliseconds.
+HARNESS_PREFLIGHT_HANG_GUARD_S=${HARNESS_PREFLIGHT_HANG_GUARD_S:-300}
+PREFLIGHT_FAILURE_DETAIL=""
+
+# wait_for_preflight <case> <launcher> <pid> <log> <item> <count>: wait until
+# the stub recorded the requested number of Definition-of-Done preflights. A
+# launcher that exits first is a verdict immediately; the shared guard exists
+# only to stop a genuinely hung launcher from holding the harness forever.
 wait_for_preflight() {
-    local item="$1" count="$2" limit="$3" deadline
-    deadline=$(( $(date +%s) + limit ))
+    local case_name="$1" launcher="$2" pid="$3" log="$4" item="$5" count="$6"
+    local deadline launcher_rc log_tail reason
+    deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))
     while :; do
         if [ "$(preflight_count "$item")" -ge "$count" ]; then return 0; fi
-        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid"; launcher_rc=$?
+            reason="exited rc=$launcher_rc"
+            break
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            reason="hung past ${HARNESS_PREFLIGHT_HANG_GUARD_S}s guard"
+            break
+        fi
         sleep "$HARNESS_POLL_S"
     done
+    log_tail=$(tail -8 "$log" 2>&1 || true)
+    PREFLIGHT_FAILURE_DETAIL="case=$case_name launcher=$launcher did not reach preflight ($reason); tail of $log:
+${log_tail:-<no launcher log output>}"
+    return 1
 }
 
 # await_both <pid> <pid> <seconds>: wait for two launchers to exit, terminating
@@ -689,14 +710,16 @@ export STUB_PREFLIGHT_SLOW_S=120
 printf '8\n' > "$CAP_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-older > "$CASE_DIR/older.log" 2>&1 &
 older_pid=$!
-if ! wait_for_preflight bd-ib-older 1 10; then
-    fail "the older launcher did not start its preflight"
+if ! wait_for_preflight "$CASE_NAME" older "$older_pid" "$CASE_DIR/older.log" bd-ib-older 1; then
+    fail "$PREFLIGHT_FAILURE_DETAIL"
 fi
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
 # The older preflight is held, so the older launcher cannot bind until the
 # release below: a younger preflight seen first ran while it was queued.
-if wait_for_preflight bd-ib-younger 1 60 && [ ! -s "$DRIVE_LOG" ]; then
+if ! wait_for_preflight "$CASE_NAME" younger "$younger_pid" "$CASE_DIR/younger.log" bd-ib-younger 1; then
+    fail "$PREFLIGHT_FAILURE_DETAIL"
+elif [ ! -s "$DRIVE_LOG" ]; then
     pass "the younger queued launcher starts its preflight before the older binds"
 else
     fail "the younger launcher waited for the FIFO head before starting its preflight"
@@ -742,10 +765,13 @@ export STUB_PREFLIGHT_SLOW_S=120
 printf '8\n' > "$CAP_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-stale-older > "$CASE_DIR/older.log" 2>&1 &
 older_pid=$!
-wait_for_preflight bd-ib-stale-older 1 10 || fail "the stale-case older launcher did not preflight"
+wait_for_preflight "$CASE_NAME" older "$older_pid" "$CASE_DIR/older.log" bd-ib-stale-older 1 \
+    || fail "$PREFLIGHT_FAILURE_DETAIL"
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-stale-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
-if ! wait_for_preflight bd-ib-stale-younger 1 60 || [ -s "$DRIVE_LOG" ]; then
+if ! wait_for_preflight "$CASE_NAME" younger "$younger_pid" "$CASE_DIR/younger.log" bd-ib-stale-younger 1; then
+    fail "$PREFLIGHT_FAILURE_DETAIL"
+elif [ -s "$DRIVE_LOG" ]; then
     fail "the stale-case younger launcher did not preflight while queued"
 fi
 # A zero-second reuse window makes the observed queued pass stale as soon as
@@ -772,10 +798,15 @@ export STUB_PREFLIGHT_FAIL_ITEM=bd-ib-failing-younger
 printf '8\n' > "$CAP_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-failing-older > "$CASE_DIR/older.log" 2>&1 &
 older_pid=$!
-wait_for_preflight bd-ib-failing-older 1 10 || fail "the failure-case older launcher did not preflight"
+wait_for_preflight "$CASE_NAME" older "$older_pid" "$CASE_DIR/older.log" bd-ib-failing-older 1 \
+    || fail "$PREFLIGHT_FAILURE_DETAIL"
 ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-failing-younger > "$CASE_DIR/younger.log" 2>&1 &
 younger_pid=$!
-if wait_for_preflight bd-ib-failing-younger 1 60 && [ ! -s "$DRIVE_LOG" ]; then
+if ! wait_for_preflight "$CASE_NAME" younger "$younger_pid" "$CASE_DIR/younger.log" bd-ib-failing-younger 1; then
+    stop_launcher "$younger_pid"
+    wait "$younger_pid"; younger_rc=$?
+    fail "$PREFLIGHT_FAILURE_DETAIL"
+elif [ ! -s "$DRIVE_LOG" ]; then
     wait "$younger_pid"; younger_rc=$?
 else
     stop_launcher "$younger_pid"
@@ -1106,14 +1137,71 @@ run_launcher bd-ib-stamp "$CASE_DIR/impl-stamp.log"
 printf '3\n' > "$CAP_FILE"
 "$RESUME_LAUNCHER" bd-ib-stamp-resume > "$CASE_DIR/resume-stamp.log" 2>&1
 stamp_pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z '
-if grep -qE "$stamp_pattern" "$CASE_DIR/impl-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/impl-stamp.log" | grep -q . \
-    && grep -qE "$stamp_pattern" "$CASE_DIR/resume-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/resume-stamp.log" | grep -q .; then
+if grep -qE "$stamp_pattern" "$CASE_DIR/impl-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/impl-stamp.log" | grep . >/dev/null \
+    && grep -qE "$stamp_pattern" "$CASE_DIR/resume-stamp.log" && ! grep -E '^[0-9]{2}:[0-9]{2}:[0-9]{2} ' "$CASE_DIR/resume-stamp.log" | grep . >/dev/null; then
     pass "both launchers stamp every line with a date, not a time of day alone"
 else
     fail "a launcher line carried a time of day without its date"
     head -4 "$CASE_DIR/impl-stamp.log" "$CASE_DIR/resume-stamp.log" >&2
 fi
 
+fi
+
+# --- 18a. a marker released after its listed run leaves the board -----------
+# Scenario 242 — The provisional fleet launch check fails the build on a broken
+# launcher. A dead launcher may leave its marker behind while its drive
+# merge-polls. Once another launcher has observed that marker's run on a board,
+# the marker must no longer hold a slot after the run leaves that board. A
+# never-listed marker remains counted while that drive is alive.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario242 ]; then
+echo "--- 18a. releases a listed-and-finished drive's stale marker"
+new_case listed-marker-left-board
+export FLEET_LAUNCH_MAX_WAIT_S=4
+write_board "$BOARD_GMK" 7 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+bash -c 'exec -a "$1" sleep 600' bash "python3 drive.py --action impl:bd-ib-ended" &
+ended_drive_pid=$!
+ended_marker="$FLEET_LAUNCH_INFLIGHT_DIR/100-stopped-seat-bd-ib-ended"
+echo "owner=stopped-seat pid=999999 item=bd-ib-ended factory=petri" > "$ended_marker"
+printf '%s %s\n' "$GMK_URL" bd-ib-ended > "$CASE_DIR/driven/bd-ib-ended"
+ONLY_GMK=1 "$LAUNCHER" bd-ib-observer > "$CASE_DIR/observer.log" 2>&1 &
+observer_pid=$!
+if wait_for_line "$ended_marker" "listed=1" 10; then
+    pass "a board observer records that the dead launcher's run listed"
+else
+    fail "the observed listed run was not recorded on its in-flight marker"
+fi
+stop_launcher "$observer_pid"
+wait "$observer_pid" 2>/dev/null || true
+rm -f "$CASE_DIR/driven/bd-ib-ended"
+run_launcher bd-ib-after-ended "$CASE_DIR/after-ended.log"
+if [ "$RC" = 0 ] && [ "$(drive_log_items)" = bd-ib-after-ended ]; then
+    pass "a listed-and-finished run's merge-polling drive no longer holds a fleet slot"
+else
+    fail "a listed-and-finished run still held a fleet slot (rc=$RC dispatches: $(drive_log_items))"
+    tail -6 "$CASE_DIR/after-ended.log" >&2
+fi
+kill "$ended_drive_pid" 2>/dev/null; wait "$ended_drive_pid" 2>/dev/null
+
+new_case unlisted-marker-stays-counted
+export FLEET_LAUNCH_MAX_WAIT_S=4
+write_board "$BOARD_GMK" 7 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+bash -c 'exec -a "$1" sleep 600' bash "python3 drive.py --action impl:bd-ib-unlisted" &
+unlisted_drive_pid=$!
+echo "owner=stopped-seat pid=999999 item=bd-ib-unlisted factory=petri" \
+    > "$FLEET_LAUNCH_INFLIGHT_DIR/100-stopped-seat-bd-ib-unlisted"
+run_launcher bd-ib-must-wait "$CASE_DIR/unlisted.log"
+if [ "$RC" = 75 ] && [ ! -s "$DRIVE_LOG" ] \
+    && log_has "$CASE_DIR/unlisted.log" "fleet=8 cap=8"; then
+    pass "an unlisted marker remains counted while its dead launcher has a live drive"
+else
+    fail "an unlisted marker did not hold the fleet slot (rc=$RC dispatches: $(drive_log_items))"
+    tail -6 "$CASE_DIR/unlisted.log" >&2
+fi
+kill "$unlisted_drive_pid" 2>/dev/null; wait "$unlisted_drive_pid" 2>/dev/null
 fi
 
 # --- 19. repository holds scope themselves to their named launch kinds ------

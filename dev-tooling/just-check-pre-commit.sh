@@ -44,6 +44,15 @@ if [[ "$(git config --get --bool livespec.sandboxExempt || printf 'false')" == t
     echo ":: the dispatch-time master-CI preflight governs whether a run may start against a red master"
     sandbox_skips+=(check-master-ci-green)
 fi
+# Inside the delegated gate Job this script IS the Job's gate, and the shared
+# client exports into `SKIP_TARGETS` the members that read authority held
+# outside the tree (the work-items ledger, the forge's settings), running them
+# on the committing host instead. Dropping the variable here ran
+# `check-no-workflow-edits` in a pod holding no credential, where it failed
+# closed on every tree carrying an approved workflow edit (gate Jobs of
+# bd-ib-oxx6eo, 2026-11-08). The pre-push script reads it the same way. Unset,
+# nothing extra is skipped.
+read -ra delegated_skip_targets <<< "${SKIP_TARGETS:-}"
 
 staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
@@ -75,7 +84,7 @@ if [[ -n "$green_amend_staged" ]] \
     fi
     echo ":: staged pre-check and staged tests passed; running the gate once"
     echo ":: skipping no-arg check-red-green-replay and same-repo live TUI picker gate"
-    if ! just check-skipping check-red-green-replay check-codex-skill-picker "${sandbox_skips[@]}"; then
+    if ! just check-skipping check-red-green-replay check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"; then
         echo ":: gate phase refused the commit" >&2
         exit 1
     fi
@@ -103,7 +112,7 @@ if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
         check-per-file-coverage \
         check-check-coverage-incremental \
         check-codex-skill-picker \
-        "${sandbox_skips[@]}"
+        "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"
     exit $?
 fi
 if [[ "$impl_count" -ge 1 ]] \
@@ -111,8 +120,8 @@ if [[ "$impl_count" -ge 1 ]] \
     && ! grep -q 'TDD-Green-Verified-At:' <<<"$head_msg"; then
     echo ":: Green-amend shape detected (impl staged; HEAD carries Red-only trailers)"
     echo ":: skipping no-arg check-red-green-replay and same-repo live TUI picker gate"
-    just check-skipping check-red-green-replay check-codex-skill-picker "${sandbox_skips[@]}"
+    just check-skipping check-red-green-replay check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"
     exit $?
 fi
 echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
-just check-skipping check-codex-skill-picker "${sandbox_skips[@]}"
+just check-skipping check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"

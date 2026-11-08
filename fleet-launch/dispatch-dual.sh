@@ -103,14 +103,14 @@ read_fleet_cap() { FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/de
 
 rows_count() { if [ "$1" = U ]; then echo U; else printf '%s' "$1" | grep -c .; fi; }
 
-# marker_snapshot: the items of the live in-flight markers, one per line, or U
-# when the directory cannot be read.  Taken BEFORE the boards are read: a
-# launcher drops its marker only after a board lists its run, so a marker that
-# vanishes after this snapshot belongs to a run the later board read lists.
-# Reading the boards first undercounted a run that listed between the two
-# reads (bd-ib-uhcn36, run 01M6H3VFB451).
+# marker_snapshot: live in-flight marker paths, item ids and listed observations,
+# tab-separated, or U when the directory cannot be read. Taken BEFORE the
+# boards are read: a launcher drops its marker only after a board lists its
+# run, so a marker that vanishes after this snapshot belongs to a run the later
+# board read lists. Reading the boards first undercounted a run that listed
+# between the two reads (bd-ib-uhcn36, run 01M6H3VFB451).
 marker_snapshot() {
-  local f p it items=""
+  local f p it listed entries=""
   mkdir -p "$INFLIGHT" 2>/dev/null
   [ -d "$INFLIGHT" ] && [ -r "$INFLIGHT" ] && [ -x "$INFLIGHT" ] || { echo U; return; }
   for f in "$INFLIGHT"/*; do
@@ -122,19 +122,34 @@ marker_snapshot() {
     if ! { [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }; then
       [ -n "$it" ] && pgrep -u "$(id -u)" -f -- "drive.py .*--action impl:${it}( |$)" >/dev/null 2>&1 || continue
     fi
-    items="$items$it
-"
+    listed=0
+    grep -qx 'listed=1' "$f" 2>/dev/null && listed=1
+    entries="${entries}${f}"$'\t'"${it}"$'\t'"${listed}"$'\n'
   done
-  printf '%s' "$items"
+  printf '%s' "$entries"
 }
 
-# unlisted_markers <snapshot> <listed-rows>: the snapshot's launches whose run the (later) board read does not list.
+# mark_marker_listed <marker>: retain the observed transition in a marker whose
+# launcher is gone but whose drive can still merge-poll after the run ends.
+mark_marker_listed() {
+  local marker="$1"
+  [ -e "$marker" ] || return
+  grep -qx 'listed=1' "$marker" 2>/dev/null || printf 'listed=1\n' >> "$marker" 2>/dev/null
+}
+
+# unlisted_markers <snapshot> <listed-rows>: count a snapshot marker until its
+# run lists. After a board observation has recorded that transition, the marker
+# stays out of the count even after the run has left the board.
 unlisted_markers() {
-  local snapshot="$1" listed="$2" it n=0
+  local snapshot="$1" listed="$2" marker it was_listed n=0
   [ "$snapshot" = U ] && { echo U; return; }
-  while IFS= read -r it; do
+  while IFS=$'\t' read -r marker it was_listed; do
     [ -n "$it" ] || continue
-    printf '%s\n' "$listed" | awk -v it="$it" '$4==it {found=1} END{exit !found}' && continue
+    if printf '%s\n' "$listed" | awk -v it="$it" '$4==it {found=1} END{exit !found}'; then
+      mark_marker_listed "$marker"
+      continue
+    fi
+    [ "$was_listed" = 1 ] && continue
     n=$((n + 1))
   done <<EOF_SNAPSHOT
 $snapshot

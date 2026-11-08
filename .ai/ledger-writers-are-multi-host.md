@@ -63,3 +63,13 @@ Before proposing any design that serializes or fences ledger writers, state
 in one sentence which SERVER-SIDE operation enforces the exclusion. If the
 answer names a file, a socket, a process, a host or a directory, the design
 is wrong for this fleet, however well it tests on one host.
+
+The same caution applies to whole-record writes made by hand. `bd update
+--body-file` replaces the whole description, so a body built from an earlier
+read silently reverts every edit made since. On 2026-11-08 a plan seat rewrote
+bd-ib-s754le from a copy saved earlier in its session, minutes after
+legacy-coordinator-agent had repaired one sentence of the same record, and the
+coordinator's wording was lost with exit 0 (an observed incident, not a
+measured trial like those above). Take the read, the edit and the write in one
+script built from the LIVE record, and refuse the write when the live body
+differs from the copy the edit started from.

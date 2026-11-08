@@ -41,7 +41,9 @@ def _run(
     cwd: Path,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    run_env = os.environ.copy()
+    # The delegated gate Job exports SKIP_TARGETS to the suite it runs; each case
+    # here names its own skips, so an inherited value never leaks into one.
+    run_env = {name: value for name, value in os.environ.items() if name != "SKIP_TARGETS"}
     if env is not None:
         run_env.update(env)
     return subprocess.run(
@@ -321,3 +323,20 @@ def test_checkout_without_the_marker_still_runs_the_master_ci_green_gate(*, tmp_
         "check-codex-skill-picker",
     ]
     assert _MASTER_CI_GATE not in invocation
+
+
+def test_the_delegated_gate_skip_targets_reach_every_check_skipping_call(*, tmp_path: Path) -> None:
+    """The gate Job's SKIP_TARGETS joins the skip list, as pre-push already reads it."""
+    repo, env = _init_repo(tmp_path=tmp_path, baseline_message="baseline")
+    _stage(repo=repo, relative_path="tests/test_placeholder.py", body="def test_green(): pass\n")
+    _stage(repo=repo, relative_path=".claude-plugin/scripts/widget.py", body="VALUE = 1\n")
+    skip = "check-branch-protection-alignment check-no-workflow-edits"
+
+    invocation = _invoke_pre_commit(repo=repo, env={**env, "SKIP_TARGETS": skip})
+
+    assert invocation.split() == [
+        "check-skipping",
+        "check-codex-skill-picker",
+        "check-branch-protection-alignment",
+        "check-no-workflow-edits",
+    ]

@@ -1433,5 +1433,12 @@
     "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
     "work_item": "bd-ib-fde4ie",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes",
+    "work_item": "bd-ib-v75dlb",
+    "first_seen": "2026-11-08"
   }
 ]

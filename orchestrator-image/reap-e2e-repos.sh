@@ -162,12 +162,12 @@ delete_repo() {
       return 0
     fi
     # Already gone is success (idempotent).
-    if printf '%s' "$out" | grep -qiE 'HTTP 404|Not Found'; then
+    if grep -qiE 'HTTP 404|Not Found' <<<"$out"; then
       printf '    already gone (404): %s\n' "$full_name"
       return 0
     fi
     # The create-on-disk race: retry with backoff.
-    if printf '%s' "$out" | grep -qiE 'done being created on disk|HTTP 403'; then
+    if grep -qiE 'done being created on disk|HTTP 403' <<<"$out"; then
       printf '    attempt %s/%s not-yet-deletable, backing off %ss\n' \
         "$attempt" "$DELETE_ATTEMPTS" "$DELETE_BACKOFF_SECONDS"
       sleep "$DELETE_BACKOFF_SECONDS"
@@ -176,7 +176,7 @@ delete_repo() {
     fi
     # Unknown error: retry too (still bounded), but surface the redacted reason.
     printf '    attempt %s/%s failed: %s\n' \
-      "$attempt" "$DELETE_ATTEMPTS" "$(printf '%s' "$out" | redact | head -1)"
+      "$attempt" "$DELETE_ATTEMPTS" "$(printf '%s' "$out" | redact | sed -n '1p')"
     sleep "$DELETE_BACKOFF_SECONDS"
     attempt=$((attempt + 1))
   done
