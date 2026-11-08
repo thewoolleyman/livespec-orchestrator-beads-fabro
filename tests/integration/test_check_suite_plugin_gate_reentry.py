@@ -95,6 +95,7 @@ _WORKFLOW = (
 
 _CHECK_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
 _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
+_CONFORMANCE_HOOK_INSTALL_TOKEN = "{{ inputs.conformance_hook_install }}"
 _DEFAULT_BRANCH = "master"
 
 # The gate program's own filename, as the NODE SCRIPTS spell it. Asserted
@@ -174,8 +175,10 @@ def _rendered_janitor(*, suite_argv: str, shell_quoted_input: bool) -> str:
     script = _node_script(node="janitor")
     assert script.count(_CHECK_SUITE_TOKEN) == 1
     replacement = shlex.quote(suite_argv) if shell_quoted_input else suite_argv
-    return script.replace(_DEFAULT_BRANCH_TOKEN, _DEFAULT_BRANCH).replace(
-        _CHECK_SUITE_TOKEN, replacement
+    return (
+        script.replace(_DEFAULT_BRANCH_TOKEN, _DEFAULT_BRANCH)
+        .replace(_CHECK_SUITE_TOKEN, replacement)
+        .replace(_CONFORMANCE_HOOK_INSTALL_TOKEN, "")
     )
 
 
