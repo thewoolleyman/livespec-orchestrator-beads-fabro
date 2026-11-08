@@ -171,6 +171,39 @@ def test_a_running_commit_is_reported_running_when_the_bound_expires(
     assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
 
 
+@pytest.mark.parametrize(
+    ("stage", "settle"),
+    [("fix", "fix_commit_settle"), ("review_fix", "review_fix_commit_settle")],
+)
+def test_a_stage_visit_refuses_a_second_wait_after_the_first_reported_running(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+    settle: str,
+) -> None:
+    """Scenario 179: one running report leaves the commit for that stage's settle."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", stage)
+    program = _program(tmp_path)
+    program["group_alive"] = _alive
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+
+    assert program["wait"](_RUN_ID, 0) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+
+    with pytest.raises(program["RunnerRefusal"], match=rf"{_RUN_ID}.*running.*{settle}"):
+        _ = program["wait"](_RUN_ID, 0)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "running"}
+
+    program["group_alive"] = _gone
+    assert program["settle"](0, str(tmp_path / "brief"), stage=stage) == 0
+    _ = path.write_text(json.dumps({"state": "running"}), encoding="utf-8")
+    program["group_alive"] = _alive
+
+    assert program["wait"](_RUN_ID, 0) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+
+
 def test_a_running_record_whose_processes_are_gone_reads_as_no_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

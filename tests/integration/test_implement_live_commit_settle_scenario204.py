@@ -207,6 +207,14 @@ def test_every_settle_restores_the_amend_base_and_covers_the_measured_hook() -> 
         assert "--restore-head-before-wait" in script
 
 
+def test_fix_and_review_fix_settles_reset_only_their_own_wait_visit_record() -> None:
+    """Scenario 179: a re-entered stage gets a fresh one-wait allowance."""
+    for node, stage in ((_FIX_SETTLE, "fix"), (_REVIEW_FIX_SETTLE, "review_fix")):
+        script = _attributes(node=node).get("script", "")
+
+        assert f"--stage {stage}" in script
+
+
 def test_the_settle_node_writes_the_brief_for_a_run_that_ended_without_a_verdict(
     tmp_path: Path,
 ) -> None:
