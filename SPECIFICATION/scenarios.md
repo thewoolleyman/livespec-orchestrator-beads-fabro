@@ -9628,17 +9628,48 @@ Feature: Engine checkpoint commits never reach the merged history
     Then it fails closed on a foreign publish head
 ```
 
-## Scenario 220 — An exhausted merge-poll budget on an open pull request rests the item for resume
+## Scenario 220 — An exhausted merge-poll budget hands an armed, passing pull request to reconciliation
 
 ```gherkin
-Feature: A succeeded run never strands its claim while its pull request waits
-  As an operator whose armed pull request merges slowly
-  I want an exhausted merge wait to rest the item where resume can reach it
-  So that no claim sits active with no run behind it
+Feature: A slow CI run does not turn a healthy armed pull request into a needs-human item
+  As an operator whose armed pull request's CI outlasts the merge wait
+  I want the item handed to reconciliation rather than rested for a human
+  So that a pull request that merges on its own is accepted without resolve-blocked or resume
 
-  Scenario: An open, non-conflicting pull request rests the item
+  Scenario: An armed pull request with passing or running checks is handed off
     Given a run that succeeded and armed auto-merge on its pull request
-    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN and not in conflict
+    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN, not in conflict, with auto-merge armed
+    And every required check is passing or still running
+    When the Dispatcher records the outcome
+    Then the item stays active under its claim and is not moved to blocked
+    And one merge-wait-handed-off journal row names the run id, the pull request, its head, the seconds the wait spent and every required check still running
+    And the item carries one ledger comment opening with livespec-merge-wait-handed-off
+    And the dispatch exits 0
+    And the dispatching process ends, so its launcher removes its fleet in-flight marker
+    And the handed-off row is counted by neither the shared fleet count, the repository's counted claims, nor the in-flight addition
+
+  Scenario: A handed-off pull request that merges is accepted by the next reconciliation pass
+    Given an item whose newest dispatch journaled merge-wait-handed-off
+    And the forge now reports its pull request merged
+    When the Dispatcher's next stranded-claim reconciliation pass runs
+    Then the pass performs reconcile-merged for the item
+    And no resolve-blocked and no resume is run for it
+
+  Scenario: A handed-off pull request whose required check fails is routed as a failed check
+    Given an item whose newest dispatch journaled merge-wait-handed-off
+    And the forge now reports a required check of its pull request in a terminal failure
+    When the Dispatcher's next stranded-claim reconciliation pass runs
+    Then the outcome is the one the merge wait's terminal required-check failure records
+
+  Scenario: A handed-off pull request closed without merging rests for a human
+    Given an item whose newest dispatch journaled merge-wait-handed-off
+    And the forge now reports its pull request closed without merging
+    When the Dispatcher's next stranded-claim reconciliation pass runs
+    Then the item rests at blocked with blocked_reason needs-human and the cause merge-poll-budget-exhausted
+
+  Scenario: An open pull request whose auto-merge is no longer armed rests the item
+    Given a run that succeeded and armed auto-merge on its pull request
+    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN and not in conflict with auto-merge no longer armed
     When the Dispatcher records the outcome
     Then the item rests at blocked with blocked_reason needs-human and the cause merge-poll-budget-exhausted
     And the outcome detail names resolve-blocked then resume as the recovery chain
