@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.306.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.305.1...v0.306.0) (2026-11-08)
+
+
+### Features
+
+* **incident:** manage rollback conflicts ([eab42bd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/eab42bd059dd39cbd88b2c2371b4bf8d9c95712a))
+
+
+### Bug Fixes
+
+* consult the ledger claim whenever no earlier run id is named ([0ed0393](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0ed03939fd435db50a7de53b4fdffd3e21419bc7))
+* preserve host-record target through reconciliation ([53d6398](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/53d6398eb1d42eeeb511f048575609de173b0a8c))
+* recover ledger-named terminal trees ([57e6b06](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/57e6b06255e243e29faaeff1372a84ea4284123e))
+
 ## [0.305.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.305.0...v0.305.1) (2026-11-08)
 
 
