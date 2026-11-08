@@ -991,7 +991,15 @@
         "fix": 3600,
         "review_fix": 7200,
         "publish_draft": 3600,
-        "pr_refresh": 3600,
+        // TEMPORARY DIAL (plan bd-ib-qy5wol; legacy-coordinator-agent R301,
+        // 2026-11-08): pr_refresh raised 3600 -> 5400. Its post-rebase gate runs
+        // the full aggregate with no output, and bd-ib-oixyzp run 01M6VZQJG3GQ
+        // lost a green, reviewed run when that gate hit 3600000 ms at 01:13:12Z
+        // after a clean rebase. Full-aggregate visits measured 2535-3800 s on
+        // 2026-11-07 (bd-ib-hap62u run 01M6VBZF4371 janitor@1/@2).
+        // END CONDITION: return it to 3600 once bd-ib-hap62u is released and
+        // pinned here, or once measured suite time is back under 3000 s.
+        "pr_refresh": 5400,
         "proof_grade": 600,
         "proof_grade_route": 600,
         "recapture_route": 600

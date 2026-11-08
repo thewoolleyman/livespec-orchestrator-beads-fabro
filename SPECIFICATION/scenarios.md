@@ -2549,18 +2549,19 @@ Feature: Per-node timeouts are configuration, rendered literally
   I want each node's timeout to be a configured value with a 30-minute default
   So that the node timeout is the only ceiling and it is always a decision
 
-Scenario: A default target renders every node at 1800 seconds
+Scenario: A default target renders each node's declared timeout, or 1800 seconds when it declares none
   Given a dispatch target with no "dispatcher.node_timeouts" table
   When the Dispatcher renders the dispatch payload's workflow graph
-  Then every node's timeout attribute is the literal duration 1800s
+  Then every node that declares a timeout carries that declared value as a literal duration
+  And every node that declares none carries the literal duration 1800s
   And the run's stall_timeout attribute is the literal duration 7200s
   And no timeout attribute contains a template opener
 
-Scenario: A configured node keeps its value and the others keep the default
+Scenario: A configured node keeps its value and the others resolve through the lower layers
   Given a dispatch target whose "dispatcher.node_timeouts" sets implement to 7200
   When the Dispatcher renders the dispatch payload's workflow graph
   Then the implement node's timeout attribute is the literal duration 7200s
-  And every other node's timeout attribute is the literal duration 1800s
+  And every other node's timeout attribute is the literal duration its workflow graph declares, or 1800s when it declares none
   And the dispatch record names the repository layer for the implement timeout
 
 Scenario: The subprocess ceiling follows the resolved graph
@@ -7957,30 +7958,30 @@ Feature: The sandbox's PID 1 and the agent adapter survive the agent's signals i
     Then none of the commands is refused
 ```
 
-## Scenario 199 — A fix turn runs the check suite once per tree and counts a commit hook's full green run
+## Scenario 199 — A fix turn grades each tree once, through its commit hook
 
 ```gherkin
 Feature: A fix turn does not spend its time limit on a duplicate check suite
   As the maintainer of a repository dispatched to the factory
-  I want a fix turn to count a commit hook's full green suite run as the turn's suite run
-  So that two full runs of a long suite do not exhaust the fix node's time limit
+  I want a fix turn's commit hook to be the turn's only grading of each tree
+  So that a full suite run does not exhaust the fix node's time limit before the janitor runs it again
 
-  Scenario: A commit whose hook ran the full suite green ends the turn's suite obligation for that tree
+  Scenario: A commit whose hook passed ends the turn's grading obligation for that tree
     Given a fix turn that commits its change
-    And the repository pre-commit hook ran the full check suite to a passing result on the committed tree
+    And the commit hook's gate passed on the committed tree
     When the fix turn completes successfully on that tree
-    Then the fix prompt directs no second run of the suite on that tree in the same turn
+    Then the fix prompt directs no run of the full check suite on that tree in the same turn
 
-  Scenario: A partial hook run or a later change still requires a full run
-    Given a fix turn whose only commit took the hook's partial fast path, or whose tree changed after its last full passing run
-    When the fix turn completes successfully
-    Then the fix prompt directs a full run of the check suite before the turn ends
+  Scenario: A hook run that did not grade the tree, or a later change, still requires a passing commit
+    Given a fix turn whose only commit took the hook's Red fast path, or whose tree changed after its last passing hook run
+    When the fix turn is to complete successfully
+    Then the turn first commits its tree through the commit hook to a passing result
 
   Scenario: A refresh-repair round applies the same rule to the integrated tree
     Given a fix turn entered with a refresh-repair brief
-    And its commit on the integrated tree ran the full check suite green through the pre-commit hook
+    And its commit on the integrated tree passed the commit hook's gate
     When the turn completes the repair successfully
-    Then the fix prompt directs no second run of the suite on that integrated tree in the same turn
+    Then the fix prompt directs no run of the full check suite on that integrated tree in the same turn
 ```
 
 ## Scenario 200 — A refresh whose conflicts lie only in declared record files merges them without a repair round
@@ -10703,12 +10704,12 @@ Feature: The check aggregate does not wait for the pytest lane to run its indepe
     Then its output lists the thirty slowest test phases of that run with their durations
 ```
 
-## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
+## Scenario 255 — A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
 
 ```gherkin
 Feature: In-turn commits pay the scoped gate, and the full aggregate runs once per run
   As the operator of a factory
-  I want implement and review_fix commits to run only the tests their change affects
+  I want implement, fix and review_fix commits to run only the tests their change affects
   So that a run does not repeat the full check aggregate at every commit before the janitor runs it
 
   Scenario: A review_fix turn's commit runs the affected-tests gate
@@ -10716,10 +10717,27 @@ Feature: In-turn commits pay the scoped gate, and the full aggregate runs once p
     When its commit hook runs
     Then it runs just check-changed on the change and not the full check aggregate
 
+  Scenario: A fix turn's commit runs the affected-tests gate
+    Given a fix turn committing a change to product modules and their tests
+    When its commit hook runs
+    Then it runs just check-changed on the change and not the full check aggregate
+
+  Scenario: A fix turn's commit that leaves a changed module's lines uncovered is refused with those lines
+    Given a fix turn committing a change that leaves lines of a product module it changed uncovered
+    When its commit hook runs
+    Then the commit is refused with a per-file coverage failure naming that module and each missing line
+    And the full check aggregate is not run
+
   Scenario: A change the affected-tests gate cannot scope falls back to the full aggregate
-    Given a review_fix turn committing a change to a shared configuration file
+    Given a fix or review_fix turn committing a change to a shared configuration file
     When its commit hook runs
     Then it runs the full check aggregate
+
+  Scenario: A workflow graph change runs the tests that read the graph
+    Given a fix turn committing a change to the implement-work-item workflow.fabro and no .py file
+    When its commit hook runs
+    Then the affected-tests gate runs every test module that reads that workflow graph
+    And it does not report the change as having nothing to gate
 
   Scenario: The janitor still runs the full aggregate once
     Given a run whose commit_green node committed through the affected-tests gate
@@ -12055,6 +12073,24 @@ Feature: A green run pays the full check aggregate once, on the tree it pushes
     Given the janitor's pre-aggregate refresh changed the tree
     When the full check aggregate fails on the refreshed head
     Then the janitor restores the pre-refresh head and records a refresh-repair brief naming each failed target
+
+  Scenario: A refresh merge commit's passing hook aggregate is the janitor's grading of the merged tree
+    Given the janitor's pre-aggregate refresh integrates the default branch's tip by a merge commit
+    When the janitor creates the merge without committing and commits it through the repository's commit hooks
+    And the commit's pre-commit hook runs the full check aggregate to a pass on exactly the merged tree
+    Then the janitor records the green verdict for that tree
+    And the janitor does not run the full check aggregate on that tree a second time in the same visit
+
+  Scenario: A partial hook run on a refresh merge leaves the janitor's own aggregate in place
+    Given the janitor's refresh merge commit whose pre-commit hook ran only part of the full check aggregate
+    When the janitor continues the visit
+    Then the janitor runs its own full check aggregate on the merged head
+
+  Scenario: A failing hook aggregate on a refresh merge takes the refresh-repair route
+    Given the janitor's refresh merge whose pre-commit hook's full check aggregate fails
+    When the janitor continues the visit
+    Then the merge is not committed
+    And the janitor restores the pre-refresh head and records a refresh-repair brief naming each failed target
 ```
 
 ## Scenario: an incident keeps one item with explicit current operation ownership
@@ -13026,4 +13062,198 @@ Feature: Journal-recorded holds reach needs-attention
     When needs-attention composes its snapshot
     Then the snapshot carries a hygiene:journal-hold:I fact
     And the snapshot carries an idle-factory fact whose handoff names impl:I
+```
+
+## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node
+
+Governing clause: `contracts.md` §"ACP node timeouts" → "Keys.", "A commit settle node ends its own wait first.", "The 30-minute default is a deliberate reduction." and "A low declaration rests on a measurement."
+
+```gherkin
+Feature: A node timeout the workflow declares reaches the run unless configuration names that node
+  As the maintainer of a repository dispatched through the factory
+  I want a node's declared timeout to be the value its run renders when nothing configures it
+  So that a timeout a change adds to the workflow applies on a dispatched run
+
+  Background:
+    Given a workflow graph declaring timeout "3900s" on fix_commit_settle and "600s" on pr_route
+    And a workflow graph node undeclared_node carrying no timeout attribute
+
+  Scenario: a node no configuration names renders its declared value
+    Given a repository whose dispatcher.node_timeouts does not name fix_commit_settle
+    When the Dispatcher renders the dispatch's workflow graph
+    Then fix_commit_settle carries the literal timeout "3900s"
+    And the dispatch record names the workflow as the layer supplying fix_commit_settle
+
+  Scenario: a repository's table outranks the workflow's declared value
+    Given a repository whose dispatcher.node_timeouts sets pr_route to 900
+    When the Dispatcher renders the dispatch's workflow graph
+    Then pr_route carries the literal timeout "900s"
+    And the dispatch record names the repository as the layer supplying pr_route
+
+  Scenario: a per-dispatch argument outranks both
+    Given a repository whose dispatcher.node_timeouts sets pr_route to 900
+    And a dispatch carrying --node-timeout pr_route=1200
+    When the Dispatcher renders the dispatch's workflow graph
+    Then pr_route carries the literal timeout "1200s"
+
+  Scenario: a node nothing declares or names takes the default
+    Given a repository whose dispatcher.node_timeouts does not name undeclared_node
+    When the Dispatcher renders the dispatch's workflow graph
+    Then undeclared_node carries the literal timeout "1800s"
+    And the dispatch record names the built-in default as the layer supplying undeclared_node
+
+  Scenario: the run's budgets read the values the graph carries
+    Given a repository whose dispatcher.node_timeouts does not name fix_commit_settle
+    When the Dispatcher derives the dispatch's execution allowance and its subprocess ceiling
+    Then each bills fix_commit_settle at 3900 seconds per visit
+
+  Scenario: a settle node below its declared timeout ends its own wait first
+    Given a repository whose dispatcher.node_timeouts sets fix_commit_settle to 1800
+    And a fix turn that left a commit run still running past 1500 seconds
+    When fix_commit_settle runs
+    Then its wait ends at 1500 seconds
+    And the node runs its failure handling
+    And the engine does not end the node on its timeout
+
+  Scenario: a settle node timeout that leaves no wait is refused
+    Given a repository whose dispatcher.node_timeouts sets fix_commit_settle to 300
+    When the Dispatcher prepares the dispatch
+    Then it refuses before any run exists naming dispatcher.node_timeouts.fix_commit_settle and the value 300
+
+  Scenario: the shipped graph keeps the deliberate reduction
+    Given the shipped implement-work-item workflow graph
+    When its declared timeouts are read
+    Then implement, janitor and fix each declare no more than 1800 seconds
+
+  Scenario: a low declaration names its measurement
+    Given the shipped implement-work-item workflow graph
+    When its declared timeouts are read
+    Then every declaration below 1800 seconds carries beside it a comment naming a recorded run's measured duration for that node
+```
+
+## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "A tree a factory run resumes or seeds can pass under the harness judging it".
+
+```gherkin
+Feature: A tree a factory run resumes or seeds can pass under the harness judging it
+  As the maintainer of a repository dispatched to the factory
+  I want a recovered tree judged on what it contains
+  So that a recovery route does not spend the work it exists to keep
+
+  Scenario: A tree with no fixture clearing the stage variable passes its own commit hook
+    Given a factory run resumed or seeded from a tree whose test suite exercises the workflow's push helper and carries no fixture clearing LIVESPEC_AGENT_STAGE
+    And that suite passes on a developer host
+    When an agent stage's commit runs that suite through the commit hook
+    Then no case of the suite reports LIVESPEC_AGENT_PUBLICATION_DENIED
+    And the seeded tree's bytes are unchanged by the harness
+
+  Scenario: The requirement holds in a repository that has changed nothing
+    Given a factory run dispatched against a fleet repository other than this one
+    And that repository has merged no change for this requirement
+    When an agent stage's commit runs that repository's suite through the commit hook
+    Then no case of the suite reports LIVESPEC_AGENT_PUBLICATION_DENIED
+
+  Scenario: A test case that sets the variable itself still observes the refusal
+    Given a test case that sets LIVESPEC_AGENT_STAGE to an agent stage in its own child environment
+    When that child calls the projected push_origin
+    Then the call exits non-zero and prints LIVESPEC_AGENT_PUBLICATION_DENIED
+
+  Scenario: An agent stage's own publication attempt stays refused
+    Given an implement, fix or review_fix turn
+    When the turn itself calls the projected push_origin or a publication action of the projected gh wrapper
+    Then the call exits non-zero and prints LIVESPEC_AGENT_PUBLICATION_DENIED with the stage and the refused action
+```
+
+## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: Operator fresh ruling for a recovery-released item
+  As the operator of a repository dispatched through the factory
+  I want to rule that a released item's next dispatch starts fresh
+  So that a stale or wrong preserved tree never seeds a dispatch I have judged it must not seed
+
+  Scenario: a fresh ruling routes a released item fresh past a verified needs-human ref
+    Given an item released for recovery that holds verified needs-human ref N
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh
+    And the recovery-route record names the ruling's instant
+    And its passed_over_needs_human field lists N with its commit
+    And needs-human ref N still exists at its commit
+
+  Scenario: a fresh ruling routes fresh when preserved work is not confirmed absent
+    Given an item released for recovery whose earlier-run identifiers name no run
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh
+    And no recovery-held record names preserved work not confirmed absent
+
+  Scenario: a fresh ruling takes precedence over a resume
+    Given an item released for recovery that passes every precondition of resume --item
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh, not resume
+
+  Scenario: an untaken needs-human listing holds a fresh-ruled item
+    Given an item released for recovery that carries a current fresh ruling
+    And the needs-human ref listing cannot be taken
+    When recovery routing grades the item
+    Then the route is held for the unobservable measurement, not fresh
+    And the fresh ruling stays current
+
+  Scenario: a fresh-ruled item's stale publish branch is preserved before it is reclaimed
+    Given an item routed fresh by a current fresh ruling
+    And the item's publish branch survives with no live run
+    When the stale publish-branch reclaim runs for the dispatch
+    Then a preserved-publish ref of the branch's head exists before the branch is deleted
+    And no needs-human or preservation ref of the item is deleted or moved
+
+  Scenario: the fresh-ruling command writes and journals one ruling
+    Given an item and a reason that passes the shared template-opener detector
+    When an operator runs dispatcher.py fresh-ruling for the item with that reason
+    Then the item carries one livespec-fresh-ruling comment naming the invoker, the reason and the UTC instant
+    And the journal carries one fresh-ruling record with the same fields
+
+  Scenario: the fresh-ruling command refuses a reason the template-opener detector flags
+    Given an item and a reason that fails the shared template-opener detector
+    When an operator runs dispatcher.py fresh-ruling for the item with that reason
+    Then the command exits 3
+    And no livespec-fresh-ruling comment or fresh-ruling record is written
+
+  Scenario: the newer of a seed ruling and a fresh ruling governs
+    Given an item released for recovery that carries a seed ruling naming ref R at commit C
+    And a later fresh ruling for the same item
+    When recovery routing grades the item
+    Then the route is fresh
+    And the seed ruling is not current
+
+  Scenario: a later seed ruling replaces a current fresh ruling
+    Given an item released for recovery that carries a fresh ruling
+    And a later seed ruling for the same item naming ref R at commit C, where R exists at C
+    When recovery routing grades the item
+    Then the route is seeded from R at C
+    And the fresh ruling is not current
+
+  Scenario: a non-fallback refusal keeps its precedence over a fresh ruling
+    Given an item released for recovery that carries a current fresh ruling
+    And a non-fallback refusal applies to the item
+    When recovery routing grades the item
+    Then the route is held naming that refusal
+    And the fresh ruling stays current
+
+  Scenario: a consumed fresh ruling does not govern a later dispatch
+    Given an item whose dispatch routed fresh by a ruling has a run
+    When that dispatch records the run
+    Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
+    And the next recovery routing of the item does not route it fresh by that ruling
+
+  Scenario: reconciliation adds a missing consumed comment
+    Given a run launched from a dispatch routed fresh by a ruling
+    And the item carries no livespec-fresh-ruling-consumed comment naming that ruling
+    When a reconciliation pass runs
+    Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
+    And the fresh ruling is not current
 ```

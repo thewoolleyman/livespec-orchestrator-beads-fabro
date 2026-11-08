@@ -4,12 +4,13 @@ Pure. `SPECIFICATION/contracts.md` section "Expedited incident lifecycle" and th
 scenarios "an attributable regression fences repayment and reopens the same
 incident" and "a deferred-proof-only finding is repaired without reverting
 healthy master". A failure demonstrated on master, another pull request or an
-adopted consumer, with change evidence naming a landed incident commit, reopens
-the SAME item into `reverting` as the next fenced generation and requests
-recovery. A defect found only by deferred factory proof while master stays
-healthy is owed by the normal repayment pull request instead, and never reverts
-the successful merge. The corrected attempt after a revert is planned in
-`_incident_recovery_correction`; final normal repayment stays owed throughout.
+adopted consumer, with change evidence naming a landed incident commit, moves
+the SAME item into `reverting` from a merged attempt, a live repayment or
+`closed` as the next fenced generation and requests recovery. A defect found
+only by deferred factory proof while master stays healthy is owed by the normal
+repayment pull request instead, and never reverts the successful merge. The
+corrected attempt after a revert is planned in `_incident_recovery_correction`;
+final normal repayment stays owed throughout.
 """
 
 from __future__ import annotations

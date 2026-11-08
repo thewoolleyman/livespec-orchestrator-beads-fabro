@@ -26,6 +26,7 @@ _ORIGIN_HEAD = "b" * 40
 @dataclass(kw_only=True)
 class _Runner:
     origin_head: str = _ORIGIN_HEAD
+    origin_url: str = "https://github.com/example/source.git"
     fetch_exit: int = 0
     observed_exit: int = 0
     ancestor: bool = True
@@ -42,6 +43,8 @@ class _Runner:
     ) -> CommandResult:
         del cwd, timeout_seconds, env, stdin
         self.calls.append(argv)
+        if argv == ["git", "config", "--get", "remote.origin.url"]:
+            return CommandResult(exit_code=0, stdout=f"{self.origin_url}\n", stderr="")
         if argv[:2] == ["git", "fetch"]:
             return CommandResult(exit_code=self.fetch_exit, stdout="", stderr="fetch refused")
         if argv[:2] == ["git", "rev-parse"]:
@@ -73,6 +76,7 @@ def _plan(*, repo: Path, root: Path) -> DispatchPlan:
         janitor=None,
         janitor_checkout=root / "janitor",
         default_branch="master",
+        fabro_version="fabro 0.393.0 (fixture)",
     )
 
 
@@ -110,6 +114,19 @@ def test_only_a_checkout_strictly_behind_origin_stages_at_the_fetched_head(
     added = next(call for call in runner.calls if call[:3] == ["git", "worktree", "add"])
     behind = origin_head != _HEAD and ancestor
     assert added[-1] == (origin_head if behind else _HEAD)
+
+
+@pytest.mark.usefixtures("proven_head")
+def test_petri_source_staging_launches_the_proven_remote_default_branch_directly(
+    *, tmp_path: Path
+) -> None:
+    """An explicit target avoids Fabro's client-side push of the disposable branch."""
+    runner = _Runner()
+
+    assert _staged(runner=runner, journal=_Journal(), tmp_path=tmp_path).exit_code == 0
+
+    launch = next(call for call in runner.calls if call[:2] == ["fabro", "run"])
+    assert launch == ["fabro", "run", "--target", "example/source@master"]
 
 
 @pytest.mark.parametrize("unobservable", ["fetch-failed", "unreadable-head"])
@@ -268,3 +285,70 @@ def test_a_head_no_origin_ref_reaches_is_refused_before_any_staging(
     assert len(unpushed_commits) == 1
     assert "unpublished work" in unpushed_commits[0]
     assert "refs/heads/master" in _git(repo=repo, args=["ls-remote", "--heads", "origin"])
+
+
+@pytest.mark.parametrize(
+    ("ancestor", "target"),
+    [(True, "example/source@master"), (False, "example/source@feat/bd-ib-x")],
+)
+def test_the_launch_target_names_the_branch_the_selected_staging_base_came_from(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ancestor: bool, target: str
+) -> None:
+    """A stale tracking ref must not outvote the freshly fetched staging base.
+
+    The preflight proves HEAD only on `origin/feat/bd-ib-x`, because the local
+    `origin/master` is stale. When the fresh fetch shows master already holds
+    HEAD, staging moves to that master head, and the remote launch must name
+    master too, or Petri clones the older feature tip instead of the staged tree.
+    """
+    monkeypatch.setattr(
+        staging,
+        "source_checkout_preflight",
+        lambda **_: pass_outcome(
+            head=_HEAD, origin_refs=("origin/feat/bd-ib-x",), origin_ref="origin/feat/bd-ib-x"
+        ),
+    )
+    runner = _Runner(ancestor=ancestor)
+
+    assert _staged(runner=runner, journal=_Journal(), tmp_path=tmp_path).exit_code == 0
+
+    launch = next(call for call in runner.calls if call[:2] == ["fabro", "run"])
+    assert launch == ["fabro", "run", "--target", target]
+
+
+@pytest.mark.parametrize(
+    ("resume_head", "resume_fetch_ref", "target"),
+    [
+        (_HEAD, "refs/heads/needs-human/9f126677", "example/source@master"),
+        (_ORIGIN_HEAD, None, "example/source@feat/bd-ib-xavjhz"),
+    ],
+    ids=["seeded", "resumed"],
+)
+@pytest.mark.usefixtures("proven_head")
+def test_a_seeded_launch_targets_its_staging_base_and_a_resume_its_publish_branch(
+    *, tmp_path: Path, resume_head: str, resume_fetch_ref: str | None, target: str
+) -> None:
+    """A seed's publish branch is not on origin, so naming it fails the launch.
+
+    A SEEDED route sets both `resume_head` and `resume_fetch_ref`: it stages on
+    the fresh default-branch base and the sandbox overlay fetches the seed from
+    its preservation ref later. Targeting the item's publish branch for it is the
+    0.303.0 regression, where every seeded `fabro run` ended with "target branch
+    was not found". Only a RESUME, which sets the head alone, owns a published
+    branch to target.
+    """
+    runner = _Runner()
+    staging_runner = staging.SourceStagingRunner(
+        inner=runner,
+        plan=_plan(repo=tmp_path, root=tmp_path),
+        journal=_Journal(),
+        worktree_root=tmp_path / ".worktrees",
+        resume_head=resume_head,
+        resume_fetch_ref=resume_fetch_ref,
+    )
+
+    result = staging_runner.run(argv=["fabro", "run"], cwd=tmp_path, timeout_seconds=30)
+
+    assert result.exit_code == 0
+    launch = next(call for call in runner.calls if call[:2] == ["fabro", "run"])
+    assert launch == ["fabro", "run", "--target", target]

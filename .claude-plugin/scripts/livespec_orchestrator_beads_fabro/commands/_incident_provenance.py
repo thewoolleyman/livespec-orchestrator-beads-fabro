@@ -5,8 +5,9 @@ reader has returned it from the retained ledger token chain.  This pure module
 deliberately does not parse labels, environment variables, commit trailers, or
 sandbox markers: those inputs may locate a candidate item, but cannot authorize
 it.  A receipt admits exactly one carrier — the repository, pull request, head
-and complete landed commit set it recorded — and only while it is a repair or
-emergency-revert attempt whose verification was honestly deferred.  A carrier
+and complete landed commit set it recorded — and only while it is a repair,
+its recorded merge or an emergency revert whose verification was honestly
+deferred.  A carrier
 the chain records in a repayment phase is normal factory work: it earns no
 exception here, and the consumers refuse it the ordinary declared route too.
 """
@@ -33,9 +34,10 @@ __all__: list[str] = [
     "receipts_from_history",
 ]
 
-# The two host-owned phases whose carrier may merge on a receipt instead of
-# factory authorship: the expedited repair and the recorded emergency revert.
-EXCEPTION_PHASES = frozenset({"repair", "reverting"})
+# The host-owned phases whose carrier may merge on a receipt instead of factory
+# authorship: the expedited repair, the generation that records its merge (the
+# first one a real chain's landed commits appear on) and the emergency revert.
+EXCEPTION_PHASES = frozenset({"repair", "master-observation", "reverting"})
 _REPAYMENT_PREFIX = "repayment"
 _CLOSED_PHASE = "closed"
 
