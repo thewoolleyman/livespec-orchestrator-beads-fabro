@@ -13,7 +13,11 @@ from typing import Any, cast
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro._beads_client import EDGE_PARENT_CHILD, make_beads_client
+from livespec_orchestrator_beads_fabro._beads_client import (
+    EDGE_PARENT_CHILD,
+    EDGE_TRACKS,
+    make_beads_client,
+)
 from livespec_orchestrator_beads_fabro._store_groom_approval import (
     GroomApproval,
     record_groom_approval,
@@ -31,6 +35,8 @@ from livespec_orchestrator_beads_fabro.intake_dor import (
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = ["file_local_slice", "plan_parent_id"]
+
+_PLAN_CHILD_EDGE_TYPES = frozenset({EDGE_PARENT_CHILD, EDGE_TRACKS})
 
 
 def file_local_slice(
@@ -77,7 +83,7 @@ def file_local_slice(
 
 
 def plan_parent_id(*, path: StoreConfig, item_id: str) -> str | None:
-    """Read the target's parent-child edge for propagation to every local slice."""
+    """Read the target's plan-child edge (`parent-child` or `tracks`) for every local slice."""
     record = make_beads_client(config=path).show_issue(issue_id=item_id)
     parent_id = record.get("parent_id")
     edges = cast(
@@ -89,7 +95,7 @@ def plan_parent_id(*, path: StoreConfig, item_id: str) -> str | None:
             cast("dict[str, Any]", edge).get("depends_on_id")
             for edge in edges
             if isinstance(edge, dict)
-            and cast("dict[str, Any]", edge).get("type") == EDGE_PARENT_CHILD
+            and cast("dict[str, Any]", edge).get("type") in _PLAN_CHILD_EDGE_TYPES
         ),
         None,
     )
