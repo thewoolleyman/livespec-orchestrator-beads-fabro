@@ -13,7 +13,10 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).parents[1]
 INSTALLER = REPOSITORY_ROOT / "dev-tooling/install-ci-fabro.sh"
 PINNED_SHA256 = "27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
-WARM_ASSET = Path("/__w/_warm/release-assets") / PINNED_SHA256
+
+
+def _warm_asset(*, environment: dict[str, str]) -> Path:
+    return Path(environment["INSTALL_CI_FABRO_WARM_DIR"]) / PINNED_SHA256
 
 
 def _write_executable(*, path: Path, body: str) -> None:
@@ -84,7 +87,10 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
         esac
         """,
     )
-    environment = os.environ | {"PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    environment = os.environ | {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "INSTALL_CI_FABRO_WARM_DIR": str(tmp_path / "warm"),
+    }
     return environment, fixture_asset, tmp_path / "curl.log"
 
 
@@ -106,13 +112,11 @@ def test_uses_verified_warm_seed_without_calling_curl(
     """A verified warm asset is installed locally without a network attempt."""
     environment, fixture_asset, curl_log = installer_environment
     environment["CURL_LOG"] = str(curl_log)
-    WARM_ASSET.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(fixture_asset, WARM_ASSET)
+    warm_asset = _warm_asset(environment=environment)
+    warm_asset.parent.mkdir(parents=True)
+    shutil.copyfile(fixture_asset, warm_asset)
 
-    try:
-        result = _run_installer(environment=environment, target=tmp_path / "fabro")
-    finally:
-        WARM_ASSET.unlink(missing_ok=True)
+    result = _run_installer(environment=environment, target=tmp_path / "fabro")
 
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "fabro").is_file()
@@ -136,15 +140,12 @@ def test_uses_api_asset_when_warm_seed_is_unavailable(
             "GITHUB_TOKEN": "test-token",
         }
     )
-    WARM_ASSET.unlink(missing_ok=True)
     if seed_is_wrong:
-        WARM_ASSET.parent.mkdir(parents=True, exist_ok=True)
-        WARM_ASSET.write_text("bad warm seed")
+        warm_asset = _warm_asset(environment=environment)
+        warm_asset.parent.mkdir(parents=True)
+        warm_asset.write_text("bad warm seed")
 
-    try:
-        result = _run_installer(environment=environment, target=tmp_path / "fabro")
-    finally:
-        WARM_ASSET.unlink(missing_ok=True)
+    result = _run_installer(environment=environment, target=tmp_path / "fabro")
 
     assert result.returncode == 0, result.stderr
     curl_arguments = curl_log.read_text()
@@ -166,7 +167,6 @@ def test_falls_back_to_release_download_after_api_asset_failure(
             "CURL_FIXTURE": str(fixture_asset),
         }
     )
-    WARM_ASSET.unlink(missing_ok=True)
 
     result = _run_installer(environment=environment, target=tmp_path / "fabro")
 
@@ -184,7 +184,6 @@ def test_rejects_a_downloaded_asset_with_the_wrong_sha256(
     environment, _fixture_asset, curl_log = installer_environment
     environment.update({"CURL_LOG": str(curl_log), "CURL_MODE": "api-bad"})
     target = tmp_path / "fabro"
-    WARM_ASSET.unlink(missing_ok=True)
 
     result = _run_installer(environment=environment, target=target)
 
@@ -199,7 +198,6 @@ def test_reports_each_failed_source_when_no_asset_can_be_fetched(
     """The terminal failure says which source in the ordered chain failed."""
     environment, _fixture_asset, curl_log = installer_environment
     environment.update({"CURL_LOG": str(curl_log), "CURL_MODE": "all-fail"})
-    WARM_ASSET.unlink(missing_ok=True)
 
     result = _run_installer(environment=environment, target=tmp_path / "fabro")
 
