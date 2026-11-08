@@ -126,6 +126,34 @@ def test_a_claim_only_pass_renders_human_lines_rather_than_reading_as_empty(
     )
 
 
+def test_a_handed_off_hold_renders_the_detail_that_names_the_handoff(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A held claim awaiting its own CI reads differently from one nobody is looking after."""
+    held = HeldClaim(
+        work_item_id="bd-ib-handoff",
+        run_id="01HANDOFF",
+        factory_name="hp",
+        factory_server_url="https://hp.example:32276",
+        dispatching_host="hp-xubuntu",
+        hold_reason="run-succeeded",
+        remedy=None,
+        detail="merge-wait-handed-off: pull request #4615 is armed",
+    )
+    _ = _stub(monkeypatch=monkeypatch, summary=_summary(held_claims=(held,)))
+
+    exit_code = main(argv=["reconcile-runs", "--repo", str(tmp_path)])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == (
+        "CLAIM   bd-ib-handoff  01HANDOFF  factory=hp host=hp-xubuntu "
+        "reason=run-succeeded detail=merge-wait-handed-off: pull request #4615 is armed\n"
+    )
+
+
 def test_a_hold_the_claim_stamp_could_not_name_renders_each_absent_field(
     *,
     capsys: pytest.CaptureFixture[str],

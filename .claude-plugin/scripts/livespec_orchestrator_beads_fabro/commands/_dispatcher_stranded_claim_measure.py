@@ -31,13 +31,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
     FORGE_NO_MERGED_PR,
+    HANDOFF_NONE,
     HISTORY_NO_PREDECESSOR,
+    OWNER_NONE,
     RUN_ABSENT,
     RUN_FAILED,
     RUN_SUCCEEDED,
     AttributedClaim,
     ClaimMeasurements,
     run_state_from_inventory,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_handoff import (
+    HandoffReading,
+    handed_off_pull_request,
+    observe_handoff,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_observe import (
     observe_merged_pull_request,
@@ -49,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_termi
     TerminalObservation,
     TerminalReadContext,
     observe_terminal_outcome,
+    terminal_plan,
 )
 
 __all__: list[str] = [
@@ -109,6 +117,7 @@ class MeasuredClaim:
 
     measurements: ClaimMeasurements
     terminal: TerminalObservation | None
+    handoff: HandoffReading | None = None
 
 
 def measure_claim(
@@ -141,11 +150,19 @@ def measure_claim(
         if run_state == RUN_FAILED
         else None
     )
+    owner_liveness = observe_owner_liveness(repo=inputs.repo, work_item_id=work_item_id)
+    handoff = (
+        _handoff_reading(
+            inputs=inputs, work_item_id=work_item_id, attributed=attributed, inventory=inventory
+        )
+        if run_state == RUN_SUCCEEDED and owner_liveness == OWNER_NONE
+        else None
+    )
     return MeasuredClaim(
         measurements=ClaimMeasurements(
             attributed=attributed,
             run_state=run_state,
-            owner_liveness=observe_owner_liveness(repo=inputs.repo, work_item_id=work_item_id),
+            owner_liveness=owner_liveness,
             forge=(
                 observe_merged_pull_request(
                     repo=inputs.repo, runner=inputs.runner, work_item_id=work_item_id
@@ -154,7 +171,7 @@ def measure_claim(
                 else observe_succeeded_run_pull_request(
                     repo=inputs.repo, runner=inputs.runner, work_item_id=work_item_id
                 )
-                if run_state == RUN_SUCCEEDED
+                if run_state == RUN_SUCCEEDED and handoff is None
                 else FORGE_NO_MERGED_PR
             ),
             predecessor=(
@@ -163,8 +180,42 @@ def measure_claim(
                 else HISTORY_NO_PREDECESSOR
             ),
             terminal_evidence_readable=run_state != RUN_FAILED or terminal is not None,
+            handoff=HANDOFF_NONE if handoff is None else handoff.kind,
         ),
         terminal=terminal,
+        handoff=handoff,
+    )
+
+
+def _handoff_reading(
+    *,
+    inputs: ClaimReadInputs,
+    work_item_id: str,
+    attributed: AttributedClaim,
+    inventory: FactoryInventory,
+) -> HandoffReading | None:
+    """What the forge says about the pull request this claim's merge wait handed off.
+
+    `None` for a claim whose newest dispatch handed nothing off, which leaves it to
+    the ladder's ordinary `run-succeeded` hold with no forge call spent: the
+    reading is taken only for the one population that can use it.
+    """
+    number = handed_off_pull_request(
+        records=inputs.records, work_item_id=work_item_id, run_id=attributed.run_id
+    )
+    if number is None:
+        return None
+    return observe_handoff(
+        plan=terminal_plan(
+            repo=inputs.repo,
+            work_item_id=work_item_id,
+            fabro_bin=inventory.fabro_bin,
+            factory_name=inventory.name,
+            factory_server_url=inventory.server_url,
+        ),
+        pr_number=number,
+        runner=inputs.runner,
+        journal=inputs.journal,
     )
 
 

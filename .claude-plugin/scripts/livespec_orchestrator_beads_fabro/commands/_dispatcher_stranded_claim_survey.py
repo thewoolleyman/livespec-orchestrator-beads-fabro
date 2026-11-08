@@ -54,6 +54,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     attribute_claim,
     grade_claim,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_handoff import (
+    HandoffReading,
+    handed_off_hold_detail,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_handoff_recovery import (
+    HandoffRecoveryRequest,
+    recover_handed_off_claim,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_measure import (
     ClaimReadInputs,
     FactoryInventory,
@@ -205,10 +213,25 @@ def _measure_and_act(
             stamp=attributed.stamp,
             reason=graded.reason,
             forge=measured.measurements.forge,
+            handoff=measured.handoff,
         )
     if inputs.dry_run:
         return _projected(
             item=item, attributed=attributed, inventory=inventory, action=graded.action
+        )
+    if measured.handoff is not None:
+        return recover_handed_off_claim(
+            repo=inputs.repo,
+            journal=inputs.journal,
+            request=HandoffRecoveryRequest(
+                item=item,
+                run_id=attributed.run_id,
+                factory_name=inventory.name,
+                factory_server_url=inventory.server_url,
+                action=graded.action,
+                reading=measured.handoff,
+            ),
+            now_iso=inputs.now_iso,
         )
     return recover_claim(
         repo=inputs.repo,
@@ -270,7 +293,12 @@ def _claim_stamp(*, repo: Path, work_item_id: str) -> ClaimStamp | None:
 
 
 def _held_claim(
-    *, item: WorkItem, stamp: ClaimStamp | None, reason: str, forge: str | None = None
+    *,
+    item: WorkItem,
+    stamp: ClaimStamp | None,
+    reason: str,
+    forge: str | None = None,
+    handoff: HandoffReading | None = None,
 ) -> HeldClaim:
     return HeldClaim(
         work_item_id=item.id,
@@ -284,6 +312,11 @@ def _held_claim(
             if reason == HOLD_ATTRIBUTION_PENDING
             else f"move:{item.id}:ready"
             if reason == HOLD_RUN_SUCCEEDED and forge == FORGE_CLOSED_UNMERGED_PR
+            else None
+        ),
+        detail=(
+            handed_off_hold_detail(reading=handoff)
+            if reason == HOLD_RUN_SUCCEEDED and handoff is not None
             else None
         ),
     )
