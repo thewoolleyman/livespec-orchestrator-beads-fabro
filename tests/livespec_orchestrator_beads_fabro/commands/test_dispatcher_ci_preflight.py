@@ -218,12 +218,19 @@ def _compare_argv(*, base: str, branch: str = _DEFAULT_BRANCH) -> tuple[str, ...
     )
 
 
-def _recent_run(*, database_id: int, head_sha: str, created_at: str) -> dict[str, str | int]:
+def _recent_run(
+    *,
+    database_id: int,
+    head_sha: str,
+    created_at: str,
+    status: str = "completed",
+    conclusion: str | None = "success",
+) -> dict[str, str | int | None]:
     return {
         "databaseId": database_id,
         "headSha": head_sha,
-        "status": "completed",
-        "conclusion": "success",
+        "status": status,
+        "conclusion": conclusion,
         "createdAt": created_at,
     }
 
@@ -600,12 +607,16 @@ def test_a_pending_run_that_concludes_green_lets_the_dispatch_proceed(tmp_path: 
     assert pauses == [60.0]
 
 
-def test_a_pending_latest_run_passes_on_a_green_ancestor_without_waiting(tmp_path: Path) -> None:
-    """The latest run stays pending while an earlier green run proves the branch.
+@pytest.mark.parametrize("conclusion", ["cancelled", "skipped"])
+def test_a_pending_latest_run_skips_a_non_green_non_red_workflow_run_for_an_older_green_ancestor(
+    tmp_path: Path, conclusion: str
+) -> None:
+    """A cancelled or skipped workflow run cannot hide an older green ancestor.
 
-    The two distinct run ids establish that the pass was earned by the concluded
-    ancestor rather than by treating the pending run as green. The recorded commit
-    and pending id are the journal evidence an operator needs to audit that decision.
+    The job result is deliberately failure: `ci-green` runs after cancellation,
+    so reading its aggregate conclusion would wrongly treat the workflow run as
+    red. The selected ancestor and pending run fields are the journal evidence
+    an operator needs to audit the pass.
     """
     runner = _Runner(
         results={
@@ -617,16 +628,25 @@ def test_a_pending_latest_run_passes_on_a_green_ancestor_without_waiting(tmp_pat
                             database_id=303,
                             head_sha="pending-head",
                             created_at="2026-11-02T08:00:00Z",
+                            status="in_progress",
+                            conclusion=None,
                         ),
                         _recent_run(
                             database_id=202,
+                            head_sha="superseded-head",
+                            created_at="2026-11-02T07:30:00Z",
+                            conclusion=conclusion,
+                        ),
+                        _recent_run(
+                            database_id=101,
                             head_sha="green-ancestor",
                             created_at="2026-11-02T07:00:00Z",
                         ),
                     ]
                 )
             ),
-            _jobs_argv(run_id="202"): _result(stdout=_jobs_payload()),
+            _jobs_argv(run_id="202"): _result(stdout=_jobs_payload(job_conclusion="failure")),
+            _jobs_argv(run_id="101"): _result(stdout=_jobs_payload()),
             _compare_argv(base="green-ancestor"): _result(stdout="ahead\n"),
         }
     )
@@ -641,11 +661,63 @@ def test_a_pending_latest_run_passes_on_a_green_ancestor_without_waiting(tmp_pat
 
     assert outcome.refusal is None
     assert outcome.record["reason"] == "master-ci-green"
-    assert outcome.record["run_database_id"] == "202"
+    assert outcome.record["run_database_id"] == "101"
     assert outcome.record["head_sha"] == "green-ancestor"
     assert outcome.record["pending_run_database_id"] == "303"
     assert "concluded green ancestor" in str(outcome.record["detail"])
     assert "303" in str(outcome.record["detail"])
+    assert _jobs_argv(run_id="202") not in runner.calls
+
+
+def test_a_cancelled_run_after_a_red_run_keeps_waiting_on_the_latest_run(tmp_path: Path) -> None:
+    """A cancelled workflow run is skipped, but the newer red run still bars a pass."""
+    pauses: list[float] = []
+    runner = _Runner(
+        results={
+            **_results(run_list=_result(stdout=_run_list_payload(status="in_progress"))),
+            _recent_run_list_argv(): _result(
+                stdout=json.dumps(
+                    [
+                        _recent_run(
+                            database_id=303,
+                            head_sha="pending-head",
+                            created_at="2026-11-02T08:00:00Z",
+                            status="in_progress",
+                            conclusion=None,
+                        ),
+                        _recent_run(
+                            database_id=202,
+                            head_sha="superseded-head",
+                            created_at="2026-11-02T07:30:00Z",
+                            conclusion="cancelled",
+                        ),
+                        _recent_run(
+                            database_id=101,
+                            head_sha="red-run",
+                            created_at="2026-11-02T07:00:00Z",
+                            conclusion="failure",
+                        ),
+                    ]
+                )
+            ),
+            _jobs_argv(run_id="202"): _result(stdout=_jobs_payload(job_conclusion="failure")),
+            _jobs_argv(run_id="101"): _result(stdout=_jobs_payload(job_conclusion="failure")),
+        }
+    )
+
+    outcome = _polled(
+        repo=tmp_path,
+        runner=runner,
+        readings=[0.0, 1800.0],
+        pauses=pauses,
+        progress=io.StringIO(),
+    )
+
+    assert outcome.refusal is not None
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["status"] == "deferred"
+    assert _jobs_argv(run_id="202") not in runner.calls
+    assert _jobs_argv(run_id="101") in runner.calls
 
 
 def test_a_transient_empty_run_listing_during_a_wait_is_repolled(tmp_path: Path) -> None:
