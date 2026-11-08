@@ -92,6 +92,26 @@ def test_projection_derives_the_dump_ordinal_from_the_ordered_stage_projection(
     } == {"stages/055-implement@1/diff.patch": dump_patch}
 
 
+def test_projection_ordinal_counts_stages_without_event_sequences(tmp_path: Path) -> None:
+    """A stage's position, rather than its event metadata, names its dump directory."""
+    dump_patch = b"diff --git a/app.py b/app.py\n+print('implemented')\n"
+
+    stage_diffs = stage_diffs_from_run_state(
+        run_state={
+            "stages": {
+                "prepare@1": {"diff": None},
+                "implement@1": {"diff": dump_patch.decode()},
+            }
+        }
+    )
+
+    artifacts = write_stage_diffs(stage_diffs=stage_diffs, output_dir=tmp_path)
+
+    assert {
+        artifact.relative_to(tmp_path).as_posix(): artifact.read_bytes() for artifact in artifacts
+    } == {"stages/002-implement@1/diff.patch": dump_patch}
+
+
 def test_unreadable_or_diff_less_projection_yields_no_artifacts(tmp_path: Path) -> None:
     assert stage_diffs_from_run_state(run_state=None) == ()
     assert stage_diffs_from_run_state(run_state={"stages": []}) == ()
