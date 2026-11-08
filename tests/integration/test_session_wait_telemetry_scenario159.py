@@ -465,11 +465,14 @@ def test_scenario_159_events_carry_the_service_namespace_and_versioned_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repository = _repository(tmp_path=tmp_path)
+    telemetry = _TelemetryTracker()
     with _capturing_server() as (url, bodies):
         monkeypatch.setenv(_ENDPOINT_ENV, url)
         _ = session_wait.main(
-            argv=["inventory", "--repo", str(repository)], seams=_seams(clock=_Clock())
+            argv=["inventory", "--repo", str(repository)],
+            seams=_seams(clock=_Clock(), telemetry_factory=telemetry),
         )
+        telemetry.settle()
 
     assert len(bodies) == 1
     request = json.loads(bodies[0])
