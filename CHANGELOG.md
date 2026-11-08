@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.304.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.303.0...v0.304.0) (2026-11-08)
+
+
+### Features
+
+* repair hook-refused pre-janitor refresh ([1e91c27](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1e91c27fb4ebf5e0f21cccf4ba056b3fa1d1694d))
+
+
+### Bug Fixes
+
+* a seeded launch targets its staging base, not an unpublished branch ([7eba833](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7eba833030b1760d004c64ddf55446c71f92a325))
+* brief the hook's whole output tail, not only its Failed targets block ([e873845](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e873845b95eb14a35e93ca712737f3cc68aa0611))
+* keep the hook's own error lines in the refresh-repair brief ([da72376](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da72376dab1956ccfd4ddd9e2bf173b735df0444))
+
 ## [0.303.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.302.0...v0.303.0) (2026-11-08)
 
 

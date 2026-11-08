@@ -492,6 +492,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
+    "work_item": "bd-ib-fde4ie",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 209 — A provider refusal booked as a successful turn is released, not left for a human",
     "work_item": "bd-ib-wkfwtx",
     "first_seen": "2026-10-20"
@@ -1136,6 +1143,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node",
+    "work_item": "bd-ib-2eyiwy",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused",
+    "work_item": "bd-ib-s754le",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees",
+    "work_item": "bd-ib-xz35zu",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label",
     "work_item": "bd-ib-pz7x",
     "first_seen": "2026-07-13"
@@ -1426,12 +1454,12 @@
     "heading": "## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees",
     "work_item": "bd-ib-xz35zu",
     "first_seen": "2026-11-08"
-   },
-   {
-     "spec_root": "SPECIFICATION",
-     "spec_file": "scenarios.md",
-     "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
-     "work_item": "bd-ib-fde4ie",
-     "first_seen": "2026-11-08"
-   }
- ]
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
+    "work_item": "bd-ib-fde4ie",
+    "first_seen": "2026-11-08"
+  }
+]

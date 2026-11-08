@@ -151,8 +151,8 @@ docker exec "$CONTAINER" bash -lc '
   test -x /usr/local/bin/bd-guard-emit.py
   test "$(cat /usr/local/etc/livespec-bd-guard.mode)" = warn
   echo "$BD_BINARY_SHA256  /usr/local/bin/bd-real" | sha256sum -c -
-  /usr/local/bin/bd-real version | grep -q "bd version $BD_VERSION"
-  /usr/local/bin/bd version | grep -q "bd version $BD_VERSION"
+  grep -q "bd version $BD_VERSION" <<<"$(/usr/local/bin/bd-real version)"
+  grep -q "bd version $BD_VERSION" <<<"$(/usr/local/bin/bd version)"
   echo "bd guarded layout: wrapper=$LIVESPEC_BD_PATH real=/usr/local/bin/bd-real version=$BD_VERSION"
 '
 
