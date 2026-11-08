@@ -8695,6 +8695,20 @@ Feature: New behaviour gets new spec before it is built
     And the invoking session sets no agent session id and no forge login can be read
     When the valve records the attestation
     Then the ledger comment and the dispatch-journal entry record the unattributed:<os-user>@<hostname> mark as the actor
+
+  Scenario: A held item whose generalization target was ratified under another topic names that topic as a relink candidate
+    Given a held spec-change-tier item whose linked topic has no revision record
+    And a revision with decision accept, cut after the item's tier record, amended the body of that record's generalization-target heading under a different topic
+    When a dispatch of the item is refused, and when needs-attention is composed
+    Then the refusal names that topic and its specification version as a relink candidate
+    And needs-attention carries hygiene:spec-tier-relink:<work-item-id> whose handoff is relink-spec-tier:<work-item-id>:<that topic>
+    And the hold is not released, the item is not relinked, and no ledger record is written
+
+  Scenario: A rejected revision is never named as a relink candidate
+    Given a held spec-change-tier item whose linked topic has no revision record
+    And the only revision cut after the item's tier record that amended its generalization-target heading carries decision reject
+    When a dispatch of the item is refused, and when needs-attention is composed
+    Then the refusal names no relink candidate and needs-attention carries no hygiene:spec-tier-relink fact for the item
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
