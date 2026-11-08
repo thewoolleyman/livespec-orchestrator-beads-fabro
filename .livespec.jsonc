@@ -138,10 +138,17 @@
   // Driver-shipped-hooks and Plugin-distribution contracts by section
   // rather than restating them — restating a sibling-owned contract here
   // is exactly what the no-cross-spec-reference rule exists to prevent.
+  // §"Self-contained plugin dispatch" cites livespec-dev-tooling's
+  // Orchestrator-build-adoption contract (its spec v155), which owns the
+  // `just adopt-orchestrator-build` operator step this plugin names as its
+  // currency remedy.
   "external_references": {
     "livespec": [
       "SPECIFICATION/contracts.md §\"Driver-shipped hooks\"",
       "SPECIFICATION/contracts.md §\"Plugin distribution\""
+    ],
+    "livespec-dev-tooling": [
+      "SPECIFICATION/contracts.md §\"Orchestrator build adoption\""
     ]
   },
   // Planning/work-item-resolution registry. These targets are the repo slugs

@@ -2776,19 +2776,26 @@ Feature: Dispatch admission surfaces plugin-currency staleness rather than block
     When the Dispatcher admits a ready work-item
     Then the dispatch is not refused on plugin-currency grounds
     And no blocking plugin-currency refusal is journaled
-    And a non-blocking dispatcher-currency-staleness fact surfaces that the provisioned build lags the latest release
+    And a non-blocking dispatcher-currency-staleness fact surfaces at low urgency that the provisioned build lags the latest release, naming `just adopt-orchestrator-build <clone> <build>` as its remedy
 
   Scenario: A deliberate release floor refuses a below-floor dispatch fail-closed
     Given a committed dispatcher.minimum_release floor
     And an executing release below that floor
     When the Dispatcher admits a ready work-item
     Then the dispatch is refused fail-closed with an actionable diagnostic naming the floor
+    And the diagnostic names `just adopt-orchestrator-build <clone> <build>` as its remedy and does not name `claude plugin update`
 
   Scenario: Unobservable currency is recorded as undetermined and does not refuse
     Given the executing build identity or the available release cannot be determined
     When the plugin-currency check runs at dispatch admission
     Then it records that currency could not be determined
     And it does not refuse the dispatch on currency grounds
+
+  Scenario: An executing build newer than the target's registered install is surfaced
+    Given a target repository whose registered install of this plugin is older than the executing build
+    When the Dispatcher admits a ready work-item for that target
+    Then it prints a non-blocking finding naming both builds
+    And the dispatch is not refused on that ground
 ```
 
 ## Scenario 96 — Each governed-repo integration point resolves from a committed declaration, with a fleet default only where one exists
@@ -11336,6 +11343,7 @@ Feature: A session resolves its project's registered plugin build and is told wh
     When the plugin's session-start hook runs
     Then it prints a warning naming the registered install's version and the latest released version
     And the session start succeeds
+    And the warning names `just adopt-orchestrator-build <clone> <build>` as its remedy and does not name `claude plugin update`
 
   Scenario: An operation-prose snippet imports the package through the registered root
     Given an operation-prose step that has an agent import this plugin's package from a snippet
