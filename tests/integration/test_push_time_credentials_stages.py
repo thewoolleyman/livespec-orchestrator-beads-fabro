@@ -64,16 +64,20 @@ def test_every_script_push_remints_and_retries_http_401_only_once(
     box.refusals = refusals
     result = box.run(node=node)
     attempts = min(refusals + 1, 2)
+    if node == "needs_human":
+        # The terminal now preserves both the immutable WIP ref and the
+        # needs-human ref. Each hookless push owns its own bounded remint.
+        attempts += 1 if refusals < 2 else 2
     expected_auth = "Basic " + base64.b64encode(f"x-access-token:{FRESH}".encode()).decode()
     assert box.mint_count() == attempts, result.stderr
     assert box.writes == [expected_auth] * attempts, result.stderr
     success = refusals < 2
     if node == "needs_human":
         assert result.returncode == 1
-        assert ("LIVESPEC_NEEDS_HUMAN_PRESERVED:" in result.stderr) == success
+        assert "LIVESPEC_NEEDS_HUMAN_PRESERVED:" in result.stderr
     else:
         assert (result.returncode == 0) == success, result.stderr
-    if success:
+    if success or node == "needs_human":
         assert box.head(ref=ref) == git("rev-parse", "HEAD", cwd=box.clone, env=box.env)
         if node == "pr_refresh":
             assert box.head(ref=ref) != old_head
@@ -126,7 +130,8 @@ def test_preservation_keeps_its_hook_policy(push_sandbox: PushSandbox) -> None:
     result = box.run(node="needs_human")
     assert "LIVESPEC_NEEDS_HUMAN_PRESERVED:" in result.stderr
     assert not marker.exists()
-    assert box.mint_count() == 1
+    # WIP capture and the terminal preservation each mint independently.
+    assert box.mint_count() == 2
 
 
 def test_failed_retry_mint_stops_before_a_second_push(push_sandbox: PushSandbox) -> None:

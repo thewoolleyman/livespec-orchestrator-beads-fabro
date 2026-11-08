@@ -62,6 +62,10 @@ if test -n "$highest_tip" && test "$tip" = "$highest_tip"; then
     echo "LIVESPEC_WIP_SKIPPED: ${prefix}${highest} $tip already captured" >&2
     exit 0
 fi
+if test "${4:-}" = '--print-refspec'; then
+    echo "LIVESPEC_WIP_CAPTURE_READY: $ref $tip" >&2
+    exit 0
+fi
 root=${LIVESPEC_SANDBOX_GH_REFRESH_ROOT:-/workspace/.livespec-gh-refresh}
 push="$root/bin/push_origin"
 if test -x "$push"; then

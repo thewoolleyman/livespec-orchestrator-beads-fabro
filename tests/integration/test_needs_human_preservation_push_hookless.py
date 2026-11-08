@@ -142,7 +142,9 @@ def test_the_hookless_form_is_per_invocation_and_scoped_to_the_preservation_node
         for verb in ("commit", "push")
         for invocation in _git_writes(script=needs_human, verb=verb)
     ]
-    assert len(writes) == 4, writes
+    # The terminal now performs the ordinary needs-human preservation push
+    # plus the immutable WIP capture push from the run branch.
+    assert len(writes) == 5, writes
     for invocation in writes:
         assert _HOOKLESS_OPTION in invocation, invocation
     assert "--no-verify" not in needs_human
