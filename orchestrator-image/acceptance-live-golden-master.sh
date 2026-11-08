@@ -218,7 +218,7 @@ delete_throwaway_repo() {
     code=$?
     set -e
     if [ "$code" -eq 0 ]; then printf 'teardown: deleted %s\n' "$full"; return 0; fi
-    if printf '%s' "$out" | grep -qiE 'HTTP 404|Not Found'; then
+    if grep -qiE 'HTTP 404|Not Found' <<<"$out"; then
       printf 'teardown: already gone (404): %s\n' "$full"; return 0
     fi
     printf 'teardown: attempt %s/6 not-yet-deletable, backing off 3s\n' "$attempt"
@@ -266,7 +266,7 @@ stage_and_build_image() {
   # Draining fabro's stdout through $() removes the pipe, so it never SIGPIPEs;
   # `|| true` keeps an informational log line from ever failing the accept.
   fabro_ver="$("$HERE/fabro" version || true)"
-  printf '%s\n' "$fabro_ver" | head -1
+  printf '%s\n' "$fabro_ver" | sed -n '1p'
   # Stage the plugin scripts tree (mint-app-token CLI + package + vendored
   # runtime) into the build context; the Dockerfile bakes it at
   # /opt/livespec-orchestrator/scripts for the entrypoint's github provisioning.
