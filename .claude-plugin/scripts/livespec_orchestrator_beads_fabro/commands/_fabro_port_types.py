@@ -117,6 +117,8 @@ class FabroInspectResult:
     status_kind: str | None
     failure: FabroFailureDetail | None
     events_payload: object | None = None
+    budget_exceeded_run_id: str | None = None
+    stalled_run_id: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

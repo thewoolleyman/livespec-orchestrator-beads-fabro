@@ -4,25 +4,33 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
-    DEAD_IMPLEMENTER_SENTINEL,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach_outcome import (
+    unobservable_run_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach_watch import (
+    ReattachBudgetWatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_second_reads import (
     executed_candidate_attribution,
     terminal_events_attachment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    NEEDS_HUMAN_MARKER,
-    NON_CONVERGED_MARKER,
-    RECAPTURE_EXHAUSTED_MARKER,
     DispatchPlan,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
+    LivenessSample,
+    StallVerdict,
+    decide_stall,
+    quiet_window_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroInspectResult,
+    FabroPort,
     fabro_port_for_plan,
 )
 
@@ -30,9 +38,18 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
         CommandResult,
         CommandRunner,
-        DispatchOutcome,
         JournalWriter,
     )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+        LivenessState,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
+        LedgerComments,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_watch import (
+        RunWallBudgetWatch,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
 
 __all__: list[str] = [
     "TERMINAL_STATUS_KINDS",
@@ -52,26 +69,152 @@ TERMINAL_STATUS_KINDS = frozenset(
     {"succeeded", "failed", "cancelled", "canceled", "blocked", "human_input_required"}
 )
 _LIVE_STATUS_KINDS = frozenset({"running", "runnable", "pending", "queued", "starting", "paused"})
+
+
 # Each sentinel a TERMINAL node prints on the client's own channel before the
 # client exits non-green. `DEAD_IMPLEMENTER_SENTINEL` covers its check-failed
 # variant too, which carries it as a prefix.
-_CLIENT_TERMINAL_SENTINELS = (
-    NEEDS_HUMAN_MARKER,
-    NON_CONVERGED_MARKER,
-    RECAPTURE_EXHAUSTED_MARKER,
-    DEAD_IMPLEMENTER_SENTINEL,
-)
-
-
 @dataclass(frozen=True, kw_only=True)
 class ReattachTiming:
     """The clock and waiting seam of one supervision loop."""
 
     sleep: Callable[[float], None] = time.sleep
     clock: Callable[[], float] = time.monotonic
+    wall_clock: Callable[[], float] = time.time
 
 
 _DEFAULT_TIMING = ReattachTiming()
+
+
+def _liveness_state() -> object:
+    """Construct liveness state after the engine's reattach import has settled."""
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+        LivenessState,
+    )
+
+    return LivenessState()
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ReattachLivenessInput:
+    """All of one reattach poll's liveness inputs."""
+
+    plan: DispatchPlan
+    port: FabroPort
+    run_id: str
+    observed_at: float
+    state: object
+    run_record: object | None
+    journal: JournalWriter
+
+
+def liveness_sample(*, inputs: _ReattachLivenessInput) -> LivenessSample:
+    """Take a liveness sample without importing the engine through this module."""
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+        liveness_sample as resolved_liveness_sample,
+    )
+
+    return resolved_liveness_sample(
+        plan=inputs.plan,
+        port=inputs.port,
+        run_id=inputs.run_id,
+        heartbeat_path=None,
+        dispatch_id=None,
+        observed_at=inputs.observed_at,
+        state=cast("LivenessState", inputs.state),
+        run_record=inputs.run_record,
+        journal=inputs.journal,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ReattachStallCancelInput:
+    """All facts needed to cancel one reattached stalled run."""
+
+    plan: DispatchPlan
+    port: FabroPort
+    journal: JournalWriter
+    run_id: str
+    quiet_seconds: float | None
+
+
+def cancel_stalled_run(*, inputs: _ReattachStallCancelInput) -> bool:
+    """Cancel lazily so reattach remains importable while the engine initializes."""
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
+        cancel_stalled_run as resolved_cancel_stalled_run,
+    )
+
+    return resolved_cancel_stalled_run(
+        dispatch_id=None,
+        plan=inputs.plan,
+        port=inputs.port,
+        journal=inputs.journal,
+        run_id=inputs.run_id,
+        quiet_seconds=inputs.quiet_seconds,
+    )
+
+
+@dataclass(kw_only=True)
+class _ReattachStallWatch:
+    """Liveness evidence retained while a reattached running run is observed."""
+
+    plan: DispatchPlan
+    journal: JournalWriter
+    run_id: str
+    timing: ReattachTiming
+    watch: ReattachBudgetWatch
+    liveness_state: object = field(default_factory=_liveness_state)
+    samples: list[LivenessSample] = field(default_factory=list)
+
+    def cancel_if_quiet(self, *, inspect: FabroInspectResult) -> bool:
+        """Cancel only when the retained event stream confirms a full quiet window."""
+        self.samples.append(
+            liveness_sample(
+                inputs=_ReattachLivenessInput(
+                    plan=self.plan,
+                    port=self.watch.port,
+                    run_id=self.run_id,
+                    observed_at=self.timing.clock(),
+                    state=self.liveness_state,
+                    run_record=inspect.payload,
+                    journal=self.journal,
+                )
+            )
+        )
+        window = tuple(self.samples)
+        stalled = decide_stall(samples=window, stall_seconds=self.plan.stall_window.seconds)
+        if stalled != StallVerdict.STALLED:
+            return False
+        return cancel_stalled_run(
+            inputs=_ReattachStallCancelInput(
+                plan=self.plan,
+                port=self.watch.port,
+                journal=self.journal,
+                run_id=self.run_id,
+                quiet_seconds=quiet_window_seconds(samples=window),
+            )
+        )
+
+
+def run_wall_ledger(*, repo: Path) -> LedgerComments | None:
+    """Resolve the budget ledger after the engine has finished importing."""
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_preserve import (
+        run_wall_ledger as resolved_run_wall_ledger,
+    )
+
+    return resolved_run_wall_ledger(repo=repo)
+
+
+def _run_wall_budget_watch(*, ledger: LedgerComments | None) -> RunWallBudgetWatch:
+    """Load the watch lazily so the engine's re-attach import remains acyclic."""
+    watch_type = cast("type[RunWallBudgetWatch] | None", globals().get("RunWallBudgetWatch"))
+    if watch_type is None:
+        from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_watch import (
+            RunWallBudgetWatch as ResolvedRunWallBudgetWatch,
+        )
+
+        watch_type = ResolvedRunWallBudgetWatch
+    return watch_type(ledger=ledger)
 
 
 def inspect_run(
@@ -145,13 +288,25 @@ def _observed_run(
     unanswered = 0
     attempt = 0
     deadline = timing.clock() + _REATTACH_WINDOW_SECONDS
+    watch = ReattachBudgetWatch(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        run_id=run_id,
+        wall_clock=timing.wall_clock,
+        port=fabro_port_for_plan(plan=plan, runner=runner),
+        budget=_run_wall_budget_watch(ledger=run_wall_ledger(repo=plan.repo)),
+    )
+    stall_watch = _ReattachStallWatch(
+        plan=plan, journal=journal, run_id=run_id, timing=timing, watch=watch
+    )
     while True:
         timeout = (
             min(_FABRO_INSPECT_TIMEOUT_SECONDS, max(0.001, deadline - timing.clock()))
             if follow_live
             else _FABRO_INSPECT_TIMEOUT_SECONDS
         )
-        inspect = fabro_port_for_plan(plan=plan, runner=runner).inspect(
+        inspect = watch.port.inspect(
             run_id=run_id,
             timeout_seconds=timeout,
         )
@@ -162,23 +317,23 @@ def _observed_run(
             result=cast("CommandResult", inspect.command),
         )
         if follow_live:
-            attempt += 1
-            journal.append(
-                record={
-                    "stage": "fabro-reattach",
-                    "work_item_id": plan.work_item_id,
-                    "run_id": run_id,
-                    "attempt": attempt,
-                    "exit_code": inspect.command.exit_code,
-                    "status": inspect.status_kind,
-                    "server_url": plan.fabro_factory_server,
-                }
+            attempt = _journal_reattach_attempt(
+                journal=journal, plan=plan, run_id=run_id, attempt=attempt, inspect=inspect
             )
         if not follow_live or (
             inspect.command.exit_code == 0 and inspect.status_kind in TERMINAL_STATUS_KINDS
         ):
             return inspect
         if inspect.command.exit_code == 0 and inspect.status_kind in _LIVE_STATUS_KINDS:
+            verdict = watch.verdict(payload=inspect.payload)
+            if verdict == "run-wall-budget-exceeded":
+                return replace(inspect, budget_exceeded_run_id=run_id)
+            if verdict == "run-wall-budget-held":
+                timing.sleep(30.0)
+                deadline = timing.clock() + _REATTACH_WINDOW_SECONDS
+                continue
+            if inspect.status_kind == "running" and stall_watch.cancel_if_quiet(inspect=inspect):
+                return replace(inspect, stalled_run_id=run_id)
             unanswered = 0
             timing.sleep(30.0)
             deadline = timing.clock() + _REATTACH_WINDOW_SECONDS
@@ -190,6 +345,30 @@ def _observed_run(
         timing.sleep(min(5.0 * 2 ** (unanswered - 1), 60.0, remaining))
         if timing.clock() >= deadline:
             return inspect
+
+
+def _journal_reattach_attempt(
+    *,
+    journal: JournalWriter,
+    plan: DispatchPlan,
+    run_id: str,
+    attempt: int,
+    inspect: FabroInspectResult,
+) -> int:
+    """Write the live-observation attempt and return its next sequence number."""
+    next_attempt = attempt + 1
+    journal.append(
+        record={
+            "stage": "fabro-reattach",
+            "work_item_id": plan.work_item_id,
+            "run_id": run_id,
+            "attempt": next_attempt,
+            "exit_code": inspect.command.exit_code,
+            "status": inspect.status_kind,
+            "server_url": plan.fabro_factory_server,
+        }
+    )
+    return next_attempt
 
 
 def inspect_after_run(
@@ -224,56 +403,3 @@ def inspect_after_run(
         if refreshed is not None and refreshed.failure is not None:
             inspect = refreshed
     return inspect
-
-
-def unobservable_run_outcome(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    run_id: str | None,
-    inspect: FabroInspectResult | None,
-    client_text: str,
-) -> DispatchOutcome | None:
-    """Retain ownership when a failed client leaves its bound run unobservable.
-
-    The caller has already handled a clean client exit. An unanswered or
-    unrecognized observation cannot establish failure, release a claim or
-    authorize another launch of this item. The run id and factory remain
-    visible for continued observation after this supervision budget expires.
-
-    A CLIENT THAT PRINTED A TERMINAL SENTINEL IS NOT UNOBSERVABLE, however its
-    inspections went — which is why `client_text` is a required argument rather
-    than something a caller may leave off. Such a sentinel is positive proof the
-    run reached a terminal node, and on the pinned engine the client's own
-    output is the ONLY channel carrying it: an unanswered inspect leaves
-    `inspect.failure` empty, so reporting the run unobservable here would
-    discard the one verdict in hand. The cost is not a relabel. Every
-    disposition downstream — the needs-human ledger valve, the durable
-    `livespec-needs-human-cause` comment that outlives the run, the preserved
-    reference record, and the non-convergence cap that reads
-    `NON_CONVERGED_MARKER` out of the detail — gates on a `blocked` or `failed`
-    status, so a shadowed sentinel rests the item at `active` with none of them
-    written, after a supervision budget spent on a run that had already ended.
-    """
-    # No inspection result means re-attachment was never attempted, as in
-    # legacy callers reporting explicit terminal sentinels from the client.
-    if (
-        run_id is None
-        or inspect is None
-        or (inspect.command.exit_code == 0 and inspect.status_kind in TERMINAL_STATUS_KINDS)
-        or any(sentinel in client_text for sentinel in _CLIENT_TERMINAL_SENTINELS)
-    ):
-        return None
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="run-unobservable",
-        stage="fabro-reattach",
-        pr_number=None,
-        merge_sha=None,
-        fabro_run_id=run_id,
-        detail=(
-            f"run {run_id} on {plan.fabro_factory_server or 'the local factory'} "
-            "is possibly still alive; re-attach observation budget exhausted; "
-            "work-item claim retained"
-        ),
-    )
