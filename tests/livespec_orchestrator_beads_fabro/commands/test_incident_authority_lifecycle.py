@@ -518,6 +518,146 @@ def test_correct_attempt_after_a_revert_receipt_opens_a_fresh_attempt_and_refuse
     ]
 
 
+def test_record_rollback_conflict_blocks_the_current_reverting_attempt(
+    tenant: _Tenant,
+) -> None:
+    observed, active = _live_repayment(tenant)
+    reverting = _verified(_reopen(tenant, active, observed, _finding()))
+    conflict = _json(
+        dict(
+            receipt="rollback-conflict:action-9:owner:operator:alice:head:" + BROKEN_MASTER,
+            release_condition="controller-release:action-9",
+        )
+    )
+
+    blocked = _verified(
+        tenant.cli(
+            "record-rollback-conflict",
+            reverting,
+            "--rollback-conflict-json",
+            conflict,
+        )
+    )
+
+    assert (blocked.phase, blocked.generation, blocked.owner) == (
+        "rollback-conflict",
+        reverting.generation + 1,
+        PRINCIPAL,
+    )
+    assert (tenant.client.show_issue(issue_id=ITEM)["status"], _recovery_kinds(tenant.client)) == (
+        "blocked",
+        ["recovery-request", "rollback-conflict"],
+    )
+
+
+def test_rollback_conflict_actions_refuse_invalid_generations_and_resolve_exact_retries(
+    tenant: _Tenant,
+) -> None:
+    module_path = Path(command.__file__).with_name("_incident_rollback_conflict.py")
+    assert module_path.is_file()
+    observed, active = _live_repayment(tenant)
+    reverting = _verified(_reopen(tenant, active, observed, _finding()))
+    conflict = _json(
+        dict(
+            receipt="rollback-conflict:action-9:owner:operator:alice:head:" + BROKEN_MASTER,
+            release_condition="controller-release:action-9",
+        )
+    )
+    assert _refused(
+        tenant.cli("record-rollback-conflict", active, "--rollback-conflict-json", conflict)
+    ) == ("incident-rollback-conflict-not-eligible: repayment-active")
+    blocked = _verified(
+        tenant.cli("record-rollback-conflict", reverting, "--rollback-conflict-json", conflict)
+    )
+    assert _refused(
+        tenant.cli(
+            "record-rollback-conflict",
+            reverting,
+            "--rollback-conflict-json",
+            _json(dict(receipt="different", release_condition="different")),
+        )
+    ).startswith("incident-generation-stale: ")
+    assert (
+        _verified(
+            tenant.cli("record-rollback-conflict", reverting, "--rollback-conflict-json", conflict)
+        )
+        == blocked
+    )
+    unresolved = _json(
+        dict(
+            release_condition="controller-release:action-9",
+            revert_receipt_id="",
+            revert_commit="",
+        )
+    )
+    assert (
+        _refused(
+            tenant.cli(
+                "resolve-rollback-conflict",
+                blocked,
+                "--rollback-resolution-json",
+                unresolved.replace("action-9", "action-10"),
+            )
+        )
+        == "incident-rollback-conflict-release-unmet: controller-release:action-10"
+    )
+    reverting_again = _verified(
+        tenant.cli(
+            "resolve-rollback-conflict",
+            blocked,
+            "--rollback-resolution-json",
+            unresolved,
+        )
+    )
+    assert (reverting_again.phase, tenant.client.show_issue(issue_id=ITEM)["status"]) == (
+        "reverting",
+        "active",
+    )
+    assert (
+        _verified(
+            tenant.cli(
+                "resolve-rollback-conflict",
+                blocked,
+                "--rollback-resolution-json",
+                unresolved,
+            )
+        )
+        == reverting_again
+    )
+
+
+def test_rollback_conflict_resolution_with_a_receipt_collects_failures(tenant: _Tenant) -> None:
+    observed, active = _live_repayment(tenant)
+    reverting = _verified(_reopen(tenant, active, observed, _finding()))
+    blocked = _verified(
+        tenant.cli(
+            "record-rollback-conflict",
+            reverting,
+            "--rollback-conflict-json",
+            _json(dict(receipt="owned-conflict", release_condition="controller-release:receipt")),
+        )
+    )
+    collecting = _verified(
+        tenant.cli(
+            "resolve-rollback-conflict",
+            blocked,
+            "--rollback-resolution-json",
+            _json(
+                dict(
+                    release_condition="controller-release:receipt",
+                    revert_receipt_id="controller-receipt-1",
+                    revert_commit="3" * 40,
+                )
+            ),
+        )
+    )
+    assert (collecting.phase, tenant.client.show_issue(issue_id=ITEM)["status"]) == (
+        "collecting-failures",
+        "active",
+    )
+    assert _recovery_kinds(tenant.client)[-2:] == ["rollback-conflict", "revert-receipt"]
+
+
 @pytest.mark.parametrize(
     ("action", "payload"),
     [
