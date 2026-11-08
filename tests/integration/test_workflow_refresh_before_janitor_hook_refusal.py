@@ -98,13 +98,18 @@ def _refuse_refresh_commit(*, run: Path) -> None:
     hook = run / ".git" / "hooks" / "prepare-commit-msg"
     lines = [
         "#!/bin/sh",
-        "printf 'Failed targets (2):\\n' >&2",
-        "printf '  - check-format\\n' >&2",
-        "printf '  - check-types\\n' >&2",
     ]
     lines.extend(f"printf 'hook-line-{number}\\n' >&2" for number in range(1, 101))
-    lines.append("printf 'error: hook-own-error-line\\n' >&2")
-    lines.extend(("exit 1", ""))
+    lines.extend(
+        (
+            "printf 'error: hook-own-error-line\\n' >&2",
+            "printf 'Failed targets (2):\\n' >&2",
+            "printf '  - check-format\\n' >&2",
+            "printf '  - check-types\\n' >&2",
+            "exit 1",
+            "",
+        )
+    )
     hook.write_text("\n".join(lines), encoding="utf-8")
     hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
 
@@ -141,7 +146,10 @@ def test_a_hook_refused_pre_janitor_refresh_restores_and_writes_its_repair_brief
     assert "refresh-target: " in brief
     assert "failed-hook-targets: check-format check-types" in brief
     hook_tail = brief.split("hook-output-last-80-lines:\n", maxsplit=1)[1].splitlines()
-    assert hook_tail[0] == "hook-line-22"
-    assert hook_tail[-1] == "error: hook-own-error-line"
+    assert hook_tail[0] == "hook-line-25"
+    assert hook_tail[-1] == "  - check-types"
+    assert len(hook_tail) == 80
+    assert "hook-line-100" in hook_tail
+    assert "error: hook-own-error-line" in hook_tail
+    assert "hook-line-24" not in hook_tail
     assert "hook-line-1" not in hook_tail
-    assert "hook-line-21" not in hook_tail
