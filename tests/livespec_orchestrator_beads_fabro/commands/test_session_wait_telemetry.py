@@ -95,6 +95,10 @@ class _CapturingExporter:
         self.calls.append((spans, dataset))
         return True
 
+    def settled_events(self) -> list[tuple[str, Decoded, str]]:
+        self.telemetry.settle()
+        return self.events()
+
     def events(self) -> list[tuple[str, Decoded, str]]:
         unique: dict[str, dict[str, object]] = {}
         for spans, _ in self.calls:
@@ -377,12 +381,12 @@ def test_acknowledgement_is_receipt_only_and_joins_the_wait_trace(
             argv=_wait_argv(repository=repository),
             seams=_seams(telemetry_factory=exporter.telemetry),
         )
-        before = len(exporter.events())
+        before = len(exporter.settled_events())
         refused = session_wait.main(
             argv=["ack", *ack, "--session-id", "someone-else"],
             seams=_seams(telemetry_factory=exporter.telemetry),
         )
-        assert len(exporter.events()) == before
+        assert len(exporter.settled_events()) == before
         accepted = session_wait.main(
             argv=["ack", *ack, "--session-id", "session-1"],
             seams=_seams(telemetry_factory=exporter.telemetry),
@@ -448,15 +452,15 @@ def test_inventory_publishes_per_wait_observations_that_stay_distinct_per_snapsh
             argv=_wait_argv(repository=repository),
             seams=_seams(telemetry_factory=exporter.telemetry),
         )
-        armed_events = len(exporter.events())
+        armed_events = len(exporter.settled_events())
         _ = session_wait.main(argv=argv, seams=seams)
-        first = exporter.events()[armed_events:]
+        first = exporter.settled_events()[armed_events:]
         clock.now += 10.0
         _ = session_wait.main(argv=argv, seams=seams)
-        unchanged = exporter.events()[armed_events + len(first) :]
+        unchanged = exporter.settled_events()[armed_events + len(first) :]
         clock.now += 61.0
         _ = session_wait.main(argv=argv, seams=seams)
-        later = exporter.events()[armed_events + len(first) :]
+        later = exporter.settled_events()[armed_events + len(first) :]
 
     assert [name for name, _, _ in first] == ["session.wait.inventory", "session.wait.observed"]
     summary, observed = first[0][1], first[1][1]
