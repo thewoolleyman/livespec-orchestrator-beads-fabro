@@ -199,6 +199,7 @@ def test_length_normalisation_prefers_the_short_distinctive_clause_over_a_tenfol
     ordered = _relevance_order(
         sections=[section for path in tree for section in _sections_of(path=path, text=tree[path])],
         statement=statement,
+        term_pattern=_TERM,
     )
 
     assert len(long_body) > len(short_body) * 10
