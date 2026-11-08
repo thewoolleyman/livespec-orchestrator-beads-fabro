@@ -431,6 +431,7 @@ check:
         check-red-green-replay
         check-required-role-keys-declared
         check-rop-pipeline-shape
+        check-rule-26-keep-out
         check-self-hosted-routing
         check-self-hosted-uv-lane
         check-shell-quality
@@ -1166,6 +1167,9 @@ check-red-green-replay *args:
 
 check-rop-pipeline-shape:
     uv run python -m livespec_dev_tooling.checks.rop_pipeline_shape
+
+check-rule-26-keep-out:
+    uv run python -m livespec_dev_tooling.checks.rule_26_keep_out
 
 check-skill-invocation-paths:
     uv run python -m livespec_dev_tooling.checks.skill_invocation_paths
