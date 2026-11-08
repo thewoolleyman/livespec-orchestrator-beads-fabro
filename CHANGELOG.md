@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.305.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.305.0...v0.305.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* cover tracks plan edge in groom filing ([21d6749](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21d67496c062f2ead5ed12d7e8bfc1c93d7e71d0))
+* preserve plan parent during groom filing ([ddab33f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ddab33f95992d8d67d3e111feb192e4e45a9753f))
+
 ## [0.305.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.304.0...v0.305.0) (2026-11-08)
 
 
