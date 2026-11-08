@@ -6880,6 +6880,21 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     Then the runner refuses the wait and leaves the commit run untouched
     And the refusal reports the commit run as still running
     And the refusal names the stage's commit-run settle as what will wait on it
+
+  Scenario: A wait is refused while another wait on the same commit run is open
+    Given a commit started through the sandbox commit runner that is still running
+    And a wait on that commit run that has not yet returned
+    When the agent starts a second wait on the same commit run
+    Then the runner refuses the second wait at once with a non-zero exit status
+    And the refusal reports the commit run's current state and that another wait on it is open
+    And the commit run is left untouched and later reports its own terminal state
+
+  Scenario: A wait after a returned or killed wait is not refused for concurrency
+    Given a commit started through the sandbox commit runner that is still running
+    And an earlier wait on that commit run that either returned or was killed before returning
+    When the agent waits on that commit run
+    Then the wait blocks for no longer than its bound
+    And it reports running or the commit run's terminal state
 ```
 
 ## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
@@ -7400,17 +7415,57 @@ Feature: Recovery routing for an automatically released item
     When a reconciliation pass reads that run
     Then the item gains one livespec-seed-ruling-consumed comment naming the ruling, the dispatch and the run
 
-  Scenario: Of two needs-human refs carrying one run, the one named under a run identifier is taken
-    Given an earlier run U of the item carried by needs-human/U and by needs-human/A
+  Scenario: Of two needs-human refs carrying one run, the tip that descends from the other is taken whatever the refs are named
+    Given an earlier run U of the item carried by needs-human/U at commit S1 and by needs-human/A at commit S2
+    And S2 descends from S1
     When the Dispatcher grades the item's recovery route
-    Then the route is seeded from needs-human/U
-    And the recovery-route record lists needs-human/A in passed_over_needs_human
+    Then the route is seeded from needs-human/A at S2
+    And the recovery-route record lists needs-human/U with S1 in passed_over_needs_human
 
-  Scenario: Of two needs-human refs carrying one run under other names, the newer tip is taken
-    Given an earlier run U of the item carried by needs-human/A and needs-human/B and by no ref named under a run identifier
+  Scenario: Of two needs-human refs carrying one run on diverged tips, the newer tip is taken
+    Given an earlier run U of the item carried by needs-human/A and needs-human/B
+    And neither tip commit descends from the other
     And B's tip commit is newer by committer time than A's
     When the Dispatcher grades the item's recovery route
     Then the route is seeded from needs-human/B
+
+  Scenario: Of three needs-human refs carrying one run, an ancestor is never taken over a tip that descends from it
+    Given an earlier run U of the item carried by needs-human/A, needs-human/B and needs-human/C
+    And B's tip commit descends from A's tip commit
+    And C's tip commit descends from neither and neither descends from it
+    And by committer time A's tip is the newest, C's is older than A's, and B's is older than C's
+    When the Dispatcher grades the item's recovery route
+    Then routing takes needs-human/C
+    And the recovery-route record lists needs-human/A and needs-human/B in passed_over_needs_human
+
+  Scenario: Of two diverged needs-human tips with equal committer time, the ref whose full name sorts first is taken
+    Given an earlier run U of the item carried by needs-human/X and needs-human/Y
+    And neither tip commit descends from the other
+    And both tip commits have the same committer time
+    And refs/heads/needs-human/X sorts before refs/heads/needs-human/Y in byte order
+    When the Dispatcher grades the item's recovery route
+    Then routing takes needs-human/X
+
+  Scenario: Of two needs-human refs carrying one run at the same commit, the one named under a run identifier is taken
+    Given an earlier run U of the item carried by needs-human/U and by needs-human/A, both at commit S
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded from needs-human/U at S
+    And the recovery-route record lists needs-human/A with S in passed_over_needs_human
+
+  Scenario: A run-id-named ancestor does not outrank a dispatch-id-named descendant of the same run
+    Given bd-ib-ofvsr3's earlier run 01M6S83KZH54MR6N8NECJN86Z8 carried by needs-human/01M6S83KZH54MR6N8NECJN86Z8 at d7f0102e1 and by needs-human/4d5104454d7b406a80014d6d2acc139e at 578a981c2
+    And both tip commits hold the trailer Fabro-Run: 01M6S83KZH54MR6N8NECJN86Z8
+    And 578a981c2 descends from d7f0102e1
+    When the Dispatcher grades bd-ib-ofvsr3's recovery route
+    Then the route is seeded from needs-human/4d5104454d7b406a80014d6d2acc139e at 578a981c2
+    And the recovery-route record lists needs-human/01M6S83KZH54MR6N8NECJN86Z8 with d7f0102e1 in passed_over_needs_human
+
+  Scenario: An unreadable ancestry between refs carrying one run holds the route, even when one is named under a run identifier
+    Given an earlier run U of the item carried by needs-human/U and by needs-human/A on different tip commits
+    And whether either tip descends from the other cannot be read
+    When the Dispatcher grades the item's recovery route
+    Then the route is held and the recovery-held record names that measurement
+    And the route is not seeded from needs-human/U
 
   Scenario: A recovery route with nothing passed over records an empty list
     Given an item released for recovery whose only needs-human tree is the one its route takes
@@ -9518,7 +9573,7 @@ Feature: A publication refusal sends triage to the right remedy
     Given a publish_draft push the repository pre-push hook refuses with a Failed targets summary naming lint and format
     When publish_draft reports the failure
     Then its output names the pre-push hook as the cause and names lint and format
-    And the run fails closed before proof capture
+    And the run routes to fix with a repair brief naming lint and format
 
   Scenario: A non-fast-forward rejection points at the stale branch
     Given a publish_draft push origin rejects as non-fast-forward
@@ -9529,6 +9584,11 @@ Feature: A publication refusal sends triage to the right remedy
     Given a publish_draft push that cannot reach origin
     When publish_draft reports the failure
     Then its output names the unreachable origin as the cause
+
+  Scenario: A GH001 rejection names each oversize path
+    Given a publish_draft push origin refuses with GitHub's GH001 large-file error naming path P at 119 MB
+    When publish_draft reports the failure
+    Then its output names the GH001 rejection, path P and its size
 ```
 
 ## Scenario 225 — The publish-branch reclaim finds an earlier dispatch journaled in another worktree
@@ -9583,17 +9643,48 @@ Feature: Engine checkpoint commits never reach the merged history
     Then it fails closed on a foreign publish head
 ```
 
-## Scenario 220 — An exhausted merge-poll budget on an open pull request rests the item for resume
+## Scenario 220 — An exhausted merge-poll budget hands an armed, passing pull request to reconciliation
 
 ```gherkin
-Feature: A succeeded run never strands its claim while its pull request waits
-  As an operator whose armed pull request merges slowly
-  I want an exhausted merge wait to rest the item where resume can reach it
-  So that no claim sits active with no run behind it
+Feature: A slow CI run does not turn a healthy armed pull request into a needs-human item
+  As an operator whose armed pull request's CI outlasts the merge wait
+  I want the item handed to reconciliation rather than rested for a human
+  So that a pull request that merges on its own is accepted without resolve-blocked or resume
 
-  Scenario: An open, non-conflicting pull request rests the item
+  Scenario: An armed pull request with passing or running checks is handed off
     Given a run that succeeded and armed auto-merge on its pull request
-    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN and not in conflict
+    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN, not in conflict, with auto-merge armed
+    And every required check is passing or still running
+    When the Dispatcher records the outcome
+    Then the item stays active under its claim and is not moved to blocked
+    And one merge-wait-handed-off journal row names the run id, the pull request, its head, the seconds the wait spent and every required check still running
+    And the item carries one ledger comment opening with livespec-merge-wait-handed-off
+    And the dispatch exits 0
+    And the dispatching process ends, so its launcher removes its fleet in-flight marker
+    And the handed-off row is counted by neither the shared fleet count, the repository's counted claims, nor the in-flight addition
+
+  Scenario: A handed-off pull request that merges is accepted by the next reconciliation pass
+    Given an item whose newest dispatch journaled merge-wait-handed-off
+    And the forge now reports its pull request merged
+    When the Dispatcher's next stranded-claim reconciliation pass runs
+    Then the pass performs reconcile-merged for the item
+    And no resolve-blocked and no resume is run for it
+
+  Scenario: A handed-off pull request whose required check fails is routed as a failed check
+    Given an item whose newest dispatch journaled merge-wait-handed-off
+    And the forge now reports a required check of its pull request in a terminal failure
+    When the Dispatcher's next stranded-claim reconciliation pass runs
+    Then the outcome is the one the merge wait's terminal required-check failure records
+
+  Scenario: A handed-off pull request closed without merging rests for a human
+    Given an item whose newest dispatch journaled merge-wait-handed-off
+    And the forge now reports its pull request closed without merging
+    When the Dispatcher's next stranded-claim reconciliation pass runs
+    Then the item rests at blocked with blocked_reason needs-human and the cause merge-poll-budget-exhausted
+
+  Scenario: An open pull request whose auto-merge is no longer armed rests the item
+    Given a run that succeeded and armed auto-merge on its pull request
+    And the merge wait's poll budget is exhausted while the forge reports the pull request OPEN and not in conflict with auto-merge no longer armed
     When the Dispatcher records the outcome
     Then the item rests at blocked with blocked_reason needs-human and the cause merge-poll-budget-exhausted
     And the outcome detail names resolve-blocked then resume as the recovery chain
@@ -13270,4 +13361,72 @@ Feature: Operator fresh ruling for a recovery-released item
     When a reconciliation pass runs
     Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
     And the fresh ruling is not current
+```
+
+## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes
+
+Governing clause: `constraints.md` §"Codex full-access runtime constraints" → "Factory sandbox turns carry the Driver guards".
+
+```gherkin
+Feature: Factory sandbox turns carry the Driver guards
+  As the maintainer of a repository dispatched to the factory
+  I want every sandbox agent turn to run its Driver's PreToolUse guards from release-verified bytes
+  So that a full-access sandbox turn cannot run a command those guards forbid
+
+  Scenario: Hooks that byte-match the pinned Driver release are trusted and block a forbidden command
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When the materialized Codex hook definitions and hook entrypoints byte-match that Driver release tag
+    Then the hooks are recorded as trusted in the per-run CODEX_HOME without Codex's hook-trust bypass
+    And an implement turn's attempt to run a command the guard forbids is blocked by the materialized guard
+
+  Scenario: A materialized hook that differs from the pinned Driver release fails the prepare step
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When a materialized Codex hook definition or hook entrypoint differs from that Driver release tag
+    Then the run's prepare step fails, naming the plugin and the hook
+    And no implement turn starts
+```
+
+## Scenario 329 — A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "Publish repair".
+
+```gherkin
+Feature: Publish repair for a repairable push refusal
+  As the operator of a repository dispatched through the factory
+  I want a push refusal the run itself can repair to reach the fix node
+  So that a green run is not lost to an oversize file or a hook failure
+
+  Scenario: a GH001 rejection reaches fix with a brief naming the oversize path
+    Given a run whose publish_draft push origin refuses with GH001 naming path P at 119 MB
+    And the run has taken no refresh-repair round
+    When publish_draft fails
+    Then the run routes to fix with a repair brief naming publish_draft, the refused head, path P and its size
+    And the run does not end at needs_human with LIVESPEC_REFRESH_REPAIR_ABSENT
+
+  Scenario: the fix turn removes the oversize path and the run republishes
+    Given a fix turn entered with a publish-repair brief naming path P
+    When the fix turn completes
+    Then no commit of the run that origin does not hold carries path P
+    And no commit origin already held was rewritten
+    And the run re-enters janitor, then publish_draft, then proof_capture
+
+  Scenario: a pre-push hook refusal reaches fix with its failed targets
+    Given a run whose publish_draft push the repository pre-push hook refuses naming failed target lint
+    When publish_draft fails
+    Then the run routes to fix with a repair brief naming lint and the last 80 lines of the hook output
+
+  Scenario: a protected-branch refusal stays fail-closed
+    Given a run whose publish_draft push origin refuses because the branch is protected
+    When publish_draft fails
+    Then the run fails closed before proof capture with its output naming the protected-branch refusal
+    And the run does not route to fix
+
+  Scenario: a publish repair counts toward the refresh-repair budget
+    Given a run that has taken two refresh-repair rounds
+    And its publish_draft push origin refuses with GH001
+    When publish_draft fails
+    Then the run fails closed to needs_human with the named cause refresh-repair-exhausted
+    And its recovery artifact pointer names the head whose push was refused
 ```

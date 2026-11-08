@@ -263,9 +263,11 @@ class _Reconciles:
     """
 
     driven: list[str] = field(default_factory=list)
+    pull_requests: list[int | None] = field(default_factory=list)
 
-    def drive(self, *, work_item_id: str) -> int:
+    def drive(self, *, work_item_id: str, pull_request: int | None = None) -> int:
         self.driven.append(work_item_id)
+        self.pull_requests.append(pull_request)
         return 0
 
 
@@ -651,6 +653,31 @@ def test_publishing_an_independent_replay_drives_reconcile_merged_for_the_item(
 
     assert exit_code == 0
     assert reconciled.driven == [_ITEM_ID]
+
+
+@pytest.mark.parametrize(
+    ("verdict", "reproduced"),
+    [(VERDICT_HOST_VERIFIED, True), (VERDICT_HOST_NOT_REPRODUCED, False)],
+)
+def test_a_replay_drives_reconcile_against_the_pull_request_its_record_was_posted_on(
+    tmp_path: Path, *, verdict: str, reproduced: bool
+) -> None:
+    """Both replay verdicts preserve the post target through the acceptance pass."""
+    _file_item(repo=tmp_path)
+    runner = _Runner(comments=_comments(records=(_capture_comment(identity=_OTHER_SESSION),)))
+    reconciled = _Reconciles()
+
+    exit_code, _ = _post(
+        repo=tmp_path,
+        verdict=verdict,
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        reproduced=reproduced,
+        reconciles=reconciled,
+    )
+
+    assert exit_code == 0
+    assert reconciled.pull_requests == [_PR_NUMBER]
 
 
 def test_a_capture_post_does_not_drive_reconcile_merged(tmp_path: Path) -> None:
@@ -1107,7 +1134,7 @@ def test_the_bound_reconcile_carries_the_invocations_repository_to_the_valve(
         repo=tmp_path, args=argparse.Namespace(journal=None, invoker="human:test")
     )
 
-    assert drive(work_item_id="bd-ib-unfiled") != 0
+    assert drive(work_item_id="bd-ib-unfiled", pull_request=_PR_NUMBER) != 0
 
 
 def _drive_capturing_valve_args(
@@ -1124,7 +1151,7 @@ def _drive_capturing_valve_args(
 
     monkeypatch.setattr(cli, "reconcile_merged_for_item", fake_valve)
     drive = reconcile_for(repo=repo, args=argparse.Namespace(journal=None, invoker="human:test"))
-    assert drive(work_item_id=_ITEM_ID) == 0
+    assert drive(work_item_id=_ITEM_ID, pull_request=_PR_NUMBER) == 0
     return seen
 
 
@@ -1155,6 +1182,17 @@ def test_a_replay_post_on_an_unmarked_item_drives_the_plain_route(
 
     assert [one.regrade for one in seen] == [False]
     assert [one.item for one in seen] == [_ITEM_ID]
+
+
+def test_the_bound_reconcile_selects_the_pull_request_that_received_the_host_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The valve receives the post target, so its journal names that same pull request."""
+    _file_item(repo=tmp_path)
+
+    seen = _drive_capturing_valve_args(repo=tmp_path, monkeypatch=monkeypatch)
+
+    assert [one.pr for one in seen] == [_PR_NUMBER]
 
 
 _RECORD_FILE_KEYS = (

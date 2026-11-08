@@ -336,7 +336,7 @@ def _render_and_post(
         return _EXIT_FAILED
     if post.verdict not in REPLAY_VERDICTS:
         return 0
-    return seams.reconcile(work_item_id=item.id)
+    return seams.reconcile(work_item_id=item.id, pull_request=pr_number)
 
 
 def _attachment_target(*, post: HostRecordPost, identity: str) -> AttachmentTarget:

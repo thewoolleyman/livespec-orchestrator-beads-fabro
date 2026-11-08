@@ -22,10 +22,10 @@ from typing import TypeVar
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _config,
+    _dispatcher_commit_runner,
     _dispatcher_git_credential_helper,
     _dispatcher_harness_shell_policy,
     _dispatcher_hook_limit_program,
-    _dispatcher_implement_tools,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
     _dispatcher_pyright_cache,
@@ -836,7 +836,7 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         # graph path these cases name does not exist on disk, so the limit is
         # WITHHELD and only the observer is materialized.
         + _dispatcher_hook_limit_program.hook_limit_prepare_steps_block(limit_seconds=None)
-        + _dispatcher_implement_tools.implement_tool_prepare_steps_block()
+        + _dispatcher_commit_runner.commit_helpers_prepare_steps_block()
         + _dispatcher_pyright_cache.pyright_cache_prepare_steps_block()
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
@@ -887,7 +887,7 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     # record-file merger), plus the
     # repository-hook limit observer (bd-ib-xi63mq) — the hostile value
     # smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 18
+    assert rendered.count("[[run.prepare.steps]]") == 20
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

@@ -2136,12 +2136,12 @@
     "work_item": "bd-ib-reapbq"
   },
   {
-    "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget on an open pull request rests the item for resume",
+    "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget hands an armed, passing pull request to reconciliation",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_merge_poll_budget_exhausted_scenario220.test_an_open_non_conflicting_pull_request_at_expiry_rests_the_item_for_resume",
-    "reason": "Integration-tier acceptance for the Scenario 220 clause, implemented by bd-ib-l6rleb. The named case binds the heading's first sub-scenario: it drives the production engine and the production post-run disposition against the in-memory tenant, with the forge reporting the pull request open and not in conflict when the poll budget is spent, and asserts the item rests at blocked with blocked_reason needs-human, the outcome detail names resolve-blocked then resume, the dispatch exits 4, and one ledger comment carries the marker line livespec-merge-poll-budget-exhausted. The second sub-scenario, a pull request merged on the final read, is the sibling case in the same module, with a conflicting pull request as the control. The unit-tier decisions are tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_merge_poll_budget_exhausted.",
-    "work_item": "bd-ib-l6rleb"
+    "test": "tests.integration.test_merge_poll_budget_exhausted_scenario220.test_a_pull_request_merged_on_the_final_read_is_not_rested",
+    "reason": "Integration-tier binding retained across the v324 retitle of Scenario 220 (proposal a-dispatched-pull-request-whose). The named case still exercises the heading's unchanged sub-scenario 'A pull request merged at expiry is not rested': it drives the production engine and post-run disposition against the in-memory tenant with the forge reporting the pull request MERGED on the final read, and asserts the item is not rested and carries no needs-human comment. The previously bound case, test_an_open_non_conflicting_pull_request_at_expiry_rests_the_item_for_resume, asserts the superseded rest and exit code 4 for an armed pull request with no failed required check, which v324 makes a handed-off merge wait; the integration-tier tests for the handed-off merge wait and its stranded-claim reconciliation are owed by bd-ib-bacahf, which also rewrites that superseded case.",
+    "work_item": "bd-ib-bacahf"
   },
   {
     "heading": "## Scenario 218 \u2014 A brief pointing at another work-item's evidence carries an advisory finding",
@@ -2988,5 +2988,21 @@
     "test": "TODO",
     "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-xz35zu adds dispatcher.py fresh-ruling and makes recovery routing route a recovery-released item fresh past every preserved tree it holds while a fresh ruling is current, still grading the pre-claim refusal first, holding on a non-fallback refusal or an untaken needs-human listing, recording passed-over needs-human refs, letting the newer of a seed ruling and a fresh ruling govern, and consuming the ruling once.",
     "work_item": "bd-ib-xz35zu"
+  },
+  {
+    "heading": "## Scenario 328 \u2014 A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-v75dlb makes the factory prepare step materialize the pinned livespec-driver-codex release into each Codex sandbox turn's per-run CODEX_HOME with its hooks trusted only on a byte match to that release tag, fail the prepare step naming the plugin and hook on a mismatch, and carry the livespec-driver-claude PreToolUse hooks into each Claude sandbox turn, so a forbidden command is blocked in either runtime.",
+    "work_item": "bd-ib-v75dlb"
+  },
+  {
+    "heading": "## Scenario 329 \u2014 A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-7owmkq makes publish_draft route a GH001 large-file rejection or a pre-push hook refusal of its push to fix with a repair brief naming the refused head and the oversize paths or failed hook targets, inside the shared two-round refresh-repair budget, while protected-branch, non-fast-forward, unreachable-origin and authentication refusals stay fail-closed and no publish refusal ends at LIVESPEC_REFRESH_REPAIR_ABSENT.",
+    "work_item": "bd-ib-7owmkq"
   }
 ]
