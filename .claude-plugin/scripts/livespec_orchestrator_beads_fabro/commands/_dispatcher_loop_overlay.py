@@ -131,6 +131,10 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # rather than from the committed default a bare `fabro run` would see.
         review_fix_visit_cap=plan.review_fix_visit_cap,
         graph_override=overlay.recorded.payload.graph,
+        # The dispatch's own `--node-timeout` layer, so the credential allowance
+        # reads the per-node values the rendered graph carries. Read defensively:
+        # only a dispatching subcommand declares the flag.
+        node_timeout_arguments=tuple(getattr(overlay.args, "node_timeout", None) or ()),
         # The client build the record MEASURED for this plan's factory binary,
         # which decides how the written config may name that graph: a Petri-era
         # client collects the package the config sits in, and refuses an
