@@ -27,7 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters impor
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
-_PROOF_CAPTURE_HOOKS = (
+_SOURCE_PROOF_CAPTURE_HOOKS = (
     _ROOT
     / ".claude-plugin"
     / ".fabro"
@@ -35,7 +35,10 @@ _PROOF_CAPTURE_HOOKS = (
     / "implement-work-item"
     / "proof-capture-hooks"
 )
-_PROOF_CAPTURE_BIN = _PROOF_CAPTURE_HOOKS.parent / "proof-capture-bin"
+_SOURCE_PROOF_CAPTURE_BIN = _SOURCE_PROOF_CAPTURE_HOOKS.parent / "proof-capture-bin"
+_DISPATCHER_PROOF_CAPTURE_ROOT = "/workspace/.livespec"
+_DISPATCHER_PROOF_CAPTURE_HOOKS = f"{_DISPATCHER_PROOF_CAPTURE_ROOT}/proof-capture-hooks"
+_DISPATCHER_PROOF_CAPTURE_BIN = f"{_DISPATCHER_PROOF_CAPTURE_ROOT}/proof-capture-bin"
 _PROOF_CAPTURE_ADAPTER = "proof_capture_adapter"
 _IMPLEMENT_ADAPTER = "implement_adapter"
 _FIX_ADAPTER = "fix_adapter"
@@ -46,8 +49,8 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
     tmp_path: Path,
 ) -> None:
     """A protected turn refuses quickly; ordinary implementation turns keep hooks."""
-    assert _PROOF_CAPTURE_HOOKS.is_dir(), "proof_capture needs its dedicated Git hooks"
-    assert _PROOF_CAPTURE_BIN.is_dir(), "proof_capture needs its dedicated Git launcher"
+    assert _SOURCE_PROOF_CAPTURE_HOOKS.is_dir(), "proof_capture needs its dedicated Git hooks"
+    assert _SOURCE_PROOF_CAPTURE_BIN.is_dir(), "proof_capture needs its dedicated Git launcher"
     commands = guarded_adapter_commands(
         run_inputs=tuple(
             f"{name}={_ADAPTER}"
@@ -63,11 +66,8 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
     _assert_ordinary_configuration(commands=commands)
 
     work, marker = _repository(tmp_path=tmp_path)
-    shutil.copytree(
-        _PROOF_CAPTURE_HOOKS,
-        work / ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-hooks",
-    )
-    guard = _install_proof_capture_launcher(repo=work, tmp_path=tmp_path)
+    assert not (work / ".claude-plugin").exists()
+    guard = _install_proof_capture_launcher(tmp_path=tmp_path)
     _install_repository_hook(repo=work, hook="pre-commit", marker=marker)
     _install_repository_hook(repo=work, hook="pre-push", marker=marker)
 
@@ -90,10 +90,7 @@ def _assert_proof_capture_configuration(*, environment: Mapping[str, str]) -> No
     """The protected adapter selects its private hook and launcher boundaries."""
     assert environment["GIT_CONFIG_COUNT"] == "1"
     assert environment["GIT_CONFIG_KEY_0"] == "core.hooksPath"
-    assert (
-        environment["GIT_CONFIG_VALUE_0"]
-        == ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-hooks"
-    )
+    assert environment["GIT_CONFIG_VALUE_0"] == _DISPATCHER_PROOF_CAPTURE_HOOKS
     assert environment["LIVESPEC_PROOF_CAPTURE_GIT_READ_ONLY"] == "1"
 
 
@@ -219,11 +216,16 @@ def _install_repository_hook(*, repo: Path, hook: str, marker: Path) -> None:
     _ = path.chmod(0o755)
 
 
-def _install_proof_capture_launcher(*, repo: Path, tmp_path: Path) -> Path:
-    """Materialize the stage's real entry guard and private Git launcher."""
+def _install_proof_capture_launcher(*, tmp_path: Path) -> Path:
+    """Materialize the stage guard and Git boundary outside the scratch clone."""
+    dispatcher_root = tmp_path / ".livespec"
     shutil.copytree(
-        _PROOF_CAPTURE_BIN,
-        repo / ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-bin",
+        _SOURCE_PROOF_CAPTURE_BIN,
+        dispatcher_root / "proof-capture-bin",
+    )
+    shutil.copytree(
+        _SOURCE_PROOF_CAPTURE_HOOKS,
+        dispatcher_root / "proof-capture-hooks",
     )
     guard = tmp_path / "credential-use-guard.sh"
     _ = guard.write_text(guard_script_text(), encoding="utf-8")

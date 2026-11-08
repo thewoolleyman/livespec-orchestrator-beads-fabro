@@ -57,6 +57,7 @@ from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR,
+    PROOF_CAPTURE_HOOKS_PATH,
     guarded_adapter_string,
 )
 
@@ -102,13 +103,10 @@ _UNESCAPABLE_RE = re.compile(r"[\r\n]")
 _GRAPH_BLOCK_NAME = "graph"
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PROOF_CAPTURE_ADAPTER_INPUT = "proof_capture_adapter"
-_PROOF_CAPTURE_HOOKS_PATH = (
-    ".claude-plugin/.fabro/workflows/implement-work-item/proof-capture-hooks"
-)
 _PROOF_CAPTURE_GIT_CONFIG = {
     "GIT_CONFIG_COUNT": "1",
     "GIT_CONFIG_KEY_0": "core.hooksPath",
-    "GIT_CONFIG_VALUE_0": _PROOF_CAPTURE_HOOKS_PATH,
+    "GIT_CONFIG_VALUE_0": PROOF_CAPTURE_HOOKS_PATH,
 }
 _PROOF_CAPTURE_GIT_LAUNCHER = {PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR: "1"}
 
