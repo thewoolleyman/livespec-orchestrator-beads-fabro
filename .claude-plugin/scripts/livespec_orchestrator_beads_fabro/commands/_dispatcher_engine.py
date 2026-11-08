@@ -63,7 +63,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     failed_outcome,
-    journal_run_output_markers,
     journal_stage,
     run_wall_budget_outcome,
     stalled_outcome,
@@ -84,34 +83,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_inputs import (
     dispatch_fabro_run_inputs,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import inspect_after_run
-from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
-    fabro_run_terminal_outcome,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import (
     merged_reconcile_from_text,
     with_merged_reconcile,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import (
-    attach_node_timeout_cut,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_post_run_terminal import (
+    post_run_terminal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
     pr_open_diff_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal import (
-    successful_store_loss_evidence,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
-    reconcile_terminal_publication,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause import (
-    worker_exit_engine_failure_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
@@ -219,81 +205,16 @@ def run_dispatch(
     """
     launcher = fabro_launcher if fabro_launcher is not None else SynchronousFabroLauncher()
     launched = launcher.launch(plan=plan, runner=runner, journal=journal)
-    fabro = launched.command
-    journal_stage(journal=journal, plan=plan, stage="fabro-run", result=fabro)
+    journal_stage(journal=journal, plan=plan, stage="fabro-run", result=launched.command)
     launcher_terminal = _launcher_terminal(plan=plan, launched=launched)
     if launcher_terminal is not None:
         return launcher_terminal
-    run_id = launched.run_id
-    inspect = inspect_after_run(
-        plan=plan,
-        runner=runner,
-        journal=journal,
-        run_id=run_id,
-        follow_live=fabro.exit_code != 0,
-        sleep=sleep,
+    post_run = post_run_terminal(
+        plan=plan, runner=runner, journal=journal, launched=launched, sleep=sleep
     )
-    inspect_stdout = "" if inspect is None else inspect.command.stdout
-    inspect_stderr = "" if inspect is None else inspect.command.stderr
-    # Both publication markers are read from ONE pass over this text, and the
-    # hook-over-limit row is written there unconditionally of how the run ended
-    # (see `journal_run_output_markers`). The event comes back so the terminal
-    # outcome can carry it to the cause writer.
-    run_output = f"{fabro.stdout}\n{fabro.stderr}\n{inspect_stdout}\n{inspect_stderr}"
-    hook_over_limit = journal_run_output_markers(
-        journal=journal, work_item_id=plan.work_item_id, text=run_output
-    )
-    terminal = fabro_run_terminal_outcome(
-        outcome_type=DispatchOutcome,
-        plan=plan,
-        run_id=run_id,
-        inspect=inspect,
-        exit_code=fabro.exit_code,
-        stderr=fabro.stderr,
-    )
-    # AND WHERE THE SAME CONCLUSION HID A FAILURE, THE ENGINE'S OWN VERDICT IS
-    # RECOVERED FROM THE RUN'S EXPORTED LOG. The worker-exit sentence names no
-    # fault, so a run that really did fail was reported as terminated with no
-    # cause while its log still carried the deterministic failure cycle the
-    # engine had decided. This passes every other ending straight through, and
-    # spends its export only on that one conclusion.
-    terminal = worker_exit_engine_failure_outcome(
-        plan=plan,
-        runner=runner,
-        journal=journal,
-        run_id=run_id,
-        inspect=inspect,
-        terminal=terminal,
-    )
-    # A STRUCTURED SUCCESSFUL CHECKPOINT OUTRANKS THE ENGINE'S OWN CONCLUSION,
-    # and only for the one conclusion that admits it cannot answer: a worker
-    # that exited zero before its terminal run event was persisted. The engine
-    # then reports `failed` for a workflow that completed every node, so the
-    # dispatch used to report a false implementation failure over an already
-    # published pull request. The checkpoint is read for THIS run only, and it
-    # decides nothing alone -- the reconciliation below still has to find the
-    # matching publication -- so every other failure keeps its own terminal
-    # outcome, untouched.
-    evidence = successful_store_loss_evidence(plan=plan, run_id=run_id, inspect=inspect)
-    publication = reconcile_terminal_publication(
-        plan=plan,
-        runner=runner,
-        journal=journal,
-        terminal=terminal,
-        evidence=evidence,
-    )
-    if publication.refusal is not None:
-        # Attached rather than threaded through `fabro_run_terminal_outcome`,
-        # which classifies the ENGINE's own record and has no business reading a
-        # sandbox sentinel. The event is evidence the cause writer renders only
-        # where the ending is attributed to it.
-        return attach_node_timeout_cut(
-            outcome=replace(publication.refusal, hook_over_limit=hook_over_limit),
-            node_timeouts=plan.node_timeouts,
-            text=run_output,
-            events_payload=None if inspect is None else inspect.events_payload,
-            journal=journal,
-        )
+    if post_run.refusal is not None:
+        return post_run.refusal
+    run_id, run_output, publication = post_run.run_id, post_run.run_output, post_run.publication
     hold, view = publication.hold, publication.view
     if publication.pr_view_error is not None:
         return failed_outcome(
