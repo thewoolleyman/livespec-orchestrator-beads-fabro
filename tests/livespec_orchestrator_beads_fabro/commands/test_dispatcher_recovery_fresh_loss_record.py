@@ -253,27 +253,33 @@ def test_a_fresh_route_after_confirmed_absence_names_the_lost_run_and_every_aske
     }
 
 
-def test_an_item_naming_no_earlier_run_records_only_the_sources_it_could_ask(
+def test_an_item_naming_no_earlier_run_is_held_before_reclaim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The control: the asked-source list is a reading, not a constant.
+    """No run identifier makes the terminal source unobservable, not absent.
 
-    The terminal-tree ref is per RUN, so an item whose history names no run
-    identifier has no ref that source could exist at and the round trip is never
-    spent. A build writing the three names unconditionally would report a
-    measurement it never took — and it would pass the case above, which is why
-    this one has to sit beside it. `source_run_id` is empty for the same reason
-    the seed's own leading-identifier helper leaves it empty: there is no run to
-    name, and a record whose other fields are present says more than no record.
+    The terminal-tree ref is per RUN, and without a run identifier there is no
+    source origin can be asked about. That is a hold, because a skipped source
+    cannot establish the absence that permits a fresh route and its reclaim.
     """
-    row = _route_row(
+    journal = _journal(
         tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
         records=({"stage": "provider-limit-release", "work_item_id": _ITEM_ID},),
     )
+    _Shell.answers = {"gh pr list": CommandResult(exit_code=0, stdout="[]", stderr="")}
+    _Shell.calls = []
+    monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
+    routed = routing.route_recovery(
+        args=_args(repo=tmp_path, journal=journal),
+        repo=tmp_path,
+        candidates=[_work_item()],
+        journal=journal,
+    )
 
-    assert _asked() == (_SOURCE_PUBLISHED_HEAD, _SOURCE_EARLIER_PRESERVED_PUBLISH_REF)
-    assert row["route"] == _ROUTE_FRESH
-    assert row["preserved_work"] == _PRESERVED_ABSENT
-    assert row["source_run_id"] == ""
-    assert row["preservation_sources_asked"] == list(_asked())
+    route = routed.route_for(work_item_id=_ITEM_ID)
+    assert route is not None
+    assert route.hold is not None
+    assert not routed.reclaims(work_item_id=_ITEM_ID)
+    assert _asked() == ()
+    rows = _rows(journal=journal, stage="recovery-held")
+    assert len(rows) == 1
