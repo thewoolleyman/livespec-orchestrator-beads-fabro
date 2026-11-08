@@ -33,10 +33,14 @@ guarantee.
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import cast
+
 from livespec_orchestrator_beads_fabro import store
 from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     update_work_item_blocked_state,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_reconcile_hook import (
     reconcile_after_lifecycle_write,
 )
@@ -76,13 +80,19 @@ def write_work_item_status_and_reconcile(
 
 def write_blocked_state_and_reconcile(
     *,
-    path: StoreConfig,
     item_id: str,
     status: str,
     blocked_reason: str | None,
+    path: StoreConfig | None = None,
+    repo: Path | None = None,
     admission_policy: str | None = None,
 ) -> None:
-    """Rewrite an item's blocked state, then reconcile the runs it disowned."""
+    """Rewrite an item's blocked state, then reconcile the runs it disowned.
+
+    The store is named by `path`, or by `repo` for a caller that holds only the
+    target repository and so lets the store location be resolved here.
+    """
+    path = path if path is not None else store_config(repo=cast("Path", repo))
     update_work_item_blocked_state(
         path=path,
         item_id=item_id,

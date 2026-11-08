@@ -146,6 +146,7 @@ def dispatch_one(
                     dispatch_factory=dispatch_factory,
                 ),
                 cleanup=stack,
+                resume=resolved_launch.resume,
             ),
             prelaunch_profile=resolved_launch.prelaunch_profile,
         )
@@ -311,6 +312,6 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
         token_supplier=token_supplier,
         identity=identity,
         spans=spans_path(args=args, repo=repo),
-        dispose=post_run_dispositions,
+        dispose=partial(post_run_dispositions, resume=lifetime.resume),
         emit_review=emit_review_gate_from_fabro_events,
     )

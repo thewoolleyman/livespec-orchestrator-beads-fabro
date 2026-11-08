@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_launch impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
     RecoveryRouting,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command import (
+    overtaken_resume,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     ReworkPass,
 )
@@ -189,6 +192,7 @@ def admit_and_dispatch_target(  # noqa: PLR0913 — kw-only targeted dispatch; `
                 # it: a targeted dispatch narrows WHICH item runs and never which
                 # read of the availability evidence its candidates are selected by.
                 prelaunch_profile=prelaunch_profile,
+                resume=overtaken_resume(args=args, repo=repo, journal=journal, janitor=janitor),
             ),
         )
         for item in launching
