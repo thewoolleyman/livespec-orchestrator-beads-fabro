@@ -40,6 +40,10 @@ class PrView:
     so the required subset is the forge's separate answer
     (`_dispatcher_required_checks`), and the merge wait intersects the two.
 
+    `running_checks` names every rollup entry that has not concluded yet, REQUIRED
+    OR NOT, for the reason `terminal_check_failures` does: the required subset is
+    the forge's separate answer. A handed-off merge wait names the required ones.
+
     `base` is the pull request's `baseRefOid` — the tip of the branch it is
     opened against, which for every dispatch here is the default branch. It
     rides THIS view, beside the mergeability the overtaken-arming ending routes
@@ -60,6 +64,7 @@ class PrView:
     head_ref_name: str | None = None
     head_repository: str | None = None
     terminal_check_failures: tuple[str, ...] = ()
+    running_checks: tuple[str, ...] = ()
 
     def matches_publication(self, *, branch: str, head: str, repository: str) -> bool:
         """Whether this is a live or merged publication of the checkpoint head."""
@@ -82,6 +87,9 @@ _TERMINAL_CHECK_CONCLUSIONS = frozenset(
 )
 
 
+_RUNNING_STATUS_STATES = frozenset({"PENDING", "EXPECTED"})
+
+
 def parse_pr_view(*, stdout: str) -> PrView | None:
     """Parse `gh pr view --json` output; None when the shape is unusable."""
     parsed_raw = parse_json(text=stdout)
@@ -100,6 +108,13 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         for name in [_terminal_check_failure_name(item=cast("dict[str, Any]", item))]
         if name is not None
     )
+    running = tuple(
+        name
+        for item in _status_check_rollup_items(rollup_raw=parsed.get("statusCheckRollup"))
+        if isinstance(item, dict)
+        for name in [_running_check_name(item=cast("dict[str, Any]", item))]
+        if name is not None
+    )
     state_raw: object = parsed.get("state")
     merge_state_raw: object = parsed.get("mergeStateStatus")
     head_raw: object = parsed.get("headRefOid")
@@ -116,6 +131,7 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         head_ref_name=_optional_string(value=parsed.get("headRefName")),
         head_repository=_head_repository_of(parsed=parsed),
         terminal_check_failures=terminal_failures,
+        running_checks=running,
     )
 
 
@@ -153,6 +169,25 @@ def _terminal_check_failure_name(*, item: dict[str, Any]) -> str | None:
     if not isinstance(conclusion_raw, str):
         return None
     if conclusion_raw.lower() not in _TERMINAL_CHECK_CONCLUSIONS:
+        return None
+    name_raw: object = item.get("name", item.get("context"))
+    return name_raw if isinstance(name_raw, str) and name_raw else "unknown"
+
+
+def _running_check_name(*, item: dict[str, Any]) -> str | None:
+    """The name of a rollup entry that has not concluded, else `None`.
+
+    A check run is running while its `status` is anything but `COMPLETED`; a
+    commit status carries no `status`, only a `state`, and is running while that
+    state is `PENDING` or `EXPECTED`.
+    """
+    status_raw: object = item.get("status")
+    state_raw: object = item.get("state")
+    if isinstance(status_raw, str):
+        running = status_raw.upper() != "COMPLETED"
+    else:
+        running = isinstance(state_raw, str) and state_raw.upper() in _RUNNING_STATUS_STATES
+    if not running:
         return None
     name_raw: object = item.get("name", item.get("context"))
     return name_raw if isinstance(name_raw, str) and name_raw else "unknown"

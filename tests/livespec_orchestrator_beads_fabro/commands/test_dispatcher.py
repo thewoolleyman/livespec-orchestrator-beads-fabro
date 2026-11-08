@@ -3018,6 +3018,30 @@ def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) 
 
 
 def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -> None:
+    pending = [{"name": "check-coverage", "isRequired": True, "status": "IN_PROGRESS"}]
+    required_answer = {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "commits": {
+                        "nodes": [
+                            {
+                                "commit": {
+                                    "statusCheckRollup": {
+                                        "contexts": {
+                                            "nodes": [
+                                                {"name": "check-coverage", "isRequired": True},
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
     runner = _FakeRunner(
         queue=[
             _ok(),
@@ -3029,26 +3053,20 @@ def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -
                     checks=[{"name": "check-coverage", "isRequired": True, "status": "QUEUED"}],
                 )
             ),
-            _ok(
-                stdout=_pr_json(
-                    armed=True,
-                    merge_state="BLOCKED",
-                    checks=[
-                        {
-                            "name": "check-coverage",
-                            "isRequired": True,
-                            "status": "IN_PROGRESS",
-                        }
-                    ],
-                )
-            ),
+            _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED", checks=pending)),
             _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED")),
+            _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED", checks=pending)),
+            _ok(stdout=json.dumps(required_answer)),
         ]
     )
-    outcome, _, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
-    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
-    assert outcome.detail.startswith("merge-poll-budget-exhausted:")
+    outcome, journal, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
+    assert (outcome.status, outcome.stage) == ("handed-off", "merge-poll")
+    assert outcome.detail.startswith("merge-wait-handed-off:")
+    assert outcome.merge_wait_handed_off is not None
+    assert outcome.merge_wait_handed_off.running_checks == ("check-coverage",)
     assert naps == [0.5]
+    handoffs = [r for r in journal.records if r["stage"] == "merge-wait-handed-off"]
+    assert [r["running_checks"] for r in handoffs] == [["check-coverage"]]
 
 
 def test_engine_poll_budget_exhaustion_keeps_pr_number(tmp_path: Path) -> None:

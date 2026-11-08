@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_park import re
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import invoker_from_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff_record import (
+    record_merge_wait_handed_off,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
     record_needs_human_cause,
 )
@@ -303,6 +306,11 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     # is fail-soft — so the order decides only which account survives a partial
     # failure. A no-op for every outcome that is not this ending.
     record_base_advanced_after_arming(repo=repo, item=item, outcome=outcome, journal=journal)
+    # A handed-off merge wait leaves the item `active` under its claim, so there is
+    # no lifecycle write for this record to precede; it is the durable account of
+    # why the item is still active and no run is left. A no-op for every other
+    # outcome.
+    record_merge_wait_handed_off(repo=repo, item=item, outcome=outcome, journal=journal)
     if not groom_cut_filed:
         escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
         # AFTER the escalation, because the escalation owns the lifecycle write
