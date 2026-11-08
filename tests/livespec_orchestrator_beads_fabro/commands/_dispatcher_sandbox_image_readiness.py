@@ -38,8 +38,9 @@ def wait_for_dispatcher_exec(
 
 def _require_exec_signal(*, ready_read: int, process: subprocess.Popen[bytes]) -> None:
     """Require EOF on the pipe, which the kernel delivers once the wrapper's exec completed."""
-    if os.read(ready_read, 1) != b"":
-        raise AssertionError(f"dispatcher fixture process {process.pid} did not signal exec")
+    assert (
+        os.read(ready_read, 1) == b""
+    ), f"dispatcher fixture process {process.pid} did not signal exec"
 
 
 def start_dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:

@@ -374,10 +374,21 @@ def _close_rig(*, rig: _Rig) -> None:
         _ = rig.guarded.wait(timeout=_SETTLE_SECONDS)
 
 
-def test_cleanup_kills_an_agent_group_other_than_its_own(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("agent_group", "own_group", "expected_kills"),
+    [
+        (303, 404, [(101, signal.SIGKILL), (303, signal.SIGKILL)]),
+        (404, 404, [(101, signal.SIGKILL)]),
+    ],
+)
+def test_cleanup_kills_only_an_agent_group_other_than_its_own(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    agent_group: int,
+    own_group: int,
+    expected_kills: list[tuple[int, signal.Signals]],
 ) -> None:
-    """Cleanup reaches the separate agent session without signalling this test's group."""
+    """Cleanup reaches a separate agent session but never signals this test's group."""
 
     class _Guarded:
         pid = 101
@@ -390,8 +401,8 @@ def test_cleanup_kills_an_agent_group_other_than_its_own(
     _ = pid_file.write_text("202\n", encoding="utf-8")
     closed = tuple(os.open(os.devnull, os.O_RDONLY) for _ in range(5))
     killed: list[tuple[int, signal.Signals]] = []
-    monkeypatch.setattr(os, "getpgid", lambda pid: 303 if pid == 202 else 0)
-    monkeypatch.setattr(os, "getpgrp", lambda: 404)
+    monkeypatch.setattr(os, "getpgid", lambda pid: agent_group if pid == 202 else 0)
+    monkeypatch.setattr(os, "getpgrp", lambda: own_group)
     monkeypatch.setattr(os, "killpg", lambda group, sig: killed.append((group, sig)))
     rig = _Rig(
         guarded=_Guarded(),  # type: ignore[arg-type]
@@ -407,7 +418,7 @@ def test_cleanup_kills_an_agent_group_other_than_its_own(
 
     _close_rig(rig=rig)
 
-    assert killed == [(101, signal.SIGKILL), (303, signal.SIGKILL)]
+    assert killed == expected_kills
 
 
 def test_a_sufficiently_fresh_deadline_lets_an_ordinary_command_finish(
