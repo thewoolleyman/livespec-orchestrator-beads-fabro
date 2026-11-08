@@ -20,7 +20,7 @@ import json
 import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
@@ -261,6 +261,7 @@ def test_a_sink_that_is_not_exporting_or_a_record_that_vanished_publishes_nothin
 @dataclass(kw_only=True)
 class _CapturingExporter:
     calls: list[tuple[tuple[dict[str, object], ...], str]] = field(default_factory=list)
+    telemetry: _TelemetryTracker = field(default_factory=lambda: _TelemetryTracker())
 
     def export(self, *, spans: tuple[dict[str, object], ...], dataset: str) -> bool:
         self.calls.append((spans, dataset))
@@ -280,6 +281,20 @@ class _CapturingExporter:
         ]
 
 
+@dataclass(kw_only=True)
+class _TelemetryTracker:
+    telemetry: list[SessionTelemetry] = field(default_factory=list)
+
+    def __call__(self, *, environ: dict[str, str]) -> SessionTelemetry:
+        instance = SessionTelemetry.from_environ(environ=environ)
+        self.telemetry.append(instance)
+        return instance
+
+    def settle(self) -> None:
+        for instance in self.telemetry:
+            instance.wait_for_delivery()
+
+
 @contextmanager
 def _receiver(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_CapturingExporter]:
     exporter = _CapturingExporter()
@@ -293,6 +308,7 @@ def _receiver(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_C
     try:
         yield exporter
     finally:
+        exporter.telemetry.settle()
         receiver.stop()
 
 
@@ -301,7 +317,7 @@ def test_recovery_events_reach_the_receiver_with_their_types_intact(
 ) -> None:
     store = _store(tmp_path=tmp_path)
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        telemetry = SessionTelemetry.from_environ(environ=dict(os.environ))
+        telemetry = exporter.telemetry(environ=dict(os.environ))
         _advance(store=store, sink=telemetry, through_deferral=None)
         report = telemetry.close()
 
@@ -377,8 +393,11 @@ def test_the_host_launch_and_complete_commands_publish_through_the_configured_ro
         use_tmp_directory=True,
     )
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
-        launched = session_wait.main(argv=_launch_argv(primary=tmp_path), seams=seams)
-        completed = session_wait.main(argv=["complete", "--repo", str(tmp_path)], seams=seams)
+        tracked_seams = replace(seams, telemetry_factory=exporter.telemetry)
+        launched = session_wait.main(argv=_launch_argv(primary=tmp_path), seams=tracked_seams)
+        completed = session_wait.main(
+            argv=["complete", "--repo", str(tmp_path)], seams=tracked_seams
+        )
     _ = capsys.readouterr()
 
     assert (launched, completed) == (0, 0)
