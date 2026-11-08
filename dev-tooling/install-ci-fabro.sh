@@ -19,6 +19,8 @@
 # binary reddens CI rather than skipping the validation.
 #
 # Usage: install-ci-fabro.sh [target-path]   (default /usr/local/bin/fabro)
+# INSTALL_CI_FABRO_WARM_DIR overrides the warm-seed directory (default
+# /__w/_warm/release-assets) so tests never touch the shared runner cache.
 
 set -euo pipefail
 
@@ -26,7 +28,8 @@ readonly version="v0.254.0"
 readonly asset="fabro-x86_64-unknown-linux-musl.tar.gz"
 readonly sha256="27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
 readonly asset_id="438318077"
-readonly warm_asset="/__w/_warm/release-assets/${sha256}"
+readonly warm_dir="${INSTALL_CI_FABRO_WARM_DIR:-/__w/_warm/release-assets}"
+readonly warm_asset="${warm_dir}/${sha256}"
 readonly api_url="https://api.github.com/repos/fabro-sh/fabro/releases/assets/${asset_id}"
 readonly fallback_url="https://github.com/fabro-sh/fabro/releases/download/${version}/${asset}"
 readonly target="${1:-/usr/local/bin/fabro}"
