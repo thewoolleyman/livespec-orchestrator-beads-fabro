@@ -274,7 +274,12 @@ class SourceStagingRunner:
             fabro_version=self.plan.fabro_version,
             origin_url=origin.stdout,
             origin_ref=origin_ref,
-            resume_branch=self.plan.branch if self.resume_head else None,
+            # Only a RESUME owns a published branch. A SEEDED route also carries
+            # a head, but its seed lives on a preservation ref and its publish
+            # branch is not on origin, so it targets its staging base instead.
+            resume_branch=(
+                self.plan.branch if self.resume_head and not self.resume_fetch_ref else None
+            ),
         )
 
     def _cleanup(self, *, checkout: Path, branch: str, head: str) -> None:
