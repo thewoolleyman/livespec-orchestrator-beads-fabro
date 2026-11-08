@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 
 from typing_extensions import override
 
-__all__: list[str] = ["CondensedClause", "CondensedSpecTree"]
+__all__: list[str] = [
+    "CondensedClause",
+    "CondensedSpecTree",
+]
 
 
 @dataclass(frozen=True, kw_only=True)
