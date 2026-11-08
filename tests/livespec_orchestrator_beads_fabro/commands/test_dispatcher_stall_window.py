@@ -30,8 +30,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     REPOSITORY_LAYER,
-    WORKFLOW_DEFAULT_LAYER,
 )
 
 pytestmark = pytest.mark.usefixtures("server_cancel")
@@ -212,7 +212,7 @@ def test_no_configured_value_leaves_the_host_stall_window_at_7200_seconds(
     _write_config(repo=tmp_path, dispatcher_keys='"node_timeouts": {"implement": 14400}')
     window = stall_window.resolve_stall_window(cwd=tmp_path)  # pyright: ignore[reportAttributeAccessIssue]
 
-    assert (window.seconds, window.layer) == (7200.0, WORKFLOW_DEFAULT_LAYER)
+    assert (window.seconds, window.layer) == (7200.0, BUILT_IN_DEFAULT_LAYER)
 
     monkeypatch.setattr(_dispatcher_stale_item_reap, "read_work_items", lambda **_: [])
     runner = _ScriptedFabroRunner(events_jsons=[_FROZEN_EVENTS])
@@ -261,7 +261,7 @@ def test_the_cancel_row_names_the_layer_that_supplied_the_stall_window(
         assert result.stalled_run_id == _RUN_ID
         rows.extend(r for r in journal.records if r.get("stage") == "watchdog-stall-cancel")
 
-    assert [row.get("stall_layer") for row in rows] == [REPOSITORY_LAYER, WORKFLOW_DEFAULT_LAYER]
+    assert [row.get("stall_layer") for row in rows] == [REPOSITORY_LAYER, BUILT_IN_DEFAULT_LAYER]
     assert [row.get("stall_seconds") for row in rows] == [1800.0, 7200.0]
 
 

@@ -40,7 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
-    default_node_timeouts,
+    NodeTimeouts,
     derive_fabro_timeout_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -204,6 +204,7 @@ class _CapturingRunDispatch:
     def __init__(self) -> None:
         self.graph_text = ""
         self.timeout_seconds = 0.0
+        self.node_timeouts: NodeTimeouts | None = None
 
     def __call__(self, **kwargs: object) -> DispatchOutcome:
         plan = kwargs["plan"]
@@ -212,6 +213,7 @@ class _CapturingRunDispatch:
         graph = Path(overlay.split('graph = "', 1)[1].split('"', 1)[0])
         self.graph_text = graph.read_text(encoding="utf-8")
         self.timeout_seconds = plan.fabro_timeout_seconds
+        self.node_timeouts = plan.node_timeouts
         return DispatchOutcome(
             work_item_id=plan.work_item_id,
             status="failed",
@@ -243,13 +245,13 @@ def _timeout_values(*, graph_text: str) -> list[str]:
     return [match.group("value") for match in _TIMEOUT_ATTR_RE.finditer(graph_text)]
 
 
-def test_default_target_renders_every_node_at_1800_seconds(
+def test_default_target_keeps_every_workflow_timeout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A target with no node_timeouts table renders 1800s and no template opener."""
+    """A target with no table renders its workflow values and no template opener."""
     _exit_code, capturing = _dispatch(tmp_path=tmp_path, monkeypatch=monkeypatch, dispatcher={})
-    assert _timeout_values(graph_text=capturing.graph_text) == ["1800s", "1800s", "1800s"]
+    assert _timeout_values(graph_text=capturing.graph_text) == ["14400s", "3600s", "1800s"]
     assert 'stall_timeout="7200s"' in capturing.graph_text
     for value in _timeout_values(graph_text=capturing.graph_text):
         assert not any(opener in value for opener in _TEMPLATE_OPENERS)
@@ -262,17 +264,17 @@ def test_default_target_renders_every_node_at_1800_seconds(
     assert f'acp.command="{guarded}"' in capturing.graph_text
 
 
-def test_configured_node_keeps_its_value_and_others_default(
+def test_configured_node_keeps_its_value_and_others_keep_workflow_defaults(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A configured implement timeout renders; the other nodes stay at 1800s."""
+    """A configured implement timeout renders; other nodes keep their declarations."""
     _exit_code, capturing = _dispatch(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
         dispatcher={"node_timeouts": {"implement": 7200}},
     )
-    assert _timeout_values(graph_text=capturing.graph_text) == ["7200s", "1800s", "1800s"]
+    assert _timeout_values(graph_text=capturing.graph_text) == ["7200s", "3600s", "1800s"]
 
 
 def test_dispatch_record_names_the_repository_layer(
@@ -298,7 +300,7 @@ def test_dispatch_record_names_the_repository_layer(
         "seconds": 7200,
         "layer": "repository",
     }
-    assert timeouts_record["node_timeouts"]["janitor"] == {"seconds": 1800, "layer": "default"}
+    assert timeouts_record["node_timeouts"]["janitor"] == {"seconds": 3600, "layer": "workflow"}
     assert timeouts_record["stall_timeout"] == {"seconds": 7200, "layer": "default"}
 
 
@@ -308,14 +310,15 @@ def test_subprocess_ceiling_follows_the_resolved_graph(
 ) -> None:
     """A longer resolved node lengthens the `fabro run` subprocess ceiling."""
     _exit_code, defaulted = _dispatch(tmp_path=tmp_path, monkeypatch=monkeypatch, dispatcher={})
+    assert isinstance(defaulted.node_timeouts, NodeTimeouts)
     assert defaulted.timeout_seconds == derive_fabro_timeout_seconds(
-        timeouts=default_node_timeouts()
+        timeouts=defaulted.node_timeouts
     )
     reset_fake_singleton()
     _exit_code, configured = _dispatch(
         tmp_path=tmp_path / "second",
         monkeypatch=monkeypatch,
-        dispatcher={"node_timeouts": {"implement": 14400}},
+        dispatcher={"node_timeouts": {"implement": 18000}},
     )
     assert configured.timeout_seconds > defaulted.timeout_seconds
 

@@ -99,6 +99,14 @@ def add_dispatch_common(*, parser: argparse.ArgumentParser) -> None:
             "command and its arguments); repeatable"
         ),
     )
+    _ = parser.add_argument(
+        "--node-timeout",
+        dest="node_timeout",
+        action="append",
+        default=None,
+        metavar="NODE=SECONDS",
+        help="override one workflow node timeout for this dispatch only; repeatable",
+    )
     # The MOST SPECIFIC layer of the whole-run wall budget. An ARGUMENT and
     # never an environment variable, for the reason `--acp-node` above is: an
     # ad-hoc shell must not be able to re-budget how long a run may hold a

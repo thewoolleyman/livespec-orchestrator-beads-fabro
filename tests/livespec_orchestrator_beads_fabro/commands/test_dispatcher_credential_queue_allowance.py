@@ -13,8 +13,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_queue_all
     credential_queue_allowance_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    BUILT_IN_DEFAULT_LAYER,
     REPOSITORY_LAYER,
-    WORKFLOW_DEFAULT_LAYER,
 )
 
 
@@ -22,7 +22,7 @@ def test_an_absent_key_resolves_the_documented_default_at_the_default_layer() ->
     resolved = credential_queue_allowance_from_block(block={})
 
     assert resolved == CredentialQueueAllowance(
-        seconds=DEFAULT_CREDENTIAL_QUEUE_ALLOWANCE_SECONDS, layer=WORKFLOW_DEFAULT_LAYER
+        seconds=DEFAULT_CREDENTIAL_QUEUE_ALLOWANCE_SECONDS, layer=BUILT_IN_DEFAULT_LAYER
     )
 
 
