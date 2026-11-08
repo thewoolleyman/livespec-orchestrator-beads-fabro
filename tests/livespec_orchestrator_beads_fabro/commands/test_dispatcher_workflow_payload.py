@@ -103,9 +103,9 @@ def test_payload_renders_the_graph_and_carries_its_prompts(tmp_path: Path) -> No
     )
     assert isinstance(payload, WorkflowPayload)
     assert payload.graph == tmp_path / "payload" / "workflow.fabro"
-    assert 'timeout="1800s"' in payload.graph.read_text(encoding="utf-8")
+    assert 'timeout="14400s"' in payload.graph.read_text(encoding="utf-8")
     assert (payload.graph.parent / "prompts" / "implement.md").is_file()
-    assert payload.node_seconds == {"implement": 1800}
+    assert payload.node_seconds == {"implement": 14400}
     # The committed source is left exactly as it was.
     assert 'timeout="14400s"' in (committed.parent / "workflow.fabro").read_text(encoding="utf-8")
 
@@ -384,7 +384,7 @@ def test_payload_skips_a_file_removed_before_its_read(
     )
     assert rendered is not None
     assert f'graph = "{payload.graph}"' in rendered
-    assert 'timeout="1800s"' in payload.graph.read_text()
+    assert 'timeout="14400s"' in payload.graph.read_text()
 
 
 def test_present_unreadable_payload_file_is_refused(*, tmp_path: Path) -> None:

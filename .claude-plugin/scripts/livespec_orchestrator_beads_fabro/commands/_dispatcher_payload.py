@@ -60,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     node_timeouts_from_block,
     node_timeouts_journal_record,
+    node_timeouts_with_arguments,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
@@ -116,6 +117,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     entry_node: str | None = None,
     proof_only: bool = False,
     run_wall_budget_argument: str | None = None,
+    node_timeout_arguments: tuple[str, ...] = (),
 ) -> WorkflowPayload | str:
     """Resolve node timeouts and the wall budget, materialize, and journal.
 
@@ -141,7 +143,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     budget would have cancelled.
     """
     block = dispatcher_block(cwd=repo)
-    timeouts = node_timeouts_from_block(block=block)
+    timeouts = _resolved_node_timeouts(block=block, arguments=node_timeout_arguments)
     if isinstance(timeouts, str):
         return timeouts
     budget = run_wall_budget_from_block(block=block, argument=run_wall_budget_argument)
@@ -182,6 +184,16 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
         }
     )
     return payload
+
+
+def _resolved_node_timeouts(
+    *, block: dict[str, object], arguments: tuple[str, ...]
+) -> NodeTimeouts | str:
+    """Resolve the repository and per-dispatch layers before rendering the graph."""
+    configured = node_timeouts_from_block(block=block)
+    if isinstance(configured, str):
+        return configured
+    return node_timeouts_with_arguments(timeouts=configured, arguments=arguments)
 
 
 def materialize_workflow_payload(
@@ -235,7 +247,7 @@ def materialize_workflow_payload(
     return WorkflowPayload(
         payload_dir=payload_dir,
         graph=graph,
-        timeouts=timeouts,
+        timeouts=rendered.timeouts,
         node_seconds=rendered.node_seconds,
         node_commands=rendered.node_commands,
     )
@@ -248,6 +260,7 @@ class _RenderedGraph:
     text: str
     node_seconds: Mapping[str, int]
     node_commands: Mapping[str, str]
+    timeouts: NodeTimeouts
 
 
 def _rendered_graph(
@@ -292,7 +305,10 @@ def _rendered_graph(
             " resume at, or carries no unconditional `start` edge to move onto it"
         )
     return _RenderedGraph(
-        text=entered, node_seconds=rendered.node_seconds, node_commands=commands.node_commands
+        text=entered,
+        node_seconds=rendered.node_seconds,
+        node_commands=commands.node_commands,
+        timeouts=rendered.timeouts,
     )
 
 

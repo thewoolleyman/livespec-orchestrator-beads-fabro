@@ -53,6 +53,7 @@ _SHIPPED_WORKFLOW_TOML = Path(".claude-plugin/.fabro/workflows/implement-work-it
 # adapter input. Every negative below is this graph with ONE attribute changed, so
 # the refusal is attributable to that change.
 _GUARDABLE = """digraph G {
+  graph [stall_timeout="7200s"]
   start [shape=Mdiamond]
   implement [backend=acp, acp.command="{{ inputs.implement_adapter }}", timeout="60s"]
   start -> implement
@@ -268,7 +269,7 @@ def test_an_unparseable_graph_is_refused_rather_than_read_as_empty() -> None:
 # attribute is never overridden at all.
 
 _STYLED_TEMPLATED = """digraph G {
-  graph [model_stylesheet="#implement { backend: acp; }"]
+  graph [model_stylesheet="#implement { backend: acp; }", stall_timeout="7200s"]
   start [shape=Mdiamond]
   implement [acp.command="{{ inputs.implement_adapter }}", timeout="60s"]
   start -> implement
@@ -351,7 +352,7 @@ def test_a_class_selector_can_make_a_node_acp_and_is_graded() -> None:
 # contributed, and a rule the engine still matches reads as not matching.
 
 _CLASS_REDECLARED = """digraph G {
-  graph [model_stylesheet=".retained { backend: acp; }"]
+  graph [model_stylesheet=".retained { backend: acp; }", stall_timeout="7200s"]
   start [shape=Mdiamond]
   implement [class="retained", acp.command="/usr/bin/true", timeout="60s"]
   implement [class="replacement"]
@@ -546,6 +547,7 @@ _OVERLAY_TOKEN = "test-oauth-token"
 _OVERLAY_GITHUB_TOKEN = "test-github-token"
 _REVIEW_FIX_VISIT_CAP = 3
 _UNGUARDABLE_GRAPH = """digraph G {
+  graph [stall_timeout="7200s"]
   start [shape=Mdiamond]
   implement [backend=acp, acp.command="/usr/bin/agent --serve", timeout="60s"]
   start -> implement

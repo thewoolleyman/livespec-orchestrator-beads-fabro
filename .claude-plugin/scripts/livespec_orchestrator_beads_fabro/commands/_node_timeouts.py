@@ -27,21 +27,25 @@ deliberate in `SPECIFICATION/contracts.md` section "ACP node timeouts".
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 __all__: list[str] = [
+    "ARGUMENT_LAYER",
+    "BUILT_IN_DEFAULT_LAYER",
     "DEFAULT_FABRO_TIMEOUT_SECONDS",
     "DEFAULT_NODE_TIMEOUTS",
     "DEFAULT_NODE_TIMEOUT_SECONDS",
     "DEFAULT_STALL_TIMEOUT_SECONDS",
     "REPOSITORY_LAYER",
     "WORKFLOW_DEFAULT_LAYER",
+    "WORKFLOW_LAYER",
     "NodeTimeouts",
     "default_node_timeouts",
     "derive_fabro_timeout_seconds",
     "node_timeouts_from_block",
     "node_timeouts_journal_record",
+    "node_timeouts_with_arguments",
     "positive_int_seconds",
 ]
 
@@ -56,7 +60,12 @@ DEFAULT_STALL_TIMEOUT_SECONDS = 7200
 # can tell a repository override from the built-in default without
 # re-deriving it.
 REPOSITORY_LAYER = "repository"
-WORKFLOW_DEFAULT_LAYER = "default"
+ARGUMENT_LAYER = "argument"
+BUILT_IN_DEFAULT_LAYER = "default"
+WORKFLOW_LAYER = "workflow"
+# Kept as the public spelling used by node-timeout callers: unlike the
+# run-level policies below, a node can inherit a workflow declaration.
+WORKFLOW_DEFAULT_LAYER = WORKFLOW_LAYER
 
 # The graph's worst-case path, expressed as the visit budget each node can
 # actually consume in one run -- read off `workflow.fabro`: `dod_gate` and
@@ -210,18 +219,26 @@ class NodeTimeouts:
     configured: Mapping[str, int]
     stall_seconds: int
     stall_layer: str
+    configured_layers: Mapping[str, str] = field(default_factory=dict)
+    workflow: Mapping[str, int] = field(default_factory=dict)
 
     def seconds_for(self, *, node: str) -> int:
         """The resolved timeout in seconds for `node`."""
-        return self.configured.get(_configuration_node(node=node), DEFAULT_NODE_TIMEOUT_SECONDS)
+        configured_node = _configuration_node(node=node)
+        if configured_node in self.configured:
+            return self.configured[configured_node]
+        return self.workflow.get(node, DEFAULT_NODE_TIMEOUT_SECONDS)
 
     def layer_for(self, *, node: str) -> str:
         """Which layer supplied `node`'s timeout."""
-        return (
-            REPOSITORY_LAYER
-            if _configuration_node(node=node) in self.configured
-            else WORKFLOW_DEFAULT_LAYER
-        )
+        configured_node = _configuration_node(node=node)
+        if configured_node in self.configured:
+            return self.configured_layers.get(configured_node, REPOSITORY_LAYER)
+        return WORKFLOW_LAYER if node in self.workflow else BUILT_IN_DEFAULT_LAYER
+
+    def with_workflow_defaults(self, *, nodes: Mapping[str, int]) -> NodeTimeouts:
+        """Carry the declared durations the rendered graph makes effective."""
+        return replace(self, workflow=dict(nodes))
 
 
 def default_node_timeouts() -> NodeTimeouts:
@@ -229,7 +246,7 @@ def default_node_timeouts() -> NodeTimeouts:
     return NodeTimeouts(
         configured={},
         stall_seconds=DEFAULT_STALL_TIMEOUT_SECONDS,
-        stall_layer=WORKFLOW_DEFAULT_LAYER,
+        stall_layer=BUILT_IN_DEFAULT_LAYER,
     )
 
 
@@ -267,6 +284,22 @@ def node_timeouts_from_block(*, block: dict[str, Any]) -> NodeTimeouts | str:
     return _with_stall(block=block, configured=configured)
 
 
+def node_timeouts_with_arguments(
+    *, timeouts: NodeTimeouts, arguments: tuple[str, ...]
+) -> NodeTimeouts | str:
+    """Apply the most-specific repeatable ``--node-timeout NODE=SECONDS`` layer."""
+    configured = dict(timeouts.configured)
+    layers = dict(timeouts.configured_layers)
+    for argument in arguments:
+        node, separator, raw_seconds = argument.partition("=")
+        seconds = positive_int_seconds(value=int(raw_seconds)) if raw_seconds.isdigit() else None
+        if not node or separator != "=" or seconds is None:
+            return f"--node-timeout must be NODE=positive-integer-seconds; got {argument!r}"
+        configured[node] = seconds
+        layers[node] = ARGUMENT_LAYER
+    return replace(timeouts, configured=configured, configured_layers=layers)
+
+
 def derive_fabro_timeout_seconds(*, timeouts: NodeTimeouts) -> float:
     """Derive the `fabro run` subprocess ceiling from the resolved graph.
 
@@ -297,7 +330,10 @@ def node_timeouts_journal_record(
     """
     return {
         "node_timeouts": {
-            node: {"seconds": seconds, "layer": timeouts.layer_for(node=node)}
+            node: {
+                "seconds": seconds,
+                "layer": _rendered_layer(timeouts=timeouts, node=node, seconds=seconds),
+            }
             for node, seconds in sorted(nodes.items())
         },
         "stall_timeout": {
@@ -308,13 +344,21 @@ def node_timeouts_journal_record(
     }
 
 
+def _rendered_layer(*, timeouts: NodeTimeouts, node: str, seconds: int) -> str:
+    """Name the layer that supplied a value read back from a rendered graph."""
+    layer = timeouts.layer_for(node=node)
+    if layer == BUILT_IN_DEFAULT_LAYER and seconds != DEFAULT_NODE_TIMEOUT_SECONDS:
+        return WORKFLOW_LAYER
+    return layer
+
+
 def _with_stall(*, block: dict[str, Any], configured: dict[str, int]) -> NodeTimeouts | str:
     stall_raw = block.get(_STALL_TIMEOUT_KEY)
     if stall_raw is None:
         return NodeTimeouts(
             configured=configured,
             stall_seconds=DEFAULT_STALL_TIMEOUT_SECONDS,
-            stall_layer=WORKFLOW_DEFAULT_LAYER,
+            stall_layer=BUILT_IN_DEFAULT_LAYER,
         )
     stall_seconds = positive_int_seconds(value=stall_raw)
     if stall_seconds is None:
