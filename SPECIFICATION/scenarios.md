@@ -13430,3 +13430,38 @@ Feature: Publish repair for a repairable push refusal
     Then the run fails closed to needs_human with the named cause refresh-repair-exhausted
     And its recovery artifact pointer names the head whose push was refused
 ```
+
+## Scenario 330 — A hold set while a launched drive waits before admission stops the drive
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: An impl launcher honours a hold until its item is admitted
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway queue, lock, in-flight and state directories
+    And an impl launcher for bd-x in repository R that has invoked a stub drive
+
+  Scenario: A hold set before admission stops the drive
+    Given the stub drive is waiting in its master-CI preflight and bd-x still reads ready
+    When the gmktec factory hold file is created with the text "engine restart"
+    Then the launcher stops the drive before any run is submitted
+    And it keeps its FIFO ticket at the same ticket number
+    And it logs a line naming bd-x, its ticket number and the hold text "engine restart"
+
+  Scenario: A hold set after admission does not stop the drive
+    Given the stub drive has admitted bd-x, which reads active
+    When the gmktec factory hold file is created
+    Then the launcher does not stop the drive and the run lists on its factory board
+
+  Scenario: No hold leaves the drive unchanged
+    Given no hold file exists
+    When the stub drive runs to submission
+    Then the run lists on its factory board exactly as it did before this rule
+
+  Scenario: A drive that admitted its item before the stop took effect
+    Given the stub drive admits bd-x at the moment the launcher stops it
+    When the launcher re-reads bd-x and it reads active
+    Then the launcher makes a non-run exit with the cause stopped-after-admission
+    And it re-takes no ticket
+    And it appends one ledger comment to bd-x naming its ticket number and the operator move valve
+```

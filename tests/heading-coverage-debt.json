@@ -1447,5 +1447,12 @@
     "heading": "## Scenario 329 — A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix",
     "work_item": "bd-ib-7owmkq",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 330 — A hold set while a launched drive waits before admission stops the drive",
+    "work_item": "bd-ib-j6rbdx",
+    "first_seen": "2026-11-08"
   }
 ]
