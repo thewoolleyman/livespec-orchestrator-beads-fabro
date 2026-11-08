@@ -2571,6 +2571,36 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   "stop grading expiry". A twin committing in the window between that scan and
   the chain's own is still answered as a recovery, by the chain's guard, which is
   why `_persist`'s idempotent arm stays reachable rather than becoming dead.
+- The ACROSS-DISPATCH PROGRESS GATE of `contracts.md`'s "Across-dispatch
+  required-result progress" clause (`bd-ib-s5idxj`, Scenario 151). Six cohesive
+  modules, and the dependency direction reads bottom-up:
+  `_dispatcher_redispatch_progress` (PURE: the prior-high-water rule, the typed
+  recovery and every diagnosis) and `_dispatcher_redispatch_recovery_record` (PURE:
+  the recovery and consumption ledger comments) and `_dispatcher_redispatch_policy`
+  (the committed `dispatcher.redispatch_no_progress_limit`, or its diagnostic) ->
+  `_dispatcher_redispatch_history` (journal rows joined to each run's RECORDED
+  factory and graded by the workflow graph's own dependency order) ->
+  `_dispatcher_redispatch_gate` (the pre-claim refusal, the drain filter and the
+  spend) -> `_dispatcher_redispatch_recovery_command` (`record-redispatch-recovery`).
+  Six properties an editor must not invert. An item with NO history reads no policy
+  and no factory, so a first dispatch is never refused for lacking a limit, while an
+  item WITH history and no valid limit is refused with the diagnostic and never an
+  implicit count. A run's evidence is read from the factory its
+  `dispatch-run-stamp` row names and from no other: an unstamped run is an UNKNOWN
+  cause, which the rule turns into a diagnosis rather than a local default server
+  standing in. Progress is graph distance from the start node, never a stage name or
+  a retry number, and a changed graph is a different workflow identity. The refusal
+  names the WHOLE flat history, not only the first `limit` runs, which is what makes
+  a spent recovery unreplayable: the epoch it authorized adds a run, so the next
+  refusal names a history the old recovery does not. A diagnosis (unknown cause,
+  incomparable variant) is cleared by a fresh typed recovery naming the history
+  through it, and once that recovery is spent the diagnosed run becomes the explicit
+  new baseline, because otherwise one unknown run would re-diagnose every later
+  dispatch. And the spend is an append-only ledger comment written LAST by the wall,
+  after every other row passed, so a selection a later row refuses does not burn the
+  recovery; the drain filter consumes nothing. The recovery record has no deadline
+  field: the original obligation deadline lives in the plan authority chain alone.
+
 - The CARRIER GATE that stops a plan deriving a plan-level step while a carrier
   of one of its assertions is still open (`bd-ib-evrynu`), split
   pure-from-impure the usual way and reading bottom-up: `_plan_carrier_map`

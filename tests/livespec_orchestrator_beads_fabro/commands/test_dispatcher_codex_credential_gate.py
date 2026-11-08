@@ -434,6 +434,7 @@ def _stub_wall_siblings(*, monkeypatch: pytest.MonkeyPatch) -> None:
         detail="resolved ACP candidate keys naming the codex-acp agent: codex-acp/openai/gpt-5.1",
     )
     monkeypatch.setattr(wall, "codex_routing_for_dispatch", lambda **_kwargs: codex_routed)
+    monkeypatch.setattr(wall, "redispatch_progress_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)

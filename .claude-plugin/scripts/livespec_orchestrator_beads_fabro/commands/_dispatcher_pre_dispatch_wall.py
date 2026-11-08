@@ -99,6 +99,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
     reclaim_stale_publish_branches,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_redispatch_gate import (
+    consume_authorized_recoveries,
+    redispatch_progress_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_screen import (
     session_headroom_screen_refusal,
 )
@@ -240,13 +244,29 @@ def pre_dispatch_wall_exit(
     proof-credential declaration it is a HOST-level fact, so one refusal covers
     the whole selection rather than reading as one fault per item.
 
+    The ACROSS-DISPATCH PROGRESS row follows the ACP-node override, ahead of every
+    row that spends a provider request: it reads the item's journaled history and
+    the factories those runs were recorded on, and refuses before any claim once
+    the committed `dispatcher.redispatch_no_progress_limit` consecutive
+    item-attributable attempts failed to advance the prior high-water mark. A fresh
+    typed causal recovery attempt admits ONE epoch; the wall spends it only after
+    every other row below has passed, so a selection refused later does not burn
+    the recovery.
+
     AND THAT IS THE WHOLE WALL: every row above is a refusal, and none of them
-    mutates anything. The publish-branch reclaim used to close this sequence and
+    mutates anything -- but for that one append-only ledger comment spending an
+    admitted recovery, written last. The publish-branch reclaim used to close this sequence and
     now sits past admission, in `post_admission_publish_branch_reclaim` below.
     """
     work_item_ids = [item.id for item in items]
+    authorized: list[tuple[str, str]] = []
     refusing = _refusing_sequence(
-        args=args, repo=repo, items=items, journal=journal, work_item_ids=work_item_ids
+        args=args,
+        repo=repo,
+        items=items,
+        journal=journal,
+        work_item_ids=work_item_ids,
+        authorized=authorized,
     )
     for ask, exit_code, newline, phase in refusing:
         with prelaunch_phase(checkpoint=prelaunch_checkpoint, name=phase):
@@ -290,6 +310,7 @@ def pre_dispatch_wall_exit(
         if codex_refusal is not None:
             _ = write_stderr(text=f"{codex_refusal}\n")
             return EXIT_PRECONDITION_ERROR
+    consume_authorized_recoveries(repo=repo, authorized=authorized)
     return None
 
 
@@ -335,6 +356,7 @@ def _refusing_sequence(
     items: Sequence[WorkItem],
     journal: JournalFile,
     work_item_ids: list[str],
+    authorized: list[tuple[str, str]],
 ) -> tuple[tuple[Callable[[], str | None], int, bool, str], ...]:
     """Every refusal this wall makes before the credential gate, IN ORDER.
 
@@ -381,6 +403,14 @@ def _refusing_sequence(
             EXIT_PRECONDITION_ERROR,
             True,
             "acp-node-override",
+        ),
+        (
+            lambda: redispatch_progress_refusal(
+                repo=repo, items=items, journal=journal, authorized=authorized
+            ),
+            EXIT_PRECONDITION_ERROR,
+            True,
+            "redispatch-no-progress",
         ),
         (
             lambda: session_headroom_screen_refusal(

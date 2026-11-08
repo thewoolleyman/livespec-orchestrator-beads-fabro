@@ -316,6 +316,7 @@ def test_the_shared_wall_returns_before_any_admission_or_later_gate(
     repo = tmp_path / "target"
     _ = _write_workflow(root=repo, nodes=("dod_gate",))
     monkeypatch.setattr(wall, "implementation_pr_override_refusal", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "redispatch_progress_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "fabro_currency_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "dod_judgement_refusal", lambda **_kwargs: None)
