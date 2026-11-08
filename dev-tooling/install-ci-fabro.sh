@@ -25,15 +25,29 @@ set -euo pipefail
 readonly version="v0.254.0"
 readonly asset="fabro-x86_64-unknown-linux-musl.tar.gz"
 readonly sha256="27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
+readonly warm_asset="/__w/_warm/release-assets/${sha256}"
 readonly url="https://github.com/fabro-sh/fabro/releases/download/${version}/${asset}"
 readonly target="${1:-/usr/local/bin/fabro}"
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
+verify_asset() {
+    printf '%s  %s\n' "$sha256" "$1" | sha256sum --check --status
+}
+
+if [[ -f "$warm_asset" ]]; then
+    if verify_asset "$warm_asset"; then
+        tar -xzf "$warm_asset" -C "$scratch"
+        install -m 0755 "${scratch}/fabro-x86_64-unknown-linux-musl/fabro" "$target"
+        "$target" --version
+        exit 0
+    fi
+fi
+
 curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "$url"
 
-if ! printf '%s  %s\n' "$sha256" "${scratch}/${asset}" | sha256sum --check --status; then
+if ! verify_asset "${scratch}/${asset}"; then
     echo "install-ci-fabro: sha256 mismatch for ${asset} (expected ${sha256})" >&2
     exit 1
 fi
