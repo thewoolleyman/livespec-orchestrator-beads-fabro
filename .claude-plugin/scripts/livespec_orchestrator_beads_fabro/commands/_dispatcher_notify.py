@@ -54,6 +54,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff import (
+    HANDED_OFF_STATUS,
+)
 from livespec_orchestrator_beads_fabro.commands._run_attribution import (
     NOTIFICATION_STAGE_PREFIX,
 )
@@ -171,7 +174,7 @@ def terminal_events(
     `spend-cap` class (y0m) is not a `DispatchOutcome.status`; it will
     build its own `NotifyEvent` and call `notify_terminal` directly.
     """
-    non_alarm_statuses = {"green", "capacity-deferred"}
+    non_alarm_statuses = {"green", "capacity-deferred", HANDED_OFF_STATUS}
     events = tuple(
         NotifyEvent(work_item_id=outcome.work_item_id, outcome_class=outcome.status)
         for outcome in outcomes
