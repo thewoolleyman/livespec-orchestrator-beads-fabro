@@ -579,8 +579,8 @@ def _cross_the_process_boundaries(monkeypatch: pytest.MonkeyPatch, walk: _Walk) 
 @pytest.fixture
 def walk(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _Walk:
     # A commit hook runs this test with its own repository named in the environment.
-    for name in [name for name in os.environ if name.startswith("GIT_")]:
-        monkeypatch.delenv(name)
+    # One statement, so the line runs whether or not this environment has any.
+    _ = [monkeypatch.delenv(name) for name in list(os.environ) if name.startswith("GIT_")]
     root, state = _clone(tmp_path=tmp_path)
     client = _tenant()
     created = _Walk(client=client, forge=_Forge(), root=root, state=state)
