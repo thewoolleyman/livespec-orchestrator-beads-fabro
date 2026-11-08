@@ -42,6 +42,9 @@ _PUBLISHED_HEAD = "f3f139b28469c7efaae32dcb897d73518edbaadd"
 _EARLIER_HEAD = "1e9b31ba00000000000000000000000000000003"
 
 _PRESERVED_PUBLISH_PREFIX = f"refs/livespec/preserved-publish/{_ITEM_ID}"
+_WIP_PREFIX = f"refs/livespec/wip/{_ITEM_ID}/{_RUN}"
+_WIP_FIRST_COMMIT = "9a9a9a9000000000000000000000000000000004"
+_WIP_SECOND_COMMIT = "8b8b8b8000000000000000000000000000000005"
 
 
 @dataclass(kw_only=True)
@@ -116,6 +119,40 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
     )
     assert not _asked(runner=runner, needle=_BRANCH_REF)
     assert not _asked(runner=runner, needle=_PRESERVED_PUBLISH_PREFIX)
+
+
+def test_the_latest_runs_highest_numbered_wip_capture_beats_the_published_head() -> None:
+    """A lost latest run resumes from its newest settled capture, not stale publication.
+
+    The two WIP refs point at different commits and the publish branch points at
+    a third, so a reader that takes the first capture, ignores captures, or
+    prefers the observed head produces a plausible but wrong seed.
+    """
+    runner = _Runner(
+        answers={
+            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
+                exit_code=0, stdout="", stderr=""
+            ),
+            f"ls-remote {SEED_REMOTE} {_WIP_PREFIX}/*": CommandResult(
+                exit_code=0,
+                stdout=(
+                    f"{_WIP_FIRST_COMMIT}\t{_WIP_PREFIX}/1\n"
+                    f"{_WIP_SECOND_COMMIT}\t{_WIP_PREFIX}/2\n"
+                ),
+                stderr="",
+            ),
+            f"ls-remote {SEED_REMOTE} {_BRANCH_REF}": CommandResult(
+                exit_code=0, stdout=f"{_PUBLISHED_HEAD}\t{_BRANCH_REF}\n", stderr=""
+            ),
+        }
+    )
+
+    assert _seed(runner=runner) == RecoverySeed(
+        source_run_id=_RUN,
+        remote=SEED_REMOTE,
+        commit_sha=_WIP_SECOND_COMMIT,
+        preservation_ref=f"{_WIP_PREFIX}/2",
+    )
 
 
 def test_an_unreadable_terminal_reference_is_unobservable_and_stops_the_search() -> None:

@@ -68,6 +68,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_recla
     surviving_publish_branch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_wip import (
+    WipRefUnobservable,
+    verified_latest_wip_seed,
+)
 
 __all__: list[str] = [
     "NEEDS_HUMAN_REF_PREFIX",
@@ -166,6 +170,7 @@ def verified_preserved_seed(
     work_item_id: str,
     earlier_run_ids: tuple[str, ...],
     journal_records: tuple[dict[str, object], ...],
+    latest_run_id: str | None = None,
 ) -> RecoverySeed | PreservedWorkUnobservable | PreservedWorkAbsent:
     """The seed the failed run's preserved work supports: one, unaskable, or absent.
 
@@ -183,24 +188,30 @@ def verified_preserved_seed(
     journal silently reports the answer of one that did not — here, "this item
     has no preserved tree" for an item whose tree was published minutes ago.
     """
+    latest = latest_run_id or _leading(identifiers=earlier_run_ids)
     asked: list[str] = []
-    # The terminal ref is per RUN, so with no identifier to name there is no ref
-    # it could exist at and the round trip would ask about a pattern that matches
-    # nothing.
     if earlier_run_ids:
         asked.append(PRESERVED_SOURCE_TERMINAL_TREE)
-        terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
+        terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=(latest,))
         if terminal is not None:
             return terminal
-    # The published tree is named by this item's OWN journal, so with no row
-    # naming one there is no ref that source could stand at and the round trip
-    # would ask origin about nothing.
-    published_tree = _newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
+    published_tree = _newest_preserved_tree_row(
+        records=journal_records, work_item_id=work_item_id, latest_run_id=latest or None
+    )
     if published_tree is not None:
         asked.append(PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE)
         tree = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
         if tree is not None:
             return tree
+    wip = verified_latest_wip_seed(
+        runner=runner, repo=repo, work_item_id=work_item_id, run_id=latest or None
+    )
+    if wip is not None:
+        return (
+            PreservedWorkUnobservable(detail=wip.detail)
+            if isinstance(wip, WipRefUnobservable)
+            else wip
+        )
     asked.append(PRESERVED_SOURCE_PUBLISHED_HEAD)
     published = _published_head_seed(
         runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
@@ -330,7 +341,7 @@ def _preserved_tree_seed(
 
 
 def _newest_preserved_tree_row(
-    *, records: tuple[dict[str, object], ...], work_item_id: str
+    *, records: tuple[dict[str, object], ...], work_item_id: str, latest_run_id: str | None
 ) -> tuple[str, str, str] | None:
     """This item's newest published-tree row, as (ref, base commit, run id).
 
@@ -352,11 +363,18 @@ def _newest_preserved_tree_row(
             continue
         ref = record.get(_REF_KEY)
         base = record.get(_BASE_COMMIT_KEY)
-        run_id = record.get(_RUN_ID_KEY)
-        if not (isinstance(ref, str) and isinstance(base, str) and isinstance(run_id, str)):
+        captured_run_id = record.get(_RUN_ID_KEY)
+        if not (
+            isinstance(ref, str) and isinstance(base, str) and isinstance(captured_run_id, str)
+        ):
             continue
-        if ref.strip() and base.strip() and run_id.strip():
-            return ref.strip(), base.strip(), run_id.strip()
+        if (
+            ref.strip()
+            and base.strip()
+            and captured_run_id.strip()
+            and (latest_run_id is None or captured_run_id == latest_run_id)
+        ):
+            return ref.strip(), base.strip(), captured_run_id.strip()
     return None
 
 
