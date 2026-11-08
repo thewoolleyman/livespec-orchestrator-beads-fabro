@@ -120,6 +120,7 @@ def project_codex_overlay_leg(  # noqa: PLR0913 — kw-only projection leg; each
     sandbox_otel_endpoint: str,
     work_item_id: str,
     dispatch_id: str,
+    node_timeout_arguments: tuple[str, ...] = (),
 ) -> CodexOverlayLeg | str:
     """Resolve this dispatch's Codex projection, or the FIRST refusal in the leg.
 
@@ -169,6 +170,7 @@ def project_codex_overlay_leg(  # noqa: PLR0913 — kw-only projection leg; each
         block=block,
         workflow_name=committed.parent.name,
         policy_inputs={REVIEW_FIX_VISIT_CAP_INPUT: review_fix_visit_cap},
+        node_timeout_arguments=node_timeout_arguments,
     )
     if isinstance(requirement, str | WorkflowFaultDeferral):
         return requirement_refusal_text(outcome=requirement)

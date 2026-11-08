@@ -118,7 +118,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
     run_wall_budget_from_block,
 )
-from livespec_orchestrator_beads_fabro.commands._node_timeouts import node_timeouts_from_block
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    node_timeouts_from_block,
+    node_timeouts_with_arguments,
+)
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
     RESERVED_WORKFLOW_NAME,
     workflow_variant_from_block,
@@ -241,6 +244,7 @@ def resolve_credential_lifetime_requirement(
     workflow_override: str | None = None,
     workflow_name: str | None = None,
     policy_inputs: Mapping[str, int] | None = None,
+    node_timeout_arguments: tuple[str, ...] = (),
 ) -> CredentialLifetimeRequirement | str | WorkflowFaultDeferral:
     """Resolve the requirement for the workflow THIS dispatch selected, or refuse.
 
@@ -276,6 +280,7 @@ def resolve_credential_lifetime_requirement(
         block=block,
         workflow_name=variant.name,
         policy_inputs=policy_inputs,
+        node_timeout_arguments=node_timeout_arguments,
     )
 
 
@@ -285,6 +290,7 @@ def credential_lifetime_requirement_for(
     block: dict[str, Any],
     workflow_name: str = RESERVED_WORKFLOW_NAME,
     policy_inputs: Mapping[str, int] | None = None,
+    node_timeout_arguments: tuple[str, ...] = (),
 ) -> CredentialLifetimeRequirement | str | WorkflowFaultDeferral:
     """The requirement for an ALREADY-RESOLVED committed workflow, or a refusal.
 
@@ -329,6 +335,7 @@ def credential_lifetime_requirement_for(
         block=block,
         workflow_name=workflow_name,
         policy_inputs=policy_inputs,
+        node_timeout_arguments=node_timeout_arguments,
     )
 
 
@@ -339,9 +346,18 @@ def _requirement_from_graph(
     block: dict[str, Any],
     workflow_name: str,
     policy_inputs: Mapping[str, int] | None,
+    node_timeout_arguments: tuple[str, ...],
 ) -> CredentialLifetimeRequirement | str | WorkflowFaultDeferral:
     """Compose the allowance from the graph, the timeouts and the checkpoint."""
-    timeouts = node_timeouts_from_block(block=block)
+    configured = node_timeouts_from_block(block=block)
+    # The per-dispatch `--node-timeout` layer is applied here exactly as the
+    # payload applies it, so the allowance is computed from the same per-node
+    # values the rendered graph carries.
+    timeouts = (
+        configured
+        if isinstance(configured, str)
+        else node_timeouts_with_arguments(timeouts=configured, arguments=node_timeout_arguments)
+    )
     if isinstance(timeouts, str):
         # The node-timeout validator OWNS this diagnostic and refuses at its own
         # stage with its own exit code (Scenario 89); the credential derivation
