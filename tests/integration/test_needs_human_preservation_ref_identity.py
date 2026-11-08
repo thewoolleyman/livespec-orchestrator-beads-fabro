@@ -52,6 +52,10 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance import (
     FACTORY_RUN_ID_MARKER,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture import (
+    WIP_CAPTURE_PROGRAM_FILENAME,
+    wip_capture_program_source,
+)
 
 _WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 _SCRIPT_ATTR = re.compile(r'script="(?P<value>(?:[^"\\]|\\.)*)"')
@@ -153,6 +157,44 @@ def test_neither_source_available_pushes_nothing_and_says_so(tmp_path: Path) -> 
     assert completed.returncode == 1
 
 
+def test_a_detached_default_head_preserves_the_run_branch_tree(tmp_path: Path) -> None:
+    """The terminal itself recovers work that only the run branch carries."""
+    work, origin = _sandbox(tmp_path=tmp_path, dispatch_id=_DISPATCH_ID)
+    capture_root = tmp_path / "dispatcher-materialized"
+    capture = capture_root / "bin" / WIP_CAPTURE_PROGRAM_FILENAME
+    capture.parent.mkdir(parents=True)
+    capture.write_text(wip_capture_program_source(), encoding="utf-8")
+    capture.chmod(0o755)
+    run_branch = "fabro/run/01M6WIPNEEDSHUMAN"
+    run_work = "run-branch-work.txt"
+    run_body = "settled work is on the run branch\n"
+    _git(work, "switch", "-c", run_branch)
+    (work / run_work).write_text(run_body, encoding="utf-8")
+    _git(work, "add", run_work)
+    _git(work, "commit", "--quiet", "-m", "settled run work")
+    _git(work, "switch", "--detach", "master")
+
+    completed = _run_needs_human(
+        work=work,
+        run_id=None,
+        extra_env={
+            "LIVESPEC_PUBLISH_BRANCH": "feat/bd-ib-ofvsr3",
+            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(capture_root),
+        },
+    )
+
+    assert completed.returncode == 1
+    assert _ref_blob(origin=origin, ref=f"{_REF_PREFIX}{_DISPATCH_ID}", path=run_work) == run_body
+    assert (
+        _ref_blob(
+            origin=origin,
+            ref=f"refs/livespec/wip/bd-ib-ofvsr3/{run_branch.removeprefix('fabro/run/')}/1",
+            path=run_work,
+        )
+        == run_body
+    )
+
+
 def test_the_primary_source_reads_the_marker_the_dispatcher_declares() -> None:
     """Assertion 1's lockstep: one key name, declared once and read once.
 
@@ -214,20 +256,24 @@ def _sandbox(*, tmp_path: Path, dispatch_id: str | None) -> tuple[Path, Path]:
     return work, origin
 
 
-def _env() -> dict[str, str]:
+def _env(*, extra: dict[str, str] | None = None) -> dict[str, str]:
     """The node's environment, with the FORMER run-id source stripped."""
     env = {key: value for key, value in os.environ.items() if key != "FABRO_RUN_ID"}
     env["LIVESPEC_GIT_AUTHOR_NAME"] = _OPERATOR_NAME
     env["LIVESPEC_GIT_AUTHOR_EMAIL"] = _OPERATOR_EMAIL
+    if extra is not None:
+        env.update(extra)
     return env
 
 
-def _run_needs_human(*, work: Path, run_id: str | None) -> subprocess.CompletedProcess[str]:
+def _run_needs_human(
+    *, work: Path, run_id: str | None, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run the terminal's own script; `run_id=None` is an engine that sends no stdin."""
     return subprocess.run(
         ["sh", "-c", _node_script(node="needs_human")],
         cwd=str(work),
-        env=_env(),
+        env=_env(extra=extra_env),
         check=False,
         text=True,
         capture_output=True,
@@ -244,6 +290,17 @@ def _preserved_blob(*, origin: Path, ref: str, path: str) -> str:
         capture_output=True,
     )
     return completed.stdout
+
+
+def _ref_blob(*, origin: Path, ref: str, path: str) -> str | None:
+    completed = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        cwd=str(origin),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout if completed.returncode == 0 else None
 
 
 def _pushed_refs(*, origin: Path) -> list[str]:
