@@ -32,10 +32,14 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
+    DispatchOutcome,
     FabroRunResult,
     JournalWriter,
     PollPolicy,
     run_dispatch,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_launcher_terminal import (
+    launcher_terminal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
@@ -232,6 +236,40 @@ def test_the_engine_routes_a_budget_report_to_its_own_terminal(tmp_path: Path) -
     assert REPOSITORY_LAYER in outcome.detail
     assert runner.calls == []
     assert [record.get("stage") for record in journal.records] == ["fabro-run"]
+
+
+def test_launcher_terminal_maps_each_already_performed_terminal(tmp_path: Path) -> None:
+    """The extracted launcher terminal retains its three outcomes and no-op."""
+    command = CommandResult(exit_code=0, stdout="", stderr="")
+    plan = _plan(repo=tmp_path)
+    none = launcher_terminal(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        launched=FabroRunResult(command=command),
+    )
+    abandoned = launcher_terminal(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        launched=FabroRunResult(
+            command=command,
+            abandoned_run_id=_RUN_ID,
+            abandoned_item_status="blocked",
+        ),
+    )
+    budget = launcher_terminal(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        launched=FabroRunResult(command=command, budget_exceeded_run_id=_RUN_ID),
+    )
+    stalled = launcher_terminal(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        launched=FabroRunResult(command=command, stalled_run_id=_RUN_ID),
+    )
+    assert none is None
+    assert abandoned is not None and abandoned.stage == "stale-run-reap"
+    assert budget is not None and budget.status == RUN_WALL_BUDGET_EXCEEDED_STAGE
+    assert stalled is not None and stalled.status == "stalled-no-progress"
 
 
 def test_a_held_export_keeps_the_run_and_never_cancels_it_as_stalled(

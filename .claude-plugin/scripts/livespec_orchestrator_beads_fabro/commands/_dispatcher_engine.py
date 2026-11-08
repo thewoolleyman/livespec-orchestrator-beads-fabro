@@ -65,12 +65,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
     failed_outcome,
     journal_run_output_markers,
     journal_stage,
-    run_wall_budget_outcome,
-    stalled_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_launcher_terminal import (
+    launcher_terminal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
     await_merge,
     outcome_after_await,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_reattach_terminal import (
+    reattach_terminal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import (
     CommandResult,
@@ -98,6 +102,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
+    PrView,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
     pr_open_diff_record,
@@ -114,7 +119,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication
 from livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause import (
     worker_exit_engine_failure_outcome,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
+from livespec_orchestrator_beads_fabro.commands._fabro_port import (
+    FabroInspectResult,
+    fabro_port_for_plan,
+)
 
 __all__: list[str] = [
     "MERGE_HELD_STAGE",
@@ -128,6 +136,7 @@ __all__: list[str] = [
     "SleepFn",
     "SynchronousFabroLauncher",
     "dispatch_fabro_run_inputs",
+    "reattach_watch_terminal",
     "run_dispatch",
     "run_fabro_factory_auth_login",
 ]
@@ -234,6 +243,9 @@ def run_dispatch(
         follow_live=fabro.exit_code != 0,
         sleep=sleep,
     )
+    reattach_terminal = reattach_watch_terminal(plan=plan, inspect=inspect)
+    if reattach_terminal is not None:
+        return reattach_terminal
     inspect_stdout = "" if inspect is None else inspect.command.stdout
     inspect_stderr = "" if inspect is None else inspect.command.stderr
     # Both publication markers are read from ONE pass over this text, and the
@@ -295,23 +307,15 @@ def run_dispatch(
             events_payload=None if inspect is None else inspect.events_payload,
             journal=journal,
         )
-    hold, view = publication.hold, publication.view
-    if publication.pr_view_error is not None:
-        return failed_outcome(
-            outcome_type=DispatchOutcome,
-            plan=plan,
-            stage="pr-view",
-            detail=f"pull-request read unobservable: {publication.pr_view_error}",
-            fabro_run_id=run_id,
-        )
-    if view is None:
-        return failed_outcome(
-            outcome_type=DispatchOutcome,
-            plan=plan,
-            stage="pr-view",
-            detail="no pull request exists for branch",
-            fabro_run_id=run_id,
-        )
+    hold = publication.hold
+    pr_view_terminal, view = _pr_view_terminal(
+        plan=plan,
+        run_id=run_id,
+        view=publication.view,
+        error=publication.pr_view_error,
+    )
+    if pr_view_terminal is not None:
+        return pr_view_terminal
     # The branch-versus-base size, recorded HERE and not at the terminal (plan
     # slice S4, `bd-ib-tbgxm4`): this is the moment the pull request is confirmed
     # and nothing about merging has been decided yet, so the measurement rides
@@ -357,50 +361,41 @@ def _launcher_terminal(
     plan: DispatchPlan,
     launched: FabroRunResult,
 ) -> DispatchOutcome | None:
-    """The terminal the LAUNCHER itself ended this run with, or None.
+    """Map a launcher-owned terminal without growing the dispatch loop."""
+    return launcher_terminal(outcome_type=DispatchOutcome, plan=plan, launched=launched)
 
-    Three endings reach the engine already decided, because the launcher's own
-    watch loop took them: a reaped run whose work-item had stopped being
-    dispatchable, a run cancelled past its whole-run wall budget, and a run
-    cancelled as stalled. Each is final — the run has been `fabro rm -f`-ed —
-    so the engine short-circuits before any PR flow rather than inspecting a
-    run that no longer exists.
 
-    THE BUDGET ARM PRECEDES THE STALL ARM, which is the clause's own precedence:
-    "When a run's measured budget is exceeded and the run also meets the
-    stalled-no-progress rule, the budget takes precedence." A quiet run past its
-    budget satisfies both, and only the budget disposition rests it for a person
-    — so a stall arm reading first would release an item nothing automatic
-    should re-dispatch. The launcher applies the same precedence in its own
-    loop; this ordering is the second half of one guarantee rather than a
-    duplicate of it, because the two surfaces decide different things: the loop
-    decides which cancel to PERFORM and this decides which terminal to REPORT.
+def reattach_watch_terminal(
+    *, plan: DispatchPlan, inspect: FabroInspectResult | None
+) -> DispatchOutcome | None:
+    """Map a reattach-owned terminal without growing the dispatch loop."""
+    return reattach_terminal(outcome_type=DispatchOutcome, plan=plan, inspect=inspect)
 
-    Grouped into one function rather than three returns in `run_dispatch`
-    because they are one question — "did the launcher already end this run?" —
-    and because reading them as a group is what makes the precedence above
-    visible at the point it applies.
-    """
-    if launched.abandoned_run_id is not None:
-        return DispatchOutcome(
-            work_item_id=plan.work_item_id,
-            status="failed",
-            stage="stale-run-reap",
-            pr_number=None,
-            merge_sha=None,
-            detail=(
-                f"run {launched.abandoned_run_id} abandoned because work-item "
-                f"{plan.work_item_id} status is {launched.abandoned_item_status}; "
-                "item is no longer dispatchable"
+
+def _pr_view_terminal(
+    *, plan: DispatchPlan, run_id: str | None, view: PrView | None, error: str | None
+) -> tuple[DispatchOutcome | None, PrView]:
+    """Turn an unreadable or absent pull request into the one terminal outcome."""
+    if error is not None:
+        return (
+            failed_outcome(
+                outcome_type=DispatchOutcome,
+                plan=plan,
+                stage="pr-view",
+                detail=f"pull-request read unobservable: {error}",
+                fabro_run_id=run_id,
             ),
-            fabro_run_id=launched.abandoned_run_id,
+            cast("PrView", None),
         )
-    if launched.budget_exceeded_run_id is not None:
-        return run_wall_budget_outcome(
-            outcome_type=DispatchOutcome, plan=plan, run_id=launched.budget_exceeded_run_id
+    if view is None:
+        return (
+            failed_outcome(
+                outcome_type=DispatchOutcome,
+                plan=plan,
+                stage="pr-view",
+                detail="no pull request exists for branch",
+                fabro_run_id=run_id,
+            ),
+            cast("PrView", None),
         )
-    if launched.stalled_run_id is not None:
-        return stalled_outcome(
-            outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id
-        )
-    return None
+    return None, view
