@@ -186,6 +186,34 @@ def test_commit_green_folds_checkpoints_and_amends_the_unpaired_red_with_hooks(
     assert "TDD-Green-Verified-At: green" in message
 
 
+def test_commit_green_folds_current_shell_red_without_replay_trailers(tmp_path: Path) -> None:
+    """A shell-harness Red is amended by its current run provenance, not TDD trailers."""
+    assert _GREEN.is_file()
+    repo = _initialize_repository(tmp_path=tmp_path)
+    base = _git(repo=repo, argv=["rev-parse", "HEAD"])
+    _git(repo=repo, argv=["config", "livespec.factoryRunId", "current-run"])
+    shell_test = repo / "tests" / "feature.sh"
+    shell_test.parent.mkdir()
+    _ = shell_test.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    _git(repo=repo, argv=["add", "tests/feature.sh"])
+    _git(
+        repo=repo,
+        argv=["commit", "--quiet", "-m", "feat: red", "-m", "Factory-Run-Id: current-run"],
+    )
+    _ = (repo / "implementation.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _checkpoint(repo=repo, name="green")
+    handoff = _handoff(repo=repo, text="## green\nShell harness now passes.\n")
+
+    completed = _run(repo=repo, argv=["bash", str(_GREEN)], check=False)
+
+    assert completed.returncode == 0, completed.stderr
+    assert _git(repo=repo, argv=["rev-parse", "HEAD^"]) == base
+    assert _git(repo=repo, argv=["show", "--format=", "--name-only", "HEAD"]) == (
+        "implementation.py\ntests/feature.sh"
+    )
+    assert "## commit_green" in handoff.read_text(encoding="utf-8")
+
+
 def test_refused_commands_append_failed_targets_and_the_recorded_output_tail(
     tmp_path: Path,
 ) -> None:
