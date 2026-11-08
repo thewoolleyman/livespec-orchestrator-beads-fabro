@@ -194,6 +194,27 @@ def test_both_settle_nodes_are_command_nodes_that_run_the_runners_settle_operati
         assert attributes.get("max_visits") == str(_SETTLE_VISITS), node
 
 
+def test_every_settle_restores_the_amend_base_and_covers_the_measured_hook() -> None:
+    """Scenario 179: every path restores a live amend before its 3425 s wait."""
+    for node in (_IMPLEMENT_SETTLE, _FIX_SETTLE, _REVIEW_FIX_SETTLE):
+        attributes = _attributes(node=node)
+        script = attributes.get("script", "")
+        bound = re.search(r"settle --timeout-seconds (\d+)", script)
+
+        assert attributes.get("timeout") == "3900s", node
+        assert bound is not None, script
+        assert 3425 <= int(bound.group(1)) < 3900
+        assert "--restore-head-before-wait" in script
+
+
+def test_fix_and_review_fix_settles_reset_only_their_own_wait_visit_record() -> None:
+    """Scenario 179: a re-entered stage gets a fresh one-wait allowance."""
+    for node, stage in ((_FIX_SETTLE, "fix"), (_REVIEW_FIX_SETTLE, "review_fix")):
+        script = _attributes(node=node).get("script", "")
+
+        assert f"--stage {stage}" in script
+
+
 def test_the_settle_node_writes_the_brief_for_a_run_that_ended_without_a_verdict(
     tmp_path: Path,
 ) -> None:
@@ -394,7 +415,7 @@ def test_a_commit_run_that_ended_without_a_verdict_is_briefed_as_having_made_no_
 
 
 def test_a_failed_commit_run_with_the_budget_exhausted_fails_the_stage(tmp_path: Path) -> None:
-    """A failed commit run is an ordinary incomplete turn once the budget is spent."""
+    """A failed commit run exhausts through the attributable hook-refusal terminal."""
     repo = _clone(tmp_path)
     _ = _git_file(repo=repo, name=_REENTRIES_GIT_PATH).write_text("1\n", encoding="utf-8")
     _ = _git_file(repo=repo, name=_LIVE_GIT_PATH).write_text(
@@ -404,7 +425,7 @@ def test_a_failed_commit_run_with_the_budget_exhausted_fails_the_stage(tmp_path:
     result = _routed(repo=repo)
 
     assert result.returncode != 0, result.stderr
-    assert _REENTRY_EXHAUSTED in result.stderr
+    assert "LIVESPEC_IMPLEMENT_HOOK_REFUSED_BUDGET_EXHAUSTED" in result.stderr
 
 
 def test_the_implement_prompt_tells_a_reentered_turn_about_a_commit_run_brief() -> None:

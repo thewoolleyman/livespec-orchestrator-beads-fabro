@@ -30,6 +30,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_rework im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
     escalate_needs_human_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import LEDGER_WRITE_ERRORS
+from livespec_orchestrator_beads_fabro.commands._dispatcher_completion_claims import CompletionClaim
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion_close import (
     close_dispatch_item,
     no_change_needed_reason,
@@ -43,6 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only_refusal import (
     host_only_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    incident_acceptance_for,
+    incident_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
@@ -60,25 +66,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     is_non_convergence_outcome,
     item_sizing_warnings,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer_write import (
-    write_proof_pointer,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import (
     resolve_stall_window,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
-    acceptance_decision,
     effective_acceptance_policy,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    WorkItemNotFoundError,
-)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -91,17 +86,10 @@ __all__: list[str] = [
     "warn_item_sizing",
 ]
 
-_LEDGER_WRITE_ERRORS = (
-    WorkItemNotFoundError,
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
 _NO_CHANGE_NEEDED_RESOLUTION = "no-longer-applicable"
 
 
-def complete_and_accept(
+def complete_and_accept(  # noqa: PLR0911, PLR0915 — one return per disposition the valve ends in, and one per ledger write the claim-token protocol can refuse.
     *,
     repo: Path,
     item: WorkItem,
@@ -125,6 +113,13 @@ def complete_and_accept(
     under EVERY `acceptance_policy`, `ai-only` included: the pass could not
     observe what a judgment needs, and absence of evidence disposes of nothing.
 
+    EVERY LEDGER WRITE HERE IS A CLAIM-CHANGING WRITE, made through
+    `CompletionClaim`. With `dispatcher.claim_tokens` true the completion and
+    each close land only after this valve has won the item's current claim
+    token. A refused write has written nothing to the item, so the valve stops
+    there and returns the refusal: an acceptance pass run against an item some
+    other writer now holds would judge, park or close work it no longer owns.
+
     RETURNS the disposition so the dispatch RESULT can report it. The parking
     verdict clause governs the result as well as the ledger, and the run terminal
     this is handed says `green` at `done` because the janitor built it before the
@@ -132,7 +127,10 @@ def complete_and_accept(
     parked item as a completed close, which is exactly finding F7(b).
     """
     config = store_config(repo=repo)
-    write_work_item_status_and_reconcile(path=config, item_id=item.id, status="acceptance")
+    claim = CompletionClaim(repo=repo, path=config, item=item, outcome=outcome, journal=journal)
+    refused = claim.complete(write=write_work_item_status_and_reconcile)
+    if refused is not None:
+        return AcceptanceDisposition(verdict=None, closed=False, refusal=refused)
     journal.append(record={"stage": "ledger-complete", "work_item_id": item.id})
     # An unreadable `.livespec.jsonc` falls back to the documented default
     # policy, visibly and here rather than inside the reader.
@@ -145,6 +143,9 @@ def complete_and_accept(
     # An unreadable label set is NOT a declaration, so it fails closed to the
     # empty marker set and the pass classifies the item change-implying.
     labels = read_dispatch_labels(repo=repo, item=item)
+    # An expedited incident is graded on its cumulative original change plus the
+    # current repayment carrier, and closes only once its chain records `closed`.
+    incident = incident_acceptance_for(config=config, item_id=item.id, merged_pr=outcome.pr_number)
     acceptance_pass = run_acceptance_pass(
         repo=repo,
         item=item,
@@ -154,20 +155,24 @@ def complete_and_accept(
         # identifiers: the dispatch id lives only in the `dispatch-id` record, and
         # the reconcile valve reaches here with an outcome carrying no run id.
         journal_path=journal.path,
+        incident=incident.scope,
     )
     journal.append(record=acceptance_pass.journal_record(work_item_id=item.id, policy=policy))
     # The pointer is written BEFORE any disposition branch, because every branch
     # is a possible end state for the item and the pointer is provenance of the
     # merge rather than of the verdict: an item that parks keeps the record its
-    # pass read, and one that closes carries the pointer into `done`.
-    write_proof_pointer(
+    # pass read, and one that closes carries the pointer into `done`. A merge the
+    # incident chain does not bind as its current carrier gets no pointer, and
+    # neither close below may discharge an incident that still owes anything.
+    decision = incident_decision(
         repo=repo,
         item=item,
         outcome=outcome,
         proof=acceptance_pass.proof,
         journal=journal,
+        incident=incident,
+        policy=policy,
     )
-    decision = acceptance_decision(policy=policy)
     if acceptance_pass.verdict == NEEDS_ATTENTION_VERDICT:
         # A cannot-judge verdict NEVER disposes, under EVERY acceptance_policy
         # including `ai-only`: the delegation `ai-only` grants is the authority
@@ -185,7 +190,11 @@ def complete_and_accept(
             journal=journal,
         )
         return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=False)
-    if acceptance_pass.verdict == NO_CHANGE_NEEDED_VERDICT and decision.to_done:
+    verdict = acceptance_pass.verdict
+    if verdict == NO_CHANGE_NEEDED_VERDICT and decision.to_done:
+        refused = claim.hold_for_close(intent="close-no-change-needed")
+        if refused is not None:
+            return AcceptanceDisposition(verdict=verdict, closed=False, refusal=refused)
         close_dispatch_item(
             repo=repo,
             item=item,
@@ -232,6 +241,9 @@ def complete_and_accept(
         and acceptance_pass.verdict == "PASS"
         and not _pending_legs(item=item, acceptance_pass=acceptance_pass)
     ):
+        refused = claim.hold_for_close(intent="close-completed")
+        if refused is not None:
+            return AcceptanceDisposition(verdict=verdict, closed=False, refusal=refused)
         close_dispatch_item(
             repo=repo,
             item=item,
@@ -317,6 +329,10 @@ def bounce_non_convergence_to_backlog(
     `non-convergence-bounce-error` and swallowed — the dispatch never
     crashes on the escalation write (mirroring the cost-gate / calibration
     fail-soft stages). A genuine bug still propagates.
+
+    The bounce is a claim-changing write: with `dispatcher.claim_tokens` true it
+    lands only after winning the item's current claim token, and a bounce that
+    loses it writes nothing to the item and journals `claim-write-refused`.
     """
     if not is_non_convergence_outcome(outcome=outcome):
         return
@@ -327,12 +343,10 @@ def bounce_non_convergence_to_backlog(
     # a slice that genuinely would not converge.
     cap = non_convergence_cap(outcome=outcome, stall_seconds=resolve_stall_window(cwd=repo).seconds)
     updated = attempt(
-        action=lambda: update_work_item_status(
-            path=store_config(repo=repo),
-            item_id=item.id,
-            status="backlog",
-        ),
-        exceptions=_LEDGER_WRITE_ERRORS,
+        action=lambda: CompletionClaim(
+            repo=repo, path=store_config(repo=repo), item=item, outcome=outcome, journal=journal
+        ).bounce(write=update_work_item_status),
+        exceptions=LEDGER_WRITE_ERRORS,
     )
     if isinstance(updated, AttemptFailure):
         journal.append(
@@ -343,6 +357,10 @@ def bounce_non_convergence_to_backlog(
                 **cap.as_record(),
             }
         )
+        return
+    if updated is not None:
+        # The claim-token protocol refused the write and journaled why; the
+        # slice was not bounced, so no bounce record or surface line is owed.
         return
     journal.append(
         record={

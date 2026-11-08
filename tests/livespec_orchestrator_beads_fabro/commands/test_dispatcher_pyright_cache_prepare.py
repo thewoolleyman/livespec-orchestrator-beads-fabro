@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -80,6 +81,35 @@ def _write_fake_npm(*, bin_dir: Path) -> None:
     script.chmod(0o755)
 
 
+def _write_fake_node(*, bin_dir: Path) -> None:
+    script = bin_dir / "node"
+    _ = script.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        'test "$1" = -p\n'
+        "python3 - \"$3\" <<'PY'\n"
+        "import json, pathlib, sys\n"
+        "print(json.loads(pathlib.Path(sys.argv[1]).read_text())['version'])\n"
+        "PY\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+
+# Every host program the rendered prepare script and the stand-ins above invoke,
+# apart from the stand-ins themselves. The script's PATH is built only from these,
+# so a real `node` on the host (for example `/usr/bin/node`) can never be reached.
+_HOST_TOOLS = ("find", "gzip", "mkdir", "mktemp", "mv", "python3", "rm", "sed", "sh", "tar")
+
+
+def _link_host_tools(*, tools_dir: Path) -> None:
+    tools_dir.mkdir()
+    for name in _HOST_TOOLS:
+        resolved = shutil.which(name)
+        assert resolved is not None, f"host tool {name!r} is not on PATH"
+        (tools_dir / name).symlink_to(os.path.realpath(resolved))
+
+
 def test_prepare_step_replaces_a_partial_locked_cache_with_the_complete_archive(
     tmp_path: Path,
 ) -> None:
@@ -89,6 +119,7 @@ def test_prepare_step_replaces_a_partial_locked_cache_with_the_complete_archive(
     bin_dir.mkdir()
     _write_fake_uv(bin_dir=bin_dir)
     _write_fake_npm(bin_dir=bin_dir)
+    _write_fake_node(bin_dir=bin_dir)
     home = tmp_path / "home"
     partial = home / ".cache" / "pyright-python" / _VERSION / "node_modules" / "pyright"
     partial.mkdir(parents=True)
@@ -99,11 +130,18 @@ def test_prepare_step_replaces_a_partial_locked_cache_with_the_complete_archive(
 
     rendered = tomli.loads(module.pyright_cache_prepare_steps_block())
     script = rendered["run"]["prepare"]["steps"][0]["script"]
+    host_tools = tmp_path / "host-tools"
+    _link_host_tools(tools_dir=host_tools)
+    assert shutil.which("node", path=str(host_tools)) is None
     result = subprocess.run(
         ["sh", "-c", script],
         check=False,
         capture_output=True,
-        env={**os.environ, "HOME": str(home), "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "PATH": f"{bin_dir}{os.pathsep}{host_tools}",
+        },
         text=True,
     )
 

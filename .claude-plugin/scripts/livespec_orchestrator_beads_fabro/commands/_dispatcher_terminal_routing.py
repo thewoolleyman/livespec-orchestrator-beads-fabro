@@ -47,6 +47,10 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     update_work_item_blocked_state,
 )
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import terminal_claim
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_blocked_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
 )
@@ -137,12 +141,16 @@ def _dispose_external_fabro_cancel(
             }
         )
     rested = attempt(
-        action=lambda: update_work_item_blocked_state(
+        action=lambda: claim_blocked_write(
+            repo=repo,
             path=store_config(repo=repo),
+            intent="external-cancel-rest",
+            write=update_work_item_blocked_state,
             item_id=item.id,
-            status="blocked",
             blocked_reason="needs-human",
             admission_policy="manual",
+            journal=journal,
+            still_as_decided=terminal_claim(item=item, run_id=outcome.fabro_run_id),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )

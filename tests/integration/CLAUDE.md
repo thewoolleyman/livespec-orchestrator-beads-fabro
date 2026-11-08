@@ -9,6 +9,18 @@ requires for a `scenarios.md` heading binding (integration-tier-or-above, never
 a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 `heading_coverage` check's default allowlist.
 
+- `test_incident_provenance_receipts.py` — binds `SPECIFICATION/scenarios.md`
+  "Scenario: incident provenance exceptions remain exact and repayable"
+  (bd-ib-y7ryj3). Each case drives the factory-provenance merge gate's `main` or
+  the retrospective factory-bypass audit's `main` with operator arguments
+  (`--incident-item`) against the in-memory tenant the `tmp_path` repository
+  configures, with the retained incident chain seeded as the canonical writer
+  records it: a receipt admits only its exact PR, head and landed commits; the
+  audit reports an incident exception with its outstanding normal repayment;
+  verification survives the loss of labels and environment and refuses an
+  unreadable chain rather than passing; a retained repayment carrier is refused
+  the `factory-override` label while the factory App passes.
+
 - `test_fleet_launch_scenario297.py` — binds `SPECIFICATION/scenarios.md`
   Scenario 297 by running the shipped `check-fleet-launch` driver over the
   committed tree. The hermetic harness proves a queued younger ticket begins

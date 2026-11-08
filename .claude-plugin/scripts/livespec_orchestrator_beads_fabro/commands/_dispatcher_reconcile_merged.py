@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_pr import (
+    incident_selection,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     invoker_from_args,
     require_invoker_refusal,
@@ -154,17 +157,36 @@ def run_reconcile_merged_command(
     # it outranks the item's status; an item resting in `acceptance` then takes the
     # re-accept arm, because its merge and its janitor already ran and the clause
     # forbids running either again.
+    # Absent on the namespaces the probe and the host-record primitive build, which
+    # never select a pull request.
+    selected_pr: int | None = getattr(args, "pr", None)
+    selection = incident_selection(
+        repo=repo, item=item, runner=command_runner, plan=plan, selected_pr=selected_pr
+    )
+    if isinstance(selection, int):
+        return selection
+    plan, selected_pr = selection
     if args.regrade:
         outcome = run_regrade(
             repo=repo, item=item, plan=plan, runner=command_runner, journal=journal
         )
     elif item.status == ACCEPTANCE_STATUS:
         outcome = _reaccept_in_acceptance(
-            repo=repo, item=item, plan=plan, runner=command_runner, journal=journal
+            repo=repo,
+            item=item,
+            plan=plan,
+            runner=command_runner,
+            journal=journal,
+            selected_pr=selected_pr,
         )
     else:
         outcome = _janitor_and_accept(
-            repo=repo, item=item, plan=plan, runner=command_runner, journal=journal
+            repo=repo,
+            item=item,
+            plan=plan,
+            runner=command_runner,
+            journal=journal,
+            selected_pr=selected_pr,
         )
     if isinstance(outcome, int):
         return outcome
@@ -174,7 +196,12 @@ def run_reconcile_merged_command(
 
 
 def _resolved_merge(
-    *, item: WorkItem, plan: DispatchPlan, runner: CommandRunner, journal: JournalFile
+    *,
+    item: WorkItem,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalFile,
+    selected_pr: int | None,
 ) -> PrView | int:
     """The merge both non-regrade arms key on, or the exit code that refuses.
 
@@ -183,7 +210,9 @@ def _resolved_merge(
     could come to name two different pull requests, and the disagreement would be
     invisible because each would be a plausible merge.
     """
-    merged = resolve_merged_pr(plan=plan, item=item, runner=runner, journal=journal)
+    merged = resolve_merged_pr(
+        plan=plan, item=item, runner=runner, journal=journal, selected_pr=selected_pr
+    )
     if isinstance(merged, str):
         _ = write_stderr(text=merged)
         return EXIT_PRECONDITION_ERROR
@@ -200,13 +229,16 @@ def _janitor_and_accept(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalFile,
+    selected_pr: int | None,
 ) -> DispatchOutcome | int:
     """The ordinary arm: resolve the merge, re-run the janitor, then accept.
 
     Returns the terminal outcome for the shared tail to journal and emit, or an
     exit code when no single merged pull request resolves.
     """
-    merged = _resolved_merge(item=item, plan=plan, runner=runner, journal=journal)
+    merged = _resolved_merge(
+        item=item, plan=plan, runner=runner, journal=journal, selected_pr=selected_pr
+    )
     if isinstance(merged, int):
         return merged
     outcome = post_merge(
@@ -231,6 +263,7 @@ def _reaccept_in_acceptance(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalFile,
+    selected_pr: int | None,
 ) -> DispatchOutcome | int:
     """Re-run ONLY the acceptance pass for an item already resting in `acceptance`.
 
@@ -252,7 +285,9 @@ def _reaccept_in_acceptance(
     a verdict, and by which an item whose pointer was skipped gets one: the pointer
     write lives inside `complete_and_accept`, before any disposition branch.
     """
-    merged = _resolved_merge(item=item, plan=plan, runner=runner, journal=journal)
+    merged = _resolved_merge(
+        item=item, plan=plan, runner=runner, journal=journal, selected_pr=selected_pr
+    )
     if isinstance(merged, int):
         return merged
     outcome = DispatchOutcome(

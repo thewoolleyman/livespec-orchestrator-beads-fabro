@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
     CriterionCheck,
@@ -35,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import pointer_in
 from livespec_orchestrator_beads_fabro.types import WorkItem
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 
 __all__: list[str] = [
     "EFFECTIVE_CRITERIA_LEG",
@@ -130,7 +134,7 @@ class AcceptancePassResult:
         }
 
 
-def run_acceptance_pass(
+def run_acceptance_pass(  # noqa: PLR0913 — kw-only; the pass's inputs, each independently optional.
     *,
     repo: Path,
     item: WorkItem,
@@ -138,6 +142,7 @@ def run_acceptance_pass(
     runner: CommandRunner | None = None,
     raw_labels: Sequence[str] = (),
     journal_path: Path | None = None,
+    incident: IncidentAcceptanceScope | None = None,
 ) -> AcceptancePassResult:
     """Read the merged diff, judge criteria, watch telemetry, and return a verdict.
 
@@ -157,10 +162,16 @@ def run_acceptance_pass(
     no-journal caller: the accepted set reduces to the outcome's own Fabro run id,
     which is a narrower question and never a wider one. Every production call site
     passes one.
+
+    `incident` is an expedited incident's acceptance scope: the merged-diff leg
+    then grades the original expedited carriers together with the current
+    repayment carrier, and is unobservable for any other merged PR.
     """
     active_runner = ShellCommandRunner() if runner is None else runner
     classification = change_classification(raw_labels=raw_labels)
-    diff_result = read_merged_diff(repo=repo, outcome=outcome, runner=active_runner)
+    diff_result = read_merged_diff(
+        repo=repo, outcome=outcome, runner=active_runner, incident=incident
+    )
     telemetry = _telemetry_evidence(outcome=outcome)
     criteria = effective_criteria(item=item)
     # A non-empty `proof_modes` is exactly the condition the clause draws the line

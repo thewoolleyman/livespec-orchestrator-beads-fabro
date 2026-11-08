@@ -107,6 +107,23 @@ span, its attributes, its join to the run's trace, and the Honeycomb board or
 trigger that consumes it), and treat the Honeycomb query as the acceptance
 evidence.
 
+### Querying Honeycomb when the session's MCP plugin offers only OAuth (measured 2026-11-06)
+
+The Honeycomb MCP plugin in a session can offer only its `authenticate` tool, a
+browser OAuth flow. An unattended session has nobody to complete it, which reads
+as "Honeycomb is unreachable". It is not. Under the env wrapper,
+`HONEYCOMB_MCP_API_KEY_LIVESPEC` is accepted as an `Authorization: Bearer`
+token by `https://mcp.honeycomb.io/mcp`. Speak JSON-RPC to it: `initialize`,
+then the `notifications/initialized` notification, then `tools/call` with
+`run_query` and environment `livespec`. Keep the `Mcp-Session-Id` response
+header and accept SSE-framed replies.
+
+`HONEYCOMB_CONFIG_KEY_LIVESPEC` is not a substitute. The v1 Query API answers it
+with 401 "this API key isn't allowed to execute queries". Probe either key by
+length only, never by value. The measurement was the stability-bar
+classification on plan epic `bd-ib-nmuyjc`, whose 2026-11-04 positive control
+returned exactly its four known failures through this route.
+
 ## A false prior-art hit closes the question (measured 2026-08-22)
 
 `.ai/instrument-aim-traps.md` covers instruments that cannot return a hit

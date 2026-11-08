@@ -98,7 +98,7 @@ jobs:
     name: ${{ matrix.target }} (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -184,21 +184,20 @@ jobs:
       # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
       # approach is invisible to it. It MUST be the --global write to
       # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
       # (Replaces the mise-action install + the actions/cache uv restore — the
       # container image is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       # bd-ib-sfa2, the NARROW ROUTE (maintainer-decided 2026-07-21).
       #
@@ -233,37 +232,71 @@ jobs:
           # is lost. Verified in the image: `sh -e -c 'false; echo X'` exits 1
           # without printing.
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           # HOME deliberately NOT under /tmp: that would put the venue inside
           # the `/tmp/*` coverage omit glob (pyproject.toml) and trip
           # livespec-impl-beads-1l6's regression guard.
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           # The root-side safe.directory trust was written to /github/home,
           # which uid 1000 does not read (its HOME is /home/ci). Without this,
           # every git call from a check fails "detected dubious ownership".
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       # No `--cov` or fail-under override here: this leg runs the SAME recipe
       # under a different uid, which is the whole point. Nothing about it is
       # advisory, warn-only, or gated behind an env lever — a failure here
       # fails the job, and `ci-green` (the sole required context) fails if any
       # matrix leg fails.
-      # UV_CACHE_DIR for every uid-1000 invocation: on the PowerEdge pool the
-      # hook template points uv at the warm seed /__w/_warm/uv, whose files are
-      # root-owned hardlinks into the fleet generation; uv as uid 1000 cannot
-      # initialize that cache ("Failed to initialize cache", master runs
-      # 33903087096 / 33903145604, 2026-09-04). The nonroot legs forgo the seed
-      # and use a private cache under /home/ci; the root legs keep the seed. The
-      # fleet-level cure is the seed-ownership decision on livespec-ifwnqj
-      # (plan ci-runner-pod-lifecycle-reliability, research/006).
+      # UV_CACHE_DIR for every uid-1000 invocation is NONROOT_UV_CACHE_DIR,
+      # which the prepare step sets to the warm seed /__w/_warm/uv when uid 1000
+      # can write it, and otherwise to a private cold cache under /home/ci. On
+      # 2026-09-04 the seed was root-owned hardlinks into the fleet generation
+      # and uv as uid 1000 could not initialize it ("Failed to initialize cache",
+      # master runs 33903087096 / 33903145604). Since livespec-dev-tooling-hmv2bo
+      # the seed is a private reflink copy per work volume. bd-ib-rpit5z
+      # (plan ci-cache-optimization, lever 4) points the nonroot legs back at it.
       - name: just ${{ matrix.target }} (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -293,15 +326,23 @@ jobs:
   # Each uid produces its OWN `.coverage` under its own artifact name, and the
   # consumer leg for a uid reads only the artifact its own uid produced — so
   # the two legs stay independently gated exactly as before.
-  check-per-file-coverage:
-    name: check-per-file-coverage (${{ matrix.uid }})
-    # bd-ib-uxv5al: the coverage pair routes through its OWN variable so it can
-    # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
-    # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
-    # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
+  # bd-ib-m26pql: per-file coverage as PARALLEL SHARDS. The suite was the PR
+  # critical path (check-per-file-coverage nonroot: median 35.0 min, p90 63.4,
+  # n=39 since 2026-11-04T20Z) because every pod runs at most
+  # LIVESPEC_TEST_PARALLELISM=3 xdist workers. Each shard runs a disjoint
+  # round-robin quarter of the tracked test files (dev-tooling/just-coverage-shard.sh)
+  # and only RECORDS coverage; check-per-file-coverage below `needs` every shard,
+  # combines their data, and runs the unchanged canonical per-file verifier.
+  # The shard count is 4: at most 4 churn slots per PR, well inside the free
+  # slots on poweredge-xubuntu (15 of 21 free at 05:05Z 2026-11-05). Raising it
+  # means editing both the `shard` list and the count passed to the recipe.
+  # In ci-green's needs, so a failed shard fails the gate directly. Root-uid
+  # coverage (ci-root-uid.yml) is unchanged and still runs the whole suite.
+  check-per-file-coverage-shard:
+    name: check-per-file-coverage-shard (${{ matrix.uid }}, ${{ matrix.shard }}/4)
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -315,6 +356,112 @@ jobs:
       matrix:
         uid:
           - nonroot
+        shard: [1, 2, 3, 4]
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # Same narrow non-root route as check-per-file-coverage below.
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          chmod 0755 /root
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
+          mkdir -p /home/ci
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
+
+      - name: just coverage-shard ${{ matrix.shard }} 4 (uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
+                MISE_DATA_DIR=/root/.local/share/mise \
+                MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                GITHUB_TOKEN="$GITHUB_TOKEN" \
+                GH_TOKEN="$GH_TOKEN" \
+              just coverage-shard ${{ matrix.shard }} 4
+
+      # include-hidden-files is REQUIRED: the data file is a dotfile.
+      - name: Publish this shard's coverage data for check-per-file-coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ matrix.uid }}-${{ matrix.shard }}
+          path: .coverage-shards/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  check-per-file-coverage:
+    name: check-per-file-coverage (${{ matrix.uid }})
+    # bd-ib-m26pql: combines the shards' coverage instead of running the suite.
+    needs: [check-per-file-coverage-shard]
+    # bd-ib-uxv5al: the coverage pair routes through its OWN variable so it can
+    # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
+    # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
+    # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
+    env:
+      # Lane-selected uv bounds from THIS job's routing (see the top-level env).
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      # bd-ib-m26pql: just-check-per-file-coverage.sh combines this directory's
+      # shard data instead of re-running the suite.
+      LIVESPEC_COVERAGE_SHARDS_DIR: .coverage-shards
+    strategy:
+      fail-fast: false
+      matrix:
+        uid:
+          - nonroot
     steps:
       # Per-step `if:` (not job-level) so the job still reports its own status
       # check name when skipped — same pattern as the check-python matrix.
@@ -322,16 +469,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
+          uv sync --all-groups
 
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+      # bd-ib-m26pql: every shard's data, downloaded BEFORE the non-root prep so
+      # its chown covers the files uid 1000 combines.
+      - name: Download every coverage shard's data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-${{ matrix.uid }}-*
+          path: .coverage-shards
+          merge-multiple: true
 
       # Same narrow route as check-python's non-root leg — see that job for the
       # /root-mode rationale and its stated limitation. Runs AFTER `uv sync` so
@@ -340,18 +495,52 @@ jobs:
         if: matrix.uid == 'nonroot'
         run: |
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just check-per-file-coverage (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -374,6 +563,19 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # bd-ib-xevgsx: since 704a96ded the consumer replays the producer's
+      # canonical verdict only when .coverage-gates/per-file.{status,log} exist;
+      # without them it prints "no canonical per-file verdict; running the
+      # suite" and re-runs the whole suite. Ship the verdict beside .coverage.
+      - name: Publish the canonical per-file verdict for the check-coverage consumer
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   # Coverage-pair CONSUMER. Kept as a matrix with a literal `check-coverage`
   # target entry (NOT a plain job) because check-coverage is a tool-backed slug
   # and check-tool-backed-check-completeness requires every tool-backed slug to
@@ -392,7 +594,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -413,41 +615,82 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       # Downloaded BEFORE the non-root prep below, so that step's
-      # `chown -R 1000:1000 "$GITHUB_WORKSPACE"` covers the `.coverage` the
+      # targeted ownership pass over "$GITHUB_WORKSPACE" covers the `.coverage` the
       # uid-1000 leg has to read AND delete (consume-once).
       - name: Download this uid's .coverage from the producer
         uses: actions/download-artifact@v4
         with:
           name: coverage-data-${{ matrix.uid }}
 
+      # bd-ib-xevgsx: restore .coverage-gates/ so check-coverage reads the
+      # producer's verdict instead of re-running the suite.
+      - name: Download this uid's canonical per-file verdict from the producer
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates
+
       - name: Prepare non-root leg (open baked toolchain to uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: just ${{ matrix.target }} (uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci \
-                UV_CACHE_DIR=/home/ci/.cache/uv \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                 MISE_DATA_DIR=/root/.local/share/mise \
                 MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                 MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -477,7 +720,7 @@ jobs:
     name: check-python-batch (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -493,26 +736,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Prepare non-root leg (open baked toolchain to uid 1000)
         if: matrix.uid == 'nonroot'
         run: |
           chmod 0755 /root
-          chmod -R a+rX /root/.config /root/.local
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
           mkdir -p /home/ci
-          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
           setpriv --reuid=1000 --regid=1000 --clear-groups \
             env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
 
       - name: Run the batched python checks (nonroot)
         if: matrix.uid == 'nonroot'
@@ -520,7 +796,7 @@ jobs:
           run_nonroot() {
             setpriv --reuid=1000 --regid=1000 --clear-groups \
               env HOME=/home/ci \
-                  UV_CACHE_DIR=/home/ci/.cache/uv \
+                  UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
                   MISE_DATA_DIR=/root/.local/share/mise \
                   MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
                   MISE_NOT_FOUND_AUTO_INSTALL=0 \
@@ -563,7 +839,7 @@ jobs:
     name: check-doctor-static
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -580,16 +856,17 @@ jobs:
       # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
       # approach is invisible to it. It MUST be the --global write to
       # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
       # (Replaces the mise-action install + the actions/cache uv restore — the
       # container image is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not two. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
 
@@ -627,7 +904,7 @@ jobs:
     name: ${{ matrix.target }}
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -663,21 +940,20 @@ jobs:
       # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
       # approach is invisible to it. It MUST be the --global write to
       # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
       # (Replaces the mise-action install + the actions/cache uv restore — the
       # container image is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: just ${{ matrix.target }}
         env:
@@ -718,7 +994,7 @@ jobs:
     name: e2e-cli
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     # SINGLE env block — this job already had a job-level `env:` carrying
     # LIVESPEC_E2E_HARNESS before the baked-image cutover, so the container
     # preamble's vars are MERGED in here rather than added as a second `env:`
@@ -743,21 +1019,20 @@ jobs:
       # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
       # approach is invisible to it. It MUST be the --global write to
       # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
       # (Replaces the mise-action install + the actions/cache uv restore — the
       # container image is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Run the CLI e2e harness (mock tier, fail-closed coverage gate)
         run: just check-e2e-cli
@@ -775,7 +1050,7 @@ jobs:
     name: check-metadata-batch
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -787,16 +1062,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Install commit-refuse hook (satisfy invariant)
         run: just install-commit-refuse-hooks
@@ -832,7 +1106,13 @@ jobs:
           # check-no-shadow-ledger-body-typechecks fails. Put the image's mise
           # shims first on PATH, exactly as the nonroot legs do.
           export PATH="/root/.local/share/mise/shims:$PATH"
+          # bd-ib-oy643z: the shims resolve node from mise's GLOBAL config, which
+          # lives under /root while a hosted container's HOME is /github/home, so
+          # from the check's temp dir the node shim fails "No version is set".
+          export MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml
           just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
+          just check-codex-hook-reconcilable || failed="$failed check-codex-hook-reconcilable"
+          just check-delegated-gate-check-suite || failed="$failed check-delegated-gate-check-suite"
           just check-handoff-dispatch-routing || failed="$failed check-handoff-dispatch-routing"
           just check-heading-coverage-debt-register || failed="$failed check-heading-coverage-debt-register"
           just check-hook-trees-not-io-exempt || failed="$failed check-hook-trees-not-io-exempt"
@@ -904,7 +1184,7 @@ jobs:
     name: acceptance
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -921,21 +1201,20 @@ jobs:
       # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
       # approach is invisible to it. It MUST be the --global write to
       # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
       # (Replaces the mise-action install + the actions/cache uv restore — the
       # container image is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: Run golden-master acceptance harness
         run: just acceptance
@@ -985,7 +1264,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -995,16 +1274,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools; install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: uv sync (all groups)
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       - name: just check-factory-provenance
         run: just check-factory-provenance
@@ -1023,7 +1301,7 @@ jobs:
   # (push-only, not a gate) is intentionally absent from `needs:`.
   ci-green:
     name: ci-green
-    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance]
+    needs: [check-python, check-per-file-coverage-shard, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance]
     if: always()
     runs-on: ubuntu-latest
     steps:

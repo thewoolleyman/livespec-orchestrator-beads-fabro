@@ -2549,18 +2549,19 @@ Feature: Per-node timeouts are configuration, rendered literally
   I want each node's timeout to be a configured value with a 30-minute default
   So that the node timeout is the only ceiling and it is always a decision
 
-Scenario: A default target renders every node at 1800 seconds
+Scenario: A default target renders each node's declared timeout, or 1800 seconds when it declares none
   Given a dispatch target with no "dispatcher.node_timeouts" table
   When the Dispatcher renders the dispatch payload's workflow graph
-  Then every node's timeout attribute is the literal duration 1800s
+  Then every node that declares a timeout carries that declared value as a literal duration
+  And every node that declares none carries the literal duration 1800s
   And the run's stall_timeout attribute is the literal duration 7200s
   And no timeout attribute contains a template opener
 
-Scenario: A configured node keeps its value and the others keep the default
+Scenario: A configured node keeps its value and the others resolve through the lower layers
   Given a dispatch target whose "dispatcher.node_timeouts" sets implement to 7200
   When the Dispatcher renders the dispatch payload's workflow graph
   Then the implement node's timeout attribute is the literal duration 7200s
-  And every other node's timeout attribute is the literal duration 1800s
+  And every other node's timeout attribute is the literal duration its workflow graph declares, or 1800s when it declares none
   And the dispatch record names the repository layer for the implement timeout
 
 Scenario: The subprocess ceiling follows the resolved graph
@@ -6430,12 +6431,34 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
     Then the run-wall-budget-exceeded record anchors the published head and the new run enters at proof_capture
   Scenario: An export that cannot be read back holds the cancel until it can
     Given a run past the budget whose preserve-by-reference pointer cannot be read back
+    And origin holds no verified preservation ref of the run
     When the watchdog samples the run
     Then it does not cancel the run
     And the journal carries a run-wall-budget-held record naming the run, the elapsed seconds, the budget and the failed measurement
     And the export is re-attempted on the immediately following poll
-    And while that re-attempt's read-back fails the run is still not cancelled
+    And while that re-attempt's read-back fails and no verified preservation ref exists the run is still not cancelled
     And once a re-attempt's read-back succeeds the run is cancelled as run-wall-budget-exceeded
+  Scenario: A verified preservation ref releases a held budget cancel
+    Given a run past the budget whose preserve-by-reference pointer cannot be read back
+    And a remote ref listing of origin shows refs/heads/needs-human/<run-id> at a commit whose tree equals the run branch's committed tip as the run's record reports it
+    When the watchdog samples the run
+    Then the run is cancelled as run-wall-budget-exceeded
+    And the record and the item's ledger comment name that ref and its commit id and state that the export could not be read back
+    And the item rests at blocked with blocked_reason needs-human
+  Scenario: A held budget cancel with no verified copy escalates once and keeps the run
+    Given a run past the budget whose export read-back has failed on three consecutive polls
+    And no remote ref listing of origin shows a verified preservation ref of the run
+    When the Dispatcher journals the third run-wall-budget-held record for the run
+    Then the journal carries one run-wall-budget-hold-escalated record for the run
+    And the item carries one ledger comment naming the run, the factory, the elapsed seconds, the budget, each failed measurement, that no verified preservation ref exists, and the remedy
+    And the run is not cancelled and the item's status is unchanged
+    And a later poll that finds a verified preservation ref cancels the run as run-wall-budget-exceeded without a second escalation
+  Scenario: An unreadable ref listing is not an absent ref
+    Given a run past the budget whose export read-back fails
+    And the remote ref listing of origin cannot be taken on that poll
+    When the watchdog samples the run
+    Then the run-wall-budget-held record names the failed ref listing as a failed measurement
+    And the run is not cancelled on that poll
   Scenario: The budget takes precedence over a simultaneous stall
     Given a run whose slot-holding time exceeds its budget
     And whose heartbeat and event stream have both stayed unchanged for the full stall window with no command node open
@@ -6478,34 +6501,34 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
 ## Scenario 176 — A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human
 
 ```gherkin
-Feature: A janitor-green run survives a default branch that moved under it
+Feature: A green run survives a default branch that moved under it
   As the maintainer of a repository dispatched to the factory
   I want a refresh conflict or a post-refresh gate failure repaired inside the run
   So that hours of finished, green work are not discarded at publication
 
-  Scenario: A conflicted publish_draft refresh routes to a repair turn
-    Given a run whose janitor stage succeeded at head H
+  Scenario: A conflicted pre-aggregate janitor refresh routes to a repair turn
+    Given a run whose implement stage left head H
     And origin's default branch has advanced with a commit that conflicts with the run's work
-    When publish_draft refreshes the run onto the default branch
-    Then publish_draft aborts the rebase and the run's working branch is at H
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch
+    Then the janitor aborts the rebase and the run's working branch is at H
     And a refresh-repair brief names H, the conflicted paths and the run commit being applied
     And the run enters the fix node rather than needs_human
     And after the fix turn the run re-enters janitor, then publish_draft, then proof_capture
 
   Scenario: A refreshed head that fails the gate is restored and repaired
-    Given a run whose janitor stage succeeded at head H
-    And the refresh onto the advanced default branch completes without conflict
-    And the repository-declared gate rejects the refreshed head
-    When publish_draft publishes
+    Given a run whose implement stage left head H
+    And the janitor's pre-aggregate refresh onto the advanced default branch completes without conflict and changes the tree
+    And the janitor's full check aggregate rejects the refreshed head
+    When the janitor finishes its aggregate
     Then the run's working branch is reset to H
     And the run enters the fix node with a brief naming each failed gate target
     And the run does not end at needs_human
 
   Scenario: A refresh commit refused by the commit hook is restored and repaired
-    Given a run whose janitor stage succeeded at head H
-    And the refresh onto the advanced default branch conflicts on no path
+    Given a run whose implement stage left head H
+    And the janitor's pre-aggregate refresh onto the advanced default branch conflicts on no path
     And the repository's commit hook refuses the commit the refresh makes
-    When publish_draft refreshes the run onto the default branch
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch
     Then the run's working branch is reset to H with no merge or rebase in progress
     And a refresh-repair brief names H, the targeted default-branch commit and each target the hook named as failed
     And the run enters the fix node rather than needs_human
@@ -6539,7 +6562,7 @@ Feature: A janitor-green run survives a default branch that moved under it
 
   Scenario: A repair round leaves the review-fix budget untouched
     Given a run that has used one review-fix round
-    When a publish_draft refresh conflict routes the run to a refresh-repair round
+    When a conflict in the janitor's pre-aggregate refresh routes the run to a refresh-repair round
     Then the run still has the same number of review-fix rounds remaining as before the repair
 
   Scenario: Only conflicting or gate-failing refreshes count toward the non-convergence bound
@@ -6555,7 +6578,7 @@ Feature: A janitor-green run survives a default branch that moved under it
     And pr arms auto-merge for the head the latest verified or carried_forward record names, and the run does not end pr-refresh-non-converged
 
   Scenario: The repair budget is bounded
-    Given a run that has already taken two refresh-repair rounds across publish_draft and pr_refresh
+    Given a run that has already taken two refresh-repair rounds across the janitor's pre-aggregate refresh and pr_refresh
     When its next refresh conflicts again
     Then the stage fails closed to needs_human with the cause refresh-repair-exhausted
     And the recovery artifact pointer names that stage's pre-refresh head
@@ -6819,10 +6842,11 @@ Feature: A factory agent's commit leg is not bounded by one tool call
 
   Scenario: A Green amend whose hook outlasts one tool call completes
     Given a review_fix-stage agent whose Green amend fires a commit hook that runs longer than one of its tool calls
-    When the agent starts the amend through the sandbox commit runner and repeats bounded waits in later tool calls
-    Then the amend completes with the hook's own verdict
+    When the agent starts the amend through the sandbox commit runner, waits on it once, and ends its turn while the commit run is still running
+    Then the run waits on that commit run before the review_fix stage's outcome is decided
+    And the amend completes with the hook's own verdict
     And the resulting commit carries every trailer the hook wrote
-    And the final wait reports the passed state, exit status zero and the resulting commit id
+    And the settled commit run reports the passed state, exit status zero and the resulting commit id
 
   Scenario: A commit refused by its hook is reported as failed
     Given a commit started through the sandbox commit runner whose hook refuses it
@@ -6848,6 +6872,14 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     Given a commit started through the sandbox commit runner that is still running
     When the agent starts another commit through the runner
     Then the runner refuses the start and names the running commit run
+
+  Scenario: A fix turn cannot wait twice on one running commit
+    Given a fix-stage agent that started a commit through the sandbox commit runner
+    And the agent's first wait on that commit run reported it running
+    When the agent waits on the same commit run again in the same stage visit
+    Then the runner refuses the wait and leaves the commit run untouched
+    And the refusal reports the commit run as still running
+    And the refusal names the stage's commit-run settle as what will wait on it
 ```
 
 ## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
@@ -7292,6 +7324,103 @@ Feature: Recovery routing for an automatically released item
     When the Dispatcher's next pass grades the item
     Then the refusal is recorded before any claim and before recovery routing
     And the item is neither routed nor offered to the admission valve in that pass
+
+  Scenario: A dispatch honours a current seed ruling ahead of the automatic preference order
+    Given an item resting ready whose earlier run left an older preserved-publish ref P
+    And a livespec-seed-ruling comment on the item names ref R at commit S, and R exists on origin at S
+    When the Dispatcher next dispatches the item
+    Then its recovery route is seeded with R as the preservation reference and S as the immutable commit
+    And its sandbox checks out S, not P's commit
+    And the item carries one livespec-seed-ruling-consumed comment naming the ruling and the run
+
+  Scenario: A seed ruling whose ref moved or vanished holds the item by name
+    Given an item resting ready that carries a current seed ruling naming ref R at commit S
+    And R is absent on origin, or stands at a commit other than S
+    When the Dispatcher next grades the item's recovery route
+    Then the route is held and no run is launched
+    And the recovery-held record names R, S and the commit observed at R, or R's absence
+    And the item is not seeded from any other preserved tree and is not routed fresh
+
+  Scenario: A consumed seed ruling does not govern a later dispatch
+    Given an item carrying a livespec-seed-ruling-consumed comment for its latest seed ruling
+    When the item is later released for recovery again with no newer ruling
+    Then its recovery route is graded by the clause's ordinary order without that ruling
+
+  Scenario: A needs-human ref named outside the run id is honoured as the run's terminal tree
+    Given an item released for recovery whose earlier run has run id U
+    And no ref needs-human/U exists, while ref needs-human/A's tip commit carries the trailer Fabro-Run: U
+    And the item also has an older preserved-publish ref P
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded with needs-human/A as the preservation reference and its tip as the immutable commit
+    And the route is not seeded from P and is not fresh
+
+  Scenario: A recovery route names every needs-human tree it passed over
+    Given an item released for recovery whose route resumes its published pull request
+    And needs-human ref N's tip commit carries the trailer Fabro-Run naming one of the item's earlier runs
+    When the Dispatcher journals the item's recovery-route record
+    Then the record's passed_over_needs_human field lists N with its commit
+
+  Scenario: An unreadable needs-human identification holds rather than routing fresh
+    Given an item released for recovery for which no needs-human ref is named under a run id
+    And the forge read that identifies needs-human refs by their tip commit cannot be taken
+    When the Dispatcher grades the item's recovery route
+    Then the route is held and the recovery-held record names that measurement
+
+  Scenario: The seed-ruling command records a ruling whose ref stands at the ruled commit
+    Given ref R exists on origin at commit S
+    When an operator runs dispatcher.py seed-ruling naming the item, R, S and a reason
+    Then the item carries one livespec-seed-ruling comment naming R, S, the invoker, the reason and the instant
+    And the journal carries one seed-ruling record with the same fields
+
+  Scenario: The seed-ruling command refuses a ref that is absent or at another commit and writes nothing
+    Given ref R is absent on origin, or stands at a commit other than S
+    When an operator runs dispatcher.py seed-ruling naming the item, R and S
+    Then the command exits 3 naming R, S and the commit observed at R, or R's absence
+    And no livespec-seed-ruling comment and no seed-ruling record is written
+
+  Scenario: A current seed ruling takes precedence over an admissible resume
+    Given an item whose published pull request passes every resume precondition
+    And a current seed ruling names ref R at commit S, and R exists on origin at S
+    When the Dispatcher next grades the item's recovery route
+    Then the route is seeded from R at S, not resume
+
+  Scenario: A non-fallback refusal still holds an item that carries a seed ruling
+    Given an item that carries a current seed ruling whose ref stands at the ruled commit
+    And the item's pull request is merged, or its earlier run is live
+    When the Dispatcher next grades the item's recovery route
+    Then the route is held with that non-fallback refusal and its existing remedy
+
+  Scenario: A later seed ruling replaces an earlier one
+    Given an item carrying a seed ruling for ref R1 and a later seed ruling for ref R2, neither consumed
+    When the Dispatcher next dispatches the item
+    Then the route is seeded from R2
+
+  Scenario: A seed-ruling launch whose consumed comment was not written is consumed by reconciliation
+    Given a run launched seeded from a seed ruling whose item carries no livespec-seed-ruling-consumed comment
+    When a reconciliation pass reads that run
+    Then the item gains one livespec-seed-ruling-consumed comment naming the ruling, the dispatch and the run
+
+  Scenario: Of two needs-human refs carrying one run, the one named under a run identifier is taken
+    Given an earlier run U of the item carried by needs-human/U and by needs-human/A
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded from needs-human/U
+    And the recovery-route record lists needs-human/A in passed_over_needs_human
+
+  Scenario: Of two needs-human refs carrying one run under other names, the newer tip is taken
+    Given an earlier run U of the item carried by needs-human/A and needs-human/B and by no ref named under a run identifier
+    And B's tip commit is newer by committer time than A's
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded from needs-human/B
+
+  Scenario: A recovery route with nothing passed over records an empty list
+    Given an item released for recovery whose only needs-human tree is the one its route takes
+    When the Dispatcher journals the item's recovery-route record
+    Then the record carries passed_over_needs_human as an empty list
+
+  Scenario: One needs-human identification serves every item of a routing pass
+    Given two items released for recovery in the same pass
+    When the Dispatcher grades both items' recovery routes
+    Then the needs-human refs and their tip commit messages are listed once for the pass
 ```
 
 ## Scenario 186 — A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor
@@ -7829,30 +7958,30 @@ Feature: The sandbox's PID 1 and the agent adapter survive the agent's signals i
     Then none of the commands is refused
 ```
 
-## Scenario 199 — A fix turn runs the check suite once per tree and counts a commit hook's full green run
+## Scenario 199 — A fix turn grades each tree once, through its commit hook
 
 ```gherkin
 Feature: A fix turn does not spend its time limit on a duplicate check suite
   As the maintainer of a repository dispatched to the factory
-  I want a fix turn to count a commit hook's full green suite run as the turn's suite run
-  So that two full runs of a long suite do not exhaust the fix node's time limit
+  I want a fix turn's commit hook to be the turn's only grading of each tree
+  So that a full suite run does not exhaust the fix node's time limit before the janitor runs it again
 
-  Scenario: A commit whose hook ran the full suite green ends the turn's suite obligation for that tree
+  Scenario: A commit whose hook passed ends the turn's grading obligation for that tree
     Given a fix turn that commits its change
-    And the repository pre-commit hook ran the full check suite to a passing result on the committed tree
+    And the commit hook's gate passed on the committed tree
     When the fix turn completes successfully on that tree
-    Then the fix prompt directs no second run of the suite on that tree in the same turn
+    Then the fix prompt directs no run of the full check suite on that tree in the same turn
 
-  Scenario: A partial hook run or a later change still requires a full run
-    Given a fix turn whose only commit took the hook's partial fast path, or whose tree changed after its last full passing run
-    When the fix turn completes successfully
-    Then the fix prompt directs a full run of the check suite before the turn ends
+  Scenario: A hook run that did not grade the tree, or a later change, still requires a passing commit
+    Given a fix turn whose only commit took the hook's Red fast path, or whose tree changed after its last passing hook run
+    When the fix turn is to complete successfully
+    Then the turn first commits its tree through the commit hook to a passing result
 
   Scenario: A refresh-repair round applies the same rule to the integrated tree
     Given a fix turn entered with a refresh-repair brief
-    And its commit on the integrated tree ran the full check suite green through the pre-commit hook
+    And its commit on the integrated tree passed the commit hook's gate
     When the turn completes the repair successfully
-    Then the fix prompt directs no second run of the suite on that integrated tree in the same turn
+    Then the fix prompt directs no run of the full check suite on that integrated tree in the same turn
 ```
 
 ## Scenario 200 — A refresh whose conflicts lie only in declared record files merges them without a repair round
@@ -7874,7 +8003,7 @@ Feature: Concurrent additions to shared record files do not cost a run a repair 
   Scenario: Insertions by both sides at the same place in a declared Markdown record keep both
     Given a repository that declares tests/integration/CLAUDE.md with format markdown-insertions
     And the default branch and the run each inserted a section at the same position in that file
-    When publish_draft or pr_refresh refreshes the run and the refresh conflicts only in that file
+    When the janitor's pre-aggregate refresh or pr_refresh refreshes the run and the refresh conflicts only in that file
     Then the merged file holds the default branch's inserted lines followed by the run's inserted lines
     And the stage proceeds as after a refresh that did not conflict
 
@@ -7965,7 +8094,7 @@ Feature: An agent stage does not act on instructions its stage prompt never gave
   Scenario: A spec change that arrived through the default branch is not refused
     Given an implement-kind run whose own commits change no spec-root path
     And the default branch gained a ratified spec revision after the run started
-    When publish_draft refreshes the run onto the default branch and prepares to publish
+    When the janitor's pre-aggregate refresh refreshes the run onto the default branch and publish_draft prepares to publish
     Then no spec-root refusal applies
 
   Scenario: Spec-root and workflow refusals are reported separately
@@ -8540,6 +8669,46 @@ Feature: New behaviour gets new spec before it is built
       | a held spec-change-tier item                  | a stem that propose-change's topic canonicalization would change       | the non-canonical topic |
       | a held spec-change-tier item                  | a stem with no proposed change under proposed_changes or the history   | the unknown topic       |
       | a held spec-change-tier item                  | a stem with no pending proposal whose latest revision record is reject | the rejected topic      |
+
+  Scenario: An attestation with no asserted invoker records the invoking session's computed identity
+    Given a held feature and an existing H2 heading that states its asked-for behaviour
+    And release-spec-tier is driven for the item with no --invoker flag and no LIVESPEC_INVOKER in the environment
+    And the invoking session sets an agent session id
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the actor as session:<that agent session id>
+    And neither records an unattributed mark as the actor
+    And the journal entry's envelope invoker and invoker_source are stamped by the append layer exactly as before
+
+  Scenario: An attestation from a human terminal with no asserted invoker records the forge login
+    Given release-spec-tier is driven for a held feature with no asserted invoker
+    And the invoking session sets no agent session id and the forge reports a login
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the actor as human:<that forge login>
+
+  Scenario: An asserted invoker is the attestation's actor
+    Given release-spec-tier is driven for a held feature with an invoker asserted by flag or by environment
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record that asserted invoker as the actor
+
+  Scenario: An attestation with no computable identity records the fallback mark
+    Given release-spec-tier is driven for a held feature with no asserted invoker
+    And the invoking session sets no agent session id and no forge login can be read
+    When the valve records the attestation
+    Then the ledger comment and the dispatch-journal entry record the unattributed:<os-user>@<hostname> mark as the actor
+
+  Scenario: A held item whose generalization target was ratified under another topic names that topic as a relink candidate
+    Given a held spec-change-tier item whose linked topic has no revision record
+    And a revision with decision accept, cut after the item's tier record, amended the body of that record's generalization-target heading under a different topic
+    When a dispatch of the item is refused, and when needs-attention is composed
+    Then the refusal names that topic and its specification version as a relink candidate
+    And needs-attention carries hygiene:spec-tier-relink:<work-item-id> whose handoff is relink-spec-tier:<work-item-id>:<that topic>
+    And the hold is not released, the item is not relinked, and no ledger record is written
+
+  Scenario: A rejected revision is never named as a relink candidate
+    Given a held spec-change-tier item whose linked topic has no revision record
+    And the only revision cut after the item's tier record that amended its generalization-target heading carries decision reject
+    When a dispatch of the item is refused, and when needs-attention is composed
+    Then the refusal names no relink candidate and needs-attention carries no hygiene:spec-tier-relink fact for the item
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
@@ -10509,7 +10678,7 @@ Feature: A push of a tree the aggregate just passed does not run the aggregate a
 
   Scenario: A push of a different tree runs the full gate
     Given the just check aggregate passed on a tree
-    When publish_draft refreshes onto a moved default branch and pushes a commit whose tree differs
+    When pr_refresh refreshes onto a moved default branch and pushes a commit whose tree differs
     Then the pre-push gate runs the full pre-push gate
 
   Scenario: No flag or variable reaches the verdict skip
@@ -10549,12 +10718,12 @@ Feature: The check aggregate does not wait for the pytest lane to run its indepe
     Then its output lists the thirty slowest test phases of that run with their durations
 ```
 
-## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
+## Scenario 255 — A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once
 
 ```gherkin
 Feature: In-turn commits pay the scoped gate, and the full aggregate runs once per run
   As the operator of a factory
-  I want implement and review_fix commits to run only the tests their change affects
+  I want implement, fix and review_fix commits to run only the tests their change affects
   So that a run does not repeat the full check aggregate at every commit before the janitor runs it
 
   Scenario: A review_fix turn's commit runs the affected-tests gate
@@ -10562,10 +10731,27 @@ Feature: In-turn commits pay the scoped gate, and the full aggregate runs once p
     When its commit hook runs
     Then it runs just check-changed on the change and not the full check aggregate
 
+  Scenario: A fix turn's commit runs the affected-tests gate
+    Given a fix turn committing a change to product modules and their tests
+    When its commit hook runs
+    Then it runs just check-changed on the change and not the full check aggregate
+
+  Scenario: A fix turn's commit that leaves a changed module's lines uncovered is refused with those lines
+    Given a fix turn committing a change that leaves lines of a product module it changed uncovered
+    When its commit hook runs
+    Then the commit is refused with a per-file coverage failure naming that module and each missing line
+    And the full check aggregate is not run
+
   Scenario: A change the affected-tests gate cannot scope falls back to the full aggregate
-    Given a review_fix turn committing a change to a shared configuration file
+    Given a fix or review_fix turn committing a change to a shared configuration file
     When its commit hook runs
     Then it runs the full check aggregate
+
+  Scenario: A workflow graph change runs the tests that read the graph
+    Given a fix turn committing a change to the implement-work-item workflow.fabro and no .py file
+    When its commit hook runs
+    Then the affected-tests gate runs every test module that reads that workflow graph
+    And it does not report the change as having nothing to gate
 
   Scenario: The janitor still runs the full aggregate once
     Given a run whose commit_green node committed through the affected-tests gate
@@ -10587,7 +10773,7 @@ Feature: publish_draft tells a landed publication from a failure
   Scenario: publish_draft finds the item's change already merged
     Given a run whose head adds no change to the default branch's tip
     And an earlier dispatch of the item has a pull request that the forge reports MERGED into the default branch with merge commit M contained in the tip
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft does not push or open a pull request
     And the run takes the merged-reconcile ending and records the pull request, merge commit M and the merged head
 
@@ -10601,19 +10787,19 @@ Feature: publish_draft tells a landed publication from a failure
   Scenario: A run that adds a change has not landed
     Given a run whose head adds a change to the default branch's tip
     And an earlier dispatch of the item has a MERGED pull request
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft pushes and opens a pull request as before
 
   Scenario: A reused branch name does not make a publication landed
     Given a run whose head adds no change to the default branch's tip
     And a MERGED pull request on the same branch name that no dispatch of this item produced
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
 
   Scenario: A merge into another base does not make a publication landed
     Given a run whose head adds no change to the default branch's tip
     And a pull request of an earlier dispatch of the item MERGED into a branch other than the default branch
-    When publish_draft finishes its refresh
+    When publish_draft runs, before it pushes
     Then publish_draft keeps its existing behaviour and does not take the merged-reconcile ending
 ```
 
@@ -10842,7 +11028,15 @@ Feature: Exactly one writer changes a dispatch claim
     Given a takeover writer that has won successor token S of an item whose closed token T named S
     And the original winner's item write naming S lands before the takeover's re-read
     When the takeover writer re-reads the item immediately before its write
-    Then it writes nothing, discards its own successor and reports claim-changed
+    Then it writes no status change, names its successor as the item's current token, and reports claim-changed
+    And the next claim writer wins that successor and its write lands
+
+  Scenario: A takeover follows a chain of closed tokens to the open one
+    Given an item naming closed token T whose close reason names S, and S is closed naming S2, and S2 is open
+    And a claim writer has observed T closed and S not named for the takeover wait on its own clock
+    When that writer treats S as current and finds it closed naming S2, which the item does not name
+    Then it reports claim-transition-pending until it has observed that state for the takeover wait too
+    And it then wins S2 and its write lands
 
   Scenario: After cutover, an item with no token is refused, not written blind
     Given dispatcher.claim_tokens is committed true
@@ -11410,6 +11604,15 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     Then the preview passes and the turn's handoff section records that last preview run
     And no re-entry budget was spent on either preview run
 
+  Scenario: A gate preview inherits a check-skip variable and still reports the skipped check's failure
+    Given a green turn whose environment carries LIVESPEC_CHECK_SKIP naming check-keyword-only-args
+    And a change that fails the repository's check-keyword-only-args target
+    When the turn runs the gate preview before ending
+    Then the preview runs check-keyword-only-args and names it as failed
+    And the preview's report names LIVESPEC_CHECK_SKIP as a variable it unset for its run
+    And the turn's environment still carries LIVESPEC_CHECK_SKIP after the preview ends
+    And no commit was created and no re-entry budget was spent
+
   Scenario: A purely mechanical Green refusal re-enters green without spending its ordinary re-entry
     Given a repository that declares check-lint and check-per-file-coverage as mechanical targets
     And commit_green's hook refuses naming only check-per-file-coverage
@@ -11853,6 +12056,57 @@ Feature: Tests order by injected clocks and deterministic events, not real time
     And the same marker with an empty reason is still refused
 ```
 
+## Scenario 305 — The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate
+
+```gherkin
+Feature: A green run pays the full check aggregate once, on the tree it pushes
+  As the operator of a factory whose default branch moves during long runs
+  I want the refresh onto the default branch to happen before the janitor
+  So that publish_draft's push reuses the janitor's green verdict instead of re-running the aggregate
+
+  Scenario: A moved default branch is integrated before the aggregate runs
+    Given a run whose implement stage committed green on a base the default branch has since advanced past
+    When the janitor visit that precedes publish_draft runs
+    Then it refreshes the run's working branch onto the default branch's current tip before it runs the full check aggregate
+    And the aggregate's green verdict is recorded for the refreshed tree
+
+  Scenario: publish_draft pushes the janitor-passed head without refreshing
+    Given a janitor visit passed the full check aggregate on a refreshed head
+    And the default branch has advanced again since that refresh
+    When publish_draft runs
+    Then it pushes exactly the janitor-passed head without refreshing
+    And the pre-push gate honours the recorded green verdict and does not run the tree-pure members again
+
+  Scenario: A conflicting pre-aggregate refresh takes the refresh-repair route
+    Given the default branch advanced with a change that conflicts with the run's commits
+    When the janitor's pre-aggregate refresh conflicts
+    Then the janitor restores the head the preceding agent stage left, records a refresh-repair brief naming the conflicted paths, and routes to fix
+    And the run does not end at needs_human with LIVESPEC_REFRESH_REPAIR_ABSENT
+
+  Scenario: An aggregate failure on a changed refreshed head takes the refresh-repair route
+    Given the janitor's pre-aggregate refresh changed the tree
+    When the full check aggregate fails on the refreshed head
+    Then the janitor restores the pre-refresh head and records a refresh-repair brief naming each failed target
+
+  Scenario: A refresh merge commit's passing hook aggregate is the janitor's grading of the merged tree
+    Given the janitor's pre-aggregate refresh integrates the default branch's tip by a merge commit
+    When the janitor creates the merge without committing and commits it through the repository's commit hooks
+    And the commit's pre-commit hook runs the full check aggregate to a pass on exactly the merged tree
+    Then the janitor records the green verdict for that tree
+    And the janitor does not run the full check aggregate on that tree a second time in the same visit
+
+  Scenario: A partial hook run on a refresh merge leaves the janitor's own aggregate in place
+    Given the janitor's refresh merge commit whose pre-commit hook ran only part of the full check aggregate
+    When the janitor continues the visit
+    Then the janitor runs its own full check aggregate on the merged head
+
+  Scenario: A failing hook aggregate on a refresh merge takes the refresh-repair route
+    Given the janitor's refresh merge whose pre-commit hook's full check aggregate fails
+    When the janitor continues the visit
+    Then the merge is not committed
+    And the janitor restores the pre-refresh head and records a refresh-repair brief naming each failed target
+```
+
 ## Scenario: an incident keeps one item with explicit current operation ownership
 
 ```gherkin
@@ -11952,4 +12206,1093 @@ Feature: an attributable regression fences repayment and reopens the same incide
     And stale cleanup cannot merge or close the corrected attempt
     And failed original CI evidence is retained while a corrected attempt requires new repair or resolution evidence
     And final normal factory repayment remains owed on that item
+```
+
+## Scenario: incident entry owns one initial authority before a carrier PR exists
+
+```gherkin
+Feature: Safe initial incident authority and a carrier before PR creation
+  Scenario: Independent hosts race the first incident publication
+    Given one canonical item has no incident root and its exact current claim is observable
+    And two clients share only the public ledger server and request different initial incident operations
+    When both condition publication on that same absent root and claim
+    Then at most one immutable initial root and host generation becomes current
+    And the loser performs no incident hook, push or lifecycle effect
+
+  Scenario: A lost initialization reply recovers the same operation
+    Given initial publication committed but its reply was lost
+    When the same operation and identical request are retried
+    Then exact authoritative lookup recovers the original root and result without another root
+    And a changed payload under that operation id is refused as incident-operation-conflict
+    And an unavailable lookup remains unknown without a blind initialization effect
+
+  Scenario: Missing server capability never becomes host-local authority
+    Given the installed provider cannot atomically publish the absent root and expected claim state
+    When authorized incident entry is requested for an existing item
+    Then it reports incident-genesis-capability-unavailable and performs no activation or incident effect
+    And it neither creates another incident item nor uses metadata read-modify-write or a local lock as authority
+
+  Scenario: A real first commit and push precede PR creation
+    Given current branch-reserved authority names the exact repository, target ref, input parent and staged tree
+    And no carrier PR exists
+    When its authorized local commit records the verified resulting commit and its first push wins the recorded remote-ref compare-and-swap
+    Then canonical head-published authority retains that exact remote head and branch history without a fabricated PR number
+    And changed input bytes, changed generation or an unrelated existing ref refuse before publication
+
+  Scenario: PR binding requires the actual authorized forge identity
+    Given head-published authority has no PR number
+    When an authenticated forge observation reports the real matching repository, head ref, head commit and intended base
+    Then that attempt advances to pr-bound with the real positive PR number
+    And a foreign PR, stale head, wrong base or unsupported carrier schema refuses without replacing its existing authority
+
+  Scenario: Factory takeover fences delayed work and normal repayment retains history
+    Given the item has a current queued or live factory claim
+    When the sanctioned incident transition conditionally invalidates that exact claim and records host ownership plus cancel or fence intent
+    Then queued old admission and a delayed old completion or proof writer perform no current effect
+    And an unknown cancel result is retained as unknown rather than claimed canceled
+    And later normal repayment transfers current ownership conditionally, retains the host attempt and uses ordinary factory validation
+
+  Scenario: Missing all-writer exclusion refuses factory takeover instead of claiming a fence
+    Given the item has a current queued or live factory claim
+    And the installed provider cannot conditionally invalidate that claim for every applicable writer
+    When authorized incident entry requests host ownership
+    Then incident entry MUST refuse with a named capability refusal
+    And it records no host ownership, reports no cancelled or fenced factory run and performs no incident effect
+    And the factory claim and its run history remain unchanged
+```
+
+## Scenario 306 — A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Failed engine checkpoint commit attribution".
+
+```gherkin
+Feature: A factory restart does not cost a run's finished work
+  As the maintainer of a repository dispatched through the factory
+  I want a run that already passed janitor preserved before it is cancelled
+  So that a restart window re-dispatches from the green tree instead of redoing implement
+
+  Scenario: the restart cancel preserves a janitor-green run before cancelling it
+    Given an active run on factory petri whose janitor stage succeeded and whose publish_draft stage has not published its branch
+    When the operator runs cancel-for-restart for factory petri
+    Then the forge carries a ref refs/livespec/preserved-publish/<work-item-id>/<commit-sha> whose commit's parent is the run's base commit and whose tree reflects the run's committed changes
+    And no git push and no repository hook ran for that publication
+    And the run is cancelled after the ref exists
+    And a livespec-preserved-tree ledger comment names the run id, the factory, the preservation ref and its commit id
+
+  Scenario: a run that has not passed janitor is cancelled without a publication
+    Given an active run on factory petri whose janitor stage has not succeeded
+    When the operator runs cancel-for-restart for factory petri
+    Then the run is cancelled
+    And no ref under refs/livespec/preserved-publish/<work-item-id>/ is created for that run
+
+  Scenario: a failed preservation still cancels the run and is recorded
+    Given an active janitor-green run on factory petri whose changed files the factory refuses to return
+    When the operator runs cancel-for-restart for factory petri
+    Then the run is cancelled
+    And a livespec-preserved-tree ledger comment states that the tree was not preserved and names the files read as the step that failed
+
+  Scenario: a janitor-green run cancelled outside the Dispatcher is preserved when it is reported
+    Given a janitor-green run that was cancelled through the factory server's cancel endpoint
+    And no livespec-preserved-tree comment names that run
+    When the Dispatcher reports the run as cancelled outside the Dispatcher
+    Then it attempts the publication of the run's changed files to a ref under refs/livespec/preserved-publish/<work-item-id>/
+    And a livespec-preserved-tree ledger comment records the ref or the step that failed
+
+  Scenario: the next dispatch starts from the preserved tree
+    Given an item whose ledger carries a livespec-preserved-tree comment naming a preservation ref for its cancelled run
+    When the item is dispatched again
+    Then the dispatch brief names that preservation ref as the tree to start from
+```
+
+## Scenario 307 — The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet-launch launchers enforce the interim launcher's gates
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A red-master repository hold yields the FIFO head and keeps the ticket
+    Given an impl launcher for repository A holding the oldest gmktec FIFO ticket and an impl launcher for repository B behind it
+    And the repository hold file for repository A exists
+    When the launchers run
+    Then the repository B launcher binds and launches
+    And the repository A launcher keeps its ticket and launches nothing into repository A
+    When the repository hold file for repository A is removed
+    Then the repository A launcher takes its FIFO place back in the order of the ticket it kept
+
+  Scenario: A repository at its WIP cap yields the FIFO head without running the preflight
+    Given an impl launcher whose target repository's counted-claims count, read through the capacity projection, equals its configured wip_cap
+    When the launcher runs
+    Then it keeps its FIFO ticket and yields the FIFO head
+    And it does not run its launch-time preflight
+    When the counted-claims count drops below the cap
+    Then it takes its FIFO place back and runs its preflight
+
+  Scenario: Only a listed item passes the WIP gate one above the cap
+    Given a repository whose counted-claims count equals its configured wip_cap
+    And the committed breakage-exception list names work item bd-x and not work item bd-y
+    When impl launchers for bd-x and bd-y run
+    Then the WIP gate does not hold bd-x
+    And the WIP gate holds bd-y
+
+  Scenario: A drive that exits before its run lists re-takes a FIFO ticket
+    Given an impl launcher whose drive exits non-zero before its run lists on the factory board
+    When the launcher handles the exit
+    Then it re-takes a FIFO ticket for the same work item rather than dropping it
+
+  Scenario: The gmktec factory hold file holds every gmktec launch
+    Given the gmktec factory hold file at the path the launcher assigns exists
+    When a gmktec launcher reaches the head of the FIFO
+    Then it launches nothing onto any gmktec factory instance until the hold file is removed
+
+  Scenario: The gmktec target setting selects the candidate only below its cap
+    Given the gmktec target setting names the candidate instance
+    And the candidate cap is 2
+    When the candidate instance's board lists 2 live runs
+    Then the launcher holds the launch
+    When the candidate instance's board lists 1 live run
+    Then the launcher launches onto the candidate instance
+    When the gmktec target setting is absent
+    Then the launcher launches onto the default instance
+```
+
+## Scenario 308 — A required check that fails terminally on infrastructure is re-run once and files a flake item
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch", the paragraph **A required check that fails terminally on infrastructure is re-run once.**
+
+```gherkin
+Feature: merge-poll re-runs an infrastructure failure once, never a touched test
+  As an operator
+  I want a pull request that failed CI on a runner fault re-run once without me
+  So that a sound factory run is not parked for a human, and every re-run still owes a root fix
+
+  Scenario: a teardown-only failure is re-run once and a flake item is filed
+    Given a factory run's pull request whose required check failed terminally
+    And the only failed job of that workflow run failed only in teardown steps while every other step succeeded
+    When the merge wait classifies the failure
+    Then the job's class is runner-teardown
+    And the Dispatcher requests exactly one re-run of the failed jobs as the factory App identity
+    And it journals a merge-poll-failed-jobs-rerun row naming the workflow run, the job, the class and the evidence
+    And it files one flake work item naming the same
+    And the merge wait continues within its existing poll budget and judges only the re-run attempt
+
+  Scenario: an OOM kill that interrupts a pytest session is re-run
+    Given a required check failed terminally because its job was killed for exceeding its memory limit during a pytest session
+    And the job's log names no failing test in a file the pull request changed
+    When the merge wait classifies the failure
+    Then the job's class is oom-kill
+    And the Dispatcher requests exactly one re-run of the failed jobs
+
+  Scenario: a failure of the re-run attempt ends blocked as before
+    Given the Dispatcher has already re-run the failed jobs once for the pull request's head
+    When a required check of the re-run attempt fails terminally
+    Then no second re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: a re-run request the forge rejects ends blocked as before
+    Given a required check failed terminally and every failed required job classifies as runner-teardown
+    When the forge rejects the Dispatcher's re-run failed jobs request
+    Then the Dispatcher journals a merge-poll-failed-jobs-rerun row naming the rejection
+    And no further re-run is requested for that head
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: an OOM kill after a failing test the pull request touched is never re-run
+    Given a required check failed terminally because its job was killed for exceeding its memory limit
+    And before the kill the job's log names a failing test in a file the pull request changed
+    When the merge wait classifies the failure
+    Then no re-run is requested and no flake work item is filed
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: any unattributed failed required job prevents the re-run
+    Given a workflow run with two failed jobs backing required checks
+    And one job's class is runner-teardown and the other's is unattributed
+    When the merge wait classifies the failures
+    Then no re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+
+  Scenario: a pytest test failure is never re-run
+    Given a required check failed terminally because pytest reported a test failure and no kill or timeout evidence matched
+    When the merge wait classifies the failure
+    Then the job's class is unattributed and no re-run is requested
+    And the outcome is blocked at merge-poll naming the failed checks and the recovery chain
+```
+
+## Scenario 309 — Fleet-launch launchers share one WIP claim-count read per repository per time-to-live
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet-launch launchers share the repository WIP claim-count read
+  Background:
+    Given fleet-launch/config.sh values overridden to a throwaway claim-count cache directory, a throwaway in-flight directory and a stub capacity projection that records each read
+
+  Scenario: Launchers polling within one time-to-live run the projection read once
+    Given five impl launchers for repository A at the WIP gate
+    And no claim-count cache file for repository A
+    When all five pass the WIP gate within one cache time-to-live
+    Then the stub capacity projection records exactly one read for repository A
+    And every launcher takes its count from that read
+
+  Scenario: A stale cached read is recomputed
+    Given a claim-count cache file for repository A older than the cache time-to-live
+    When an impl launcher for repository A passes the WIP gate
+    Then the stub capacity projection records a new read for repository A
+
+  Scenario: A launcher does not count its own in-flight marker
+    Given repository A's projection reports 2 counted claims and repository A's wip_cap is 3
+    And fleet in-flight markers with running launchers for not-yet-active work items bd-x and bd-y in repository A
+    When the impl launcher for bd-x passes the WIP gate
+    Then its in-flight addition is 1
+    And it holds, because 2 counted claims plus 1 in flight reaches the cap of 3
+
+  Scenario: A failed recomputation does not hold the launch
+    Given no claim-count cache file for repository A
+    And the stub capacity projection fails every read for repository A
+    When an impl launcher for repository A passes the WIP gate
+    Then the launcher does not hold on the unreadable count
+    And no claim-count cache file for repository A is written
+
+  Scenario: The cached sum equals the uncached sum
+    Given one ledger state and one set of in-flight markers for repository A
+    When the WIP gate sum is taken once with the cache and once with a cache time-to-live of 0
+    Then both sums are equal
+```
+
+## Scenario 310 — A terminal dispatch span carries its run class, execution target and sandbox cost
+
+Governing clause: `contracts.md` §"Bounded session waits and observable inventory".
+
+```gherkin
+Feature: Terminal dispatch span cost attributes
+  As the radar admission function placing work by measured cost
+  I want each terminated dispatch to report where it ran and what its sandbox consumed
+  So that per-run-class cost percentiles can be read from Honeycomb by code
+
+  Scenario: An implement-work-item dispatch whose pod sandbox ran on gmktec-xubuntu terminates
+    Given an implement-work-item dispatch whose pod sandbox was scheduled on a node of gmktec-xubuntu and consumed 840 CPU-seconds with a memory peak of 3221225472 bytes
+    When the dispatch terminates
+    Then its livespec.dispatch.terminal span carries livespec.dispatch.run_class implement-work-item and livespec.dispatch.execution_target gmktec-xubuntu
+    And it carries livespec.sandbox.cpu_seconds 840 and livespec.sandbox.memory_peak_bytes 3221225472
+    And all four keys survive the receiver allowlist into dataset livespec-dispatcher
+
+  Scenario: A dispatch whose sandbox control group cannot be read
+    Given a dispatch whose sandbox control group was gone before its usage was read
+    When the dispatch terminates
+    Then its terminal span carries neither livespec.sandbox.cpu_seconds nor livespec.sandbox.memory_peak_bytes
+    And livespec.dispatch.unavailable_fields on that span names both
+```
+
+## Scenario 311 — Dropping an attribute the scheduler requires fails the check
+
+Governing clause: `contracts.md` §"Bounded session waits and observable inventory".
+
+```gherkin
+Feature: Scheduler-required attribute check
+  As the maintainer relying on the radar admission function's Honeycomb inputs
+  I want a change that drops or renames a required attribute to fail before it merges
+  So that the scheduler is never silently starved of an input
+
+  Scenario: A change renames a required terminal-span attribute
+    Given the pinned livespec-dev-tooling package's required_columns.json requires livespec.sandbox.cpu_seconds from dataset livespec-dispatcher
+    When a change renames that key in the emitted-attribute vocabulary to livespec.sandbox.cpu_s
+    Then just check fails naming livespec.sandbox.cpu_seconds and dataset livespec-dispatcher
+
+  Scenario: A change drops a required key from the receiver allowlist
+    Given the same required_columns.json
+    When a change removes livespec.sandbox.cpu_seconds from _otel_scrub.ATTRIBUTE_ALLOWLIST
+    Then just check fails naming livespec.sandbox.cpu_seconds and dataset livespec-dispatcher
+```
+
+## Scenario 312 — A fleet launcher that exits without a run leaves a terminal line, and its ready item's ticket is re-taken or reported
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A committed fleet-launch launcher accounts for every exit it makes before its run lists
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub ready-set check, a stub ledger that records comments, and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A launcher stopped by TERM while yielding leaves a terminal line and reports its dropped ticket
+    Given an impl launcher for bd-x holding FIFO ticket T while yielding on bd-x's repository hold file
+    And bd-x reads ready in the stub ledger
+    And no other launcher holds a ticket at T's ticket number
+    When the launcher receives TERM
+    Then its sequence log ends with one terminal line naming bd-x, T's ticket number and the TERM signal
+    And that line is written before T's ticket file is removed
+    And the stub ledger records one comment on bd-x naming T's ticket number, the TERM signal and that the exit was not a run ending
+    And that comment does not state that bd-x is held by its owner
+
+  Scenario: A ready-set refusal that clears within the retry bound keeps the ticket
+    Given FLEET_LAUNCH_READY_RETRY_POLLS set to 3
+    And a stub ready-set check that refuses bd-x on its first 2 polls and admits it on the 3rd
+    When the impl launcher for bd-x polls
+    Then it keeps its FIFO ticket while the check refuses
+    And it holds no factory mutex and no fleet in-flight marker while the check refuses
+    And it launches bd-x once the check admits it
+
+  Scenario: A ready-set refusal that outlasts the retry bound is reported
+    Given FLEET_LAUNCH_READY_RETRY_POLLS set to 3
+    And a stub ready-set check that refuses bd-x on every poll with reason R
+    When the impl launcher for bd-x exhausts its 3 polls
+    Then its terminal line names bd-x, its ticket number, reason R and 3 polls tried
+    And the stub ledger records one comment on bd-x naming its ticket number, reason R and 3 polls tried
+
+  Scenario: A dead-pid ticket is reported as a stall
+    Given a FIFO ticket file for bd-y whose launcher pid P is no longer alive
+    When another launcher reads that FIFO directory
+    Then it writes a stall line naming bd-y, the ticket number and the dead pid P
+    And it writes that line before it removes or skips the ticket
+```
+
+## Scenario 313 — A failed scheduled default-branch workflow run becomes one ledger item per failed job
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Scheduled-workflow breakage pass".
+
+```gherkin
+Feature: a red scheduled workflow on the default branch becomes owned work
+  As the maintainer who moved a CI leg off pull requests onto a schedule
+  I want every failed job of that scheduled run filed as a ledger item from the host
+  So that a failure found after merge is owned work rather than a red mark nobody reads
+
+  Scenario: a failed run files one item per failed job
+    Given .livespec.jsonc declares dispatcher.breakage_workflows as ["ci-root-uid.yml"]
+    And the latest completed default-branch run of ci-root-uid.yml concluded failure with jobs check-coverage and check-types failed
+    When dispatcher.py breakage-pass runs
+    Then it files two work items through the capture-work-item filing seam
+    And each title names ci-root-uid.yml and its failed job
+    And each description names the run URL, the head commit and each failing test the job log names
+    And each item carries the label breakage:ci-root-uid.yml and its breakage_key
+    And the verdict line reads filed with both item ids
+
+  Scenario: a later pass over the same failure files nothing new
+    Given a prior pass filed an item for ci-root-uid.yml:check-coverage at head commit H, and that item is now closed
+    And the latest completed run is a re-run at head commit H whose check-coverage job failed again
+    When dispatcher.py breakage-pass runs
+    Then it files no item
+    And the verdict line reads already-filed naming the closed item
+
+  Scenario: a green run files nothing
+    Given the latest completed default-branch run of ci-root-uid.yml concluded success
+    When dispatcher.py breakage-pass runs
+    Then it files no item
+    And the verdict line reads green
+
+  Scenario: an unreadable workflow fails visibly
+    Given the forge credential is unusable
+    When dispatcher.py breakage-pass runs
+    Then it files no item
+    And the verdict line reads unreadable naming what could not be read
+    And the pass exits non-zero
+```
+
+## Scenario 314 — A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A committed fleet-launch launcher spends no launch slot on work no factory may run
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub Dispatcher, a stub ledger that records comments, and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A host-only item exits before the mutex and the preflight
+    Given an impl launcher for bd-x holding FIFO ticket T
+    And the stub Dispatcher's host-only command reports bd-x host_only true with reason "declares an edit under .github/workflows/"
+    When the launcher reaches its host-only screen
+    Then it takes no factory mutex and runs no launch-time preflight
+    And its sequence log ends with one terminal line naming bd-x, T's ticket number and the cause host-only
+    And the stub ledger records one comment on bd-x naming T's ticket number and the host-only reason
+    And no launcher re-takes a ticket for bd-x
+
+  Scenario: A drive refused with exit code 5 is not re-ticketed
+    Given an impl launcher for bd-x whose stub drive exits 5 before any run lists, writing "REFUSED: work-item bd-x is refused"
+    When the drive exits
+    Then the launcher re-takes no ticket for bd-x
+    And its sequence log ends with one terminal line naming bd-x, its ticket number and the cause refused
+    And the stub ledger records one comment on bd-x naming the dropped ticket number and the REFUSED line
+
+  Scenario: A transient early exit still re-takes the same ticket
+    Given an impl launcher for bd-x holding FIFO ticket T whose stub drive exits 1 before any run lists
+    When the drive exits
+    Then the launcher re-takes a FIFO ticket for bd-x at T's ticket number
+```
+
+## Scenario 315 — A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Dispatcher exit codes".
+
+```gherkin
+Feature: Every permanent pre-dispatch refusal gives a caller one signal
+  Scenario Outline: A hand-picked dispatch refused before any run exits 5
+    Given a ready work item bd-x <shape>
+    When an operator runs dispatcher.py loop --item bd-x
+    Then no claim is taken and no factory run is created
+    And the command exits with code 5
+    And stderr carries exactly one line beginning "REFUSED: " that names bd-x
+
+    Examples:
+      | shape                                                                   |
+      | whose factory_safety is needs-host-secrets                              |
+      | whose description declares an edit under .github/workflows/            |
+      | whose pre-dispatch Definition-of-Done judgement rests it at needs-human |
+```
+
+## Scenario 316 — A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: A repository hold names the launch kinds it holds
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards and throwaway queue, lock, in-flight and state directories
+    And queued tickets for an impl launcher of bd-x and a resume launcher of bd-y, both in repository R
+
+  Scenario: A hold scoped to dispatch holds the impl launcher and lets the resume launch
+    Given a repository hold file for R carrying "kinds: dispatch", "reason: commit_green ceiling" and "until: PR 4440 merged"
+    When both launchers poll
+    Then the impl launcher for bd-x keeps its ticket, yields the FIFO head and logs a yield line naming dispatch, the reason and the until text
+    And the resume launcher for bd-y launches
+
+  Scenario: A hold file with no kinds line holds both launch kinds
+    Given a repository hold file for R carrying no kinds line
+    When both launchers poll
+    Then the impl launcher for bd-x and the resume launcher for bd-y both keep their tickets and launch nothing
+
+  Scenario: A hold set while a launcher waits for the mutex is honoured at the launch point
+    Given the impl launcher for bd-x has passed its WIP gate and waits for the factory launch mutex
+    And no repository hold file for R exists
+    When a repository hold file for R is created before the launcher invokes drive
+    Then the launcher releases the mutex and its fleet in-flight marker without launching
+    And it keeps its FIFO ticket
+```
+
+## Scenario 317 — Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref".
+
+```gherkin
+Feature: A run's committed work reaches origin as it progresses
+  As the maintainer of a repository dispatched through the factory
+  I want each settled agent stage's commits on origin before the run moves on
+  So that a cancel, a server crash or an operator removal costs at most the node visit in progress
+
+  Scenario: a settled implement visit is preserved as the run's first capture
+    Given a run of work item W whose implement visit committed through the detached commit runner
+    When implement_commit_settle ends with the tip of fabro/run/<run-id> at commit I
+    Then origin's ref refs/livespec/wip/W/<run-id>/1 points at commit I
+    And the run's HEAD, index and working tree are the same as they were before the push
+    And no repository hook ran for the push
+
+  Scenario: a later settled visit adds the next capture and rewrites nothing
+    Given origin's ref refs/livespec/wip/W/<run-id>/1 points at commit I
+    When fix_commit_settle ends with the run branch's tip at commit F
+    Then origin's ref refs/livespec/wip/W/<run-id>/2 points at commit F
+    And origin's ref refs/livespec/wip/W/<run-id>/1 still points at commit I
+
+  Scenario: a tip the engine reset onto the default branch is not preserved
+    Given origin's ref refs/livespec/wip/W/<run-id>/2 points at commit F
+    And a node left the workspace HEAD detached on the default branch's head D, and the engine's next checkpoint moved fabro/run/<run-id> to an empty commit on D
+    When the next preserving step runs
+    Then no work-in-progress ref of the run is created at that tip
+    And the step's recorded output names the tip and states that its tree carries none of the run's work
+    And the run's latest preserved capture is still refs/livespec/wip/W/<run-id>/2
+
+  Scenario: a failed preservation push does not fail the run
+    Given the forge refuses the push of the run's next work-in-progress ref
+    When fix_commit_settle ends
+    Then the step keeps its own outcome and the run continues
+    And the step's recorded output names the ref, the tip and the failure
+
+  Scenario: needs-human preserves the run branch, not a detached HEAD
+    Given a run whose workspace HEAD is detached on the default branch's head while fabro/run/<run-id> holds the run's work
+    When the run reaches needs_human
+    Then origin's ref refs/heads/needs-human/<run-id> holds a tree that carries the run's work
+
+  Scenario: a committing step without preservation fails the check
+    Given a workflow that declares a step settling an agent stage's commits without the preservation
+    When the repository's checks run
+    Then the check fails and names that step
+```
+
+## Scenario 318 — A run's ending names its latest preserved capture on the item
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "A run's ending names its latest preserved capture on the item".
+
+```gherkin
+Feature: The ledger says where a lost run's work is
+  As the maintainer of a repository dispatched through the factory
+  I want every run that ended without merging to name its latest preserved capture on its item
+  So that I can find the work without reading the forge's refs
+
+  Scenario: a wall-budget cancel names the latest capture
+    Given a run of work item W whose highest-numbered work-in-progress ref is refs/livespec/wip/W/<run-id>/3 at commit C
+    When the Dispatcher records the run's wall-budget cancel
+    Then W carries a livespec-preserved-tree ledger comment naming the run id, the factory, refs/livespec/wip/W/<run-id>/3 and commit C
+
+  Scenario: a run with no capture is named as having none
+    Given a run of work item W that ended before any preserving step ran
+    When the Dispatcher records the run's ending
+    Then W carries a livespec-preserved-tree ledger comment stating that the run has no work-in-progress ref
+
+  Scenario: an unreadable forge is not reported as no capture
+    Given the forge refuses the Dispatcher's listing of the run's work-in-progress refs
+    When the Dispatcher records the run's ending
+    Then W carries a livespec-preserved-tree ledger comment stating that the preservation could not be determined
+```
+
+## Scenario 319 — A re-dispatch starts from the latest run's latest preserved capture
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: A re-dispatch does not redo a lost run's settled work
+  As the maintainer of a repository dispatched through the factory
+  I want a re-dispatch to start from the newest work the item's latest run preserved
+  So that a run lost to a crash or a removal costs only the node visit that was in progress
+
+  Scenario: a run removed without a terminal publication is seeded from its latest capture
+    Given work item W whose latest run was removed by an operator fabro rm after its fix visit settled
+    And that run's highest-numbered work-in-progress ref holds the settled fix commit
+    And no needs-human ref or preservation ref was published at that run's ending
+    When W is released for recovery and routed
+    Then the route is seeded from that work-in-progress ref
+    And the dispatch brief names that ref as the tree to start from
+
+  Scenario: a terminal publication of the same run is preferred
+    Given work item W whose latest run has both a work-in-progress ref and a preserved-publish ref published at its ending
+    When W is released for recovery and routed
+    Then the route is seeded from the preserved-publish ref
+
+  Scenario: a seeded run carries the preserved work through the commit gates
+    Given work item W seeded from a work-in-progress ref that holds a settled implement commit and a later settled fix commit
+    When the seeded run reaches publication in a fresh sandbox
+    Then the published branch carries both preserved changes
+    And every commit on it passed the repository's commit and pre-push gates
+
+  Scenario: a run a factory restart cancelled before janitor succeeded is seeded from its latest capture
+    Given work item W whose latest run R settled its implement commit, which origin holds at refs/livespec/wip/W/R/1
+    And a factory restart cancelled R during its fix visit, before its janitor stage succeeded, so no preservation ref was published at R's ending
+    And W carries a livespec-preserved-tree comment naming run R and refs/livespec/wip/W/R/1
+    And W is at ready and no newer dispatch has been submitted for it
+    When the Dispatcher next dispatches W
+    Then W is graded by recovery routing before admission
+    And it is routed seeded from refs/livespec/wip/W/R/1, not fresh
+
+  Scenario: a wall-budget cancel stays blocked and is seeded only after a person returns it
+    Given work item W whose latest run R was cancelled by the whole-run wall budget after its implement commit settled at refs/livespec/wip/W/R/1
+    And W carries a livespec-preserved-tree comment naming run R and refs/livespec/wip/W/R/1
+    When the Dispatcher's next pass runs while W rests blocked with blocked_reason needs-human
+    Then W stays blocked and is not dispatched
+    When a person returns W to ready and the Dispatcher next dispatches W
+    Then it is routed seeded from refs/livespec/wip/W/R/1, not fresh
+```
+
+## Scenario 320 — Preservation refs are deleted when the Dispatcher closes or collects an item's runs
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Preservation refs are deleted when the Dispatcher closes or collects an item's runs".
+
+```gherkin
+Feature: Preserved run refs do not accumulate on origin
+  As the maintainer of a repository dispatched through the factory
+  I want an item's preserved run refs removed once the Dispatcher closes it or collects its ended runs
+  So that origin keeps only the preserved work that a re-dispatch can still use
+
+  Scenario: accepting an item deletes its preservation refs
+    Given work item W with refs under refs/livespec/wip/W/ and refs/livespec/preserved-publish/W/
+    When the Dispatcher accepts W
+    Then none of those refs exists on origin
+
+  Scenario: collecting a closed item's ended run deletes that run's refs
+    Given a closed work item W whose ended run R has work-in-progress refs and a needs-human ref
+    When the Dispatcher's ended-run collection removes R
+    Then neither R's work-in-progress refs nor refs/heads/needs-human/R exists on origin
+
+  Scenario: an open item keeps its preservation refs
+    Given work item W, blocked for a human, with a ref under refs/livespec/wip/W/
+    When the Dispatcher's ended-run collection runs
+    Then that ref still exists on origin
+
+  Scenario: a failed deletion is retried
+    Given the forge refuses the deletion of a closed item's preservation ref
+    When the Dispatcher's next pass runs
+    Then it attempts the deletion again and the item's state is unchanged
+```
+
+## Scenario 321 — drive names the stage and offending sources of a goal-template preflight refusal
+
+Governing clause: `contracts.md` §"The skill surface" → "A pre-run refusal names its stage and detail".
+
+```gherkin
+Feature: A refused dispatch says why in drive's own summary
+  As an operator who presses an impl action through drive
+  I want the summary to name the refusing stage and its detail
+  So that I do not have to know the dispatch journal exists to learn why nothing ran
+
+  Scenario: a goal-template preflight refusal names the stage and the offending comment
+    Given a ready work item W one of whose ledger comments, C, carries a goal-template opening delimiter
+    When an operator runs drive --action impl:W without --json
+    Then the Dispatcher refuses the dispatch at stage goal-minijinja-preflight before any factory run is created
+    And drive's human summary names the stage goal-minijinja-preflight
+    And the summary names comment C by its id and its creation instant
+    And the summary does not consist only of a statement that the Dispatcher did not report green
+
+  Scenario: a field opener is named by the field
+    Given a ready work item W whose description carries a goal-template opening delimiter
+    When an operator runs drive --action impl:W without --json
+    Then drive's human summary names the stage goal-minijinja-preflight and the field description
+
+  Scenario: the machine payload is unchanged
+    Given the same refused dispatch of W
+    When the operator runs drive --action impl:W --json
+    Then the JSON payload has the same shape it has for any other refused dispatch
+```
+
+## Scenario 322 — A comment-poisoned item is superseded by a successor that passes the goal-template preflight
+
+Governing clause: `contracts.md` §"Dispatcher policy settings" → "A template-poisoned item is superseded, never repaired in place".
+
+```gherkin
+Feature: A permanently poisoned item is replaced, not abandoned
+  As an operator whose item recorded a template opener in an append-only comment
+  I want one command that files a clean successor and retires the original
+  So that the work is dispatchable again without hand-copying fields and comments
+
+  Scenario: supersede-contaminated files a clean successor and closes the original
+    Given an open work item W with a plan parent P, a blocks dependency on item B, a dependent item D that W blocks, a dispatch-record label, a lifecycle label and one other label L
+    And W carries an instruction comment containing a goal-template opening delimiter, a clean instruction comment, and a livespec-dod-judgement record comment K
+    When an operator runs dispatcher.py supersede-contaminated --item W --reason R
+    Then exactly one successor S is filed with W's title, type, priority, description, plan parent P and a blocks dependency on B
+    And S carries label L and carries neither the lifecycle label nor the dispatch-record label
+    And D's blocks edge names S as the blocker
+    And S carries both instruction comments in their original order, each opening with a provenance line naming W, the source comment's id and its creation instant
+    And the poisoned comment's copy carries the opener in bracket form and the clean comment's copy is otherwise verbatim
+    And S does not carry the record comment K
+    And S carries a comment naming W, the reason R and the id of K, and W carries a comment naming S and the reason R
+    And one supersede-contaminated journal record names W, S, the invoker and a UTC instant
+    And W is closed with resolution duplicate
+    And a dispatch of S passes stage goal-minijinja-preflight
+
+  Scenario: a stage-scoped rider keeps its scope line first
+    Given an open comment-poisoned work item W one of whose instruction comments opens with the line FOR review ONLY:
+    When an operator runs dispatcher.py supersede-contaminated --item W --reason R
+    Then that comment's copy on the successor opens with the line FOR review ONLY: and carries the provenance line second
+    And the copied rider reaches the review stage's brief and does not reach the implement or review_fix stage's brief
+
+  Scenario: an item that cannot or need not be superseded is refused
+    Given a work item W that is closed, or whose ledger comments carry no goal-template opening delimiter, or one of whose fields carries one
+    When an operator runs dispatcher.py supersede-contaminated --item W --reason R
+    Then the command exits 3 naming the reason, and for the field case naming each field to edit
+    And no item, comment, edge, journal record or status change is written
+
+  Scenario: a failure after the successor is filed leaves the original open
+    Given supersede-contaminated has filed successor S for W
+    When the write of the closing comment on W fails
+    Then the command exits non-zero naming S and the step it reached
+    And W is still open
+```
+
+## Scenario 323 — An earlier run's preserved ref never outranks a newer run's published head
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: Run-age-bounded recovery preference
+  As the maintainer of a repository dispatched through the factory
+  I want recovery routing never to prefer an older run's tree over a newer run's published head
+  So that a re-dispatch never starts from older work than the item already published
+
+  Scenario: an earlier run's needs-human ref does not outrank a later run's published head
+    Given an item whose latest run published head H to its publish branch
+    And an earlier run of the item holds needs-human ref N
+    When recovery routing grades the item
+    Then the route names H, or a needs-human or preservation ref the run that published H wrote, as the tree the next dispatch starts from
+    And the route never names N
+
+  Scenario: an earlier run's failed-checkpoint preservation ref does not outrank a later run's published head
+    Given an item whose latest run published head H to its publish branch
+    And an earlier run of the item holds failed-checkpoint preservation ref P
+    When recovery routing grades the item
+    Then the route never names P
+
+  Scenario: the same run's needs-human ref is preferred over its own published head
+    Given an item whose latest run published head H and, at its ending, needs-human ref N
+    When recovery routing grades the item
+    Then the route is seeded from N
+
+  Scenario: a later run's needs-human ref is preferred over an earlier run's published head
+    Given an item whose earlier run published head H
+    And a later run of the item, which published no head, ended with needs-human ref N
+    When recovery routing grades the item
+    Then the route is seeded from N
+
+  Scenario: a needs-human ref is attributed to the run its trailer carries
+    Given an item whose earlier run published head H
+    And a later run of the item ended with a needs-human ref whose name names no run but whose tip commit carries a Fabro-Run trailer naming that later run
+    When recovery routing grades the item
+    Then the route is seeded from that needs-human ref
+    And the item is not held
+
+  Scenario: a ref whose publishing run cannot be established holds the item
+    Given an item whose latest run published head H
+    And a needs-human ref N of the item whose name names no run and whose tip commit carries no run trailer
+    When recovery routing grades the item
+    Then the item is routed held and stays ready
+    And the recovery-held record names the measurement publishing-run-unobservable
+    And no publish branch is reclaimed
+
+  Scenario: an item with no competing ref is not held for attribution
+    Given an item whose latest run published head H, whose run no record names
+    And the item's only other ref is the preserved-publish ref the stale publish-branch reclaim wrote for H
+    And the item holds no needs-human ref and no failed-checkpoint preservation ref
+    When recovery routing grades the item
+    Then the item is not routed held for publishing-run-unobservable
+```
+
+## Scenario 324 — A hold recorded only in the dispatch journal reaches needs-attention
+
+Governing clause: `contracts.md` §"The skill surface" → "Orchestrator-owned attention facts" → "Journal-recorded holds".
+
+```gherkin
+Feature: Journal-recorded holds reach needs-attention
+  As the operator of a repository dispatched through the factory
+  I want a hold that only the dispatch journal records to appear in needs-attention
+  So that a held item never reads as idle or dispatchable and a stall never goes silent
+
+  Scenario: a current hold composes one fact naming every reason
+    Given the dispatch journal's newest record for item I is a recovery-held record carrying one measurement and one refusal
+    And that record was appended within the last seven days and item I is not closed
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:I fact naming I, recovery-held, that measurement and that refusal
+    And its handoff inspects the recorded stage in the dispatch journal
+    And it advertises no valve
+
+  Scenario: a hold that names only a run takes the run as its subject
+    Given the dispatch journal's newest record for run R is an orphan-run-reconcile-held record naming no work-item
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:R fact
+
+  Scenario: a later route record retires the hold
+    Given item I has a recovery-held record
+    And a later recovery-route record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: a record that carries no retiring stage leaves the hold current
+    Given item I has a recovery-held record appended today
+    And a later pr-view record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact
+
+  Scenario: a hold older than seven days retires without reading as resolved
+    Given the newest hold record for item I was appended eight days ago and nothing later names I
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+    And nothing in the snapshot reports that hold as resolved
+
+  Scenario: a closed item's hold retires
+    Given item I has a recovery-held record appended today
+    And item I is closed
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: an unreadable journal is unobservable, not empty
+    Given the dispatch journal cannot be read
+    When needs-attention composes its snapshot
+    Then the snapshot carries one hygiene:journal-hold:unobservable fact
+    And it does not report that no holds exist
+    And it carries no idle-factory fact
+
+  Scenario: an excluded record of one stage does not hide a hold of another
+    Given item I has a recovery-held record appended today
+    And a later stranded-claim-hold record of item I carrying the reason run-succeeded
+    And a later stranded-claim-hold record of item I carrying the reason run-live
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:I fact
+    And it names recovery-held
+
+  Scenario: a lifted launcher hold ends only the launcher hold
+    Given item I has a recovery-held record appended today
+    And a later launcher-hold record of item I
+    And a later launcher-hold-lifted record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact naming recovery-held
+    And item I still does not count as admission-eligible for the idle-factory fact
+
+  Scenario: a launcher hold composes from the journal and never from the launcher's files
+    Given a launcher appended one launcher-hold record to this repository's dispatch journal naming item I
+    And the launcher also keeps a hold file and a ticket naming item J
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact
+    And the snapshot carries no journal-hold fact for J
+
+  Scenario: a launcher hold without an item composes under its hold name and retires when lifted
+    Given a launcher appended one launcher-hold record carrying hold H and no work_item_id
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:H fact
+    When the launcher appends a launcher-hold-lifted record carrying hold H
+    And needs-attention composes its snapshot again
+    Then the snapshot carries no journal-hold fact for H
+
+  Scenario: a stranded-claim hold whose owner is live composes nothing
+    Given item I's newest stranded-claim-hold record carries the reason run-live
+    And an earlier stranded-claim-hold record of item I carries the reason factory-unobservable
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: two held stages on one subject compose one fact from the newest
+    Given item I is ready and has a recovery-held record appended today
+    And a later stranded-claim-hold record of item I carrying the reason run-succeeded
+    When needs-attention composes its snapshot
+    Then the snapshot carries exactly one hygiene:journal-hold:I fact
+    And it names stranded-claim-hold and run-succeeded
+    And item I still does not count as admission-eligible for the idle-factory fact
+
+  Scenario: a run's terminal record retires its wall-budget hold
+    Given item I has a run-wall-budget-held record
+    And a later fabro-terminal-events record of item I
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for I
+
+  Scenario: a sandbox container held for a live run composes nothing
+    Given run R's newest sandbox-container-held record carries the hold_reason run-live
+    And an earlier sandbox-container-held record of run R carries the hold_reason run-unobserved
+    When needs-attention composes its snapshot
+    Then the snapshot carries no journal-hold fact for R
+
+  Scenario: a recovery-held item is not reported idle
+    Given item I is ready and otherwise admission-eligible and carries a live recovery-held
+    And item I is a child of an epic the idle-slot audit is configured to read
+    And no other ready item is admission-eligible and the repository holds zero counted claims
+    And every admission-required ACP node has an eligible candidate
+    When needs-attention composes its snapshot
+    Then the snapshot carries no idle-factory fact naming I
+    And the idle-slot audit classifies I as HELD with recovery-held named as the reason
+
+  Scenario: a reclaim-held item still counts as eligible
+    Given item I is ready and otherwise admission-eligible and its current hold is publish-branch-reclaim-held
+    And no other ready item is admission-eligible and the repository holds zero counted claims
+    And every admission-required ACP node has an eligible candidate
+    When needs-attention composes its snapshot
+    Then the snapshot carries a hygiene:journal-hold:I fact
+    And the snapshot carries an idle-factory fact whose handoff names impl:I
+```
+
+## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node
+
+Governing clause: `contracts.md` §"ACP node timeouts" → "Keys.", "A commit settle node ends its own wait first.", "The 30-minute default is a deliberate reduction." and "A low declaration rests on a measurement."
+
+```gherkin
+Feature: A node timeout the workflow declares reaches the run unless configuration names that node
+  As the maintainer of a repository dispatched through the factory
+  I want a node's declared timeout to be the value its run renders when nothing configures it
+  So that a timeout a change adds to the workflow applies on a dispatched run
+
+  Background:
+    Given a workflow graph declaring timeout "3900s" on fix_commit_settle and "600s" on pr_route
+    And a workflow graph node undeclared_node carrying no timeout attribute
+
+  Scenario: a node no configuration names renders its declared value
+    Given a repository whose dispatcher.node_timeouts does not name fix_commit_settle
+    When the Dispatcher renders the dispatch's workflow graph
+    Then fix_commit_settle carries the literal timeout "3900s"
+    And the dispatch record names the workflow as the layer supplying fix_commit_settle
+
+  Scenario: a repository's table outranks the workflow's declared value
+    Given a repository whose dispatcher.node_timeouts sets pr_route to 900
+    When the Dispatcher renders the dispatch's workflow graph
+    Then pr_route carries the literal timeout "900s"
+    And the dispatch record names the repository as the layer supplying pr_route
+
+  Scenario: a per-dispatch argument outranks both
+    Given a repository whose dispatcher.node_timeouts sets pr_route to 900
+    And a dispatch carrying --node-timeout pr_route=1200
+    When the Dispatcher renders the dispatch's workflow graph
+    Then pr_route carries the literal timeout "1200s"
+
+  Scenario: a node nothing declares or names takes the default
+    Given a repository whose dispatcher.node_timeouts does not name undeclared_node
+    When the Dispatcher renders the dispatch's workflow graph
+    Then undeclared_node carries the literal timeout "1800s"
+    And the dispatch record names the built-in default as the layer supplying undeclared_node
+
+  Scenario: the run's budgets read the values the graph carries
+    Given a repository whose dispatcher.node_timeouts does not name fix_commit_settle
+    When the Dispatcher derives the dispatch's execution allowance and its subprocess ceiling
+    Then each bills fix_commit_settle at 3900 seconds per visit
+
+  Scenario: a settle node below its declared timeout ends its own wait first
+    Given a repository whose dispatcher.node_timeouts sets fix_commit_settle to 1800
+    And a fix turn that left a commit run still running past 1500 seconds
+    When fix_commit_settle runs
+    Then its wait ends at 1500 seconds
+    And the node runs its failure handling
+    And the engine does not end the node on its timeout
+
+  Scenario: a settle node timeout that leaves no wait is refused
+    Given a repository whose dispatcher.node_timeouts sets fix_commit_settle to 300
+    When the Dispatcher prepares the dispatch
+    Then it refuses before any run exists naming dispatcher.node_timeouts.fix_commit_settle and the value 300
+
+  Scenario: the shipped graph keeps the deliberate reduction
+    Given the shipped implement-work-item workflow graph
+    When its declared timeouts are read
+    Then implement, janitor and fix each declare no more than 1800 seconds
+
+  Scenario: a low declaration names its measurement
+    Given the shipped implement-work-item workflow graph
+    When its declared timeouts are read
+    Then every declaration below 1800 seconds carries beside it a comment naming a recorded run's measured duration for that node
+```
+
+## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "A tree a factory run resumes or seeds can pass under the harness judging it".
+
+```gherkin
+Feature: A tree a factory run resumes or seeds can pass under the harness judging it
+  As the maintainer of a repository dispatched to the factory
+  I want a recovered tree judged on what it contains
+  So that a recovery route does not spend the work it exists to keep
+
+  Scenario: A tree with no fixture clearing the stage variable passes its own commit hook
+    Given a factory run resumed or seeded from a tree whose test suite exercises the workflow's push helper and carries no fixture clearing LIVESPEC_AGENT_STAGE
+    And that suite passes on a developer host
+    When an agent stage's commit runs that suite through the commit hook
+    Then no case of the suite reports LIVESPEC_AGENT_PUBLICATION_DENIED
+    And the seeded tree's bytes are unchanged by the harness
+
+  Scenario: The requirement holds in a repository that has changed nothing
+    Given a factory run dispatched against a fleet repository other than this one
+    And that repository has merged no change for this requirement
+    When an agent stage's commit runs that repository's suite through the commit hook
+    Then no case of the suite reports LIVESPEC_AGENT_PUBLICATION_DENIED
+
+  Scenario: A test case that sets the variable itself still observes the refusal
+    Given a test case that sets LIVESPEC_AGENT_STAGE to an agent stage in its own child environment
+    When that child calls the projected push_origin
+    Then the call exits non-zero and prints LIVESPEC_AGENT_PUBLICATION_DENIED
+
+  Scenario: An agent stage's own publication attempt stays refused
+    Given an implement, fix or review_fix turn
+    When the turn itself calls the projected push_origin or a publication action of the projected gh wrapper
+    Then the call exits non-zero and prints LIVESPEC_AGENT_PUBLICATION_DENIED with the stage and the refused action
+```
+
+## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees
+
+Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work".
+
+```gherkin
+Feature: Operator fresh ruling for a recovery-released item
+  As the operator of a repository dispatched through the factory
+  I want to rule that a released item's next dispatch starts fresh
+  So that a stale or wrong preserved tree never seeds a dispatch I have judged it must not seed
+
+  Scenario: a fresh ruling routes a released item fresh past a verified needs-human ref
+    Given an item released for recovery that holds verified needs-human ref N
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh
+    And the recovery-route record names the ruling's instant
+    And its passed_over_needs_human field lists N with its commit
+    And needs-human ref N still exists at its commit
+
+  Scenario: a fresh ruling routes fresh when preserved work is not confirmed absent
+    Given an item released for recovery whose earlier-run identifiers name no run
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh
+    And no recovery-held record names preserved work not confirmed absent
+
+  Scenario: a fresh ruling takes precedence over a resume
+    Given an item released for recovery that passes every precondition of resume --item
+    And the item carries a current fresh ruling
+    When recovery routing grades the item
+    Then the route is fresh, not resume
+
+  Scenario: an untaken needs-human listing holds a fresh-ruled item
+    Given an item released for recovery that carries a current fresh ruling
+    And the needs-human ref listing cannot be taken
+    When recovery routing grades the item
+    Then the route is held for the unobservable measurement, not fresh
+    And the fresh ruling stays current
+
+  Scenario: a fresh-ruled item's stale publish branch is preserved before it is reclaimed
+    Given an item routed fresh by a current fresh ruling
+    And the item's publish branch survives with no live run
+    When the stale publish-branch reclaim runs for the dispatch
+    Then a preserved-publish ref of the branch's head exists before the branch is deleted
+    And no needs-human or preservation ref of the item is deleted or moved
+
+  Scenario: the fresh-ruling command writes and journals one ruling
+    Given an item and a reason that passes the shared template-opener detector
+    When an operator runs dispatcher.py fresh-ruling for the item with that reason
+    Then the item carries one livespec-fresh-ruling comment naming the invoker, the reason and the UTC instant
+    And the journal carries one fresh-ruling record with the same fields
+
+  Scenario: the fresh-ruling command refuses a reason the template-opener detector flags
+    Given an item and a reason that fails the shared template-opener detector
+    When an operator runs dispatcher.py fresh-ruling for the item with that reason
+    Then the command exits 3
+    And no livespec-fresh-ruling comment or fresh-ruling record is written
+
+  Scenario: the newer of a seed ruling and a fresh ruling governs
+    Given an item released for recovery that carries a seed ruling naming ref R at commit C
+    And a later fresh ruling for the same item
+    When recovery routing grades the item
+    Then the route is fresh
+    And the seed ruling is not current
+
+  Scenario: a later seed ruling replaces a current fresh ruling
+    Given an item released for recovery that carries a fresh ruling
+    And a later seed ruling for the same item naming ref R at commit C, where R exists at C
+    When recovery routing grades the item
+    Then the route is seeded from R at C
+    And the fresh ruling is not current
+
+  Scenario: a non-fallback refusal keeps its precedence over a fresh ruling
+    Given an item released for recovery that carries a current fresh ruling
+    And a non-fallback refusal applies to the item
+    When recovery routing grades the item
+    Then the route is held naming that refusal
+    And the fresh ruling stays current
+
+  Scenario: a consumed fresh ruling does not govern a later dispatch
+    Given an item whose dispatch routed fresh by a ruling has a run
+    When that dispatch records the run
+    Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
+    And the next recovery routing of the item does not route it fresh by that ruling
+
+  Scenario: reconciliation adds a missing consumed comment
+    Given a run launched from a dispatch routed fresh by a ruling
+    And the item carries no livespec-fresh-ruling-consumed comment naming that ruling
+    When a reconciliation pass runs
+    Then the item carries a livespec-fresh-ruling-consumed comment naming the ruling's instant, the dispatch id and the run id
+    And the fresh ruling is not current
+```
+
+## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes
+
+Governing clause: `constraints.md` §"Codex full-access runtime constraints" → "Factory sandbox turns carry the Driver guards".
+
+```gherkin
+Feature: Factory sandbox turns carry the Driver guards
+  As the maintainer of a repository dispatched to the factory
+  I want every sandbox agent turn to run its Driver's PreToolUse guards from release-verified bytes
+  So that a full-access sandbox turn cannot run a command those guards forbid
+
+  Scenario: Hooks that byte-match the pinned Driver release are trusted and block a forbidden command
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When the materialized Codex hook definitions and hook entrypoints byte-match that Driver release tag
+    Then the hooks are recorded as trusted in the per-run CODEX_HOME without Codex's hook-trust bypass
+    And an implement turn's attempt to run a command the guard forbids is blocked by the materialized guard
+
+  Scenario: A materialized hook that differs from the pinned Driver release fails the prepare step
+    Given a factory run pins a release of its runtime's Driver plugin
+    And the run's prepare step has materialized that Driver plugin into the sandbox turn's per-run home
+    When a materialized Codex hook definition or hook entrypoint differs from that Driver release tag
+    Then the run's prepare step fails, naming the plugin and the hook
+    And no implement turn starts
 ```

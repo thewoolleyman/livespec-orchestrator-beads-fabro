@@ -618,19 +618,45 @@ _bdg_emit_span() {
     _bdg_emit="${LIVESPEC_BD_GUARD_EMIT:-$(dirname -- "$0")/bd-guard-emit.py}"
     [ -f "$_bdg_emit" ] || return 0
     _bdg_ppid=$PPID
-    _bdg_comm=$(cat "/proc/$_bdg_ppid/comm" 2>/dev/null || echo "")
-    _bdg_cmd=$(tr '\0' ' ' < "/proc/$_bdg_ppid/cmdline" 2>/dev/null | cut -c1-160)
+    # Caller identity. Linux reads procfs; a host without it (Darwin) asks `ps`
+    # for the same two facts. Every read is silent: a missing file or an exited
+    # parent must never put a byte on bd's stderr.
+    if [ -r "/proc/$_bdg_ppid/cmdline" ]; then
+        _bdg_comm=$(cat "/proc/$_bdg_ppid/comm" 2>/dev/null || echo "")
+        _bdg_cmd=$( (tr '\0' ' ' < "/proc/$_bdg_ppid/cmdline") 2>/dev/null | cut -c1-160)
+    else
+        _bdg_comm=$(ps -o comm= -p "$_bdg_ppid" 2>/dev/null | sed 's|.*/||')
+        _bdg_cmd=$(ps -o args= -p "$_bdg_ppid" 2>/dev/null | cut -c1-160)
+    fi
+    # Detach into a new session where `setsid` exists (Linux); Darwin ships no
+    # `setsid`, so fall back to `nohup` there. Either way the emit is a
+    # backgrounded, fail-open child that never delays bd.
+    if command -v setsid >/dev/null 2>&1; then
+        _bdg_detach='setsid'
+    else
+        _bdg_detach='nohup'
+    fi
     BDG_ARGV="$_bdg_argv" BDG_WARNED="$violated" BDG_OP="$_bdg_op" BDG_MODE="$MODE" \
     BDG_EXIT="$1" BDG_START_NS="$2" BDG_END_NS="$3" \
     BDG_PPID="$_bdg_ppid" BDG_COMM="$_bdg_comm" BDG_CALLER_CMD="$_bdg_cmd" \
     BDG_CWD="$PWD" \
-        setsid python3 "$_bdg_emit" >/dev/null 2>&1 </dev/null &
+        "$_bdg_detach" python3 "$_bdg_emit" >/dev/null 2>&1 </dev/null &
+}
+
+# Epoch nanoseconds. GNU date expands %N; BSD date (Darwin) prints a literal
+# `N`, so a non-numeric answer falls back to whole seconds scaled to ns.
+_bdg_now_ns() {
+    _bdg_ns=$(date +%s%N 2>/dev/null) || _bdg_ns=""
+    case "$_bdg_ns" in
+        '' | *[!0-9]*) _bdg_ns="$(date +%s 2>/dev/null || echo 0)000000000" ;;
+    esac
+    printf '%s' "$_bdg_ns"
 }
 
 if [ "$violated" -eq 1 ] && [ "$MODE" = "fail" ]; then
     # fail mode: BLOCK without execing. Emit a span FIRST (so the block is
     # observable to telemetry), then exit non-zero. Messages already on stderr.
-    _bdg_now=$(date +%s%N 2>/dev/null || echo 0)
+    _bdg_now=$(_bdg_now_ns)
     _bdg_emit_span 3 "$_bdg_now" "$_bdg_now"
     exit 3
 fi
@@ -649,10 +675,10 @@ fi
 # create can never take the plain `exec` path below.
 if [ "$is_forced_create" -eq 1 ]; then
     _bdg_op="create-forced-backlog"   # telemetry: enforcement is observable
-    _bdg_cstart=$(date +%s%N 2>/dev/null || echo 0)
+    _bdg_cstart=$(_bdg_now_ns)
     _bdg_cout=$("$REAL" "$@")
     _bdg_crc=$?
-    _bdg_cend=$(date +%s%N 2>/dev/null || echo 0)
+    _bdg_cend=$(_bdg_now_ns)
     if [ "$_bdg_crc" -eq 0 ]; then
         _bdg_newid=$(_bdg_extract_id "$_bdg_cout")
         if [ -n "$_bdg_newid" ]; then
@@ -677,11 +703,11 @@ if [ "${LIVESPEC_BD_GUARD_OTLP:-on}" = "off" ]; then
     exec "$REAL" "$@"
 fi
 
-_bdg_start=$(date +%s%N 2>/dev/null || echo 0)
+_bdg_start=$(_bdg_now_ns)
 trap ':' HUP INT TERM
 "$REAL" "$@"
 _bdg_rc=$?
 trap - HUP INT TERM
-_bdg_end=$(date +%s%N 2>/dev/null || echo 0)
+_bdg_end=$(_bdg_now_ns)
 _bdg_emit_span "$_bdg_rc" "$_bdg_start" "$_bdg_end"
 exit "$_bdg_rc"

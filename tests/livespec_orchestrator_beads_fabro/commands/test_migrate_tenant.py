@@ -122,7 +122,7 @@ def test_main_backfills_dispatch_factory_metadata_from_legacy_comments(
     assert "dispatch factories backfilled: 0" in captured.out
 
 
-def test_main_backfills_native_content_fields_and_retires_metadata_copies(
+def test_main_backfills_native_content_fields_and_keeps_the_metadata_copies(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     client = _fake()
@@ -154,14 +154,28 @@ def test_main_backfills_native_content_fields_and_retires_metadata_copies(
     metadata_only = client.show_issue(issue_id="metadata-only")
     assert metadata_only["acceptance_criteria"] == "Legacy acceptance."
     assert metadata_only["notes"] == "Legacy notes."
-    assert metadata_only["metadata"] == {"rank": "a0"}
+    # The metadata copies stay: the backfill's payload only omits them, and a
+    # metadata write merges top-level keys (bd-ib-anwf).
+    assert metadata_only["metadata"] == {
+        "rank": "a0",
+        "acceptance_criteria": "Legacy acceptance.",
+        "notes": "Legacy notes.",
+    }
     diverged = client.show_issue(issue_id="diverged")
     assert diverged["acceptance_criteria"] == "Native acceptance."
     assert diverged["notes"] == "Native notes."
-    assert diverged["metadata"] == {"rank": "a1"}
+    assert diverged["metadata"] == {
+        "rank": "a1",
+        "acceptance_criteria": "Stale acceptance.",
+        "notes": "Stale notes.",
+    }
 
     rc = main(argv=[])
     captured = capsys.readouterr()
 
+    # Both rows are counted again because their copies are still there. The
+    # second run's writes change neither record.
     assert rc == 0
-    assert "native content fields backfilled: 0" in captured.out
+    assert "native content fields backfilled: 2" in captured.out
+    assert client.show_issue(issue_id="metadata-only") == metadata_only
+    assert client.show_issue(issue_id="diverged") == diverged

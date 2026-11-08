@@ -87,6 +87,7 @@ SYSTEM_INFO_PATH = f"{_API_PREFIX}/system/info"
 # The `SubmitAnswerRequest` variant that picks one option of a multiple-choice
 # question by its `key`.
 _ANSWER_KIND_SELECTED = "selected"
+_EVENT_PAGE_LIMIT = 100
 _NO_SERVER_URL_ERROR = (
     "the factory target carries no server url; refusing to send a Fabro HTTP "
     "request against an unnamed host"
@@ -255,6 +256,30 @@ class FabroHttpPort:
         return self._verb(
             method="GET",
             path=f"{_API_PREFIX}/runs/{run_id}/state",
+            payload=None,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def stream(
+        self,
+        *,
+        run_id: str,
+        after: int | None,
+        timeout_seconds: float,
+    ) -> FabroHttpResult:
+        """Read the items after one run-local stream cursor.
+
+        The run route applies ``after`` before serialising its response.  That
+        is materially different from ``fabro events -n``: the CLI downloads
+        the complete history first and trims it at the client, so its cost
+        grows with an otherwise healthy run's age.
+        """
+        query = f"limit={_EVENT_PAGE_LIMIT}"
+        if after is not None:
+            query = f"after={after}&{query}"
+        return self._verb(
+            method="GET",
+            path=f"{_API_PREFIX}/runs/{run_id}/events?{query}",
             payload=None,
             timeout_seconds=timeout_seconds,
         )

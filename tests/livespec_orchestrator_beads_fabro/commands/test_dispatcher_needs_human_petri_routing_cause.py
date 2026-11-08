@@ -120,6 +120,39 @@ def _stage(*, handler: str, state: str) -> dict[str, Any]:
     return {"handler": handler, "state": state, "output": None, "response": None}
 
 
+def _failed_stage(*, output: str | None, completion_reason: str | None = None) -> dict[str, Any]:
+    """One failed agent stage, optionally with its timeout completion reason."""
+    stage = _stage(handler="agent", state="failed")
+    stage["output"] = output
+    if completion_reason is not None:
+        stage["completion"] = {"failure_reason": completion_reason}
+    return stage
+
+
+def _ordered_petri_inspect(*, stages: dict[str, Any], execution: list[str]) -> list[object]:
+    """A terminal record whose map order conflicts with its execution order."""
+    return [
+        {
+            "run_id": _RUN,
+            "status": {"kind": "failed", "reason": "workflow_error"},
+            "stages": stages,
+            "checkpoint": {
+                "current_node": "needs_human",
+                "git_commit_sha": "9bcd4faa2e3c4d5f6071829304a5b6c7d8e9f012",
+                "timestamp": "2026-11-04T00:00:00.000000000Z",
+            },
+            "conclusion": {
+                "stages": execution,
+                "status": "failed",
+                "failure": {
+                    "reason": "workflow_error",
+                    "detail": {"message": _TERMINAL_MESSAGE, "category": "deterministic"},
+                },
+            },
+        }
+    ]
+
+
 def _petri_inspect() -> list[object]:
     """`fabro inspect --json` for a Petri-era run that ended at the terminal.
 
@@ -306,6 +339,83 @@ def test_the_measured_petri_failure_message_is_named_as_the_cause(
     assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
     assert f"innermost cause: {_FAILURE_MESSAGE}" in outcome.detail
     assert f"innermost cause: {_FAILURE_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_petri_conclusion_order_selects_fix_after_a_blob_output_predecessor(
+    tmp_path: Path,
+) -> None:
+    """A map sorted `fix`, `pr` must not send attribution back to the blob."""
+    cause = "per-file coverage failed after the refresh"
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=_ordered_petri_inspect(
+            stages={
+                "fix@2": _failed_stage(
+                    output=f'{{"outcome": "failed", "failure_reason": "{cause}"}}'
+                ),
+                "pr_refresh@1": _failed_stage(output="blob://sha256/04f3"),
+                _TERMINAL_STAGE: _stage(handler="script", state="failed"),
+            },
+            execution=["pr_refresh@1", "refresh_repair@1", "fix@2", _TERMINAL_STAGE],
+        ),
+        events_payload=None,
+    )
+
+    body = needs_human_cause_body(outcome=outcome)
+
+    assert outcome.needs_human_stages == ("pr_refresh@1", "fix@2")
+    assert "failed stage: pr_refresh@1, fix@2" in body
+    assert f"innermost cause: {cause}" in body
+    assert "innermost cause: ABSENT" not in body
+
+
+def test_petri_conclusion_order_selects_fix_after_a_rebase_conflict(
+    tmp_path: Path,
+) -> None:
+    """A map sorted `fix`, `publish` must not blame the repaired conflict."""
+    cause = "check-heading-coverage-debt-register refused the commit"
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=_ordered_petri_inspect(
+            stages={
+                "fix@1": _failed_stage(
+                    output=f'{{"outcome": "failed", "failure_reason": "{cause}"}}'
+                ),
+                "publish_draft@1": _failed_stage(output="rebase conflict"),
+                _TERMINAL_STAGE: _stage(handler="script", state="failed"),
+            },
+            execution=["publish_draft@1", "refresh_repair@1", "fix@1", _TERMINAL_STAGE],
+        ),
+        events_payload=None,
+    )
+
+    body = needs_human_cause_body(outcome=outcome)
+
+    assert outcome.needs_human_stages == ("publish_draft@1", "fix@1")
+    assert "failed stage: publish_draft@1, fix@1" in body
+    assert f"innermost cause: {cause}" in body
+    assert "innermost cause: rebase conflict" not in body
+
+
+def test_a_timed_out_petri_stage_surfaces_its_own_completion_reason(tmp_path: Path) -> None:
+    """A stage with no output still records the timeout that ended its turn."""
+    cause = "review_fix@1 timed out after 7200 seconds"
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=_ordered_petri_inspect(
+            stages={
+                "review_fix@1": _failed_stage(output=None, completion_reason=cause),
+                _TERMINAL_STAGE: _stage(handler="script", state="failed"),
+            },
+            execution=["review_fix@1", _TERMINAL_STAGE],
+        ),
+        events_payload=None,
+    )
+
+    body = needs_human_cause_body(outcome=outcome)
+
+    assert "failed stage: review_fix@1" in body
+    assert f"innermost cause: {cause}" in body
 
 
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(

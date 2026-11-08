@@ -351,11 +351,55 @@ rollback target is `v0393-95a2e5b80` (sha256 `996d4e23…b072`), named in `host_
 | `b4d9d6583` (thewoolleyman/fabro#18) | a run-store failure is reported as `transient_infra` | a run killed by the server's own store fault was charged to the work item | **YES**, all three gmktec instances | `bd-ib-bpucez` (plan `fabro-currency`) |
 | `8764f1de8` (thewoolleyman/fabro#19) | a run resumed onto a re-acquired sandbox re-runs its prepare steps | the resumed run lost the Dispatcher-made sandbox preparation | **YES**, all three gmktec instances; the live-server proof is still owed | `bd-ib-ljw2xg` (plan `fabro-currency`) |
 
+**The serving build (2026-11-04, later).** Since 2026-11-04 ~10:12Z all three gmktec
+instances serve `c39bdbded`, the carrier tip after `8764f1de8`, with the four rows below.
+Its `Cargo.lock` pins Petri `d25a6c15` (`thewoolleyman/petri#3`), which also carries
+`565ac47`, so `565ac47` is now deployed. The build is
+`fabro 0.393.0-nightly.1 (c39bdbd 2026-11-04)`, sha256
+`e93c96b721a356d88b9dc54da009bc4da7c820f37f7146ef888e10c1ca4f6e96`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-c39bdbded/` on vps.
+The pin is livespec-dev-tooling PR #3369 (`ebbba70a`). Candidate and mi-homelab restarted
+at zero runs; main restarted by cancel-and-redispatch on a coordinator stop-the-line for
+slow board reads. Its rollback target is `v0393-8764f1de8`, named in `host_vars`. The
+factory client moved to the same build in this repository's PR #4363 (`828a53225`).
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `cc9a4e011` (thewoolleyman/fabro#20) | the Petri resume tests wait on the interrupted run's teardown, not on a task count | test-only: the resume tests raced the run's teardown | **YES**, all three gmktec instances (no runtime change) | `bd-ib-q3xszn` (plan `fabro-currency`) |
+| `ad393441b` (thewoolleyman/fabro#21) | the client requests gzip/brotli board reads, and plain `fabro ps` asks the server for only the active board columns | a board read moved about 7.2 MB uncompressed over the vps-gmktec link, and plain `ps` downloaded every run to show the live ones | **YES**, all three gmktec instances and the pinned factory client | `bd-ib-xoh477` (plan `fabro-currency`) |
+| `fcb4dc073` (thewoolleyman/fabro#22) | the stall watchdog takes an injectable clock, and the model-streaming stall test runs on it | the stall test's verdict depended on host load | **YES**, all three gmktec instances | `bd-ib-gmuxd4` (plan `fabro-currency`) |
+| `c39bdbded` (thewoolleyman/fabro#23) | a run-list entry carries a goal preview of at most 1 KiB; the single-run read keeps the full goal | 87% of the list body was goal text; on `:32276` the `-a` body went from 1,911,454 to 80,913 bytes and `fabro ps -a` from 26-38 s to about 1 s | **YES**, all three gmktec instances | `bd-ib-xoh477` (plan `fabro-currency`) |
+
 Deploying it exposed a role defect. The `fabro_server` role's restart-deferred apply
 renamed the new build over the binary of a running server. That server spawns each run's
 worker from its own executable path, so every new run failed to launch from 14:42:47Z
 until the 15:04:02Z restart. The fix is livespec-dev-tooling-udma. Until it ships, any
 apply that stages a Fabro binary MUST restart that instance in the same step.
+
+**The serving build (2026-11-05).** Since 2026-11-05 all three gmktec instances serve
+`85af3547e`, the carrier tip after `c39bdbded`, with the three rows below; its `Cargo.lock`
+still pins Petri `d25a6c15`. The build is `fabro 0.393.0-nightly.1 (85af354 2026-11-04)`,
+sha256 `d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711`, staged with
+`BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0393-85af3547e/` on vps.
+The pins are livespec-dev-tooling `5ff61d5c` (candidate) and `376f3791` (main and
+mi-homelab). Main `:32276` restarted at 16:40:11Z in the same apply that moved its sandbox
+driver to v0.8.1 (livespec-dev-tooling `7d2dd488`), after a verified preserve of all 15
+live runs and their cancel-and-redispatch. Its rollback target is `v0393-c39bdbded`, and
+the pre-staged revert is livespec-dev-tooling branch
+`revert/fabro-server-85af354-driver-v0.8.1`. The factory client moved to the same build
+in this change.
+
+| Commit on `carrier-candidate-registered-20261023` (fork PR) | What it is | Why the factory needs it | Deployed | Owner |
+| --- | --- | --- | --- | --- |
+| `da6c8015a` (thewoolleyman/fabro#24) | `fabro run` retries the source-branch push on a transient origin rejection, and keeps the push stderr in its "could not be made available" error | one GitHub `Internal Server Error` or `commit_refs` failure on the push failed the whole dispatch, with no reason printed | **YES**, all three gmktec instances and the pinned factory client | `bd-ib-uctbct` (plan `fabro-currency`) |
+| `0a867ce16` (thewoolleyman/fabro#25) | `fabro events -n` reads only the tail pages from the server, prints each page as it arrives, and a node subject no longer carries the node's script | a bounded read of a long run downloaded the whole stream (107 MB) and printed nothing before a timeout, so the stall watchdog made false kills | **YES**, all three gmktec instances and the pinned factory client; on main `-n 30` of a 24,644-item run took 3.5 s | `bd-ib-dmjsmd` (plan `fabro-currency`) |
+| `85af3547e` (thewoolleyman/fabro#26) | the server keeps one sandbox plugin supervisor per provider configuration for its whole life | the server's own `sandbox cp` and `sandbox/describe` calls failed with "plugin response transport closed" | **YES**, all three gmktec instances | `bd-ib-m7lxgn` (plan `fabro-currency`) |
+| `0d5ce5f60` (thewoolleyman/fabro#27; on `factory-integration` as `161890e36`, #28), fixed by `711a96404` (#30; on `factory-integration` as `8b82e99bb`, #29) | carrier-only CI: `.github/workflows/fork-gates.yml` runs Format, Clippy and Test on the `fabro-k3s` ARC scale set for every push to, and pull request against, a `carrier-*` branch or `factory-integration`; `carrier-build.yml` builds the release binary from a named ref on the same runners and publishes it with `VERSION`, `SHA256SUMS` and `BUILD_INFO`; #29/#30 add the system `safe.directory` entry and a bash default shell its container job needs (first good build: run 42149380640) | a carrier pull request showed NO checks, so every fork gate and every engine build ran on the shared dev host (`SPECIFICATION/constraints.md`, "Fork gate and build venue") | **N/A**, it changes no engine code; the serving build is unchanged | `bd-ib-dqxcsh` (plan `fabro-currency`) |
+| `3aa7521ea` (thewoolleyman/fabro#31) | the command stall tests `command_output_refreshes_the_budget` and `one_active_child_keeps_the_whole_parallel_run_alive` run on a manual stall clock that only recorded command output advances, with paired wider-than-budget cases that must stall (test-only) | both tests measured their 1 s budget on the real clock, so sandbox start-up under host load cancelled an active run | **N/A**, it changes no engine code; the serving build is unchanged | `bd-ib-oeckki` (plan `fabro-currency`) |
+| `f4e90c2af` (thewoolleyman/fabro#32) | `required_publication_blocks_the_terminal_result_and_cleanup` and `a_pending_question_carries_its_choice_descriptions_previews_and_context` wait on the event they assert with no test-local deadline; the gate in the second no longer expires its question after 1.5 s of real time, and the test answers it (test-only) | both tests failed under host load (27.2 s and 33.4 s at load average 100-113) while the behaviour was correct | **N/A**, it changes no engine code; the serving build is unchanged | `bd-ib-4uge7u` (plan `fabro-currency`) |
+| `41c42145e` (thewoolleyman/fabro#33) | `Cargo.lock` pins Petri `c6bfd5e3` (thewoolleyman/petri#4, on `fabro-integration-registered-20261023`): Petri's post-exit output drain ends on silence only while it waits on a stream that yields nothing, so a log consumer that holds one line past the 5 s idle limit no longer cuts the tail off an exited process's output | under host load a command or process step lost its output's tail behind the truncation marker; `fabro-petri`'s `a_large_output_round_trips_through_the_blob_table` ended `Success` with its output under the offload threshold and no blob reference | **NO.** It changes engine code (Petri); the serving build `85af3547e` still pins Petri `d25a6c15` until a carrier build and a gitops roll | `bd-ib-aqcgxz` (plan `fabro-currency`) |
+| `c2be004f5` (thewoolleyman/fabro#34) | `.config/nextest.toml` `profile.ci` flags SLOW at 30 s and terminates no test, through one `filter = "all()"` override so no `profile.default` kill applies under CI; the fork-gates Test job gains `timeout-minutes: 120` as the run-level bound (test configuration only) | four healthy `fabro-petri` hooks tests crossed the 120 s per-test kill at load average 100-113 and were reported as failures | **N/A**, it changes no engine code; the serving build is unchanged | `bd-ib-adrhkf` (plan `fabro-currency`) |
+| `bbe693847` (thewoolleyman/fabro#35) | the `fabro-cli` integration-test helpers in `tests/it/cmd/support.rs` wait for fixture setup with no wall-clock deadline: four `assert_cmd` timeouts and four `Instant` polls removed, with the run-level bound left to the fork-gates Test job (test-only) | under host load `events_completed_run_outputs_raw_ndjson` and `events_since_filters_output` failed at 32 to 37 s while their fixture's `fabro run --dry-run` was still running | **N/A**, it changes no engine code; the serving build is unchanged | `bd-ib-sltfyg` (plan `fabro-currency`) |
 
 **The Kubernetes port's Fabro carries, cut into the 0.389 carrier (2026-10-19).** Plan
 `fabro-currency` cut `carrier-0389` at `bf5a2dc351644fe0d61cf8d2f25193c23553bd06` on
@@ -376,7 +420,9 @@ its own plan added.
 | `plugin-sandbox-providers` at `ec1d605cd` | an unbundled provider kind maps to Petri's plugin backend, launched from `[server.sandbox.providers.<kind>]` with `host_address`, `args` and `inherit_env`; the environment's resources reach every container backend, which also gives Docker sandboxes the environment's cpu, memory and disk as container limits; the run worker resolves only `server.sandbox` | superseded upstream (2026-10-20) by draft `fabro-sh/fabro#1048` for `#937`, from topic `plugin-registered-providers` `3022c9922` on upstream `main`, which registers the provider through #122's `register_plugin` and needs a `process_spec`. This topic stays in the carrier until the next carrier moves |
 | `petri-fork-integration` at `a1d991661` | the carrier-only Cargo `[patch]` described above | never upstream |
 
-**Gating a carrier on vps.** Run fmt, clippy AND nextest on the fork's pinned
+**Gating a carrier on vps (fallback only since 2026-11-06).** A carrier is now gated by
+the fork-gates checks on `fabro-k3s` (`.ai/fabro-fork-hand-build.md`); the notes below
+apply only to the dev-host fallback. Run fmt, clippy AND nextest on the fork's pinned
 `nightly-2026-04-14`, and build `fabro-cli` in the same nextest invocation as
 `fabro-server`. The three server graph-render tests (`get_graph_returns_svg`,
 `render_graph_from_manifest_returns_svg`,

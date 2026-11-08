@@ -1912,11 +1912,12 @@
     "work_item": "bd-ib-dpkip6"
   },
   {
-    "heading": "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run",
+    "heading": "## Scenario 199 \u2014 A fix turn grades each tree once, through its commit hook",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.prompts.test_fix_check_suite_once_per_tree_scenario199.test_every_directive_to_run_the_suite_carries_the_once_per_tree_rule",
-    "reason": "Prompt-tier acceptance for this heading, completed by bd-ib-k6dwyv. The tier is tests.prompts (a declared scenario tier) because the deliverable IS the prose: the obligation is discharged by the agent out of the fix prompt and is rendered by no Python caller, so nothing host-side can observe whether a turn chose to run the suite twice, and the engine reports the resulting timeout as an ordinary node failure. The bound node id is the DIRECTIVE-SITE enumeration rather than a case reading the new section, because the defect was never a missing paragraph: each site that directs a run of the suite said to re-run it until green with no exemption, so a rule stated in a section the directive never references leaves the directive saying the thing that cost run 01M56YAEWMS8 its turn. That case collects every list item carrying the check-suite workflow input and requires the rule AT each of them, which fails for a third directive added later without it, and its count control asserts the enumeration reached both known sites so a splitter that matched nothing fails rather than reporting clean. The heading's three gherkin scenarios are sibling cases in the same module, each asserted POSITIVELY as the sentences that grant the arm rather than by probing for the absence of a phrase: the hook-run-counts scenario (test_a_hook_green_full_suite_run_is_counted_as_the_turn_s_run_for_that_tree), the partial-run-or-later-change scenario (test_a_partial_hook_run_or_a_later_change_still_owes_a_full_run), and the refresh-repair integrated-tree scenario (test_the_rule_reaches_the_refresh_repair_steps_integrated_tree); two further siblings pin that the rule relaxes neither the obligation nor the janitor re-run behind it, and that the section is read before the turn-finishing guidance. The graph control (test_the_graph_scan_names_one_fix_prompt_that_is_on_disk) is what makes the prompt under test the file the fix node actually dispatches."
+    "test": "TODO",
+    "reason": "Revised at v319 (proposal fix-turn-commits-run-the-affected-tests-gate): a fix turn now grades each tree once, through its commit hook, and the fix prompt directs no full-suite run beyond what that hook runs. The earlier prompt-tier test (tests.prompts.test_fix_check_suite_once_per_tree_scenario199) asserts the superseded once-per-tree rule, so a test of the revised rule is owed by work-item bd-ib-fde4ie.",
+    "work_item": "bd-ib-fde4ie"
   },
   {
     "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",
@@ -2335,11 +2336,11 @@
     "work_item": "bd-ib-6zy3zd"
   },
   {
-    "heading": "## Scenario 255 \u2014 A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
+    "heading": "## Scenario 255 \u2014 A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal in-turn-commits-run-the-affected-tests-gate, and the owning work-item bd-ib-72hvx5 makes the commit hook of implement and review_fix turns run the affected-tests gate with a full-aggregate fallback, together with the test that binds this entry.",
+    "reason": "An integration-tier test is owed for this heading: ratified with proposal in-turn-commits-run-the-affected-tests-gate, and the owning work-item bd-ib-72hvx5 makes the commit hook of implement and review_fix turns run the affected-tests gate with a full-aggregate fallback, together with the test that binds this entry. Extended at v319 (proposal fix-turn-commits-run-the-affected-tests-gate) to fix turns and to workflow.fabro graph-reading test selection; those cases are owed by work-item bd-ib-fde4ie.",
     "work_item": "bd-ib-72hvx5"
   },
   {
@@ -2727,6 +2728,22 @@
     "work_item": "bd-ib-ke5wkf"
   },
   {
+    "heading": "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "tests.integration.test_workflow_refresh_before_janitor_scenario305",
+    "reason": "Integration-tier execution against a real throwaway origin: the janitor refreshes before its declared aggregate and records the exact passed head; publish_draft then pushes that head unchanged after a further default-branch move; conflict and aggregate-red refreshes restore the agent head and record their refresh-repair brief for the existing fix route. The three refresh-merge cases added at v319 (proposal janitor-refresh-merge-grades-once) are owed by work-item bd-ib-yqjaut.",
+    "work_item": "bd-ib-fvgkw4"
+  },
+  {
+    "heading": "## Scenario 306 \u2014 A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: a-janitor-green-run-cancelled was ratified 2026-11-04 and the owning work-item bd-ib-vraou4 adds the Dispatcher's cancel-for-restart command, which publishes a janitor-green run's committed tree to refs/livespec/preserved-publish/<work-item-id>/ before cancelling it, the same best-effort publication when an outside cancel of a janitor-green run is reported, the livespec-preserved-tree ledger comment, and a re-dispatch brief naming the preserved tree, with the test exercising each of those paths.",
+    "work_item": "bd-ib-vraou4"
+  },
+  {
     "heading": "## Dispatch pre-launch step attribution and concurrency",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
@@ -2762,9 +2779,7 @@
     "heading": "## Scenario: incident provenance exceptions remain exact and repayable",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-y7ryj3 owns implementation and proof.",
-    "work_item": "bd-ib-y7ryj3"
+    "test": "tests.integration.test_incident_provenance_receipts.test_factory_provenance_recognizes_a_trusted_receipt_only_for_its_exact_pr_head_and_landed_commits"
   },
   {
     "heading": "## Scenario: a successful incident merge reenters normal factory on the same item",
@@ -2797,5 +2812,189 @@
     "test": "TODO",
     "reason": "A real integration-tier test is owed for this incident lifecycle behavior; bd-ib-k5teti owns implementation and proof.",
     "work_item": "bd-ib-k5teti"
+  },
+  {
+    "heading": "## Scenario 307 \u2014 The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-3ufx6l ports the repository hold, WIP gate, breakage exception, early-exit re-ticket, gmktec hold and candidate-target gates into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising each.",
+    "work_item": "bd-ib-3ufx6l"
+  },
+  {
+    "heading": "## Scenario 308 \u2014 A required check that fails terminally on infrastructure is re-run once and files a flake item",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-tckulg adds the merge-poll failed-job classifier, the single automatic failed-jobs re-run with its journal row and flake-item filing, and tests that exercise each scenario of this heading.",
+    "work_item": "bd-ib-tckulg"
+  },
+  {
+    "heading": "## Scenario 309 \u2014 Fleet-launch launchers share one WIP claim-count read per repository per time-to-live",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-zwtfbq carries the shared per-repository WIP claim-count cache into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising one projection read per time-to-live, stale recomputation, own-marker exclusion, failed-recomputation no-hold and cached-uncached equality.",
+    "work_item": "bd-ib-zwtfbq"
+  },
+  {
+    "heading": "## Scenario 310 \u2014 A terminal dispatch span carries its run class, execution target and sandbox cost",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-faprof adds the four terminal-span cost attributes (run class, execution target, sandbox CPU-seconds and peak memory) and their allowlist entries, with cases for a pod sandbox on gmktec-xubuntu and for an unreadable sandbox control group.",
+    "work_item": "bd-ib-faprof"
+  },
+  {
+    "heading": "## Scenario 311 \u2014 Dropping an attribute the scheduler requires fails the check",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-atmome adds the emitted-attribute vocabulary and the just-check member that reads livespec-dev-tooling's required_columns.json from the pinned package, with cases for a renamed vocabulary key and a dropped allowlist key.",
+    "work_item": "bd-ib-atmome"
+  },
+  {
+    "heading": "## Scenario 312 \u2014 A fleet launcher that exits without a run leaves a terminal line, and its ready item's ticket is re-taken or reported",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-rk7mbd carries non-run-exit accounting into the committed fleet-launch/ launchers and adds the check-fleet-launch harness cases exercising the terminal line on TERM, the dropped-ticket ledger comment, the bounded ready-set retry and the dead-pid stall line.",
+    "work_item": "bd-ib-rk7mbd"
+  },
+  {
+    "heading": "## Scenario 313 \u2014 A failed scheduled default-branch workflow run becomes one ledger item per failed job",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-pgbr52 adds dispatcher.py breakage-pass, with cases for a failed run filing one item per failed job, a re-run at the same head commit filing nothing, a green run filing nothing, and an unreadable workflow failing visibly.",
+    "work_item": "bd-ib-pgbr52"
+  },
+  {
+    "heading": "## Scenario: incident entry owns one initial authority before a carrier PR exists",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this incident lifecycle behavior: independent concurrent clients sharing only the installed public ledger server race first incident publication, retry after a lost reply, pre-PR commit and first push, and exact PR binding; bd-ib-dzbwaq owns implementation and proof.",
+    "work_item": "bd-ib-dzbwaq"
+  },
+  {
+    "heading": "## Scenario 314 \u2014 A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-v52w7a adds the host-only screen and the exit-5 no-re-ticket rule to the committed fleet-launch/ launchers, with check-fleet-launch harness cases for a host-only verdict, a drive exiting 5 and a drive exiting 1 before listing.",
+    "work_item": "bd-ib-v52w7a"
+  },
+  {
+    "heading": "## Scenario 315 \u2014 A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-t5aju3 makes every permanent pre-dispatch refusal of a hand-picked dispatch, the host-only refusal included, exit 5 with exactly one REFUSED: stderr line, and adds dispatcher.py host-only.",
+    "work_item": "bd-ib-t5aju3"
+  },
+  {
+    "heading": "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-fa5elg adds kinds:, reason: and until: to repository hold files and the hold re-read under the factory mutex to the committed fleet-launch/ launchers, with check-fleet-launch harness cases for each.",
+    "work_item": "bd-ib-fa5elg"
+  },
+  {
+    "heading": "## Scenario 317 \u2014 Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-ofvsr3 adds the preserving step at the end of implement_commit_settle, fix_commit_settle, review_fix_commit_settle and needs_human that creates numbered refs/livespec/wip refs under the tree guard, plus the check that fails a commit-settling step without it.",
+    "work_item": "bd-ib-ofvsr3"
+  },
+  {
+    "heading": "## Scenario 318 \u2014 A run's ending names its latest preserved capture on the item",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-xdhe5z adds the livespec-preserved-tree ledger comment naming the run's latest preserved capture, none, or undetermined at every non-merge run ending.",
+    "work_item": "bd-ib-xdhe5z"
+  },
+  {
+    "heading": "## Scenario 319 \u2014 A re-dispatch starts from the latest run's latest preserved capture",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-v6br5b adds recovery routing that seeds a re-dispatch from the latest run's highest-numbered work-in-progress ref, with the end-to-end seeded continuation case.",
+    "work_item": "bd-ib-v6br5b"
+  },
+  {
+    "heading": "## Scenario 320 \u2014 Preservation refs are deleted when the Dispatcher closes or collects an item's runs",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-efiasj adds deletion of an item's work-in-progress, preserved-publish and needs-human refs when the Dispatcher closes or accepts it or collects its ended runs.",
+    "work_item": "bd-ib-efiasj"
+  },
+  {
+    "heading": "## Scenario 321 \u2014 drive names the stage and offending sources of a goal-template preflight refusal",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-it2d makes drive's human summary of a pre-run Dispatcher refusal name the refusing stage and its detail, naming each offending field and each ledger comment by id and creation instant for a goal-minijinja-preflight refusal, with the --json payload unchanged.",
+    "work_item": "bd-ib-it2d"
+  },
+  {
+    "heading": "## Scenario 322 \u2014 A comment-poisoned item is superseded by a successor that passes the goal-template preflight",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-it2d adds dispatcher.py supersede-contaminated, which files one successor through the capture filing seam, copies instruction comments with a provenance line and neutralized openers while keeping a FOR-stage scope line first, re-points blocks edges, closes the original as duplicate, and refuses closed, uncontaminated or field-poisoned items with no writes.",
+    "work_item": "bd-ib-it2d"
+  },
+  {
+    "heading": "## Scenario 323 \u2014 An earlier run's preserved ref never outranks a newer run's published head",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-so6fef makes recovery routing refuse to prefer an earlier run's needs-human or failed-checkpoint preservation ref over a later run's published head, prefer the same or a later run's ref, and route held with the measurement publishing-run-unobservable when a ref's or the head's publishing run cannot be established.",
+    "work_item": "bd-ib-so6fef"
+  },
+  {
+    "heading": "## Scenario 324 \u2014 A hold recorded only in the dispatch journal reaches needs-attention",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-5xogp4 composes hygiene:journal-hold facts from this repository's dispatch journal, retires them on the closed retiring list or at seven days, and excludes an item carrying a live recovery-held from the idle-factory fact and the idle-slot audit.",
+    "work_item": "bd-ib-5xogp4"
+  },
+  {
+    "heading": "## Scenario 325 \u2014 A workflow-declared node timeout stands unless configuration names the node",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-2eyiwy renders a workflow-declared node timeout unless configuration names the node, names the supplying layer on the dispatch record, has the ceiling and the execution allowance read the rendered values, ends a commit settle node's wait 300 seconds before its rendered timeout, and refuses a settle timeout that leaves no wait.",
+    "work_item": "bd-ib-2eyiwy"
+  },
+  {
+    "heading": "## Scenario 326 \u2014 A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-s754le keeps LIVESPEC_AGENT_STAGE out of a tree's test processes through a harness-owned means, so a resumed or seeded tree with no fixture clearing it passes its own commit hook, while an agent stage's own publication call is still refused.",
+    "work_item": "bd-ib-s754le"
+  },
+  {
+    "heading": "## Scenario 327 \u2014 A fresh ruling routes a released item fresh past its preserved trees",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-xz35zu adds dispatcher.py fresh-ruling and makes recovery routing route a recovery-released item fresh past every preserved tree it holds while a fresh ruling is current, still grading the pre-claim refusal first, holding on a non-fallback refusal or an untaken needs-human listing, recording passed-over needs-human refs, letting the newer of a seed ruling and a fresh ruling govern, and consuming the ruling once.",
+    "work_item": "bd-ib-xz35zu"
+  },
+  {
+    "heading": "## Scenario 328 \u2014 A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-v75dlb makes the factory prepare step materialize the pinned livespec-driver-codex release into each Codex sandbox turn's per-run CODEX_HOME with its hooks trusted only on a byte match to that release tag, fail the prepare step naming the plugin and hook on a mismatch, and carry the livespec-driver-claude PreToolUse hooks into each Claude sandbox turn, so a forbidden command is blocked in either runtime.",
+    "work_item": "bd-ib-v75dlb"
   }
 ]

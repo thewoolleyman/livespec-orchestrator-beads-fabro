@@ -16,12 +16,14 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from livespec_orchestrator_beads_fabro import _store_dispatch_claim as dispatch_claim
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client, reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_STAMP_METADATA_KEY,
     ClaimStamp,
     claim_row_for,
     claim_stamp_from_record,
+    claim_stamp_metadata,
     record_claim_stamp,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -181,3 +183,71 @@ def test_a_pending_stamp_is_replaced_wholesale_by_the_run_stamp() -> None:
     row = claim_row_for(path=_config(), work_item_id=_ITEM_ID)
     assert (row.status, row.assignee) == ("active", "fabro")
     assert row.stamp == replace(pending, run_id="01RUN")
+
+
+def test_a_claim_change_mints_a_server_assigned_open_claim_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The protocol's successor must be a new no-history server record.
+
+    A fixed-id create could reopen a token a competing writer has already
+    closed, defeating the close-as-compare-and-swap protocol before a writer
+    has a chance to read the winning close reason back.
+    """
+    client = make_beads_client(config=_config())
+    create = getattr(dispatch_claim, "create_claim_token", None)
+
+    assert callable(create), "claim-token protocol must expose its successor-token mint"
+
+    no_history_create = client.create_no_history_issue
+    no_history_calls: list[tuple[str, str]] = []
+
+    def _create_no_history(*, title: str, description: str) -> str:
+        no_history_calls.append((title, description))
+        return no_history_create(title=title, description=description)
+
+    monkeypatch.setattr(client, "create_no_history_issue", _create_no_history)
+
+    token_id = create(client=client)
+
+    assert no_history_calls, "a claim token must receive its id from the server"
+    record = client.show_issue(issue_id=token_id)
+    assert record["status"] != "closed"
+    assert "claim-token" in record["labels"]
+
+
+def test_claim_token_protocol_disabled_preserves_the_legacy_single_item_write() -> None:
+    """The default is a strict no-token cutover: existing writers stay unchanged."""
+    append_work_item(path=_config(), item=_item())
+    client = make_beads_client(config=_config())
+    change = getattr(dispatch_claim, "change_claim", None)
+
+    assert callable(change), "claim-token protocol must expose the guarded claim write"
+    outcome = change(
+        client=client,
+        work_item_id=_ITEM_ID,
+        writer="test-writer",
+        intent="hold-for-test",
+        claim_tokens=False,
+        status="blocked",
+    )
+
+    assert outcome.outcome == "applied"
+    assert client.show_issue(issue_id=_ITEM_ID)["status"] == "blocked"
+    assert client.no_history_issue_ids() == ()
+
+
+def test_the_stamp_overlay_is_the_one_top_level_key_a_reader_finds_the_stamp_under() -> None:
+    """The overlay a token-guarded admission merges reads back as the stamp it carries."""
+    stamp = ClaimStamp(
+        dispatch_id="01DISPATCH",
+        dispatching_host="hp",
+        run_id=None,
+        factory_name="hp",
+        factory_server="https://hp.example:32276",
+    )
+
+    overlay = claim_stamp_metadata(stamp=stamp)
+
+    assert list(overlay) == [CLAIM_STAMP_METADATA_KEY]
+    assert claim_stamp_from_record(record={"metadata": overlay}) == stamp

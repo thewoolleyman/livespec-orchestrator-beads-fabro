@@ -80,9 +80,22 @@ def test_publish_draft_takes_the_unconfigured_default_duration() -> None:
     assert f'timeout="{DEFAULT_NODE_TIMEOUT_SECONDS}s"' in body
 
 
-def test_this_repository_budgets_both_publication_stages_for_one_hour() -> None:
-    """Scenario 177: this repository's own node_timeouts raise both stages."""
-    timeouts = resolve_node_timeouts(cwd=_REPO_ROOT)
+def test_this_repository_budgets_both_publication_stages_for_one_hour(tmp_path: Path) -> None:
+    """Scenario 177: a target whose node_timeouts raise both stages renders them.
+
+    The target is a FIXTURE, not this repository's committed `.livespec.jsonc`.
+    `dispatcher.node_timeouts` is an operator dial: plan bd-ib-qy5wol raised this
+    repository's `pr_refresh` to 5400 s on 2026-11-08, and a test reading the
+    committed value turned that dial into a red build. The scenario's claim is
+    that a configured value resolves from the repository layer and renders as a
+    literal duration, and a fixture target proves exactly that.
+    """
+    (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {"node_timeouts": '
+        '{"publish_draft": 3600, "pr_refresh": 3600}}}}\n',
+        encoding="utf-8",
+    )
+    timeouts = resolve_node_timeouts(cwd=tmp_path)
     assert isinstance(timeouts, NodeTimeouts), timeouts
     rendered = _rendered(timeouts=timeouts)
 

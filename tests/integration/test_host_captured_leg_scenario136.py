@@ -66,6 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
     stale_proof_pointer_items,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main as dispatcher_main
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -374,6 +375,7 @@ def _patch_acceptance_pass(*, monkeypatch: pytest.MonkeyPatch, comments: str) ->
         outcome: DispatchOutcome,
         raw_labels: Sequence[str] = (),
         journal_path: Path | None = None,
+        incident: IncidentAcceptanceScope | None = None,
     ) -> AcceptancePassResult:
         return run_acceptance_pass(
             repo=repo,
@@ -382,6 +384,7 @@ def _patch_acceptance_pass(*, monkeypatch: pytest.MonkeyPatch, comments: str) ->
             runner=runner,
             raw_labels=raw_labels,
             journal_path=journal_path,
+            incident=incident,
         )
 
     monkeypatch.setattr(_dispatcher_completion, "run_acceptance_pass", _call)
@@ -415,6 +418,7 @@ def _dispatch_with_host_records(
         outcome: DispatchOutcome,
         raw_labels: Sequence[str] = (),
         journal_path: Path | None = None,
+        incident: IncidentAcceptanceScope | None = None,
     ) -> AcceptancePassResult:
         return run_acceptance_pass(
             repo=repo,
@@ -423,6 +427,7 @@ def _dispatch_with_host_records(
             runner=runner,
             raw_labels=raw_labels,
             journal_path=journal_path,
+            incident=incident,
         )
 
     monkeypatch.setattr(_dispatcher_completion, "run_acceptance_pass", _call)

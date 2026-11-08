@@ -171,6 +171,39 @@ def test_a_running_commit_is_reported_running_when_the_bound_expires(
     assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
 
 
+@pytest.mark.parametrize(
+    ("stage", "settle"),
+    [("fix", "fix_commit_settle"), ("review_fix", "review_fix_commit_settle")],
+)
+def test_a_stage_visit_refuses_a_second_wait_after_the_first_reported_running(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+    settle: str,
+) -> None:
+    """Scenario 179: one running report leaves the commit for that stage's settle."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", stage)
+    program = _program(tmp_path)
+    program["group_alive"] = _alive
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+
+    assert program["wait"](_RUN_ID, 0) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+
+    with pytest.raises(program["RunnerRefusal"], match=rf"{_RUN_ID}.*running.*{settle}"):
+        _ = program["wait"](_RUN_ID, 0)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "running"}
+
+    program["group_alive"] = _gone
+    assert program["settle"](0, str(tmp_path / "brief"), stage=stage) == 0
+    _ = path.write_text(json.dumps({"state": "running"}), encoding="utf-8")
+    program["group_alive"] = _alive
+
+    assert program["wait"](_RUN_ID, 0) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+
+
 def test_a_running_record_whose_processes_are_gone_reads_as_no_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -262,7 +295,7 @@ def test_a_second_start_while_one_is_running_is_refused_naming_the_running_run(
 def test_a_start_launches_the_commit_unchanged_in_its_own_session_and_prints_its_id(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The run is recorded, the worker is launched detached, and start does not wait."""
+    """Scenario 179: settle restores a live amend's starting HEAD before it waits."""
     fake = _FakeSubprocess()
     program = _program(tmp_path, fake)
     command = ["mise", "exec", "--", "git", "commit", "--amend", "--no-edit"]
@@ -272,9 +305,140 @@ def test_a_start_launches_the_commit_unchanged_in_its_own_session_and_prints_its
     run_id = capsys.readouterr().out.strip()
     record = json.loads((tmp_path / "runs" / f"{run_id}.json").read_text(encoding="utf-8"))
 
-    assert record == {"state": "running", "command": command, "root": str(tmp_path)}
+    assert record == {
+        "state": "running",
+        "command": command,
+        "root": str(tmp_path),
+        "start_head": "0123abc",
+    }
     assert fake.popens[0][1:] == ["/runner.py", "worker", run_id]
     assert (tmp_path / "runs" / f"{run_id}.pid").read_text(encoding="utf-8") == "4242\n"
+
+    reset_calls: list[tuple[str, ...]] = []
+    path = tmp_path / "runs" / f"{run_id}.json"
+    _ = path.write_text(json.dumps(record), encoding="utf-8")
+    answers = {
+        ("rev-parse", "--git-path", "livespec-commit-runs"): str(tmp_path / "runs"),
+        ("rev-parse", "HEAD"): "checkpoint-head",
+        ("reset", "--soft", "0123abc"): "",
+    }
+
+    def git_output(*argv: str) -> str:
+        if argv == ("reset", "--soft", "0123abc"):
+            reset_calls.append(argv)
+        return answers[argv]
+
+    def passes_after_restore(group: int) -> bool:
+        assert group == 4242
+        assert reset_calls == [("reset", "--soft", "0123abc")]
+        _ = path.write_text(
+            json.dumps({"state": "passed", "exit_code": 0, "head": "green-head"}),
+            encoding="utf-8",
+        )
+        return False
+
+    program["git_output"] = git_output
+    program["group_alive"] = passes_after_restore
+    program["commit_in_flight"] = lambda run_path: run_path == path
+    program["is_ancestor"] = lambda commit: commit == "0123abc"
+
+    assert program["settle"](0, str(tmp_path / "brief"), restore_head_before_wait=True) == 0
+
+
+def _restore_attempt(
+    tmp_path: Path, *, in_flight: bool, descends: bool, head: str = "checkpoint-head"
+) -> list[tuple[str, ...]]:
+    """Run settle with a restore requested; return every `git reset` it issued."""
+    program = _program(tmp_path)
+    path = _record(
+        tmp_path,
+        _RUN_ID,
+        {"state": "running", "start_head": "0123abc", "command": ["git", "commit"]},
+        4242,
+    )
+    resets: list[tuple[str, ...]] = []
+
+    def git_output(*argv: str) -> str:
+        if argv[:1] == ("reset",):
+            resets.append(argv)
+            return ""
+        return {
+            ("rev-parse", "--git-path", "livespec-commit-runs"): str(tmp_path / "runs"),
+            ("rev-parse", "HEAD"): head,
+        }[argv]
+
+    program["git_output"] = git_output
+    program["group_alive"] = _gone
+    program["commit_in_flight"] = lambda run_path: in_flight and run_path == path
+    program["is_ancestor"] = lambda commit: descends and commit == "0123abc"
+
+    assert program["settle"](0, str(tmp_path / "brief"), restore_head_before_wait=True) == 0
+    return resets
+
+
+def test_settle_restores_the_starting_head_only_while_the_commit_is_verifiably_in_flight(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: a commit that already finished is never moved off the branch."""
+    assert _restore_attempt(tmp_path / "live", in_flight=True, descends=True) == [
+        ("reset", "--soft", "0123abc")
+    ]
+    assert _restore_attempt(tmp_path / "done", in_flight=False, descends=True) == []
+
+
+def test_settle_never_moves_a_head_that_no_longer_descends_from_the_starting_commit(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: a completed amend's own commit does not descend from its starting HEAD."""
+    assert _restore_attempt(tmp_path / "amended", in_flight=True, descends=False) == []
+    assert (
+        _restore_attempt(tmp_path / "unmoved", in_flight=True, descends=True, head="0123abc") == []
+    )
+
+
+def test_a_commit_is_in_flight_only_while_a_live_git_commit_process_is_in_its_session(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: the worker being alive does not by itself mean the commit is running."""
+    program = _program(tmp_path)
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    commands = {4242: ["python3", "runner.py", "worker"], 4243: ["git", "commit", "--amend"]}
+    program["argv_of"] = lambda _root, pid: commands.get(pid, [])
+
+    def table(*, commit_state: str) -> dict[int, tuple[str, int, int, int, int]]:
+        return {
+            4242: ("S", 1, 4242, 4242, 1),
+            4243: (commit_state, 4242, 4242, 4242, 2),
+        }
+
+    program["process_table"] = lambda _root: table(commit_state="S")
+    assert program["commit_in_flight"](path) is True
+    program["process_table"] = lambda _root: table(commit_state="Z")
+    assert program["commit_in_flight"](path) is False
+    program["process_table"] = lambda _root: {4242: ("S", 1, 4242, 4242, 1)}
+    assert program["commit_in_flight"](path) is False
+    program["process_table"] = lambda _root: {}
+    assert program["commit_in_flight"](path) is False
+    path.with_suffix(".pid").unlink()
+    assert program["commit_in_flight"](path) is False
+
+
+def test_head_ancestry_asks_git_whether_the_starting_commit_is_behind_head(tmp_path: Path) -> None:
+    """Scenario 179: the ancestry reading is git's own merge-base answer."""
+    fake = _FakeSubprocess()
+    program = _program(tmp_path, fake)
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: Any) -> SimpleNamespace:
+        calls.append(command)
+        assert kwargs["capture_output"] is True
+        return SimpleNamespace(returncode=0 if command[-2] == "base" else 1)
+
+    program["subprocess"] = SimpleNamespace(run=run)
+
+    assert program["is_ancestor"]("base") is True
+    assert program["is_ancestor"]("other") is False
+    assert calls[0] == ["git", "merge-base", "--is-ancestor", "base", "HEAD"]
 
 
 @pytest.mark.parametrize(

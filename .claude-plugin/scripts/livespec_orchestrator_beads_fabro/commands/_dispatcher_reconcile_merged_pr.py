@@ -51,13 +51,22 @@ def resolve_merged_pr(
     runner: CommandRunner,
     journal: JournalFile,
     produced_by_item_dispatch_only: bool = False,
+    selected_pr: int | None = None,
 ) -> PrView | str | None:
     """Resolve the merged PR for `item`: a view, a refusal string, or `None`.
 
     `produced_by_item_dispatch_only` drops the body-mention tier whatever the item's
     status: a caller that publishes ONTO the pull request (the host-record primitive)
     needs one an item's own dispatch produced, identified by head branch or title.
+
+    `selected_pr` is the operator's `--pr` choice among several merged pull requests of
+    the item: it is read directly instead of ranking, so a sibling that also names the
+    item can no longer make the resolution ambiguous.
     """
+    if selected_pr is not None:
+        return _selected_merged_pr(
+            plan=plan, item=item, number=selected_pr, runner=runner, journal=journal
+        )
     viewed = run_stage(
         runner=runner,
         journal=journal,
@@ -113,6 +122,58 @@ def resolve_merged_pr(
             item=item, branch=plan.branch, state=unmerged_state, default_branch=default_branch
         )
     return None
+
+
+def _selected_merged_pr(
+    *, plan: DispatchPlan, item: WorkItem, number: int, runner: CommandRunner, journal: JournalFile
+) -> PrView | str:
+    """Resolve the `--pr` selection to its merged view, or a refusal naming the pull request."""
+    read = run_stage(
+        runner=runner,
+        journal=journal,
+        plan=plan,
+        stage="reconcile-pr-view-selected",
+        command=(_pr_view_selected_argv(number=number), plan.repo, _GH_TIMEOUT_SECONDS, None),
+    )
+    candidate = _selected_candidate(stdout=read.stdout, item=item, plan=plan)
+    if read.exit_code != 0 or candidate is None or candidate.number != number:
+        return (
+            f"ERROR: reconcile-merged --pr refused: PR #{number} is not a merged pull request "
+            f"onto {plan.integration.contract.default_branch} that identifies work-item "
+            f"{item.id} by head ref or title\n"
+        )
+    journal.append(
+        record={
+            "stage": "reconcile-pr-selected",
+            "work_item_id": item.id,
+            "pr_number": candidate.number,
+            "merge_sha": candidate.merge_sha,
+        }
+    )
+    return candidate
+
+
+def _selected_candidate(*, stdout: str, item: WorkItem, plan: DispatchPlan) -> PrView | None:
+    candidate = _pr_view_from_list_entry(
+        entry_raw=parse_json(text=stdout),
+        item=item,
+        branch=plan.branch,
+        default_branch=plan.integration.contract.default_branch,
+    )
+    if candidate is None or candidate[1] == "body":
+        return None
+    return candidate[0]
+
+
+def _pr_view_selected_argv(*, number: int) -> list[str]:
+    return [
+        "gh",
+        "pr",
+        "view",
+        str(number),
+        "--json",
+        "number,title,body,headRefName,baseRefName,state,mergeCommit",
+    ]
 
 
 def merged_pr_list_argv(*, item: WorkItem, default_branch: str) -> list[str]:

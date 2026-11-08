@@ -18,6 +18,10 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     update_work_item_blocked_state,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import terminal_claim
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_blocked_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -66,12 +70,16 @@ def escalate_needs_human_block(
     if item.status == "blocked" and item.blocked_reason == "needs-human":
         return
     updated = attempt(
-        action=lambda: update_work_item_blocked_state(
+        action=lambda: claim_blocked_write(
+            repo=repo,
             path=store_config(repo=repo),
+            intent="needs-human-block",
+            write=update_work_item_blocked_state,
             item_id=item.id,
-            status="blocked",
             blocked_reason="needs-human",
             admission_policy="manual",
+            journal=journal,
+            still_as_decided=terminal_claim(item=item, run_id=outcome.fabro_run_id),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )
@@ -83,6 +91,10 @@ def escalate_needs_human_block(
                 "reason": f"{type(updated.error).__name__}",
             }
         )
+        return
+    if updated is not None:
+        # The claim-token protocol refused the write and journaled why; the
+        # item was not rested, so no `needs-human-blocked` record is owed.
         return
     journal.append(
         record={

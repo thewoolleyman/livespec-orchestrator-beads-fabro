@@ -124,6 +124,8 @@ def release_comment(*, item_id: str, row: Mapping[str, object] | None) -> str:
             "A stall-watchdog cancel is NOT factory non-convergence, so this item",
             "was not bounced to backlog. The dispatch claim was released and the",
             "item returned to ready; the ordinary admission valve will pick it up.",
+            "The run was cancelled through the factory server's cancel route and",
+            "its record is retained on the factory for triage.",
             "Triage the cancelled run above before assuming the slice is at fault:",
             "a hang, a per-container OOM kill and a false kill inside an open",
             "command node all end this way, and none of them is a verdict about",

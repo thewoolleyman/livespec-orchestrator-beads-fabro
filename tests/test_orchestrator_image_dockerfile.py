@@ -193,8 +193,8 @@ def test_tier_one_verifies_guarded_beads_contract_without_host_mutation() -> Non
     assert "bd-guard-wrapper-sentinel" in script
     assert "/usr/local/bin/bd" in script
     assert 'echo "$BD_BINARY_SHA256  /usr/local/bin/bd-real" | sha256sum -c -' in script
-    assert '/usr/local/bin/bd-real version | grep -q "bd version $BD_VERSION"' in script
-    assert '/usr/local/bin/bd version | grep -q "bd version $BD_VERSION"' in script
+    assert 'grep -q "bd version $BD_VERSION" <<<"$(/usr/local/bin/bd-real version)"' in script
+    assert 'grep -q "bd version $BD_VERSION" <<<"$(/usr/local/bin/bd version)"' in script
 
 
 def test_tier_one_embedded_bd_proves_enforcement_and_normalization() -> None:

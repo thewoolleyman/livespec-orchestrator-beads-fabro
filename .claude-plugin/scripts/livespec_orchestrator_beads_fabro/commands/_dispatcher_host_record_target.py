@@ -32,12 +32,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch impor
     resolve_default_branch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_pr import (
+    incident_carrier_target,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     livespec_config_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     build_plan,
     janitor_reconcile_checkout_path,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -46,8 +52,12 @@ __all__: list[str] = [
 ]
 
 
-def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> int | None:
+def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> int | str | None:
     """The pull request of the item's latest merged run, or `None` when none resolves.
+
+    An item with incident authority answers with the chain's current `pr-bound`
+    carrier, or with the chain's refusal as the string the primitive emits
+    (`incident-carrier-stale` for a superseded reading).
 
     Resolved through the reconcile valve's own authority rather than from a flag, so a
     record cannot be published onto an earlier pull request — where the acceptance pass
@@ -57,6 +67,14 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
     qualifies. A merge that merely MENTIONS the item in its body is a sibling or a
     follow-up, never a pull request a dispatch of the item produced, so it yields `None`.
     """
+    incident = incident_carrier_target(
+        repo=repo, item=item, runner=runner, surface="post-host-record"
+    )
+    if incident is not None:
+        return incident if isinstance(incident, str) else incident.pr_number
+    selected = reconciled_pr_selection(repo=repo, item=item)
+    if selected is not None:
+        return selected
     # Imported here rather than at module scope: the resolution pulls in the reconcile
     # supervisor, which imports the completion path, which imports the acceptance pass —
     # and the acceptance pass imports the proof evidence this module also uses. A
@@ -87,3 +105,29 @@ def host_record_target(*, repo: Path, item: WorkItem, runner: CommandRunner) -> 
         produced_by_item_dispatch_only=True,
     )
     return merged.number if merged is not None and not isinstance(merged, str) else None
+
+
+def reconciled_pr_selection(*, repo: Path, item: WorkItem) -> int | None:
+    """Return the latest pull-request choice a successful reconciliation recorded.
+
+    Reconciliation validates an explicit selector against the forge before it writes
+    this record. Re-reading title matches here would discard that authority and makes
+    a host landing split across several pull requests ambiguous again. The reverse
+    scan is deliberate: the ordinary dispatch journal is append-only, so a later
+    reconciliation is the item's current resolved target.
+    """
+    records = read_journal_records(journal_path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
+    for record in reversed(records):
+        if record.get("stage") != "reconcile-pr-selected":
+            continue
+        if record.get("work_item_id") != item.id:
+            continue
+        pr_number = record.get("pr_number")
+        merge_sha = record.get("merge_sha")
+        if (
+            isinstance(pr_number, int)
+            and not isinstance(pr_number, bool)
+            and isinstance(merge_sha, str)
+        ):
+            return pr_number
+    return None

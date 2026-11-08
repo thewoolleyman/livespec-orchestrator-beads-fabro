@@ -294,11 +294,12 @@ class WatchedFabroLauncher:
             if run_id is not None and not worker_running_notified:
                 self._notify_worker_running()
                 worker_running_notified = True
+            liveness_state.observe_run(record=poll.record, journal=journal)
             samples.append(
                 liveness_sample(
                     plan=plan,
                     port=port,
-                    run_id=run_id,
+                    run_id=bound_run_id or run_id,
                     heartbeat_path=self.heartbeat_path,
                     dispatch_id=self.dispatch_id,
                     observed_at=self.clock(),

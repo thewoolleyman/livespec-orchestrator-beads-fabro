@@ -18,6 +18,9 @@
 : "${FLEET_LAUNCH_STATE_DIR:=$FLEET_LAUNCH_ORCH_REPO/tmp/petri-canary}"
 : "${FLEET_LAUNCH_FLEET_CAP_FILE:=$FLEET_LAUNCH_STATE_DIR/fleet-cap}"
 : "${FLEET_LAUNCH_HOLD_FILE:=$FLEET_LAUNCH_STATE_DIR/hold-gmktec}"
+# A repository hold is hold-repo-<target-checkout-basename> in this directory.
+# It scopes a red repository to its own launches without stopping other tenants.
+: "${FLEET_LAUNCH_REPO_HOLD_DIR:=$FLEET_LAUNCH_STATE_DIR}"
 
 # Factory servers. hp-xubuntu and vps are retired as factories and are never read.
 : "${FLEET_LAUNCH_GMK_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32276}"
@@ -30,8 +33,19 @@
 # Minimum gmktec idle CPU percentage before a launch.
 : "${FLEET_LAUNCH_GMK_MIN_IDLE:=25}"
 
-# The Fabro client that reads the boards.
-: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro}"
+# The Fabro client that reads the boards: the build gmktec serves, bbe693847,
+# which requests compressed board reads and filters plain `ps` on the server
+# (bd-ib-xoh477). Keep it equal to dispatcher.factories.petri.bin.
+: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro}"
+
+# The shared factory-board snapshot (board-snapshot.sh). Every launcher on the host reads a factory's
+# board through one snapshot file per factory, so the factory server receives at most one run listing
+# per FLEET_LAUNCH_BOARD_TTL_S from them however many launchers are queued. 0 turns the sharing off.
+# A launcher waits at most FLEET_LAUNCH_BOARD_REFRESH_WAIT_S for another launcher's refresh to finish
+# (one listing costs the petri server 25-40 s) before it reads the board as unknown.
+: "${FLEET_LAUNCH_BOARD_SNAPSHOT_DIR:=/run/user/1000/fleet-board-snapshot.d}"
+: "${FLEET_LAUNCH_BOARD_TTL_S:=60}"
+: "${FLEET_LAUNCH_BOARD_REFRESH_WAIT_S:=180}"
 
 # Cross-seat coordination directories (shared by every seat on this host).
 : "${FLEET_LAUNCH_INFLIGHT_DIR:=/run/user/1000/fleet-inflight.d}"

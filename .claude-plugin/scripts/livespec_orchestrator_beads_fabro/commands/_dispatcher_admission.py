@@ -27,7 +27,7 @@ could disagree.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import Ac
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     resolve_acp_preflight,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_claims import (
+    planned_claim_rows,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_confirmation import (
     confirmation_for,
 )
@@ -47,9 +50,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibilit
     filter_eligible_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_slots import (
-    auto_approve_governing_settings,
     budget_left,
     ready_free_slots,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_writes import (
+    admission_held_outcome,
+    admit_item,
+    approve_ready_items,
+    withheld_outcomes,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_capacity_deferred import (
     CapacitySnapshot,
@@ -61,9 +69,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_stamp import (
     stamp_pending_claim,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
-    auto_disposition_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     write_dispatch_lock,
@@ -85,13 +90,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_gat
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_WIP_CAP,
-    admission_held_detail,
     plan_admissions,
     resolve_assignee,
     resolve_wip_cap,
 )
 from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_aging_order
-from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -204,6 +207,11 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     on.
     """
     accounting = claimed_active_accounting(repo=repo, items=items, journal=journal)
+    # What this pass decides on for each row it may admit that is ALREADY
+    # `active` (a groom-door claim, a rework re-dispatch), read before its
+    # first ledger write. Empty, with no read, unless claim tokens are on.
+    marked = accounting.rework_pending_active_ids
+    planned = planned_claim_rows(repo=repo, candidates=candidates, items=items, rework_ids=marked)
     rework_pass = rework if rework is not None else ReworkPass()
     verdict, rework_admittable, admittable, refused = _eligible_legs(
         repo=repo,
@@ -228,6 +236,9 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
         journal=journal,
         active_count=accounting.active_count,
         wip_cap=wip_cap,
+        planned=planned,
+        resume_ids=resume_ids,
+        explicit_factory=explicit_factory,
     )
     occupied = accounting.active_count + len(reworked.admitted)
     free_slots = ready_free_slots(
@@ -245,50 +256,53 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
     admitted: list[WorkItem] = []
     deferred: list[DispatchOutcome] = []
     config = store_config(repo=repo)
-    approved_ids = {item.id for item in plan.approved}
-    for item in plan.approved:
-        update_work_item_status(path=config, item_id=item.id, status="ready")
-        journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
-        journal.append(
-            record=auto_disposition_journal_record(
-                work_item_id=item.id,
-                disposition="auto-approve",
-                governing_settings=auto_approve_governing_settings(item=item),
-            )
-        )
+    approved_ids, claim_refused = approve_ready_items(
+        repo=repo, plan=plan, config=config, journal=journal, write=update_work_item_status
+    )
+    unapproved = {item.id for item, _ in claim_refused}
     for item, assignee in plan.admitted:
+        if item.id in unapproved:
+            continue
         journal_item = replace(item, status="ready") if item.id in approved_ids else item
         dispatch_id = selfup.run_id()
-        # BEFORE the transition, deliberately: the row must never be `active`
-        # under this dispatch while still stamped with the PREVIOUS dispatch's
-        # run id, which the factory now reports absent and a reconciler would
-        # release. `_dispatcher_claim_stamp` carries the full reasoning.
-        stamp_pending_claim(
+        # The stamp goes BEFORE the transition, or with it in ONE write once
+        # claim tokens are on: the row must never be `active` under this
+        # dispatch while still stamped with the PREVIOUS dispatch's run id,
+        # which the factory now reports absent and a reconciler would release.
+        # `_dispatcher_claim_stamp` carries the full reasoning; the two store
+        # writers are handed over so `_dispatcher_admission_writes` calls them
+        # exactly as this valve did.
+        refusal = admit_item(
             repo=repo,
-            work_item_id=item.id,
-            dispatch_id=dispatch_id,
+            config=config,
             journal=journal,
+            item_id=journal_item.id,
+            assignee=assignee,
+            dispatch_id=dispatch_id,
             resume=item.id in resume_ids,
             explicit_factory=explicit_factory,
+            stamp=stamp_pending_claim,
+            write=update_work_item_status,
+            planned=planned.get(item.id),
         )
-        update_work_item_status(
-            path=config, item_id=journal_item.id, status="active", assignee=assignee
-        )
+        if refusal is not None:
+            claim_refused.append((item, refusal))
+            continue
         _ = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
         journal.append(
             record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}
         )
         admitted.append(replace(journal_item, status="active", assignee=assignee))
-    for item, reason in plan.held:
-        held = admission_held_outcome(item=item, reason=reason)
-        journal.append(record={"stage": "outcome", "outcome": asdict(held)})
-        _ = write_stderr(text=f"SURFACE: {admission_held_detail(item_id=item.id, reason=reason)}\n")
-        refused.append(held)
+    refused.extend(
+        withheld_outcomes(
+            held=plan.held, claim_refused=[*reworked.refused, *claim_refused], journal=journal
+        )
+    )
     if wip_cap is not None:
         deferred = capacity_deferred_outcomes(
             admittable=admittable,
             admitted=admitted,
-            held=plan.held,
+            held=(*plan.held, *claim_refused),
             capacity=CapacitySnapshot(
                 active_count=occupied,
                 wip_cap=wip_cap,
@@ -413,23 +427,4 @@ def admission_acp_verdict(
         headroom=session_headroom_policy(repo=repo, now_iso=now_iso, journal_path=journal_path),
         factory_runs=FactoryRunReader(repo=repo, journal=journal),
         confirmation=confirmation_for(journal=journal, evaluated=evaluated),
-    )
-
-
-def admission_held_outcome(*, item: WorkItem, reason: str) -> DispatchOutcome:
-    """Build the `admission-held` terminal for an item held at the admission valve.
-
-    A `failed` outcome (so the dispatch exit code flips to 1 and the
-    maintainer's eyes are required) at the `admission-held` stage; nothing is
-    launched and nothing is closed — a manual item stays at `pending-approval`
-    for the maintainer to approve, while an unresolvable item stays put until
-    assignment is fixed.
-    """
-    return DispatchOutcome(
-        work_item_id=item.id,
-        status="failed",
-        stage="admission-held",
-        pr_number=None,
-        merge_sha=None,
-        detail=admission_held_detail(item_id=item.id, reason=reason),
     )

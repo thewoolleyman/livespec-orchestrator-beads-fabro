@@ -273,6 +273,27 @@
     // that surface round-trips the file through json.dumps and silently strips
     // every comment here while reporting green — tracked as bd-ib-lmi5.
     "dispatcher": {
+      // INTERIM, RE-LANDED (2026-11-05, legacy-coordinator-agent ruling; plan
+      // stall-watchdog-false-kills, bd-ib-laf735). The v0.287.0 watchdog stream leg reads
+      // a route petri does not serve (404), so every stream poll is unobservable and the
+      // 7200 s default measures run age, not quiet: run 01M6MZSSK8F6 (bd-ib-v5dqyn) was
+      // cancelled at 06:38:12Z with its last event 0.03 s earlier, and its pod was reaped
+      // before any preserve ref existed. 21600 s leaves a silent run to the whole-run wall
+      // budget, whose preserve ask works. REVERT this key only once BOTH bd-ib-fn5uq4
+      // (correct stream route) ships with a real quiet reading AND bd-ib-xdhe5z (a stall
+      // cancel pushes a preserve ref) is live.
+      "stall_timeout_seconds": 21600,
+      // CUTOVER (2026-11-06, bd-ib-4eeefv, S5 of bd-ib-jjws2). With this key true every
+      // claim writer of this tenant (every Dispatcher, intake, the human valves and
+      // reconciliation) changes an item's status, `fabro` assignee or run stamp only
+      // after winning the item's current claim token, and names the successor in that
+      // one write (contracts.md, "Dispatcher policy settings", the Claim tokens bullet).
+      // It was committed only after `migrate_claim_tokens.py` named an open token on
+      // every non-closed item of this tenant with every claim writer stopped, and a
+      // survey then exited 0. Committed-configuration only: the drive configuration
+      // API cannot set it. A tenant that runs with it false again needs that migration
+      // pass re-run, with writers stopped, before it returns to true.
+      "claim_tokens": true,
       "auto_approve_ready": true,
       // wip_cap: 16 matches the factory's 16-run cap (coordinator R99:
       // max_concurrent_runs 16, quota 64/32). Raised from 10 to 12 on
@@ -280,7 +301,11 @@
       // maintainer's direction to max out factory capacity: at each lower cap the
       // orchestrator's own active items filled it and further tickets were
       // capacity-deferred. Read on each admission pass; no restart needed.
-      "wip_cap": 16,
+      // Raised from 16 to 20 on 2026-11-04 (coordinator R301, reversible): the
+      // factory-runs quota went to 84 CPU / 42 pods and the fleet cap to 20, and
+      // at 21:00Z the launchers yielded on "repo WIP full (17/16)" with fleet
+      // slots free. To be replaced by the single Fabro limit (bd-ib-rtzhfc).
+      "wip_cap": 20,
       "acceptance_mode": "ai-only",
       // Committed maintainer delegations of the human valves (contracts.md,
       // journal invoker attribution, "Delegated valve authority"). A press
@@ -841,6 +866,15 @@
         // 2026-10-30: implement, fix and review on Codex Terra with a Sonnet fallback (maintainer
         // direction via the coordinator, superseding R153 for these three nodes); the Codex
         // headroom brake skips to the fallback before the weekly window is spent.
+        //
+        // 2026-11-04: an Opus 5.5 implement/fix canary (PR #4388, maintainer YES recorded on
+        // livespec-dev-tooling-6tgd2z 16:47:02Z) was REVERTED within the hour. Its first
+        // counted dispatch, bd-ib-adcaa6 run 01M6KVPC4B2J, failed both implement attempts with
+        // "API Error: 400 Claude Code 2.1.170 does not support this model; version 2.1.280 or
+        // newer is required", and the Terra fallback never engaged (failure class
+        // retry_requested). A host `claude -p --model claude-opus-5-5` succeeds only because
+        // the host CLI is newer. Before routing any node to claude-opus-5-5, raise the
+        // factory sandbox's Claude Code to 2.1.280 or newer and prove it with one dispatch.
         "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" }] },
         "review_fix": { "agent": "claude-acp", "model": "claude-sonnet-5-5", "effort": "high" },
@@ -920,16 +954,52 @@
       // (bd-ib-tusqrf): it reads and increments one counter under `$GIT_DIR`
       // before a fresh janitor suite run, or records the named exhausted bound
       // for needs_human. It never runs the suite itself.
+      //
+      // `commit_red` and `commit_green` are declared UPWARD as a stopgap
+      // (plan bd-ib-qy5wol, sandbox-commit-gate-ceiling). Since v0.287.0 the
+      // split implement graph runs the commit hooks in these two script nodes,
+      // and the Green amend's hook runs the full in-sandbox suite. Inherited at
+      // the 1800 s default, every visit of a correct green timed out: bd-ib-abbb3j
+      // run 01M6MW212ABC and bd-ib-hap62u run 01M6MW9171VA each failed
+      // commit_green 3 of 3 with "Script timed out after 1800000ms", while
+      // bd-ib-adcaa6 measured that suite at 5863 s on a loaded petri. 7200 s sits
+      // above that measurement and matches `review_fix`. The root fix is the
+      // commit node not re-running the whole suite, at which point these two
+      // entries come back down.
+      //
+      // The three `*_commit_settle` nodes are declared UPWARD as an interim dial
+      // (plan bd-ib-qy5wol; legacy-coordinator-agent R301, 2026-11-07). The
+      // workflow declares 3900 s for each and its settle script waits up to
+      // 3600 s, but the Dispatcher renders a node no table names at the 1800 s
+      // default, so the engine killed the script before its failure handling
+      // (measured: run 01M6V85A0CM5 renders 1800 s; a hook here measured 3425 s).
+      // These restore the declared value and cost the allowance 16800 s; the
+      // credential-use window, not the allowance, governs the freshness floor.
+      // END CONDITION: delete all three once bd-ib-2eyiwy is released and pinned
+      // here, because the Dispatcher then honours the declared value itself.
       "node_timeouts": {
         "implement": 14400,
+        "implement_commit_settle": 3900,
+        "fix_commit_settle": 3900,
+        "review_fix_commit_settle": 3900,
         "implement_completion": 600,
+        "commit_red": 7200,
+        "commit_green": 7200,
         "dod_gate": 600,
         "janitor_admission": 600,
         "janitor": 4340,
         "fix": 3600,
         "review_fix": 7200,
         "publish_draft": 3600,
-        "pr_refresh": 3600,
+        // TEMPORARY DIAL (plan bd-ib-qy5wol; legacy-coordinator-agent R301,
+        // 2026-11-08): pr_refresh raised 3600 -> 5400. Its post-rebase gate runs
+        // the full aggregate with no output, and bd-ib-oixyzp run 01M6VZQJG3GQ
+        // lost a green, reviewed run when that gate hit 3600000 ms at 01:13:12Z
+        // after a clean rebase. Full-aggregate visits measured 2535-3800 s on
+        // 2026-11-07 (bd-ib-hap62u run 01M6VBZF4371 janitor@1/@2).
+        // END CONDITION: return it to 3600 once bd-ib-hap62u is released and
+        // pinned here, or once measured suite time is back under 3000 s.
+        "pr_refresh": 5400,
         "proof_grade": 600,
         "proof_grade_route": 600,
         "recapture_route": 600
@@ -1059,7 +1129,15 @@
       "factories": {
         "petri": {
           "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
+          // `bin` is the client of the build gmktec serves (0.393.0-nightly.1 at
+          // bbe693847; main :32276 since 2026-11-07 03:43Z, which is 85af3547e plus
+          // Petri c6bfd5e3, a server-side step change only). It requests compressed
+          // board reads and asks the server for only active statuses on plain `ps`
+          // (bd-ib-xoh477): against :32276 plain `ps` took 2.4-5.5 s where the 0.382
+          // adeefec4c client took 16-26 s, measured 2026-11-04 from vps. Its dispatch
+          // push retries a transient origin rejection and keeps the push stderr
+          // (bd-ib-uctbct, thewoolleyman/fabro#24).
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro",
           "secret_channel": "native_secrets",
           // factory-python: the toolchain-named catalog id (livespec-dev-tooling
           // SPECIFICATION, "Factory sandbox environment naming"). Its provider, not
@@ -1070,12 +1148,12 @@
         // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
         // ruling 2026-11-02T19:22:32Z). Same keys as `petri`; its address comes
         // from the factory registry. `bin` is the client of the build it serves
-        // (0.393.0-nightly.1 at 84fb903b8). It is never the default: choose it per
+        // (0.393.0-nightly.1 at bbe693847). It is never the default: choose it per
         // dispatch with `--factory candidate`, and count its runs against the
         // shared gmktec fleet cap.
         "candidate": {
           "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-84fb903b8/fabro",
+          "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro",
           "secret_channel": "native_secrets",
           "environment": "factory-python"
         }

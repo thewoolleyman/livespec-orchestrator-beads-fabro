@@ -44,9 +44,8 @@ reach for the PATH client when reading a factory:
 - Prefer `dispatcher.py inspect --factory <name> <run-id>` (section above).
 - For a board listing, run the factory's own committed client, i.e. the
   `dispatcher.factories.<name>.bin` path in `.livespec.jsonc`, with
-  `ps --server https://<host>:<port>`. On 2026-11-03 `petri` named
-  `~/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro`
-  and `candidate` named `~/.local/state/fabro-web-prod/v0393-84fb903b8/fabro`.
+  `ps --server https://<host>:<port>`. Since 2026-11-04 both `petri` and
+  `candidate` name `~/.local/state/fabro-web-prod/v0393-c39bdbded/fabro`.
 
 Do NOT fix this by copying a newer build over `~/.fabro/bin/fabro`. That file is
 also the binary the dev host's own `fabro-server` units (`127.0.0.1:32276` and

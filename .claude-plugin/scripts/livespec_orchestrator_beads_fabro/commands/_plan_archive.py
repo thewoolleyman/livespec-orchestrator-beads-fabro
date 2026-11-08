@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._store_statuses import livespec_status_for
+from livespec_orchestrator_beads_fabro.commands._close_claim_hold import hold_before_close
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_archive_gates import (
     PlanArchiveRefusedError,
@@ -80,6 +82,8 @@ _ARCHIVE_DIR = "archive"
 # and that comparand is now the archiving party's COMPUTED identity
 # (`_plan_completeness_identity`).
 PLAN_ARCHIVE_ACTOR = "plan-archive"
+# The intent the archive's hold on the epic is recorded under in the token's close reason.
+_CLOSE_INTENT = "plan-archive"
 
 
 def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive inputs.
@@ -114,6 +118,19 @@ def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive i
     because it is that leg's own comparand: a plan refusing for undisposed
     children owes nobody a forge round trip, and a leg comparing two identities
     cannot run before one of them exists.
+
+    THE CLOSE WINS THE EPIC'S CLAIM TOKEN FIRST, AND THE HOLD PRECEDES THE MOVE.
+    With `dispatcher.claim_tokens` true the close is a claim-changing write
+    (`SPECIFICATION/contracts.md`, "Claim tokens"), so the epic's current token
+    is won in a hold (`_close_claim_hold`) once every gate has passed. The hold
+    sits BEFORE the directory move rather than immediately before the close,
+    because the move is the one step here with no retry: a hold refused after
+    it would leave the plan moved and the epic open, and the next archive would
+    find no source directory. Refused before it, `ClaimWriteRefusedError`
+    leaves the plan where it was and the archive can be run again. The hold
+    re-reads the epic before it answers, so a write that won its successor
+    before that read is not closed over; the move and the archive comment are
+    what remain between the hold and the close.
     """
     client = make_beads_client(config=config)
     undisposed = list(undisposed_plan_child_ids(client=client, epic_id=epic_id))
@@ -156,6 +173,10 @@ def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive i
             unproved=proof.unproved,
             rejected=proof.rejected,
         )
+    read_at = livespec_status_for(status=str(client.show_issue(issue_id=epic_id).get("status")))
+    hold_before_close(
+        path=config, item_id=epic_id, intent=_CLOSE_INTENT, status=read_at, repo=project_root
+    )
     archive = project_root / _PLAN_DIR / _ARCHIVE_DIR / slug
     archive.parent.mkdir(parents=True, exist_ok=True)
     _ = source.rename(archive)

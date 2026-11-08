@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib
 import json
 import os
@@ -12,6 +13,12 @@ from types import ModuleType
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
+    CLAIM_TOKEN_METADATA_KEY,
+    ClaimStamp,
+    create_claim_token,
+    record_claim_stamp,
+)
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_dispatch_lock,
@@ -20,8 +27,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     CriterionCheck,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    IncidentAcceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import janitor_checkout_path
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentStanding
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -1132,6 +1143,61 @@ def test_regrade_pass_with_an_unverified_host_assertion_parks_in_acceptance(
     assert parking["pending"] == ["host-captured record for 'The released command works.'"]
 
 
+def test_regrade_pass_on_an_incident_owing_final_normal_proof_parks_instead_of_closing(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A re-graded PASS cannot discharge an incident whose chain has not recorded `closed`."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    owing = IncidentStanding(
+        item_id=item.id,
+        kind="incident",
+        repository="owner/repository",
+        history=(),
+        outstanding=("normal-repayment-unmerged:master-observation",),
+    )
+    monkeypatch.setattr(
+        regrade,
+        "incident_acceptance_for",
+        lambda **_: IncidentAcceptance(standing=owing, scope=None, config=_config()),
+    )
+    monkeypatch.setattr(regrade, "run_acceptance_pass", lambda **_: _AcceptancePass(verdict="PASS"))
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert (payload[0]["status"], payload[0]["stage"]) == ("green", "acceptance")
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.status == "acceptance"
+    records = _journal_records(repo=repo)
+    hold = next(
+        record for record in records if record["stage"] == "incident-obligation-outstanding"
+    )
+    assert (hold["route"], hold["outstanding"]) == (
+        "regrade",
+        ["normal-repayment-unmerged:master-observation"],
+    )
+    assert "ledger-regrade-accept" not in [record["stage"] for record in records]
+
+
 def test_regrade_park_reaches_the_lifecycle_reconcile_chokepoint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1220,6 +1286,214 @@ def test_regrade_fail_leaves_status_labels_and_failed_passes_untouched(
     assert ledger_row["metadata"]["acceptance_failed_ai_passes"] == 1
     stages = [record["stage"] for record in _journal_records(repo=repo)]
     assert "ledger-regrade-accept" not in stages
+
+
+_REGRADE_ARMS = [
+    pytest.param((), "regrade:close", "done", id="close"),
+    pytest.param(("The released command works.",), "regrade:park", "acceptance", id="park"),
+]
+
+
+def _passing_regrade_after_the_cutover(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pending: tuple[str, ...]
+) -> tuple[Path, WorkItem, str]:
+    """A cut-over repository, and a marked merged item naming a token, whose re-grade PASSES.
+
+    `pending` is the host-captured assertions still awaiting replay: none closes
+    the item, any parks it in `acceptance`.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    committed = repo / ".livespec.jsonc"
+    config = json.loads(committed.read_text(encoding="utf-8"))
+    config["livespec-orchestrator-beads-fabro"]["dispatcher"]["claim_tokens"] = True
+    _ = committed.write_text(json.dumps(config), encoding="utf-8")
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    client = make_beads_client(config=_config())
+    token = create_claim_token(client=client)
+    metadata = dict(client.show_issue(issue_id=item.id)["metadata"])
+    metadata[CLAIM_TOKEN_METADATA_KEY] = token
+    client.update_issue(issue_id=item.id, metadata=metadata, names_claim_token=True)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    proof = _PendingHostProof(pending_host_captured=pending) if pending else None
+    monkeypatch.setattr(
+        regrade, "run_acceptance_pass", lambda **_: _AcceptancePass(verdict="PASS", proof=proof)
+    )
+    return repo, item, token
+
+
+def _regrade(*, repo: Path, item: WorkItem) -> int:
+    return main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+
+@pytest.mark.parametrize(("pending", "intent", "lands_on"), _REGRADE_ARMS)
+def test_regrade_disposes_only_after_winning_the_items_current_claim_token(
+    pending: tuple[str, ...],
+    intent: str,
+    lands_on: str,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The arm is a human valve: with claim tokens enabled both dispositions are fenced."""
+    repo, item, token = _passing_regrade_after_the_cutover(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, pending=pending
+    )
+
+    exit_code = _regrade(repo=repo, item=item)
+
+    closed = make_beads_client(config=_config()).show_issue(issue_id=token)
+    assert closed["status"] == "closed", "the arm never contested the item's current token"
+    won = json.loads(closed["close_reason"])
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)[0]["stage"] == lands_on
+    assert (won["writer"], won["intent"]) == ("human-valve", intent)
+    assert (stored.status, stored.rework_pending) == (lands_on, False)
+    assert "claim-write-refused" not in [record["stage"] for record in _journal_records(repo=repo)]
+
+
+@pytest.mark.parametrize(("pending", "intent", "lands_on"), _REGRADE_ARMS)
+def test_regrade_that_loses_the_claim_token_writes_nothing_and_reports_the_outcome(
+    pending: tuple[str, ...],
+    intent: str,
+    lands_on: str,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another writer closes the token first: no park, no close, and a journaled refusal."""
+    repo, item, token = _passing_regrade_after_the_cutover(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, pending=pending
+    )
+    client = make_beads_client(config=_config())
+    before = copy.deepcopy(client.show_issue(issue_id=item.id))
+    close = client.close_issue_without_verdict
+
+    def _raced(*, issue_id: str, reason: str) -> None:
+        if issue_id == token:
+            close(issue_id=issue_id, reason="another writer won this token")
+        close(issue_id=issue_id, reason=reason)
+
+    monkeypatch.setattr(client, "close_issue_without_verdict", _raced)
+
+    exit_code = _regrade(repo=repo, item=item)
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)[0]
+    assert exit_code == 1
+    assert (payload["status"], payload["stage"]) == ("failed", "regrade")
+    assert payload["stage"] != lands_on
+    assert "refused the ledger write (claim-changed)" in captured.err
+    assert client.show_issue(issue_id=item.id) == before
+    records = _journal_records(repo=repo)
+    stages = [record["stage"] for record in records]
+    assert "ledger-regrade-accept" not in stages
+    assert "acceptance-parking-record" not in stages
+    [refused] = [record for record in records if record["stage"] == "claim-write-refused"]
+    assert (refused["writer"], refused["intent"], refused["reason"]) == (
+        "human-valve",
+        intent,
+        "claim-changed",
+    )
+
+
+def test_regrade_whose_item_lost_its_marker_while_it_graded_contests_no_token(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The arm decided on a marked item. Unmarked by another writer, it is no longer that item."""
+    repo, item, token = _passing_regrade_after_the_cutover(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, pending=()
+    )
+    client = make_beads_client(config=_config())
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+
+    def _unmarked_while_grading(**_: object) -> _AcceptancePass:
+        client.update_issue(issue_id=item.id, remove_labels=["rework:pending"])
+        return _AcceptancePass(verdict="PASS")
+
+    monkeypatch.setattr(regrade, "run_acceptance_pass", _unmarked_while_grading)
+
+    exit_code = _regrade(repo=repo, item=item)
+
+    assert exit_code == 1
+    assert json.loads(capsys.readouterr().out)[0]["stage"] == "regrade"
+    assert client.show_issue(issue_id=token)["status"] != "closed"
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert (stored.status, stored.resolution) == ("active", None)
+
+
+@pytest.mark.parametrize(("pending", "intent", "lands_on"), _REGRADE_ARMS)
+def test_regrade_whose_item_a_rework_run_claimed_while_it_graded_contests_no_token(
+    pending: tuple[str, ...],
+    intent: str,
+    lands_on: str,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rework re-dispatch moves no status and leaves the marker: its run stamp is what tells.
+
+    The arm read the item's claim row before it graded. A rework run that
+    learned its run id during the pass has replaced the stamp, so the item is
+    no longer the one the arm graded, and it is neither parked nor closed
+    under that run.
+    """
+    repo, item, token = _passing_regrade_after_the_cutover(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, pending=pending
+    )
+    client = make_beads_client(config=_config())
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+
+    def _claimed_by_a_rework_run_while_grading(**_: object) -> _AcceptancePass:
+        record_claim_stamp(
+            path=_config(),
+            work_item_id=item.id,
+            stamp=ClaimStamp(
+                dispatch_id="01REWORKDISPATCH",
+                dispatching_host="host-a",
+                run_id="01REWORKRUN",
+                factory_name="hp",
+                factory_server=None,
+            ),
+        )
+        proof = _PendingHostProof(pending_host_captured=pending) if pending else None
+        return _AcceptancePass(verdict="PASS", proof=proof)
+
+    monkeypatch.setattr(regrade, "run_acceptance_pass", _claimed_by_a_rework_run_while_grading)
+
+    exit_code = _regrade(repo=repo, item=item)
+
+    payload = json.loads(capsys.readouterr().out)[0]
+    assert exit_code == 1
+    assert (payload["status"], payload["stage"]) == ("failed", "regrade")
+    assert payload["stage"] != lands_on
+    assert client.show_issue(issue_id=token)["status"] != "closed"
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert (stored.status, stored.resolution, stored.rework_pending) == ("active", None, True)
+    [refused] = [
+        record for record in _journal_records(repo=repo) if record["stage"] == "claim-write-refused"
+    ]
+    assert (refused["intent"], refused["reason"]) == (intent, "claim-changed")
 
 
 def test_regrade_refuses_every_merge_it_cannot_prove(

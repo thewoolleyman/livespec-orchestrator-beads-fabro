@@ -115,8 +115,16 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "gen_ai.usage.input_tokens",
         "output_tokens",
         "gen_ai.usage.output_tokens",
+        # Codex emits these measured cache-token counts on `handle_responses`.
+        # Keep the OpenTelemetry semantic-convention keys intact so factory
+        # cost queries use the observed cache distribution rather than a
+        # fixed cached-input share.
+        "gen_ai.usage.cache_read.input_tokens",
+        "gen_ai.usage.cache_write.input_tokens",
         "cache_read_tokens",
         "cache_creation_tokens",
+        "cache_creation_5m_tokens",
+        "cache_creation_1h_tokens",
         "duration_ms",
         "model",
         "request_id",

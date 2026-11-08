@@ -66,6 +66,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._claude_cache_lifetimes import (
+    cache_write_lifetimes,
+)
 from livespec_orchestrator_beads_fabro.commands._otel_enrich_export import (
     HoneycombHttpExporter,
     SpanExporter,
@@ -105,6 +108,7 @@ _DISPATCH_ID = "livespec.dispatch.id"
 _FABRO_RUN_ID = "fabro.run_id"
 _DISPATCH_FACTORY = "livespec.dispatch.factory"
 _DISPATCH_CONTEXT_KEYS = (_WORK_ITEM_ID, _DISPATCH_ID, _FABRO_RUN_ID, _DISPATCH_FACTORY)
+_CLAUDE_RESPONSE_RECORD_NAMES = ("claude_code.llm_request", "claude_code.api_request")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -281,11 +285,22 @@ def enrich_span(
                 # reject the whole span (fail closed), do not partially ship.
                 return None
             forwarded_attrs.append(measured_attr(key=key, value=scalar))
+    for key, value in _claude_cache_lifetimes(span=span).items():
+        forwarded_attrs.append(measured_attr(key=key, value=value))
     for triple_key, triple_value in triple.items():
         forwarded_attrs.append(attr(key=triple_key, value=triple_value))
-    rebuilt: dict[str, object] = {k: v for k, v in span.items() if k != "attributes"}
+    rebuilt: dict[str, object] = {
+        key: value for key, value in span.items() if key not in {"attributes", "usage"}
+    }
     rebuilt["attributes"] = forwarded_attrs
     return rebuilt
+
+
+def _claude_cache_lifetimes(*, span: dict[str, object]) -> dict[str, int]:
+    """Map response usage to safe lifetime attributes only for Claude API records."""
+    if span.get("name") not in _CLAUDE_RESPONSE_RECORD_NAMES:
+        return {}
+    return cache_write_lifetimes(usage=span.get("usage"))
 
 
 def _scalar_value(*, entry: dict[str, object]) -> object:

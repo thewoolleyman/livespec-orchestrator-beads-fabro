@@ -860,8 +860,6 @@ def test_watched_launcher_polls_its_bound_run_by_id_without_listing_the_factory(
                     stdout='[{"run_id": "01BOUND", "status": {"kind": "running"}}]',
                     stderr="",
                 )
-            if argv[1] == "events":
-                return CommandResult(exit_code=0, stdout="[]", stderr="")
             self.run_finished = True
             return CommandResult(exit_code=0, stdout="Run: 01BOUND\n", stderr="")
 
@@ -922,8 +920,13 @@ def test_watched_launcher_polls_its_bound_run_by_id_without_listing_the_factory(
         # Learning the run writes the CLAIM stamp too, right after the run
         # stamp and before the bound polls begin.
         "dispatch-claim-stamp-run",
+        # The fixture has no reachable server stream, so each liveness read is
+        # journaled as unobservable rather than counted as quiet time.
+        "watchdog-stream-poll",
         "watchdog-bound-poll",
+        "watchdog-stream-poll",
         "watchdog-bound-poll",
+        "watchdog-stream-poll",
     ]
 
 

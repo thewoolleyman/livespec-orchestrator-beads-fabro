@@ -81,8 +81,10 @@ __all__: list[str] = [
     "RESUME_ENTRY_NODE_ARG",
     "RESUME_FETCH_REF_ARG",
     "RESUME_HEAD_ARG",
+    "RESUME_PROOF_ONLY_ARG",
     "ResumeCheckout",
     "graph_entered_at",
+    "proof_only_graph",
     "resume_checkout_for",
     "resume_checkout_prepare_steps_block",
 ]
@@ -101,6 +103,11 @@ RESUME_HEAD_ARG = "resume_head"
 # one the reclaim deletes before the run starts. Absent for a resume, which fetches
 # the publish branch the resumed run goes on to push to.
 RESUME_FETCH_REF_ARG = "resume_fetch_ref"
+
+# The explicit selector for the merged-resume arm. It is its own attribute rather
+# than a node name carried in `resume_entry_node`, because the arm is not "the
+# ordinary graph entered at a node" but a different graph with every edge replaced.
+RESUME_PROOF_ONLY_ARG = "resume_proof_only"
 
 # The unconditional `start` edge, as the committed graph spells it: a bare
 # `start -> <target>` line carrying no attribute list. The CONDITIONAL form is
@@ -147,6 +154,25 @@ _NODE_NAME = re.compile(r"^\w+$")
 # not a question the derivation has.
 _START_NODE = "start"
 
+# The terminal `exit` is engine structure rather than a stage: the arm's graph may
+# carry an edge to it, which is how a run ends, and to no other stage outside the
+# three proof stages.  Each route is `(source, destination, condition)`; the engine
+# selects a matching condition first and otherwise the one bare edge, so the bare
+# edge of `proof_capture` carries the successful capture to `proof_verify` while
+# its conditional edges end a failed or `fix` capture; the bare edge of
+# `proof_verify` ends every outcome except the `approve` one, which is the only
+# route to `proof_grade`; and `proof_grade` ends the run whatever it returns.
+_PROOF_ONLY_NODES = frozenset({"start", "exit", "proof_capture", "proof_verify", "proof_grade"})
+_PROOF_ONLY_EDGES: tuple[tuple[str, str, str | None], ...] = (
+    ("start", "proof_capture", None),
+    ("proof_capture", "exit", "outcome=failed"),
+    ("proof_capture", "exit", "preferred_label=fix"),
+    ("proof_capture", "proof_verify", None),
+    ("proof_verify", "proof_grade", "preferred_label=approve"),
+    ("proof_verify", "exit", None),
+    ("proof_grade", "exit", None),
+)
+
 
 @dataclass(frozen=True, kw_only=True)
 class ResumeCheckout:
@@ -164,11 +190,15 @@ class ResumeCheckout:
     branch is the one the reclaim deletes before that run starts — so a fetch of
     the branch would ask origin for a ref that is already gone, and the step would
     fail the run rather than place it anywhere.
+
+    `read_only` marks the proof-only arm's checkout: the merged pull request's head
+    commit at merge, on which nothing may be pushed.
     """
 
     branch: str
     head: str
     fetch_ref: str | None = None
+    read_only: bool = False
 
 
 def graph_entered_at(*, graph_text: str, node: str) -> str | None:
@@ -199,6 +229,37 @@ def graph_entered_at(*, graph_text: str, node: str) -> str | None:
         ],
     )
     return _validated(text=derived, declared=frozenset(graph.nodes) - orphaned, entry=node)
+
+
+def proof_only_graph(*, graph_text: str) -> str | None:
+    """Derive the merged-resume arm containing only capture, verification and grade.
+
+    The committed workflow remains the authority for every retained node's
+    attributes, including the proof-stage prompts and commands.  This derived
+    graph replaces every edge because keeping the ordinary workflow's failure
+    routes would enter `fix`, `review`, publication, or a human gate.  Its
+    condition-bearing edges to `exit` end a failed or `fix` capture and every
+    verification that is not `approve`; the one successful path is capture,
+    verification, grade, then the engine's terminal `exit` node.
+    """
+    graph = parse_dot_graph(text=graph_text)
+    if isinstance(graph, str) or frozenset(graph.nodes) < _PROOF_ONLY_NODES:
+        return None
+    removed_nodes = frozenset(graph.nodes) - _PROOF_ONLY_NODES
+    proof_edges = "".join(_proof_only_edge_line(route=route) for route in _PROOF_ONLY_EDGES)
+    derived = _spliced(
+        text=graph_text,
+        edits=[
+            *_declaration_spans(graph_text=graph_text, names=removed_nodes),
+            *_edge_spans(
+                graph_text=graph_text,
+                names=frozenset(graph.nodes),
+                moved=(-1, -1),
+            ),
+            (graph_text.rfind("}"), graph_text.rfind("}"), f"\n{proof_edges}"),
+        ],
+    )
+    return _proof_only_validated(text=derived)
 
 
 def _orphaned_by_entering(*, graph: DotGraph, entry: str) -> frozenset[str]:
@@ -290,6 +351,26 @@ def _validated(*, text: str, declared: frozenset[str], entry: str) -> str | None
     return text
 
 
+def _proof_only_edge_line(*, route: tuple[str, str, str | None]) -> str:
+    """One edge statement of the arm's graph, carrying its condition when it has one."""
+    source, destination, condition = route
+    attributes = "" if condition is None else f' [condition="{condition}"]'
+    return f"    {source} -> {destination}{attributes}\n"
+
+
+def _proof_only_validated(*, text: str) -> str | None:
+    """Return a proof-only graph only when its nodes and routes are exact."""
+    graph = parse_dot_graph(text=text)
+    if isinstance(graph, str) or frozenset(graph.nodes) != _PROOF_ONLY_NODES:
+        return None
+    routes = tuple(
+        (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
+    )
+    if routes != _PROOF_ONLY_EDGES:
+        return None
+    return text
+
+
 def _spliced(*, text: str, edits: list[tuple[int, int, str]]) -> str:
     """`text` with each `(start, end, replacement)` edit applied, in offset order.
 
@@ -324,13 +405,20 @@ def resume_checkout_prepare_steps_block(*, checkout: ResumeCheckout | None) -> s
     if checkout is None:
         return pyright_cache_prepare_steps_block()
     ref = checkout.fetch_ref or f"refs/heads/{checkout.branch}"
-    script = " && ".join(
-        (
-            "set -e",
-            f"git fetch --no-tags origin {shlex.quote(ref)}",
-            f"git checkout --detach {shlex.quote(checkout.head)}",
-        )
-    )
+    head = shlex.quote(checkout.head)
+    commands = [
+        "set -e",
+        f"git fetch --no-tags origin {shlex.quote(ref)}",
+        f"git checkout --detach {head}",
+    ]
+    if checkout.read_only:
+        # The head the sandbox lands on must be exactly the one asked for (never
+        # the default-branch merge commit), and the clone must have nowhere to push.
+        commands += [
+            f'test "$(git rev-parse HEAD)" = {head}',
+            "git remote set-url --push origin no-push-proof-only-arm",
+        ]
+    script = " && ".join(commands)
     resume_step = (
         "\n# --- Dispatcher-materialized recovery checkout: the ref the recorded\n"
         "# --- head lives on, at that head ---\n"
@@ -365,6 +453,7 @@ def resume_checkout_for(*, args: argparse.Namespace, branch: str) -> ResumeCheck
         branch=branch,
         head=head,
         fetch_ref=fetch_ref if isinstance(fetch_ref, str) and fetch_ref else None,
+        read_only=getattr(args, RESUME_PROOF_ONLY_ARG, False) is True,
     )
 
 

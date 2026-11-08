@@ -61,10 +61,11 @@ references passes with its guidance orphaned.
   `factory-integration`). The fork has no ledger tenant, so neither the
   factory sandbox nor the execution-mirror convention can carry it; the file
   records the host-routed door (`driver-dispatch` in, `close-work-item` with
-  the merge SHA out), the shared build cache, the pinned nightly the fork's
-  own CI uses, and the fact that a fork pull request against the carrier
-  branch shows NO checks — the merge gate is local and must be recorded before
-  merging. It also records that merging into the carrier deploys nothing.
+  the merge SHA out), the `fabro-k3s` ARC scale set that runs the merge gate
+  (fork-gates checks in the pull request's rollup) and the carrier build
+  (`carrier-build.yml`), the throttled dev-host fallback and when it is
+  allowed, and the pinned nightly the fork's own CI uses. It also records that
+  merging into the carrier deploys nothing.
 - Read `.ai/herdr-plan-tabs.md` BEFORE opening a plan session as a herdr tab,
   moving one out of tmux, or placing or moving any herdr tab. Tab label, Claude
   session name and plan slug are identical by maintainer direction, and a herdr

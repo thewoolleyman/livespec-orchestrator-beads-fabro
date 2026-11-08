@@ -141,6 +141,13 @@ _COMMIT_SETTLE_ADDED = {
     "review_fix_commit_settle",
 }
 _JANITOR_ADMISSION_ADDED = {"janitor_admission"}
+# The red-janitor brief route (Scenario 305) sits on the janitor's red edge ahead of
+# `fix`, and closes no cycle of its own.
+_JANITOR_REFRESH_ROUTE_ADDED = {"janitor_refresh_route"}
+# The no-progress classifier runs after the established janitor refresh route
+# and before the established fix settle path. Both nodes close no cycle: they
+# turn one repeated unchanged-head failure into the existing terminal.
+_FIX_NO_PROGRESS_ROUTE_ADDED = {"fix_progress_route", "janitor_failure_route"}
 # This command node sits before `disposition`, preserving its three-visit
 # review-fix budget while converting a fourth request into a named terminal
 # route instead of the engine's unroutable entry abort.
@@ -595,9 +602,13 @@ def test_the_janitor_fix_loop_routes_on_outcome_and_is_bounded_by_max_visits() -
     """Outcome routing works on both engines; `max_visits` is what bounds the loop."""
     text = _graph_text()
     conditions = _conditions(text=text)
-    assert conditions["janitor", "fix"] == "outcome!=succeeded"
+    assert conditions["janitor", "janitor_refresh_route"] == "outcome!=succeeded"
+    assert conditions["janitor_refresh_route", "refresh_repair"] == "preferred_label=refresh_repair"
     assert conditions["janitor", "publish_draft"] == "outcome=succeeded"
     assert ("fix", "fix_commit_settle") in {
+        (edge.group("src"), edge.group("dst")) for edge in _EDGE_RE.finditer(text)
+    }
+    assert ("janitor_refresh_route", "fix") in {
         (edge.group("src"), edge.group("dst")) for edge in _EDGE_RE.finditer(text)
     }
     assert "max_visits=" in _node_bodies(text=text)["fix"]
@@ -749,6 +760,8 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
+        | _JANITOR_REFRESH_ROUTE_ADDED
+        | _FIX_NO_PROGRESS_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )
@@ -777,6 +790,8 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
+        | _JANITOR_REFRESH_ROUTE_ADDED
+        | _FIX_NO_PROGRESS_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )

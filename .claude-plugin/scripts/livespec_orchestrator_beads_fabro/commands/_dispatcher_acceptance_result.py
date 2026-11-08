@@ -60,10 +60,17 @@ class AcceptanceDisposition:
     its line there: `stage: done` is reserved for an item the pass CLOSED, and
     everything else — a park, a rework route, a block — rests at the acceptance
     stage. Naming the negative would make the rework route look like a park.
+
+    `refusal` is the claim-token protocol's outcome when it withheld one of the
+    valve's ledger writes, and `None` on every disposition whose writes landed.
+    A withheld write wrote nothing to the item, so the valve did not dispose of
+    it. `verdict` is `None` when the refused write was the completion itself,
+    because the acceptance pass never ran.
     """
 
-    verdict: str
+    verdict: str | None
     closed: bool
+    refusal: str | None = None
 
 
 def outcome_after_acceptance(
@@ -74,6 +81,19 @@ def outcome_after_acceptance(
     The merge facts are carried through untouched: the run DID merge, and an
     operator triaging a park needs the pull request its records live on.
     """
+    if disposition.refusal is not None:
+        # Not a park and not a close: a ledger write the valve owed was withheld,
+        # so the result asks for attention and says which protocol outcome it was.
+        return replace(
+            outcome,
+            status=NEEDS_ATTENTION_STATUS,
+            stage=ACCEPTANCE_STAGE,
+            verdict=disposition.verdict,
+            detail=(
+                f"{outcome.detail}; the claim-token protocol refused an acceptance ledger "
+                f"write ({disposition.refusal}), so the item was left as it was"
+            ),
+        )
     if disposition.closed:
         return replace(outcome, verdict=disposition.verdict)
     status = (

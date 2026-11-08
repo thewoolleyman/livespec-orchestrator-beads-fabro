@@ -176,23 +176,18 @@ JANITOR_CLUSTER_GATE_DEFAULT: tuple[str, ...] = (
 # post-merge outcome for a premise nobody asked for.
 JANITOR_TRUST_DEFAULT: tuple[str, ...] = (FLEET_TOOL_RUNNER, "trust")
 
-# The IN-SANDBOX-GATE venue's check-suite. It is the same declared check-suite
-# with the host-venue provisioning dropped -- NOT because the sandbox needs none,
-# but because the sandbox provisions the pack in its PREPARE CHAIN instead, through
-# `SANDBOX_CHECKOUT_PROVISION_DEFAULT` below. This comment used to say the sandbox
-# is "a fresh full clone whose own prepare chain has already run, so the
-# worktree-pack provisioning the host janitor needs is not a premise there"; the
-# premise was real all along and nothing satisfied it, which is the defect
-# `bd-ib-tlmq3m` closes. The two venues differing ONLY in their fleet default is
-# what the ratified venue dimension buys -- before it, this argv lived as a bare
-# literal in the publish prompts with nothing binding it to the host one.
-#
-# The host venue provisions INSIDE its suite and the sandbox venue provisions
-# BEFORE it, and that asymmetry is deliberate: the host janitor's suite is the only
-# thing that runs in its fresh worktree, while a sandbox runs a whole implement
-# stage -- whose own in-session `just check`, and whose `pr_refresh` gate, both read
-# the pack long before the janitor node does.
-SANDBOX_CHECK_SUITE_DEFAULT: tuple[str, ...] = (*_FLEET_RECIPE_INVOCATION, "check")
+# The IN-SANDBOX-GATE venue's fleet-default check-suite mirrors the host janitor:
+# it reinstalls the ignored worktree-discipline pack immediately before `check`.
+# A sandbox refresh can sync a newer livespec-dev-tooling pin after the prepare
+# chain installed the old pack bodies, so the suite itself must converge the pack
+# it verifies. `SANDBOX_CHECKOUT_PROVISION_DEFAULT` remains necessary for the
+# implement stage's first reads, before this suite is reached. A governed
+# repository's declared suite is still resolved and rendered unchanged.
+SANDBOX_CHECK_SUITE_DEFAULT: tuple[str, ...] = (
+    *_FLEET_RECIPE_INVOCATION,
+    "install-worktree-pack",
+    "check",
+)
 
 # The IN-SANDBOX venue's PER-CLONE provisioning recipe -- the twin of the
 # host-janitor one above, and the correction of the paragraph beside it. That

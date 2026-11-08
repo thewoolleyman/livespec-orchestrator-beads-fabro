@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro._beads_client_metadata import CLAIM_TOKEN_METADATA_KEY
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -169,6 +170,29 @@ def test_list_issues_passes_limit_zero_for_unbounded_enumeration() -> None:
     assert captured["verb_args"] == ["list", "--status", "all", "--limit", "0", "--json"]
 
 
+def test_show_issues_reads_many_ids_in_one_show_and_none_without_ids() -> None:
+    """`show_issues` is ONE `bd show <id>... --json` for the whole batch.
+
+    A chain walk across every item of a tenant reads its tokens this way, so
+    the verb must not fall back to one show per id. With no ids it runs nothing:
+    `bd show --json` without an id exits 1.
+    """
+    calls: list[list[str]] = []
+
+    class _Recording(ShellBeadsClient):
+        def _run_json(self, *, verb_args: list[str]) -> Any:
+            calls.append(verb_args)
+            return [{"id": "li-a", "status": "closed"}, {"id": "li-c", "status": "open"}]
+
+    client = _Recording(config=_config())
+    records = client.show_issues(issue_ids=["li-a", "li-b", "li-c"])
+    nothing = client.show_issues(issue_ids=[])
+
+    assert calls == [["show", "li-a", "li-b", "li-c", "--json"]]
+    assert [record["id"] for record in records] == ["li-a", "li-c"]
+    assert nothing == []
+
+
 def test_register_custom_statuses_emits_config_set_argv() -> None:
     """The shell client registers the 5 custom statuses via the verified
     `bd config set status.custom` CSV form. Capture the `verb_args` handed
@@ -210,6 +234,33 @@ def test_shell_update_skips_no_op_but_runs_when_flags_present(
     client.update_issue(issue_id="li-a", status="closed")  # flagged: shells out
     assert len(seen) == 1
     assert seen[0][:2] == ["update", "li-a"]
+
+
+def test_shell_update_sends_the_claim_token_key_only_for_a_protocol_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`names_claim_token` is the one thing that lets the token key into `--metadata`.
+
+    `bd` merges top-level keys, so the first write leaves whatever token the
+    item names untouched, and the second, a protocol write, changes it.
+    """
+    client = ShellBeadsClient(config=_config())
+    seen: list[list[str]] = []
+    monkeypatch.setattr(
+        client,
+        "_run_void",
+        lambda *, verb_args: seen.append(verb_args),
+    )
+    metadata = {"rank": "a0", CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1"}
+
+    client.update_issue(issue_id="li-a", metadata=metadata)
+    client.update_issue(issue_id="li-a", metadata=metadata, names_claim_token=True)
+
+    assert seen == [
+        ["update", "li-a", "--metadata", '{"rank":"a0"}'],
+        ["update", "li-a", "--metadata", '{"dispatch_claim_token":"fake-wisp-1","rank":"a0"}'],
+    ]
+    assert metadata == {"rank": "a0", CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1"}
 
 
 def test_shell_close_with_reason(monkeypatch: pytest.MonkeyPatch) -> None:

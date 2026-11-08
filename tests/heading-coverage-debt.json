@@ -709,7 +709,7 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 255 — A commit inside an implement or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
+    "heading": "## Scenario 255 — A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once",
     "work_item": "bd-ib-72hvx5",
     "first_seen": "2026-10-26"
   },
@@ -1003,6 +1003,139 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 306 — A janitor-green run cancelled for a factory restart has its committed tree published to a preservation ref",
+    "work_item": "bd-ib-vraou4",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 307 — The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target",
+    "work_item": "bd-ib-3ufx6l",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 308 — A required check that fails terminally on infrastructure is re-run once and files a flake item",
+    "work_item": "bd-ib-tckulg",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 309 — Fleet-launch launchers share one WIP claim-count read per repository per time-to-live",
+    "work_item": "bd-ib-zwtfbq",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 310 — A terminal dispatch span carries its run class, execution target and sandbox cost",
+    "work_item": "bd-ib-faprof",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 311 — Dropping an attribute the scheduler requires fails the check",
+    "work_item": "bd-ib-atmome",
+    "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 312 — A fleet launcher that exits without a run leaves a terminal line, and its ready item's ticket is re-taken or reported",
+    "work_item": "bd-ib-rk7mbd",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 313 — A failed scheduled default-branch workflow run becomes one ledger item per failed job",
+    "work_item": "bd-ib-pgbr52",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 314 — A fleet launcher screens a host-only item with the Dispatcher's predicate and never re-tickets a permanent refusal",
+    "work_item": "bd-ib-v52w7a",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 315 — A hand-picked dispatch of a host-only item is refused with exit code 5 and one REFUSED line",
+    "work_item": "bd-ib-t5aju3",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 316 — A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run",
+    "work_item": "bd-ib-fa5elg",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 317 — Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref",
+    "work_item": "bd-ib-ofvsr3",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 318 — A run's ending names its latest preserved capture on the item",
+    "work_item": "bd-ib-xdhe5z",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 319 — A re-dispatch starts from the latest run's latest preserved capture",
+    "work_item": "bd-ib-v6br5b",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 320 — Preservation refs are deleted when the Dispatcher closes or collects an item's runs",
+    "work_item": "bd-ib-efiasj",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 321 — drive names the stage and offending sources of a goal-template preflight refusal",
+    "work_item": "bd-ib-it2d",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 322 — A comment-poisoned item is superseded by a successor that passes the goal-template preflight",
+    "work_item": "bd-ib-it2d",
+    "first_seen": "2026-11-05"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 323 — An earlier run's preserved ref never outranks a newer run's published head",
+    "work_item": "bd-ib-so6fef",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 324 — A hold recorded only in the dispatch journal reaches needs-attention",
+    "work_item": "bd-ib-5xogp4",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label",
     "work_item": "bd-ib-pz7x",
     "first_seen": "2026-07-13"
@@ -1220,9 +1353,9 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: incident provenance exceptions remain exact and repayable",
-    "work_item": "bd-ib-y7ryj3",
-    "first_seen": "2026-11-04"
+    "heading": "## Scenario: incident entry owns one initial authority before a carrier PR exists",
+    "work_item": "bd-ib-dzbwaq",
+    "first_seen": "2026-11-05"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1272,5 +1405,40 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node",
+    "work_item": "bd-ib-2eyiwy",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused",
+    "work_item": "bd-ib-s754le",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees",
+    "work_item": "bd-ib-xz35zu",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
+    "work_item": "bd-ib-fde4ie",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes",
+    "work_item": "bd-ib-v75dlb",
+    "first_seen": "2026-11-08"
   }
 ]

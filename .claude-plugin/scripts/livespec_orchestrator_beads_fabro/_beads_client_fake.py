@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_orchestrator_beads_fabro._beads_client_metadata import (
+    merged_metadata,
+    metadata_payload,
+)
 from livespec_orchestrator_beads_fabro.errors import BeadsMappingError
 
 if TYPE_CHECKING:
@@ -51,9 +55,15 @@ class FakeBeadsClient:
     `bd close`'s `WHERE status != 'closed'` guarantees. `create_issue` with an
     id that already exists is an UPSERT that reopens the record and erases its
     close reason, which is why nothing may ever re-create a token id. And a
-    no-history record is omitted from `list_issues` (and therefore from
-    `exists`, which the shell client resolves through that same listing) while
-    `show_issue` still returns it.
+    no-history record is omitted from `list_issues` and from `children` (and
+    therefore from `exists`, which the shell client resolves through that same
+    listing) while `show_issue` still returns it.
+
+    `update_issue` MERGES a metadata payload into the stored object at the top
+    level and replaces a nested object whole, as `bd update --metadata` does,
+    so a writer that omits a key cannot be seen to remove it here when it would
+    not remove it there. The claim-token key is withheld from the payload
+    unless the caller is a protocol write (`_beads_client_metadata`).
     """
 
     def __init__(self) -> None:
@@ -88,13 +98,12 @@ class FakeBeadsClient:
             )
         return dict(record)
 
+    def show_issues(self, *, issue_ids: list[str]) -> list[BeadsRecord]:
+        """Copies of the requested records that exist, as `bd show <id>... --json` returns them."""
+        return [dict(self._issues[issue_id]) for issue_id in issue_ids if issue_id in self._issues]
+
     def seed_comment(
-        self,
-        *,
-        issue_id: str,
-        text: str,
-        author: str | None = None,
-        created_at: str | None = None,
+        self, *, issue_id: str, text: str, author: str | None = None, created_at: str | None = None
     ) -> None:
         """Seed a comment onto an issue (fake-only hermetic seeding seam)."""
         if issue_id not in self._issues:
@@ -120,10 +129,17 @@ class FakeBeadsClient:
         return [dict(record) for record in self._comments.get(issue_id, [])]
 
     def children(self, *, parent_id: str) -> list[BeadsRecord]:
+        """Return the parent's children as the LIST surface sees them.
+
+        `bd children <id>` is `bd list --parent <id> --status all`, so it omits
+        every no-history record exactly as `list_issues` does. A fake answering
+        from its backing dict would return a token record that carried a parent
+        edge, where the live tenant returns none.
+        """
         return [
             dict(record)
-            for record in self._issues.values()
-            if _is_child_of(record=record, parent_id=parent_id)
+            for issue_id, record in self._issues.items()
+            if issue_id not in self._no_history and _is_child_of(record=record, parent_id=parent_id)
         ]
 
     def exists(self, *, issue_id: str) -> bool:
@@ -210,6 +226,7 @@ class FakeBeadsClient:
         acceptance_criteria: str | None = None,
         notes: str | None = None,
         description: str | None = None,
+        names_claim_token: bool = False,
     ) -> None:
         record = self._issues.get(issue_id)
         if record is None:
@@ -217,14 +234,16 @@ class FakeBeadsClient:
                 record_id=issue_id,
                 detail="cannot update an issue that is not present in the tenant",
             )
+        payload = metadata_payload(metadata=metadata, names_claim_token=names_claim_token)
         _update_scalar_fields(
             record=record,
             fields={
                 "status": status,
                 "parent_id": parent_id,
-                # The only field that is COPIED rather than referenced: the
-                # caller's dict must not become the tenant's own.
-                "metadata": None if metadata is None else dict(metadata),
+                # MERGED at the top level, as `bd update --metadata` does, and
+                # never replaced: a key the payload omits survives. The result
+                # is a fresh dict, so the caller's never becomes the tenant's.
+                "metadata": merged_metadata(stored=record.get("metadata"), payload=payload),
                 "acceptance_criteria": acceptance_criteria,
                 "notes": notes,
                 "description": description,
@@ -320,12 +339,7 @@ def _update_scalar_fields(*, record: BeadsRecord, fields: dict[str, Any]) -> Non
             record[key] = value
 
 
-def _update_assignee(
-    *,
-    record: BeadsRecord,
-    assignee: str | None,
-    clear_assignee: bool,
-) -> None:
+def _update_assignee(*, record: BeadsRecord, assignee: str | None, clear_assignee: bool) -> None:
     if clear_assignee or assignee is not None:
         record["assignee"] = None if clear_assignee else assignee
 

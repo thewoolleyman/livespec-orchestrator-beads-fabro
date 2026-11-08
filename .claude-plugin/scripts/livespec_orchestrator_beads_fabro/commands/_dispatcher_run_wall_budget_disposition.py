@@ -46,6 +46,10 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     update_work_item_blocked_state,
 )
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_guard import terminal_claim
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    claim_blocked_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_rows import (
@@ -140,12 +144,16 @@ def dispose_run_wall_budget_cancel(
         exceptions=_LEDGER_WRITE_ERRORS,
     )
     rested = attempt(
-        action=lambda: update_work_item_blocked_state(
+        action=lambda: claim_blocked_write(
+            repo=repo,
             path=store_config(repo=repo),
+            intent="run-wall-budget-rest",
+            write=update_work_item_blocked_state,
             item_id=item.id,
-            status="blocked",
             blocked_reason="needs-human",
             admission_policy="manual",
+            journal=journal,
+            still_as_decided=terminal_claim(item=item, run_id=outcome.fabro_run_id),
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
     )
@@ -157,6 +165,8 @@ def dispose_run_wall_budget_cancel(
                 "reason": f"{type(rested.error).__name__}",
             }
         )
+        return
+    if rested is not None:
         return
     _journal_rest(journal=journal, item=item, row=row)
 

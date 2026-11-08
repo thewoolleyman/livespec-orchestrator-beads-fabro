@@ -10,6 +10,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
 )
 from livespec_orchestrator_beads_fabro._beads_client_fake import FakeBeadsClient
+from livespec_orchestrator_beads_fabro._beads_client_metadata import CLAIM_TOKEN_METADATA_KEY
 from livespec_orchestrator_beads_fabro.errors import BeadsMappingError
 
 
@@ -55,6 +56,20 @@ def test_fake_show_missing_raises() -> None:
     fake = FakeBeadsClient()
     with pytest.raises(BeadsMappingError):
         _ = fake.show_issue(issue_id="li-absent")
+
+
+def test_fake_show_issues_returns_copies_of_the_present_ids_only() -> None:
+    """As `bd show <id>... --json` does: an absent id is left out, never an error."""
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
+    token = fake.create_no_history_issue(title="t", description="d")
+
+    records = fake.show_issues(issue_ids=["li-x", "li-absent", token])
+    records[0]["status"] = "mutated"
+
+    assert [record["id"] for record in records] == ["li-x", token]
+    assert fake.show_issue(issue_id="li-x")["status"] == "open"
+    assert fake.show_issues(issue_ids=[]) == []
 
 
 def test_fake_update_missing_raises() -> None:
@@ -164,6 +179,17 @@ def test_fake_children_returns_immediate_dotted_child_only() -> None:
     _ = fake.create_issue(draft=_draft(issue_id="x.1.2", parent_id=None))
     assert [record["id"] for record in fake.children(parent_id="x")] == ["x.1"]
     assert [record["id"] for record in fake.children(parent_id="x.1")] == ["x.1.2"]
+
+
+def test_fake_children_omits_a_no_history_record_carrying_a_parent_edge() -> None:
+    """`bd children` is `bd list --parent`, a list surface: no-history records are absent."""
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-epic", parent_id=None))
+    _ = fake.create_issue(draft=_draft(issue_id="li-child", parent_id="li-epic"))
+    token = fake.create_no_history_issue(title="token", description="single-use")
+    fake.add_dependency(from_id=token, to_id="li-epic", edge_type=EDGE_PARENT_CHILD)
+
+    assert [record["id"] for record in fake.children(parent_id="li-epic")] == ["li-child"]
 
 
 def test_fake_seed_and_list_comments_roundtrip() -> None:
@@ -299,3 +325,63 @@ def test_fake_delete_missing_issue_raises() -> None:
     fake = FakeBeadsClient()
     with pytest.raises(BeadsMappingError):
         fake.delete_issue(issue_id="li-absent")
+
+
+def test_fake_update_merges_top_level_metadata_and_replaces_a_nested_object() -> None:
+    """`bd update --metadata` merges top-level keys; the fake does the same."""
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(
+        draft=_draft(metadata={"rank": "a0", "kept": "as-is", "audit": {"commits": ["c1"], "n": 1}})
+    )
+
+    fake.update_issue(issue_id="li-a", metadata={"rank": "a8", "audit": {"commits": ["c2"]}})
+
+    assert fake.show_issue(issue_id="li-a")["metadata"] == {
+        "rank": "a8",
+        "kept": "as-is",
+        "audit": {"commits": ["c2"]},
+    }
+
+
+def test_fake_update_names_a_claim_token_only_for_a_protocol_write() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(metadata={"rank": "a0"}))
+
+    fake.update_issue(issue_id="li-a", metadata={CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1"})
+    assert fake.show_issue(issue_id="li-a")["metadata"] == {"rank": "a0"}
+
+    fake.update_issue(
+        issue_id="li-a", metadata={CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1"}, names_claim_token=True
+    )
+    assert fake.show_issue(issue_id="li-a")["metadata"] == {
+        "rank": "a0",
+        CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1",
+    }
+
+    fake.update_issue(issue_id="li-a", metadata={"rank": "a8", CLAIM_TOKEN_METADATA_KEY: "stale"})
+    assert fake.show_issue(issue_id="li-a")["metadata"] == {
+        "rank": "a8",
+        CLAIM_TOKEN_METADATA_KEY: "fake-wisp-1",
+    }
+
+
+def test_fake_update_never_stores_the_callers_own_metadata_object() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft())
+    metadata = {"rank": "a0"}
+
+    fake.update_issue(issue_id="li-a", metadata=metadata)
+    metadata["rank"] = "mutated-by-the-caller"
+
+    assert fake.show_issue(issue_id="li-a")["metadata"] == {"rank": "a0"}
+
+
+def test_fake_update_without_metadata_leaves_a_sparse_record_without_the_key() -> None:
+    fake = FakeBeadsClient()
+    token_id = fake.create_no_history_issue(title="token", description="a token record")
+
+    fake.update_issue(issue_id=token_id, add_labels=["claim-token"])
+    assert "metadata" not in fake.show_issue(issue_id=token_id)
+
+    fake.update_issue(issue_id=token_id, metadata={"rank": "a0"})
+    assert fake.show_issue(issue_id=token_id)["metadata"] == {"rank": "a0"}

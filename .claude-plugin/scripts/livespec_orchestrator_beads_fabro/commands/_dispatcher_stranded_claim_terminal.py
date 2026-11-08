@@ -40,6 +40,18 @@ the exact state this whole subsection exists to end. It is decided by
 RE-READING the row rather than by predicting which route fired: every route is
 fail-soft, so a route can decline or can fail its own ledger write, and only
 the row itself says what happened.
+
+A DISPOSITION THE CLAIM-TOKEN PROTOCOL REFUSED IS REPORTED, NOT SWALLOWED. With
+`dispatcher.claim_tokens` true every delegated disposition is a guarded write,
+and one that loses the item's token writes nothing to the item. Each
+disposition returns nothing, and reports a refusal the one way it can: the
+`claim-write-refused` row `settle_claim_write` journals. So the recovery reads
+its own journal back for the rows written for this item since it began, and one
+whose write was refused answers `RefusedDisposition` naming the protocol's
+outcome. The row re-read cannot stand in for that: another writer that won the
+token has usually moved the row, which reads exactly like a route that landed.
+A refused needs-human rest also writes no cause comment, because a comment
+saying the item rests for a human would describe a rest that did not happen.
 """
 
 from __future__ import annotations
@@ -52,6 +64,9 @@ from livespec_orchestrator_beads_fabro._store_dispatch_claim import claim_row_fo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
     escalate_needs_human_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import (
+    CLAIM_WRITE_REFUSED_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
@@ -61,6 +76,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
     inspect_run,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_rows import (
+    journal_records,
+    names_stage,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_cause import (
     record_needs_human_cause,
 )
@@ -89,6 +108,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 __all__: list[str] = [
     "EFFECT_NEEDS_HUMAN_REST",
     "EFFECT_TERMINAL_ROUTING",
+    "RefusedDisposition",
     "TerminalObservation",
     "TerminalReadContext",
     "apply_terminal_disposition",
@@ -107,6 +127,7 @@ _BLOCKED_STATUS = "blocked"
 _RUN_ID_KEY = "run_id"
 _WORK_ITEM_KEY = "work_item_id"
 _STAGE_KEY = "stage"
+_REASON_KEY = "reason"
 
 _LEDGER_READ_ERRORS: tuple[type[Exception], ...] = (
     WorkItemNotFoundError,
@@ -150,6 +171,32 @@ class TerminalObservation:
     """
 
     outcome: DispatchOutcome
+
+
+@dataclass(frozen=True, kw_only=True)
+class RefusedDisposition:
+    """A terminal disposition the claim-token protocol refused.
+
+    `outcome` is the protocol's own name for the refusal (`claim-changed`,
+    `claim-transition-pending`, ...). The recovery wrote nothing to the item,
+    so its caller holds the claim rather than reporting it recovered.
+    """
+
+    outcome: str
+
+
+def _refusals(*, journal: JournalFile, work_item_id: str) -> tuple[str, ...]:
+    """The outcome of each claim write of this item the journal records as refused.
+
+    In append order, read back from the journal the dispositions wrote to. A
+    caller counts them before a disposition and again after it: the rows past
+    that count are the refusals that disposition met.
+    """
+    return tuple(
+        str(record.get(_REASON_KEY))
+        for record in journal_records(journal=journal)
+        if names_stage(record=record, item_id=work_item_id, stage=CLAIM_WRITE_REFUSED_STAGE)
+    )
 
 
 def observe_terminal_outcome(
@@ -201,26 +248,49 @@ def apply_terminal_disposition(
     observation: TerminalObservation,
     journal: JournalFile,
     now_iso: str,
-) -> tuple[str, ...]:
+) -> tuple[str, ...] | RefusedDisposition:
     """Apply the Dispatcher's own disposition for this terminal, then rest it.
 
     The order mirrors `post_run_dispositions` exactly: the human-gate
     escalation and its cause record first, then the three non-green routes as
     one group, then the rest for a failure none of them claimed.
+
+    Answers the effects this pass took, or `RefusedDisposition` when the
+    claim-token protocol refused the last write it attempted: a refused route
+    on a row that is no longer this claim, or a refused rest.
     """
     outcome = observation.outcome
+    seen = len(_refusals(journal=journal, work_item_id=item.id))
     if outcome.status == _BLOCKED_STATUS:
-        escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
-        record_needs_human_cause(repo=repo, item=item, outcome=outcome, journal=journal)
+        _ = _rest_with_cause(repo=repo, item=item, outcome=outcome, journal=journal)
     dispose_terminal_routing(
         repo=repo, item=item, outcome=outcome, journal=journal, now_iso=now_iso
     )
     if not _still_claimed(repo=repo, work_item_id=item.id):
+        refused = _refusals(journal=journal, work_item_id=item.id)[seen:]
+        if refused:
+            return RefusedDisposition(outcome=refused[-1])
         return (EFFECT_TERMINAL_ROUTING,)
     rest = replace(outcome, status=_BLOCKED_STATUS, needs_human_kind=STAGE_FAILURE)
-    escalate_needs_human_block(repo=repo, item=item, outcome=rest, journal=journal)
-    record_needs_human_cause(repo=repo, item=item, outcome=rest, journal=journal)
+    if not _rest_with_cause(repo=repo, item=item, outcome=rest, journal=journal):
+        return RefusedDisposition(outcome=_refusals(journal=journal, work_item_id=item.id)[-1])
     return (EFFECT_TERMINAL_ROUTING, EFFECT_NEEDS_HUMAN_REST)
+
+
+def _rest_with_cause(
+    *, repo: Path, item: WorkItem, outcome: DispatchOutcome, journal: JournalFile
+) -> bool:
+    """Rest the item for a human and record why; `False` when the rest was refused.
+
+    The cause comment follows the rest, as it does on the Dispatcher's own
+    path, and is not written for a rest the claim-token protocol refused.
+    """
+    refused_before = len(_refusals(journal=journal, work_item_id=item.id))
+    escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
+    if len(_refusals(journal=journal, work_item_id=item.id)) > refused_before:
+        return False
+    record_needs_human_cause(repo=repo, item=item, outcome=outcome, journal=journal)
+    return True
 
 
 def _evidence_readable(*, inspect: FabroInspectResult | None) -> bool:

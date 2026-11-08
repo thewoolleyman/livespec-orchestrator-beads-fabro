@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -15,6 +15,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_pr_association
     associated_pr_numbers_for_merge,
 )
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 
 __all__: list[str] = [
     "DiffResult",
@@ -46,24 +49,72 @@ class DiffResult:
     empty: bool = False
 
 
-def read_merged_diff(*, repo: Path, outcome: DispatchOutcome, runner: CommandRunner) -> DiffResult:
+def read_merged_diff(
+    *,
+    repo: Path,
+    outcome: DispatchOutcome,
+    runner: CommandRunner,
+    incident: IncidentAcceptanceScope | None = None,
+) -> DiffResult:
+    """The diff the acceptance pass grades; for an incident, the cumulative one.
+
+    An incident's acceptance receives the original expedited change corpus plus
+    the current repayment carrier, never the marker-removal diff alone
+    (`SPECIFICATION/contracts.md`, "Expedited incident lifecycle"). Each original
+    carrier PR's diff precedes the current one; a merged PR the chain does not
+    bind as current, or an original diff that cannot be read, is ungradeable.
+    """
+    if incident is not None and incident.refusal is not None:
+        return DiffResult(merged_diff=None, reason=incident.refusal, gradeable=False)
+    current = _read_outcome_diff(repo=repo, outcome=outcome, runner=runner)
+    if incident is None or current.merged_diff is None:
+        return current
+    originals: list[str] = []
+    for number in incident.original_prs:
+        original = _pr_diff(repo=repo, runner=runner, pr_number=number)
+        if original.merged_diff is None:
+            return DiffResult(
+                merged_diff=None,
+                reason=(
+                    f"incident original carrier PR #{number} diff unreadable: {original.reason}"
+                ),
+                gradeable=False,
+            )
+        originals.append(original.merged_diff)
+    named = ", ".join(f"#{number}" for number in incident.original_prs)
+    return DiffResult(
+        merged_diff="".join(originals) + current.merged_diff,
+        reason=(
+            f"cumulative incident diff read: original carriers {named} with current "
+            f"repayment PR #{incident.current_pr}"
+        ),
+        gradeable=True,
+    )
+
+
+def _pr_diff(*, repo: Path, runner: CommandRunner, pr_number: int) -> DiffResult:
+    return _diff_from_command(
+        result=runner.run(
+            argv=["gh", "pr", "diff", str(pr_number), "--patch"],
+            cwd=repo,
+            timeout_seconds=_DIFF_TIMEOUT_SECONDS,
+        ),
+        read_reason="pull request diff read",
+        empty_reason="pull request diff is empty",
+        failed_reason="pull request diff failed",
+        no_file_changes_reason="pull request diff has no file changes",
+    )
+
+
+def _read_outcome_diff(
+    *, repo: Path, outcome: DispatchOutcome, runner: CommandRunner
+) -> DiffResult:
     merge_sha = outcome.merge_sha
     if merge_sha is None:
         return DiffResult(merged_diff=None, reason="merge sha unavailable", gradeable=True)
     pr_number = outcome.pr_number
     if pr_number is not None:
-        pr_result = runner.run(
-            argv=["gh", "pr", "diff", str(pr_number), "--patch"],
-            cwd=repo,
-            timeout_seconds=_DIFF_TIMEOUT_SECONDS,
-        )
-        diff = _diff_from_command(
-            result=pr_result,
-            read_reason="pull request diff read",
-            empty_reason="pull request diff is empty",
-            failed_reason="pull request diff failed",
-            no_file_changes_reason="pull request diff has no file changes",
-        )
+        diff = _pr_diff(repo=repo, runner=runner, pr_number=pr_number)
         if diff.merged_diff is not None:
             return diff
         if not diff.gradeable:

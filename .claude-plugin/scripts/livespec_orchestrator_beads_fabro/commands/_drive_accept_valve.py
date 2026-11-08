@@ -56,6 +56,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    INCIDENT_OBLIGATION_ERR,
+    closure_obligations_for,
+    incident_refusal_detail,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
     write_work_item_status_and_reconcile,
@@ -80,6 +85,12 @@ from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     valve_refusal,
     valve_success,
 )
+from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
+    WRITER_HUMAN_VALVE,
+    ClaimWrite,
+    resting_at,
+    valve_claim_refusal,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -101,6 +112,13 @@ _HOST_RECORD_FORMAT = (
 )
 _HUMAN_RECORD_FORMAT = (
     f"{PROOF_RECORD_TITLE} — {VERDICT_HUMAN_ATTESTED} — <human identity> — <UTC timestamp>"
+)
+# What an accept that carried the human-attested link has done by the time its
+# close is refused. The pointer is rewritten first, and a refused close does
+# not restore it; the rewrite is idempotent, so a second press is safe.
+_POINTER_REWRITTEN = (
+    "the proof pointer in the item's description was already rewritten to cite the "
+    "human-attested record, and that rewrite stands"
 )
 _NO_POINTER_DETAIL = (
     "the description carries no Proof of Done pointer, so the pull request"
@@ -129,9 +147,20 @@ def accept_item(
     """Accept one parked item, or refuse it while a host or human leg is outstanding."""
     if item.status != _ACCEPTANCE_STATUS:
         return invalid_source_state(aid=action_id, item=item, expected=_ACCEPTANCE_STATUS)
+    # An expedited incident is accepted only once its chain records `closed`:
+    # a human press is not final normal proof, and an expedited merge is not one.
+    incident = closure_obligations_for(config=config, item_id=item.id)
+    if incident:
+        detail = incident_refusal_detail(item_id=item.id, outstanding=incident)
+        return valve_refusal(
+            aid=action_id,
+            wid=item.id,
+            err=INCIDENT_OBLIGATION_ERR,
+            msg=f"accept refused: {detail}.",
+        )
     criteria = effective_criteria(item=item)
     if not criteria.pending_leg_assertions:
-        return _close(config=config, item=item, action_id=action_id)
+        return _close(repo=repo, config=config, item=item, action_id=action_id)
     return _gated_accept(
         repo=repo, config=config, item=item, action_id=action_id, criteria=criteria, runner=runner
     )
@@ -175,7 +204,7 @@ def _gated_accept(
         )
     human = criteria.human_attested_assertions
     if not human:
-        return _close(config=config, item=item, action_id=action_id)
+        return _close(repo=repo, config=config, item=item, action_id=action_id)
     attested = (
         None
         if records is None
@@ -189,7 +218,9 @@ def _gated_accept(
             detail=f"no such record on pull request #{pointer.pull_request}",
         )
     _carry_both_links(config=config, item=item, pointer=pointer, record=attested)
-    return _close(config=config, item=item, action_id=action_id)
+    return _close(
+        repo=repo, config=config, item=item, action_id=action_id, already_done=_POINTER_REWRITTEN
+    )
 
 
 def _records(
@@ -275,8 +306,33 @@ def _carry_both_links(
     )
 
 
-def _close(*, config: StoreConfig, item: WorkItem, action_id: str) -> dict[str, Any]:
-    write_work_item_status_and_reconcile(path=config, item_id=item.id, status="done")
+def _close(
+    *,
+    repo: Path,
+    config: StoreConfig,
+    item: WorkItem,
+    action_id: str,
+    already_done: str | None = None,
+) -> dict[str, Any]:
+    """Close the accepted item; `already_done` is what this press wrote before the close."""
+    lost = ClaimWrite(
+        repo=repo,
+        path=config,
+        item_id=item.id,
+        writer=WRITER_HUMAN_VALVE,
+        intent="accept",
+        still_as_decided=resting_at(status=_ACCEPTANCE_STATUS),
+    ).write_status(
+        status="done",
+        reconcile=True,
+        unguarded=lambda: write_work_item_status_and_reconcile(
+            path=config, item_id=item.id, status="done"
+        ),
+    )
+    if lost is not None:
+        return valve_claim_refusal(
+            aid=action_id, wid=item.id, verb="accept", outcome=lost, already_done=already_done
+        )
     return valve_success(
         aid=action_id,
         wid=item.id,

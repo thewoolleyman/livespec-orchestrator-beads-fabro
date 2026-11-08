@@ -1,0 +1,356 @@
+{
+ "labelled_before_any_verdict": true,
+ "spec": "SPECIFICATION/ on primary checkout master (history v315)",
+ "labels": [
+  {
+   "id": "bd-ib-csrvhs",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 297 / Provisional fleet launch scripts",
+   "reason": "Test-harness wait fix; restores a load-independent verdict, no product behaviour a clause governs changes."
+  },
+  {
+   "id": "bd-ib-ax6bxj",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Dispatcher admission, WIP cap, and post-merge acceptance -> 'The spec-stated judgement is one shared component'",
+   "reason": "Reusing an unchanged non-feature tier record is what the reuse clause already requires ('Classifying ... again on every dispatch path is satisfied by that reuse')."
+  },
+  {
+   "id": "bd-ib-yqjaut",
+   "classification": "non_functional",
+   "label": "breaks",
+   "clause": "contracts.md 'The run refreshes before the janitor, and publish_draft pushes the janitor-passed head' + Scenario 305",
+   "reason": "Removing the merge commit's hook suite run (or reordering grade-before-merge) changes the refresh-then-aggregate order and the 'no check, target or gate is removed or weakened' sentence; owner says the paragraph must be amended."
+  },
+  {
+   "id": "bd-ib-ajfmkw",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Dispatcher policy settings (reconcile clause 2) / Scenario 196",
+   "reason": "Keeps naming the move valve as required; only adds a precondition."
+  },
+  {
+   "id": "bd-ib-qcshv6",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 196 / needs-human cause clauses",
+   "reason": "Makes the cause quote the stage the run ended on; restores accuracy, no clause requires quoting a recovered stage."
+  },
+  {
+   "id": "bd-ib-xs2gmn",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Fabro runtime constraints",
+   "reason": "Fabro fork client/server refusal of resuming a finished run; no clause of this repo states the contrary."
+  },
+  {
+   "id": "bd-ib-bomy33",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Grooming and slice-size calibration (autonomy-tier bullet) / Scenario 206",
+   "reason": "Conformance: the clause says a held item 'MUST be held out of ready' and the hold 'MUST fail closed'."
+  },
+  {
+   "id": "bd-ib-dpsiwz",
+   "classification": "chore",
+   "label": "unsure",
+   "clause": "Repository integration contract / 'The prepare chain refreshes the remote's tags' / 'What the clone holds after preparation' / seam-equivalence scenario on run.prepare step positions",
+   "reason": "Moves every prepare step into command nodes; clauses are written in terms of 'prepare steps the Dispatcher renders' and a scenario admits run.prepare token positions, so whether a functional move contradicts them depends on reading 'prepare step' as mechanism or as role (item itself says a propose-change is needed for the scenario)."
+  },
+  {
+   "id": "bd-ib-qshcwc",
+   "classification": "bug",
+   "label": "unsure",
+   "clause": "Factory-configurable ACP fallback priority -> 'Recovery from the failed run's preserved work' / 'A needs-human tree is recognised by the run it carries'",
+   "reason": "Clause says 'prefer the one named under one of the item's run identifiers, otherwise newest by committer time' and orders runs by journal order; item ranks across run-id and dispatch-id names by committer time 'whichever identifier names it'. Breaks only if 'run identifiers' means run ids alone."
+  },
+  {
+   "id": "bd-ib-s754le",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Dispatcher admission ... publication guard ('the sandbox gh wrapper and push_origin helper MUST refuse a publication action from an agent stage')",
+   "reason": "Guard still refuses agent-turn publication (bullet 3); only a tree's own test suite stops tripping it."
+  },
+  {
+   "id": "bd-ib-oxx6eo",
+   "classification": "chore",
+   "label": "does-not-break",
+   "clause": "Expedited incident lifecycle",
+   "reason": "Adds an integration test only."
+  },
+  {
+   "id": "bd-ib-7i2bta",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Expedited incident lifecycle (phase table)",
+   "reason": "Adds the missing writer of master-observation the phase table already pairs with a merged carrier."
+  },
+  {
+   "id": "bd-ib-yvmtrm",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 252",
+   "reason": "Adds a sanity rule on Proof of Done timestamps; no clause permits future-dated records."
+  },
+  {
+   "id": "bd-ib-ot4av7",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 240 / 'The spec-stated judgement is one shared component'",
+   "reason": "Reusing a current recorded governing-heading verdict is what the reuse rule prescribes."
+  },
+  {
+   "id": "bd-ib-z5yzyq",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 199",
+   "reason": "Prompt change; keeps every case Scenario 199 requires (bullet 5) and adds a case the scenario does not state."
+  },
+  {
+   "id": "bd-ib-grzfpt",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 176 / Refresh repair",
+   "reason": "Spec requires the fix turn to integrate the default branch; merge vs rebase is the prompt's choice, no clause mandates rebase."
+  },
+  {
+   "id": "bd-ib-wd2zcq",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 31 / reject:regroom ('acceptance -> backlog with the merged change reverted')",
+   "reason": "Makes the valve do what the contract already says it does."
+  },
+  {
+   "id": "bd-ib-qnucbe",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 21",
+   "reason": "Recipe registration arguments; no spec clause names sparse registration."
+  },
+  {
+   "id": "bd-ib-rjnif7",
+   "classification": "chore",
+   "label": "does-not-break",
+   "clause": "Scenario 159",
+   "reason": "Test made load-independent; behaviour under test unchanged."
+  },
+  {
+   "id": "bd-ib-st2sby",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 280",
+   "reason": "Spend journal also records the final result event; no clause states the journal's line set."
+  },
+  {
+   "id": "bd-ib-e3vbbo",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Definition of Done and Proof of Done",
+   "reason": "Makes filing display agree with the pre-dispatch screen; consistency fix."
+  },
+  {
+   "id": "bd-ib-2eyiwy",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "ACP node timeouts / Scenario 89 / Scenario 325",
+   "reason": "Scenario 325 already ratifies 'a workflow-declared node timeout stands unless configuration names the node'."
+  },
+  {
+   "id": "bd-ib-tcfwol",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Provisional fleet launch scripts",
+   "reason": "Shell pipefail reader fixes; item notes no spec clause on pipeline verdicts."
+  },
+  {
+   "id": "bd-ib-xwtohc",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Fabro runtime constraints",
+   "reason": "Ansible inventory pin parity in livespec-dev-tooling; no clause of this repo governs it."
+  },
+  {
+   "id": "bd-ib-diiztk",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 176 / Refresh repair",
+   "reason": "Same as grzfpt: merge instead of rebase is within 'integrates the default branch into the run's work'."
+  },
+  {
+   "id": "bd-ib-oknwxm",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Recovery from the failed run's preserved work / Scenario 185",
+   "reason": "Conformance: 'fresh only when preserved work is confirmed absent', 'held when a measurement cannot be taken'."
+  },
+  {
+   "id": "bd-ib-mpfv5q",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Provisional fleet launch scripts",
+   "reason": "Launcher matches its own dispatch id; no clause states first-row matching."
+  },
+  {
+   "id": "bd-ib-so6fef",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Recovery from the failed run's preserved work (v313 run-age bound) / Scenario 323",
+   "reason": "Conformance to the ratified run-age bound."
+  },
+  {
+   "id": "bd-ib-bx5rf2",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 96 / Dispatcher admission",
+   "reason": "Changes the fleet-default sandbox check-suite composition; no clause fixes the default as bare 'just check'."
+  },
+  {
+   "id": "bd-ib-azhnw5",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 185 / Scenario 319",
+   "reason": "Adds lineage refusals for a seeded route; consistent with 'a seeded dispatch restores the captured code'."
+  },
+  {
+   "id": "bd-ib-xukb7w",
+   "classification": "bug",
+   "label": "unsure",
+   "clause": "'The run refreshes before the janitor, and publish_draft pushes the janitor-passed head' / Scenario 305",
+   "reason": "publish_draft drops an empty checkpoint commit before pushing; contradicts 'MUST push exactly the head that janitor passed' only if that checkpoint lies on the janitor-passed head rather than after it."
+  },
+  {
+   "id": "bd-ib-oixyzp",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 204",
+   "reason": "Gives the third incomplete implement visit its needs_human ending; restores the scenario."
+  },
+  {
+   "id": "bd-ib-lpdlsq",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 176",
+   "reason": "Exhausted janitor refresh repair reaches needs_human; restores the scenario's intent."
+  },
+  {
+   "id": "bd-ib-zedjgq",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Dispatcher admission / Pre-push gate refinements",
+   "reason": "Source-branch launch no longer blocks on the aggregate while every push still runs the full gate; no clause requires the synchronous wait."
+  },
+  {
+   "id": "bd-ib-2flry2",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 239",
+   "reason": "Display label made to match the ratified hold/advisory split."
+  },
+  {
+   "id": "bd-ib-ekrfg5",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Provisional fleet launch scripts",
+   "reason": "Launcher honours SIGTERM; restores intended stop behaviour."
+  },
+  {
+   "id": "bd-ib-kseatc",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Dispatcher policy settings -> Claim tokens step 5 / Scenario 263",
+   "reason": "Current ratified step 5 already follows the chain hop by hop and names S2 on stand-down (spec was amended)."
+  },
+  {
+   "id": "bd-ib-w5yzzt",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Pre-commit staged pre-check / Scenario 289",
+   "reason": "Green amend on workflow.fabro runs tests; stricter gate, no clause requires the doc-only path."
+  },
+  {
+   "id": "bd-ib-a4dtst",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 176",
+   "reason": "Prompt evidence requirements for 'inherited' failures; supports the scenario."
+  },
+  {
+   "id": "bd-ib-eb5zl5",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 316 / Provisional fleet launch scripts",
+   "reason": "Harness polls completed state; test-only."
+  },
+  {
+   "id": "bd-ib-tlgq3y",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Dispatcher policy settings -> Claim tokens",
+   "reason": "Conformance to 'every non-closed work-item MUST name exactly one token' and the outside-protocol write rule."
+  },
+  {
+   "id": "bd-ib-gowxxg",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 103",
+   "reason": "Retry and read-back of the needs-human push; restores preservation reporting."
+  },
+  {
+   "id": "bd-ib-m7o3wf",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 316",
+   "reason": "Release the mutex before logging the yield; ordering fix."
+  },
+  {
+   "id": "bd-ib-keg67m",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "ACP node timeouts / needs-human cause first error line",
+   "reason": "Better first-error-line selection; no clause requires the context line."
+  },
+  {
+   "id": "bd-ib-utwjkf",
+   "classification": "chore",
+   "label": "does-not-break",
+   "clause": "Dispatcher policy settings -> Claim tokens",
+   "reason": "Test of the ratified 'Token records MUST be excluded from list-work-items ...'."
+  },
+  {
+   "id": "bd-ib-veyxvz",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 199 / Grooming and slice-size calibration",
+   "reason": "Uses the existing non-converged exit for an unchanged-head loop."
+  },
+  {
+   "id": "bd-ib-mlxa6s",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Inherited from livespec",
+   "reason": "Hermetic test fixture only."
+  },
+  {
+   "id": "bd-ib-digmk2",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Fabro runtime constraints",
+   "reason": "Sandbox driver umask fix and re-pin, outside this repo's clauses."
+  },
+  {
+   "id": "bd-ib-2fpn5m",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 1",
+   "reason": "Umask-independent test assertion."
+  },
+  {
+   "id": "bd-ib-nsw25x",
+   "classification": "bug",
+   "label": "does-not-break",
+   "clause": "Scenario 30 / Scenario 176 (and Scenario 305)",
+   "reason": "Re-installs hooks after a refresh; its publish_draft-refresh premise is now moot under Scenario 305 (publish_draft MUST NOT refresh), but the requested behaviour contradicts no MUST."
+  }
+ ]
+}

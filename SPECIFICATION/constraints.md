@@ -44,7 +44,7 @@ This section refines the pre-push step ordering inherited from livespec; it adds
 
 **A deletion-only push skips the pre-push aggregate.** The repository's pre-push gate (`01-check-pre-push`, run through `just check-pre-push`) MUST read the ref updates git supplies on the hook's standard input, one per line as `<local ref> <local object id> <remote ref> <remote object id>`. When there is at least one line and every line's local object id consists only of zeros, the push only deletes refs: the gate MUST then exit zero without running the green-token check or the `just check` aggregate, and MUST print one line saying the gate was skipped because the push only deletes refs. Any other input, including no input at all and any push that creates or updates even one ref beside its deletions, MUST run the full gate exactly as before. The lefthook pre-push entry MUST pass the hook's standard input through to the gate. This skip MUST NOT be reachable by `--no-verify`, by an environment variable, or by any flag; the ref updates themselves are its only input. The repository's always-run ledger-conformance pre-push step (`02-ledger-conformance`) is a separate step this skip does not reach: it MUST still run on a deletion-only push, so the skip MUST live inside `just check-pre-push` and never at the lefthook level. Scenario 188 in `scenarios.md` exercises this section.
 
-**A green aggregate on the exact tree carries to its push.** When the `just check` aggregate passes, it MUST record a green verdict for the tree it checked, keyed on that commit's tree object id, even when it skipped declared targets. A verdict whose aggregate skipped targets MUST name them. A verdict vouches only for the targets that ran and passed and whose result the committed tree alone decides, the tree-pure members; a member that reads state outside the tree is never covered by a verdict. The pre-push gate MUST honour a recorded green verdict whose tree is byte-identical to the tree being pushed, with a clean worktree, in place of running again the members that verdict covers, MUST still run every member of the pre-push check set that reads state outside the tree and refuse the push when one fails, and MUST print one line naming the honoured verdict and every target the verdict skipped. A push whose tree differs from the recorded verdict's tree, such as a `publish_draft` push after its own refresh rebase onto a moved default branch, MUST run the full pre-push gate exactly as before. Like the deletion-only skip, honouring a verdict MUST NOT be reachable by `--no-verify`, by an environment variable or by any flag; the recorded verdict and the tree are its only inputs. Measured 2026-10-26: the factory janitor skips targets that cannot run in the sandbox, so it recorded no verdict, and each `publish_draft` pre-push re-ran the whole aggregate, about 24 minutes at two test workers, on the tree the janitor had just passed. Scenario 253 in `scenarios.md` exercises this paragraph.
+**A green aggregate on the exact tree carries to its push.** When the `just check` aggregate passes, it MUST record a green verdict for the tree it checked, keyed on that commit's tree object id, even when it skipped declared targets. A verdict whose aggregate skipped targets MUST name them. A verdict vouches only for the targets that ran and passed and whose result the committed tree alone decides, the tree-pure members; a member that reads state outside the tree is never covered by a verdict. The pre-push gate MUST honour a recorded green verdict whose tree is byte-identical to the tree being pushed, with a clean worktree, in place of running again the members that verdict covers, MUST still run every member of the pre-push check set that reads state outside the tree and refuse the push when one fails, and MUST print one line naming the honoured verdict and every target the verdict skipped. A push whose tree differs from the recorded verdict's tree, such as a `pr_refresh` push after its own refresh rebase onto a moved default branch, MUST run the full pre-push gate exactly as before. Like the deletion-only skip, honouring a verdict MUST NOT be reachable by `--no-verify`, by an environment variable or by any flag; the recorded verdict and the tree are its only inputs. Measured 2026-10-26: the factory janitor skips targets that cannot run in the sandbox, so it recorded no verdict, and each `publish_draft` pre-push re-ran the whole aggregate, about 24 minutes at two test workers, on the tree the janitor had just passed. Scenario 253 in `scenarios.md` exercises this paragraph.
 
 ## Pre-commit staged pre-check
 
@@ -285,7 +285,9 @@ orchestrator depends on for factory operation: the Codex companion plugin's
 interactive review/rescue paths (`codex:codex-rescue`, `/codex:review`,
 `/codex:adversarial-review`) and the orchestrator-owned raw `codex exec`
 credential-refresh invocation. These constraints govern when those surfaces MUST
-run with Codex `danger-full-access`.
+run with Codex `danger-full-access`. The bullet "Factory sandbox turns carry the
+Driver guards" separately governs factory sandbox agent turns, which are not
+among those surfaces.
 
 - **Gate evaluation is local and hook-time.** Codex full access is decided at
   hook time (SessionStart, and the raw `codex exec` credential-refresh command)
@@ -331,6 +333,17 @@ run with Codex `danger-full-access`.
   `codex exec` reads additional prompt text from stdin until EOF even when a
   prompt argument is present, and an inherited open socket therefore stalls the
   process indefinitely before it does any work.
+- **Factory sandbox turns carry the Driver guards.** A factory Codex sandbox
+  turn's per-run `CODEX_HOME` MUST carry the `livespec-driver-codex` plugin at
+  the Driver release the run pins, with its hooks enabled. The materialized
+  Driver hooks MUST be recorded as trusted in that `CODEX_HOME` only when the
+  materialized hook definitions and hook entrypoints byte-match that Driver
+  release tag, and a mismatch MUST fail the run's prepare step, naming the
+  plugin and the hook. Codex's hook-trust bypass MUST NOT be used to establish
+  that trust. A factory Claude sandbox turn's materialized plugin cache MUST
+  carry the `livespec-driver-claude` plugin's PreToolUse hooks at the release
+  the run pins. A command that a materialized PreToolUse guard forbids MUST be
+  blocked when a sandbox turn of either runtime attempts it.
 - **Out of scope — operator dogfooding.** Manually-typed
   `codex exec <plugin>:<op>` dogfooding commands are NOT gated by this contract.
   Their posture comes from the operator's own host-wide `~/.codex/config.toml`,
@@ -345,7 +358,10 @@ run with Codex `danger-full-access`.
   full-access flag and the stdin EOF redirect. Marker provenance is decided by
   re-running the `refresh` operation against the current manifest and diffing the
   resulting marker: any difference means the committed marker has drifted from
-  the manifest it claims to derive from. Review-time verification MUST check
+  the manifest it claims to derive from. The factory sandbox guard rule is
+  decided by a real dispatched factory run on the released orchestrator, in
+  which an implement turn of each runtime attempts a command its guard forbids
+  and the guard blocks it. Review-time verification MUST check
   those deciding signals whenever the hook, canary, gate, Codex invocation
   wrapper, or Codex dogfooding instructions change.
 

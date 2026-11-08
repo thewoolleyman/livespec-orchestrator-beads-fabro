@@ -91,8 +91,26 @@ _WAIT_WITHOUT_KILLING = (
     "DO NOT START ANOTHER `git commit` WHILE ONE IS STILL LIVE.",
 )
 
-# Direction 4 — the turn does not end while a hook it started is still running.
+# Direction 4 — the implement turn does not end while a hook it started is still
+# running. The fix turn limits this rule to a commit made inside its own
+# foreground `git commit` tool call (bd-ib-oueyxf).
 _NO_TURN_END_MID_HOOK = ("DO NOT END YOUR TURN WHILE A COMMIT HOOK YOU STARTED IS STILL RUNNING.",)
+_FOREGROUND_TURN_END_BOUND = (
+    "DO NOT END YOUR TURN WHILE A COMMIT HOOK IS STILL RUNNING INSIDE YOUR OWN",
+    "FOREGROUND `git commit` TOOL CALL. That commit is waited out in the",
+)
+
+# bd-ib-oueyxf — a fix turn whose only remaining work is a runner-started commit
+# the runner still reports as running ends succeeded and names the commit run, so
+# the graph's `fix_commit_settle` node waits it out instead of the turn being cut.
+_LEAVE_RUNNING_COMMIT_FOR_SETTLE = (
+    "A COMMIT RUN THAT YOU STARTED THROUGH THE COMMIT RUNNER AND THAT THE RUNNER",
+    "STILL REPORTS AS RUNNING IS LEFT FOR `fix_commit_settle`.",
+    "end the turn as SUCCEEDED, not failed,",
+    "and name that commit run's id in your final message.",
+)
+
+_TURN_END_BULLET = "\n- DO NOT END YOUR TURN WHILE"
 
 # The waiting direction must hold for the detached commit runner's bounded waits
 # too, so bd-ib-sufca7 can ship that runner without contradicting this prose.
@@ -161,12 +179,25 @@ def test_the_prompt_directs_waiting_without_killing_or_a_second_commit(node: str
         assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
 
 
-@pytest.mark.parametrize("node", _COMMITTING_STAGE_NODES)
-def test_the_prompt_forbids_ending_the_turn_while_a_commit_hook_runs(node: str) -> None:
-    section = _section(node=node)
+def test_the_implement_prompt_forbids_ending_the_turn_while_a_commit_hook_runs() -> None:
+    section = _section(node="implement")
 
     for phrase in _NO_TURN_END_MID_HOOK:
-        assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
+        assert phrase in section, f"the implement prompt's commit-hook section omits {phrase!r}"
+
+
+def test_the_fix_prompt_limits_the_turn_end_rule_to_its_own_foreground_commit() -> None:
+    section = _section(node="fix")
+
+    for phrase in _FOREGROUND_TURN_END_BOUND:
+        assert phrase in section, f"the fix prompt's commit-hook section omits {phrase!r}"
+
+
+def test_the_fix_prompt_leaves_a_still_running_runner_commit_for_fix_commit_settle() -> None:
+    section = _section(node="fix")
+
+    for phrase in _LEAVE_RUNNING_COMMIT_FOR_SETTLE:
+        assert phrase in section, f"the fix prompt's commit-hook section omits {phrase!r}"
 
 
 @pytest.mark.parametrize("node", _COMMITTING_STAGE_NODES)
@@ -179,8 +210,15 @@ def test_the_waiting_direction_holds_for_a_commit_runner_s_bounded_waits(node: s
 
 
 def test_the_fix_prompt_carries_the_same_directions_as_the_implement_prompt() -> None:
-    """One wording, not two: a per-prompt paraphrase drifts and cannot be audited."""
-    distinct = {_section(node=node) for node in _COMMITTING_STAGE_NODES}
+    """One wording, not two: a per-prompt paraphrase drifts and cannot be audited.
+
+    The comparison stops before the turn-end bullet, the one direction the fix
+    prompt words differently (bd-ib-oueyxf).
+    """
+    distinct = {
+        _section(node=node).split(_TURN_END_BULLET, maxsplit=1)[0]
+        for node in _COMMITTING_STAGE_NODES
+    }
 
     assert len(distinct) == 1, (
         f"{len(distinct)} distinct commit-hook wordings across "

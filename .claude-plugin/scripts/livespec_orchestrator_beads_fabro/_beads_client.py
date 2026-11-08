@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro._beads_client_fake import (
     fake_singleton,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro._beads_client_metadata import metadata_payload
 from livespec_orchestrator_beads_fabro.effects._beads_client_shell import (
     invoke,
     raise_for_status,
@@ -101,6 +102,16 @@ class BeadsClient(Protocol):
         """Return one issue by id (`bd show <id> --json`)."""
         ...
 
+    def show_issues(self, *, issue_ids: list[str]) -> list[BeadsRecord]:
+        """Return the records of `issue_ids` that exist (`bd show <id>... --json`).
+
+        One invocation for many ids, which is how a reader walks every claim
+        token chain of a tenant without a read per item. An id the tenant does
+        not hold is simply not returned: `bd show` reports it on stderr and
+        exits 0 with the rest. No ids reads nothing.
+        """
+        ...
+
     def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
         """Return an issue's comments (`bd comments <id> --json`).
 
@@ -167,6 +178,7 @@ class BeadsClient(Protocol):
         acceptance_criteria: str | None = None,
         notes: str | None = None,
         description: str | None = None,
+        names_claim_token: bool = False,
     ) -> None:
         """Mutate an existing issue's status / assignee / parent / labels / content.
 
@@ -178,6 +190,14 @@ class BeadsClient(Protocol):
         (repeatable); it is the seam used by lifecycle routing to clear retired labels and
         policy labels when an item changes state. Removing a
         label the issue does not carry is a no-op (bd is idempotent here).
+
+        `metadata` is MERGED into the stored object at the top level, as
+        `bd update --metadata` does: a top-level key the payload omits
+        survives, and a nested object the payload carries is replaced whole.
+        The claim-token key is left out of the payload unless
+        `names_claim_token` is true, so only a claim-token protocol write can
+        change which token an item names (`_beads_client_metadata`). A caller
+        outside that protocol leaves the flag alone.
         """
         ...
 
@@ -263,6 +283,12 @@ class ShellBeadsClient:
         parsed = self._run_json(verb_args=["show", issue_id, "--json"])
         return coerce_issue_record(parsed=parsed, issue_id=issue_id)
 
+    def show_issues(self, *, issue_ids: list[str]) -> list[BeadsRecord]:
+        if not issue_ids:
+            return []
+        parsed = self._run_json(verb_args=["show", *issue_ids, "--json"])
+        return coerce_record_list(parsed=parsed)
+
     def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
         """Return an issue's comments (`bd comments <id> --json`)."""
         parsed = self._run_json(verb_args=["comments", issue_id, "--json"])
@@ -326,6 +352,7 @@ class ShellBeadsClient:
         acceptance_criteria: str | None = None,
         notes: str | None = None,
         description: str | None = None,
+        names_claim_token: bool = False,
     ) -> None:
         verb_args = build_update_argv(
             issue_id=issue_id,
@@ -335,7 +362,7 @@ class ShellBeadsClient:
             parent_id=parent_id,
             add_labels=add_labels,
             remove_labels=remove_labels,
-            metadata=metadata,
+            metadata=metadata_payload(metadata=metadata, names_claim_token=names_claim_token),
             acceptance_criteria=acceptance_criteria,
             notes=notes,
             description=description,

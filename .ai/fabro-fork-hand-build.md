@@ -44,25 +44,10 @@ measured on that walk.
   describes what serves. A fix based on it would not rebuild the serving
   lineage. Merge the fix into that same carrier branch. Worktrees live under
   `~/.worktrees/fabro/<branch>`.
-- Share the build cache: `CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target`.
-  A cold workspace build of the fork is a from-scratch Rust dependency compile
-  on a box that runs many concurrent sessions; the shared target directory is
-  what makes the gates incremental. The directory can be EMPTY: on
-  2026-11-02 no fork target directory existed on vps, so the first gate was
-  a cold build anyway. Do not plan an ETA around a warm cache without
-  `ls`-ing it first.
-- Run `uptime` BEFORE any build or test run, every time, and bound the
-  compile (`CARGO_BUILD_JOBS`, `nice`, `--test-threads`) when the load is
-  already high. The load on 2026-09-12 was 25 to 30 on 18 cores from other
-  sessions' cargo and pytest runs. The coordinator's standing throttle for a
-  fork gate on vps (ruling 2026-11-02): `nice -n 19`, `CARGO_BUILD_JOBS=4`,
-  nextest limited to `-p` the touched crates with a low `--test-threads`. At
-  nice 19 the gate takes only the cycles the other sessions leave idle, so it
-  pauses only when `mpstat 5 1` reports idle below 8%. There is no cluster
-  venue for a fork build: `rust.yml` runs only for `main`, and an ad hoc
-  host build on gmktec is not sanctioned. The throttle protects the shared
-  box. It is never a reason to read a test verdict differently: see "A test
-  verdict never depends on load" below.
+- No fork build or gate runs on vps by default. The merge gate and the
+  carrier build both run on the `fabro-k3s` ARC scale set (the two sections
+  below); a vps build is only the fallback in "The dev-host fallback". An ad
+  hoc host build on gmktec is not sanctioned either way.
 
 ## Nightly tags are release tags
 
@@ -82,32 +67,55 @@ measured on that walk.
   `fabro-server-candidate` canary instance on gmktec `:32278`, not a
   release tag.
 
-## The merge gate is local
+## The merge gate is the `fabro-k3s` scale set
 
-The fork's GitHub workflows run only on `main` (`rust.yml`,
-`typescript.yml`: `branches: [main]`), so a pull request against
-any carrier branch shows NO checks and `gh pr view` reports an empty
-status rollup. That is not a green signal; it is the absence of an
-instrument. The merge gate is therefore run locally against the branch tip,
-and it is TARGETED (maintainer ruling 2026-11-03):
+Since 2026-11-06 (`bd-ib-dqxcsh`; `SPECIFICATION/constraints.md`
+§"Fabro runtime constraints", "Fork gate and build venue") the fork carries
+`.github/workflows/fork-gates.yml` on `carrier-candidate-registered-20261023`
+(fork PR #27, `0d5ce5f60`) and on `factory-integration` (fork PR #28,
+`161890e36`). It runs Format (`cargo fmt --check`), Clippy and Test (nextest)
+on the self-hosted ARC scale set `fabro-k3s` for:
 
-```bash
-cd ~/.worktrees/fabro/<branch>
-export CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
-cargo +nightly-2026-04-14 fmt --check --all
-cargo +nightly-2026-04-14 clippy --workspace --all-targets -- -D warnings
-# RED: the change's own tests, with the fix reverted, must fail.
-# GREEN: the same tests, with the fix, must pass.
-cargo nextest run --profile ci -p <crate> -E '<the tests the diff adds or changes>'
-```
+- every push to a `carrier-*` branch or `factory-integration`;
+- every pull request targeting one of those branches;
+- a manual `workflow_dispatch`.
 
-Do NOT run the whole crate or workspace test suite for a narrow diff. The
-RED/GREEN run of the change's own tests is the evidence. On 2026-11-03,
-full `fabro-petri` runs on two one-function diffs (`bd-ib-6r3yax`,
-`bd-ib-bpucez`) cost about an hour each on a loaded host and surfaced only
-pre-existing test defects. Widen the selection only when the diff reaches
-across modules or changes a shared interface, and then select the dependent
-tests, not the crate.
+So a fork pull request against a carrier branch now shows those three checks in
+its status rollup, and THEY are the merge gate: merge only when all three are
+green on the PR head. An EMPTY rollup on such a pull request is still not
+green; it means the workflow is missing from the target branch, or the scale set
+is down (see the fallback).
+
+- The jobs run in a `buildpack-deps:noble` container on ARC's kubernetes
+  container mode, with no Docker daemon. The Docker sandbox scenarios self-skip
+  there, so a change that reaches the Docker backend still needs its own
+  evidence. Upstream's `rust.yml` keeps running for `main` only, on its own
+  runners.
+- Two environment fixes live in the workflow and must survive any rewrite.
+  First, `safe.directory` is set in the SYSTEM gitconfig, because the
+  `fabro-cli` test harness clears the environment and sets a temporary
+  `HOME`. Second, nextest runs under `tini -s`, because the Petri crash
+  scenarios poll `process_running`, which counts zombies, and the container
+  has no reaper.
+- The scale set's `minRunners` is 0, so an idle scale set lists NO runners
+  (`gh api repos/thewoolleyman/fabro/actions/runners` reports
+  `total_count 0`). That is not an outage. Its health signal is the ARC
+  listener `fabro-k3s-*-listener` and a queued job being picked up. The jobs
+  API names the pod that ran each job (`runner_name`
+  `fabro-k3s-<id>-runner-<pod>`).
+- Measured on the first green run, 42132952719 (2026-11-06):
+  4,421 of 4,421 tests passed and 60 were skipped. In 87 one-minute samples
+  of the vps process table during that run, no `cargo`, `rustc`,
+  `clippy-driver` or `cargo-nextest` process ran.
+
+The RED/GREEN evidence for a change's own tests is still owed, and it stays
+TARGETED (maintainer ruling 2026-11-03). Get it on the cluster as well. Push the
+test-only commit to the pull request first and read the Test check red. Then
+push the fix and read it green. Record both run ids on the ledger item. Do not
+widen a local run to the whole crate or workspace to get the same evidence.
+Full `fabro-petri` runs on two one-function diffs (`bd-ib-6r3yax`,
+`bd-ib-bpucez`) once cost about an hour each on a loaded host. They surfaced
+only pre-existing test defects.
 
 ### A test verdict never depends on load
 
@@ -133,6 +141,15 @@ about 120 s in `profile.ci` and 20 s for `fabro-petri` in
 `profile.default`, which kills healthy tests under load), and
 `bd-ib-gmuxd4` (the stall test's real-clock budget).
 
+Two of those are fixed since 2026-11-06. `bd-ib-aqcgxz` was a Petri
+product defect: the output drain read a stalled log consumer as silence and
+dropped an exited process's output tail (thewoolleyman/petri#4, pinned by
+fork PR #33). `bd-ib-adrhkf` was fixed by fork PR #34 (`c2be004f5`):
+`profile.ci` now flags SLOW at 30 s and terminates no test, through one
+`filter = "all()"` override, because a `profile.default` override outranks
+the `ci` base and would otherwise keep its kill. The fork-gates Test job's
+`timeout-minutes: 120` is the run-level bound.
+
 Work independent fork items in PARALLEL, each in its own worktree on the
 carrier branch, and fold their merges into one engine build. Do not queue
 them one at a time.
@@ -140,33 +157,106 @@ them one at a time.
 `nightly-2026-04-14` is the toolchain the fork's own CI pins for fmt and
 clippy; a different nightly reports different lints and is not evidence.
 Record which gates ran, against which commit, on the ledger item before
-merging. A gate that was killed before it reported is not a gate that ran:
-the S4 session's wind-down killed the server and CLI test targets and the
-clippy run mid-flight, and the next session had to re-run them. Launch long
-gates DETACHED through this repository's runner and watch the log, never as
-a foreground call a wind-down can cancel and never as an agent-harness
-background task:
+merging, by run id. A gate that was cancelled or superseded before it
+reported is not a gate that ran.
+
+## A fix that lands in the Petri fork
+
+Some fork items are Petri defects. `thewoolleyman/petri`
+`fabro-integration-registered-20261023` is the branch the carrier's
+`[patch]` names, and its `Cargo.lock` pin says which commit serves. That
+fork has NO runner: its pull requests (#3, #4) show no checks. Gate a Petri
+change on `fabro-k3s` instead:
+
+- Push a throwaway branch of `thewoolleyman/fabro` carrying a push-triggered
+  workflow that fetches the Petri commit and runs fmt, clippy and the
+  targeted tests.
+- The attractor step tests launch the host sandbox plugin. Build it with
+  `SANDBOX_DRIVER_PLUGINS=host scripts/plugins-build.sh` and export
+  `PETRI_SANDBOX_HOST_PLUGIN`; without it they fail in about 0.01 s with
+  stage `Failed`.
+- Merge the Petri PR first, then a Fabro PR that moves every Petri entry in
+  `Cargo.lock` to the merge commit; its Fork gates are the Fabro-side merge
+  gate.
+
+The worked example is plan `fabro-currency` research note 024.
+
+## Carrier builds run on `fabro-k3s`
+
+The release binary a factory build pins is built by `carrier-build.yml`, a
+`workflow_dispatch` workflow on `factory-integration` (the fork's default
+branch, which `workflow_dispatch` requires). It builds any named ref on the same
+scale set, with the hand-build recipe: `bun install --frozen-lockfile`;
+`cargo clean --release -p fabro-spa`; `cargo dev build --release -p fabro-cli`,
+under `NODE_ENV=production`.
 
 ```bash
-cd ~/.worktrees/livespec-orchestrator-beads-fabro/<branch>   # any worktree with the pack
-run_id=$(mise exec -- just gate-start -- /path/to/gate-script.sh)
-mise exec -- just gate-status "$run_id"    # exit 75 while still running
+gh workflow run carrier-build.yml -R thewoolleyman/fabro \
+  --ref factory-integration -f ref=<carrier branch, tag or commit>
+gh run download <run-id> -R thewoolleyman/fabro -n fabro-engine-<sha12>
 ```
 
-Measured 2026-09-12 on vps: a `run_in_background` harness task running the
-same nextest gate was killed three times in a row with "stopped because the
-system is running low on memory" during the `fabro-server` test-binary
-link, and so was a background `gate-wait` waiter, while `free -g` showed 52
-to 54 GB available each time. The trigger is the harness's own heuristic,
-not the kernel. The detached gate-runner job launched for the identical
-script survived that window untouched and reported 2,317 passed. Wait on it
-with a polling watch of `tmp/gate-runs/<run_id>/output.log` for the
-script's own done marker, and keep `CARGO_BUILD_JOBS` at 4 to 6 with
-`nice -n 10` on this shared box regardless.
+The artifact `fabro-engine-<sha12>` carries `fabro`, `VERSION`, `SHA256SUMS`
+and a `BUILD_INFO` line naming the source repository, ref, commit, recipe,
+build time, runner and run URL. The workflow fails if `fabro --version` does
+not name the commit it built. GitHub keeps the artifact for 90 days. Stage it
+for a host roll from the downloaded files, and verify `SHA256SUMS` and
+`BUILD_INFO` before you pin it. Building the binary on vps is the fallback,
+not the route.
+
+## The dev-host fallback
+
+Use this ONLY while the cluster venue is unavailable. That means the
+`fabro-k3s` listener is absent, or a fork-gates or carrier-build job is never
+picked up. Record the fallback, and why it was needed, in the work item's notes
+(`SPECIFICATION/constraints.md`, "Fork gate and build venue"):
+
+- Throttle (coordinator ruling 2026-11-02): `nice -n 19`,
+  `CARGO_BUILD_JOBS=4`, nextest limited to `-p` the touched crates with a low
+  `--test-threads`. Run `uptime` before every build. At nice 19 the gate takes
+  only the cycles other sessions leave idle, so it pauses only when
+  `mpstat 5 1` reports idle below 8%. The throttle protects the shared box. It
+  never changes how a verdict is read (see "A test verdict never depends on
+  load").
+- Gate commands, against the branch tip:
+
+  ```bash
+  cd ~/.worktrees/fabro/<branch>
+  export CARGO_TARGET_DIR=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
+  cargo +nightly-2026-04-14 fmt --check --all
+  cargo +nightly-2026-04-14 clippy --workspace --all-targets -- -D warnings
+  timeout 2h cargo nextest run --profile ci -p <crate> -E '<the tests the diff adds or changes>'
+  ```
+
+- Launch a long gate DETACHED through this repository's runner, never as an
+  agent-harness background task. On 2026-09-12 a harness background task
+  running a nextest gate was killed three times during the `fabro-server`
+  link with "system is running low on memory", while 52 to 54 GB were free.
+  The detached runner survived:
+
+  ```bash
+  run_id=$(mise exec -- just gate-start -- /path/to/gate-script.sh)
+  mise exec -- just gate-status "$run_id"    # exit 75 while still running
+  ```
+
+- The shared `CARGO_TARGET_DIR` above has no host sweep (livespec-dev-tooling
+  `dev_host_retention` leaves it out by design). On 2026-11-05 it had grown to
+  98 G, writing about 40 G/day while every fork gate ran on vps. After a
+  fallback build, cap it under both of cargo's build locks. A `flock` exit of
+  75 means another build holds a lock, so delete nothing:
+
+  ```bash
+  T=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
+  mkdir -p "$T/debug" "$T/release"
+  CARGO_TARGET_DIR="$T" flock -n -E 75 "$T/release/.cargo-lock" \
+    flock -n -E 75 "$T/debug/.cargo-lock" cargo sweep --maxsize 40GB /data/projects/fabro
+  ```
 
 ## Merging and the runbook duty
 
-- Merge with `gh pr merge <n> --rebase -R thewoolleyman/fabro`. The fork
+- Merge only when the pull request's Format, Clippy and Test checks are
+  green on its head commit. Merge with
+  `gh pr merge <n> --rebase -R thewoolleyman/fabro`. The fork
   rebase-merges, so the merge SHA is the LAST commit of the rebased series,
   and the branch SHA does not survive; verify the landing with a content
   check on the carrier branch it merged into, not by branch containment.

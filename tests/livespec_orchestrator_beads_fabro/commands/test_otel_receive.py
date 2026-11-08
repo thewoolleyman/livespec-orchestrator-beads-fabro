@@ -1448,3 +1448,29 @@ def test_receiver_forwards_petri_acp_turn_attributes_intact(
     assert _attrs_of(span=forwarded[0]) == {
         key: {"stringValue": value} for key, value in expected.items()
     }
+
+
+def test_receiver_preserves_codex_handle_responses_cache_token_counts(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """Codex cache-read/write counts remain integer attributes after forwarding."""
+    _receiver, exporter, _heartbeat, base = receiver_factory
+    expected = {
+        "gen_ai.usage.cache_read.input_tokens": "2097152",
+        "gen_ai.usage.cache_write.input_tokens": "131072",
+    }
+
+    status = _post_json(
+        url=f"{base}/v1/traces",
+        body=_trace_request(
+            span_name="handle_responses",
+            attrs=[{"key": key, "value": {"intValue": value}} for key, value in expected.items()],
+        ),
+    )
+
+    assert status == _HTTP_OK
+    forwarded = tuple(span for spans, _dataset in exporter.calls for span in spans)
+    assert len(forwarded) == 1
+    assert _attrs_of(span=forwarded[0]) == {
+        key: {"intValue": value} for key, value in expected.items()
+    }

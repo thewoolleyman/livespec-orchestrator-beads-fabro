@@ -55,7 +55,9 @@ __all__: list[str] = [
     "COMMIT_RUNNER_PROGRAM_FILENAME",
     "HOOK_BANNER_PATTERN",
     "REPORT_EXIT_CODE_KEY",
+    "REPORT_GIT_REFUSAL_LINE_KEY",
     "REPORT_HEAD_KEY",
+    "REPORT_HOOK_PASSED_KEY",
     "REPORT_HOOK_RAN_KEY",
     "REPORT_OUTPUT_TAIL_KEY",
     "REPORT_RUN_ID_KEY",
@@ -78,6 +80,8 @@ REPORT_STATE_KEY = "state"
 REPORT_EXIT_CODE_KEY = "exit_code"
 REPORT_HEAD_KEY = "head"
 REPORT_HOOK_RAN_KEY = "hook_ran"
+REPORT_HOOK_PASSED_KEY = "hook_passed"
+REPORT_GIT_REFUSAL_LINE_KEY = "git_refusal_line"
 REPORT_FAILED_TARGETS_KEY = "failed_targets"
 REPORT_OUTPUT_TAIL_KEY = "output_tail"
 
@@ -98,6 +102,7 @@ from pathlib import Path
 
 RUNNING = "running"
 NO_VERDICT = "no-verdict"
+STAGE_SETTLES = {"fix": "fix_commit_settle", "review_fix": "review_fix_commit_settle"}
 TAIL_LINES = 60
 BRIEF_TAIL_LINES = 80
 # Worst first: a settled set is described by its least settled run.
@@ -111,6 +116,8 @@ VALUE_SHORT_OPTIONS = "mFCct"
 ATTACHED_VALUE_SHORT_OPTIONS = "uS"
 # The repository hook's own banner; a commit whose output lacks it ran no hook.
 HOOK_BANNER = re.compile(__HOOK_BANNER__)
+# The aggregate's terminal passing verdict, which Git may follow with its own refusal.
+HOOK_PASSED = re.compile(r"^All [0-9]+ targets passed\.?$", re.MULTILINE)
 # The two lines `cut-settle` prints for the host to read; one spelling, substituted.
 CUT_RUN_SENTINEL = "__CUT_RUN_SENTINEL__"
 CUT_HOOK_SENTINEL = "__CUT_HOOK_SENTINEL__"
@@ -142,6 +149,33 @@ def runs_directory():
 
 def state_path(directory, run_id):
     return directory / (run_id + ".json")
+
+
+def waited_running_path(directory, stage):
+    return directory / "waited-running" / (stage + ".json")
+
+
+def waited_running_runs(directory, stage):
+    path = waited_running_path(directory, stage)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return value if isinstance(value, list) and all(isinstance(item, str) for item in value) else []
+
+
+def remember_running_wait(directory, stage, run_id):
+    runs = waited_running_runs(directory, stage)
+    if run_id not in runs:
+        runs.append(run_id)
+    path = waited_running_path(directory, stage)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(runs) + "\n", encoding="utf-8")
+
+
+def reset_running_waits(directory, stage):
+    if stage in STAGE_SETTLES:
+        waited_running_path(directory, stage).unlink(missing_ok=True)
 
 
 def read_record(path):
@@ -276,7 +310,15 @@ def start(command, program):
             raise RunnerRefusal("commit run " + path.stem + " is still running; wait on it first")
     run_id = "commit-" + uuid.uuid4().hex
     path = state_path(directory, run_id)
-    write_record(path, {"state": RUNNING, "command": command, "root": root})
+    write_record(
+        path,
+        {
+            "state": RUNNING,
+            "command": command,
+            "root": root,
+            "start_head": git_output("rev-parse", "HEAD"),
+        },
+    )
     with path.with_suffix(".launch.log").open("w", encoding="utf-8") as log:
         worker = subprocess.Popen(
             [sys.executable, program, "worker", run_id],
@@ -319,6 +361,11 @@ def worker(run_id):
     terminal = {"state": "passed" if result.returncode == 0 else "failed"}
     terminal["exit_code"] = result.returncode
     terminal["hook_ran"] = HOOK_BANNER.search(text) is not None
+    if terminal["hook_ran"] and HOOK_PASSED.search(text) is not None:
+        terminal["hook_passed"] = True
+        refusal = git_refusal_line(text) if result.returncode != 0 else None
+        if refusal is not None:
+            terminal["git_refusal_line"] = refusal
     if result.returncode != 0:
         terminal["failed_targets"] = failed_targets(text)
     if result.returncode == 0:
@@ -327,32 +374,59 @@ def worker(run_id):
     return 0
 
 
-def report(run_id, path, record):
+def report_payload(run_id, path, record):
     record, state = settled(path, record)
     payload = {"run_id": run_id, "state": state}
     if state != RUNNING:
         payload["exit_code"] = record.get("exit_code")
         payload["head"] = record.get("head")
         payload["hook_ran"] = record.get("hook_ran") is True
+        output = full_output(path)
+        if hook_passed(record, output):
+            payload["hook_passed"] = True
+            refusal = recorded_git_refusal(record, output) if state == "failed" else None
+            if refusal is not None:
+                payload["git_refusal_line"] = refusal
         if state == "failed":
             targets = record.get("failed_targets")
             payload["failed_targets"] = (
-                targets if isinstance(targets, list) else failed_targets(full_output(path))
+                targets if isinstance(targets, list) else failed_targets(output)
             )
         payload["output_tail"] = output_tail(path)
+    return payload, state
+
+
+def report(run_id, path, record):
+    payload, _ = report_payload(run_id, path, record)
     print(json.dumps(payload, sort_keys=True))
     return 0
 
 
 def wait(run_id, timeout_seconds):
-    path = state_path(runs_directory(), run_id)
+    directory = runs_directory()
+    path = state_path(directory, run_id)
+    stage = os.environ.get("LIVESPEC_AGENT_STAGE")
+    settle_node = STAGE_SETTLES.get(stage)
+    if settle_node is not None and run_id in waited_running_runs(directory, stage):
+        record = read_record(path)
+        if record is None:
+            raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
+        state = current_state(path, record)
+        raise RunnerRefusal(
+            "commit run " + run_id + " already reported running during " + stage
+            + " stage visit; current state is " + state + "; " + settle_node + " will wait on it"
+        )
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     while True:
         record = read_record(path)
         if record is None:
             raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
         if current_state(path, record) != RUNNING or time.monotonic() >= deadline:
-            return report(run_id, path, record)
+            payload, state = report_payload(run_id, path, record)
+            if settle_node is not None and state == RUNNING:
+                remember_running_wait(directory, stage, run_id)
+            print(json.dumps(payload, sort_keys=True))
+            return 0
         time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
 
@@ -375,6 +449,29 @@ def failed_targets(text):
             break
         targets.append(match.group(1))
     return targets
+
+
+def git_refusal_line(text):
+    """The first nonblank line Git printed after the aggregate's passing verdict."""
+    passed = HOOK_PASSED.search(text)
+    if passed is None:
+        return None
+    for line in text[passed.end() :].splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def hook_passed(record, output):
+    return record.get("hook_passed") is True or (
+        record.get("hook_ran") is True and HOOK_PASSED.search(output) is not None
+    )
+
+
+def recorded_git_refusal(record, output):
+    refusal = record.get("git_refusal_line")
+    return refusal if isinstance(refusal, str) else git_refusal_line(output)
 
 
 def brief_text(run_id, path, record, state, timeout_seconds):
@@ -400,6 +497,22 @@ def brief_text(run_id, path, record, state, timeout_seconds):
     output = full_output(path)
     targets = failed_targets(output)
     tail = "\n".join(output.splitlines()[-BRIEF_TAIL_LINES:])
+    if hook_passed(record, output):
+        refusal = recorded_git_refusal(record, output)
+        refusal_text = refusal if refusal is not None else "Git's refusal line was not captured"
+        return (
+            "failed targets: none\n\n"
+            + named
+            + "ended FAILED with exit status "
+            + str(record.get("exit_code"))
+            + "; the repository commit hook passed, and Git then refused the commit: "
+            + refusal_text
+            + "; no commit was made. Its own error lines (the tail of its recorded output at "
+            + str(path.with_suffix(".output"))
+            + "):\n\n"
+            + tail
+            + "\n"
+        )
     return (
         "failed targets: " + (" ".join(targets) if targets else "none") + "\n\n"
         + named + "ended FAILED with exit status " + str(record.get("exit_code"))
@@ -410,7 +523,51 @@ def brief_text(run_id, path, record, state, timeout_seconds):
     )
 
 
-def settle(timeout_seconds, brief_file):
+def commit_in_flight(path, proc_root="/proc"):
+    """True while a `git commit` of this run is itself still executing.
+
+    The worker outlives its commit by the instant it takes to write the verdict, so the
+    worker being alive does not mean the commit is still running.
+    """
+    try:
+        group = int(path.with_suffix(".pid").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    table = process_table(proc_root)
+    if group not in table:
+        return False
+    return any(
+        table[pid][0] != "Z" and git_operation(argv_of(proc_root, pid)) == "commit"
+        for pid in (group, *descendants(table, group))
+    )
+
+
+def is_ancestor(commit):
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, "HEAD"], capture_output=True, check=False
+    )
+    return result.returncode == 0
+
+
+def restore_starting_head(path, record):
+    """Put an in-flight amend back on the commit it began from, keeping its index.
+
+    Only while the commit is verifiably still running and HEAD still descends from the
+    commit it began from: a finished amend leaves a HEAD that does not, so its own
+    commit is never moved off the branch.
+    """
+    start_head = record.get("start_head")
+    if not isinstance(start_head, str):
+        return
+    if git_output("rev-parse", "HEAD") == start_head or not is_ancestor(start_head):
+        return
+    fresh = read_record(path)
+    if fresh is None or recorded_state(fresh) != RUNNING or not commit_in_flight(path):
+        return
+    git_output("reset", "--soft", start_head)
+
+
+def settle(timeout_seconds, brief_file, restore_head_before_wait=False, stage=None):
     """Wait live runs and brief the latest terminal hook refusal exactly once."""
     directory = runs_directory()
     brief = Path(brief_file)
@@ -425,6 +582,7 @@ def settle(timeout_seconds, brief_file):
     if not live:
         if not records:
             brief.unlink(missing_ok=True)
+            reset_running_waits(directory, stage)
             return 0
         path, record = max(records, key=lambda item: item[0].stat().st_mtime_ns)
         if (
@@ -433,6 +591,7 @@ def settle(timeout_seconds, brief_file):
             or record.get("settled") is True
         ):
             brief.unlink(missing_ok=True)
+            reset_running_waits(directory, stage)
             return 0
         write_record(path, {**record, "settled": True})
         brief.parent.mkdir(parents=True, exist_ok=True)
@@ -441,7 +600,13 @@ def settle(timeout_seconds, brief_file):
             encoding="utf-8",
         )
         print(json.dumps({"settled": [{"run_id": path.stem, "state": "failed"}]}, sort_keys=True))
+        reset_running_waits(directory, stage)
         return 0
+    if restore_head_before_wait:
+        for path in live:
+            record = read_record(path)
+            if record is not None and recorded_state(record) == RUNNING:
+                restore_starting_head(path, record)
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     outcomes = []
     for path in live:
@@ -465,6 +630,7 @@ def settle(timeout_seconds, brief_file):
     )
     settled_runs = [{"run_id": one.stem, "state": status} for one, _, status in outcomes]
     print(json.dumps({"settled": settled_runs}, sort_keys=True))
+    reset_running_waits(directory, stage)
     return 0
 
 
@@ -674,6 +840,8 @@ def main(argv, program):
     settle_parser = operations.add_parser("settle")
     settle_parser.add_argument("--timeout-seconds", required=True, type=float)
     settle_parser.add_argument("--brief-file", required=True)
+    settle_parser.add_argument("--restore-head-before-wait", action="store_true")
+    settle_parser.add_argument("--stage", choices=tuple(STAGE_SETTLES))
     cut_parser = operations.add_parser("cut-settle")
     cut_parser.add_argument("--timeout-seconds", required=True, type=float)
     worker_parser = operations.add_parser("worker")
@@ -686,7 +854,12 @@ def main(argv, program):
         if args.operation == "wait":
             return wait(args.run_id, args.timeout_seconds)
         if args.operation == "settle":
-            return settle(args.timeout_seconds, args.brief_file)
+            return settle(
+                args.timeout_seconds,
+                args.brief_file,
+                restore_head_before_wait=args.restore_head_before_wait,
+                stage=args.stage,
+            )
         if args.operation == "cut-settle":
             return cut_settle(args.timeout_seconds)
         return worker(args.run_id)

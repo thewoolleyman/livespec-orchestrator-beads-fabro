@@ -9,6 +9,8 @@ fake makes the seeded writes visible.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from livespec_orchestrator_beads_fabro.commands.close_work_item import close_completed, main
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
@@ -18,6 +20,24 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_items,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+
+
+@pytest.fixture(autouse=True)
+def _project_root_before_the_cutover(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Resolve `main`'s default project root in a repository that commits no claim-token key.
+
+    With no `--project-root`, the wrapper reads the current directory's
+    `.livespec.jsonc`, and this repository's own commits `dispatcher.claim_tokens`
+    true: a close there wins the item's claim token first, and the items these
+    cases seed name none. The cases here are about the close and the resolution
+    label, so they run from a root with no key, where the close is unguarded.
+    The claim-token cases are `test_claim_token_close_holds.py`.
+    """
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
 
 
 def _config() -> StoreConfig:
@@ -129,6 +149,37 @@ def test_main_missing_id_exits_not_found(capsys: pytest.CaptureFixture[str]) -> 
     assert code == 3
     err = capsys.readouterr().err
     assert "work-item not found" in err
+
+
+def test_main_reports_a_refused_claim_hold_and_exits_four(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """From a cut-over root, an item naming no claim token is not closed; the refusal is said.
+
+    The protocol's own outcome names why (`claim-token-missing` here; a lost
+    token reads `claim-changed`), and the exit code is the hold's own, distinct
+    from a missing item's. The close-hold cases proper are
+    `test_claim_token_close_holds.py`.
+    """
+    cut_over = tmp_path / "cut-over"
+    cut_over.mkdir()
+    _ = (cut_over / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
+        ' "dispatcher": {"claim_tokens": true}}}',
+        encoding="utf-8",
+    )
+    _seed(_open_item(id_="li-x"))
+
+    code = main(argv=["li-x", "--project-root", str(cut_over)])
+
+    assert code == 4
+    assert capsys.readouterr().err == (
+        "ERROR: human-valve (close-work-item) refused: the claim-token protocol reported "
+        "claim-token-missing; the status and claim of li-x were not written.\n"
+    )
+    reloaded = _reload("li-x")
+    assert reloaded is not None
+    assert reloaded.status == "ready"
 
 
 def test_main_uses_cwd_project_root_by_default(

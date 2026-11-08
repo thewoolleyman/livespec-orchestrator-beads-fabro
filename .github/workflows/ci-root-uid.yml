@@ -35,13 +35,23 @@ env:
   MISE_HTTP_RETRIES: "5"
   # Lane-selected uv fetch bounds — the same form ci.yml carries, required of
   # every workflow that routes through CI_RUNNER_LABELS (self_hosted_uv_lane).
-  UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
-  UV_HTTP_TIMEOUT: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+  UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+  UV_HTTP_TIMEOUT: ${{ contains(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
 
 on:
   schedule:
     - cron: "17 */3 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      runner_labels:
+        description: >-
+          JSON runner-label array for every root job of this dispatch, for
+          example ["livespec-orchestrator-k3s"]. Empty (the default) keeps
+          CI_RUNNER_LABELS / CI_COVERAGE_RUNNER_LABELS, so a scheduled run and a
+          plain dispatch route exactly as before.
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: ci-root-uid
@@ -88,9 +98,9 @@ jobs:
     name: ${{ matrix.target }} (${{ matrix.uid }})
     needs: [decide]
     if: needs.decide.outputs.run == 'true'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -119,21 +129,30 @@ jobs:
       # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
       # approach is invisible to it. It MUST be the --global write to
       # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
       # (Replaces the mise-action install + the actions/cache uv restore — the
       # container image is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
+          uv sync --all-groups
 
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
 
       - name: just ${{ matrix.target }} (root)
         if: matrix.uid == 'root'
@@ -147,13 +166,13 @@ jobs:
     # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
     # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
-    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
-      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
-      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -170,16 +189,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
+          uv sync --all-groups
 
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
 
       - name: just check-per-file-coverage (root)
         if: matrix.uid == 'root'
@@ -198,6 +226,19 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # bd-ib-xevgsx: since 704a96ded the consumer replays the producer's
+      # canonical verdict only when .coverage-gates/per-file.{status,log} exist;
+      # without them it prints "no canonical per-file verdict; running the
+      # suite" and re-runs the whole suite. Ship the verdict beside .coverage.
+      - name: Publish the canonical per-file verdict for the check-coverage consumer
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   check-coverage:
     name: ${{ matrix.target }} (${{ matrix.uid }})
     if: needs.decide.outputs.run == 'true'
@@ -206,13 +247,13 @@ jobs:
     # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
     # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
-    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
-      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
-      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -229,16 +270,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trust workspace for git (container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
-
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+          uv sync --all-groups
 
       # Downloaded BEFORE the non-root prep below, so that step's
       # `chown -R 1000:1000 "$GITHUB_WORKSPACE"` covers the `.coverage` the
@@ -248,6 +288,24 @@ jobs:
         with:
           name: coverage-data-${{ matrix.uid }}
 
+      # bd-ib-xevgsx: restore .coverage-gates/ so check-coverage reads the
+      # producer's verdict instead of re-running the suite.
+      - name: Download this uid's canonical per-file verdict from the producer
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates
+
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
+
       - name: just ${{ matrix.target }} (root)
         if: matrix.uid == 'root'
         run: just ${{ matrix.target }}
@@ -256,9 +314,9 @@ jobs:
     name: check-python-batch (${{ matrix.uid }})
     needs: [decide]
     if: needs.decide.outputs.run == 'true'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.168.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.187.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -274,16 +332,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        run: git config --global --add safe.directory '*'
-
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
         run: |
+          git config --global --add safe.directory '*'
           mise trust
           mise install
+          uv sync --all-groups
 
-      - name: Install Python dev deps via uv
-        run: uv sync --all-groups
+      # bd-ib-jcrdzk: a GitHub-hosted container's HOME is /github/home, so mise
+      # cannot find its global config under /root and the node shim resolves no
+      # version; pyright then falls back to nodeenv, which crashes. Point mise at
+      # the baked config and put its shims first, as ci.yml's legs already do.
+      - name: Point mise at the baked global config (root)
+        if: matrix.uid == 'root'
+        run: |
+          echo "MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml" >> "$GITHUB_ENV"
+          echo "/root/.local/share/mise/shims" >> "$GITHUB_PATH"
 
       - name: Run the batched python checks (root)
         if: matrix.uid == 'root'

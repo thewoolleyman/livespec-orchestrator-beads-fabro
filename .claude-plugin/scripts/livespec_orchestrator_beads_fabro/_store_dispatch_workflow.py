@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "dispatch_workflow_for",
     "dispatch_workflow_from_record",
+    "dispatch_workflow_metadata",
     "dispatch_workflows_for",
     "record_dispatch_workflow",
 ]
@@ -86,6 +87,16 @@ def record_dispatch_workflow(*, path: StoreConfig, work_item_id: str, workflow: 
     metadata = _metadata_of(record=record)
     metadata[_META_DISPATCH_WORKFLOW] = workflow
     client.update_issue(issue_id=work_item_id, metadata=metadata)
+
+
+def dispatch_workflow_metadata(*, workflow: str) -> dict[str, Any]:
+    """The pin as the one top-level metadata key it occupies.
+
+    The overlay a writer merges into an item's metadata. `record_dispatch_workflow`
+    merges it in a write of its own; a token-guarded groom door hands it to the
+    write that claims the item, so the pin lands only if that door wins.
+    """
+    return {_META_DISPATCH_WORKFLOW: workflow}
 
 
 def _metadata_of(*, record: BeadsRecord) -> dict[str, Any]:
