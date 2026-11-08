@@ -71,7 +71,9 @@ insufficient by the time an agent would use it.
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import dataclass
+from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     CREDENTIAL_EXPIRY_ENV_VAR,
@@ -80,6 +82,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
     CREDENTIAL_USE_UNPROTECTED_VALUE,
     GUARD_SCRIPT_PATH,
+    PROOF_CAPTURE_GIT_BIN_PATH,
+    PROOF_CAPTURE_HOOKS_PATH,
     credential_use_deadline_epoch_capped,
     guard_script_text,
 )
@@ -104,6 +108,9 @@ __all__: list[str] = [
 # detail of the two functions below -- the producer and the consumer of this name
 # are both in this file, which is what keeps a disagreement about it impossible.
 _GUARD_SCRIPT_ENV_VAR = "LIVESPEC_CREDENTIAL_USE_GUARD_SCRIPT"
+_PROOF_CAPTURE_ASSETS_DIR = (
+    Path(__file__).resolve().parents[3] / ".fabro" / "workflows" / "implement-work-item"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -209,10 +216,10 @@ def credential_use_guard_prepare_steps_block(*, projection: CredentialUseDeclara
        and checkpoints after it, so a step that writes the guard before the
        exclusion is in place is a step whose checkpoint commits it into the run
        branch (`bd-ib-ccywva`, hp-candidate run 01M4XNM4BBMYFPQDA6X5JCBDYM).
-       Only the guard's own FILE is named, never the `.livespec` directory
-       holding it: the entry lands in a governed repository's clone, and
-       excluding a directory a repository could legitimately track would hide
-       that repository's own content from git.
+       Each dispatcher-materialized FILE is named, never the `.livespec`
+       directory holding them: the entry lands in a governed repository's
+       clone, and excluding a directory a repository could legitimately track
+       would hide that repository's own content from git.
     2. INSTALL -- write the guard from its env value, make it executable, and read
        it back with `test -s` so an empty projection aborts the sandbox here
        rather than surfacing as an unexplained node refusal later.
@@ -228,15 +235,33 @@ def credential_use_guard_prepare_steps_block(*, projection: CredentialUseDeclara
     """
     if projection is None:
         return ""
+    proof_capture_paths = (
+        f"{PROOF_CAPTURE_GIT_BIN_PATH}/git",
+        f"{PROOF_CAPTURE_HOOKS_PATH}/pre-commit",
+        f"{PROOF_CAPTURE_HOOKS_PATH}/pre-push",
+    )
     exclude = worktree_exclude_script(
-        paths=(GUARD_SCRIPT_PATH,),
+        paths=(GUARD_SCRIPT_PATH, *proof_capture_paths),
         label="livespec-credential-use-guard",
+    )
+    launcher = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-bin" / "git").read_text(encoding="utf-8")
+    hook = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-hooks" / "pre-commit").read_text(
+        encoding="utf-8"
     )
     install = (
         f'mkdir -p "$(dirname {GUARD_SCRIPT_PATH})"'
+        f" {shlex.quote(PROOF_CAPTURE_GIT_BIN_PATH)}"
+        f" {shlex.quote(PROOF_CAPTURE_HOOKS_PATH)}"
         f' && printf %s "${_GUARD_SCRIPT_ENV_VAR}" > {GUARD_SCRIPT_PATH}'
+        f" && printf %s {shlex.quote(launcher)} > {PROOF_CAPTURE_GIT_BIN_PATH}/git"
+        f" && printf %s {shlex.quote(hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-commit"
+        f" && printf %s {shlex.quote(hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-push"
         f" && chmod 700 {GUARD_SCRIPT_PATH}"
+        f" {PROOF_CAPTURE_GIT_BIN_PATH}/git"
+        f" {PROOF_CAPTURE_HOOKS_PATH}/pre-commit"
+        f" {PROOF_CAPTURE_HOOKS_PATH}/pre-push"
         f" && test -s {GUARD_SCRIPT_PATH}"
+        f" && test -x {PROOF_CAPTURE_GIT_BIN_PATH}/git"
     )
     check = f"/bin/sh {GUARD_SCRIPT_PATH} --check-start"
     lines = [
