@@ -100,7 +100,9 @@ __all__: list[str] = [
     "GUARD_REFUSAL_EXIT_CODE",
     "GUARD_SCRIPT_PATH",
     "GUARD_TERM_GRACE_SECONDS",
+    "PROOF_CAPTURE_GIT_BIN_PATH",
     "PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR",
+    "PROOF_CAPTURE_HOOKS_PATH",
     "credential_use_deadline_epoch_capped",
     "guard_script_text",
     "guarded_acp_command",
@@ -147,6 +149,12 @@ CREDENTIAL_USE_UNPROTECTED_VALUE = "1"
 # this guard owns the PATH change so an ACP command cannot replace it with a
 # later Git configuration flag.
 PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR = "LIVESPEC_PROOF_CAPTURE_GIT_READ_ONLY"
+
+# The Dispatcher writes these assets beside its credential-use guard, outside
+# every target clone. Proof capture runs for every tenant, including repositories
+# that do not carry this plugin's own `.claude-plugin` directory.
+PROOF_CAPTURE_GIT_BIN_PATH = "/workspace/.livespec/proof-capture-bin"
+PROOF_CAPTURE_HOOKS_PATH = "/workspace/.livespec/proof-capture-hooks"
 
 # Where the prepare step writes the guard inside the sandbox.
 GUARD_SCRIPT_PATH = "/workspace/.livespec/credential-use-guard.sh"
@@ -310,13 +318,13 @@ if [ -n "$proof_capture_git_read_only" ]; then
         exit {GUARD_REFUSAL_EXIT_CODE}
     fi
     if [ "$mode" != "check" ]; then
-        repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {{
-            echo "LIVESPEC_PROOF_CAPTURE_GIT_LAUNCHER_ABSENT: proof_capture is" \\
-                 "read-only, but its repository root could not be resolved before" \\
-                 "starting the guarded adapter." >&2
-            exit {GUARD_REFUSAL_EXIT_CODE}
-        }}
-        proof_capture_git_bin="$repository_root/.claude-plugin/.fabro/workflows/implement-work-item/proof-capture-bin"
+        proof_capture_git_bin="{PROOF_CAPTURE_GIT_BIN_PATH}"
+        if [ ! -x "$proof_capture_git_bin/git" ]; then
+            # The production path above is Dispatcher-materialized. This nearby
+            # fallback keeps a relocated guard self-contained for a hermetic
+            # sandbox while still never consulting the target repository.
+            proof_capture_git_bin="$(dirname "$0")/.livespec/proof-capture-bin"
+        fi
         if [ ! -x "$proof_capture_git_bin/git" ]; then
             echo "LIVESPEC_PROOF_CAPTURE_GIT_LAUNCHER_ABSENT: proof_capture is" \\
                  "read-only, but its stage-scoped git launcher is not executable" \\
