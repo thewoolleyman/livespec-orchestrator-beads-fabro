@@ -150,8 +150,10 @@ def _node_script(*, node: str) -> str:
     graph = parse_dot_graph(text=_graph_text())
     assert not isinstance(graph, str), graph
     script: str = graph.nodes[node]["script"]
-    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
-        "{{ inputs.sandbox_check_suite }}", "true"
+    return (
+        script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
+        .replace("{{ inputs.sandbox_check_suite }}", "true")
+        .replace("{{ inputs.conformance_hook_install }}", "")
     )
 
 
