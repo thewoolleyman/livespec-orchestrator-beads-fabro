@@ -51,26 +51,16 @@ def git(*argv, cwd):
     return command("git", *argv, cwd=cwd)
 
 
-def latest_red_test(handoff):
-    latest, in_red = "", False
-    for line in handoff.read_text(encoding="utf-8").splitlines():
-        if line.startswith("## "):
-            in_red = line.startswith("## red")
-        elif in_red and line.startswith("Red test file:"):
-            latest = line.removeprefix("Red test file:").strip().strip("`")
-    return latest
-
-
-def selected_paths(stage, root):
-    if stage == "red":
-        handoff_path = git(
-            "rev-parse", "--git-path", "livespec-implement-handoff.md", cwd=root
-        ).stdout.strip()
-        handoff = Path(handoff_path)
-        return [latest_red_test(handoff)] if handoff.is_file() and latest_red_test(handoff) else []
+def changed_paths(root):
     tracked = git("diff", "--name-only", "--no-renames", "HEAD", cwd=root).stdout.splitlines()
     untracked = git("ls-files", "--others", "--exclude-standard", cwd=root).stdout.splitlines()
     return sorted(set(tracked + untracked))
+
+
+def selected_paths(stage, root, test_file):
+    if stage == "red":
+        return [test_file]
+    return changed_paths(root)
 
 
 def copy_path(path, root, preview):
@@ -109,9 +99,9 @@ def skipped_environment():
     return environment, names
 
 
-def preview(stage):
+def preview(stage, test_file):
     root = Path(git("rev-parse", "--show-toplevel", cwd=Path.cwd()).stdout.strip())
-    paths = selected_paths(stage, root)
+    paths = selected_paths(stage, root, test_file)
     if not paths:
         return 2, [], []
     preview_root = Path(tempfile.mkdtemp(prefix="livespec-gate-preview-"))
@@ -139,8 +129,11 @@ def preview(stage):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", choices=("red", "green"))
+    parser.add_argument("test_file", nargs="?")
     args = parser.parse_args()
-    status, targets, unset = preview(args.stage)
+    if (args.stage == "red") != (args.test_file is not None):
+        parser.error("red requires the test file path commit_red will stage; green takes none")
+    status, targets, unset = preview(args.stage, args.test_file)
     print(
         json.dumps(
             {"status": status, "failed_targets": targets, "unset_variables": unset},
@@ -170,7 +163,11 @@ def gate_preview_prepare_steps_block() -> str:
     root = sandbox_plugins_root_expansion()
     path = gate_preview_program_path_expansion()
     step = PrepareStep(
-        script=f'set -eu\nmkdir -p "{root}"\n' + payload_write_command(path_word=f'"{path}"'),
+        script=(
+            f'set -eu\nmkdir -p "{root}"\n'
+            + payload_write_command(path_word=f'"{path}"')
+            + f'\nchmod 755 "{path}"'
+        ),
         env={PAYLOAD_ENV_VAR: gate_preview_program_source()},
     )
     return (
