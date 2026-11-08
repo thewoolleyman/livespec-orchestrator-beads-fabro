@@ -44,6 +44,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro._store_groom_approval import groom_approval_for
+from livespec_orchestrator_beads_fabro.commands.context import item_context
 from livespec_orchestrator_beads_fabro.commands.groom import (
     CandidateSlice,
     CrossRepoSlice,
@@ -310,6 +311,89 @@ def test_filed_factory_slices_link_their_dependency_edges() -> None:
     # The dependency edge points at the base slice's REAL minted id.
     assert base_id in items
     assert dependent.depends_on == ({"kind": "local", "work_item_id": base_id},)
+
+
+def test_filed_slices_inherit_the_regroomed_plan_child_parent_edge() -> None:
+    client = make_beads_client(config=_config())
+    _ = client.create_issue(
+        draft=IssueDraft(
+            issue_id="li-plan",
+            issue_type="epic",
+            title="Plan epic",
+            description="",
+            priority=1,
+            assignee=None,
+            created_at="2026-06-19T00:00:00Z",
+            labels=[],
+            metadata={},
+            spec_id=None,
+            parent_id=None,
+        )
+    )
+    _seed_backlog_item(issue_id="li-epic")
+    client.add_dependency(from_id="li-epic", to_id="li-plan", edge_type="parent-child")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[_factory_slice(title="first slice"), _factory_slice(title="second slice")],
+    )
+
+    for slice_id in result.filed_slice_ids:
+        dependencies = client.show_issue(issue_id=slice_id)["dependencies"]
+        assert {"depends_on_id": "li-plan", "type": "parent-child"} in dependencies
+
+
+def test_filed_slices_of_an_unparented_item_gain_no_parent_child_edge() -> None:
+    _seed_backlog_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[_factory_slice(title="independent slice")],
+    )
+
+    (slice_id,) = result.filed_slice_ids
+    dependencies = make_beads_client(config=_config()).show_issue(issue_id=slice_id)["dependencies"]
+    assert all(edge.get("type") != "parent-child" for edge in dependencies)
+
+
+def test_context_lists_every_slice_filed_from_a_plan_child() -> None:
+    client = make_beads_client(config=_config())
+    _ = client.create_issue(
+        draft=IssueDraft(
+            issue_id="li-plan",
+            issue_type="epic",
+            title="Plan epic",
+            description="",
+            priority=1,
+            assignee=None,
+            created_at="2026-06-19T00:00:00Z",
+            labels=[],
+            metadata={},
+            spec_id=None,
+            parent_id=None,
+        )
+    )
+    _seed_backlog_item(issue_id="li-epic")
+    client.add_dependency(from_id="li-epic", to_id="li-plan", edge_type="parent-child")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[_factory_slice(title="first slice"), _factory_slice(title="second slice")],
+    )
+
+    context = item_context(config=_config(), project_root=_LOCAL_REPO_ROOT, key="li-plan")
+    assert {child["id"] for child in context["children"]} == set(result.filed_slice_ids) | {
+        "li-epic"
+    }
 
 
 def test_dependency_on_unknown_draft_title_is_rejected() -> None:

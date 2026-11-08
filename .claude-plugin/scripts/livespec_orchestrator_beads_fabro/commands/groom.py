@@ -36,13 +36,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_runtime.work_items.rank import key_between
-from returns.pipeline import is_successful
-from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro import regroom
-from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
-    record_size_justification,
-)
 from livespec_orchestrator_beads_fabro._store_groom_approval import (
     GroomApproval,
     record_groom_approval,
@@ -64,6 +59,10 @@ from livespec_orchestrator_beads_fabro.commands._groom_context import (
     GroomContext,
     load_groom_context,
 )
+from livespec_orchestrator_beads_fabro.commands._groom_filing import (
+    file_local_slice,
+    plan_parent_id,
+)
 from livespec_orchestrator_beads_fabro.commands._groom_plan import (
     PlannedLocalSlice,
     plan_approved_slices,
@@ -81,15 +80,9 @@ from livespec_orchestrator_beads_fabro.commands._groom_types import (
 from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import (
     WRITER_HUMAN_VALVE,
     ClaimWrite,
-    ClaimWriteRefused,
     resting_at,
 )
 from livespec_orchestrator_beads_fabro.errors import GroomDraftError
-from livespec_orchestrator_beads_fabro.intake_dor import (
-    DefinitionOfReadyChecklist,
-    apply_intake_dor,
-)
-from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import DependsOnRaw, WorkItem
 
 if TYPE_CHECKING:
@@ -207,13 +200,17 @@ def file_approved_slices(
     filed_ids: list[str] = []
     parses: list[SliceCriteriaParse] = []
     refused_routes: list[SliceRouteRefusal] = []
+    parent_id = plan_parent_id(path=path, item_id=regroom_item_id)
     for planned, item in prepared:
-        parse, refused = _file_local_slice(
+        refused = file_local_slice(
             path=path,
             item=item,
             approval=approved,
             size_justification=planned.candidate.size_justification,
+            plan_parent_id=parent_id,
         )
+        # Advisory only: an empty parse is REPORTED, never a refusal.
+        parse = SliceCriteriaParse(slice_id=item.id, criteria=effective_criteria(item=item))
         parses.append(parse)
         if refused is not None:
             refused_routes.append(refused)
@@ -281,37 +278,6 @@ def _prepare_local_slices(
     return tuple(prepared)
 
 
-def _file_local_slice(
-    *,
-    path: StoreConfig,
-    item: WorkItem,
-    approval: GroomApproval,
-    size_justification: object,
-) -> tuple[SliceCriteriaParse, SliceRouteRefusal | None]:
-    """File one approved local slice, route it, stamp its approval, parse it.
-
-    The three writes are kept in one place because they are one act: a slice
-    that is filed but not routed is not ready, and a slice that is filed but
-    not stamped is a slice nobody can attribute later. A route the claim-token
-    protocol refused is answered beside the parse; the slice is stamped all
-    the same, because the approval was given whether or not the route landed.
-    """
-    append_work_item(path=path, item=item)
-    if size_justification is not None:
-        record_size_justification(
-            path=path,
-            work_item_id=item.id,
-            justification=size_justification,
-        )
-    refused = _route_approved_slice_intake(path=path, item_id=item.id)
-    # Stamped AFTER intake routing: the router rewrites the slice's modeled
-    # metadata, so a stamp placed before it would be overlaid by the very
-    # write that makes the slice ready.
-    record_groom_approval(path=path, work_item_id=item.id, approval=approval)
-    # Advisory only: an empty parse is REPORTED, never a refusal.
-    return SliceCriteriaParse(slice_id=item.id, criteria=effective_criteria(item=item)), refused
-
-
 def _work_item_for(
     *,
     candidate: CandidateSlice,
@@ -368,31 +334,6 @@ def _work_item_for(
         spec_commitment_hint=None,
         admission_policy="auto",
     )
-
-
-def _route_approved_slice_intake(*, path: StoreConfig, item_id: str) -> SliceRouteRefusal | None:
-    """Route a freshly filed approved slice through the shared intake primitive.
-
-    Answers `None` when the route landed, and the refusal when the claim-token
-    protocol refused it: a refused route wrote nothing, so the slice is still
-    where it was filed and the caller has to say so.
-    """
-    routed = apply_intake_dor(
-        path=path,
-        item_id=item_id,
-        checklist=DefinitionOfReadyChecklist(
-            single_coherent_done=True,
-            autonomously_verifiable=True,
-            autonomy_tiered=True,
-            dependency_linked=True,
-            repo_targeted=True,
-            above_floor=True,
-        ),
-    )
-    failure = None if is_successful(routed) else unsafe_perform_io(routed.failure())
-    if isinstance(failure, ClaimWriteRefused):
-        return SliceRouteRefusal(slice_id=item_id, outcome=failure.outcome)
-    return None
 
 
 def _now_iso() -> str:
