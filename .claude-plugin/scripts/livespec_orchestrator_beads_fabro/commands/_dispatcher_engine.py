@@ -69,8 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
     stalled_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
-    await_merge,
-    outcome_after_await,
+    settle_merge_wait,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import (
     CommandResult,
@@ -331,19 +330,13 @@ def run_dispatch(
     )
     if current_hold is not None:
         return current_hold
-    outcome = outcome_after_await(
+    outcome = settle_merge_wait(
         outcome_type=DispatchOutcome,
         plan=plan,
         runner=runner,
         journal=journal,
-        merged=await_merge(
-            outcome_type=DispatchOutcome,
-            plan=plan,
-            runner=runner,
-            journal=journal,
-            sleep=sleep,
-            poll=poll,
-        ),
+        sleep=sleep,
+        poll=poll,
         pr_number=view.number,
         run_id=run_id,
     )

@@ -325,6 +325,9 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # outcome would put the key on dispatches that are not that ending and
     # leave a consumer discriminating by its value instead of its presence.
     "base_advanced",
+    # The handoff a merge wait took, which only that ending carries, dropped on
+    # the same terms as the field above.
+    "merge_wait_handed_off",
     "dead_implementer_condition",
     # Factory identity is carried only by the terminal cancellation arm so
     # its ledger disposition can name where the operator cancelled the run.
