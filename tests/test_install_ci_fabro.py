@@ -45,10 +45,10 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
         body="""\
         #!/usr/bin/env bash
         input="$(cat)"
-        case "$input" in
-          *bad*) exit 1 ;;
-          *) exit 0 ;;
-        esac
+        path="${input##*  }"
+        if [[ "$path" == /__w/_warm/release-assets/* ]] && [[ "$(head -c 3 "$path")" == bad ]]; then
+          exit 1
+        fi
         """,
     )
     _write_executable(
@@ -56,7 +56,23 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
         body="""\
         #!/usr/bin/env bash
         printf '%s\\n' "$*" >> "$CURL_LOG"
-        exit 97
+        url="${!#}"
+        output=""
+        while (($#)); do
+          if [[ "$1" == --output ]]; then
+            output="$2"
+            shift 2
+            continue
+          fi
+          shift
+        done
+        case "${CURL_MODE:-fail}" in
+          api-success)
+            [[ "$url" == *api.github.com* ]] || exit 97
+            cp "$CURL_FIXTURE" "$output"
+            ;;
+          *) exit 97 ;;
+        esac
         """,
     )
     environment = os.environ | {"PATH": f"{bin_dir}:{os.environ['PATH']}"}
@@ -92,3 +108,38 @@ def test_uses_verified_warm_seed_without_calling_curl(
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "fabro").is_file()
     assert not curl_log.exists()
+
+
+@pytest.mark.parametrize("seed_is_wrong", [False, True], ids=["absent", "checksum-mismatch"])
+def test_uses_api_asset_when_warm_seed_is_unavailable(
+    *,
+    installer_environment: tuple[dict[str, str], Path, Path],
+    seed_is_wrong: bool,
+    tmp_path: Path,
+) -> None:
+    """A missing or invalid warm asset moves to the authenticated API route."""
+    environment, fixture_asset, curl_log = installer_environment
+    environment.update(
+        {
+            "CURL_LOG": str(curl_log),
+            "CURL_MODE": "api-success",
+            "CURL_FIXTURE": str(fixture_asset),
+            "GITHUB_TOKEN": "test-token",
+        }
+    )
+    WARM_ASSET.unlink(missing_ok=True)
+    if seed_is_wrong:
+        WARM_ASSET.parent.mkdir(parents=True, exist_ok=True)
+        WARM_ASSET.write_text("bad warm seed")
+
+    try:
+        result = _run_installer(environment=environment, target=tmp_path / "fabro")
+    finally:
+        WARM_ASSET.unlink(missing_ok=True)
+
+    assert result.returncode == 0, result.stderr
+    curl_arguments = curl_log.read_text()
+    assert "https://api.github.com/repos/fabro-sh/fabro/releases/assets/438318077" in curl_arguments
+    assert "Accept: application/octet-stream" in curl_arguments
+    assert "Authorization: Bearer test-token" in curl_arguments
+    assert "https://github.com/fabro-sh/fabro/releases/download/" not in curl_arguments

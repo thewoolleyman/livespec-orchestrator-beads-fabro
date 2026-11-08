@@ -22,11 +22,11 @@
 
 set -euo pipefail
 
-readonly version="v0.254.0"
 readonly asset="fabro-x86_64-unknown-linux-musl.tar.gz"
 readonly sha256="27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
+readonly asset_id="438318077"
 readonly warm_asset="/__w/_warm/release-assets/${sha256}"
-readonly url="https://github.com/fabro-sh/fabro/releases/download/${version}/${asset}"
+readonly api_url="https://api.github.com/repos/fabro-sh/fabro/releases/assets/${asset_id}"
 readonly target="${1:-/usr/local/bin/fabro}"
 
 scratch="$(mktemp -d)"
@@ -45,10 +45,15 @@ if [[ -f "$warm_asset" ]]; then
     fi
 fi
 
-curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "$url"
+api_headers=(-H 'Accept: application/octet-stream')
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    api_headers+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "${api_headers[@]}" "$api_url"
 
 if ! verify_asset "${scratch}/${asset}"; then
-    echo "install-ci-fabro: sha256 mismatch for ${asset} (expected ${sha256})" >&2
+    echo "install-ci-fabro: sha256 mismatch for GitHub releases API asset (expected ${sha256})" >&2
     exit 1
 fi
 
