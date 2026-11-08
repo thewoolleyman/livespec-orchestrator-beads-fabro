@@ -346,6 +346,39 @@ def test_filed_slices_inherit_the_regroomed_plan_child_parent_edge() -> None:
         assert {"depends_on_id": "li-plan", "type": "parent-child"} in dependencies
 
 
+def test_filed_slices_inherit_the_plan_of_an_item_attached_by_a_tracks_edge() -> None:
+    client = make_beads_client(config=_config())
+    _ = client.create_issue(
+        draft=IssueDraft(
+            issue_id="li-plan",
+            issue_type="epic",
+            title="Plan epic",
+            description="",
+            priority=1,
+            assignee=None,
+            created_at="2026-06-19T00:00:00Z",
+            labels=[],
+            metadata={},
+            spec_id=None,
+            parent_id=None,
+        )
+    )
+    _seed_backlog_item(issue_id="li-epic")
+    client.add_dependency(from_id="li-epic", to_id="li-plan", edge_type="tracks")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[_factory_slice(title="first slice"), _factory_slice(title="second slice")],
+    )
+
+    for slice_id in result.filed_slice_ids:
+        dependencies = client.show_issue(issue_id=slice_id)["dependencies"]
+        assert {"depends_on_id": "li-plan", "type": "parent-child"} in dependencies
+
+
 def test_filed_slices_of_an_unparented_item_gain_no_parent_child_edge() -> None:
     _seed_backlog_item(issue_id="li-epic")
 
