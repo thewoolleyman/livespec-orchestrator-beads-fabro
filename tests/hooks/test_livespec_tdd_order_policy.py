@@ -194,3 +194,18 @@ def test_refusal_message_is_deterministic_across_repeated_calls() -> None:
         test_change_pending=False,
     )
     assert policy.refusal_message(decision=decision) == policy.refusal_message(decision=decision)
+
+
+def test_decide_allows_an_unmerged_path_whatever_head_says() -> None:
+    policy = _load_policy()
+    for state in (policy.HEAD_CLOSED, policy.HEAD_NO_TRAILERS):
+        decision = policy.decide(
+            tool="Edit",
+            path=".claude/hooks/some_guard.py",
+            head_state=state,
+            exists_at_head=True,
+            test_change_pending=False,
+            unmerged_in_progress=True,
+        )
+        assert decision.decision == policy.ALLOW
+        assert decision.reason == policy.REASON_UNMERGED_PATH
