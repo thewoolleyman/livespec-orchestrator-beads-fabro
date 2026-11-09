@@ -3405,6 +3405,36 @@ resolution the `canonical_branch` key documents (§"`compat` block");
 the dispatch path reuses that single resolution rather than carrying
 its own ref constant. (Implementation tracked as `bd-ib-hkzcfb`.)
 
+**A sandbox runs its tools from pinned clones and works in the latest clones.**
+A factory sandbox MUST hold two kinds of clone of other repositories, and it MUST
+NOT use one kind for the other's purpose.
+
+- *Run-from clones.* Every tool the sandbox EXECUTES that comes from a repository
+  other than the target (for example livespec core's checker, resolved through
+  `LIVESPEC_CORE_PLUGIN_ROOT`) MUST run from a run-from clone of that repository.
+  A run-from clone MUST be separate from every work clone. It MUST be checked out
+  at the release the governed tree under test declares for that repository (for
+  livespec core, `.livespec.jsonc` `compat.pinned`), which is the same release the
+  repository's CI runs for that tree. It MUST be shallow, and it MUST be read-only
+  to the run's agent and gate processes. Where the governed tree declares no
+  release for that repository, the run-from clone MUST be taken at that
+  repository's newest release tag, never at its default-branch tip. When the
+  janitor refreshes the run's tree, the Dispatcher MUST re-resolve each run-from
+  clone's release from the refreshed tree's declaration and MUST re-clone any
+  whose declared release changed, before the refreshed tree is checked. A tool
+  from a repository other than the target MUST NOT execute from a work clone; the
+  target repository's own tooling runs from the target's clone, which is the tree
+  under test.
+- *Work clones.* The target repository's clone and the sibling clones under
+  `/livespec-siblings`, which the run reads for cross-repository state and the
+  agent reads and edits, MUST be taken at the default branch's latest commit at
+  the moment they are cloned. They MUST be writable, and MUST carry enough history
+  for archaeology and debugging: non-shallow, or a depth the repository declares
+  sufficient. A cross-repository conformance read, such as livespec's
+  `wiring-completeness-cross-repo`, MUST read the work clones.
+
+Scenario 336 in `scenarios.md` exercises this paragraph.
+
 
 ### Definition-of-Done and Proof-of-Done stages
 
@@ -10020,7 +10050,7 @@ classify the failure as permanent rather than as transient infrastructure, and
 MUST carry that reclassification into the failure signature as well as the
 category, so a consumer keying on either sees the same verdict.
 
-Two classes of such cause are recognised today, and BOTH reclassify:
+Three classes of such cause are recognised today, and ALL THREE reclassify:
 
 - A **provider usage or spend ceiling**. This holds for EVERY model vendor, not
   only the one whose ceiling is currently scarce, and it is the class this
@@ -10028,11 +10058,20 @@ Two classes of such cause are recognised today, and BOTH reclassify:
 - A **remote-compaction 404** — the agent runtime's own conversation-compaction
   endpoint returning not-found. Retrying re-issues the same doomed request.
   Measured 2026-08-22: 2 of the 13 diagnosable causes across 53 failed runs.
+- A **sandbox the kernel killed for memory** — the run's sandbox container was
+  terminated by the kernel's out-of-memory killer, as the sandbox provider
+  reports the container's termination (on the Kubernetes provider, a container
+  termination reason of `OOMKilled`). Every later sandbox operation of that run
+  meets a container that no longer exists, so retrying it cannot succeed, and an
+  unchanged re-dispatch meets the same memory limit. Measured 2026-11-09 on
+  gmktec-xubuntu: two runs whose claude agent the memory-cgroup OOM killer took
+  at about 7.2 to 7.4 GB in a 7629 MiB sandbox failed their next checkpoint exec
+  with an API 500 that read as `transient_infra`.
 
 The TYPED provider-limit state described below is set by the FIRST class only. A
-remote-compaction 404 reclassifies the category and signature without setting it,
-which is correct: it is permanent, but it is not a spend ceiling and the
-admission gate MUST NOT treat it as one.
+remote-compaction 404 and a sandbox killed for memory reclassify the category and
+signature without setting it, which is correct: each is permanent, but neither is
+a spend ceiling and the admission gate MUST NOT treat either as one.
 
 **The surfaced cause is the permanent one, else the ROOT of the chain.** A Fabro
 cause chain is ordered outermost-first, so the element carrying the provider's
@@ -10087,8 +10126,19 @@ priority" → "Provider-limit release and re-dispatch" and does NOT rest at
 containment") whose surfaced implementer failure carries the typed state takes
 the same route.
 
+**A sandbox killed for memory is named.** When the Dispatcher derives a failed
+run's outcome, it MUST read the run's sandbox container termination from the
+sandbox provider before that sandbox is collected. When the provider reports an
+out-of-memory kill, the Dispatcher MUST carry the condition as typed
+resource-exhaustion state on the failure detail, naming the OOM kill, the run id
+and the container's memory limit, and the dispatch outcome and its journal record
+MUST name the same three. When the provider's report cannot be read on that pass,
+the outcome MUST say that the sandbox's termination was unobservable, and the
+failure MUST keep the category and signature it arrived with. Scenario 335 in
+`scenarios.md` exercises this paragraph.
+
 **CONTROL — an ordinary failure keeps its classification.** A failure whose cause
-chain carries NO permanent cause of either class above MUST retain the category
+chain carries NO permanent cause of any class above MUST retain the category
 and signature it arrived with. A rule that reclassified every failure as
 permanent would not be a discrimination rule; it would disable retries
 wholesale.

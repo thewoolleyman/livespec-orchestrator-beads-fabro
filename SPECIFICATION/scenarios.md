@@ -13603,3 +13603,68 @@ Feature: A field opener is caught at filing, not first at launch
     And an approve of W leaves it at pending-approval with a result naming the field description
     And once the description is edited to carry no delimiter, an approve of W routes it onward as it would any other item
 ```
+
+## Scenario 335 — A run whose sandbox was OOM-killed is classified permanent and names the kill and the memory limit
+
+Governing clause: `contracts.md` §"Provider-limit permanence and root-cause surfacing" → "A sandbox killed for memory is named."
+
+```gherkin
+Feature: A run whose sandbox was OOM-killed is classified permanent and names the kill and the memory limit
+
+  Scenario: An OOM-killed sandbox reclassifies the failure and names the kill
+    Given a dispatched run whose sandbox container the kernel's out-of-memory killer terminated
+    And whose next sandbox operation failed with a sandbox exec failure the engine recorded as `transient_infra`
+    When the Dispatcher derives the run's outcome while its sandbox is not yet collected
+    Then the failure is classified permanent rather than `transient_infra`, in both its category and its signature
+    And the failure detail carries typed resource-exhaustion state naming the OOM kill, the run id and the container's memory limit
+    And the dispatch outcome and its journal record name the OOM kill, the run id and the container's memory limit
+    And no typed provider-limit state is set for the run
+
+  Scenario: A connection failure with no OOM kill keeps its classification
+    Given a dispatched run that failed because a sandbox operation could not reach its provider
+    And whose sandbox container the provider reports was not terminated by an out-of-memory kill
+    When the Dispatcher derives the run's outcome
+    Then the failure keeps the category `transient_infra` and its signature
+
+  Scenario: An unreadable termination is reported as unobservable
+    Given a dispatched run whose sandbox exec failed
+    And whose sandbox provider cannot report the container's termination on that pass
+    When the Dispatcher derives the run's outcome
+    Then the outcome says the sandbox's termination was unobservable
+    And the failure keeps the category and signature it arrived with
+```
+
+## Scenario 336 — A sandbox checks a tree with the tooling release that tree pins, and works in the latest clones
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "A sandbox runs its tools from pinned clones and works in the latest clones."
+
+```gherkin
+Feature: A sandbox checks a tree with the tooling release that tree pins, and works in the latest clones
+
+  Scenario: An executed tool runs from a pinned, shallow, read-only clone
+    Given a governed tree whose .livespec.jsonc compat.pinned names livespec release vA
+    And livespec's default branch is ahead of vA
+    When a factory run executes livespec core's doctor checks
+    Then the checks run from a run-from clone of livespec checked out at vA
+    And that clone is shallow
+    And a write into that clone by the run's agent or gate processes fails
+    And LIVESPEC_CORE_PLUGIN_ROOT does not resolve under /livespec-siblings
+
+  Scenario: A janitor refresh re-resolves the run-from clone from the refreshed tree
+    Given a factory run whose run-from clone of livespec is at vA, the release its run-start tree pins
+    When the janitor refreshes the run onto a default branch whose .livespec.jsonc compat.pinned names vB
+    Then the next doctor check of the refreshed tree runs from a run-from clone of livespec at vB
+
+  Scenario: A repository with no declared release runs from its newest release tag
+    Given a factory run that executes a tool from a repository the governed tree declares no release for
+    When the sandbox takes that repository's run-from clone
+    Then the clone is checked out at that repository's newest release tag, not its default-branch tip
+
+  Scenario: Work clones are the latest, writable and deep enough to debug
+    Given a factory run
+    When the sandbox takes the target repository's clone and the sibling clones under /livespec-siblings
+    Then each is at its default branch's latest commit at the moment it was cloned
+    And each is writable by the run's agent
+    And each is non-shallow or carries the depth its repository declares sufficient
+    And livespec's wiring-completeness-cross-repo check reads the sibling clones under /livespec-siblings
+```

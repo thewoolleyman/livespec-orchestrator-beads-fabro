@@ -3043,5 +3043,21 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-cfgtlo files an item through the capture filing seam whose description carries a goal-template opening delimiter, and shows that filing_display reports a mechanical finding naming the field and the offset of its first delimiter, whose ledger comment carries no opener, that the item rests at pending-approval even under auto admission, that approve refuses naming the field, and that approve routes it onward once the description is edited. bd-ib-cfgtlo owns it.",
     "work_item": "bd-ib-cfgtlo"
+  },
+  {
+    "heading": "## Scenario 335 \u2014 A run whose sandbox was OOM-killed is classified permanent and names the kill and the memory limit",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-jnstxo derives the outcome of a dispatched run whose sandbox container the provider reports as OOM-killed, and shows that the failure is classified permanent in both category and signature, that the failure detail, the dispatch outcome and its journal record name the OOM kill, the run id and the container's memory limit, that no typed provider-limit state is set, that a connection failure with no OOM kill keeps transient_infra, and that an unreadable termination is reported as unobservable with the arrived classification kept. bd-ib-jnstxo owns it.",
+    "work_item": "bd-ib-jnstxo"
+  },
+  {
+    "heading": "## Scenario 336 \u2014 A sandbox checks a tree with the tooling release that tree pins, and works in the latest clones",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the run/work-clone implementation child of plan epic bd-ib-nmuyjc prepares a factory sandbox and shows that livespec core's doctor checks run from a separate shallow, read-only run-from clone at the governed tree's compat.pinned release (not under /livespec-siblings), that a janitor refresh onto a tree pinning a different release re-clones it at that release, that a repository with no declared release runs from its newest release tag, and that the target and /livespec-siblings work clones are at their default branch's latest commit, writable and non-shallow. bd-ib-nmuyjc owns it until that child is filed.",
+    "work_item": "bd-ib-nmuyjc"
   }
 ]
