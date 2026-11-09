@@ -73,6 +73,10 @@ from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation_models i
     CondensedClause,
     CondensedSpecTree,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_identifier_paragraphs import (
+    identified_paragraphs,
+    merged_selection,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_partial import (
     FUNCTION_TERMS,
     partially_selected_section,
@@ -88,7 +92,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_tree_rendering import (
     rendered_tree_length as _rendered_length,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_scenario_governing import (
-    governing_clause_references,
+    pinned_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_sections import (
     sections_of as _split_sections,
@@ -211,34 +215,12 @@ def condensed_spec_tree(
     references = (
         definition.references if definition.present else reference_line_headings(text=statement)
     )
-    pinned = [
-        section
-        for reference in references
-        for section in sections
-        if section.heading is not None and section.heading.rstrip(" \t") == reference.rstrip(" \t")
-    ]
-    governing = governing_clause_references(
-        scenario_bodies=[section.body for section in pinned], paths=spec_tree
+    pinned, governing_terms = pinned_sections(
+        sections=sections, references=references, spec_tree=spec_tree, term_pattern=_TERM
     )
-    asked_terms |= frozenset(
-        term
-        for _path, _heading, paragraph in governing
-        for term in _TERM.findall(paragraph.casefold())
-    )
-    pinned = list(
-        dict.fromkeys(
-            [
-                *pinned,
-                *(
-                    section
-                    for path, heading, _paragraph in governing
-                    for section in sections
-                    if section.path == path
-                    and section.heading is not None
-                    and section.heading.rstrip(" \t") == f"## {heading}"
-                ),
-            ]
-        )
+    asked_terms |= governing_terms
+    identified, remaining = identified_paragraphs(
+        sections=sections, asked_text=asked_text, remaining=remaining
     )
     pinned_selected, pinned_complete, remaining = select_referenced_sections(
         sections=[
@@ -280,6 +262,9 @@ def condensed_spec_tree(
         if partial is not None:
             selected[section.key] = partial
             remaining -= len(partial) - len(section.elided)
+    selected = merged_selection(
+        sections=sections, selected=selected, complete=complete, identified=identified
+    )
     return CondensedSpecTree(
         tree=_condensed(sections=sections, selected=selected, paths=spec_tree),
         clauses=tuple(
