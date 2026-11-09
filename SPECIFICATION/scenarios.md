@@ -13508,3 +13508,29 @@ Feature: The release branch advances only on an operator dispatch that starts a 
     Then the run fails naming the tag
     And the `release` branch still names the commit of v1.1.0
 ```
+
+## Scenario 332 — A host Claude judgement's spend journal ends with the closing result event's final usage
+
+```gherkin
+Feature: Host judgement spend journal final usage
+
+  Scenario: A judgement whose Claude stream emits a result event journals its final usage last
+    Given a host model judgement whose resolved candidate is the Claude agent, launched with caller drift_run
+    And its stream emits assistant events with message ids msg_a and msg_b, then a result event whose usage reports 1148 output tokens
+    When the judgement completes
+    Then a journal under $HOME/.claude/spend-journal/ has a header line carrying "final_usage_line": true and a name beginning purpose:drift_run@
+    And its assistant lines are those two events in order, each with a ts timestamp
+    And its last line has type result, carries that usage object unchanged and the message_ids array [msg_a, msg_b], and carries no started_at key
+
+  Scenario: A judgement whose Claude process ends without a result event keeps its last assistant line last
+    Given a host model judgement whose resolved candidate is the Claude agent
+    And its process is ended by the input bound after one assistant event and before any result event
+    When the judgement ends
+    Then the journal's last line is that assistant event
+
+  Scenario: A judgement read after its process exits writes the same final usage line
+    Given a host model judgement that reads its Claude candidate's output only after the process exits
+    And that output ends with a result event
+    When the judgement completes
+    Then its journal's last line has type result and carries that event's usage object unchanged
+```
