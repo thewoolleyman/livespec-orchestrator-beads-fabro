@@ -63,6 +63,14 @@ def test_the_eligible_resume_is_journaled_with_every_required_measurement() -> N
     ]
 
 
+def test_the_journaler_names_every_measurement_as_a_typed_keyword_parameter() -> None:
+    module = importlib.import_module(_MODULE)
+    parameters = inspect.signature(module.journal_record_file_resume).parameters
+
+    assert not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+    assert {"default_branch_tip", "conflicted_paths"} <= set(parameters)
+
+
 def test_an_eligible_record_file_conflict_is_journaled_then_released_and_resumed() -> None:
     """Scenario 184's automatic arm does all three acts in order, once."""
     module = importlib.import_module(_MODULE)

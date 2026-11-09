@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, TypeVar, cast
+from typing import Protocol, TypeVar
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
     BASE_ADVANCED_AFTER_ARMING,
@@ -29,14 +29,15 @@ class _JournalWriter(Protocol):
         """Persist one structured Dispatcher journal row."""
 
 
-def journal_record_file_resume(
+def journal_record_file_resume(  # noqa: PLR0913 -- each field is a separately measured contract requirement.
     *,
     journal: _JournalWriter,
     work_item_id: str,
     run_id: str | None,
     pr_number: int | None,
     pr_head: str,
-    **measurements: str | tuple[str, ...],
+    default_branch_tip: str,
+    conflicted_paths: tuple[str, ...],
 ) -> None:
     """Record the complete measured hand-off before the automatic resume.
 
@@ -45,8 +46,6 @@ def journal_record_file_resume(
     rebuilding it at a later lifecycle step, makes the journal the exact record
     of the run, pull request, heads and paths that admitted the automatic path.
     """
-    default_branch_tip = cast("str", measurements["default_branch_tip"])
-    conflicted_paths = cast("tuple[str, ...]", measurements["conflicted_paths"])
     journal.append(
         record={
             "stage": "base-advanced-record-files-resume",
