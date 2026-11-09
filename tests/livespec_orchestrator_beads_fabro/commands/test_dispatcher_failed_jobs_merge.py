@@ -10,6 +10,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     PollPolicy,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import await_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
 
 
@@ -216,3 +217,68 @@ def test_await_merge_does_not_rerun_on_the_last_poll_of_the_budget(tmp_path: Pat
     assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
     assert not any(call[:3] == ["gh", "run", "rerun"] for call in runner.calls)
     assert not any(r.get("stage") == "merge-poll-failed-jobs-rerun" for r in journal.records)
+
+
+def _view_at(*, head: str) -> str:
+    return json.dumps({**json.loads(_view()), "headRefOid": head})
+
+
+def _wait_with_journal_file(*, tmp_path: Path, rows: list[dict[str, object]], head: str):
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    for row in rows:
+        journal.append(record=row)
+    queue = [
+        _ok(stdout=_view_at(head=head)),
+        _ok(stdout=_required()),
+        CommandResult(exit_code=1, stdout="", stderr="forge unavailable"),
+    ]
+    runner = _Runner(queue=queue)
+    outcome = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=journal,
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=2, interval_seconds=0.5),
+    )
+    return outcome, runner
+
+
+def _rerun_row(*, outcome: str, head: str, item: str = "x-1") -> dict[str, object]:
+    return {
+        "work_item_id": item,
+        "stage": "merge-poll-failed-jobs-rerun",
+        "workflow_run": "42",
+        "pr_head": head,
+        "outcome": outcome,
+    }
+
+
+def test_await_merge_declines_a_second_rerun_for_a_head_the_journal_already_reran(
+    tmp_path: Path,
+) -> None:
+    for prior in ("requested", "rejected"):
+        outcome, runner = _wait_with_journal_file(
+            tmp_path=tmp_path / prior,
+            rows=[_rerun_row(outcome=prior, head="abc")],
+            head="abc",
+        )
+
+        assert isinstance(outcome, DispatchOutcome)
+        assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
+        assert not any(call[:2] == ["gh", "run"] for call in runner.calls)
+
+
+def test_await_merge_ignores_journal_rows_of_another_head_or_item(tmp_path: Path) -> None:
+    outcome, runner = _wait_with_journal_file(
+        tmp_path=tmp_path,
+        rows=[
+            _rerun_row(outcome="requested", head="old"),
+            _rerun_row(outcome="requested", head="abc", item="other-9"),
+            _rerun_row(outcome="required-check-failed", head="abc"),
+        ],
+        head="abc",
+    )
+
+    assert isinstance(outcome, DispatchOutcome)
+    assert ["gh", "run", "view", "42", "--json", "attempt,jobs"] in runner.calls

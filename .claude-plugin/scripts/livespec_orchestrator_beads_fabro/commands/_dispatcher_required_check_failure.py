@@ -15,6 +15,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_failed_jobs_rerun im
     FailedRequiredChecks,
     attempt_failed_jobs_rerun,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_tail import journal_tail_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_view import GH_TIMEOUT_SECONDS
 from livespec_orchestrator_beads_fabro.commands._dispatcher_required_checks import (
     required_check_failure_outcome,
@@ -91,13 +93,30 @@ def required_check_failure(
             runner=context.runner,
             journal=context.journal,
         )
-        if may_keep_polling
+        if may_keep_polling and not _head_already_rerun(context=context, pr_head=view.head)
         else None
     )
     if rerun is not None and rerun.requested:
         rerun_state.attempts_before_rerun[rerun.workflow_run] = rerun.prior_attempt
         return None
     return _blocked_outcome(context=context, view=view, failed=failed)
+
+
+def _head_already_rerun(*, context: RequiredCheckFailureContext, pr_head: str | None) -> bool:
+    """Whether the journal records a rerun request, accepted or rejected, for this head.
+
+    The bound is per pull request head and counted from the journal, so it
+    survives a Dispatcher restart and a later merge wait for the same head.
+    """
+    if not isinstance(context.journal, JournalFile):
+        return False
+    return any(
+        record.get("work_item_id") == context.plan.work_item_id
+        and record.get("stage") == "merge-poll-failed-jobs-rerun"
+        and record.get("outcome") in {"requested", "rejected"}
+        and record.get("pr_head") == pr_head
+        for record in journal_tail_records(journal_path=context.journal.path)
+    )
 
 
 def _outcome_after_rerun(
