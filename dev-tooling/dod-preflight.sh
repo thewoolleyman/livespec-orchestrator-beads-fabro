@@ -88,12 +88,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     judgement_subject,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
-from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
-    governing_heading_findings,
-)
-from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
-    host_governing_heading_reader,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     judgement_prompt,
     judgement_rubric,
@@ -101,16 +95,45 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
-# The registered build may predate the component's reuse module; without it
-# every run takes the judgement, which is what this script did before.
+# The reading is the package's own seam: a recorded verdict the component's reuse
+# rule still allows decides and starts no judge candidate, as at the gate. The
+# registered build may predate the seam, and this script (shipped by v0.244.0)
+# must hold on any build it can meet, so such a build takes the judgement every
+# run, which is what this script did before the seam existed.
 try:
-    from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
-        reusable_governing_heading_verdict,
+    from livespec_orchestrator_beads_fabro.commands._dod_preflight_governing_reading import (
+        preflight_governing_heading_reading,
     )
 except ImportError:
+    from types import SimpleNamespace
 
-    def reusable_governing_heading_verdict(*, item, repo, comments):
-        return None
+    from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+        governing_heading_findings,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
+        host_governing_heading_reader,
+    )
+
+    def preflight_governing_heading_reading(*, item, repo, comments, runner):
+        del comments
+        governing = host_governing_heading_reader(runner=runner)(item=item, repo=repo)
+        report = (
+            ["governing-heading-kind: unobserved"]
+            if governing is None
+            else [f"governing-heading-kind: {governing.kind}"]
+            + [f"governing-heading: {heading}" for heading in governing.stated_by]
+        )
+        findings = governing_heading_findings(
+            item=item, section=definition_of_done(description=item.description), verdict=governing
+        )
+        holds = (
+            governing is not None
+            and bool(findings)
+            and len(findings) == len(set(governing.stated_by))
+        )
+        return SimpleNamespace(
+            verdict=governing, report=report, findings=findings, holds=holds
+        )
 
 
 install_root, repo_root, item_id, override, side = sys.argv[1:6]
@@ -140,37 +163,25 @@ comments = tuple(
 rubric = judgement_rubric(payload_root=Path(install_root))
 if rubric is None:
     sys.exit(f"dod-preflight: the registered build ships no readable rubric under {install_root}")
-# A recorded verdict the component's reuse rule still allows (a current subject
-# digest and clauses, or a standing `release-spec-tier` attestation) decides, as
-# at the gate, and no model is spent. It reads the candidate edit above, so a
-# changed governing-heading subject finds no record and is taken afresh.
-governing = reusable_governing_heading_verdict(item=item, repo=repo, comments=comments)
-if governing is None:
-    # `None` means the judgement could not be taken, and it fails open exactly as
-    # it does at the gate: no finding is raised on an outage no edit could clear.
-    governing = host_governing_heading_reader(runner=ShellCommandRunner())(item=item, repo=repo)
-report = (
-    ["governing-heading-kind: unobserved"]
-    if governing is None
-    else [f"governing-heading-kind: {governing.kind}"]
-    + [f"governing-heading: {heading}" for heading in governing.stated_by]
+# `None` as the verdict means the judgement could not be taken, and it fails open
+# exactly as it does at the gate: no finding is raised on an outage no edit could
+# clear. The reading sees the candidate edit above, so a changed governing-heading
+# subject finds no record and is taken afresh.
+reading = preflight_governing_heading_reading(
+    item=item, repo=repo, comments=comments, runner=ShellCommandRunner()
 )
-Path(f"{side}.governing").write_text("\n".join(report) + "\n", encoding="utf-8")
-findings = governing_heading_findings(
-    item=item, section=definition_of_done(description=item.description), verdict=governing
-)
+governing = reading.verdict
+Path(f"{side}.governing").write_text("\n".join(reading.report) + "\n", encoding="utf-8")
 # The omission HOLDS only when the reference line names none of the headings the
-# verdict returns, which is exactly when every one of them is omitted. Otherwise
-# each finding is advisory: printed with its remedy, holding nothing. Derived
-# from `governing_heading_findings` rather than `governing_heading_holds`, so
-# the script runs against a registered build that predates the latter.
-holds = governing is not None and bool(findings) and len(findings) == len(set(governing.stated_by))
+# verdict returns. Otherwise each finding is advisory: printed with its remedy,
+# holding nothing.
 Path(f"{side}.findings").write_text(
-    "".join(f"finding: {finding}\n" for finding in findings) if holds else "", encoding="utf-8"
+    "".join(f"finding: {finding}\n" for finding in reading.findings) if reading.holds else "",
+    encoding="utf-8",
 )
-if not holds:
+if not reading.holds:
     with Path(f"{side}.governing").open("a", encoding="utf-8") as advisory:
-        advisory.writelines(f"advisory: {finding}\n" for finding in findings)
+        advisory.writelines(f"advisory: {finding}\n" for finding in reading.findings)
 sys.stdout.write(
     judgement_prompt(
         gate_prompt=rubric,

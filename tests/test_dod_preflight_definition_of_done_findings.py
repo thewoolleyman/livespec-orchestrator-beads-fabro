@@ -26,7 +26,7 @@ def test_the_preflight_checks_the_dispatchers_definition_of_done_findings_before
     assert "definition_of_done_findings" in text
     assert "section_findings = definition_of_done_findings(item=item, cwd=repo)" in text
     assert text.index("section_findings = definition_of_done_findings") < text.index(
-        "governing = host_governing_heading_reader"
+        "reading = preflight_governing_heading_reading("
     )
 
 
