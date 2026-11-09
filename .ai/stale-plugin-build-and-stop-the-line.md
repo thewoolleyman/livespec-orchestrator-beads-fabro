@@ -57,8 +57,13 @@ file such a failure with the U+27E6 / U+27E7 substitution, never verbatim.
 BROKEN — a bad model/adapter config, a stale-but-fixable plugin build a session
 dispatches through, a mint/credential outage, or a gate wedged by a defect —
 HALT, fix the root cause or notify its owner and WAIT for the fix, and resume
-only on the NORMAL path once the fix rolls out through the ordinary channel
-(release → `ensure-plugins` → reload → normal dispatch). Never pin a build,
+only on the NORMAL path once the fix rolls out through the ordinary channel.
+For this plugin that channel is: release, then canary samples, then the roll
+step `gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z` (which
+alone advances `release`; see `git-pr-and-release-mechanics.md`), then adopt
+(`ensure-plugins`, or `just adopt-orchestrator-build` once
+livespec-dev-tooling-7upzav ships), then reload, and then normal dispatch.
+Never pin a build,
 re-route to another factory, or otherwise route around a breakage to keep your
 own work moving: a broken-window workaround normalizes the outage, hides it from
 a real fix, and validates only your private path, not the one every other

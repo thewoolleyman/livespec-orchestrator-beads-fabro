@@ -118,12 +118,33 @@ label. Discovered 2026-09-30 (`bd-ib-74sqh7` holds that instance's wiring).
 Measured 2026-08-27 across all 12 consumers, and re-checked here on
 2026-10-18: each `.claude/settings.json` pins
 `{"source":"github","repo":"thewoolleyman/livespec-orchestrator-beads-fabro","ref":"release"}`,
-a moving branch rather than a tag or SHA. Propagation is automatic: a merge to
-master leads release-please to publish a release; `release: published` fires
-`.github/workflows/fast-forward-release-branch.yml`, which fast-forwards
-`refs/heads/release` to the released commit (a plain push, so it fails loudly
-rather than rewriting); consumers resolve the new commit when their
-project-scope plugin install refreshes. To verify a fix reached a consumer,
-confirm `release` advanced, then content-grep that repo's installed plugin
-cache; do not hunt for a pin file or open bump PRs. `pin-freshness.yml` and
+a moving branch rather than a tag or SHA. This host's single
+`~/.claude/plugins/known_marketplaces.json` entry reads `ref: release` too, so a
+clone that commits a tag ref resolves `release` here all the same.
+
+Propagation is NOT automatic. A merge to master still leads release-please to
+publish a release, but `release` advances only at the ROLL STEP, after the
+release's canary samples pass:
+
+```bash
+gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z
+```
+
+That dispatch fast-forwards `refs/heads/release` to the tag's commit. It is a
+plain push, so a tag that does not descend from the current `release` fails
+the run rather than rewriting the branch. A `release: published` event still
+fires `.github/workflows/fast-forward-release-branch.yml`, but its job is
+skipped.
+
+The reason is that every clone's SessionStart `just ensure-plugins` installs
+whatever `release` names, uncanaried. The auto-advance this replaced moved
+livespec-dev-tooling's registration at 21:17Z on 2026-11-08, and this
+repository's at 01:28:45Z on 2026-11-09 (v0.307.0, seven minutes after it was
+published). It is conformance to livespec-dev-tooling spec v155 (option D), and
+bd-ib-sghxlk holds the change.
+
+Consumers resolve the new commit when their project-scope plugin install
+refreshes. To verify a fix reached a consumer, confirm `release` advanced at
+the roll step, then content-grep that repo's installed plugin cache; do not
+hunt for a pin file or open bump PRs. `pin-freshness.yml` and
 `bump-pin-from-dispatch.yml` serve sources pinned by tag, not this plugin.
