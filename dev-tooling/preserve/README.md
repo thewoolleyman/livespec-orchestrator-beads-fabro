@@ -50,6 +50,11 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
    `sudo find` and `sudo cat` over ssh (fleet_host_guard refuses `tar`).
    - The tree is copied with ONE `find -printf '%s %P'` and ONE bulk `cat`, then split locally by size.
    - A per-file ssh round trip starved at 16 runs in parallel.
+   - The container-worker route (rule 11) is the exception to the ONE bulk `cat`. It reads INSIDE the sandbox
+     container through `kubectl exec`, never on the host, and runs only `test -d`, `git config --get`, `find`,
+     `cat` and `dd` (byte ranges of one file) there. It bounds each exec to `PRESERVE_EXEC_CHUNK_BYTES`, because
+     one exec stream carrying a whole tree is reset by the API server. Nothing on any host is written by either
+     route.
 2. **Copy the run branch, never HEAD.** The script uses the tip of `refs/heads/fabro/run/<RUN>` when it
    exists. A late node (refresh_repair) can leave HEAD detached on master, and preserving HEAD then drops
    the run's work (rhivsm, 2026-11-05).
