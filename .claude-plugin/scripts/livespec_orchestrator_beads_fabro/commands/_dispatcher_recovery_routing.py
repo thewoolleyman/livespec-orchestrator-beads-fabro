@@ -51,7 +51,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
-    MEASUREMENT_PRESERVED_WORK,
     unobservable_measurements,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_non_fallback import (
@@ -369,7 +368,7 @@ def _fallback_route(
             journal=journal,
             hold=RecoveryHold(
                 measurements=(
-                    RecoveryMeasurement(name=MEASUREMENT_PRESERVED_WORK, detail=preserved.detail),
+                    RecoveryMeasurement(name=preserved.measurement, detail=preserved.detail),
                 )
             ),
         )
