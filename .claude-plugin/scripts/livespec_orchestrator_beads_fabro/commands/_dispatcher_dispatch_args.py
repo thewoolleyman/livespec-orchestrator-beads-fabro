@@ -25,9 +25,24 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
 )
 
 __all__: list[str] = [
+    "add_dispatch_arguments",
     "add_dispatch_common",
+    "add_loop_arguments",
     "add_probe_arguments",
 ]
+
+
+def add_dispatch_arguments(*, parser: argparse.ArgumentParser) -> None:
+    add_dispatch_common(parser=parser)
+    _ = parser.add_argument("--item", dest="item", required=True)
+
+
+def add_loop_arguments(*, parser: argparse.ArgumentParser) -> None:
+    add_dispatch_common(parser=parser)
+    _ = parser.add_argument("--budget", dest="budget", type=int, required=True)
+    _ = parser.add_argument("--parallel", dest="parallel", type=int, default=1)
+    _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
+    _ = parser.add_argument("--item", dest="items", action="append", default=None)
 
 
 def add_probe_arguments(*, parser: argparse.ArgumentParser) -> None:
