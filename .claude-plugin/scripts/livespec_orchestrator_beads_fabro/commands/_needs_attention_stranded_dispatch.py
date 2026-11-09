@@ -9,6 +9,9 @@ from typing import Any, Protocol, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff import (
+    HANDED_OFF_STATUS,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
@@ -160,14 +163,18 @@ def _record_evidence(
     histories: _DispatchHistories,
     evidence: _DispatchEvidence,
 ) -> None:
-    if evidence.status in {"failed", "green"}:
+    if evidence.status in {"failed", "green", HANDED_OFF_STATUS}:
         _record_outcome_evidence(histories=histories, evidence=evidence)
     else:
         _record_opening_evidence(histories=histories, evidence=evidence)
 
 
 def _record_outcome_evidence(*, histories: _DispatchHistories, evidence: _DispatchEvidence) -> None:
-    if evidence.status == "green":
+    # A handed-off merge wait is an `active` item with no live lock BY DESIGN: its
+    # pull request is armed and the reconciliation pass completes it, so it is not
+    # the stranded shape this surface exists to find and a "release it" handoff
+    # would send a person to undo the handoff.
+    if evidence.status in {"green", HANDED_OFF_STATUS}:
         histories.latest[evidence.work_item_id] = None
         return
     histories.outcome_attempts[evidence.work_item_id] = (
@@ -209,7 +216,7 @@ def _terminal_outcome_payload(*, payload: dict[str, Any]) -> _DispatchEvidence |
     stage = payload.get("stage")
     pr_number = payload.get("pr_number")
     merge_sha = payload.get("merge_sha")
-    if status not in {"failed", "green"}:
+    if status not in {"failed", "green", HANDED_OFF_STATUS}:
         return None
     if not isinstance(work_item_id, str) or not work_item_id:
         return None

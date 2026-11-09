@@ -459,6 +459,7 @@ supervisor_entry_files = [
     "plan/fabro-currency/research/004-fake-acp-agent.py",
     # fleet-launch/: provisional operator scripts run directly by a seat (see fleet-launch/README.md).
     "fleet-launch/ready-set-check.py",
+    "fleet-launch/ledger-item.py",
     "fleet-launch/host-capture-payload.py",
     "fleet-launch/_capture_evidence.py",
     # The Enemy Unit Test copy of that fake agent: it owns ACP JSON-RPC stdout
@@ -566,6 +567,12 @@ destructive_cli_allowlist = [
 #   work starting, in a process whose source tree is the one being removed,
 #   so no in-process `main()` can stand in. It scrubs the child env exactly
 #   as an allowlisted spawn must.
+# - test_commit_settle_ends_git_operation_yzrguu.py runs the MATERIALIZED commit
+#   runner and the commit-settle node scripts against real merges and rebases in a
+#   throwaway repository. The runner is stdlib-only source written into a sandbox
+#   that has no copy of this package, and the thing under test is the git state it
+#   leaves, so no in-process `main()` can stand in. It scrubs every `GIT_`,
+#   `COVERAGE` and `COV_CORE` variable from the child env.
 # - test_dispatcher_publication_head.py runs the MATERIALIZED publication-head
 #   program the Dispatcher lands in the sandbox. That program is deliberately
 #   stdlib-only because a governed clone has no copy of this package, and the
@@ -669,6 +676,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_implement_hook_refusal_cause_scenario285.py",
     "tests/integration/test_sandbox_commit_runner_scenario179.py",
     "tests/integration/test_needs_human_node_timeout_cut_scenario192.py",
+    "tests/integration/test_commit_settle_ends_git_operation_yzrguu.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

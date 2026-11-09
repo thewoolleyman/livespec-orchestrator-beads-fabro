@@ -161,6 +161,14 @@ def test_an_unset_endpoint_is_visibly_local_only() -> None:
     assert calls == ["http://127.0.0.1:1/v1/traces"]
 
 
+def test_wait_for_delivery_is_a_noop_without_a_worker() -> None:
+    telemetry = SessionTelemetry(config=config_from_environ(environ={}))
+
+    telemetry.wait_for_delivery()
+
+    assert telemetry.exporting is False
+
+
 @pytest.mark.parametrize(
     "endpoint",
     ["https://api.honeycomb.io", "https://api.eu1.honeycomb.io/v1/traces", "not a url", "ftp://h"],

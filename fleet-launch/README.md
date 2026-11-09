@@ -32,7 +32,9 @@ for the Dispatcher's own admission conditions.
 | --- | --- |
 | `config.sh` | The one place a host-specific value is set: factory server URLs, the fabro client path, the fleet-cap and hold files, the queue, lock and in-flight directories, the plugin registry and cache, the wrappers and the timings. Every value can be overridden from the environment. |
 | `board-snapshot.sh` | The shared factory-board reader both launchers source. Every launcher on the host reads a factory's board through one snapshot file refreshed at most once per `FLEET_LAUNCH_BOARD_TTL_S`, because one run listing costs the petri server 25-40 s; an unreadable refresh is an unknown count, never zero, and the binding count under the launch mutex reads the factory directly. |
-| `dispatch-dual.sh` | Launches one work-item. Gates, in order: the Dispatcher's ready set, the shared fleet cap, the launch-time Definition-of-Done preflight, the hold file, gmktec's own ceiling and idle CPU, a per-factory FIFO ticket and mutex, a binding re-count including this launch's in-flight marker, and a usable-credential probe. |
+| `dispatch-dual.sh` | Launches one work-item. Gates, in order: the Dispatcher's ready set, the shared fleet cap, the launch-time Definition-of-Done preflight, the hold file, gmktec's own ceiling and idle CPU, a per-factory FIFO ticket and mutex, a binding re-count including this launch's in-flight marker, and a usable-credential probe. After it invokes the drive it re-reads every applicable hold on each poll until the item reads `active`, the run lists or the drive exits; a hold set while the item still reads `ready` stops the drive with TERM, keeps the FIFO ticket at its number and logs the hold, and a stop that finds the item `active` makes a `stopped-after-admission` non-run exit with one ledger comment (Scenario 330). |
+| `ledger-item.py` | Reads a work-item's ledger status or appends one ledger comment to it through the installed plugin build's own store seam; the launcher uses it to tell `ready` from `active` after a stop. |
+| `launcher-versions.sh` | Read-only readback: lists every running `dispatch-dual*.sh` and `resume-capped*.sh` launcher with the version (first 12 hex digits of the sha256) of the script content it is executing, read from bash's open file descriptor, and the version of the script file on disk, and marks each launcher whose two differ `STALE`. |
 | `ready-set-check.py` | Asks the installed plugin build's own `ready_items()` whether an item is dispatchable, so the answer cannot diverge from the Dispatcher's selection. |
 | `release-hold-on-caam-rotation.sh` | Keeps the hold file in place until caam's active Claude profile changes, then removes it. |
 | `resolve-default-factory.sh` | Prints a repository's committed `dispatcher.default_factory` from its origin default branch. |
@@ -53,6 +55,17 @@ For an independent tenant, add `REPO_OVERRIDE=/data/projects/<repo>` and
 `WRAPPER=<path>/fleet-launch/wrappers/with-<repo>-env-keep-path.sh`. For a
 registry-resolved capture dispatch, add `CAPTURE_NULL=1 CAPTURE_EXPECT=petri`. To keep
 a queue position across a restart, pass the old ticket's number as `TICKET_NS`.
+
+A running bash launcher executes the script content it started with, so a hold check added
+to the script later never reached it (bd-ib-5ycmsm). Both launchers therefore compare their
+script on disk with the content they started on at the top of every wait loop and again
+after they bind at the launch point, and re-execute themselves when it differs, keeping
+their pid, FIFO ticket and give-up deadline. Replace a launcher script atomically (write
+beside it, then `mv`); an in-place edit corrupts a running bash. A launcher started before
+this change cannot re-execute itself, so after any change to a hold or guard, run
+`fleet-launch/launcher-versions.sh` and restart each launcher it marks `STALE` (pass its old
+ticket number as `TICKET_NS` to keep its place) before relying on the change. `config.sh` and
+`board-snapshot.sh` are read when a launcher starts and are not part of the version.
 
 The state directory (`FLEET_LAUNCH_STATE_DIR`) holds data only: logs, verdicts, the
 shared `fleet-cap` file and the `hold-gmktec` file. It never holds a script.

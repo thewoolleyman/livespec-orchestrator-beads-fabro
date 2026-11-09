@@ -25,6 +25,11 @@ decline it even when that object is reachable from the branch.  Failure names
 the recorded head and prevents the engine from entering any workflow stage on a
 default-branch worktree.
 
+Both fetches land in a private per-staging ref that is read and then deleted,
+never in `FETCH_HEAD`: that file is shared by every process fetching in the
+checkout, so a concurrent fetch would overwrite the answer between the fetch and
+the read.
+
 An origin head that cannot be READ fails the staging closed. Falling back to
 the checkout's HEAD there would reinstate exactly the defect above, and would
 do it on the one path where nothing in the record says the base went unproven.
@@ -148,7 +153,7 @@ class SourceStagingRunner:
         branch = f"livespec/source/{suffix}"
         root = self.worktree_root if self.worktree_root is not None else Path.home() / ".worktrees"
         checkout = root / self.plan.repo.name / f"fabro-source-{suffix}"
-        base = self._staging_base(head=head)
+        base = self._staging_base(head=head, suffix=suffix)
         created = (
             base.failure
             if base.failure is not None
@@ -191,15 +196,14 @@ class SourceStagingRunner:
         finally:
             self._cleanup(checkout=checkout, branch=branch, head=base.commit)
 
-    def _staging_base(self, *, head: str) -> _StagingBase:
+    def _staging_base(self, *, head: str, suffix: str) -> _StagingBase:
         """Freshly fetch the default branch and decide which commit to stage at."""
         if self.resume_head and not self.resume_fetch_ref:
-            return self._resumed_staging_base(expected=self.resume_head)
+            return self._resumed_staging_base(expected=self.resume_head, suffix=suffix)
         default_branch = self.plan.integration.contract.default_branch
-        fetched = self._git(argv=["fetch", "--quiet", "origin", default_branch])
-        if fetched.exit_code != 0:
-            return _StagingBase(commit=head, origin_head="", failure=fetched)
-        observed = self._git(argv=["rev-parse", "FETCH_HEAD"])
+        observed = self._fetched_tip(branch=default_branch, suffix=suffix)
+        if observed.exit_code != 0:
+            return _StagingBase(commit=head, origin_head="", failure=observed)
         origin_head = observed.stdout.strip()
         if origin_head == "":
             return _StagingBase(
@@ -209,8 +213,8 @@ class SourceStagingRunner:
                     exit_code=_UNREADABLE_ORIGIN_HEAD_EXIT,
                     stdout="",
                     stderr=(
-                        f"fetched origin/{default_branch} but `git rev-parse FETCH_HEAD` named "
-                        "no commit, so the staging base cannot be proven current: "
+                        f"fetched origin/{default_branch} but `git rev-parse` of the fetched "
+                        "ref named no commit, so the staging base cannot be proven current: "
                         f"{observed.stderr.strip()}\n"
                     ),
                 ),
@@ -219,16 +223,26 @@ class SourceStagingRunner:
             return _StagingBase(commit=origin_head, origin_head=origin_head, failure=None)
         return _StagingBase(commit=head, origin_head=origin_head, failure=None)
 
-    def _resumed_staging_base(self, *, expected: str) -> _StagingBase:
-        """Fetch and prove the recorded pull-request head before staging it."""
-        fetched = self._git(argv=["fetch", "--quiet", "origin", self.plan.branch])
+    def _fetched_tip(self, *, branch: str, suffix: str) -> CommandResult:
+        """Fetch one origin branch into a private ref and read the commit it names.
+
+        `FETCH_HEAD` is a single file per checkout, so a read of it is an answer
+        about whichever process fetched last, not about THIS fetch. The private
+        ref is unique to this staging, and it is deleted as soon as it has been
+        read: the fetched objects stay for the `git worktree add` that follows.
+        A failed fetch is returned as it came back.
+        """
+        ref = f"refs/livespec/staging/{suffix}"
+        fetched = self._git(argv=["fetch", "--quiet", "origin", f"+refs/heads/{branch}:{ref}"])
         if fetched.exit_code != 0:
-            return _StagingBase(
-                commit=expected,
-                origin_head="",
-                failure=self._resume_head_failure(expected=expected, detail=fetched.stderr),
-            )
-        observed = self._git(argv=["rev-parse", "FETCH_HEAD"])
+            return fetched
+        observed = self._git(argv=["rev-parse", "--verify", f"{ref}^{{commit}}"])
+        _ = self._git(argv=["update-ref", "-d", ref])
+        return observed
+
+    def _resumed_staging_base(self, *, expected: str, suffix: str) -> _StagingBase:
+        """Fetch and prove the recorded pull-request head before staging it."""
+        observed = self._fetched_tip(branch=self.plan.branch, suffix=suffix)
         actual = observed.stdout.strip()
         if observed.exit_code != 0 or actual != expected:
             detail = observed.stderr

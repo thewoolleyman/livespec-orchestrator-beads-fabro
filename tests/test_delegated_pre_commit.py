@@ -116,6 +116,106 @@ def test_pre_commit_delegates_before_locally_falling_back(*, tmp_path: Path) -> 
     assert gated_calls == ["just check-pre-commit-doc-only"]
 
 
+def _local_fallback_repository(*, tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
+    """Create a staged Python change and stand-ins for the local fallback."""
+    repo = tmp_path / "repository"
+    repo.mkdir(parents=True)
+    _git(repo=repo, arguments=["init", "--quiet"])
+    _git(repo=repo, arguments=["config", "user.name", "Test User"])
+    _git(repo=repo, arguments=["config", "user.email", "test@example.invalid"])
+    widget = repo / ".claude-plugin" / "scripts" / "widget.py"
+    widget.parent.mkdir(parents=True)
+    _ = widget.write_text("VALUE = 0\n", encoding="utf-8")
+    _git(repo=repo, arguments=["add", "."])
+    _git(repo=repo, arguments=["commit", "--quiet", "-m", "baseline"])
+    _ = widget.write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo=repo, arguments=["add", str(widget.relative_to(repo))])
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in {
+        "uv": """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FAKE_LOG"
+case "$*" in
+  *"pre_commit_delegate run"*) exit 75 ;;
+esac
+""",
+        "just": """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FAKE_LOG"
+if [[ -n "${FAKE_INDEX_MUTATION:-}" ]]; then
+    git add "$FAKE_INDEX_MUTATION"
+fi
+exit "${FAKE_AGGREGATE_STATUS:-0}"
+""",
+    }.items():
+        tool = bin_dir / name
+        tool.write_text(body, encoding="utf-8")
+        tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+    log = tmp_path / "calls.log"
+    return (
+        repo,
+        {
+            **os.environ,
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_LOG": str(log),
+        },
+        log,
+    )
+
+
+def test_local_fallback_records_evidence_only_for_a_passing_same_tree_aggregate(
+    *, tmp_path: Path
+) -> None:
+    """The local aggregate mints reusable evidence only when its tree is exact."""
+    clean_repo, clean_env, clean_log = _local_fallback_repository(tmp_path=tmp_path / "clean")
+    clean_env["SKIP_TARGETS"] = "check-no-workflow-edits"
+    clean = subprocess.run(
+        ["bash", str(_PRE_COMMIT_SCRIPT)],
+        cwd=clean_repo,
+        env=clean_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert clean.returncode == 0, clean.stderr
+    assert any(
+        "green_token write-pre-commit pre-commit-aggregate:" in call
+        for call in clean_log.read_text(encoding="utf-8").splitlines()
+    )
+    assert any(
+        call.startswith("check-skipping check-codex-skill-picker")
+        and call.endswith("check-no-workflow-edits")
+        for call in clean_log.read_text(encoding="utf-8").splitlines()
+    )
+
+    for name in ("failed", "dirty", "untracked", "index-changed"):
+        repo, env, log = _local_fallback_repository(tmp_path=tmp_path / name)
+        if name == "failed":
+            env["FAKE_AGGREGATE_STATUS"] = "1"
+        elif name == "dirty":
+            _ = (repo / "unstaged.txt").write_text("dirty\n", encoding="utf-8")
+        elif name == "untracked":
+            _ = (repo / "untracked.txt").write_text("new\n", encoding="utf-8")
+        else:
+            _ = (repo / "later.py").write_text("LATER = 1\n", encoding="utf-8")
+            env["FAKE_INDEX_MUTATION"] = "later.py"
+        completed = subprocess.run(
+            ["bash", str(_PRE_COMMIT_SCRIPT)],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert completed.returncode == (1 if name == "failed" else 0), completed.stderr
+        assert not any(
+            "green_token write-pre-commit" in call
+            for call in log.read_text(encoding="utf-8").splitlines()
+        )
+
+
 def _git(*, repo: Path, arguments: list[str]) -> str:
     """Run git in a throwaway repository and return its standard output."""
     completed = subprocess.run(
