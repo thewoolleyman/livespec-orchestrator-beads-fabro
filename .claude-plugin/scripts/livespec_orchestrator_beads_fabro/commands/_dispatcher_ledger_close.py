@@ -395,6 +395,11 @@ _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
     # takes.
     "reclassified_turns",
     "remedy",
+    # What the sandbox provider reported about the container, dropped on the
+    # same ATTRIBUTION terms: an explicit null would read as "this run's
+    # container termination was read and showed nothing", a positive finding
+    # only a failed run's observation takes.
+    "sandbox_termination",
     "step",
     # The acceptance verdict, which only an outcome that reached the post-merge
     # acceptance valve carries. Dropping it when unset keeps every pre-merge and

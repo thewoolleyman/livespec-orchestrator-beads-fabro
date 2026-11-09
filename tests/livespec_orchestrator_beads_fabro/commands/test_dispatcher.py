@@ -2723,6 +2723,7 @@ def test_engine_fabro_run_failure_surfaces_inspect_failure_detail(tmp_path: Path
             ),
             _ok(stdout=failed_inspect),
             _ok(stdout="[]"),
+            CommandResult(exit_code=1, stdout="", stderr="no cluster reachable"),
         ]
     )
 
@@ -2738,6 +2739,7 @@ def test_engine_fabro_run_failure_surfaces_inspect_failure_detail(tmp_path: Path
         "fabro-inspect",
         "fabro-reattach",
         "fabro-terminal-events",
+        "fabro-sandbox-termination",
     ]
 
 

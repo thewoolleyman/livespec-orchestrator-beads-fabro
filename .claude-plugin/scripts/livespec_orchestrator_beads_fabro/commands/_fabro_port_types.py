@@ -11,6 +11,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroFailureDetail,
     FabroRunSummary,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_resource_exhaustion import (
+    SandboxTermination,
+)
 
 __all__: list[str] = [
     "FabroCommand",
@@ -117,6 +120,7 @@ class FabroInspectResult:
     status_kind: str | None
     failure: FabroFailureDetail | None
     events_payload: object | None = None
+    sandbox_termination: SandboxTermination | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

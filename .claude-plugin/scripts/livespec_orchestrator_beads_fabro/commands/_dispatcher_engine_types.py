@@ -22,6 +22,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_class
     ProviderLimitRelease,
     ReclassifiedTurn,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_resource_exhaustion import (
+    SandboxTermination,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
@@ -222,6 +225,11 @@ class DispatchOutcome:
     # acceptance pass needs the merged head, and a record of what the ending
     # proved cannot be recovered from the pull request alone.
     merged_reconcile: MergedReconcile | None = None
+    # What the sandbox provider reported about how the run's container ended
+    # (Scenario 335): an OOM kill naming the run id and the memory limit, or the
+    # statement that the termination was unobservable. None on every outcome that
+    # read no report, which is every outcome of a run that did not fail.
+    sandbox_termination: SandboxTermination | None = None
 
 
 SleepFn = Callable[[float], None]
