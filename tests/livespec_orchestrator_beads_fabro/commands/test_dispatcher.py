@@ -284,6 +284,7 @@ def test_workflow_payload_directory_encodes_dotted_work_item_ids_injectively() -
     }
     assert set(_dispatcher_run_status.__all__) == {
         "PrView",
+        "TerminalCheckFailure",
         "parse_pr_view",
     }
     # The sibling-clone surface moved OUT of the overlay into the cohesive leaf
