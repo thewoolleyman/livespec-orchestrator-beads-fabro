@@ -31,9 +31,17 @@ require_fast_bounded_poll() {
 require_line '    export FLEET_LAUNCH_POLL_S=0.01'
 require_line '    export FLEET_LAUNCH_MUTEX_POLL_S=0.01'
 require_line '    export FLEET_LAUNCH_LISTING_POLL_S=0.01'
-require_fast_bounded_poll wait_for_preflight
 require_fast_bounded_poll await_both
 require_fast_bounded_poll wait_for_line
+
+preflight_wait="$(function_body wait_for_preflight)"
+if ! grep -qF 'HARNESS_PREFLIGHT_HANG_GUARD_S=${HARNESS_PREFLIGHT_HANG_GUARD_S:-300}' "$harness" \
+    || ! grep -qF 'deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))' <<<"$preflight_wait" \
+    || ! grep -qF 'kill -0 "$pid"' <<<"$preflight_wait" \
+    || ! grep -qF 'tail -8 "$log"' <<<"$preflight_wait"; then
+    printf 'wait_for_preflight does not diagnose exited launchers with one shared hang guard\n' >&2
+    exit 1
+fi
 
 preflight_stub="$(sed -n '/dod-preflight.sh)/,/^[[:space:]]*;;/p' "$harness")"
 if ! grep -qF 'sleep "$HARNESS_POLL_S"' <<<"$preflight_stub" \

@@ -2322,9 +2322,9 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     # push program, v138's carry-forward decision, v156's per-assertion
     # proof grade, the generated-record-file resolution of bd-ib-ze7xxj and
     # bd-ib-davaxq's record-file merger), the repository-hook limit observer
-    # (bd-ib-xi63mq), the detached commit runner (bd-ib-atyefi), and the
-    # review-turn guard (bd-ib-azxvoo).
-    assert rendered.count("[[run.prepare.steps]]") == 18
+    # (bd-ib-xi63mq), the Red and Green command programs, the detached commit
+    # runner (bd-ib-atyefi), and the review-turn guard (bd-ib-azxvoo).
+    assert rendered.count("[[run.prepare.steps]]") == 20
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
@@ -2455,10 +2455,10 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
     # publication helpers the gate's block materializes beside it (v121, v138,
     # v156's per-assertion proof grade, bd-ib-ze7xxj's generated-record-file
     # resolution and bd-ib-davaxq's record-file merger), the repository-hook
-    # limit observer (bd-ib-xi63mq), and the detached commit runner
-    # (bd-ib-atyefi) and the review-turn guard (bd-ib-azxvoo) — no clone step
-    # among them.
-    assert rendered.count("[[run.prepare.steps]]") == 16
+    # limit observer (bd-ib-xi63mq), the Red and Green command programs, the
+    # detached commit runner (bd-ib-atyefi), and the review-turn guard
+    # (bd-ib-azxvoo) — no clone step among them.
+    assert rendered.count("[[run.prepare.steps]]") == 18
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 
@@ -3018,6 +3018,30 @@ def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) 
 
 
 def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -> None:
+    pending = [{"name": "check-coverage", "isRequired": True, "status": "IN_PROGRESS"}]
+    required_answer = {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "commits": {
+                        "nodes": [
+                            {
+                                "commit": {
+                                    "statusCheckRollup": {
+                                        "contexts": {
+                                            "nodes": [
+                                                {"name": "check-coverage", "isRequired": True},
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
     runner = _FakeRunner(
         queue=[
             _ok(),
@@ -3029,26 +3053,20 @@ def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -
                     checks=[{"name": "check-coverage", "isRequired": True, "status": "QUEUED"}],
                 )
             ),
-            _ok(
-                stdout=_pr_json(
-                    armed=True,
-                    merge_state="BLOCKED",
-                    checks=[
-                        {
-                            "name": "check-coverage",
-                            "isRequired": True,
-                            "status": "IN_PROGRESS",
-                        }
-                    ],
-                )
-            ),
+            _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED", checks=pending)),
             _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED")),
+            _ok(stdout=_pr_json(armed=True, merge_state="BLOCKED", checks=pending)),
+            _ok(stdout=json.dumps(required_answer)),
         ]
     )
-    outcome, _, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
-    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
-    assert outcome.detail.startswith("merge-poll-budget-exhausted:")
+    outcome, journal, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
+    assert (outcome.status, outcome.stage) == ("handed-off", "merge-poll")
+    assert outcome.detail.startswith("merge-wait-handed-off:")
+    assert outcome.merge_wait_handed_off is not None
+    assert outcome.merge_wait_handed_off.running_checks == ("check-coverage",)
     assert naps == [0.5]
+    handoffs = [r for r in journal.records if r["stage"] == "merge-wait-handed-off"]
+    assert [r["running_checks"] for r in handoffs] == [["check-coverage"]]
 
 
 def test_engine_poll_budget_exhaustion_keeps_pr_number(tmp_path: Path) -> None:

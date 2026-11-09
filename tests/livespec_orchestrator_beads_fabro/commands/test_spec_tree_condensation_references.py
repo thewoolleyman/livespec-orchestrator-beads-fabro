@@ -21,9 +21,13 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     asked_for_behaviour,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_stated_citation import (
+    judged_prompt_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     _TERM,
     ELIDED_BODY_MARKER,
+    PROMPT_CHARACTER_CEILING,
     _relevance_order,
     _sections_of,
     condensed_spec_tree,
@@ -199,6 +203,7 @@ def test_length_normalisation_prefers_the_short_distinctive_clause_over_a_tenfol
     ordered = _relevance_order(
         sections=[section for path in tree for section in _sections_of(path=path, text=tree[path])],
         statement=statement,
+        term_pattern=_TERM,
     )
 
     assert len(long_body) > len(short_body) * 10
@@ -355,9 +360,14 @@ def test_uq2ocd_overflow_keeps_the_whole_deep_refresh_repair_paragraph() -> None
             "and routes to refresh repair.\n"
         ),
     )
+    # The ceiling below was measured against the tree current when this shape was
+    # reported, so the tree is pinned to that immutable snapshot (v283) rather than
+    # to the live specification, whose every growth would silently move the edge.
     tree = {
         path.name: path.read_text()
-        for path in sorted(Path(__file__).parents[3].joinpath("SPECIFICATION").glob("*.md"))
+        for path in sorted(
+            Path(__file__).parents[3].joinpath("SPECIFICATION", "history", "v283").glob("*.md")
+        )
     }
     self_contained = _body(tree=tree, heading="## Self-contained plugin dispatch")
     refresh_start = self_contained.index("**Refresh repair.**")
@@ -365,5 +375,45 @@ def test_uq2ocd_overflow_keeps_the_whole_deep_refresh_repair_paragraph() -> None
     statement = asked_for_behaviour(item=item)
 
     condensed = condensed_spec_tree(spec_tree=tree, statement=statement, ceiling=168_422)
+
+    assert refresh_repair in "".join(condensed.values())
+
+
+def test_uq2ocd_shape_keeps_its_refresh_repair_paragraph_at_the_production_ceiling() -> None:
+    """The statement's own field labels carry no topic, so they do not outrank its subject.
+
+    At the ceiling production derives from the v328 tree, the five cited sections
+    overflow, and the labels a rendered statement carries ("Acceptance criteria",
+    "Definition of Done", "Title") used to rank unrelated paragraphs above the
+    cited Refresh repair paragraph.
+    """
+    item = replace(
+        _ITEM,
+        id="bd-ib-uq2ocd",
+        title="A refresh commit refused by a hook takes the Refresh repair route",
+        description=(
+            "## Definition of Done\n\n"
+            "References: ## Dispatcher admission, WIP cap, and post-merge acceptance, "
+            "## Self-contained plugin dispatch, ## Work-item state semantics, "
+            "## Dispatch-time baseline conformance gate\n\n"
+            "- A refresh commit refused by the commit hook restores the pre-refresh head "
+            "and routes to refresh repair.\n"
+        ),
+    )
+    tree = {
+        path.name: path.read_text()
+        for path in sorted(
+            Path(__file__).parents[3].joinpath("SPECIFICATION", "history", "v328").glob("*.md")
+        )
+    }
+    self_contained = _body(tree=tree, heading="## Self-contained plugin dispatch")
+    refresh_start = self_contained.index("**Refresh repair.**")
+    refresh_repair = self_contained[refresh_start:].split("\n\n", maxsplit=1)[0]
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement=asked_for_behaviour(item=item),
+        ceiling=judged_prompt_ceiling(spec_tree=tree, ceiling=PROMPT_CHARACTER_CEILING),
+    )
 
     assert refresh_repair in "".join(condensed.values())

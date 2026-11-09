@@ -7,12 +7,26 @@ commit hooks, and the append-only handoff are all observed at the git boundary.
 
 from __future__ import annotations
 
+import importlib
 import subprocess
 from pathlib import Path
+
+import pytest
 
 _ROOT = Path(__file__).parents[2]
 _RED = _ROOT / "dev-tooling" / "commit-red.sh"
 _GREEN = _ROOT / "dev-tooling" / "commit-green.sh"
+_COMMIT_PROGRAMS_MODULE = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_implement_commit_programs"
+)
+_COMMIT_PROGRAMS_PATH = (
+    _ROOT
+    / ".claude-plugin"
+    / "scripts"
+    / "livespec_orchestrator_beads_fabro"
+    / "commands"
+    / "_dispatcher_implement_commit_programs.py"
+)
 
 
 def _run(*, repo: Path, argv: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -59,6 +73,61 @@ def _handoff(*, repo: Path, text: str) -> Path:
     path = repo / _git(repo=repo, argv=["rev-parse", "--git-path", "livespec-implement-handoff.md"])
     _ = path.write_text(text, encoding="utf-8")
     return path
+
+
+def test_commit_command_scripts_materialize_and_run_the_plugin_root_programs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A target repository's dev-tooling files never choose command-node programs."""
+    assert _COMMIT_PROGRAMS_PATH.is_file()
+    programs = importlib.import_module(_COMMIT_PROGRAMS_MODULE)
+    plugins_root = tmp_path / "plugins"
+    prepare = programs.commit_program_prepare_steps_block()
+    environment = {
+        "HOME": str(tmp_path / "home"),
+        "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
+        "LIVESPEC_PREPARE_PAYLOAD": "",
+    }
+    for source, filename in (
+        (programs.commit_red_program_source(), programs.COMMIT_RED_PROGRAM_FILENAME),
+        (programs.commit_green_program_source(), programs.COMMIT_GREEN_PROGRAM_FILENAME),
+    ):
+        environment["LIVESPEC_PREPARE_PAYLOAD"] = source
+        completed = subprocess.run(
+            ["sh", "-c", prepare[filename]],
+            check=False,
+            capture_output=True,
+            env=environment,
+            text=True,
+        )
+        assert completed.returncode == 0, completed.stderr
+    assert (plugins_root / programs.COMMIT_RED_PROGRAM_FILENAME).is_file()
+    assert (plugins_root / programs.COMMIT_GREEN_PROGRAM_FILENAME).is_file()
+
+    repo = _initialize_repository(tmp_path=tmp_path)
+    scratch_tooling = repo / "dev-tooling"
+    scratch_tooling.mkdir()
+    for name in ("commit-red.sh", "commit-green.sh"):
+        _ = (scratch_tooling / name).write_text("exit 99\n", encoding="utf-8")
+    handoff = _handoff(repo=repo, text="## red\nRed test file: tests/test_feature.py\n")
+    test_file = repo / "tests" / "test_feature.py"
+    test_file.parent.mkdir()
+    _ = test_file.write_text("def test_feature() -> None:\n    assert False\n", encoding="utf-8")
+    _git(repo=repo, argv=["add", "tests/test_feature.py"])
+    _checkpoint(repo=repo, name="red")
+    monkeypatch.setenv("LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT", str(plugins_root))
+
+    red = _run(repo=repo, argv=["sh", "-c", programs.commit_red_command_script()], check=False)
+
+    assert red.returncode == 0, red.stderr
+    assert "Exit status: 0" in handoff.read_text(encoding="utf-8")
+    _ = test_file.write_text("def test_feature() -> None:\n    assert True\n", encoding="utf-8")
+    _checkpoint(repo=repo, name="green")
+
+    green = _run(repo=repo, argv=["sh", "-c", programs.commit_green_command_script()], check=False)
+
+    assert green.returncode == 0, green.stderr
+    assert "## commit_green" in handoff.read_text(encoding="utf-8")
 
 
 def test_commit_red_folds_checkpoints_stages_only_the_named_red_test_and_runs_hooks(

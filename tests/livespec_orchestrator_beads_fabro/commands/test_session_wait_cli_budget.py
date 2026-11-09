@@ -15,10 +15,11 @@ import json
 import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
@@ -33,32 +34,25 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
     default_wait_launcher,
     observe_wait_target,
 )
+from livespec_orchestrator_beads_fabro.commands._session_wait_types import PaneTarget
 
 _PEER_RECEIVE_BYTES = 65536
-# Far above any budget these tests request, so a peer that has not answered by
-# then has hung for the purposes of every assertion below.
+# Far above any budget these tests request: a hung peer is released by the
+# test ending, never by this guard.
 _NEVER_SECONDS = 3600.0
 
 
-_PEER_REPLY = (
-    json.dumps({"id": "livespec-session-wait", "result": {"agent": {"terminal_id": "t-peer"}}})
-    + "\n"
-).encode("utf-8")
-
-
-def _answer_after(
+def _hold_unanswered(
     *,
     connection: socket.socket,
     received: list[bytes],
     stop: threading.Event,
-    reply_after_seconds: float,
 ) -> None:
-    """Record one request, then reply only once the delay has passed."""
+    """Record one request, then leave it unanswered until the test ends."""
     with suppress(OSError):
         connection.settimeout(1.0)
         received.append(connection.recv(_PEER_RECEIVE_BYTES))
-        if not stop.wait(timeout=reply_after_seconds):
-            connection.sendall(_PEER_REPLY)
+        _ = stop.wait(timeout=_NEVER_SECONDS)
 
 
 def _serve(
@@ -67,7 +61,6 @@ def _serve(
     held: list[socket.socket],
     received: list[bytes],
     stop: threading.Event,
-    reply_after_seconds: float,
 ) -> None:
     while not stop.is_set():
         try:
@@ -76,28 +69,21 @@ def _serve(
             continue
         held.append(connection)
         threading.Thread(
-            target=_answer_after,
-            kwargs={
-                "connection": connection,
-                "received": received,
-                "stop": stop,
-                "reply_after_seconds": reply_after_seconds,
-            },
+            target=_hold_unanswered,
+            kwargs={"connection": connection, "received": received, "stop": stop},
             daemon=True,
         ).start()
 
 
 @contextmanager
-def _identity_peer(*, socket_path: Path, reply_after_seconds: float) -> Iterator[list[bytes]]:
-    """A unix socket that answers `agent.get` only after a fixed delay.
+def _hung_identity_peer(*, socket_path: Path) -> Iterator[list[bytes]]:
+    """A unix socket that reads `agent.get` and never answers it.
 
     Disclosed as a CONTROLLED PEER rather than presented as a server: a healthy
-    Herdr server cannot be asked to answer slowly or never, and what is under
-    test is how the CLI's budget treats a slow first identity observation. The
-    reply, when it comes, is a well-formed agent record carrying a terminal id,
-    so a freeze that receives it in time identifies the pane. Each connection
-    is held OPEN until it is answered — closing it would end the read with an
-    empty buffer, which is a reply rather than a hang.
+    Herdr server cannot be asked to hang, and what is under test is how the
+    CLI's budget treats a first identity observation that never arrives. Each
+    connection is held OPEN — closing it would end the read with an empty
+    buffer, which is a reply rather than a hang.
 
     Every request received is recorded and yielded, so a test can assert that
     only a read-only `agent.get` reached the target.
@@ -111,13 +97,7 @@ def _identity_peer(*, socket_path: Path, reply_after_seconds: float) -> Iterator
     listener.settimeout(0.05)
     worker = threading.Thread(
         target=_serve,
-        kwargs={
-            "listener": listener,
-            "held": held,
-            "received": received,
-            "stop": stop,
-            "reply_after_seconds": reply_after_seconds,
-        },
+        kwargs={"listener": listener, "held": held, "received": received, "stop": stop},
         daemon=True,
     )
     worker.start()
@@ -154,20 +134,73 @@ class _FreezeRecorder:
     """
 
     budgets: list[float] = field(default_factory=list)
+    clock: _ControlledClock | None = None
+    spent_per_freeze_seconds: float = 0.0
+    identify: Callable[..., PaneTarget] = freeze_pane_target
 
     def freeze(self, *, socket_path: Path, pane_id: str, timeout_seconds: float) -> object:
         self.budgets.append(timeout_seconds)
-        return freeze_pane_target(
-            socket_path=socket_path,
-            pane_id=pane_id,
-            timeout_seconds=timeout_seconds,
-        )
+        try:
+            return self.identify(
+                socket_path=socket_path,
+                pane_id=pane_id,
+                timeout_seconds=timeout_seconds,
+            )
+        finally:
+            if self.clock is not None:
+                self.clock.advance(seconds=self.spent_per_freeze_seconds)
 
 
-def _recorded_freeze(*, monkeypatch: pytest.MonkeyPatch) -> _FreezeRecorder:
-    """Put the recorder in the CLI's own freeze seam for one case."""
-    recorder = _FreezeRecorder()
+@dataclass(kw_only=True)
+class _ControlledClock:
+    """The CLI's monotonic clock, moved only by the test.
+
+    It starts at the host's monotonic reading so the wait that follows the
+    freezes, which reads the real clock, sees a coherent starting instant. The
+    time a slow peer would have spent is `advance`d by the test rather than
+    waited for, so the verdict cannot depend on the speed of the host.
+    """
+
+    offset_seconds: float = 0.0
+
+    def monotonic(self) -> float:
+        return time.monotonic() + self.offset_seconds
+
+    def advance(self, *, seconds: float) -> None:
+        self.offset_seconds += seconds
+
+
+def _identified_without_contact(
+    *, socket_path: Path, pane_id: str, timeout_seconds: float
+) -> PaneTarget:
+    """The target a healthy peer would have identified, with no peer contacted.
+
+    Whether a freeze outlasts its budget is decided by the clock the test moves,
+    so no real peer's reply time may enter that verdict.
+    """
+    _ = timeout_seconds
+    return PaneTarget(
+        backend="herdr",
+        socket_path=socket_path,
+        server_generation="generation-1",
+        pane_id=pane_id,
+        terminal_id="t-peer",
+    )
+
+
+def _recorded_freeze(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    spent_per_freeze_seconds: float = 0.0,
+    identify: Callable[..., PaneTarget] = freeze_pane_target,
+) -> _FreezeRecorder:
+    """Put the recorder in the CLI's own freeze seam, on a clock the test controls."""
+    clock = _ControlledClock()
+    recorder = _FreezeRecorder(
+        clock=clock, spent_per_freeze_seconds=spent_per_freeze_seconds, identify=identify
+    )
     monkeypatch.setattr(_session_wait_commands, "freeze_pane_target", recorder.freeze)
+    monkeypatch.setattr(_session_wait_commands, "time", SimpleNamespace(monotonic=clock.monotonic))
     return recorder
 
 
@@ -219,7 +252,7 @@ def test_a_hung_first_identity_observation_is_refused_inside_the_deadline(
     deadline_seconds = 0.3
     recorder = _recorded_freeze(monkeypatch=monkeypatch)
     with (
-        _identity_peer(socket_path=socket_path, reply_after_seconds=_NEVER_SECONDS) as received,
+        _hung_identity_peer(socket_path=socket_path) as received,
         pytest.raises(ValueError, match="not identifiable"),
     ):
         _ = session_wait.main(
@@ -244,10 +277,11 @@ def test_slow_identity_observations_share_one_budget_with_the_wait(
 ) -> None:
     """Two slow freezes and the wait itself spend ONE deadline, not three.
 
-    Each peer answers after most of the deadline. A CLI that gave every freeze
-    its own budget would identify both panes and then start a full-length wait,
-    returning after roughly three deadlines; with one shared budget the second
-    freeze cannot outlast what remains.
+    Each freeze is made to spend most of the deadline by a clock the test moves;
+    no peer is contacted, so the host's speed cannot change what the CLI grants.
+    A CLI that gave every freeze its own budget would identify both panes and
+    then start a full-length wait, returning after roughly three deadlines; with
+    one shared budget the second freeze cannot outlast what remains.
 
     The SECOND granted budget is what distinguishes those two worlds, and it
     distinguishes them without a verdict on the host: a shared budget cannot
@@ -255,14 +289,14 @@ def test_slow_identity_observations_share_one_budget_with_the_wait(
     spent, while a per-freeze budget grants it the whole deadline again.
     """
     deadline_seconds = 2.0
-    reply_after_seconds = 1.6
+    spent_seconds = 1.6
     first, second = tmp_path / "first.sock", tmp_path / "second.sock"
-    recorder = _recorded_freeze(monkeypatch=monkeypatch)
-    with (
-        _identity_peer(socket_path=first, reply_after_seconds=reply_after_seconds),
-        _identity_peer(socket_path=second, reply_after_seconds=reply_after_seconds),
-        suppress(ValueError),
-    ):
+    recorder = _recorded_freeze(
+        monkeypatch=monkeypatch,
+        spent_per_freeze_seconds=spent_seconds,
+        identify=_identified_without_contact,
+    )
+    with suppress(ValueError):
         _ = session_wait.main(
             argv=_wait_argv(
                 repository=tmp_path,
@@ -275,7 +309,7 @@ def test_slow_identity_observations_share_one_budget_with_the_wait(
     granted_first, granted_second = recorder.budgets
     assert granted_first <= deadline_seconds
     assert granted_second < granted_first
-    assert granted_second <= deadline_seconds - reply_after_seconds, (
+    assert granted_second <= deadline_seconds - spent_seconds, (
         f"the second freeze was granted {granted_second}s after the first spent"
-        f" {reply_after_seconds}s of a {deadline_seconds}s deadline"
+        f" {spent_seconds}s of a {deadline_seconds}s deadline"
     )

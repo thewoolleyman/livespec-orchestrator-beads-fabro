@@ -171,6 +171,39 @@ def test_a_running_commit_is_reported_running_when_the_bound_expires(
     assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
 
 
+@pytest.mark.parametrize(
+    ("stage", "settle"),
+    [("fix", "fix_commit_settle"), ("review_fix", "review_fix_commit_settle")],
+)
+def test_a_stage_visit_refuses_a_second_wait_after_the_first_reported_running(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+    settle: str,
+) -> None:
+    """Scenario 179: one running report leaves the commit for that stage's settle."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", stage)
+    program = _program(tmp_path)
+    program["group_alive"] = _alive
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+
+    assert program["wait"](_RUN_ID, 0) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+
+    with pytest.raises(program["RunnerRefusal"], match=rf"{_RUN_ID}.*running.*{settle}"):
+        _ = program["wait"](_RUN_ID, 0)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "running"}
+
+    program["group_alive"] = _gone
+    assert program["settle"](0, str(tmp_path / "brief"), stage=stage) == 0
+    _ = path.write_text(json.dumps({"state": "running"}), encoding="utf-8")
+    program["group_alive"] = _alive
+
+    assert program["wait"](_RUN_ID, 0) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+
+
 def test_a_running_record_whose_processes_are_gone_reads_as_no_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -682,3 +715,108 @@ def test_main_routes_the_settle_operation_with_its_bound_and_brief_file(
         program["main"](["settle", "--timeout-seconds", "0", "--brief-file", str(brief)], "/r.py")
         == 0
     )
+
+
+@dataclass
+class _Clock:
+    """A fake monotonic clock whose sleep may run a nested call, as a concurrent wait would."""
+
+    now: float = 0.0
+    on_sleep: Any = None
+    sleeps: list[float] = field(default_factory=list)
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+        if self.on_sleep is not None:
+            hook, self.on_sleep = self.on_sleep, None
+            hook()
+
+
+def test_a_wait_started_while_another_wait_on_the_run_is_open_is_refused_at_once(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 179: concurrent waits on one commit run never each return into the turn."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", "implement")
+    program = _program(tmp_path)
+    program["group_alive"] = _alive
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    clock = _Clock()
+    program["time"] = clock
+    refused: list[tuple[int, float, str]] = []
+
+    def concurrent_wait() -> None:
+        started = clock.now
+        status = program["main"](["wait", _RUN_ID, "--timeout-seconds", "300"], "/runner.py")
+        refused.append((status, clock.now - started, capsys.readouterr().err))
+
+    clock.on_sleep = concurrent_wait
+
+    assert program["wait"](_RUN_ID, 5) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+
+    assert len(refused) == 1
+    status, elapsed, message = refused[0]
+    assert status != 0
+    assert elapsed == 0.0
+    assert _RUN_ID in message
+    assert "running" in message
+    assert "another wait" in message
+    assert "open" in message
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "running"}
+
+    _ = path.write_text(
+        json.dumps({"state": "passed", "exit_code": 0, "head": "feedbee"}), encoding="utf-8"
+    )
+    assert program["wait"](_RUN_ID, 300) == 0
+    report = _last_report(capsys)
+    assert report[REPORT_STATE_KEY] == "passed"
+    assert report[REPORT_HEAD_KEY] == "feedbee"
+
+
+def test_a_wait_after_the_earlier_wait_returned_blocks_for_its_bound(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 179: an open wait is one that has not returned, so a later wait is not refused."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", "implement")
+    program = _program(tmp_path)
+    program["group_alive"] = _alive
+    _ = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    clock = _Clock()
+    program["time"] = clock
+
+    assert program["wait"](_RUN_ID, 2) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+    clock.sleeps.clear()
+
+    assert program["wait"](_RUN_ID, 3) == 0
+    assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
+    assert sum(clock.sleeps) == 3
+
+
+def test_a_wait_whose_process_was_killed_does_not_refuse_a_later_wait(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 179: a wait that ended without returning is not an open wait."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", "implement")
+    program = _program(tmp_path)
+    program["group_alive"] = _alive
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    clock = _Clock()
+    program["time"] = clock
+    later: list[int] = []
+
+    def the_first_wait_is_killed_then_a_later_wait_starts() -> None:
+        program["process_table"] = lambda _proc_root: {}
+        later.append(program["main"](["wait", _RUN_ID, "--timeout-seconds", "0"], "/runner.py"))
+
+    clock.on_sleep = the_first_wait_is_killed_then_a_later_wait_starts
+
+    assert program["wait"](_RUN_ID, 5) == 0
+    capsys.readouterr()
+
+    assert later == [0]
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "running"}

@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatching_host imp
 __all__: list[str] = [
     "ACTION_ABSENT_RUN_RELEASE",
     "ACTION_ABSENT_RUN_REPEATED",
+    "ACTION_HANDOFF_RECONCILE_MERGED",
+    "ACTION_HANDOFF_REQUIRED_CHECK_FAILED",
+    "ACTION_HANDOFF_REST",
     "ACTION_TERMINAL_COMPLETION",
     "ATTRIBUTION_PENDING_REMEDY",
     "FORGE_CLOSED_UNMERGED_PR",
@@ -57,6 +60,12 @@ __all__: list[str] = [
     "FORGE_NO_MERGED_PR",
     "FORGE_OPEN_PR",
     "FORGE_UNOBSERVABLE",
+    "HANDOFF_ENDED",
+    "HANDOFF_MERGED",
+    "HANDOFF_NONE",
+    "HANDOFF_PENDING",
+    "HANDOFF_REQUIRED_CHECK_FAILED",
+    "HANDOFF_UNOBSERVABLE",
     "HISTORY_ABSENT_RUN_RELEASE",
     "HISTORY_NO_PREDECESSOR",
     "HISTORY_OTHER_OUTCOME",
@@ -197,6 +206,33 @@ ACTION_ABSENT_RUN_RELEASE = "absent-run-release"
 ACTION_ABSENT_RUN_REPEATED = "absent-run-repeated"
 ACTION_TERMINAL_COMPLETION = "terminal-run-completion"
 
+# The three routes a HANDED-OFF merge wait (Scenario 220) earns once the forge
+# has answered about its pull request. They are peers of the three above in that
+# each is a disposition and not a hold, and they apply only to a claim whose
+# run SUCCEEDED, which is the one state the ladder otherwise always holds.
+ACTION_HANDOFF_RECONCILE_MERGED = "merge-wait-handoff-reconcile-merged"
+ACTION_HANDOFF_REQUIRED_CHECK_FAILED = "merge-wait-handoff-required-check-failed"
+ACTION_HANDOFF_REST = "merge-wait-handoff-rest"
+
+# What the forge said about the pull request a handed-off merge wait named. A
+# CLOSED vocabulary like the others, with `none` for a claim that was never handed
+# off and `unobservable` for the reading that could not be taken. `ended` is the
+# pull request the forge will not merge: closed without merging, or OPEN with
+# auto-merge no longer armed. `pending` is the one that keeps the claim held:
+# OPEN, armed, every required check passing or still running.
+HANDOFF_NONE = "none"
+HANDOFF_MERGED = "merged"
+HANDOFF_REQUIRED_CHECK_FAILED = "required-check-failed"
+HANDOFF_ENDED = "ended-unmerged"
+HANDOFF_PENDING = "pending"
+HANDOFF_UNOBSERVABLE = "unobservable"
+
+_HANDOFF_ROUTES: dict[str, str] = {
+    HANDOFF_MERGED: ACTION_HANDOFF_RECONCILE_MERGED,
+    HANDOFF_REQUIRED_CHECK_FAILED: ACTION_HANDOFF_REQUIRED_CHECK_FAILED,
+    HANDOFF_ENDED: ACTION_HANDOFF_REST,
+}
+
 
 @dataclass(frozen=True, kw_only=True)
 class ClaimHold:
@@ -243,6 +279,12 @@ class ClaimMeasurements:
     factory can report a run `failed` while the record carrying WHY cannot be
     read, and a release route chosen without that record is chosen on no
     evidence.
+
+    `handoff` is what the forge said about the pull request of a claim whose
+    newest dispatch handed its merge wait off, and `none` for every other claim. It
+    is the one measurement that can turn a `run-succeeded` hold into a route, and
+    it defaults to `none` so a claim that was never handed off grades exactly as
+    it always did.
     """
 
     attributed: AttributedClaim
@@ -251,6 +293,7 @@ class ClaimMeasurements:
     forge: str
     predecessor: str
     terminal_evidence_readable: bool
+    handoff: str = HANDOFF_NONE
 
 
 def attribute_claim(
@@ -313,6 +356,8 @@ def grade_claim(*, measurements: ClaimMeasurements) -> ClaimRoute | ClaimHold:
         return ClaimHold(reason=observation)
     if measurements.run_state == RUN_ABSENT:
         return _absent_run_grade(measurements=measurements)
+    if measurements.run_state == RUN_SUCCEEDED:
+        return ClaimRoute(action=_HANDOFF_ROUTES[measurements.handoff])
     if not measurements.terminal_evidence_readable:
         return ClaimHold(reason=HOLD_TERMINAL_EVIDENCE_UNAVAILABLE)
     return ClaimRoute(action=ACTION_TERMINAL_COMPLETION)
@@ -328,7 +373,7 @@ def _observation_hold(*, measurements: ClaimMeasurements) -> str | None:
         return HOLD_LIVENESS_UNOBSERVABLE
     if measurements.owner_liveness == OWNER_LIVE:
         return HOLD_DISPATCH_LIVE
-    if measurements.run_state == RUN_SUCCEEDED:
+    if measurements.run_state == RUN_SUCCEEDED and measurements.handoff not in _HANDOFF_ROUTES:
         return HOLD_RUN_SUCCEEDED
     return None
 

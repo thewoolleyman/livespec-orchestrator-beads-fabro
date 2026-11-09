@@ -31,11 +31,13 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from http import HTTPStatus
 from pathlib import Path
 from typing import cast
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import session_wait
+from livespec_orchestrator_beads_fabro.commands import _otel_receive, session_wait
+from livespec_orchestrator_beads_fabro.commands._otel_http_handler import HttpPostHandler
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -67,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._session_telemetry_export import
     SessionTelemetry,
     TelemetryConfig,
     config_from_environ,
+    http_post,
 )
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import (
     GateObservation,
@@ -96,12 +99,68 @@ def hermetic_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @dataclass(kw_only=True)
+class _TelemetryTracker:
+    """Hands each command its exporter and remembers which command sent which span."""
+
+    telemetry: list[SessionTelemetry] = field(default_factory=list)
+    command_of_span: dict[str, int] = field(default_factory=dict)
+
+    def __call__(self, *, environ: dict[str, str]) -> SessionTelemetry:
+        command = len(self.telemetry)
+
+        def post(*, url: str, body: bytes, timeout_seconds: float) -> PostOutcome:
+            request = cast(
+                "dict[str, list[dict[str, list[dict[str, list[dict[str, str]]]]]]]",
+                json.loads(body),
+            )
+            for resource in request["resourceSpans"]:
+                for scope in resource["scopeSpans"]:
+                    for span in scope["spans"]:
+                        _ = self.command_of_span.setdefault(span["spanId"], command)
+            return http_post(url=url, body=body, timeout_seconds=timeout_seconds)
+
+        instance = SessionTelemetry(config=config_from_environ(environ=environ), post=post)
+        self.telemetry.append(instance)
+        return instance
+
+    def settle(self) -> None:
+        for instance in self.telemetry:
+            instance.wait_for_delivery()
+
+
+@dataclass(kw_only=True)
+class _Withheld:
+    """Holds one batch, and every re-send of it, undelivered until released."""
+
+    armed: bool = False
+    key: str | None = None
+    arrived: threading.Event = field(default_factory=threading.Event)
+    release: threading.Event = field(default_factory=threading.Event)
+    _claim: threading.Lock = field(default_factory=threading.Lock)
+
+    def hold(self, *, spans: tuple[dict[str, object], ...]) -> None:
+        key = json.dumps(spans, sort_keys=True)
+        with self._claim:
+            if self.armed and self.key is None:
+                self.key = key
+        if key == self.key:
+            self.arrived.set()
+            assert self.release.wait(timeout=30.0)
+
+
+@dataclass(kw_only=True)
 class _CapturingExporter:
     calls: list[tuple[tuple[dict[str, object], ...], str]] = field(default_factory=list)
+    telemetry: _TelemetryTracker = field(default_factory=_TelemetryTracker)
+    withheld: _Withheld = field(default_factory=_Withheld)
 
     def export(self, *, spans: tuple[dict[str, object], ...], dataset: str) -> bool:
+        self.withheld.hold(spans=spans)
         self.calls.append((spans, dataset))
         return True
+
+    def arrived_names(self) -> list[str]:
+        return [cast("str", span["name"]) for spans, _ in self.calls for span in spans]
 
     def events(self) -> list[tuple[str, Decoded]]:
         return [(cast("str", span["name"]), _decode(span=span)) for span in self._spans()]
@@ -110,7 +169,17 @@ class _CapturingExporter:
         return {dataset for _, dataset in self.calls}
 
     def _spans(self) -> list[dict[str, object]]:
-        return [span for spans, _ in self.calls for span in spans]
+        unique: dict[str, dict[str, object]] = {}
+        for spans, _ in self.calls:
+            for span in spans:
+                _ = unique.setdefault(json.dumps(span, sort_keys=True), span)
+        # Ordered by the command that sent each span, so a batch that lands after a
+        # later command's events still reads in the lifecycle's order; the sort is
+        # stable, so arrival order holds within a command.
+        return sorted(
+            unique.values(),
+            key=lambda span: self.telemetry.command_of_span[cast("str", span["spanId"])],
+        )
 
 
 def _decode(*, span: dict[str, object]) -> Decoded:
@@ -142,6 +211,7 @@ def _receiver(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_C
     try:
         yield exporter
     finally:
+        exporter.telemetry.settle()
         receiver.stop()
 
 
@@ -197,13 +267,18 @@ class _Clock:
         return self.now
 
 
-def _seams(*, clock: _Clock) -> session_wait.SessionWaitCliSeams:
+def _seams(
+    *, clock: _Clock, telemetry_factory: _TelemetryTracker | None = None
+) -> session_wait.SessionWaitCliSeams:
     return session_wait.SessionWaitCliSeams(
         primary_repository=_own_root,
         launcher=_launcher,
         observe_target=_observe_failed,
         process_generation=_waiter_gone,
         wall_clock=clock,
+        telemetry_factory=SessionTelemetry.from_environ
+        if telemetry_factory is None
+        else telemetry_factory,
     )
 
 
@@ -222,18 +297,63 @@ def _wait_argv(*, repository: Path, wait_id: str) -> list[str]:
     ]  # fmt: skip
 
 
-def _run_arc(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Decoded]]:
+def _late_inventory(
+    *,
+    inventory: list[str],
+    seams: session_wait.SessionWaitCliSeams,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reply_seen = threading.Event()
+    release_reply = threading.Event()
+    command_finished = threading.Event()
+    results: list[int] = []
+    original_reply = _otel_receive.reply
+
+    def delayed_reply(*, handler: HttpPostHandler, status: HTTPStatus) -> None:
+        if not reply_seen.is_set():
+            reply_seen.set()
+            assert release_reply.wait(timeout=10.0)
+        original_reply(handler=handler, status=status)
+
+    monkeypatch.setattr(_otel_receive, "reply", delayed_reply)
+
+    def run_inventory() -> None:
+        results.append(session_wait.main(argv=inventory, seams=seams))
+        command_finished.set()
+
+    command = threading.Thread(target=run_inventory)
+    command.start()
+    assert reply_seen.wait(timeout=10.0)
+    assert command_finished.wait(timeout=10.0)
+    release_reply.set()
+    command.join()
+    assert results == [0]
+
+
+def _run_arc(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reply_mode: str
+) -> list[tuple[str, Decoded]]:
     """The whole lifecycle through the host CLI, against the real receiver seam."""
     repository = _repository(tmp_path=tmp_path)
     clock = _Clock()
     inventory = ["inventory", "--repo", str(repository)]
     ack = ["ack", "--repo", str(repository), "--session-id", "session-159", "--wait-id", "wait-1"]
-    seams = _seams(clock=clock)
     with _receiver(tmp_path=tmp_path, monkeypatch=monkeypatch) as exporter:
+        seams = _seams(clock=clock, telemetry_factory=exporter.telemetry)
         for name, value in _ASSOCIATIONS.items():
             monkeypatch.setenv(name, value)
-        _ = session_wait.main(argv=inventory, seams=seams)
+        if reply_mode == "late_reply":
+            _late_inventory(inventory=inventory, seams=seams, monkeypatch=monkeypatch)
+        else:
+            exporter.withheld.armed = reply_mode == "late_batch"
+            _ = session_wait.main(argv=inventory, seams=seams)
         _ = session_wait.main(argv=_wait_argv(repository=repository, wait_id="wait-1"), seams=seams)
+        if reply_mode == "late_batch":
+            assert exporter.withheld.arrived.is_set()
+            names = exporter.arrived_names()
+            assert "session.wait.armed" in names
+            assert "session.wait.inventory" not in names
+            exporter.withheld.release.set()
         _ = session_wait.main(argv=inventory, seams=seams)
         clock.now += 10.0
         _ = session_wait.main(argv=inventory, seams=seams)
@@ -246,10 +366,11 @@ def _run_arc(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[s
     return exporter.events()
 
 
+@pytest.mark.parametrize("reply_mode", ["immediate", "late_reply", "late_batch"])
 def test_scenario_159_lifecycle_and_snapshots_arrive_scrubbed_typed_and_rate_limited(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reply_mode: str
 ) -> None:
-    events = _run_arc(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    events = _run_arc(tmp_path=tmp_path, monkeypatch=monkeypatch, reply_mode=reply_mode)
 
     assert [name for name, _ in events] == [
         "session.wait.inventory",
@@ -344,11 +465,14 @@ def test_scenario_159_events_carry_the_service_namespace_and_versioned_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repository = _repository(tmp_path=tmp_path)
+    telemetry = _TelemetryTracker()
     with _capturing_server() as (url, bodies):
         monkeypatch.setenv(_ENDPOINT_ENV, url)
         _ = session_wait.main(
-            argv=["inventory", "--repo", str(repository)], seams=_seams(clock=_Clock())
+            argv=["inventory", "--repo", str(repository)],
+            seams=_seams(clock=_Clock(), telemetry_factory=telemetry),
         )
+        telemetry.settle()
 
     assert len(bodies) == 1
     request = json.loads(bodies[0])

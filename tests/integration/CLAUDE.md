@@ -29,14 +29,27 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   before drive, and drops a failed queued ticket without taking that mutex.
 
 - `test_merge_poll_budget_exhausted_scenario220.py` — binds
-  `SPECIFICATION/scenarios.md` "Scenario 220": an exhausted merge-poll budget
-  re-reads the pull request, proceeds on MERGED and otherwise rests the item at
-  `blocked / needs-human` with the cause `merge-poll-budget-exhausted`. It runs the
-  production `run_dispatch` and `post_run_dispositions` against the in-memory
-  tenant, standing in only the subprocess seam and the Fabro launcher. Its
-  MERGED-at-the-final-read case and its conflicting-pull-request case are the
-  controls for the resting case: a build that rested every exhausted wait fails the
-  first, and one that rested none fails the second.
+  `SPECIFICATION/scenarios.md` "Scenario 220" for the merge wait itself: an
+  exhausted merge-poll budget re-reads the pull request, proceeds on MERGED, hands
+  an armed pull request with no failed required check off (the item stays `active`,
+  the dispatch exits 0, one journal row and one ledger comment are left), and
+  otherwise rests the item at `blocked / needs-human` with the cause
+  `merge-poll-budget-exhausted`. It runs the production `run_dispatch` and
+  `post_run_dispositions` against the in-memory tenant, standing in only the
+  subprocess seam and the Fabro launcher. Its MERGED-at-the-final-read case, its
+  unarmed-pull-request case and its conflicting-pull-request case are the controls
+  for the handoff: a build that handed off every exhausted wait fails the second
+  and third, and one that handed off none fails the first handoff case.
+- `test_merge_wait_handoff_lifecycle_scenario220.py` — binds the other half of the
+  same Scenario: the dispatch that hands the pull request off, and the stranded-claim
+  pass that completes the item. It runs the production engine, post-run disposition
+  and `survey_stranded_claims` over ONE real dispatch journal. The claim is surveyed
+  first while the pull request is open and passing and must be HELD with the item
+  untouched; it is then surveyed again after the forge reports the pull request
+  merged (reconciled, no resolve-blocked, no resume), with a failed required check
+  (rested as a failed check) and closed without merging (rested with the exhausted
+  cause). Only the subprocess seam, the launcher and the `reconcile-merged` valve's
+  own janitor run are stood in.
 - `test_regroom_state_machine_scenario9.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 9 — needs-regroom state and
   transitions": the three transitions of the `livespec_orchestrator_beads_fabro.regroom`

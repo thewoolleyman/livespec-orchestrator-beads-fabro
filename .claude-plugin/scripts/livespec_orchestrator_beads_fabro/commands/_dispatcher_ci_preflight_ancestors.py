@@ -31,6 +31,7 @@ _PENDING_STATUSES = frozenset({"queued", "in_progress", "waiting", "pending", "r
 _RED_CONCLUSIONS = frozenset(
     {"failure", "timed_out", "action_required", "stale", "startup_failure"},
 )
+_NON_CANDIDATE_RUN_CONCLUSIONS = frozenset({"cancelled", "skipped"})
 
 
 def green_ancestor(
@@ -125,10 +126,12 @@ def _concluded_candidate(
     run: CiRun,
 ) -> tuple[str, str, str] | None:
     status = run.get("status")
+    workflow_conclusion = run.get("conclusion")
     run_id = run_id_of(run=run)
     head_sha = run.get("headSha")
     if (
         (isinstance(status, str) and status in _PENDING_STATUSES)
+        or workflow_conclusion in _NON_CANDIDATE_RUN_CONCLUSIONS
         or run_id in (pending_run_id, UNKNOWN_RUN)
         or not isinstance(head_sha, str)
         or not head_sha

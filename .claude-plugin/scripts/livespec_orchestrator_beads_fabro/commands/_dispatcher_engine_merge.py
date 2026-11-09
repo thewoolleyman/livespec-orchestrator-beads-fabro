@@ -6,13 +6,17 @@ from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import (
     CONSECUTIVE_CONFLICTING_REPORTS,
-    MERGE_POLL_BUDGET_EXHAUSTED,
     BaseAdvancedAfterArming,
     base_advanced_detail,
-    merge_poll_budget_exhausted_detail,
     reports_base_advanced_after_arming,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance_record_files import (
+    measure_conflicted_paths,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_confirm import confirm_pr
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_exhaustion import (
+    outcome_at_exhaustion,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_pr_association import (
@@ -28,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_view import (
     view_pr,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_required_checks import (
+    required_check_failure_outcome,
     required_check_names,
 )
 
@@ -40,7 +45,7 @@ if TYPE_CHECKING:
         SleepFn,
     )
 
-__all__: list[str] = ["await_merge", "confirm_pr", "outcome_after_await"]
+__all__: list[str] = ["await_merge", "confirm_pr", "outcome_after_await", "settle_merge_wait"]
 
 
 def await_merge(
@@ -84,6 +89,12 @@ def await_merge(
         if view is not None and _reports_overtaken_arming(view=view):
             conflicting_reports += 1
             if conflicting_reports >= CONSECUTIVE_CONFLICTING_REPORTS:
+                measurement = measure_conflicted_paths(
+                    repo=plan.repo,
+                    runner=runner,
+                    pr_head=view.head or "",
+                    default_branch_tip=view.base or "",
+                )
                 return outcome_type(
                     work_item_id=plan.work_item_id,
                     status="blocked",
@@ -95,6 +106,9 @@ def await_merge(
                         factory=plan.fabro_factory_name,
                         pr_head=view.head,
                         default_branch_tip=view.base,
+                        conflict_measurement_failure=(
+                            "git-merge-tree" if measurement.failure is not None else None
+                        ),
                     ),
                 )
         else:
@@ -121,6 +135,44 @@ def await_merge(
     return None
 
 
+def settle_merge_wait(  # noqa: PLR0913 — kw-only stage; each field is an independent caller input.
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    sleep: SleepFn,
+    poll: PollPolicy,
+    pr_number: int,
+    run_id: str | None,
+) -> DispatchOutcome:
+    """Wait for the merge, then dispose of whatever the wait ended with.
+
+    The seconds the wait spent are measured HERE, on the poll policy's clock,
+    because only a handoff states them and only this function sees both ends of
+    the wait.
+    """
+    waiting_since = poll.clock()
+    merged = await_merge(
+        outcome_type=outcome_type,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        sleep=sleep,
+        poll=poll,
+    )
+    return outcome_after_await(
+        outcome_type=outcome_type,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        merged=merged,
+        pr_number=pr_number,
+        run_id=run_id,
+        waited_seconds=int(poll.clock() - waiting_since),
+    )
+
+
 def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is an independent caller input.
     *,
     outcome_type: type[DispatchOutcome],
@@ -130,6 +182,7 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
     merged: PrView | DispatchOutcome | None,
     pr_number: int,
     run_id: str | None,
+    waited_seconds: int,
 ) -> DispatchOutcome:
     """One terminal outcome from `await_merge`'s three-way answer.
 
@@ -140,13 +193,14 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
     with a disposition tree hanging off its end.
     """
     if merged is None:
-        merged = _outcome_at_exhaustion(
+        merged = outcome_at_exhaustion(
             outcome_type=outcome_type,
             plan=plan,
             runner=runner,
             journal=journal,
             pr_number=pr_number,
             run_id=run_id,
+            waited_seconds=waited_seconds,
         )
     # Discriminated on `PrView` rather than on `outcome_type`, which is a
     # runtime PARAMETER and so narrows nothing for the reader or the checker.
@@ -165,54 +219,6 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
             ),
         )
     return merged
-
-
-def _outcome_at_exhaustion(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-    pr_number: int,
-    run_id: str | None,
-) -> PrView | DispatchOutcome:
-    """What an exhausted poll budget earns, after one final read of the pull request.
-
-    MERGED proceeds as a merge observed within the budget; OPEN and not in
-    conflict rests the item for resume so no claim is left `active` over an
-    ended run. The read omits the status-check rollup, as the access-denied
-    confirmation above does: only the state and mergeability are decided on.
-    Anything else -- conflicting, closed, unreadable -- keeps the existing failed
-    outcome, which is the clause's silence rather than a ruling.
-    """
-    view = view_pr(plan=plan, runner=runner, journal=journal, include_status_checks=False).view
-    if view is not None and view.state == "MERGED":
-        return view
-    if view is not None and view.state == "OPEN" and view.merge_state_status != "DIRTY":
-        return outcome_type(
-            work_item_id=plan.work_item_id,
-            status="blocked",
-            stage="merge-poll",
-            pr_number=view.number,
-            merge_sha=None,
-            detail=merge_poll_budget_exhausted_detail(work_item_id=plan.work_item_id),
-            fabro_run_id=run_id,
-            base_advanced=BaseAdvancedAfterArming(
-                factory=plan.fabro_factory_name,
-                pr_head=view.head,
-                default_branch_tip=view.base,
-                cause=MERGE_POLL_BUDGET_EXHAUSTED,
-            ),
-        )
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="failed",
-        stage="merge-poll",
-        pr_number=pr_number,
-        merge_sha=None,
-        detail="PR did not reach MERGED within the poll budget",
-        fabro_run_id=run_id,
-    )
 
 
 def _required_check_failure(
@@ -241,19 +247,12 @@ def _required_check_failure(
     failed = [name for name in view.terminal_check_failures if name in required]
     if not failed:
         return None
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="blocked",
-        stage="merge-poll",
-        pr_number=view.number,
+    return required_check_failure_outcome(
+        outcome_type=outcome_type,
+        plan=plan,
+        number=view.number,
         merge_sha=view.merge_sha,
-        detail=(
-            f"required check failed terminally: {', '.join(failed)}; the factory run "
-            "succeeded but its pull request cannot merge. Recover with "
-            f"`resolve-blocked:{plan.work_item_id}:ready`, then "
-            f"`resume --item {plan.work_item_id}`, which checks out the pull request's "
-            "published head for rework."
-        ),
+        failed=failed,
     )
 
 

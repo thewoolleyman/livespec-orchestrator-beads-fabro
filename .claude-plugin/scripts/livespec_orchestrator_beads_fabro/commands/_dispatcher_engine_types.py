@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_base_advance import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit import HookOverLimit
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_verdict import HookVerdict
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff import (
+    MergeWaitHandedOff,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_merged_reconcile import MergedReconcile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut import NodeTimeoutCut
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
@@ -196,6 +200,11 @@ class DispatchOutcome:
     # account of it", bd-ib-k3nmbi).
     hook_verdict: HookVerdict | None = None
     base_advanced: BaseAdvancedAfterArming | None = None
+    # The handoff a merge wait took when its poll budget ended on an armed pull
+    # request whose required checks were passing or still running. Carried on the
+    # outcome for the reason `base_advanced` beside it is: the ledger comment is
+    # written by the post-run disposition, long after the poll that measured it.
+    merge_wait_handed_off: MergeWaitHandedOff | None = None
     # The provider-limit release this terminal owes, decided ONCE by the
     # terminal mapper and read from here by the disposition that performs it.
     # It rides the outcome for the reason `hook_over_limit` beside it does: the
@@ -254,10 +263,16 @@ class CommandRunner(Protocol):
 
 @dataclass(frozen=True, kw_only=True)
 class PollPolicy:
-    """Bounded merge-confirmation polling (an unbounded loop is a defect)."""
+    """Bounded merge-confirmation polling (an unbounded loop is a defect).
+
+    `clock` is the monotonic reading the wait measures the seconds it spent on, so
+    a handoff can state them; it is a field rather than a module call so a test
+    can supply a deterministic one.
+    """
 
     attempts: int
     interval_seconds: float
+    clock: Callable[[], float] = time.monotonic
 
 
 class FabroLauncher(Protocol):

@@ -20,6 +20,15 @@ from livespec_orchestrator_beads_fabro.commands._groom_spec_change_classificatio
 from livespec_orchestrator_beads_fabro.commands._groom_types import CandidateSlice
 
 _HEADING = "## A governing clause"
+_SCENARIO_HEADING = (
+    "## Scenario 206 — The spec-change tier is decided by the spec-stated judgement, "
+    "and a feature waits for ratification"
+)
+_CONTRACT_HEADING = "## Factory-configurable ACP fallback priority"
+_GOVERNING_PARAGRAPH = (
+    "**A ruled seed names the tree a released item's next dispatch starts from.** "
+    "The comment MUST pass the shared template-opener detector before it is written.\n"
+)
 
 
 def _repo(*, tmp_path: Path) -> Path:
@@ -34,6 +43,25 @@ def _repo(*, tmp_path: Path) -> Path:
     )
     _ = (spec / "contracts.md").write_text(
         f"# Contracts\n\n{_HEADING}\n\nThe clause body.\n", encoding="utf-8"
+    )
+    return repo
+
+
+def _scenario_repo(*, tmp_path: Path) -> Path:
+    """A cited scenario points at a deep contracts paragraph outside lexical reach."""
+    repo = _repo(tmp_path=tmp_path)
+    spec = repo / "SPECIFICATION"
+    _ = (spec / "contracts.md").write_text(
+        f"# Contracts\n\n{_CONTRACT_HEADING}\n\n"
+        + ("unrelated policy background.\n\n" * 15_000)
+        + _GOVERNING_PARAGRAPH,
+        encoding="utf-8",
+    )
+    _ = (spec / "scenarios.md").write_text(
+        f"{_SCENARIO_HEADING}\n\n"
+        'Governing clause: `contracts.md` §"Factory-configurable ACP fallback priority" '
+        '→ "A ruled seed names the tree a released item\'s next dispatch starts from".\n',
+        encoding="utf-8",
     )
     return repo
 
@@ -110,3 +138,74 @@ def test_a_blank_field_is_named_rather_than_dropped(
     rendered = (tmp_path / "prompt-2").read_text(encoding="utf-8")
     assert "Acceptance criteria: (none recorded)" in rendered
     assert "Title: A drafted slice" in rendered
+
+
+def test_a_scenario_reference_carries_its_governing_contract_paragraph_to_groom_judgement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stated governing paragraph keeps an ordinary follow-up in the factory."""
+    _install_judge(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        replies=(
+            "feature",
+            '{"kind": "stated", "stated_by": ["## Factory-configurable ACP fallback priority"], '
+            '"generalization_target": null, "rationale": ""}',
+        ),
+    )
+    candidate = _candidate(
+        acceptance=(
+            "A seed-ruling command records, verifies and refuses an invalid ruling.\n\n"
+            f"References: {_SCENARIO_HEADING}"
+        )
+    )
+
+    classified = classified_candidate_slices(
+        slices=[candidate], repo=_scenario_repo(tmp_path=tmp_path)
+    )
+
+    assert classified == [CandidateSlice(**{**candidate.__dict__, "is_spec_change": False})]
+    rendered = (tmp_path / "prompt-2").read_text(encoding="utf-8")
+    assert _GOVERNING_PARAGRAPH in rendered
+
+
+def test_a_literal_command_and_marker_carry_their_stating_paragraph_to_groom_judgement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scenario with no governing clause line still reaches the paragraph it never names."""
+    _install_judge(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        replies=(
+            "feature",
+            '{"kind": "stated", "stated_by": ["## Factory-configurable ACP fallback priority"], '
+            '"generalization_target": null, "rationale": ""}',
+        ),
+    )
+    repo = _scenario_repo(tmp_path=tmp_path)
+    stating = (
+        "**A ruled seed names the tree a released item's next dispatch starts from.** "
+        "An operator MAY run `dispatcher.py seed-ruling --repo <path>`, which writes the "
+        "marker line `livespec-seed-ruling`. "
+        "The comment MUST pass the shared template-opener detector before it is written.\n"
+    )
+    contracts = repo / "SPECIFICATION" / "contracts.md"
+    _ = contracts.write_text(
+        contracts.read_text(encoding="utf-8").replace(_GOVERNING_PARAGRAPH, stating),
+        encoding="utf-8",
+    )
+    _ = (repo / "SPECIFICATION" / "scenarios.md").write_text(
+        f"{_SCENARIO_HEADING}\n\nScenario: a released item is recovered.\n", encoding="utf-8"
+    )
+    candidate = _candidate(
+        acceptance=(
+            "A `dispatcher.py seed-ruling` command writes a comment opening with the marker "
+            "line `livespec-seed-ruling`, refusing an invalid ruling.\n\n"
+            f"References: {_SCENARIO_HEADING}"
+        )
+    )
+
+    classified = classified_candidate_slices(slices=[candidate], repo=repo)
+
+    assert classified == [CandidateSlice(**{**candidate.__dict__, "is_spec_change": False})]
+    assert stating in (tmp_path / "prompt-2").read_text(encoding="utf-8")

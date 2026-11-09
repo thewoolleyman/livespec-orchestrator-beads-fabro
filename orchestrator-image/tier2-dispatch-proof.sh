@@ -122,7 +122,7 @@ stage_and_build_image() {
   [ -x "$HOST_FABRO_BIN" ] || fail "fabro binary not found at $HOST_FABRO_BIN"
   cp "$HOST_FABRO_BIN" "$HERE/fabro"
   chmod +x "$HERE/fabro"
-  "$HERE/fabro" version | head -1
+  "$HERE/fabro" version | sed -n '1p'
   # Stage the plugin scripts tree (mint-app-token CLI + package + vendored
   # runtime) into the build context; the Dockerfile bakes it at
   # /opt/livespec-orchestrator/scripts for the entrypoint's github provisioning.

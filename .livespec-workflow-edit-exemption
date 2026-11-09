@@ -1,3 +1,14 @@
-work_item=bd-ib-vnmph2
-reason=Host-landed after the factory refused bd-ib-vnmph2 as host-only (drive.py host-only-refused, 08:20:08Z 2026-11-05: it edits .github/workflows/). The ci-cache-optimization plan seat lands it. In the five nonroot "Prepare non-root leg" steps of ci.yml, the blanket `chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"` becomes `find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +`. That is the same end state, and find visits the two starting directories themselves, so it touches only entries uid 1000 does not already own (bd-ib-uuatg4's pattern for modes). One comment that named the old chown is reworded. It runs strictly less work; no job, gate, target or test is removed or weakened. actionlint v1.7.10 is clean. Maintainer tier: approval:workflow-edit is set on bd-ib-vnmph2 by legacy-coordinator-agent under the maintainer's standing 2026-11-03T15:00:49Z ruling.
+# Workflow-edit exemption — one exemption binds to one reviewed change.
+#
+# The change: .github/workflows/fast-forward-release-branch.yml gains a
+# workflow_dispatch trigger with a required `tag` input, a job-level
+# `if: github.event_name == 'workflow_dispatch'`, and a step that checks out
+# the named tag. ADDITIVE ONLY: no workflow line is deleted or modified. The
+# `release` branch then advances only on an operator dispatch that starts a
+# release's canary, never on every published release (livespec-dev-tooling spec v155, option D). Authorized by
+# legacy-coordinator-agent ruling e8d70af3, 2026-11-09 ~01:4xZ, recorded on the
+# work item. It adds no job to any PR or push CI path.
+work_item=bd-ib-sghxlk
+reason=Stop every published release from rolling to every fleet clone through the unprotected release branch; release advances only when an operator dispatches a published tag, which starts that release's canary.
+change=additive
 ci_runtime=no-significant-increase

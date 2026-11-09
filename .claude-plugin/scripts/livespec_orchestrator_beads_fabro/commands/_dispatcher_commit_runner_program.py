@@ -102,6 +102,7 @@ from pathlib import Path
 
 RUNNING = "running"
 NO_VERDICT = "no-verdict"
+STAGE_SETTLES = {"fix": "fix_commit_settle", "review_fix": "review_fix_commit_settle"}
 TAIL_LINES = 60
 BRIEF_TAIL_LINES = 80
 # Worst first: a settled set is described by its least settled run.
@@ -148,6 +149,70 @@ def runs_directory():
 
 def state_path(directory, run_id):
     return directory / (run_id + ".json")
+
+
+def waited_running_path(directory, stage):
+    return directory / "waited-running" / (stage + ".json")
+
+
+def waited_running_runs(directory, stage):
+    path = waited_running_path(directory, stage)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return value if isinstance(value, list) and all(isinstance(item, str) for item in value) else []
+
+
+def remember_running_wait(directory, stage, run_id):
+    runs = waited_running_runs(directory, stage)
+    if run_id not in runs:
+        runs.append(run_id)
+    path = waited_running_path(directory, stage)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(runs) + "\n", encoding="utf-8")
+
+
+def reset_running_waits(directory, stage):
+    if stage in STAGE_SETTLES:
+        waited_running_path(directory, stage).unlink(missing_ok=True)
+
+
+def open_wait_path(directory, run_id):
+    return directory / "open-waits" / (run_id + ".json")
+
+
+def claim_open_wait(directory, run_id):
+    """Record this process's wait as the run's one open wait, or None when another is open."""
+    path = open_wait_path(directory, run_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    own = process_table("/proc").get(os.getpid())
+    claim = {"pid": os.getpid(), "start_ticks": own[4] if own is not None else None}
+    staged = path.with_name(path.name + "." + str(os.getpid()) + ".tmp")
+    staged.write_text(json.dumps(claim, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        while True:
+            try:
+                # A hard link is atomic and fails if the name exists, so only one wait claims.
+                os.link(staged, path)
+            except FileExistsError:
+                if open_wait_owner_alive(path):
+                    return None
+                # The owner was killed before it could release the claim, so it is not open.
+                path.unlink(missing_ok=True)
+            else:
+                return path
+    finally:
+        staged.unlink(missing_ok=True)
+
+
+def open_wait_owner_alive(path):
+    claim = read_record(path) or {}
+    pid, start_ticks = claim.get("pid"), claim.get("start_ticks")
+    if not isinstance(pid, int):
+        return False
+    owner = process_table("/proc").get(pid)
+    return owner is not None and owner[0] != "Z" and owner[4] == start_ticks
 
 
 def read_record(path):
@@ -346,7 +411,7 @@ def worker(run_id):
     return 0
 
 
-def report(run_id, path, record):
+def report_payload(run_id, path, record):
     record, state = settled(path, record)
     payload = {"run_id": run_id, "state": state}
     if state != RUNNING:
@@ -365,20 +430,53 @@ def report(run_id, path, record):
                 targets if isinstance(targets, list) else failed_targets(output)
             )
         payload["output_tail"] = output_tail(path)
+    return payload, state
+
+
+def report(run_id, path, record):
+    payload, _ = report_payload(run_id, path, record)
     print(json.dumps(payload, sort_keys=True))
     return 0
 
 
 def wait(run_id, timeout_seconds):
-    path = state_path(runs_directory(), run_id)
-    deadline = time.monotonic() + max(0.0, timeout_seconds)
-    while True:
+    directory = runs_directory()
+    path = state_path(directory, run_id)
+    stage = os.environ.get("LIVESPEC_AGENT_STAGE")
+    settle_node = STAGE_SETTLES.get(stage)
+    if settle_node is not None and run_id in waited_running_runs(directory, stage):
         record = read_record(path)
         if record is None:
             raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
-        if current_state(path, record) != RUNNING or time.monotonic() >= deadline:
-            return report(run_id, path, record)
-        time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+        state = current_state(path, record)
+        raise RunnerRefusal(
+            "commit run " + run_id + " already reported running during " + stage
+            + " stage visit; current state is " + state + "; " + settle_node + " will wait on it"
+        )
+    record = read_record(path)
+    if record is None:
+        raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
+    marker = claim_open_wait(directory, run_id)
+    if marker is None:
+        raise RunnerRefusal(
+            "commit run " + run_id + " is " + current_state(path, record)
+            + "; another wait on it is open, so this wait returns at once"
+        )
+    try:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            record = read_record(path)
+            if record is None:
+                raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
+            if current_state(path, record) != RUNNING or time.monotonic() >= deadline:
+                payload, state = report_payload(run_id, path, record)
+                if settle_node is not None and state == RUNNING:
+                    remember_running_wait(directory, stage, run_id)
+                print(json.dumps(payload, sort_keys=True))
+                return 0
+            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+    finally:
+        marker.unlink(missing_ok=True)
 
 
 def full_output(path):
@@ -518,8 +616,11 @@ def restore_starting_head(path, record):
     git_output("reset", "--soft", start_head)
 
 
-def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
-    """Wait live runs and brief the latest terminal hook refusal exactly once."""
+def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
+    """Wait live runs and brief the latest terminal hook refusal exactly once.
+
+    Returns the settled state of the turn's commit run, or None when none was recorded.
+    """
     directory = runs_directory()
     brief = Path(brief_file)
     live, records = [], []
@@ -533,7 +634,8 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
     if not live:
         if not records:
             brief.unlink(missing_ok=True)
-            return 0
+            reset_running_waits(directory, stage)
+            return None
         path, record = max(records, key=lambda item: item[0].stat().st_mtime_ns)
         if (
             recorded_state(record) != "failed"
@@ -541,7 +643,8 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
             or record.get("settled") is True
         ):
             brief.unlink(missing_ok=True)
-            return 0
+            reset_running_waits(directory, stage)
+            return recorded_state(record)
         write_record(path, {**record, "settled": True})
         brief.parent.mkdir(parents=True, exist_ok=True)
         brief.write_text(
@@ -549,7 +652,8 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
             encoding="utf-8",
         )
         print(json.dumps({"settled": [{"run_id": path.stem, "state": "failed"}]}, sort_keys=True))
-        return 0
+        reset_running_waits(directory, stage)
+        return "failed"
     if restore_head_before_wait:
         for path in live:
             record = read_record(path)
@@ -578,6 +682,71 @@ def settle(timeout_seconds, brief_file, restore_head_before_wait=False):
     )
     settled_runs = [{"run_id": one.stem, "state": status} for one, _, status in outcomes]
     print(json.dumps({"settled": settled_runs}, sort_keys=True))
+    reset_running_waits(directory, stage)
+    return state
+
+
+def operation_in_progress():
+    """The merge or rebase a turn left in progress in this worktree, or None."""
+    git_directory = runs_directory().parent
+    if any((git_directory / name).is_dir() for name in ("rebase-merge", "rebase-apply")):
+        return "rebase"
+    if (git_directory / "MERGE_HEAD").is_file():
+        return "merge"
+    return None
+
+
+def run_git_operation(*argv):
+    environment = {**os.environ, "GIT_EDITOR": "true", "GIT_SEQUENCE_EDITOR": "true"}
+    return subprocess.run(
+        ["git", *argv], capture_output=True, text=True, check=False, env=environment
+    ).returncode == 0
+
+
+def end_operation(state, stage):
+    """Leave no merge or rebase in progress once the turn's commit run has settled.
+
+    A FAILED run aborts the operation, which puts HEAD back where the operation began; a
+    PASSED run mid-rebase finishes the rebase instead, because the settled commit sits on
+    the rebase's detached HEAD and an abort would discard it. Any other state, and a passed
+    run with a merge in progress, leaves the tree alone. Returns the journal lines.
+    """
+    if state not in ("failed", "passed"):
+        return []
+    named = "stage " + (stage or "implement")
+    lines = []
+    for _ in range(3):
+        operation = operation_in_progress()
+        if operation is None or (state == "passed" and operation != "rebase"):
+            break
+        flag = "--abort" if state == "failed" else "--continue"
+        done = run_git_operation(operation, flag)
+        verb = "aborted" if state == "failed" else "finished"
+        if not done:
+            lines.append(
+                "LIVESPEC_COMMIT_SETTLE_OPERATION_UNRESOLVED: " + named + ": `git " + operation
+                + " " + flag + "` did not complete, so the in-progress " + operation
+                + " was left in place"
+            )
+            break
+        lines.append(
+            "LIVESPEC_COMMIT_SETTLE_OPERATION_" + verb.upper() + ": " + named + ": " + verb
+            + " the in-progress " + operation + " after the " + state
+            + " commit run; HEAD is " + git_output("rev-parse", "HEAD")
+        )
+    return lines
+
+
+def settle(timeout_seconds, brief_file, restore_head_before_wait=False, stage=None):
+    """Settle the turn's commit runs, then hand the next node a tree with no operation open."""
+    state = settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage)
+    lines = end_operation(state, stage)
+    for line in lines:
+        print(line, file=sys.stderr)
+    brief = Path(brief_file)
+    if lines and state == "failed" and brief.exists():
+        with brief.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\nRedo the integration that commit run recorded.\n")
     return 0
 
 
@@ -788,6 +957,7 @@ def main(argv, program):
     settle_parser.add_argument("--timeout-seconds", required=True, type=float)
     settle_parser.add_argument("--brief-file", required=True)
     settle_parser.add_argument("--restore-head-before-wait", action="store_true")
+    settle_parser.add_argument("--stage", choices=tuple(STAGE_SETTLES))
     cut_parser = operations.add_parser("cut-settle")
     cut_parser.add_argument("--timeout-seconds", required=True, type=float)
     worker_parser = operations.add_parser("worker")
@@ -804,6 +974,7 @@ def main(argv, program):
                 args.timeout_seconds,
                 args.brief_file,
                 restore_head_before_wait=args.restore_head_before_wait,
+                stage=args.stage,
             )
         if args.operation == "cut-settle":
             return cut_settle(args.timeout_seconds)

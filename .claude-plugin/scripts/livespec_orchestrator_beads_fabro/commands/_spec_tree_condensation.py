@@ -54,12 +54,10 @@ opposite of what the relevance order is for.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, ValuesView
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from livespec_runtime.spec_stated import JUDGE_PROMPT
-from typing_extensions import override
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
@@ -71,6 +69,14 @@ from livespec_orchestrator_beads_fabro.commands._spec_tree_clause_resolution imp
 from livespec_orchestrator_beads_fabro.commands._spec_tree_clause_resolution import (
     headings_resolved,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation_models import (
+    CondensedClause,
+    CondensedSpecTree,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_identifier_paragraphs import (
+    identified_paragraphs,
+    merged_selection,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_partial import (
     FUNCTION_TERMS,
     partially_selected_section,
@@ -80,10 +86,13 @@ from livespec_orchestrator_beads_fabro.commands._spec_tree_referenced_selection 
     select_referenced_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_relevance import (
-    relevance_order,
+    relevance_order as _relevance_order,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_rendering import (
     rendered_tree_length as _rendered_length,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_scenario_governing import (
+    pinned_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_sections import (
     sections_of as _split_sections,
@@ -136,46 +145,6 @@ _TEMPLATE_OVERHEAD = len(JUDGE_PROMPT.format(spec_tree="", statement=""))
 # A retrieval term. Three characters or more, because a one- or two-character
 # token carries no topic and matches nearly every clause.
 _TERM = re.compile(r"[a-z0-9_]{3,}")
-
-
-@dataclass(frozen=True, kw_only=True)
-class CondensedClause:
-    """One headed clause whose full body is provenance for a model prompt.
-
-    `path` is the clause's file relative to the spec root. It rides OUTSIDE the
-    equality the verdict-reuse comparison uses, because a clause moved between
-    files is still the clause a verdict was judged against; the Definition-of-Done
-    SPEC IDENTITY reads it, so the same move still changes that identity.
-    """
-
-    heading: str
-    body: str
-    path: str = field(default="", compare=False)
-
-
-@dataclass(frozen=True, kw_only=True, eq=False)
-class CondensedSpecTree:
-    """The rendered tree and the full clauses selected into it."""
-
-    tree: Mapping[str, str]
-    clauses: tuple[CondensedClause, ...]
-
-    def __getitem__(self, path: str) -> str:
-        return self.tree[path]
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self.tree)
-
-    def __len__(self) -> int:
-        return len(self.tree)
-
-    def values(self) -> ValuesView[str]:
-        """The rendered file bodies, preserving the mapping-facing contract."""
-        return self.tree.values()
-
-    @override
-    def __eq__(self, other: object) -> bool:
-        return self.tree == other
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -246,13 +215,13 @@ def condensed_spec_tree(
     references = (
         definition.references if definition.present else reference_line_headings(text=statement)
     )
-    pinned = [
-        section
-        for reference in references
-        for section in sections
-        if section.heading is not None and section.heading.rstrip(" \t") == reference.rstrip(" \t")
-    ]
-    pinned = list(dict.fromkeys(pinned))
+    pinned, governing_terms = pinned_sections(
+        sections=sections, references=references, spec_tree=spec_tree, term_pattern=_TERM
+    )
+    asked_terms |= governing_terms
+    identified, remaining = identified_paragraphs(
+        sections=sections, asked_text=asked_text, remaining=remaining
+    )
     pinned_selected, pinned_complete, remaining = select_referenced_sections(
         sections=[
             ReferencedSection(
@@ -270,8 +239,8 @@ def condensed_spec_tree(
     )
     selected.update(pinned_selected)
     complete.update(pinned_complete)
-    relevance_order = _relevance_order(sections=sections, statement=statement)
-    for section in (section for section in relevance_order if section not in pinned):
+    relevance = _relevance_order(sections=sections, statement=statement, term_pattern=_TERM)
+    for section in (section for section in relevance if section not in pinned):
         cost = len(section.full) - len(section.elided)
         if cost <= remaining:
             selected[section.key] = section.full
@@ -293,6 +262,9 @@ def condensed_spec_tree(
         if partial is not None:
             selected[section.key] = partial
             remaining -= len(partial) - len(section.elided)
+    selected = merged_selection(
+        sections=sections, selected=selected, complete=complete, identified=identified
+    )
     return CondensedSpecTree(
         tree=_condensed(sections=sections, selected=selected, paths=spec_tree),
         clauses=tuple(
@@ -361,19 +333,6 @@ def _section(
         heading=heading,
         body=body,
     )
-
-
-def _relevance_order(*, sections: list[_Section], statement: str) -> list[_Section]:
-    """Every section, most relevant to `statement` first, ties broken by position.
-
-    The weight is inverse clause frequency, which is what keeps a term every
-    clause carries — `the`, `MUST`, this repository's own name — from ranking
-    clauses that merely share the specification's vocabulary above the clause
-    that shares the statement's subject.  Dividing by the square root of each
-    clause's lexical breadth stops a long clause from winning only because it
-    has room to collect many otherwise-marginal matching terms.
-    """
-    return relevance_order(sections=sections, statement=statement, term_pattern=_TERM)
 
 
 def _condensed(

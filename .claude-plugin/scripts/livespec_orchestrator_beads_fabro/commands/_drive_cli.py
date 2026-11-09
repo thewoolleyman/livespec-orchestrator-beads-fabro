@@ -25,6 +25,9 @@ from typing import Any, cast
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     add_invoker_argument,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff import (
+    HANDED_OFF_STATUS,
+)
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = [
@@ -42,7 +45,7 @@ _EXIT_BLOCKED = 4
 
 
 def exit_code_for_status(*, status: str) -> int:
-    if status == "green":
+    if status in {"green", HANDED_OFF_STATUS}:
         return 0
     if status == "blocked":
         return _EXIT_BLOCKED

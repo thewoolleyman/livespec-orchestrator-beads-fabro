@@ -83,6 +83,7 @@ _GROOM_WORKFLOW = _REPO_ROOT / ".fabro" / "workflows" / "groom-work-item" / "wor
 
 _CHECK_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
 _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
+_CONFORMANCE_HOOK_INSTALL_TOKEN = "{{ inputs.conformance_hook_install }}"
 _DEFAULT_BRANCH = "master"
 _BRANCH = "feat/bd-ib-cwrllw"
 _SHARED_FILE = "shared.txt"
@@ -166,7 +167,12 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
 
 
 def _node_script(
-    *, node: str, check_suite: str, shell_quoted_input: bool, workflow: Path = _WORKFLOW
+    *,
+    node: str,
+    check_suite: str,
+    shell_quoted_input: bool,
+    conformance_hook_install: str = "",
+    workflow: Path = _WORKFLOW,
 ) -> str:
     """One shipped node's script with ONLY the engine's own two tokens bound.
 
@@ -182,8 +188,10 @@ def _node_script(
     script: str = graph.nodes[node]["script"]
     assert script.count(_CHECK_SUITE_TOKEN) == 1, node
     rendered = shlex.quote(check_suite) if shell_quoted_input else check_suite
-    return script.replace(_DEFAULT_BRANCH_TOKEN, _DEFAULT_BRANCH).replace(
-        _CHECK_SUITE_TOKEN, rendered
+    return (
+        script.replace(_DEFAULT_BRANCH_TOKEN, _DEFAULT_BRANCH)
+        .replace(_CHECK_SUITE_TOKEN, rendered)
+        .replace(_CONFORMANCE_HOOK_INSTALL_TOKEN, conformance_hook_install)
     )
 
 
@@ -425,6 +433,7 @@ def _run(
     world: _World,
     check_suite: str,
     shell_quoted_input: bool,
+    conformance_hook_install: str = "",
     workflow: Path = _WORKFLOW,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -435,6 +444,7 @@ def _run(
                 node=node,
                 check_suite=check_suite,
                 shell_quoted_input=shell_quoted_input,
+                conformance_hook_install=conformance_hook_install,
                 workflow=workflow,
             ),
         ],
@@ -554,6 +564,110 @@ def test_a_failing_pr_refresh_suite_puts_its_own_output_in_the_repair_brief(
     assert _STDOUT_MARKER in targets[0]
     assert _STDERR_MARKER in targets[0]
     assert _COMMAND_NOT_FOUND not in targets[0]
+
+
+_CANONICAL_BODY_FILE = "canonical-hook-body"
+_INSTALLED_BODY_FILE = "installed-hook-body"
+
+
+def _hook_body_installer(*, root: Path, status: int) -> Path:
+    """A stand-in conformance hook installer that copies the tree's canonical body.
+
+    It records the canonical body of the tree it runs against as the installed
+    hook body, which is what the real installer does to the three hooks, then
+    exits the status the case asked for.
+    """
+    path = root / "install-conformance-hooks"
+    _ = path.write_text(
+        "#!/bin/sh\n"
+        f"body=old\nif test -f {_CANONICAL_BODY_FILE}; then body=$(cat {_CANONICAL_BODY_FILE}); fi\n"
+        f'printf "%s\\n" "$body" > ".git/{_INSTALLED_BODY_FILE}"\n'
+        f"exit {status}\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+    return path
+
+
+def _body_conformance_suite(*, root: Path) -> Path:
+    """A stand-in declared suite that fails body_mismatch-style on a stale install."""
+    path = root / "declared-body-suite"
+    _ = path.write_text(
+        "#!/bin/sh\n"
+        f'test "$(cat {_CANONICAL_BODY_FILE})" = "$(cat .git/{_INSTALLED_BODY_FILE})"\n',
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+    return path
+
+
+def _advance_default_canonical_body(*, world: _World) -> str:
+    """Move origin's default branch to a tree carrying a newer canonical hook body."""
+    mover = world.clone.parent / "mover"
+    _ = _git("clone", "--quiet", str(world.origin), str(mover), cwd=world.clone.parent)
+    advanced = _commit(
+        cwd=mover, path=_CANONICAL_BODY_FILE, text="new\n", subject="feat: new canonical body"
+    )
+    _ = _git("push", "--quiet", "origin", f"HEAD:refs/heads/{_DEFAULT_BRANCH}", cwd=mover)
+    return advanced
+
+
+def test_a_clean_pr_refresh_reinstalls_the_refreshed_tree_s_conformance_hooks(
+    tmp_path: Path,
+) -> None:
+    """A clean rebase onto a newer canonical hook body must not fail the gate on stale hooks.
+
+    The hooks were installed at run.prepare from the dispatch base. After the
+    rebase succeeds the post-rebase gate grades the refreshed tree, so the
+    resolved installer has to run again before it or the gate reports
+    body_mismatch and the run spends a refresh-repair round on an environment
+    fault.
+    """
+    world = _world(root=tmp_path)
+    installer = _hook_body_installer(root=tmp_path, status=0)
+    _ = subprocess.run(
+        [str(installer)], cwd=world.clone, check=True, capture_output=True, text=True
+    )
+    _ = _published(world=world, root=tmp_path)
+    _ = _advance_default_canonical_body(world=world)
+    suite = _body_conformance_suite(root=tmp_path)
+
+    result = _run(
+        node="pr_refresh",
+        world=world,
+        check_suite=shlex.quote(str(suite)),
+        shell_quoted_input=False,
+        conformance_hook_install=shlex.quote(str(installer)),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_REFRESH_REPAIR" not in result.stderr
+    assert world.state(name=_BRIEF_FILENAME) is None
+    installed = (world.clone / ".git" / _INSTALLED_BODY_FILE).read_text(encoding="utf-8")
+    assert installed == "new\n"
+
+
+def test_a_failed_pr_refresh_hook_install_fails_closed_before_the_gate(tmp_path: Path) -> None:
+    """A tree whose hook body could not be established is not graded or published."""
+    world = _world(root=tmp_path)
+    _ = _published(world=world, root=tmp_path)
+    _ = _advance_default_canonical_body(world=world)
+    installer = _hook_body_installer(root=tmp_path, status=3)
+    record = tmp_path / "gate-record"
+    suite = _check_suite(root=tmp_path, record=record, status=0)
+
+    result = _run(
+        node="pr_refresh",
+        world=world,
+        check_suite=_declared_command_line(suite=suite),
+        shell_quoted_input=False,
+        conformance_hook_install=shlex.quote(str(installer)),
+    )
+
+    assert result.returncode == 3, result.stderr
+    assert "LIVESPEC_PR_REFRESH_CONFORMANCE_HOOK_INSTALL_FAILED" in result.stderr
+    assert not record.exists(), "the declared suite ran against an unestablished hook body"
+    assert world.state(name=_BRIEF_FILENAME) is None
 
 
 @pytest.mark.parametrize(

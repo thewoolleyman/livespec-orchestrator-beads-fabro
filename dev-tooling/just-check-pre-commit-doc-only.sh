@@ -90,7 +90,7 @@ done
 # for the commit that itself edits tests/heading-coverage.json, because
 # authoring an UNOWNED TODO entry is never valid per the check's contract.
 printf '\n::: just check-no-todo-registry\n'
-if git diff --cached --name-only | grep -qx 'tests/heading-coverage.json'; then
+if grep -qx 'tests/heading-coverage.json' <<<"$(git diff --cached --name-only)"; then
     echo ":: staged changeset edits tests/heading-coverage.json — checking authored TODO ownership"
     if authored_unowned_heading_coverage_todo; then
         echo ":: staged changeset authors an unowned heading-coverage TODO — arming the TODO-ownership release tier"

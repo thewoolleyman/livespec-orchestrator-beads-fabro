@@ -19,22 +19,70 @@
 # binary reddens CI rather than skipping the validation.
 #
 # Usage: install-ci-fabro.sh [target-path]   (default /usr/local/bin/fabro)
+# INSTALL_CI_FABRO_WARM_DIR overrides the warm-seed directory (default
+# /__w/_warm/release-assets) so tests never touch the shared runner cache.
 
 set -euo pipefail
 
 readonly version="v0.254.0"
 readonly asset="fabro-x86_64-unknown-linux-musl.tar.gz"
 readonly sha256="27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
-readonly url="https://github.com/fabro-sh/fabro/releases/download/${version}/${asset}"
+readonly asset_id="438318077"
+readonly warm_dir="${INSTALL_CI_FABRO_WARM_DIR:-/__w/_warm/release-assets}"
+readonly warm_asset="${warm_dir}/${sha256}"
+readonly api_url="https://api.github.com/repos/fabro-sh/fabro/releases/assets/${asset_id}"
+readonly fallback_url="https://github.com/fabro-sh/fabro/releases/download/${version}/${asset}"
 readonly target="${1:-/usr/local/bin/fabro}"
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
-curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "$url"
+verify_asset() {
+    printf '%s  %s\n' "$sha256" "$1" | sha256sum --check --status
+}
 
-if ! printf '%s  %s\n' "$sha256" "${scratch}/${asset}" | sha256sum --check --status; then
-    echo "install-ci-fabro: sha256 mismatch for ${asset} (expected ${sha256})" >&2
+if [[ -f "$warm_asset" ]]; then
+    if verify_asset "$warm_asset"; then
+        tar -xzf "$warm_asset" -C "$scratch"
+        install -m 0755 "${scratch}/fabro-x86_64-unknown-linux-musl/fabro" "$target"
+        "$target" --version
+        exit 0
+    fi
+    printf 'install-ci-fabro: warm seed %s had a sha256 mismatch; trying GitHub releases API asset route\n' "$warm_asset" >&2
+else
+    printf 'install-ci-fabro: warm seed %s was absent; trying GitHub releases API asset route\n' "$warm_asset" >&2
+fi
+
+api_headers=(-H 'Accept: application/octet-stream')
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    api_headers+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+if curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "${api_headers[@]}" "$api_url"; then
+    if ! verify_asset "${scratch}/${asset}"; then
+        echo "install-ci-fabro: sha256 mismatch for GitHub releases API asset (expected ${sha256})" >&2
+        exit 1
+    fi
+
+    tar -xzf "${scratch}/${asset}" -C "$scratch"
+    install -m 0755 "${scratch}/fabro-x86_64-unknown-linux-musl/fabro" "$target"
+    "$target" --version
+    exit 0
+else
+    api_status=$?
+    printf 'install-ci-fabro: GitHub releases API asset route failed with curl exit status %s; trying GitHub release download URL\n' "$api_status" >&2
+fi
+
+if curl --fail --silent --show-error --location --retry 5 --output "${scratch}/${asset}" "$fallback_url"; then
+    :
+else
+    fallback_status=$?
+    printf 'install-ci-fabro: GitHub release download URL failed with curl exit status %s\n' "$fallback_status" >&2
+    exit 1
+fi
+
+if ! verify_asset "${scratch}/${asset}"; then
+    echo "install-ci-fabro: sha256 mismatch for GitHub release download (expected ${sha256})" >&2
     exit 1
 fi
 

@@ -43,11 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_pres
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_watch import (
     RunWallBudgetWatch,
-    RunWallVerdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
-    FABRO_RM_TIMEOUT_SECONDS,
-    cancel_stalled_run,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_watch_decision import (
+    decide_run_watch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watch_poll import (
     WatchPollBinding,
@@ -55,9 +53,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watch_poll import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     LivenessSample,
-    StallVerdict,
-    decide_stall,
-    quiet_window_seconds,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watched_launch_result import (
+    WatchResult,
+    watched_launch_result,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
@@ -72,20 +71,7 @@ __all__: list[str] = ["WatchedFabroLauncher"]
 # (`_node_timeouts.derive_fabro_timeout_seconds`) — the watched and
 # synchronous launchers deliberately read the SAME number, so a repository
 # that lengthens a node cannot have one path outlive the other.
-# The `fabro rm -f` budget lives with the cancel it belongs to
-# (`_dispatcher_stall_cancel`); the launcher reads it back because it joins its
-# own run thread against the same number — the thread is waiting for the
-# `fabro run` that `rm` is what ends, so two different budgets would let the
-# join outlive or undercut the cancel it is waiting on.
 _WATCHDOG_POLL_INTERVAL_SECONDS = 60.0
-
-
-@dataclass(frozen=True, kw_only=True)
-class _WatchResult:
-    stalled_run_id: str | None = None
-    budget_exceeded_run_id: str | None = None
-    abandoned_run_id: str | None = None
-    abandoned_item_status: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -191,38 +177,9 @@ class WatchedFabroLauncher:
             run_returned=run_returned,
             port=port,
         )
-        if watched.abandoned_run_id is not None:
-            thread.join(timeout=FABRO_RM_TIMEOUT_SECONDS)
-            return FabroRunResult(
-                command=holder.get(
-                    "result",
-                    CommandResult(exit_code=1, stdout="", stderr="cancelled by stale item reaper"),
-                ),
-                abandoned_run_id=watched.abandoned_run_id,
-                abandoned_item_status=watched.abandoned_item_status,
-            )
-        if watched.budget_exceeded_run_id is not None:
-            thread.join(timeout=FABRO_RM_TIMEOUT_SECONDS)
-            return FabroRunResult(
-                command=holder.get(
-                    "result",
-                    CommandResult(
-                        exit_code=124, stdout="", stderr="cancelled on the whole-run wall budget"
-                    ),
-                ),
-                budget_exceeded_run_id=watched.budget_exceeded_run_id,
-            )
-        if watched.stalled_run_id is not None:
-            thread.join(timeout=FABRO_RM_TIMEOUT_SECONDS)
-            return FabroRunResult(
-                command=holder.get(
-                    "result",
-                    CommandResult(exit_code=124, stdout="", stderr="cancelled by stall watchdog"),
-                ),
-                stalled_run_id=watched.stalled_run_id,
-            )
-        thread.join()
-        return FabroRunResult(command=holder["result"], run_id=run_id_holder.get("run_id"))
+        return watched_launch_result(
+            watched=watched, thread=thread, holder=holder, run_id_holder=run_id_holder
+        )
 
     def _watch(
         self,
@@ -233,7 +190,7 @@ class WatchedFabroLauncher:
         thread: threading.Thread,
         run_returned: threading.Event,
         port: FabroPort,
-    ) -> _WatchResult:
+    ) -> WatchResult:
         # The window this run is graded against comes from the plan, which
         # resolved `dispatcher.stall_timeout_seconds` through the node timeouts'
         # own layers once per dispatch. Reading it here rather than resolving a
@@ -270,7 +227,7 @@ class WatchedFabroLauncher:
                 # that had already completed. A run whose `fabro run` has NOT
                 # returned, and whose liveness stays flat for the full stall
                 # window, is still cancelled as stalled-no-progress below.
-                return _WatchResult()
+                return WatchResult()
             poll = observe_watch_poll(
                 plan=plan,
                 runner=runner,
@@ -287,7 +244,7 @@ class WatchedFabroLauncher:
             known_run_id = run_id if run_id is not None else known_run_id
             bound_run_id = run.run_id if run is not None else bound_run_id
             if poll.abandoned_item_status is not None and run is not None:
-                return _WatchResult(
+                return WatchResult(
                     abandoned_run_id=run.run_id,
                     abandoned_item_status=poll.abandoned_item_status,
                 )
@@ -308,10 +265,8 @@ class WatchedFabroLauncher:
             )
             if known_run_id is None or run is None or run.status_kind != "running":
                 continue
-            # BEFORE the stall decision, which is the clause's own precedence:
-            # a quiet run past its budget satisfies both rules, and only the
-            # budget disposition rests it for a person.
-            verdict = budget.verdict(
+            decision = decide_run_watch(
+                budget=budget,
                 dispatch_id=self.dispatch_id,
                 plan=plan,
                 port=port,
@@ -320,30 +275,14 @@ class WatchedFabroLauncher:
                 run_id=known_run_id,
                 recorded_epoch=poll.recorded_running_epoch,
                 now_epoch=self.wall_clock(),
+                samples=tuple(samples),
+                stall_seconds=stall_seconds,
             )
-            if verdict == RunWallVerdict.CANCELLED:
-                return _WatchResult(budget_exceeded_run_id=known_run_id)
-            if verdict == RunWallVerdict.HELD:
-                # A HELD verdict is NOT a fall-through: the clause requires that
-                # a run whose budget export is pending its read-back "is not
-                # cancelled as stalled-no-progress" either, and a quiet run past
-                # its budget satisfies the stall rule too.
-                continue
-            window = tuple(samples)
-            # A cancel the server refused falls through: the run may still be
-            # live, so the watch keeps polling and asks again.
-            if decide_stall(
-                samples=window, stall_seconds=stall_seconds
-            ) == StallVerdict.STALLED and cancel_stalled_run(
-                dispatch_id=self.dispatch_id,
-                plan=plan,
-                port=port,
-                journal=journal,
-                run_id=known_run_id,
-                quiet_seconds=quiet_window_seconds(samples=window),
-            ):
-                return _WatchResult(stalled_run_id=known_run_id)
-        return _WatchResult()
+            if decision.budget_exceeded:
+                return WatchResult(budget_exceeded_run_id=known_run_id)
+            if decision.stalled:
+                return WatchResult(stalled_run_id=known_run_id)
+        return WatchResult()
 
     def _notify_worker_running(self) -> None:
         """Release the native-secret launch transaction, if one is wired.

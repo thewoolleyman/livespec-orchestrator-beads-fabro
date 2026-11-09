@@ -91,6 +91,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation i
     gather_resume,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_release import (
+    stale_assignee_with_run,
+)
+from livespec_orchestrator_beads_fabro.commands._run_attribution import newest_journaled_run_id
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -149,7 +153,7 @@ class RecoveryRouting:
         then delete the very branch the resumed run was about to check out.
         """
         route = self.route_for(work_item_id=work_item_id)
-        return route is None or route.route != ROUTE_RESUME
+        return route is None or route.route in {ROUTE_FRESH, ROUTE_SEEDED}
 
     def offered(self, *, candidates: list[WorkItem]) -> list[WorkItem]:
         """The candidates the admission valve is offered, which excludes every hold.
@@ -223,7 +227,9 @@ def route_recovery(
     runner = ShellCommandRunner()
     routes: list[RecoveryRoute] = []
     for item in candidates:
-        if not released_for_recovery(records=journaled, work_item_id=item.id):
+        if not released_for_recovery(
+            records=journaled, work_item_id=item.id
+        ) and not stale_assignee_with_run(repo=repo, item=item):
             routes.append(RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH))
             continue
         routes.append(
@@ -349,12 +355,14 @@ def _fallback_route(
     it, and asking it anyway would spend an origin round trip per released
     candidate to answer a question the route had already settled.
     """
+    journaled = read_journal_records(journal_path=journal.path)
     preserved = verified_preserved_seed(
         runner=runner,
         repo=repo,
         work_item_id=item.id,
         earlier_run_ids=gather.earlier_run_ids,
-        journal_records=read_journal_records(journal_path=journal.path),
+        journal_records=journaled,
+        latest_run_id=newest_journaled_run_id(records=journaled, work_item_id=item.id),
     )
     if isinstance(preserved, PreservedWorkUnobservable):
         return _held_route(

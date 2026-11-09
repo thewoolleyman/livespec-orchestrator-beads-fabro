@@ -5,6 +5,9 @@ is a thin adapter over a released library function, run against the exact
 attempt the shared `--item`, `--attempt`, `--phase`, `--operation`,
 `--generation` and `--owner` identity names:
 
+- `record-merge` reads the merged repair PR the chain names and its landed
+  history from the forge and git and records `master-observation`
+  (`record_merge`).
 - `enter-repayment` observes the named master run on the forge and calls
   `enter_repayment`, so the run's own completion and conclusion are the gate.
 - `advance-repayment` calls `advance_repayment` for the named next phase.
@@ -31,19 +34,13 @@ separators) of exactly its record's fields; anything else is the named refusal
 from __future__ import annotations
 
 import argparse
-import json
 import re
 from collections.abc import Callable
-from dataclasses import fields
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from livespec_orchestrator_beads_fabro._incident_authority_payload import (
-    attempt_record,
-    decode_attempt,
-)
+from livespec_orchestrator_beads_fabro._incident_authority_payload import attempt_record
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
     AuthorityRefusal,
-    IncidentAttempt,
     IncidentReading,
 )
 from livespec_orchestrator_beads_fabro.commands._incident_authority_binding import (
@@ -57,7 +54,18 @@ from livespec_orchestrator_beads_fabro.commands._incident_authority_completion i
     decode_attestation,
     observe_master_run,
 )
-from livespec_orchestrator_beads_fabro.effects import parse_json
+from livespec_orchestrator_beads_fabro.commands._incident_authority_decode import (
+    decode_attributed_attempt,
+    decode_record,
+    invalid_payload,
+)
+from livespec_orchestrator_beads_fabro.commands._incident_authority_merge import record_merge
+from livespec_orchestrator_beads_fabro.commands._incident_rollback_conflict import (
+    RollbackConflict,
+    RollbackResolution,
+    record_rollback_conflict,
+    resolve_rollback_conflict,
+)
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
     RepaymentEntry,
@@ -80,7 +88,6 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandRunner
 
 __all__: list[str] = [
-    "INVALID_PAYLOAD",
     "LIFECYCLE_PAYLOADS",
     "MASTER_CI_UNOBSERVABLE",
     "LifecycleReply",
@@ -91,51 +98,34 @@ __all__: list[str] = [
 
 # Each lifecycle action and the payload arguments it alone requires.
 LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
+    "record-merge": (),
     "enter-repayment": ("master_run", "target_ref"),
     "advance-repayment": ("to_phase",),
     "bind-repayment-acceptance": ("pr",),
     "reopen-regression": ("attributed_json", "finding_json", "principal"),
     "record-deferred-finding": ("finding_json",),
     "record-revert-receipt": ("revert_receipt_json",),
+    "record-rollback-conflict": ("rollback_conflict_json",),
+    "resolve-rollback-conflict": ("rollback_resolution_json",),
     "correct-attempt": ("correction_json", "target_ref"),
     "complete-incident": ("master_run", "completion_json"),
 }
-INVALID_PAYLOAD = "incident-action-invalid-payload"
-_SCALARS: dict[str, type] = {"str": str, "bool": bool}
-_T = TypeVar("_T")
 _PR_NUMBER = re.compile(r"[1-9][0-9]*")
 
 LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | AuthorityRefusal
 _Handler = Callable[..., LifecycleReply]
 
 
-def _invalid(*, flag: str, detail: str) -> AuthorityRefusal:
-    return AuthorityRefusal(code=INVALID_PAYLOAD, detail=f"{flag}: {detail}")
-
-
-def _canonical(*, value: object) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
-def _record(*, text: str, shape: type[_T], flag: str) -> _T | AuthorityRefusal:
-    """Decode exactly one record of `shape` from its canonical JSON, or refuse."""
-    raw = parse_json(text=text)
-    names = {field.name: _SCALARS.get(str(field.type)) for field in fields(cast("Any", shape))}
-    value = cast("dict[str, object]", raw) if isinstance(raw, dict) else None
-    if value is None or text != _canonical(value=value):
-        return _invalid(flag=flag, detail="not one canonical JSON object")
-    if set(value) != set(names) or any(type(value[k]) is not t for k, t in names.items()):
-        return _invalid(flag=flag, detail=f"needs exactly {sorted(names)} with their types")
-    return shape(**value)
-
-
-def _attempt(*, text: str) -> IncidentAttempt | AuthorityRefusal:
-    """The attributed attempt in its canonical record bytes; the library re-reads the chain."""
-    raw = parse_json(text=text)
-    attempt = decode_attempt(value=raw)
-    if attempt is None or text != _canonical(value=attempt_record(attempt=attempt)):
-        return _invalid(flag="--attributed-json", detail="not one canonical attempt record")
-    return attempt
+def _record_merge(
+    *,
+    args: argparse.Namespace,
+    client: BeadsClient,
+    reading: IncidentReading,
+    runner: CommandRunner,
+) -> LifecycleReply:
+    return record_merge(
+        client=client, reading=reading, runner=runner, repo=args.repo, repository=args.repository
+    )
 
 
 def _enter(
@@ -174,7 +164,7 @@ def _bind(
     runner: CommandRunner,
 ) -> LifecycleReply:
     if _PR_NUMBER.fullmatch(args.pr) is None:
-        return _invalid(flag="--pr", detail="not a positive pull request number")
+        return invalid_payload(flag="--pr", detail="not a positive pull request number")
     return bind_repayment_acceptance(
         client=client,
         reading=reading,
@@ -188,10 +178,10 @@ def _bind(
 def _reopen(
     *, args: argparse.Namespace, client: BeadsClient, reading: IncidentReading, **_: object
 ) -> LifecycleReply:
-    attributed = _attempt(text=args.attributed_json)
+    attributed = decode_attributed_attempt(text=args.attributed_json)
     if isinstance(attributed, AuthorityRefusal):
         return attributed
-    finding = _record(text=args.finding_json, shape=Finding, flag="--finding-json")
+    finding = decode_record(text=args.finding_json, shape=Finding, flag="--finding-json")
     if isinstance(finding, AuthorityRefusal):
         return finding
     return reopen_for_regression(
@@ -206,7 +196,7 @@ def _reopen(
 def _defer(
     *, args: argparse.Namespace, client: BeadsClient, reading: IncidentReading, **_: object
 ) -> LifecycleReply:
-    finding = _record(text=args.finding_json, shape=Finding, flag="--finding-json")
+    finding = decode_record(text=args.finding_json, shape=Finding, flag="--finding-json")
     if isinstance(finding, AuthorityRefusal):
         return finding
     return record_deferred_finding(client=client, reading=reading, finding=finding)
@@ -215,7 +205,7 @@ def _defer(
 def _revert(
     *, args: argparse.Namespace, client: BeadsClient, reading: IncidentReading, **_: object
 ) -> LifecycleReply:
-    receipt = _record(
+    receipt = decode_record(
         text=args.revert_receipt_json, shape=RevertReceipt, flag="--revert-receipt-json"
     )
     if isinstance(receipt, AuthorityRefusal):
@@ -223,10 +213,38 @@ def _revert(
     return record_revert_receipt(client=client, reading=reading, receipt=receipt)
 
 
+def _rollback_conflict(
+    *, args: argparse.Namespace, client: BeadsClient, reading: IncidentReading, **_: object
+) -> LifecycleReply:
+    conflict = decode_record(
+        text=args.rollback_conflict_json,
+        shape=RollbackConflict,
+        flag="--rollback-conflict-json",
+    )
+    if isinstance(conflict, AuthorityRefusal):
+        return conflict
+    return record_rollback_conflict(client=client, reading=reading, conflict=conflict)
+
+
+def _resolve_rollback_conflict(
+    *, args: argparse.Namespace, client: BeadsClient, reading: IncidentReading, **_: object
+) -> LifecycleReply:
+    resolution = decode_record(
+        text=args.rollback_resolution_json,
+        shape=RollbackResolution,
+        flag="--rollback-resolution-json",
+    )
+    if isinstance(resolution, AuthorityRefusal):
+        return resolution
+    return resolve_rollback_conflict(client=client, reading=reading, resolution=resolution)
+
+
 def _correct(
     *, args: argparse.Namespace, client: BeadsClient, reading: IncidentReading, **_: object
 ) -> LifecycleReply:
-    correction = _record(text=args.correction_json, shape=Correction, flag="--correction-json")
+    correction = decode_record(
+        text=args.correction_json, shape=Correction, flag="--correction-json"
+    )
     if isinstance(correction, AuthorityRefusal):
         return correction
     return enter_corrected_attempt(
@@ -245,7 +263,7 @@ def _complete(
     attestation = decode_attestation(text=args.completion_json)
     if attestation is None:
         detail = f"needs exactly {list(ATTESTATION_FIELDS)} as one canonical JSON object"
-        return _invalid(flag="--completion-json", detail=detail)
+        return invalid_payload(flag="--completion-json", detail=detail)
     return complete_from_forge(
         client=client,
         reading=reading,
@@ -257,12 +275,15 @@ def _complete(
 
 
 _HANDLERS: dict[str, _Handler] = {
+    "record-merge": _record_merge,
     "enter-repayment": _enter,
     "advance-repayment": _advance,
     "bind-repayment-acceptance": _bind,
     "reopen-regression": _reopen,
     "record-deferred-finding": _defer,
     "record-revert-receipt": _revert,
+    "record-rollback-conflict": _rollback_conflict,
+    "resolve-rollback-conflict": _resolve_rollback_conflict,
     "correct-attempt": _correct,
     "complete-incident": _complete,
 }

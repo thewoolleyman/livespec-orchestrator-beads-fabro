@@ -1,0 +1,3022 @@
+{
+ "spec_version": "316",
+ "caller": "measure_x366dh",
+ "state": {
+  "calls": 51,
+  "usd": 6.035798,
+  "usd_reported": 6.035798,
+  "unreported": 0,
+  "stopped": false
+ },
+ "verdicts": [
+  {
+   "id": "bd-ib-csrvhs",
+   "selected_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Forbidden patterns",
+    "## Scenario 297 \u2014 A queued provisional launcher runs its preflight while it waits and still binds in FIFO order"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Forbidden patterns",
+    "## Provisional fleet launch scripts",
+    "## Scenario 297 \u2014 A queued provisional launcher runs its preflight while it waits and still binds in FIFO order"
+   ],
+   "generalization_target": "## Forbidden patterns",
+   "rationale": "Forbidden patterns bars wall-clock verdicts in tests under `tests/` and allows a wall-clock wait only as a hang guard. That covers the Python wrapper's behaviour, but its text does not reach the shell harness in `fleet-launch/test/run-tests.sh`. The required failure message (case, launcher, log tail) and the 10-consecutive-CI-pass criterion are not stated anywhere in the spec.",
+   "named_clauses": [
+    "## Forbidden patterns",
+    "## Provisional fleet launch scripts",
+    "## Scenario 297 \u2014 A queued provisional launcher runs its preflight while it waits and still binds in FIFO order",
+    "## Forbidden patterns"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118968,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55814,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 734,
+      "output_tokens_details": {
+       "thinking_tokens": 482
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55814,
+        "output_tokens": 734,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.3
+  },
+  {
+   "id": "bd-ib-ax6bxj",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Grooming and slice-size calibration",
+    "## Scenario 206 \u2014 The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification"
+   ],
+   "generalization_target": "## Dispatcher admission, WIP cap, and post-merge acceptance",
+   "rationale": "The visible text says bug, chore and non_functional items are never spec-change tier and are classified on every dispatch path. It also states tier-record reuse and re-taking, but only for features and governing-heading verdicts. Reuse of a non-feature record while its asked-for behaviour and specification are unchanged, and re-classification when the behaviour changes, are not stated for those item types in the shown text.",
+   "named_clauses": [
+    "## Grooming and slice-size calibration",
+    "## Scenario 206 \u2014 The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.117748,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54704,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 834,
+      "output_tokens_details": {
+       "thinking_tokens": 592
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54704,
+        "output_tokens": 834,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 14.2
+  },
+  {
+   "id": "bd-ib-yqjaut",
+   "selected_clauses": [
+    "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate",
+    "## Self-contained plugin dispatch"
+   ],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The ratified text states that the janitor refreshes before the aggregate, that the aggregate runs once on the pushed tree, and that a failing aggregate on a changed refreshed head takes the refresh-repair route naming failed targets. It says nothing about the refresh merge commit's own hooks running the full suite, or about the pre-push commit-range validation accepting the merge head. The work item itself says this is a spec-change tier needing a proposal.",
+   "named_clauses": [
+    "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate",
+    "## Self-contained plugin dispatch",
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.120214,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55152,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 991,
+      "output_tokens_details": {
+       "thinking_tokens": 739
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55152,
+        "output_tokens": 991,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 15.5
+  },
+  {
+   "id": "bd-ib-ajfmkw",
+   "selected_clauses": [
+    "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Dispatcher policy settings"
+   ],
+   "generalization_target": "## Dispatcher policy settings",
+   "rationale": "The Stranded claim release hold list requires the `attribution-pending` held entry to name the operator `move` valve as the remedy, and explains that a dispatch between admission and taking its lock is indistinguishable from a dead one. It does not require a precondition (release the claim, press only after launcher and drive are observed dead) on the console held line or the journaled held entry.",
+   "named_clauses": [
+    "## Dispatcher policy settings",
+    "## Dispatcher policy settings"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.113448,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54729,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 399,
+      "output_tokens_details": {
+       "thinking_tokens": 225
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54729,
+        "output_tokens": 399,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.9
+  },
+  {
+   "id": "bd-ib-qcshv6",
+   "selected_clauses": [
+    "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Dispatcher policy settings",
+    "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded"
+   ],
+   "generalization_target": "## Dispatcher policy settings",
+   "rationale": "The visible text says a needs-human cause comment exists and that it names the run id and the run's innermost cause (Scenario 196, and the needs-human cause comment in 'A factory run never awaits a human'). It does not say that the cause is taken from the stage the run ended on, that recovered earlier stages are excluded, or that failed stages are listed in failure order with the ending stage marked.",
+   "named_clauses": [
+    "## Dispatcher policy settings",
+    "## Scenario 196 \u2014 Reconciliation releases or completes a stranded dispatch claim on its owning host, and holds with a named reason every claim it cannot prove stranded",
+    "## Dispatcher policy settings"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11681,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54695,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 742,
+      "output_tokens_details": {
+       "thinking_tokens": 503
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54695,
+        "output_tokens": 742,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 14.3
+  },
+  {
+   "id": "bd-ib-xs2gmn",
+   "selected_clauses": [
+    "## Fabro runtime constraints",
+    "## Scenario 66 \u2014 A parked rework item is re-dispatched before new ready work",
+    "## Scenario 187 \u2014 A priority-epic idle-slot audit surfaces dispatchable priority work while the factory queue is empty, and a blocker with a live run is not a stale edge",
+    "## Scenario 307 \u2014 The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Fabro runtime constraints",
+   "rationale": "The ratified text governs which Fabro build the factory may pin and how the fork is built and carried. It says nothing about how `fabro resume` must behave on an already-finished run: the exit code, the 'already finished' message, or keeping `start_requested` and `runnable` out of the stream. The Dispatcher's resume scenarios (142, 143) concern Dispatcher-level resume, not the Fabro CLI or server.",
+   "named_clauses": [
+    "## Fabro runtime constraints"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.116786,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55873,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 504,
+      "output_tokens_details": {
+       "thinking_tokens": 321
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55873,
+        "output_tokens": 504,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.7
+  },
+  {
+   "id": "bd-ib-bomy33",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Grooming and slice-size calibration",
+    "## Scenario 206 \u2014 The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification"
+   ],
+   "generalization_target": "## Grooming and slice-size calibration",
+   "rationale": "The autonomy-tier bullet states that a spec-change-tier item MUST be held out of `ready`, that the hold fails closed, that the wall refuses with exit 5 naming the topic, and that `manual` admission rests at `pending-approval` for the `approve` valve. It does not state that `approve` itself refuses a held item, the hold reasons (`no-linked-topic`, `unratified-topic`, `awaiting-rejudgement`) or the re-judgement-on-approve arm. It also does not state that an intake or drain pass moves an already-`ready` held item to `backlog` with a ledger comment, while an item due re-judgement stays at `ready`.",
+   "named_clauses": [
+    "## Grooming and slice-size calibration",
+    "## Scenario 206 \u2014 The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification",
+    "## Grooming and slice-size calibration"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118064,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54822,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 842,
+      "output_tokens_details": {
+       "thinking_tokens": 520
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54822,
+        "output_tokens": 842,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.5
+  },
+  {
+   "id": "bd-ib-dpsiwz",
+   "selected_clauses": [
+    "## Fabro runtime constraints"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Fabro runtime constraints",
+   "rationale": "The visible ratified text never requires workflow setup to run as explicit command nodes, never requires workflows to validate without `[[run.prepare.steps]]`, and never says a failed setup node names its step. It still treats a repository's prepare chain as a target-toolchain fact. The only 'loadable on the engine the factory moves onto' rule is the proof-stage constraint in the Fabro runtime constraints section, and it covers only the four proof-stage nodes, so generalizing that section would be the natural home.",
+   "named_clauses": [
+    "## Fabro runtime constraints"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11979600000000001,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 56023,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 775,
+      "output_tokens_details": {
+       "thinking_tokens": 565
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 56023,
+        "output_tokens": 775,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.9
+  },
+  {
+   "id": "bd-ib-qshcwc",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Factory-configurable ACP fallback priority"
+   ],
+   "generalization_target": "## Factory-configurable ACP fallback priority",
+   "rationale": "The clause states the `passed_over_needs_human` field, which must be present and empty when nothing was passed over. It also states a newest-by-committer-time tie-break, but only among refs carrying the same run, and says those named under a run identifier are preferred. It does not say that among needs-human refs of different earlier runs, or named under a run id versus a dispatch id, routing seeds from the newest by committer time. Nor does it say the pull request record's run cannot outrank newer needs-human work.",
+   "named_clauses": [
+    "## Factory-configurable ACP fallback priority",
+    "## Factory-configurable ACP fallback priority"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.117574,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54157,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 926,
+      "output_tokens_details": {
+       "thinking_tokens": 702
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54157,
+        "output_tokens": 926,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.7
+  },
+  {
+   "id": "bd-ib-s754le",
+   "selected_clauses": [],
+   "kind": "stated",
+   "stated_by": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 326 \u2014 A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused"
+   ],
+   "generalization_target": null,
+   "rationale": "The 'A tree a factory run resumes or seeds can pass under the harness judging it' paragraph of Self-contained plugin dispatch states every bullet: the commit-hook suite sees no LIVESPEC_AGENT_PUBLICATION_DENIED, LIVESPEC_AGENT_STAGE is not inherited by test processes via a harness-owned means requiring no tree change, a test case that sets the variable itself still sees the refusal, agent-stage publication stays refused, and the requirement applies in every fleet repository. Scenario 326 exercises each of these, including the run against a repository that has merged nothing.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 326 \u2014 A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.112538,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54739,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 306,
+      "output_tokens_details": {
+       "thinking_tokens": 0
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54739,
+        "output_tokens": 306,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.7
+  },
+  {
+   "id": "bd-ib-oxx6eo",
+   "selected_clauses": [
+    "## Expedited incident lifecycle",
+    "## Scenario: incident provenance exceptions remain exact and repayable",
+    "## Scenario: a successful incident merge reenters normal factory on the same item",
+    "## Scenario: an attributable regression fences repayment and reopens the same incident",
+    "## Scenario: incident entry owns one initial authority before a carrier PR exists"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Expedited incident lifecycle"
+   ],
+   "generalization_target": "## Expedited incident lifecycle",
+   "rationale": "The section states the incident phase/state sequence the walk asserts (repair through repayment and reopen) and requires pre-enablement demonstration of parts of it. It does not require one end-to-end test that fakes only bd and the forge across the orchestrator and dev-tooling. Its demonstration clause asks for the real public provider with independent clients, so a faked bd goes beyond what the text states.",
+   "named_clauses": [
+    "## Expedited incident lifecycle",
+    "## Expedited incident lifecycle"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11603999999999999,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54865,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 631,
+      "output_tokens_details": {
+       "thinking_tokens": 448
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54865,
+        "output_tokens": 631,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.3
+  },
+  {
+   "id": "bd-ib-7i2bta",
+   "selected_clauses": [
+    "## Expedited incident lifecycle",
+    "## Scenario: incident provenance exceptions remain exact and repayable",
+    "## Scenario: an attributable regression fences repayment and reopens the same incident"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Expedited incident lifecycle"
+   ],
+   "generalization_target": "## Expedited incident lifecycle",
+   "rationale": "The phase table pairs master-observation with 'the exact expedited repair carrier merged' and reverting with 'a current incident failure'. The text also requires attempts to bind landed commit/tree identities and the bypass audit to admit only the exact carrier. It does not state a record-merge writer, its named refusals (unmerged PR, head mismatch, non-pr-bound or non-active), the recovered-true idempotent retry, or that reopen-regression may move from master-observation to reverting.",
+   "named_clauses": [
+    "## Expedited incident lifecycle",
+    "## Expedited incident lifecycle"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.117232,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55131,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 697,
+      "output_tokens_details": {
+       "thinking_tokens": 479
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55131,
+        "output_tokens": 697,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.1
+  },
+  {
+   "id": "bd-ib-yvmtrm",
+   "selected_clauses": [
+    "## Scenario 252 \u2014 The acceptance pass selects each Proof of Done record by the binding the record carries"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The visible text covers how a Proof of Done record is posted, bound to an item and pull request, and graded, including the stale-head rule in Scenario 252. Nothing shown requires the first-line timestamp to be no later than the comment's creation time, or has the proof evidence leg discard a future-stamped record and name both times. The record-format material would sit in the \u00a7\"Proof of Done record\" subsection under this heading, which is where a generalization would go.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.116178,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54799,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 658,
+      "output_tokens_details": {
+       "thinking_tokens": 467
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54799,
+        "output_tokens": 658,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.1
+  },
+  {
+   "id": "bd-ib-ot4av7",
+   "selected_clauses": [
+    "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled"
+   ],
+   "generalization_target": "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
+   "rationale": "Scenario 240 states that every host taking, including the repository preflight, reuses a recorded verdict on identical digests without starting a judge, and that a changed subject takes a fresh judgement. It also describes governing-heading verdicts with clause provenance. It does not state that the preflight's governing-heading reader specifically consults the recorded verdict first, that the output lines match a fresh taking, or that a standing release-spec-tier attestation decides the preflight's governing-heading verdict.",
+   "named_clauses": [
+    "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
+    "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.120248,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55559,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 913,
+      "output_tokens_details": {
+       "thinking_tokens": 624
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55559,
+        "output_tokens": 913,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 14.6
+  },
+  {
+   "id": "bd-ib-z5yzyq",
+   "selected_clauses": [
+    "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run"
+   ],
+   "generalization_target": "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run",
+   "rationale": "Scenario 199 states only the last bullet: a full run is still directed when the tree changed after the last full passing run or the only commit took the partial fast path. It does not cover a no-commit, unchanged-tree fix turn, reproducing a failure by the tests the output names, treating a call with no exit status as still running, or avoiding concurrent full runs.",
+   "named_clauses": [
+    "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run",
+    "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11737399999999999,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55012,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 735,
+      "output_tokens_details": {
+       "thinking_tokens": 514
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55012,
+        "output_tokens": 735,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.4
+  },
+  {
+   "id": "bd-ib-grzfpt",
+   "selected_clauses": [
+    "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Self-contained plugin dispatch"
+   ],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The ratified text requires a refresh-repair route whose fix turn integrates the default branch, and Scenario 176 has publish_draft republish a repaired head that lacks the published tip P using an explicit lease. The visible text does not say the `fix` prompt must direct a merge when the publish branch exists on origin at an ancestor tip, nor a rebase when it does not. That prompt-level merge-versus-rebase conditional is the new behaviour.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.120574,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55042,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1049,
+      "output_tokens_details": {
+       "thinking_tokens": 841
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55042,
+        "output_tokens": 1049,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.1,
+   "retry_of_unparseable_first_attempt": {
+    "id": "bd-ib-grzfpt",
+    "selected_clauses": [
+     "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+    ],
+    "kind": "did-not-run",
+    "error": "response is not JSON: Expecting value: line 1 column 1 (char 0)",
+    "model_calls": [
+     {
+      "agent": "/home/ubuntu/.local/bin/claude",
+      "exit": 0,
+      "cost_usd": 0.121068,
+      "model": "claude-sonnet-5-5",
+      "usage": {
+       "input_tokens": 55039,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "output_tokens": 1099,
+       "output_tokens_details": {
+        "thinking_tokens": 847
+       },
+       "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+       },
+       "service_tier": "standard",
+       "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+       },
+       "inference_geo": "global",
+       "iterations": [
+        {
+         "input_tokens": 55039,
+         "output_tokens": 1099,
+         "cache_read_input_tokens": 0,
+         "cache_creation_input_tokens": 0,
+         "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+         },
+         "type": "message"
+        }
+       ],
+       "speed": "standard",
+       "fallback_credit": null
+      }
+     }
+    ],
+    "seconds": 15.8
+   }
+  },
+  {
+   "id": "bd-ib-wd2zcq",
+   "selected_clauses": [
+    "## Scenario 31 \u2014 drive human valve actions"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 31 \u2014 drive human valve actions",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance"
+   ],
+   "generalization_target": "## Dispatcher admission, WIP cap, and post-merge acceptance",
+   "rationale": "Scenario 31 and the merge-strategy text state that `reject:<id>:regroom` reverts the merged change and returns the item to backlog, and note that the revert reads the merge commit. The visible text does not state that an item resting in `acceptance` carries its PR number and merge sha, that a multi-commit rebase-merged PR is reverted in full, or that the revert lands on the default branch through the repository's hooks.",
+   "named_clauses": [
+    "## Scenario 31 \u2014 drive human valve actions",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11784,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55955,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 593,
+      "output_tokens_details": {
+       "thinking_tokens": 353
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55955,
+        "output_tokens": 593,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.1
+  },
+  {
+   "id": "bd-ib-qnucbe",
+   "selected_clauses": [
+    "## Scenario 21 \u2014 Codex plugin discovery and full-access posture"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Scenario 21 \u2014 Codex plugin discovery and full-access posture",
+   "rationale": "The visible text of Scenario 21 covers the /skills picker, full-access gating and the default-off posture. It says nothing about the `just ensure-codex-plugins` recipe, the `codex plugin marketplace add ... --ref release` source arguments, or exit-0 idempotency over an existing registration. Part of the specification is withheld from this prompt, so I found nothing in the shown text that governs this behaviour, and this scenario's Codex plugin discovery coverage is the closest place to generalize.",
+   "named_clauses": [
+    "## Scenario 21 \u2014 Codex plugin discovery and full-access posture"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11855199999999999,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 56136,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 628,
+      "output_tokens_details": {
+       "thinking_tokens": 405
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 56136,
+        "output_tokens": 628,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.8
+  },
+  {
+   "id": "bd-ib-rjnif7",
+   "selected_clauses": [
+    "## Scenario 159 \u2014 Wait inventory and measurements arrive in Honeycomb without controlling liveness"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 159 \u2014 Wait inventory and measurements arrive in Honeycomb without controlling liveness"
+   ],
+   "generalization_target": "## Bounded session waits and observable inventory",
+   "rationale": "Scenario 159 states that lifecycle events must arrive in Honeycomb and that export degradation must not change the local result. That covers the third bullet's premise, that a withheld lifecycle event is a failure. The ratified text does not state that the test must pass when a reply is held past the 2 s timeout or when a late batch arrives after the next command's events. Test determinism and arrival-order tolerance are not specified.",
+   "named_clauses": [
+    "## Scenario 159 \u2014 Wait inventory and measurements arrive in Honeycomb without controlling liveness",
+    "## Bounded session waits and observable inventory"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.119518,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54969,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 958,
+      "output_tokens_details": {
+       "thinking_tokens": 739
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54969,
+        "output_tokens": 958,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.0
+  },
+  {
+   "id": "bd-ib-st2sby",
+   "selected_clauses": [
+    "## Bounded session waits and observable inventory",
+    "## Scenario 280 \u2014 Each host model-judgement spawn names its caller in OTEL_RESOURCE_ATTRIBUTES, appended to any inherited entries"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Bounded session waits and observable inventory",
+   "rationale": "The ratified text covers host model-judgement caller labelling (`livespec.caller` in `OTEL_RESOURCE_ATTRIBUTES`) and its OTLP telemetry vocabulary. It says nothing about the host spend journal under `$HOME/.claude/spend-journal/`, the final `result` line carrying `usage` and `message_ids`, the `final_usage_line` header flag, or the no-`result` fallback. It also names only some of the callers the item lists. Generalizing the host model-judgement subsection of the telemetry contract could state this behaviour.",
+   "named_clauses": [
+    "## Bounded session waits and observable inventory"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118044,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55672,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 670,
+      "output_tokens_details": {
+       "thinking_tokens": 431
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55672,
+        "output_tokens": 670,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.3
+  },
+  {
+   "id": "bd-ib-e3vbbo",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 239 \u2014 Every taking of the Definition-of-Done judgement grades one subject by one rubric",
+    "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
+    "## Scenario 140 \u2014 Filing displays Definition-of-Done findings and withholds ready only on a mechanical one"
+   ],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The ratified text requires every taking of the Definition-of-Done judgement to grade one subject by one rubric, and a recorded verdict binds every host taking. It also requires filing displays to report an unverifiable condition rather than treat it as verified, for the sandbox-capability mirror. The visible text does not state that `filing_display` must report that it could not take the governing-heading judgement instead of `definition-of-done findings: none`, or that the display and the pre-dispatch screen agree on the governing-heading verdict. Much of the relevant section text is withheld, so this rests on the visible clauses and scenario titles.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 239 \u2014 Every taking of the Definition-of-Done judgement grades one subject by one rubric",
+    "## Scenario 240 \u2014 A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled",
+    "## Scenario 140 \u2014 Filing displays Definition-of-Done findings and withholds ready only on a mechanical one",
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.125992,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54951,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1609,
+      "output_tokens_details": {
+       "thinking_tokens": 1227
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54951,
+        "output_tokens": 1609,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 17.7
+  },
+  {
+   "id": "bd-ib-2eyiwy",
+   "selected_clauses": [
+    "## ACP node timeouts",
+    "## Scenario 89 \u2014 Node timeouts resolve from configuration and land as literal durations",
+    "## Scenario 325 \u2014 A workflow-declared node timeout stands unless configuration names the node"
+   ],
+   "kind": "stated",
+   "stated_by": [
+    "## ACP node timeouts",
+    "## Scenario 325 \u2014 A workflow-declared node timeout stands unless configuration names the node",
+    "## Scenario 89 \u2014 Node timeouts resolve from configuration and land as literal durations"
+   ],
+   "generalization_target": null,
+   "rationale": "\"ACP node timeouts\" (Keys, Resolution layers, \"The run's budgets follow the graph\", \"A commit settle node ends its own wait first\", \"A low declaration rests on a measurement\") states every bullet. A node no configuration names takes its workflow-declared timeout and otherwise 1800 s. A repository table and then a per-dispatch argument override that value. The record names the supplying layer. The allowance and ceiling read the rendered per-node values. A node with no measurement must declare at least 1800 s. A settle node's wait ends 300 s before its rendered timeout. Scenario 325 exercises these, and Scenario 89 covers the default and override cases.",
+   "named_clauses": [
+    "## ACP node timeouts",
+    "## Scenario 325 \u2014 A workflow-declared node timeout stands unless configuration names the node",
+    "## Scenario 89 \u2014 Node timeouts resolve from configuration and land as literal durations"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.120892,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55231,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1043,
+      "output_tokens_details": {
+       "thinking_tokens": 709
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55231,
+        "output_tokens": 1043,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.1
+  },
+  {
+   "id": "bd-ib-tcfwol",
+   "selected_clauses": [
+    "## Provisional fleet launch scripts"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Forbidden patterns",
+   "rationale": "The visible text, including the fully shown \"Provisional fleet launch scripts\" section, says nothing about pipefail or about how a pipeline's verdict is judged. That section covers only fleet-launch/ behaviour, not the other shell scripts the item names, and the work item itself says the repository has no spec clause on pipeline verdicts. A repository-wide shell-script rule on pipeline readers would fit as an extension of the constraints' forbidden patterns.",
+   "named_clauses": [
+    "## Forbidden patterns"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.115832,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55346,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 514,
+      "output_tokens_details": {
+       "thinking_tokens": 319
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55346,
+        "output_tokens": 514,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 9.1
+  },
+  {
+   "id": "bd-ib-xwtohc",
+   "selected_clauses": [
+    "## Fabro runtime constraints"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Fabro factory host provisioning constraints",
+   "rationale": "The visible text covers pinning the Fabro build and agent versions, but nothing in it states that every Fabro server renders its sandbox-driver-kubernetes provider path as a versioned path with a matching sha256 from one inventory value, or that the candidate canary pod must match petri's exec parity. The host provisioning section is the natural home for that rule, but its body is withheld, so I can't credit it.",
+   "named_clauses": [
+    "## Fabro factory host provisioning constraints"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11813,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 56080,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 597,
+      "output_tokens_details": {
+       "thinking_tokens": 418
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 56080,
+        "output_tokens": 597,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.3
+  },
+  {
+   "id": "bd-ib-diiztk",
+   "selected_clauses": [
+    "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The ratified text only requires the refresh-repair route to integrate the default branch into the run's work. It does not say whether the fix turn merges or rebases, nor that it must keep an already-published origin tip as an ancestor. Scenario 176 even accepts a repaired head that does not contain the published head, relying on a lease push. The merge-versus-rebase choice by publish-branch state is therefore left to the prompt, and the 'Refresh repair' passage that would state it lives inside the '## Self-contained plugin dispatch' section.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.119532,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55151,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 923,
+      "output_tokens_details": {
+       "thinking_tokens": 702
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55151,
+        "output_tokens": 923,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.0
+  },
+  {
+   "id": "bd-ib-oknwxm",
+   "selected_clauses": [
+    "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch"
+   ],
+   "generalization_target": "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+   "rationale": "Scenario 185 states that an unobservable measurement, or an unreadable needs-human identification, holds the item rather than routing it fresh, and that a reclaim runs only after preservation is verified. The visible text never says that run ids are read from the item's ledger record, that a route with no earlier run id is held with a record naming the unasked needs-human source, or that a fresh route's row lists the needs-human source among the sources asked.",
+   "named_clauses": [
+    "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+    "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.12066,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55565,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 953,
+      "output_tokens_details": {
+       "thinking_tokens": 699
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55565,
+        "output_tokens": 953,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.8
+  },
+  {
+   "id": "bd-ib-mpfv5q",
+   "selected_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 307 \u2014 The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Provisional fleet launch scripts",
+   "rationale": "The fleet-launch section refers to a launched run \"listing on its factory board\" but never says how a launcher identifies its own run. It says nothing about matching on the `livespec.dispatch.id` label, the `listed=` verdict-file line, ignoring an orphaned earlier submission of the same work item, or the missing-dispatch-id line. Extending that section would state this behaviour.",
+   "named_clauses": [
+    "## Provisional fleet launch scripts"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11537,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55280,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 481,
+      "output_tokens_details": {
+       "thinking_tokens": 308
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55280,
+        "output_tokens": 481,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.2
+  },
+  {
+   "id": "bd-ib-so6fef",
+   "selected_clauses": [],
+   "kind": "stated",
+   "stated_by": [
+    "## Factory-configurable ACP fallback priority",
+    "## Scenario 323 \u2014 An earlier run's preserved ref never outranks a newer run's published head"
+   ],
+   "generalization_target": null,
+   "rationale": "The recovery-preference clause states all four bullets. A needs-human or failed-checkpoint ref outranks the published head only if its run is the head's run or a later one. A ref is attributed to its run through a Fabro-Run or Factory-Run-Id trailer. When the run cannot be established the item is routed held with `publishing-run-unobservable`, and reclaim runs only for fresh and seeded items. Scenario 323 exercises each of these cases.",
+   "named_clauses": [
+    "## Factory-configurable ACP fallback priority",
+    "## Scenario 323 \u2014 An earlier run's preserved ref never outranks a newer run's published head"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.116804,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54362,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 808,
+      "output_tokens_details": {
+       "thinking_tokens": 575
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54362,
+        "output_tokens": 808,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.6
+  },
+  {
+   "id": "bd-ib-bx5rf2",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 96 \u2014 Each governed-repo integration point resolves from a committed declaration, with a fleet default only where one exists"
+   ],
+   "generalization_target": "## Dispatcher admission, WIP cap, and post-merge acceptance",
+   "rationale": "The visible text states that a declared check suite runs verbatim and that an absent declaration falls back to the fleet default convention. It also says the declared check suite reaches the workflow as `sandbox_check_suite`. Scenario 96 is worded for the janitor check suite. Nothing visible states that the sandbox fleet default must run `install-worktree-pack` before `check`, composed like the host-janitor default, so that a refresh across a pin bump does not leave a stale worktree pack.",
+   "named_clauses": [
+    "## Scenario 96 \u2014 Each governed-repo integration point resolves from a committed declaration, with a fleet default only where one exists",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118608,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54584,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 944,
+      "output_tokens_details": {
+       "thinking_tokens": 685
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54584,
+        "output_tokens": 944,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.4
+  },
+  {
+   "id": "bd-ib-azhnw5",
+   "selected_clauses": [
+    "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+    "## Scenario 319 \u2014 A re-dispatch starts from the latest run's latest preserved capture"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Factory-configurable ACP fallback priority",
+    "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+    "## Scenario 319 \u2014 A re-dispatch starts from the latest run's latest preserved capture"
+   ],
+   "generalization_target": "## Factory-configurable ACP fallback priority",
+   "rationale": "Scenario 185 states that a seeded run checks out the recorded commit SHA. Scenario 319 states that the published branch carries the preserved changes and every commit passes the gates. The shown text does not state the ancestry refusal before implement, the commit-settle and publish_draft ancestry checks, the reference-advancing rule after a refresh, or the carried-content fallback with its broken-lineage ledger comment.",
+   "named_clauses": [
+    "## Factory-configurable ACP fallback priority",
+    "## Scenario 185 \u2014 A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch",
+    "## Scenario 319 \u2014 A re-dispatch starts from the latest run's latest preserved capture",
+    "## Factory-configurable ACP fallback priority"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.119854,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55682,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 849,
+      "output_tokens_details": {
+       "thinking_tokens": 570
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55682,
+        "output_tokens": 849,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.7
+  },
+  {
+   "id": "bd-ib-xukb7w",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate"
+   ],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The spec requires that publish_draft push the janitor-passed head without refreshing, and that empty run-owned commits be dropped (stated only for pr_refresh), with the proof carried forward. It never says that when publish_draft drops empty checkpoint commits it must keep merged-in default-branch commits at their original ids instead of replaying them as copies, nor that the later refresh must not conflict on them.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate",
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11806,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54725,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 861,
+      "output_tokens_details": {
+       "thinking_tokens": 619
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54725,
+        "output_tokens": 861,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.4
+  },
+  {
+   "id": "bd-ib-oixyzp",
+   "selected_clauses": [
+    "## Scenario 204 \u2014 An implement turn that reports its work incomplete fails the implement stage"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Self-contained plugin dispatch"
+   ],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The ratified paragraph \"An implement turn that ends incomplete does not succeed\" and Scenario 204 state that an incomplete turn ends the stage as failed with a cause naming partial progress once its budget is spent, and that the run takes the stage's failure edge. The visible text does not state that the engine's deterministic-failure-cycle circuit breaker must not pre-empt that edge. It also does not state that the third-visit incomplete turn reaches the hook-route node and ends at needs_human, or that the cause names the settled failed commit run's hook exit status and failed targets.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.120192,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55041,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1011,
+      "output_tokens_details": {
+       "thinking_tokens": 760
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55041,
+        "output_tokens": 1011,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.8
+  },
+  {
+   "id": "bd-ib-lpdlsq",
+   "selected_clauses": [
+    "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+   ],
+   "kind": "stated",
+   "stated_by": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+   ],
+   "generalization_target": null,
+   "rationale": "The Definition-of-Done stages text (inside the Self-contained plugin dispatch section) says a conflicting janitor pre-aggregate refresh takes the refresh-repair route while its budget lasts. Scenario 176's 'The repair budget is bounded' case then says that after two rounds across the janitor refresh and pr_refresh, the next conflict fails closed to needs_human with cause refresh-repair-exhausted, and the recovery pointer names the pre-refresh head. That is the required behaviour: an exhausted janitor repair reaches needs_human and preserves the restored head.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.12057200000000001,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54996,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1058,
+      "output_tokens_details": {
+       "thinking_tokens": 769
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54996,
+        "output_tokens": 1058,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 14.1
+  },
+  {
+   "id": "bd-ib-zedjgq",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Pre-push gate refinements",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance"
+   ],
+   "generalization_target": "## Dispatcher admission, WIP cap, and post-merge acceptance",
+   "rationale": "The spec states that a push of a tree with no matching green verdict runs the full pre-push gate, and it fixes the names of the staged `livespec/source/<id>` worktree and branch. It does not state that a Dispatcher launch must hand the run to the engine without blocking inside `fabro run` on that aggregate, nor the 120-second reach-petri bound, so the main asked-for behaviour is unstated.",
+   "named_clauses": [
+    "## Pre-push gate refinements",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance",
+    "## Dispatcher admission, WIP cap, and post-merge acceptance"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.116372,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54361,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 765,
+      "output_tokens_details": {
+       "thinking_tokens": 533
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54361,
+        "output_tokens": 765,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 17.2
+  },
+  {
+   "id": "bd-ib-2flry2",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 239 \u2014 Every taking of the Definition-of-Done judgement grades one subject by one rubric",
+    "## Scenario 140 \u2014 Filing displays Definition-of-Done findings and withholds ready only on a mechanical one"
+   ],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The ratified text states the split: a reference line naming at least one governing heading gets an advisory finding, and a line naming none is refused. It also requires the omitted headings to be named verbatim with the remedy. It applies this to the dod_gate node, pre-admission, pre-dispatch and host-side preflight takings. It does not list the capture and filing display as a taking bound to that split, nor require the display's advisory label to agree with the `approve:` hold, so the display-labelling behaviour is only partly stated.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Scenario 239 \u2014 Every taking of the Definition-of-Done judgement grades one subject by one rubric",
+    "## Scenario 140 \u2014 Filing displays Definition-of-Done findings and withholds ready only on a mechanical one",
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118828,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54339,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1015,
+      "output_tokens_details": {
+       "thinking_tokens": 712
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54339,
+        "output_tokens": 1015,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.4
+  },
+  {
+   "id": "bd-ib-ekrfg5",
+   "selected_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Provisional fleet launch scripts"
+   ],
+   "generalization_target": "## Provisional fleet launch scripts",
+   "rationale": "The clause requires impl and resume launchers that receive TERM while yielding on a repository hold to write a terminal line naming the signal and then remove their FIFO ticket, and the check-fleet-launch harness cases and Scenario 312 cover that. It does not state that TERM must take effect within a bounded time, that this holds when the signal lands during a command substitution on bash 5.2, or that a signal exit releases a held gmktec mutex.",
+   "named_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Provisional fleet launch scripts"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11716,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55710,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 574,
+      "output_tokens_details": {
+       "thinking_tokens": 369
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55710,
+        "output_tokens": 574,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 9.2
+  },
+  {
+   "id": "bd-ib-kseatc",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Dispatcher policy settings",
+    "## Scenario 263 \u2014 Exactly one writer changes a dispatch claim, and every other writer stands down"
+   ],
+   "generalization_target": "## Dispatcher policy settings",
+   "rationale": "Step 5 of the Claim tokens bullet and Scenario 263 already state the first two behaviours: a takeover follows the chain of closed tokens hop by hop (each hop waited out for the takeover wait) to an open one, and a stand-down names its own open successor so the next writer's write lands. The text only requires needs-attention to surface an item that names no current token (`claim-token-missing`). It never says needs-attention surfaces an item whose chain ends in a closed token naming no successor.",
+   "named_clauses": [
+    "## Dispatcher policy settings",
+    "## Scenario 263 \u2014 Exactly one writer changes a dispatch claim, and every other writer stands down",
+    "## Dispatcher policy settings"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.117462,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54756,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 795,
+      "output_tokens_details": {
+       "thinking_tokens": 542
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54756,
+        "output_tokens": 795,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.5
+  },
+  {
+   "id": "bd-ib-w5yzzt",
+   "selected_clauses": [
+    "## Inherited from livespec",
+    "## Pre-commit staged pre-check",
+    "## Scenario 289 \u2014 A Green amend whose staged test fails is refused before the rest of its gate's tests run"
+   ],
+   "kind": "stated",
+   "stated_by": [
+    "## Pre-commit staged pre-check",
+    "## Scenario 289 \u2014 A Green amend whose staged test fails is refused before the rest of its gate's tests run"
+   ],
+   "generalization_target": null,
+   "rationale": "The ratified text defines a Green amend as staging at least one implementation file with Red-only trailers on HEAD, without limiting that to Python files. It requires the hook to run the amend's staged tests, refuse the commit naming any failing test, and then run the rest of the gate. It also says a commit staging no Python file takes an early exit, which covers the doc-only path for commits that are not Green amends. A staged `workflow.fabro` implementation file is therefore covered by the same rule.",
+   "named_clauses": [
+    "## Pre-commit staged pre-check",
+    "## Scenario 289 \u2014 A Green amend whose staged test fails is refused before the rest of its gate's tests run"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.12219400000000001,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55322,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1155,
+      "output_tokens_details": {
+       "thinking_tokens": 913
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55322,
+        "output_tokens": 1155,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 14.9
+  },
+  {
+   "id": "bd-ib-a4dtst",
+   "selected_clauses": [
+    "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Self-contained plugin dispatch"
+   ],
+   "generalization_target": "## Self-contained plugin dispatch",
+   "rationale": "The visible text sends a refreshed head that the gate rejects to the fix turn's refresh-repair route, and it sets prompt rules for the `fix` stage. It does not require evidence from running the failing tests on the default branch before a failure is called inherited, a needs-human reason naming each test's result on both trees, accounting for every failed target, a ban on stopping a running worker, or an 'unverified inherited attribution' cause on the item.",
+   "named_clauses": [
+    "## Self-contained plugin dispatch",
+    "## Self-contained plugin dispatch"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.121654,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55027,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 1160,
+      "output_tokens_details": {
+       "thinking_tokens": 957
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55027,
+        "output_tokens": 1160,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 15.3
+  },
+  {
+   "id": "bd-ib-eb5zl5",
+   "selected_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run"
+   ],
+   "generalization_target": "## Provisional fleet launch scripts",
+   "rationale": "The ratified text requires a launcher that finds a hold set at the launch point to release the mutex and in-flight marker, keep its ticket and launch nothing. It also requires a harness case for this that makes `just check` fail when the launcher breaks it, which covers the two 'still fails' bullets. It does not say the case must judge the completed final state by bounded polling instead of a single snapshot at the log line, so that part is unstated.",
+   "named_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run",
+    "## Provisional fleet launch scripts"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11878,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55755,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 727,
+      "output_tokens_details": {
+       "thinking_tokens": 486
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55755,
+        "output_tokens": 727,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.4
+  },
+  {
+   "id": "bd-ib-tlgq3y",
+   "selected_clauses": [],
+   "kind": "partial",
+   "stated_by": [
+    "## Dispatcher policy settings",
+    "## Scenario 263 \u2014 Exactly one writer changes a dispatch claim, and every other writer stands down"
+   ],
+   "generalization_target": "## Dispatcher policy settings",
+   "rationale": "The Claim tokens rule states that a won claim-changing write names its successor token in the same write, that the migration pass names a fresh token on each item, and that every non-closed item names exactly one current token. It does not require outside-protocol metadata writes to omit the token key. It calls such writes an accepted, unfenced residual. It also says nothing about the in-memory client merging top-level keys.",
+   "named_clauses": [
+    "## Dispatcher policy settings",
+    "## Scenario 263 \u2014 Exactly one writer changes a dispatch claim, and every other writer stands down",
+    "## Dispatcher policy settings"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.115972,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54821,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 633,
+      "output_tokens_details": {
+       "thinking_tokens": 416
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54821,
+        "output_tokens": 633,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 9.7
+  },
+  {
+   "id": "bd-ib-gowxxg",
+   "selected_clauses": [
+    "## Scenario 103 \u2014 A needs-human outcome terminates the run and routes the decision to the ledger",
+    "## Scenario 184 \u2014 The default branch advancing between pr_refresh and the arming re-enters pr_refresh, and an armed pull request it overtakes rests at needs-human with a named cause"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Scenario 103 \u2014 A needs-human outcome terminates the run and routes the decision to the ledger"
+   ],
+   "generalization_target": "## Scenario 103 \u2014 A needs-human outcome terminates the run and routes the decision to the ledger",
+   "rationale": "Scenario 103 states that the run preserves its work by reference before terminating, which is the general requirement this item defends. The visible text does not state the specific mechanics: bounded retry on 'fatal error in commit_refs', the ls-remote read-back, the LIVESPEC_NEEDS_HUMAN_PRESERVED and LIVESPEC_NEEDS_HUMAN_PUSH_FAILED outcomes, or the workflows-refusal exclusion. Scenario 184 gives the landed-but-errored pattern only for pr_refresh.",
+   "named_clauses": [
+    "## Scenario 103 \u2014 A needs-human outcome terminates the run and routes the decision to the ledger",
+    "## Scenario 103 \u2014 A needs-human outcome terminates the run and routes the decision to the ledger"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118872,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55891,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 709,
+      "output_tokens_details": {
+       "thinking_tokens": 421
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55891,
+        "output_tokens": 709,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.1
+  },
+  {
+   "id": "bd-ib-m7o3wf",
+   "selected_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 297 \u2014 A queued provisional launcher runs its preflight while it waits and still binds in FIFO order",
+    "## Scenario 302 \u2014 A fleet-launch resume launcher waits for the fleet cap and the factory FIFO",
+    "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run"
+   ],
+   "generalization_target": "## Provisional fleet launch scripts",
+   "rationale": "The ratified text requires a launcher that finds a hold at the launch point to release the mutex and its in-flight marker, keep its ticket and launch nothing. It also requires the yield log line to name the hold's kinds, reason and until text. It never orders that log line relative to the release, so the required property that the line appears only after the yield is complete is unstated.",
+   "named_clauses": [
+    "## Provisional fleet launch scripts",
+    "## Scenario 316 \u2014 A repository hold scoped to dispatch launches holds fresh dispatches and lets resumes run",
+    "## Provisional fleet launch scripts"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.117644,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55682,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 628,
+      "output_tokens_details": {
+       "thinking_tokens": 413
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55682,
+        "output_tokens": 628,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 10.2
+  },
+  {
+   "id": "bd-ib-keg67m",
+   "selected_clauses": [
+    "## ACP node timeouts",
+    "## Inherited from livespec"
+   ],
+   "kind": "stated",
+   "stated_by": [
+    "## ACP node timeouts"
+   ],
+   "generalization_target": null,
+   "rationale": "The paragraph \"A refused commit's needs-human cause is attributable from the ledger\" requires the excerpt to be the first failing test id or, when none is reported, the output's first line that reports an error. It also requires the cause to state that the failing target is unknown, with the reason named, when the hook output names no failed target. A ruff finding line reports an error and a numbered source-context line does not, so all four bullets follow from that clause, even though it does not spell out the `<path>:<line>:<column>: <RULE>` line format.",
+   "named_clauses": [
+    "## ACP node timeouts"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.117482,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54786,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 791,
+      "output_tokens_details": {
+       "thinking_tokens": 578
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54786,
+        "output_tokens": 791,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 11.2
+  },
+  {
+   "id": "bd-ib-utwjkf",
+   "selected_clauses": [],
+   "kind": "stated",
+   "stated_by": [
+    "## Dispatcher policy settings"
+   ],
+   "generalization_target": null,
+   "rationale": "The Claim tokens rule in contracts.md under this heading says \"Token records MUST be excluded from `list-work-items`, `next`, `needs-attention`'s work-item facts and every child enumeration.\" That covers all four listing surfaces the tests check. The no-history record class is a choice of implementation, not something the spec states. Tests that fail when a token is minted as an ordinary issue verify the same MUST.",
+   "named_clauses": [
+    "## Dispatcher policy settings"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11754200000000001,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 54821,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 790,
+      "output_tokens_details": {
+       "thinking_tokens": 607
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 54821,
+        "output_tokens": 790,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.5
+  },
+  {
+   "id": "bd-ib-veyxvz",
+   "selected_clauses": [
+    "## Grooming and slice-size calibration",
+    "## Scenario 199 \u2014 A fix turn runs the check suite once per tree and counts a commit hook's full green run"
+   ],
+   "kind": "partial",
+   "stated_by": [
+    "## Grooming and slice-size calibration"
+   ],
+   "generalization_target": "## Grooming and slice-size calibration",
+   "rationale": "The ratified text states a fix-loop cap with a \"non-converged\" exit edge routing back to the Dispatcher's `backlog` bounce, which is the exit the work item wants to reuse. It does not state the new trigger: leaving through that exit when a fix turn leaves the head unchanged and the next janitor visit fails again, or the bound of two no-progress fix turns before the wall budget. The text also does not say that a head-changing fix still routes to janitor.",
+   "named_clauses": [
+    "## Grooming and slice-size calibration",
+    "## Grooming and slice-size calibration"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.117296,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55598,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 610,
+      "output_tokens_details": {
+       "thinking_tokens": 396
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55598,
+        "output_tokens": 610,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 16.1
+  },
+  {
+   "id": "bd-ib-mlxa6s",
+   "selected_clauses": [
+    "## Inherited from livespec",
+    "## Scenario 198 \u2014 A sandbox agent cannot signal the sandbox's PID 1 or its own adapter, and signals to its own processes still run"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Inherited from livespec",
+   "rationale": "The visible ratified text does not state that a test fixture's PATH must be hermetic (built from a temporary directory of named host tools, not the host's /usr/bin:/bin). It also does not state the pyright-cache prepare step's partial-cache replacement. The only nearby clause is the inherited \"pytest discipline\" bullet, which is too generic to cover this. A hermetic-test-environment rule added there would state it.",
+   "named_clauses": [
+    "## Inherited from livespec"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11602,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55365,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 529,
+      "output_tokens_details": {
+       "thinking_tokens": 348
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55365,
+        "output_tokens": 529,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 13.5
+  },
+  {
+   "id": "bd-ib-digmk2",
+   "selected_clauses": [
+    "## Fabro runtime constraints"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Fabro runtime constraints",
+   "rationale": "The visible text governs the Fabro build pin, rebuild and re-pin duty, and pinned agent versions. It never says that commands run through the sandbox driver's exec inherit the sandbox's own umask (0022) rather than the driver's private 077, and it names no sandbox-driver-kubernetes release or re-pin of the `:32276` instance. Extending the pinned-surface and re-pin rules in that section to the sandbox driver would state it.",
+   "named_clauses": [
+    "## Fabro runtime constraints"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.11992799999999999,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 56239,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 745,
+      "output_tokens_details": {
+       "thinking_tokens": 552
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 56239,
+        "output_tokens": 745,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 19.1
+  },
+  {
+   "id": "bd-ib-2fpn5m",
+   "selected_clauses": [
+    "## Scenario 1 \u2014 Gap-tied fix cycle"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Scenario 1 \u2014 Gap-tied fix cycle",
+   "rationale": "Scenario 1 says closure confirms the recorded check passes and its negative control fails. The visible text does not state the `refuse-check-failed` verdict on interpreter loss, the 126/127 launch-failure rule, or how a test removes execute bits and handles umask. Those are test-fixture details, so the behaviour is unstated.",
+   "named_clauses": [
+    "## Scenario 1 \u2014 Gap-tied fix cycle"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118854,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 56272,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 631,
+      "output_tokens_details": {
+       "thinking_tokens": 467
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 56272,
+        "output_tokens": 631,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 15.0
+  },
+  {
+   "id": "bd-ib-nsw25x",
+   "selected_clauses": [
+    "## Scenario 30 \u2014 Dispatch-time baseline conformance gate",
+    "## Scenario 176 \u2014 A green run whose refresh conflicts with a moved default branch is repaired and published instead of ending at needs-human"
+   ],
+   "kind": "unstated",
+   "stated_by": [],
+   "generalization_target": "## Dispatch-time baseline conformance gate",
+   "rationale": "The visible text covers the one-time prepare-chain hook install (Scenario 30) and the pre-aggregate refresh and refresh-repair routing (Scenario 176), but never says the conformance hook install is re-run after a refresh, or that hooks must equal the refreshed tree's canonical body at every later janitor visit and pre-push. Most of the relevant bodies are withheld, so I could only judge what is shown. The Dispatch-time baseline conformance gate section is the natural place to state it.",
+   "named_clauses": [
+    "## Dispatch-time baseline conformance gate"
+   ],
+   "model_calls": [
+    {
+     "agent": "/home/ubuntu/.local/bin/claude",
+     "exit": 0,
+     "cost_usd": 0.118626,
+     "model": "claude-sonnet-5-5",
+     "usage": {
+      "input_tokens": 55063,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 850,
+      "output_tokens_details": {
+       "thinking_tokens": 636
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+       {
+        "input_tokens": 55063,
+        "output_tokens": 850,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 0
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    }
+   ],
+   "seconds": 12.6
+  }
+ ]
+}

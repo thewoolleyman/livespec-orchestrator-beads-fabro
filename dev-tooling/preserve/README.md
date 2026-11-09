@@ -19,9 +19,12 @@ dev-tooling/preserve/preserve_dispatch.sh [--dry-run] <DISPATCH_ID> [<factory-ur
 dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <namespace> <pod>
 ```
 
-- `preserve_runs.sh` prints one TSV row per run: `RUN NODE REPO SHA REF VERDICT SECONDS`.
+- `preserve_runs.sh` prints one TSV row per run: `RUN NODE REPO SHA REF VERDICT SECONDS SOURCE`. `SOURCE`
+  names the commit it preserved (see rule 9), and `VERDICT` reads `EMPTY` when no candidate carried work
+  (rule 10).
 - `represerve.sh` waits until `HH:MM` UTC (a past time means now), runs one preserve, and on success also
   writes `refs/heads/preserve/<alias>`, for example `bd-ib-<item>-<RUN12>`, in the run's own repository.
+  It writes the alias only on a `VERIFIED…` row, so an `EMPTY` row gets no alias.
 - `preserve_dispatch.sh` takes the Dispatcher's DISPATCH ID, the id the dispatcher and coordinator quote, instead of
   the run ULID. It resolves the run through the factory server's `livespec.dispatch.id` run label, checks that the
   sandbox clone's `livespec.factoryRunId` git-config marker names the same dispatch id, then runs
@@ -59,12 +62,42 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
    repository. Each push retries 5 times with backoff.
 6. **ls-remote verify.** A row reads `VERIFIED` only after `git ls-remote` returns the pushed sha. It
    re-reads up to 5 times, because GitHub can lag.
-7. **Create-only needs-human ref.** After VERIFIED, the script writes `refs/heads/needs-human/<RUN_ULID>`
-   at the same sha, which is the only ref `route_recovery` seeds from. If that ref already exists at
-   another sha, it is never moved and the row reads `VERIFIED+NH_KEPT:<sha12>`. The `preserve/` ref
-   remains the audit copy.
+7. **Needs-human ref only at the wall-budget line or before a cancel (temporary).** Every caller: pass
+   `PRESERVE_WRITE_NEEDS_HUMAN=1` on a preserve at the 330-minute wall-budget line or right before a
+   cancel, and on no other. A routine preserve writes only the `preserve/` ref, because a run-keyed
+   `refs/heads/needs-human/<RUN_ULID>` seeds recovery and can lead the seed list, so a mid-run copy
+   pre-empts the tree the run's own ending later pushes. `preserve_dispatch.sh` and `represerve.sh`
+   inherit the variable. With it set, the ref is `refs/heads/needs-human/<DISPATCH ID>`: the dispatch id
+   is read from the sandbox clone's `livespec.factoryRunId` marker, because that is the name the factory's
+   own needs-human ending writes and every seed lookup reads (a run-ULID-keyed ref left two names per run
+   and lookups finding neither; bd-ib-mfl2qa, 2026-11-08). It is written create-only at the verified sha,
+   and the row reads `VERIFIED+NH:needs-human/<dispatch id>`. If it already exists at another sha (the run
+   ended on its own) it is never moved: this pass is written to `needs-human/<dispatch id>-<sha12>` and the
+   row reads `VERIFIED+NH_KEPT:<old sha12>+NH_SUFFIX:<that ref>`. A clone with no marker gets no
+   needs-human ref, and the row reads `VERIFIED+NH_NO_DISPATCH_ID`. The `preserve/run-<RUN ULID>` ref
+   stays the run-keyed copy.
+   - **Known cost, accepted by legacy-coordinator-agent on 2026-11-07:** a run preserved at 330 minutes
+     that then ends on its own still gets a stale seed. The dispatcher's route read catches that before
+     any ticket, whereas a wall-budget ending with no seed is caught by nothing.
+   - **This rule is temporary.** When bd-ib-qshcwc ships, remove the variable and restore one behaviour.
 8. **The pod must still be Running.** A run whose sandbox has already been torn down has no tree to copy.
    Its row reads `FAILED(... sha=none)`.
+9. **Preserve the commit that carries the work, judged against the merge base (bd-ib-anmcjq).** A fix or
+   refresh round can reset `fabro/run/<RUN>` to plain master. A preserve of that tip then holds none of
+   the run's work and still read `VERIFIED` (bd-ib-7fdesc run `01M6Z3TFJRES` and bd-ib-reuccp run
+   `01M6YYE03JKS`, 2026-11-09). A commit carries work when its tree differs from the tree of its merge base
+   with `origin/master`. A two-way diff against master's current tip would count master's later commits as
+   work, so it is never used. The bulk copy also takes the run branch's reflog and the `HEAD` reflog. The
+   candidates, in order, are: the run-branch tip (`tip`, or `HEAD` with no run branch), then the run
+   branch's reflog newest first (`reflog@{N}`), then the `HEAD` reflog newest first (`HEAD@{N}`). The first
+   candidate that carries work and passes rule 3's fsck is preserved, and the row's `SOURCE` names it.
+10. **Nothing carrying work is `EMPTY`, and `EMPTY` pushes nothing.** When no candidate carries work, the
+    row reads `EMPTY` and the script pushes no `preserve/run-<RUN>` ref and no `needs-human` ref, so
+    `represerve.sh` writes no alias. When the choice cannot be made at all (the copy, fsck or the
+    `origin/master` fetch failed), the row reads `FAILED(...)`, never `EMPTY`. Until bd-ib-ofvsr3 and
+    bd-ib-vraou4 ship and retire these scripts, an operator reading any older preserve applies the same
+    test by hand: `git diff --quiet $(git merge-base <ref> origin/master) <ref>` exiting 0 means NOT
+    preserved.
 
 ## Shell gotcha
 
