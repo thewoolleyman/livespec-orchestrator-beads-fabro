@@ -276,6 +276,38 @@ def test_subject_keeps_named_clauses_verbatim_where_they_fit_and_stays_within_th
     assert "clause the governing-heading verdict named or selected was omitted" in subject
 
 
+def test_subject_says_so_when_the_verdict_names_no_clause_of_a_referenced_heading(
+    tmp_path: Path,
+) -> None:
+    """A referenced heading with no named or selected clause is marked, not rendered whole."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    large_body = "x" * 270_000
+    _ = (spec / "contracts.md").write_text(
+        "## Governing\n\n" + large_body + "\n",
+        encoding="utf-8",
+    )
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n- The brief stays gradeable.\n\nReferences: ## Governing\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(
+        item=item,
+        cwd=tmp_path,
+        governing=GoverningHeadingVerdict(kind="unstated"),
+    )
+
+    assert len(subject) <= 150_000
+    assert large_body not in subject
+    assert "named or selected no clause from this referenced heading" in subject
+
+
 def test_subject_bounds_large_references_before_a_governing_verdict_is_available(
     tmp_path: Path,
 ) -> None:
