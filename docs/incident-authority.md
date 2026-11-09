@@ -20,6 +20,18 @@ cycles, unsupported states, unreadable links and the bounded history limit produ
 named refusals. Repeated identical genesis delivery is idempotent. The reader
 rechecks the open successor before returning a current-generation observation.
 
+A current read (`read-current`, `read-local-gates`, the incident head read) does not
+re-read the chain from genesis. The canonical writer records the token it just closed
+under the item's `incident_authority_head` metadata, and the reader starts its walk
+there and follows the tokens' own links to the open successor, so the records read
+are bounded by that hint's lag and not by the number of generations. The hint is a
+start point and never authority: a stale one only lengthens the forward walk, and an
+absent one (a chain not yet transitioned by this build), an open-token one or one
+naming another item's token reads the whole chain from the genesis root. Historical
+lookups, `read-history` and the writer's operation-reuse check always read the whole
+retained chain. The reply omits `operation_ids`, the set of operations a read walked,
+because that set depends on which of the two reads produced it.
+
 Genesis and transition markers are `livespec-incident-authority-v1` and
 `livespec-incident-transition-v1`, followed by a newline and canonical JSON with
 sorted keys, compact separators, and schema 1. Tokens carry the title
