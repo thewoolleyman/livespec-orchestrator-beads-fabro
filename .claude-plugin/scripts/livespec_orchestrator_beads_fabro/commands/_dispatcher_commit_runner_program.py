@@ -121,8 +121,12 @@ HOOK_PASSED = re.compile(r"^All [0-9]+ targets passed\.?$", re.MULTILINE)
 HOOK_REFUSAL_RECIPE = re.compile(
     r"^error: Recipe [`']?([^`'\s]+)[`']? failed", re.MULTILINE
 )
-# Lefthook names its command before it runs it, even when the command prints no recipe error.
-LEFTHOOK_COMMAND = re.compile(r"^[^A-Za-z0-9\n]*([0-9][A-Za-z0-9_-]+)\b", re.MULTILINE)
+# Lefthook's closing summary marks a failed command with the boxing glove, `🥊 name (1.2 seconds)`,
+# and a passed one with a check mark; the banner's own glove is boxed and never starts a line.
+LEFTHOOK_FAILED_COMMAND = re.compile("^\U0001f94a (\\S+) \\(", re.MULTILINE)
+LEFTHOOK_SUMMARY_ENTRY = re.compile(r"^\S+ \S+ \([0-9.]+ seconds\)\s*$", re.MULTILINE)
+# A structured event line a check or hook printed, never a line Git printed.
+STRUCTURED_EVENT_LINE = re.compile(r"\{.*\}")
 # The two lines `cut-settle` prints for the host to read; one spelling, substituted.
 CUT_RUN_SENTINEL = "__CUT_RUN_SENTINEL__"
 CUT_HOOK_SENTINEL = "__CUT_HOOK_SENTINEL__"
@@ -520,35 +524,36 @@ def last_passing_aggregate(text):
 
 
 def hook_passed_output(text):
-    """True only when no later hook began after the aggregate's passing verdict."""
-    passed = last_passing_aggregate(text)
-    return passed is not None and HOOK_BANNER.search(text, passed.end()) is None
+    """True when the aggregate passed and no hook that began after it refused the commit."""
+    return last_passing_aggregate(text) is not None and hook_refusal_target(text) is None
 
 
 def hook_refusal_target(text):
-    """Name a later commit-msg command that refused after pre-commit passed."""
+    """Name the check of a hook that began after the aggregate passed and then refused."""
     passed = last_passing_aggregate(text)
     if passed is None:
         return None
     later_hooks = list(HOOK_BANNER.finditer(text, passed.end()))
-    if not later_hooks or "hook: commit-msg" not in later_hooks[-1].group(0):
+    if not later_hooks:
         return None
     hook_output = text[later_hooks[-1].end() :]
     recipe = HOOK_REFUSAL_RECIPE.search(hook_output)
     if recipe is not None:
         return recipe.group(1)
-    command = LEFTHOOK_COMMAND.search(hook_output)
+    command = LEFTHOOK_FAILED_COMMAND.search(hook_output)
     return command.group(1) if command is not None else None
 
 
 def git_refusal_line(text):
-    """The first nonblank line Git printed after the aggregate's passing verdict."""
+    """The first line Git printed once every hook had finished its summary."""
     passed = last_passing_aggregate(text)
     if passed is None:
         return None
-    for line in text[passed.end() :].splitlines():
+    entries = list(LEFTHOOK_SUMMARY_ENTRY.finditer(text, passed.end()))
+    start = entries[-1].end() if entries else passed.end()
+    for line in text[start:].splitlines():
         stripped = line.strip()
-        if stripped:
+        if stripped and STRUCTURED_EVENT_LINE.fullmatch(stripped) is None:
             return stripped
     return None
 

@@ -549,6 +549,93 @@ def test_a_commit_msg_refusal_after_a_passing_pre_commit_hook_names_its_recipe(
     assert refusal in brief
 
 
+_PRE_COMMIT_OUTPUT = (
+    "│ 🥊 lefthook v1.13.6  hook: pre-commit │\n"
+    "┃  03-check-pre-commit \u276f \n"
+    "All 95 targets passed.\n"
+    '{"check_id": "aggregate", "event": "check_aggregate_passed", "level": "info"}\n'
+    "summary: (done in 3728.63 seconds)       \n"
+    "✔️ 03-check-pre-commit (3728.63 seconds)\n"
+)
+_COMMIT_MSG_BANNER = "│ 🥊 lefthook v1.13.6  hook: commit-msg │\n"
+
+
+def _refused_run(tmp_path: Path, output: str) -> tuple[dict[str, Any], str]:
+    program = _program(tmp_path)
+    path = _record(
+        tmp_path,
+        _RUN_ID,
+        {"state": "failed", "exit_code": 1, "hook_ran": True},
+        None,
+    )
+    _ = path.with_suffix(".output").write_text(output, encoding="utf-8")
+    report, state = program["report_payload"](_RUN_ID, path, json.loads(path.read_text()))
+    brief = program["brief_text"](_RUN_ID, path, json.loads(path.read_text()), state, 300)
+    return report, brief
+
+
+def test_a_commit_msg_refusal_names_the_failing_lefthook_command_not_a_passing_one(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: the named check is the command lefthook marked failed."""
+    report, brief = _refused_run(
+        tmp_path,
+        _PRE_COMMIT_OUTPUT
+        + _COMMIT_MSG_BANNER
+        + "┃  00-no-commit-on-master \u276f \n\n"
+        + "┃  01-red-green-replay \u276f \n\nsuite-green stall kill\r\nexit status 1\n"
+        + "summary: (done in 903.07 seconds)       \n"
+        + "✔️ 00-no-commit-on-master (0.00 seconds)\n"
+        + "🥊 01-red-green-replay (903.07 seconds)\n",
+    )
+
+    assert report["failed_targets"] == ["01-red-green-replay"]
+    assert "hook_passed" not in report
+    assert "git_refusal_line" not in report
+    assert "failed targets: 01-red-green-replay" in brief
+    assert "repository commit hook passed" not in brief
+    assert "suite-green stall kill" in brief
+
+
+def test_a_git_refusal_after_every_hook_passed_quotes_the_line_git_printed(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: a passing commit-msg hook leaves a Git refusal a Git refusal."""
+    refusal = "fatal: cannot lock ref 'HEAD': is at 1234 but expected 5678"
+    report, brief = _refused_run(
+        tmp_path,
+        _PRE_COMMIT_OUTPUT
+        + _COMMIT_MSG_BANNER
+        + "┃  00-no-commit-on-master \u276f \n\n"
+        + "summary: (done in 0.01 seconds)       \n"
+        + "✔️ 00-no-commit-on-master (0.01 seconds)\n"
+        + refusal
+        + "\n",
+    )
+
+    assert report["hook_passed"] is True
+    assert report["git_refusal_line"] == refusal
+    assert report["failed_targets"] == []
+    assert "Git then refused the commit: " + refusal in brief
+
+
+def test_a_git_refusal_after_the_aggregate_alone_skips_the_aggregates_own_events(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: the aggregate's pass event is never quoted as Git's refusal."""
+    refusal = "error: unable to write new index file"
+    report, _ = _refused_run(
+        tmp_path,
+        "│ 🥊 lefthook v1.13.6  hook: pre-commit │\n"
+        "All 95 targets passed.\n"
+        '{"check_id": "aggregate", "event": "check_aggregate_passed", "level": "info"}\n'
+        + refusal
+        + "\n",
+    )
+
+    assert report["git_refusal_line"] == refusal
+
+
 def test_a_commit_ended_by_a_signal_records_no_verdict(tmp_path: Path) -> None:
     """Scenario 179: a commit process ended by a signal is not a failed commit."""
     program = _program(tmp_path, _FakeSubprocess(returncode=-15))
