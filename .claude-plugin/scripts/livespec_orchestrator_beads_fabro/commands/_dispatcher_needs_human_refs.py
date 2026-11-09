@@ -10,7 +10,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 __all__: list[str] = [
     "NeedsHumanRef",
     "NeedsHumanRefsUnobservable",
+    "NeedsHumanScope",
     "newest_needs_human_ref",
+    "refs_by_name",
 ]
 
 _LS_REMOTE_FIELDS = 2
@@ -27,6 +29,21 @@ class NeedsHumanRef:
 
 
 @dataclass(frozen=True, kw_only=True)
+class NeedsHumanScope:
+    """The identifiers that decide which needs-human refs count for one item.
+
+    `foreign_run_ids` are identifiers the dispatch journal attributes to OTHER
+    items. A ref named under one was pushed by a run that is not this item's, so
+    its tip is neither read nor counted: reading it spends a `git show` on a tree
+    that cannot carry this item's run, and a tip missing from the local object
+    store would otherwise hold every item in the pass for another item's ref.
+    """
+
+    run_ids: tuple[str, ...]
+    foreign_run_ids: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, kw_only=True)
 class NeedsHumanRefsUnobservable:
     """The remote listing or an inspected tip could not be read."""
 
@@ -37,12 +54,13 @@ def newest_needs_human_ref(
     *,
     runner: CommandRunner,
     repo: Path,
-    run_ids: tuple[str, ...],
+    scope: NeedsHumanScope,
     ref_prefix: str,
     remote: str,
     timeout_seconds: float,
 ) -> NeedsHumanRef | NeedsHumanRefsUnobservable | None:
     """Return the tree to seed from: the descendant, else newest, tip among every carrying ref."""
+    run_ids = scope.run_ids
     result = runner.run(
         argv=["git", "ls-remote", remote, f"{ref_prefix}/*"],
         cwd=repo,
@@ -55,9 +73,11 @@ def newest_needs_human_ref(
                 " the failed run preserved its terminal tree could not be established"
             )
         )
-    found = _refs_by_name(stdout=result.stdout)
+    found = refs_by_name(stdout=result.stdout)
     carrying: list[NeedsHumanRef] = []
     for ref, commit in sorted(found.items()):
+        if ref.removeprefix(f"{ref_prefix}/") in scope.foreign_run_ids:
+            continue
         run_id = _suffix_run_id(ref=ref, ref_prefix=ref_prefix, run_ids=run_ids)
         if run_id is None:
             run_id = _tip_run_id(
@@ -226,7 +246,7 @@ def _tip_run_id(
     return None
 
 
-def _refs_by_name(*, stdout: str) -> dict[str, str]:
+def refs_by_name(*, stdout: str) -> dict[str, str]:
     """Map each well-formed `ls-remote` line by the ref it named."""
     return {
         fields[1]: fields[0]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-__all__: list[str] = ["published_head_is_later", "published_head_relation"]
+__all__: list[str] = ["foreign_run_ids", "published_head_is_later", "published_head_relation"]
 
 _PUBLISHED_HEAD_KEY = "published_head"
 _RUN_ID_KEY = "run_id"
@@ -30,15 +30,29 @@ def published_head_is_later(
 
 
 def published_head_relation(
-    *, records: tuple[dict[str, object], ...], preserved_run_id: str, published_head: str
+    *,
+    records: tuple[dict[str, object], ...],
+    preserved_run_id: str,
+    published_head: str,
+    publications: tuple[tuple[str, str], ...] = (),
 ) -> Literal[True, False] | None:
     """Compare the two runs, or name the attribution gap with ``None``.
 
     ``None`` is deliberately distinct from ``False``: a recovery route may keep
     an established terminal tree when the head is proven not newer, but cannot
-    reclaim either tree when the journal cannot establish which run published it.
+    reclaim either tree when neither the journal nor a publication record can
+    establish which run published it. ``publications`` pairs each head a
+    publication record declares with the run that record names; a head published
+    by the preserved ref's own run needs no journal order to be ranked.
     """
     published_position = _publishing_run_position(records=records, head=published_head)
+    if published_position is None:
+        publishing_run = next((run for head, run in publications if head == published_head), None)
+        if publishing_run is None:
+            return None
+        if publishing_run == preserved_run_id:
+            return False
+        published_position = _run_position(records=records, run_id=publishing_run)
     preserved_position = _run_position(records=records, run_id=preserved_run_id)
     if published_position is None or preserved_position is None:
         return None
@@ -64,3 +78,16 @@ def _run_position(
         if record.get(_RUN_ID_KEY) == run_id:
             return position
     return fallback
+
+
+def foreign_run_ids(
+    *, records: tuple[dict[str, object], ...], work_item_id: str, own: tuple[str, ...]
+) -> frozenset[str]:
+    """Run and dispatch identifiers the journal attributes to another item and not this one."""
+    return frozenset(
+        value
+        for record in records
+        if isinstance(record.get("work_item_id"), str) and record["work_item_id"] != work_item_id
+        for key in (_RUN_ID_KEY, "dispatch_id")
+        if isinstance(value := record.get(key), str) and value and value not in own
+    )

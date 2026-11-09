@@ -125,7 +125,13 @@ def test_the_preservation_ref_outranks_the_published_head_and_names_the_base() -
             _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
         }
     )
-    seed = _seed(runner=runner, journal_records=(_row(),))
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            _row(),
+            {"work_item_id": _ITEM_ID, "run_id": _RUN, "published_head": _PUBLISHED_HEAD},
+        ),
+    )
     assert not isinstance(seed, PreservedWorkUnobservable)
     assert seed is not None
     assert seed.preservation_ref == _REF
@@ -135,9 +141,7 @@ def test_the_preservation_ref_outranks_the_published_head_and_names_the_base() -
     assert seed.commit_sha == _BASE
     assert seed.commit_sha != _PRESERVED_COMMIT
     assert seed.commit_sha != _PUBLISHED_HEAD
-    # The published head was never even asked for, which is what "preferred over"
-    # means operationally -- a round trip spent there is a question already settled.
-    assert not _asked(runner=runner, needle=_BRANCH_REF)
+    assert _asked(runner=runner, needle=_BRANCH_REF)
 
 
 def test_the_newest_published_tree_wins_over_an_earlier_one() -> None:

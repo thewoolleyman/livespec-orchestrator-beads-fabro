@@ -8,6 +8,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_refs import (
     NeedsHumanRef,
     NeedsHumanRefsUnobservable,
+    NeedsHumanScope,
     newest_needs_human_ref,
 )
 
@@ -36,7 +37,7 @@ def test_an_unreadable_trailer_only_tip_is_unobservable() -> None:
     found = newest_needs_human_ref(
         runner=_Runner(),
         repo=Path("/repo"),
-        run_ids=("run",),
+        scope=NeedsHumanScope(run_ids=("run",)),
         ref_prefix="refs/heads/needs-human",
         remote="origin",
         timeout_seconds=1.0,
@@ -70,7 +71,7 @@ def test_a_fabro_run_tip_trailer_attributes_an_opaque_ref() -> None:
     found = newest_needs_human_ref(
         runner=_FabroTrailerRunner(),
         repo=Path("/repo"),
-        run_ids=("run",),
+        scope=NeedsHumanScope(run_ids=("run",)),
         ref_prefix="refs/heads/needs-human",
         remote="origin",
         timeout_seconds=1.0,
@@ -106,7 +107,7 @@ def test_an_opaque_tip_without_an_accepted_run_trailer_is_not_a_seed() -> None:
     found = newest_needs_human_ref(
         runner=_UnattributedTipRunner(),
         repo=Path("/repo"),
-        run_ids=("run",),
+        scope=NeedsHumanScope(run_ids=("run",)),
         ref_prefix="refs/heads/needs-human",
         remote="origin",
         timeout_seconds=1.0,
@@ -164,7 +165,7 @@ def _choose(*, history: _History, run_ids: tuple[str, ...]) -> object:
     return newest_needs_human_ref(
         runner=history,
         repo=Path("/repo"),
-        run_ids=run_ids,
+        scope=NeedsHumanScope(run_ids=run_ids),
         ref_prefix=_PREFIX,
         remote="origin",
         timeout_seconds=1.0,
@@ -300,3 +301,26 @@ def test_unreadable_ancestry_or_committer_times_are_unobservable_never_a_pick() 
     ):
         found = _choose(history=history, run_ids=("run-a", "run-b"))
         assert isinstance(found, NeedsHumanRefsUnobservable)
+
+
+def test_a_ref_named_under_another_items_run_is_neither_read_nor_counted() -> None:
+    foreign = f"{_PREFIX}/foreign-run"
+    own = f"{_PREFIX}/run-a"
+    history = _History(
+        refs={foreign: _RYW, own: _OLD_S83},
+        messages={},
+        times={},
+        ancestors=set(),
+    )
+    found = newest_needs_human_ref(
+        runner=history,
+        repo=Path("/repo"),
+        scope=NeedsHumanScope(run_ids=("run-a",), foreign_run_ids=frozenset({"foreign-run"})),
+        ref_prefix=_PREFIX,
+        remote="origin",
+        timeout_seconds=1.0,
+    )
+    assert isinstance(found, NeedsHumanRef)
+    assert found.ref == own
+    assert found.passed_over == ()
+    assert not any(_RYW in call for call in history.calls)

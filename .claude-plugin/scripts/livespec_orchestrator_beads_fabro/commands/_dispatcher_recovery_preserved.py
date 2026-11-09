@@ -58,7 +58,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_refs import (
     NeedsHumanRefsUnobservable,
+    NeedsHumanScope,
     newest_needs_human_ref,
+    refs_by_name,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
     PRESERVED_PUBLISH_REF_PREFIX,
@@ -73,6 +75,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_checkpoint 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age import (
+    foreign_run_ids,
     published_head_relation,
 )
 
@@ -117,15 +120,6 @@ SEED_REMOTE = "origin"
 
 _GIT_TIMEOUT_SECONDS = 120.0
 
-# `git ls-remote` prints exactly two tab-separated fields per ref.
-_LS_REMOTE_FIELDS = 2
-
-# The consumer end of `preserved_tree_journal_record`'s own row. Named here
-# rather than spelled at the read, for the reason `_dispatcher_preserved_tree_
-# base` gives about the staging row: a reader spelling a key differently from
-# its writer finds nothing and reports no preserved tree, which at every
-# surface is indistinguishable from a run that never published one.
-
 
 @dataclass(frozen=True, kw_only=True)
 class PreservedWorkUnobservable:
@@ -168,6 +162,7 @@ def verified_preserved_seed(
     work_item_id: str,
     earlier_run_ids: tuple[str, ...],
     journal_records: tuple[dict[str, object], ...],
+    publications: tuple[tuple[str, str], ...] = (),
 ) -> RecoverySeed | PreservedWorkUnobservable | PreservedWorkAbsent:
     """The seed the failed run's preserved work supports: one, unaskable, or absent.
 
@@ -195,7 +190,14 @@ def verified_preserved_seed(
             )
         )
     asked: list[str] = [PRESERVED_SOURCE_TERMINAL_TREE]
-    preserved = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
+    preserved = _needs_human_seed(
+        runner=runner,
+        repo=repo,
+        earlier_run_ids=earlier_run_ids,
+        foreign_run_ids=foreign_run_ids(
+            records=journal_records, work_item_id=work_item_id, own=earlier_run_ids
+        ),
+    )
     # The published tree is named by this item's OWN journal, so with no row
     # naming one there is no ref that source could stand at and the round trip
     # would ask origin about nothing.
@@ -212,6 +214,7 @@ def verified_preserved_seed(
             work_item_id=work_item_id,
             terminal=preserved,
             records=journal_records,
+            publications=publications,
         )
         return preserved if newer_head is None else newer_head
     asked.append(PRESERVED_SOURCE_PUBLISHED_HEAD)
@@ -232,7 +235,11 @@ def verified_preserved_seed(
 
 
 def _needs_human_seed(
-    *, runner: CommandRunner, repo: Path, earlier_run_ids: tuple[str, ...]
+    *,
+    runner: CommandRunner,
+    repo: Path,
+    earlier_run_ids: tuple[str, ...],
+    foreign_run_ids: frozenset[str],
 ) -> RecoverySeed | PreservedWorkUnobservable | None:
     """The terminal tree a needs-human ending preserved: the descendant, else the newest.
 
@@ -247,7 +254,7 @@ def _needs_human_seed(
     found = newest_needs_human_ref(
         runner=runner,
         repo=repo,
-        run_ids=earlier_run_ids,
+        scope=NeedsHumanScope(run_ids=earlier_run_ids, foreign_run_ids=foreign_run_ids),
         ref_prefix=NEEDS_HUMAN_REF_PREFIX,
         remote=SEED_REMOTE,
         timeout_seconds=_GIT_TIMEOUT_SECONDS,
@@ -323,7 +330,7 @@ def _preserved_tree_seed(
                 " be established, so no seed was taken and absence is not confirmed"
             )
         )
-    if ref not in _refs_by_name(stdout=result.stdout):
+    if ref not in refs_by_name(stdout=result.stdout):
         return None
     return RecoverySeed(
         source_run_id=run_id,
@@ -340,30 +347,26 @@ def _newer_published_head_seed(
     work_item_id: str,
     terminal: RecoverySeed,
     records: tuple[dict[str, object], ...],
+    publications: tuple[tuple[str, str], ...],
 ) -> RecoverySeed | PreservedWorkUnobservable | None:
-    """Return a head a later dispatch published, or ``None`` when none was recorded.
+    """Return a head a later run published, or ``None`` when the terminal ref stands.
 
     A terminal ref normally wins because it is the complete tree the failed run
     preserved.  The journal is the exception's evidence: when it names the
     branch tip as a later run's publication, choosing the older terminal tree
-    would discard the item's newer work.  Rows without a published-head field
-    predate this measurement, so they leave the established terminal-ref
-    behaviour intact rather than manufacturing an attribution from their order.
+    would discard the item's newer work.  A surviving head that no journal row
+    names is NOT a reason to keep the terminal ref: the clause holds the item
+    whenever a head and a competing ref both exist and either run cannot be
+    established, so the comparison runs for an ordinary published draft too.
     """
-    if not any(record.get("published_head") is not None for record in records):
-        return None
-    published = _published_head_seed(
-        runner=runner,
-        repo=repo,
-        work_item_id=work_item_id,
-        earlier_run_ids=(),
-    )
+    published = _published_head_seed(runner=runner, repo=repo, work_item_id=work_item_id)
     if published is None or isinstance(published, PreservedWorkUnobservable):
         return None
     relation = published_head_relation(
         records=records,
         preserved_run_id=terminal.source_run_id,
         published_head=published.commit_sha,
+        publications=publications,
     )
     if relation is None:
         return PreservedWorkUnobservable(
@@ -381,7 +384,7 @@ def _published_head_seed(
     runner: CommandRunner,
     repo: Path,
     work_item_id: str,
-    earlier_run_ids: tuple[str, ...],
+    earlier_run_ids: tuple[str, ...] = (),
 ) -> RecoverySeed | PreservedWorkUnobservable | None:
     """The observed published head, named by the ref the reclaim will preserve it at.
 
@@ -436,7 +439,7 @@ def _earlier_head_seed(
                 " be established, so no seed was taken and absence is not confirmed"
             )
         )
-    found = _refs_by_name(stdout=result.stdout)
+    found = refs_by_name(stdout=result.stdout)
     if not found:
         return None
     ref = sorted(found)[-1]
@@ -446,21 +449,6 @@ def _earlier_head_seed(
         commit_sha=found[ref],
         preservation_ref=ref,
     )
-
-
-def _refs_by_name(*, stdout: str) -> dict[str, str]:
-    """Every ref `ls-remote` named, mapped to the object it reported at it.
-
-    Keyed by the FULL ref, which is what makes the lookups above exact: a prefix
-    or suffix test would attribute one run's preserved tree to another, and the
-    answer authorizes a checkout.
-    """
-    named: dict[str, str] = {}
-    for line in stdout.splitlines():
-        fields = line.split()
-        if len(fields) == _LS_REMOTE_FIELDS:
-            named[fields[1]] = fields[0]
-    return named
 
 
 def _leading(*, identifiers: tuple[str, ...]) -> str:

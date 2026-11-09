@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
+    PreservedWorkUnobservable,
     verified_preserved_seed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
@@ -96,3 +97,33 @@ def test_an_unreadable_competing_publish_branch_keeps_the_verified_tree() -> Non
     )
     assert isinstance(seed, RecoverySeed)
     assert seed.commit_sha == "base"
+
+
+class _TerminalRefAndSurvivingBranchRunner:
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        if "refs/heads/needs-human/*" in argv:
+            return CommandResult(
+                exit_code=0, stdout="a" * 40 + "\trefs/heads/needs-human/older\n", stderr=""
+            )
+        return CommandResult(exit_code=0, stdout="b" * 40 + "\trefs/heads/feat/item\n", stderr="")
+
+
+def test_a_published_head_no_journal_row_names_is_held_against_a_competing_terminal_ref() -> None:
+    held = verified_preserved_seed(
+        runner=_TerminalRefAndSurvivingBranchRunner(),
+        repo=Path("/repo"),
+        work_item_id="item",
+        earlier_run_ids=("older",),
+        journal_records=({"work_item_id": "item", "run_id": "older"},),
+    )
+    assert isinstance(held, PreservedWorkUnobservable)
+    assert "publishing-run-unobservable" in held.detail

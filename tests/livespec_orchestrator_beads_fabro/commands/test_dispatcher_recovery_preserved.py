@@ -88,12 +88,13 @@ def _asked(*, runner: _Runner, needle: str) -> bool:
     return any(needle in call for call in runner.calls)
 
 
-def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> None:
+def test_the_terminal_tree_wins_and_the_lower_sources_are_never_asked() -> None:
     """The needs-human ref carries the run's whole tree, so nothing below it is read.
 
-    The descendant tip is taken even though an OLDER run also has a ref and the
-    publish branch is carrying a different head at the same moment — so a reading
-    that preferred either would land on a well-formed wrong commit.
+    The descendant tip is taken even though an OLDER run also has a ref — so a
+    reading that preferred it would land on a well-formed wrong commit. The publish
+    branch IS asked, because a surviving head competes with the ref, but it names
+    nothing here and so the ref stands.
     """
     older_ref = f"{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}"
     runner = _Runner(
@@ -125,7 +126,6 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
         preservation_ref=f"{NEEDS_HUMAN_REF_PREFIX}/{_RUN}",
         passed_over_needs_human=((older_ref, _EARLIER_HEAD),),
     )
-    assert not _asked(runner=runner, needle=_BRANCH_REF)
     assert not _asked(runner=runner, needle=_PRESERVED_PUBLISH_PREFIX)
 
 
