@@ -25,12 +25,26 @@ name: Fast-forward release branch
 on:
   release:
     types: [published]
+  # OPERATOR DISPATCH (bd-ib-sghxlk; spec v327; livespec-dev-tooling v155 option D). The
+  # job below runs ONLY on this dispatch, so a published release no longer
+  # moves `release` by itself: every fleet clone's SessionStart ensure-plugins
+  # installs whatever `release` names, so `release` advances only when an
+  # operator dispatches a tag, which starts that release's canary:
+  #   gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z
+  # The `release: published` trigger above still fires; its job is skipped.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to advance `release` to (vX.Y.Z)"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   fast-forward-release-branch:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Mint App installation token
@@ -46,6 +60,22 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+
+      # On a dispatch the checkout above has no release payload, so it checks
+      # out the dispatched ref; this step moves HEAD to the tag the operator
+      # names. The push below stays fast-forward-only, so a tag that does not
+      # descend from the current `release` fails the run and moves nothing.
+      - name: Check out the dispatched tag
+        env:
+          ROLL_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet "refs/tags/${ROLL_TAG}^{commit}" >/dev/null; then
+            echo "roll tag ${ROLL_TAG} is not a tag of this repository" >&2
+            exit 1
+          fi
+          git checkout --detach "refs/tags/${ROLL_TAG}"
+          echo "Roll tag ${ROLL_TAG} = $(git rev-parse HEAD)"
 
       - name: Fast-forward the release branch to the released commit
         run: |
