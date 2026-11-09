@@ -19,9 +19,12 @@ dev-tooling/preserve/preserve_dispatch.sh [--dry-run] <DISPATCH_ID> [<factory-ur
 dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <namespace> <pod>
 ```
 
-- `preserve_runs.sh` prints one TSV row per run: `RUN NODE REPO SHA REF VERDICT SECONDS`.
+- `preserve_runs.sh` prints one TSV row per run: `RUN NODE REPO SHA REF VERDICT SECONDS SOURCE`. `SOURCE`
+  names the commit it preserved (see rule 9), and `VERDICT` reads `EMPTY` when no candidate carried work
+  (rule 10).
 - `represerve.sh` waits until `HH:MM` UTC (a past time means now), runs one preserve, and on success also
   writes `refs/heads/preserve/<alias>`, for example `bd-ib-<item>-<RUN12>`, in the run's own repository.
+  It writes the alias only on a `VERIFIED…` row, so an `EMPTY` row gets no alias.
 - `preserve_dispatch.sh` takes the Dispatcher's DISPATCH ID, the id the dispatcher and coordinator quote, instead of
   the run ULID. It resolves the run through the factory server's `livespec.dispatch.id` run label, checks that the
   sandbox clone's `livespec.factoryRunId` git-config marker names the same dispatch id, then runs
@@ -79,6 +82,22 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
    - **This rule is temporary.** When bd-ib-qshcwc ships, remove the variable and restore one behaviour.
 8. **The pod must still be Running.** A run whose sandbox has already been torn down has no tree to copy.
    Its row reads `FAILED(... sha=none)`.
+9. **Preserve the commit that carries the work, judged against the merge base (bd-ib-anmcjq).** A fix or
+   refresh round can reset `fabro/run/<RUN>` to plain master. A preserve of that tip then holds none of
+   the run's work and still read `VERIFIED` (bd-ib-7fdesc run `01M6Z3TFJRES` and bd-ib-reuccp run
+   `01M6YYE03JKS`, 2026-11-09). A commit carries work when its tree differs from the tree of its merge base
+   with `origin/master`. A two-way diff against master's current tip would count master's later commits as
+   work, so it is never used. The bulk copy also takes the run branch's reflog and the `HEAD` reflog. The
+   candidates, in order, are: the run-branch tip (`tip`, or `HEAD` with no run branch), then the run
+   branch's reflog newest first (`reflog@{N}`), then the `HEAD` reflog newest first (`HEAD@{N}`). The first
+   candidate that carries work and passes rule 3's fsck is preserved, and the row's `SOURCE` names it.
+10. **Nothing carrying work is `EMPTY`, and `EMPTY` pushes nothing.** When no candidate carries work, the
+    row reads `EMPTY` and the script pushes no `preserve/run-<RUN>` ref and no `needs-human` ref, so
+    `represerve.sh` writes no alias. When the choice cannot be made at all (the copy, fsck or the
+    `origin/master` fetch failed), the row reads `FAILED(...)`, never `EMPTY`. Until bd-ib-ofvsr3 and
+    bd-ib-vraou4 ship and retire these scripts, an operator reading any older preserve applies the same
+    test by hand: `git diff --quiet $(git merge-base <ref> origin/master) <ref>` exiting 0 means NOT
+    preserved.
 
 ## Shell gotcha
 
