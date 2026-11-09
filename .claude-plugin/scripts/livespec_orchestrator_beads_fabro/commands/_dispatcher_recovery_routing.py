@@ -91,6 +91,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation i
     gather_resume,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_release import (
+    stale_assignee_with_run,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -223,7 +226,9 @@ def route_recovery(
     runner = ShellCommandRunner()
     routes: list[RecoveryRoute] = []
     for item in candidates:
-        if not released_for_recovery(records=journaled, work_item_id=item.id):
+        if not released_for_recovery(
+            records=journaled, work_item_id=item.id
+        ) and not stale_assignee_with_run(repo=repo, item=item):
             routes.append(RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH))
             continue
         routes.append(

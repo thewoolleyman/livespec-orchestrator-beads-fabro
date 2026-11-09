@@ -292,6 +292,10 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
     tripwire — a fifth node routing into `fix` would re-open this silently, and
     this is the assertion that notices.
 
+    `fix_commit_settle` is a producer too (work-item `bd-ib-yzrguu`): a fix turn's
+    commit run that settles failed re-enters `fix`, and the loop is counted with
+    two entries of its own rather than taken out of the others' share.
+
     `refresh_repair` is the fourth producer and is excluded from the arithmetic:
     v134's "Refresh-repair accounting" paragraph grants the refresh-repair route
     its own two rounds in addition to what the other entry paths allow, so it
@@ -303,6 +307,7 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
     }
 
     assert producers == {
+        "fix_commit_settle",
         "janitor_failure_route",
         "janitor_refresh_route",
         _CAPTURE,
