@@ -479,11 +479,18 @@ PREFLIGHT_FAILURE_DETAIL=""
 # only to stop a genuinely hung launcher from holding the harness forever.
 wait_for_preflight() {
     local case_name="$1" launcher="$2" pid="$3" log="$4" item="$5" count="$6"
-    local deadline launcher_rc log_tail reason
+    local deadline launcher_rc log_tail reason launcher_alive
     deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))
     while :; do
+        # Liveness is sampled BEFORE the record is read: a launcher records its
+        # preflight before it can exit, so a launcher seen dead here has already
+        # written everything the read below can find.  Reading the record first
+        # let a fast preflight finish between the two checks and be reported as
+        # a launcher that never preflighted.
+        launcher_alive=1
+        kill -0 "$pid" 2>/dev/null || launcher_alive=0
         if [ "$(preflight_count "$item")" -ge "$count" ]; then return 0; fi
-        if ! kill -0 "$pid" 2>/dev/null; then
+        if [ "$launcher_alive" = 0 ]; then
             wait "$pid"; launcher_rc=$?
             reason="exited rc=$launcher_rc"
             break
