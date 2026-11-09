@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.311.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.311.0...v0.311.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* reconcile-merged resolves a merge-held incident repayment's explicit merged PR on its reserved branch (bd-ib-iwksr3) ([b26c3dc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b26c3dc2decf8ea355e247a7a17a39b45d9a5095))
+
 ## [0.311.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.310.0...v0.311.0) (2026-11-09)
 
 
