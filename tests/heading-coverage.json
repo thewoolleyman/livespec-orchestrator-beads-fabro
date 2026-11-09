@@ -276,27 +276,27 @@
     "heading": "## Scenario 8 \u2014 Intake Definition-of-Ready triage",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_intake_dor_scenario8.test_single_acceptance_item_is_tagged_ready",
+    "test": "tests.integration.test_intake_dor_scenario8.test_auto_admission_single_acceptance_item_lands_ready",
     "clauses": [
       {
         "gap_id": "gap-55i6toie",
         "scenario": "Scenario 8 \u2014 Intake Definition-of-Ready triage"
       }
     ],
-    "reason": "Integration-tier acceptance for the shared intake Definition-of-Ready checklist (livespec_orchestrator_beads_fabro.intake_dor) that all three capture front-ends call: the three Scenario-8 cases (single-acceptance->ready, epic->needs-regroom, non-verifiable-or-blocked->not-yet-actionable) are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the single-acceptance->ready journey; the epic->needs-regroom and non-verifiable/blocked->not-yet-actionable cases are sibling tests in the same module, with the per-gate precedence pinned by evaluate()."
+    "reason": "Integration-tier acceptance for the shared intake Definition-of-Ready checklist (livespec_orchestrator_beads_fabro.intake_dor) that all three capture front-ends call: the three Scenario-8 cases (single-acceptance->ready, epic->needs-regroom, non-verifiable-or-blocked->not-yet-actionable) are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the auto-admission single-acceptance->ready journey; the manual-admission pending-approval case, the epic->backlog case and the non-verifiable/blocked cases are sibling tests in the same module, with the per-gate precedence pinned by evaluate()."
   },
   {
     "heading": "## Scenario 9 \u2014 backlog bounce state and transitions",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_regroom_state_machine_scenario9.test_groom_approval_exits_needs_regroom_by_filing_ready_slices",
+    "test": "tests.integration.test_regroom_state_machine_scenario9.test_close_regroomed_out_closes_backlog_item_with_replacement_reason",
     "clauses": [
       {
         "gap_id": "gap-qyvkjjyg",
         "scenario": "Scenario 9 \u2014 backlog bounce state and transitions"
       }
     ],
-    "reason": "Integration-tier acceptance for the needs-regroom state machine (livespec_orchestrator_beads_fabro.regroom): the three Scenario-9 transitions are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the exit-by-filing-ready-slices journey; the entry-via-DoR-failure and entry-via-non-convergence-bounce transitions are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the needs-regroom state machine (livespec_orchestrator_beads_fabro.regroom): the three Scenario-9 transitions are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the groom-approval journey that regrooms the original backlog item out (not silently dropped); the refusal cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 10 \u2014 Dispatcher never auto-approves a manual-admission spec-change item",
@@ -315,14 +315,14 @@
     "heading": "## Scenario 11 \u2014 Dispatcher bounces a non-converging slice to backlog",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_stalled_slice_to_backlog",
+    "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_dot_non_converged_slice_to_backlog",
     "clauses": [
       {
         "gap_id": "gap-rs4tkntz",
         "scenario": "Scenario 11 \u2014 Dispatcher bounces a non-converging slice to backlog"
       }
     ],
-    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (slice bd-ib-dnw2ei, gap-rs4tkntz): under the work-item-state-machine lifecycle the bounce target is the first-class backlog status (the slice leaves the WIP for re-grooming), not the prior needs-regroom label. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend); the bound node id is the stalled-slice bounce-to-backlog journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (slice bd-ib-dnw2ei, gap-rs4tkntz): under the work-item-state-machine lifecycle the bounce target is the first-class backlog status (the slice leaves the WIP for re-grooming), not the prior needs-regroom label. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the DOT-marker non-converged slice bounce-to-backlog journey; the no-bounce-on-ordinary-failure/green cases and the predicate cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 12 \u2014 Dispatcher emits calibration telemetry",
@@ -433,8 +433,8 @@
     "heading": "## Scenario 20 \u2014 Review gate routes a green build through code review before PR",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_workflow_acp_adapter_parameterized.test_implementer_and_review_nodes_use_their_respective_inputs",
-    "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The gate is BLOCKING by default: a past-cap blocking finding escalates the item to blocked / needs-human unless the effective merge_on_review_cap ships it (contracts.md \u00a7\"Dispatcher policy settings\"); the graph's approve/fix edge behavior is codified in the workflow DOT, and the blocking/ship-on-cap disposition binds its test when the dispatcher-policy-settings implementation slice lands."
+    "test": "tests.integration.test_workflow_acp_adapter_parameterized.test_each_acp_node_has_its_own_adapter_input",
+    "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies each ACP node rides its own adapter input, so the implementer nodes and the review-only node are configured independently; sibling tests in the same module prove the review adapter pin, the conditioned approve edge, the label-only routing, the unconditional needs-human fallback and the bounded review-fix loop. The gate is BLOCKING by default: a past-cap blocking finding escalates the item to blocked / needs-human unless the effective merge_on_review_cap ships it (contracts.md \u00a7\"Dispatcher policy settings\"); the graph's approve/fix edge behavior is codified in the workflow DOT, and the blocking/ship-on-cap disposition binds its test when the dispatcher-policy-settings implementation slice lands."
   },
   {
     "heading": "## Scenario 21 \u2014 Codex plugin discovery and full-access posture",
@@ -847,8 +847,8 @@
     "heading": "## Scenario 64 \u2014 Every Codex ACP node runs a pinned model, and the opt-out is a true no-op",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_dispatcher_codex_pins_and_provider_limits_scenarios64_65.test_scenario64_dispatcher_renders_pinned_codex_adapters_and_true_opt_out",
-    "reason": "Ratified as retroactive cover for PR #1711. Bound to an integration-tier test that renders the Dispatcher Fabro inputs for both Codex adapters, validates repo-level tier overrides, and proves the empty-model opt-out renders the unpinned base adapter byte-for-byte."
+    "test": "tests.integration.test_dispatcher_codex_pins_and_provider_limits_scenarios64_65.test_scenario64_a_structured_codex_entry_pins_exactly_the_node_it_names",
+    "reason": "Ratified as retroactive cover for PR #1711. Bound to an integration-tier test. The bound node id renders the Dispatcher Fabro inputs for a structured Codex entry and proves it pins exactly the node it names while every other node is unaffected; the unconfigured-defaults and retired-key cases are sibling tests in the same module. The Scenario 64 explicit opt-out case (the manual form rendering the un-pinned base string) has no integration-tier test in this repository yet."
   },
   {
     "heading": "## Scenario 65 \u2014 A provider ceiling is permanent and surfaces the provider's own sentence",
@@ -1034,7 +1034,7 @@
     "heading": "## Scenario 90 \u2014 The Codex adapter is identified by its baked path and pinned through its environment",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_codex_adapter_baked_path_scenarios90_91.test_scenario90_a_default_dispatch_renders_both_adapters_in_their_ratified_forms",
+    "test": "tests.integration.test_codex_adapter_baked_path_scenarios90_91.test_scenario90_a_codex_pinned_dispatch_renders_both_adapters_in_their_ratified_forms",
     "work_item": "bd-ib-nr3pon",
     "reason": "Bound by bd-ib-nr3pon (commission item E2) leg (a) to the INTEGRATION-tier journey the scenario describes: a real three-layer resolution against this repository's committed workflow inputs, rendered through the dispatch argv builder, asserting the publish adapter is its env assignments in sorted key order followed by the baked /opt/livespec/codex-acp/bin/codex-acp path, that model and model_reasoning_effort ride inside CODEX_CONFIG rather than as -c arguments, and that the Claude implementer string is byte-identical. The same module carries the scenario's other three cases \u2014 the publish class declaring INITIAL_AGENT_MODE agent-full-access, a review node routed to Codex rendering read-only, and the prohibition on identifying the adapter by package name. A unit-tier test cannot discharge it: the assertion is about the adapter string a real dispatch renders."
   },
