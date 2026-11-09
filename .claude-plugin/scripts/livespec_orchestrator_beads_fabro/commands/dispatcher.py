@@ -32,6 +32,8 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py clear-provider-exhaustion --provider <name> --reason <text>
                                           [--repo <path>] [--invoker <id>]
                                           [--journal <path>]
+  dispatcher.py fresh-ruling --repo <path> --item <id> --reason <text>
+                             [--invoker <id>] [--journal <path>]
   dispatcher.py clear-acp-availability-hold --scope <scope> --hold-key <key>
                                             --reason <text>
                                             [--candidate-key <key>]
@@ -336,6 +338,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_inspect impo
     add_factory_inspect_arguments,
     run_factory_inspect_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fresh_ruling import (
+    add_fresh_ruling_arguments,
+    run_fresh_ruling_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
     add_post_host_record_arguments,
     run_post_host_record_cli,
@@ -485,6 +491,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "dispatch": run_dispatch_command,
     "drift-run": _run_drift_run,
     "file-canary": run_file_canary_command,
+    "fresh-ruling": run_fresh_ruling_command,
     "idle-slot-audit": run_idle_slot_audit_command,
     "inspect": run_factory_inspect_command,
     "janitor-check": run_janitor_check,
@@ -508,6 +515,14 @@ def main(*, argv: list[str] | None = None) -> int:
     return handler(args=args)
 
 
+def _add_operator_valve_subcommands(
+    *, add_parser: Callable[[str], argparse.ArgumentParser]
+) -> None:
+    add_clear_provider_exhaustion_arguments(parser=add_parser("clear-provider-exhaustion"))
+    add_clear_acp_availability_hold_arguments(parser=add_parser("clear-acp-availability-hold"))
+    add_fresh_ruling_arguments(parser=add_parser("fresh-ruling"))
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -517,12 +532,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
     add_codex_cred_status_arguments(parser=subparsers.add_parser("codex-cred-status"))
     add_claude_cred_status_arguments(parser=subparsers.add_parser("claude-cred-status"))
-    add_clear_provider_exhaustion_arguments(
-        parser=subparsers.add_parser("clear-provider-exhaustion")
-    )
-    add_clear_acp_availability_hold_arguments(
-        parser=subparsers.add_parser("clear-acp-availability-hold")
-    )
+    _add_operator_valve_subcommands(add_parser=subparsers.add_parser)
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
