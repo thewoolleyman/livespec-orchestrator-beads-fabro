@@ -20,6 +20,10 @@ attempt the shared `--item`, `--attempt`, `--phase`, `--operation`,
 - `record-revert-receipt` calls `record_revert_receipt`, the step that makes a
   corrected attempt eligible.
 - `correct-attempt` calls `enter_corrected_attempt`.
+- `correct-unmerged-attempt` reads the bound repair PR and the named failed run
+  from the forge and calls `enter_unmerged_correction`
+  (`correct_unmerged_action`): the corrected attempt for a repair whose
+  expedited PR closed unmerged after a retained fast check failed on its head.
 - `complete-incident` observes the bound repayment PR and the named master run
   on the forge, scans that run head's tree for the incident marker, takes the
   rest as one canonical operator attestation and calls `complete_incident`; a
@@ -60,6 +64,9 @@ from livespec_orchestrator_beads_fabro.commands._incident_authority_decode impor
     invalid_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._incident_authority_merge import record_merge
+from livespec_orchestrator_beads_fabro.commands._incident_authority_unmerged import (
+    correct_unmerged_action,
+)
 from livespec_orchestrator_beads_fabro.commands._incident_rollback_conflict import (
     RollbackConflict,
     RollbackResolution,
@@ -108,6 +115,7 @@ LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "record-rollback-conflict": ("rollback_conflict_json",),
     "resolve-rollback-conflict": ("rollback_resolution_json",),
     "correct-attempt": ("correction_json", "target_ref"),
+    "correct-unmerged-attempt": ("correction_json", "target_ref", "failed_run"),
     "complete-incident": ("master_run", "completion_json"),
 }
 _PR_NUMBER = re.compile(r"[1-9][0-9]*")
@@ -285,6 +293,7 @@ _HANDLERS: dict[str, _Handler] = {
     "record-rollback-conflict": _rollback_conflict,
     "resolve-rollback-conflict": _resolve_rollback_conflict,
     "correct-attempt": _correct,
+    "correct-unmerged-attempt": correct_unmerged_action,
     "complete-incident": _complete,
 }
 
