@@ -53,14 +53,13 @@ _BLOCKING_CHILD = "import sys; _ = sys.stdin.read()"
 # The probe the `finally` arm needs: it completes the startup handshake, then
 # never finishes, so `communicate` times out with the child still alive.
 _HANGING_PROBE = """
+import os
 import sys
-import time
-from pathlib import Path
+import threading
 
-_, ready_path, go_path, _result_path = sys.argv[1:5]
-Path(ready_path).write_text("ready", encoding="utf-8")
-while True:
-    time.sleep(1)
+_, ready_fd, _go_fd, _result_path = sys.argv[1:5]
+os.write(int(ready_fd), b"ready")
+threading.Event().wait()
 """
 _HANGING_TIMEOUT_SECONDS = 2.0
 _DEAD_CHILD_EXIT = 7
@@ -97,37 +96,45 @@ def _spawn(*, code: str) -> subprocess.Popen[str]:
     )
 
 
-def test_wait_for_reports_a_child_that_died_before_the_handshake(tmp_path: Path) -> None:
+def test_wait_for_reports_a_child_that_died_before_the_handshake() -> None:
     """A dead child must fail the regression WITH its own output, not time out."""
     module = _frozen_module()
     process = _spawn(code=_DYING_CHILD)
     _ = process.wait(timeout=_PATIENT_WAIT_SECONDS)
-    with pytest.raises(AssertionError) as excinfo:
-        module._wait_for(  # noqa: SLF001 - the frozen file's own scaffolding is the subject.
-            path=tmp_path / "never-written",
-            timeout=_PATIENT_WAIT_SECONDS,
-            process=process,
-        )
+    ready_read, ready_write = os.pipe()
+    os.close(ready_write)
+    try:
+        with pytest.raises(AssertionError) as excinfo:
+            module._wait_for(  # noqa: SLF001 - the frozen file's own scaffolding is the subject.
+                ready_fd=ready_read,
+                timeout=_PATIENT_WAIT_SECONDS,
+                process=process,
+            )
+    finally:
+        os.close(ready_read)
     message = str(excinfo.value)
     assert f"child exited early (rc={_DEAD_CHILD_EXIT})" in message
     assert "child stdout" in message
     assert "child stderr" in message
 
 
-def test_wait_for_times_out_on_a_live_child_that_never_signals(tmp_path: Path) -> None:
+def test_wait_for_times_out_on_a_live_child_that_never_signals() -> None:
     """The bound is what keeps a silent child from hanging the whole suite."""
     module = _frozen_module()
     process = _spawn(code=_BLOCKING_CHILD)
+    ready_read, ready_write = os.pipe()
     try:
         with pytest.raises(AssertionError) as excinfo:
             module._wait_for(  # noqa: SLF001 - the frozen file's own scaffolding is the subject.
-                path=tmp_path / "never-written",
+                ready_fd=ready_read,
                 timeout=_NO_WAIT_SECONDS,
                 process=process,
             )
         assert "timed out after" in str(excinfo.value)
-        assert "never-written" in str(excinfo.value)
+        assert "readiness signal" in str(excinfo.value)
     finally:
+        os.close(ready_read)
+        os.close(ready_write)
         process.kill()
         _ = process.communicate()
 
