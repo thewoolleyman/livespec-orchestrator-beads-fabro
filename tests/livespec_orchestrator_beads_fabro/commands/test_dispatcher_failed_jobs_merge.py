@@ -10,6 +10,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     PollPolicy,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import await_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
 
 
@@ -216,3 +217,36 @@ def test_await_merge_does_not_rerun_on_the_last_poll_of_the_budget(tmp_path: Pat
     assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
     assert not any(call[:3] == ["gh", "run", "rerun"] for call in runner.calls)
     assert not any(r.get("stage") == "merge-poll-failed-jobs-rerun" for r in journal.records)
+
+
+def test_await_merge_counts_a_journaled_rerun_of_the_same_head_across_a_restart(
+    tmp_path: Path,
+) -> None:
+    journal_file = tmp_path / "journal.jsonl"
+    prior = {
+        "work_item_id": "x-1",
+        "stage": "merge-poll-failed-jobs-rerun",
+        "workflow_run": "42",
+        "pr_head": "abc123",
+        "outcome": "rejected",
+    }
+    journal_file.write_text(json.dumps(prior) + "\n", encoding="utf-8")
+    failing_view = json.loads(_view())
+    failing_view["headRefOid"] = "abc123"
+    runner = _Runner(
+        queue=[_ok(stdout=json.dumps(failing_view)), _ok(stdout=_required()), _ok(), _ok()]
+    )
+
+    outcome = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        runner=runner,
+        journal=JournalFile(path=journal_file),
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=2, interval_seconds=0.5),
+    )
+
+    assert isinstance(outcome, DispatchOutcome)
+    assert (outcome.status, outcome.stage) == ("blocked", "merge-poll")
+    assert not any(call[:3] == ["gh", "run", "view"] for call in runner.calls)
+    assert not any(call[:3] == ["gh", "run", "rerun"] for call in runner.calls)
