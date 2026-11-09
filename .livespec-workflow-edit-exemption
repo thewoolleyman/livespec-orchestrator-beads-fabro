@@ -4,11 +4,11 @@
 # workflow_dispatch trigger with a required `tag` input, a job-level
 # `if: github.event_name == 'workflow_dispatch'`, and a step that checks out
 # the named tag. ADDITIVE ONLY: no workflow line is deleted or modified. The
-# `release` branch then advances only at the roll step, never on every
-# published release (livespec-dev-tooling spec v155, option D). Authorized by
+# `release` branch then advances only on an operator dispatch that starts a
+# release's canary, never on every published release (livespec-dev-tooling spec v155, option D). Authorized by
 # legacy-coordinator-agent ruling e8d70af3, 2026-11-09 ~01:4xZ, recorded on the
 # work item. It adds no job to any PR or push CI path.
 work_item=bd-ib-sghxlk
-reason=Stop every published release from rolling to every fleet clone through the unprotected release branch; release advances only when the roll step dispatches a canaried tag.
+reason=Stop every published release from rolling to every fleet clone through the unprotected release branch; release advances only when an operator dispatches a published tag, which starts that release's canary.
 change=additive
 ci_runtime=no-significant-increase

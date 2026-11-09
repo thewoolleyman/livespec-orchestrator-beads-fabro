@@ -123,8 +123,9 @@ a moving branch rather than a tag or SHA. This host's single
 clone that commits a tag ref resolves `release` here all the same.
 
 Propagation is NOT automatic. A merge to master still leads release-please to
-publish a release, but `release` advances only at the ROLL STEP, after the
-release's canary samples pass:
+publish a release, but `release` advances only when an operator dispatches the
+workflow with that release's tag, and that dispatch STARTS the release's
+canary (spec v327, contracts.md §"Self-contained plugin dispatch"):
 
 ```bash
 gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z
@@ -136,6 +137,18 @@ the run rather than rewriting the branch. A `release: published` event still
 fires `.github/workflows/fast-forward-release-branch.yml`, but its job is
 skipped.
 
+The order is:
+
+1. Hold factory launches from every clone outside the canary. Until
+   livespec-dev-tooling-7upzav reaches a clone, its session start installs
+   whatever `release` names, so the dispatch moves it too.
+2. Dispatch the workflow with the tag.
+3. The canary's clones adopt the build `release` now names, and the canary's
+   factory runs launch on it.
+4. Judge the canary samples, which are those runs' outcomes.
+5. Take the ROLL STEP: adopt the build in every fleet clone, lift the holds,
+   reload, and dispatch normally.
+
 The reason is that every clone's SessionStart `just ensure-plugins` installs
 whatever `release` names, uncanaried. The auto-advance this replaced moved
 livespec-dev-tooling's registration at 21:17Z on 2026-11-08, and this
@@ -144,7 +157,8 @@ published). It is conformance to livespec-dev-tooling spec v155 (option D), and
 bd-ib-sghxlk holds the change.
 
 Consumers resolve the new commit when their project-scope plugin install
-refreshes. To verify a fix reached a consumer, confirm `release` advanced at
-the roll step, then content-grep that repo's installed plugin cache; do not
+refreshes. To verify a fix reached a consumer, confirm `release` advanced and
+the roll step took that build, then content-grep that repo's installed plugin
+cache; do not
 hunt for a pin file or open bump PRs. `pin-freshness.yml` and
 `bump-pin-from-dispatch.yml` serve sources pinned by tag, not this plugin.
