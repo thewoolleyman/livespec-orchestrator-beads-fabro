@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_pull_requests import (
     dispatch_pull_requests_env_line,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_subject import (
+    dod_gate_subject,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     contract_prompt_variables,
 )
@@ -202,6 +205,15 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # and without this projection it falls back to the publish branch name
         # as its title and keeps `publish_draft`'s placeholder body.
         publication_metadata=publication_metadata_for(item=overlay.item),
+        # The Definition-of-Done judgement subject, for the `dod_gate` node ALONE.
+        # Rendered HERE for the reason the publication metadata above is, and
+        # delivered as a file rather than appended to the goal: Fabro injects the
+        # goal into every ACP node, and only this one grades the subject.
+        dod_gate_subject=dod_gate_subject(
+            item=overlay.item,
+            repo=overlay.repo,
+            comments=tuple(comment.text for comment in overlay.recorded.comments),
+        ),
         # The item's `factory_captured` assertions, for the sandbox's own
         # per-assertion grade of the verified record. Rendered HERE for the same
         # reason the publication metadata above is: this is the one call site

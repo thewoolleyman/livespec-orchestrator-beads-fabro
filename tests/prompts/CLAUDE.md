@@ -109,6 +109,14 @@ instead.
   OUTPUT-IS-NOT-SOURCE clause and the round trip it pairs with stay bound in
   `tests/integration/test_proof_finding_work_order_scenario138.py`.
 
+- `test_dod_gate_subject_file.py` — bd-ib-tzvtgc: the goal no longer carries the
+  Definition-of-Done judgement subject (Fabro injects the goal into every ACP
+  node, and only `dod_gate` grades the subject), so the gate prompt is the only
+  thing that sends the node to the file the Dispatcher materializes it in. The
+  path needle is IMPORTED from `_dispatcher_dod_gate_subject`, so a path changed
+  on one side fails here instead of leaving the node reading nothing; a sibling
+  case keeps the host-call heading the rubric still grades.
+
 - `test_dod_gate_nested_heading_scope.py` — bd-ib-uwhvdv: check 4 of the
   Definition-of-Done gate prompt reads a referenced heading as its WHOLE
   section — the named H2 plus every nested heading, to the next H2 — states
