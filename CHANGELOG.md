@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.308.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.307.0...v0.308.0) (2026-11-09)
+
+
+### Features
+
+* **fleet-launch:** stop an impl drive when a hold appears before admission (bd-ib-j6rbdx) ([366462c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/366462c67b74b8f56361357746133868a56634b3))
+* reconciliation clears a stale fabro assignee from a ready item (bd-ib-3lbt4o) ([299ac3c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/299ac3cde07a84d1d25d672e2d327868c3519d3b))
+
+
+### Bug Fixes
+
+* a wait whose process was killed does not refuse later waits ([ce7503d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ce7503d02df0ff85f2aada1f174af9dba6aff015))
+* carry each failed target's own output in the refresh-repair brief ([7471853](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7471853a57919877d676ce00a55f71a1330ff6a6))
+* condensed spec tree keeps paragraphs naming a command or marker the statement names ([29612c5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/29612c5fca6ecb21c5ed44c47d3b42522925ed3c))
+* **dispatcher:** extract the dry-pass claim projection under the LLOC ceiling ([8792b7c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8792b7c940a5c04b362ce01b001cae251aac712e))
+* local pre-commit fallback records same-tree evidence after a passing aggregate ([6ed227a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ed227ac0c71a115e64a0d135c365a36ef0891f4))
+* refuse a wait on a commit run while another wait on it is open ([cd3e1d8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cd3e1d8b88a506724d5271cd5c478f116901f031))
+* settle ends a stranded merge or rebase before the next node ([daced5a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/daced5a42e9b99de963fa9293af71bb58c3bdfe7))
+* settle wait telemetry assertions before verdict ([beb40df](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/beb40df20115c84c0dc2effe3d36e56462de464a))
+* skip terminal non-CI workflow runs in ancestor lookup ([0992e8c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0992e8c347da9f47b245edb1ced46fe048523dc7))
+* source staging reads its own fetched ref, not FETCH_HEAD ([64be426](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/64be42615e57ab8cee3ed33c240feae424d23b3b))
+
 ## [0.307.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.306.0...v0.307.0) (2026-11-09)
 
 
