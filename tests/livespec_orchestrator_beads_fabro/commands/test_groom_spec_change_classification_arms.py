@@ -167,3 +167,45 @@ def test_a_scenario_reference_carries_its_governing_contract_paragraph_to_groom_
     assert classified == [CandidateSlice(**{**candidate.__dict__, "is_spec_change": False})]
     rendered = (tmp_path / "prompt-2").read_text(encoding="utf-8")
     assert _GOVERNING_PARAGRAPH in rendered
+
+
+def test_a_literal_command_and_marker_carry_their_stating_paragraph_to_groom_judgement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scenario with no governing clause line still reaches the paragraph it never names."""
+    _install_judge(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        replies=(
+            "feature",
+            '{"kind": "stated", "stated_by": ["## Factory-configurable ACP fallback priority"], '
+            '"generalization_target": null, "rationale": ""}',
+        ),
+    )
+    repo = _scenario_repo(tmp_path=tmp_path)
+    stating = (
+        "**A ruled seed names the tree a released item's next dispatch starts from.** "
+        "An operator MAY run `dispatcher.py seed-ruling --repo <path>`, which writes the "
+        "marker line `livespec-seed-ruling`. "
+        "The comment MUST pass the shared template-opener detector before it is written.\n"
+    )
+    contracts = repo / "SPECIFICATION" / "contracts.md"
+    _ = contracts.write_text(
+        contracts.read_text(encoding="utf-8").replace(_GOVERNING_PARAGRAPH, stating),
+        encoding="utf-8",
+    )
+    _ = (repo / "SPECIFICATION" / "scenarios.md").write_text(
+        f"{_SCENARIO_HEADING}\n\nScenario: a released item is recovered.\n", encoding="utf-8"
+    )
+    candidate = _candidate(
+        acceptance=(
+            "A `dispatcher.py seed-ruling` command writes a comment opening with the marker "
+            "line `livespec-seed-ruling`, refusing an invalid ruling.\n\n"
+            f"References: {_SCENARIO_HEADING}"
+        )
+    )
+
+    classified = classified_candidate_slices(slices=[candidate], repo=repo)
+
+    assert classified == [CandidateSlice(**{**candidate.__dict__, "is_spec_change": False})]
+    assert stating in (tmp_path / "prompt-2").read_text(encoding="utf-8")

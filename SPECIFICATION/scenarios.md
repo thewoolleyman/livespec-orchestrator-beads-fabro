@@ -12931,18 +12931,14 @@ Feature: A refused dispatch says why in drive's own summary
   I want the summary to name the refusing stage and its detail
   So that I do not have to know the dispatch journal exists to learn why nothing ran
 
-  Scenario: a goal-template preflight refusal names the stage and the offending comment
-    Given a ready work item W one of whose ledger comments, C, carries a goal-template opening delimiter
-    When an operator runs drive --action impl:W without --json
-    Then the Dispatcher refuses the dispatch at stage goal-minijinja-preflight before any factory run is created
-    And drive's human summary names the stage goal-minijinja-preflight
-    And the summary names comment C by its id and its creation instant
-    And the summary does not consist only of a statement that the Dispatcher did not report green
-
-  Scenario: a field opener is named by the field
+  Scenario: a goal-template preflight refusal names the stage and the offending field
     Given a ready work item W whose description carries a goal-template opening delimiter
     When an operator runs drive --action impl:W without --json
-    Then drive's human summary names the stage goal-minijinja-preflight and the field description
+    Then the Dispatcher refuses the dispatch at stage goal-minijinja-preflight before any factory run is created
+    And drive's human summary names the stage goal-minijinja-preflight, the field description and the offset of its first delimiter
+    And the summary does not consist only of a statement that the Dispatcher did not report green
+    And the dispatch exits 5 with exactly one REFUSED: line naming W, the field description, the offset and the remedy of editing that field
+    And neither the summary nor the REFUSED: line contains a goal-template opening delimiter
 
   Scenario: the machine payload is unchanged
     Given the same refused dispatch of W
@@ -12952,13 +12948,13 @@ Feature: A refused dispatch says why in drive's own summary
 
 ## Scenario 322 — A comment-poisoned item is superseded by a successor that passes the goal-template preflight
 
-Governing clause: `contracts.md` §"Dispatcher policy settings" → "A template-poisoned item is superseded, never repaired in place".
+Governing clause: `contracts.md` §"Dispatcher policy settings" → "A goal-template opener is neutralized in a comment and refused in a field".
 
 ```gherkin
-Feature: A permanently poisoned item is replaced, not abandoned
+Feature: A comment-poisoned item can be replaced by a clean successor
   As an operator whose item recorded a template opener in an append-only comment
-  I want one command that files a clean successor and retires the original
-  So that the work is dispatchable again without hand-copying fields and comments
+  I want one command that files a successor with a clean ledger and retires the original
+  So that I do not have to hand-copy fields and comments to get an item free of openers
 
   Scenario: supersede-contaminated files a clean successor and closes the original
     Given an open work item W with a plan parent P, a blocks dependency on item B, a dependent item D that W blocks, a dispatch-record label, a lifecycle label and one other label L
@@ -13533,4 +13529,50 @@ Feature: Host judgement spend journal final usage
     And that output ends with a result event
     When the judgement completes
     Then its journal's last line has type result and carries that event's usage object unchanged
+```
+
+## Scenario 333 — A ledger comment or lesson carrying a goal-template opener is neutralized in the goal and does not refuse the dispatch
+
+Governing clause: `contracts.md` §"Dispatcher policy settings" → "A goal-template opener is neutralized in a comment and refused in a field".
+
+```gherkin
+Feature: A ledger comment or a lesson cannot make an item undispatchable
+  As an operator whose item's append-only ledger, or whose repository's lessons, carry a template opener
+  I want the goal render to rewrite the opener rather than refuse
+  So that text I cannot edit away cannot strand the item for good
+
+  Scenario: a comment opener is rendered in bracket form and the dispatch proceeds
+    Given a ready work item W whose fields carry no goal-template opening delimiter
+    And one of W's instruction comments, C, which is not a record comment, is longer than 1000 characters and carries a goal-template opening delimiter
+    When the Dispatcher renders W's goal for a dispatch
+    Then the dispatch passes stage goal-minijinja-preflight
+    And C's text appears in the rendered goal whole, untruncated and unstripped, with each opener in bracket form and every other character unchanged
+    And the ledger comment C is unchanged
+
+  Scenario: a lesson opener is rendered in bracket form and the dispatch proceeds
+    Given a ready work item W whose fields and ledger comments carry no goal-template opening delimiter
+    And a ratified lesson L in the committed lessons file carries a goal-template opening delimiter
+    When the Dispatcher renders W's goal for a dispatch
+    Then the dispatch passes stage goal-minijinja-preflight
+    And L appears in the rendered goal with each opener in bracket form
+    And the committed lessons file is unchanged
+```
+
+## Scenario 334 — A goal-template opener in an item field is a mechanical filing finding and approve refuses it
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Effective acceptance criteria".
+
+```gherkin
+Feature: A field opener is caught at filing, not first at launch
+  As an operator filing a work item
+  I want an opener in an item field reported where it was made
+  So that no dispatch time is spent discovering it
+
+  Scenario: the filing display reports the field and approve refuses until it is edited
+    Given a work item W filed through the capture filing seam whose description carries a goal-template opening delimiter and which otherwise carries no mechanical finding
+    Then filing_display reports a (mechanical) finding naming the field description and the offset of its first delimiter
+    And the finding's ledger comment on W carries no goal-template opening delimiter
+    And W rests at pending-approval even when its effective admission_policy is auto
+    And an approve of W leaves it at pending-approval with a result naming the field description
+    And once the description is edited to carry no delimiter, an approve of W routes it onward as it would any other item
 ```

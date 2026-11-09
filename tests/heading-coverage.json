@@ -3027,5 +3027,21 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-st2sby drives a host model judgement whose candidate is the Claude agent and shows that its spend journal carries the final_usage_line header and ends with a result line holding the closing result event's usage unchanged and the assistant message_ids in order, that a process ended before any result event keeps its last assistant line last, and that a launch reading output only after exit writes the same result line. bd-ib-st2sby owns it.",
     "work_item": "bd-ib-st2sby"
+  },
+  {
+    "heading": "## Scenario 333 \u2014 A ledger comment or lesson carrying a goal-template opener is neutralized in the goal and does not refuse the dispatch",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-cfgtlo renders the goal of a ready item whose fields carry no opener, and shows that an instruction comment longer than 1000 characters carrying a goal-template opening delimiter, and a ratified lesson carrying one, each reach the rendered goal whole with only the opener rewritten to bracket form, that the dispatch passes stage goal-minijinja-preflight, and that neither the ledger comment nor the lessons file changes. bd-ib-cfgtlo owns it.",
+    "work_item": "bd-ib-cfgtlo"
+  },
+  {
+    "heading": "## Scenario 334 \u2014 A goal-template opener in an item field is a mechanical filing finding and approve refuses it",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-cfgtlo files an item through the capture filing seam whose description carries a goal-template opening delimiter, and shows that filing_display reports a mechanical finding naming the field and the offset of its first delimiter, whose ledger comment carries no opener, that the item rests at pending-approval even under auto admission, that approve refuses naming the field, and that approve routes it onward once the description is edited. bd-ib-cfgtlo owns it.",
+    "work_item": "bd-ib-cfgtlo"
   }
 ]
