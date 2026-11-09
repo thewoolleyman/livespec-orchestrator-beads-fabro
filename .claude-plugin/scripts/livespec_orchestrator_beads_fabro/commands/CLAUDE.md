@@ -897,8 +897,9 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
     precondition and the per-poll verdict. The pointer is written AND READ BACK
     before `fabro rm -f`, and a read-back that fails yields `HELD` rather than
     `CANCELLED`: the run keeps its slot for one more poll and the export is
-    re-attempted. The `HELD` arm must stay an explicit `continue` in the watch
-    loop and never a fall-through — a quiet run past its budget satisfies the
+    re-attempted. The `HELD` arm must stay an explicit non-cancelling return in
+    `decide_run_watch` (`_dispatcher_run_watch_decision.py`, the per-poll
+    budget-then-stall decision the watch loop calls) and never a fall-through — a quiet run past its budget satisfies the
     stall rule as well, so a fall-through cancels it as stalled, with the wrong
     record, the wrong disposition, and the pointer the hold exists to secure
     still unwritten.
