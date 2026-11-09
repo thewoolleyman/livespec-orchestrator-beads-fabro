@@ -12,7 +12,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import minijinj
 __all__: list[str] = [
     "SEED_RULING_MARKER",
     "SeedRuling",
-    "latest_unconsumed_seed_ruling",
     "record_verified_seed_ruling",
     "seed_ruling_comment_body",
     "verify_seed_ruling",
@@ -55,17 +54,6 @@ def seed_ruling_comment_body(
             f"instant: {instant}",
         )
     )
-
-
-def latest_unconsumed_seed_ruling(
-    *, comments: tuple[str, ...], consumed_instants: frozenset[str]
-) -> SeedRuling | None:
-    """Return the newest parseable ruling not already consumed by a launch."""
-    rulings = tuple(_ruling_from_comment(comment=one) for one in comments)
-    eligible = tuple(
-        one for one in rulings if one is not None and one.instant not in consumed_instants
-    )
-    return eligible[-1] if eligible else None
 
 
 def verify_seed_ruling(*, runner: CommandRunner, repo: Path, ruling: SeedRuling) -> str:
@@ -140,29 +128,3 @@ def _observed_commit(*, stdout: str, ref: str) -> str | None:
         if len(fields) == _LS_REMOTE_FIELDS and fields[1] == ref:
             return fields[0]
     return None
-
-
-def _ruling_from_comment(*, comment: str) -> SeedRuling | None:
-    """Decode the stable body shape; unrelated or malformed comments are inert."""
-    lines = comment.splitlines()
-    if not lines or lines[0] != SEED_RULING_MARKER:
-        return None
-    fields = dict(line.split(": ", 1) for line in lines[1:] if ": " in line)
-    required = (
-        "work-item",
-        "preservation-ref",
-        "commit-sha",
-        "invoker",
-        "reason",
-        "instant",
-    )
-    if any(not isinstance(fields.get(name), str) or not fields[name] for name in required):
-        return None
-    return SeedRuling(
-        work_item_id=fields["work-item"],
-        preservation_ref=fields["preservation-ref"],
-        commit_sha=fields["commit-sha"],
-        invoker=fields["invoker"],
-        reason=fields["reason"],
-        instant=fields["instant"],
-    )
