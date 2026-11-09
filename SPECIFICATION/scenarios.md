@@ -13465,3 +13465,35 @@ Feature: An impl launcher honours a hold until its item is admitted
     And it re-takes no ticket
     And it appends one ledger comment to bd-x naming its ticket number and the operator move valve
 ```
+
+## Scenario 331 — The release branch advances only at the roll step
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch".
+
+```gherkin
+Feature: The release branch advances only at the roll step
+
+  Scenario: a published release does not move the release branch
+    Given the `release` branch names the commit of release tag v1.0.0
+    When release v1.1.0 of this repository is published
+    Then the `fast-forward-release-branch.yml` run for that event finishes with its job skipped
+    And the `release` branch still names the commit of v1.0.0
+
+  Scenario: the roll step advances the release branch to a canaried tag
+    Given the `release` branch names the commit of release tag v1.0.0
+    And release v1.1.0's commit descends from v1.0.0's commit
+    When the roll step runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
+    Then the `release` branch names the commit of v1.1.0 when the run ends
+
+  Scenario: a tag that does not descend from the release branch moves nothing
+    Given the `release` branch names the commit of release tag v1.1.0
+    When the roll step dispatches the workflow with tag v1.0.0, whose commit is an ancestor of v1.1.0's
+    Then the run fails
+    And the `release` branch still names the commit of v1.1.0
+
+  Scenario: a tag that does not exist moves nothing
+    Given the `release` branch names the commit of release tag v1.1.0
+    When the roll step dispatches the workflow with a tag this repository does not carry
+    Then the run fails naming the tag
+    And the `release` branch still names the commit of v1.1.0
+```

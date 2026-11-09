@@ -3008,6 +3008,21 @@ clones the dispatch path makes are of the dispatch TARGET repo (the work
 site, cloned host-side and again inside the Fabro sandbox); the
 orchestrator's own source is never a dispatch-time prerequisite.
 
+**The release channel.** Fleet members and adopters resolve this plugin
+through the moving `release` branch: every consumer's marketplace
+registration names `ref: release`, and a session-start plugin refresh
+installs whatever commit `release` names. So the commit `release` names
+IS the build the fleet adopts. `release` MUST advance only when the roll
+step dispatches `.github/workflows/fast-forward-release-branch.yml` with
+a `tag` input naming a published release tag of this repository, after
+that release's canary samples. A `release: published` event MUST NOT
+advance `release`, and the workflow's job MUST NOT run for that event.
+The advance MUST be fast-forward-only: when the named tag's commit does
+not descend from the commit `release` names, the run MUST fail, and
+`release` MUST keep its commit. The roll step's command is
+`gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z`.
+Scenario 331 in `scenarios.md` exercises this paragraph.
+
 The host-side Dispatcher MUST run on the packaged payload alone — the
 Python standard library plus the vendored runtime under
 `scripts/_vendor/` — with no dependency on an orchestrator working
