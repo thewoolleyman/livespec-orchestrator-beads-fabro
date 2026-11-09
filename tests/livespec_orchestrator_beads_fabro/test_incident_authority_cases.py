@@ -17,7 +17,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     decode_attempt,
     decode_record,
 )
-from livespec_orchestrator_beads_fabro.effects import _incident_authority_reader as reader
+from livespec_orchestrator_beads_fabro.effects import _incident_authority_chain as chain_module
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -244,7 +244,7 @@ def test_cycle_is_refused() -> None:
 
 def test_bounded_history_is_explicit_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     client, _, _ = _chain()
-    monkeypatch.setattr(reader, "_MAX_TOKENS", 1)
+    monkeypatch.setattr(chain_module, "_MAX_TOKENS", 1)
     result = _read(client)
     assert (
         isinstance(result, AuthorityRefusal) and result.code == "incident-authority-history-limit"
