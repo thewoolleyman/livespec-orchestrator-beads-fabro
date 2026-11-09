@@ -4819,6 +4819,17 @@ Feature: The proof chain does not lose what it found
     Given a red janitor outcome
     When the fix node starts
     Then it receives the janitor failure output as its reason for entry
+  Scenario: A janitor ended by its node timeout with no verdict is run once more, not fixed
+    Given a janitor visit that its node timeout ended before its check aggregate reported a verdict
+    When the run routes from that janitor visit
+    Then it enters exactly one further janitor visit on the same head with no agent turn between the two visits
+    And it does not enter the fix node
+  Scenario: A second janitor time-out with no verdict ends at needs_human
+    Given a janitor visit ended by its node timeout with no verdict
+    And a further janitor visit on the same head that its node timeout also ended with no verdict
+    When the run routes from the further visit
+    Then the run ends at needs_human with its tree preserved
+    And the recorded cause states that both janitor visits were ended by the node timeout with no check-suite verdict
   Scenario: A parking verdict is recorded and reported honestly
     Given a merged item whose merging run has a verified record
     And an acceptance pass that returns NEEDS_ATTENTION
