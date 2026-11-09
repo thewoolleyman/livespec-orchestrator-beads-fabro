@@ -10120,6 +10120,39 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     Given any host taking of the Definition-of-Done judgement
     When the taking ends, whether a candidate decided it or it did not run
     Then the dispatch journal carries one row for it naming its stage, the deciding or bound-ended candidates, and each one's total input tokens with its marking
+
+  Scenario: A comment that is not carried does not change the subject digest
+    Given an item whose most recent dispatch claim was at time T
+    And a rider appended before T that is neither standing nor stage-scoped
+    And a cache-eligible pre-dispatch verdict on subject digest D taken after T
+    When the pre-dispatch judgement is taken for the item's next dispatch with no rider appended after T
+    Then the subject digest is D
+    And the recorded verdict is reused without running a judge
+
+  Scenario: A rendered goal carries each rider it receives once
+    Given a ready item carrying one carried rider that names no stage and whose text is unique on the item
+    When the Dispatcher renders the implement stage's goal for a dispatch of the item
+    Then that rider's text occurs exactly once in the rendered goal
+    And the subject digest the dod_gate node grades equals the digest a host taking computes for the same item
+
+  Scenario: A pre-admission taking ended by the input bound lists the item without changing its routing
+    Given an item in backlog whose pre-admission taking is ended by the input bound on every candidate
+    When intake routes the item and needs-attention is read
+    Then the item is routed exactly as it would be without the judgement
+    And needs-attention lists it as unpreflightable with the subject's size in characters and its carried rider count
+
+  Scenario: A preflight ended by the input bound did not run and the item is listed as unpreflightable
+    Given a ready item whose judgement subject exceeds every candidate's input bound
+    When the repository preflight is run for the item
+    Then the preflight exits with its cannot-run code 2 and refuses nothing
+    And the did-not-run record names the input bound as the cause and states the subject's size in characters
+    And the did-not-run record states the number of carried riders the subject held
+    And needs-attention lists the item as unpreflightable with that size and its carried rider count
+
+  Scenario: The unpreflightable fact clears when a later taking runs a judge
+    Given an item listed as unpreflightable
+    When a later host taking of its judgement runs a judge
+    Then needs-attention no longer lists the item as unpreflightable
 ```
 
 ## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
@@ -11320,6 +11353,34 @@ Feature: Riders instruct only the stages they are written for
     When the Dispatcher renders the goal briefs for its run
     Then the implement and review_fix briefs carry that rider
     And the review, proof_capture and proof_verify briefs do not
+
+  Scenario: a rider appended before the item's last dispatch claim is left out of the next goal
+    Given a work item claimed for a dispatch at time T
+    And a rider that names no stage, appended before T, whose first line does not begin STANDING RIDER:
+    And a second rider that names no stage, appended after T
+    When the Dispatcher renders the implement brief for the item's next dispatch
+    Then the brief carries the second rider and not the first
+    And the operator-rider section states that it left out 1 rider, the first rider's creation time, and the command that lists the item's ledger comments
+    And the first rider is still on the item's ledger
+
+  Scenario: standing and stage-scoped riders are carried whatever their age
+    Given a work item claimed for a dispatch at time T
+    And a rider appended before T whose first line begins STANDING RIDER:
+    And a rider appended before T whose first line is FOR proof_capture ONLY:
+    When the Dispatcher renders the briefs for the item's next dispatch
+    Then the implement and review_fix briefs carry the standing rider
+    And the proof_capture brief carries the stage-scoped rider
+
+  Scenario: an item never claimed for a dispatch carries every rider
+    Given a work item that has never been claimed for a dispatch, carrying three riders that name no stage
+    When the Dispatcher renders the implement brief for its first dispatch
+    Then the brief carries all three riders and states no left-out count
+
+  Scenario: every stage's brief of one dispatch states the same left-out line
+    Given a work item with one rider that is not carried
+    When the Dispatcher renders every stage's brief for one dispatch of the item
+    Then each brief's left-out line is identical
+    And none of them counts a Definition-of-Done judgement record
 ```
 
 ## Scenario 269 — The lifecycle guard harness waits for a slow capture server and names a failed one
