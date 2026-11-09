@@ -30,6 +30,24 @@ That preamble is the dispatch-time snapshot of the item: its title,
 description, Definition of Done section, references and ledger comments. It
 is the artifact you read. Read all of it before deciding anything.
 
+**THE SUBJECT YOU GRADE IS NOT IN THE GOAL.** The judgement subject is the item's
+description, effective criteria, riders, the governing-heading verdict block and
+the bodies of the referenced clauses. Every node of the run carries the goal, and
+only this node grades the subject, so the Dispatcher delivers it to you alone.
+Where a host call appended the subject to this rubric, it stands under
+`## The work-item under judgement` in your prompt: grade that. Where you run as
+the node of a run, the Dispatcher wrote the SAME subject, byte for byte, to this
+file:
+
+    "${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-dod-gate-subject.md"
+
+Read the whole of that file before you check anything, and grade it. It carries
+every `## Referenced heading:` body, the riders and the
+`## Governing-heading verdict` block that the checks below name, and it carries
+the text of each clause the verdict names or selects. Reading it is not editing
+the sandbox. If the file is absent or empty, say `dod-gate-subject: unreadable`
+verbatim in your output and grade from the goal and the spec tree instead.
+
 **What you GRADE is the item's own Definition of Done and nothing else.** In
 the goal, the item's own section stands between a line beginning
 `--- BEGIN ITEM DEFINITION OF DONE` and a line reading

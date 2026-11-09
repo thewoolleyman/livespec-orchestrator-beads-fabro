@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_proje
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch_fetch import (
     default_branch_fetch_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_subject import (
+    dod_gate_subject_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance import (
     factory_run_id_prepare_steps_block,
 )
@@ -171,6 +174,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     credential_use: CredentialUseDeclaration | None = None,
     resume_checkout: ResumeCheckout | None = None,
     publication_metadata: PublicationMetadata | None = None,
+    dod_gate_subject: str | None = None,
     # Whether this dispatch's sandbox inherits the fleet's own check suite, and so
     # needs the gitignored worktree-discipline pack that suite reads. Decided ONCE
     # from the plan's resolved contract by `_dispatcher_loop_overlay` and forwarded
@@ -223,6 +227,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     the derivation reads a WORK-ITEM and this builder is handed none — and a
     caller that renders none projects no title line and no body step, which is
     exactly the overlay every direct caller rendered before.
+
+    `dod_gate_subject` is the Definition-of-Done judgement subject only the
+    `dod_gate` node grades, rendered by the caller that holds the work-item for
+    the reason `publication_metadata` is. It rides a materialized file rather than
+    the goal, which Fabro injects into every ACP node (bd-ib-tzvtgc); a caller
+    that renders none projects no step.
 
     `factory_environment` keys the run-scoped `[environments.<id>.env]` table,
     because that table is read by the engine ONLY under the environment the run
@@ -399,6 +409,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         # sandbox plugins root is not known host-side and the pinned engine
         # expands no `${...}` in an env value.
         + publication_metadata_prepare_steps_block(metadata=publication_metadata)
+        + dod_gate_subject_prepare_steps_block(subject=dod_gate_subject)
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{env_environment_id}.env]\n"

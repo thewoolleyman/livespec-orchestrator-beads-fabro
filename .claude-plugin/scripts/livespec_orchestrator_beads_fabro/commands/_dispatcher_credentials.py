@@ -114,6 +114,10 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # that holds none, which projects neither and leaves the stage's own
     # absent-title and absent-body sentinels to report the shortfall.
     publication_metadata: PublicationMetadata | None = None,
+    # The Definition-of-Done judgement subject only the `dod_gate` node grades,
+    # rendered by the caller that holds the work-item and delivered as a file
+    # rather than through the goal every ACP node carries (bd-ib-tzvtgc).
+    dod_gate_subject: str | None = None,
     # The `factory_captured` assertions the sandbox's per-assertion Proof of Done
     # grade reads a record's verdicts for, already rendered as an env line by the
     # caller that holds the work-item. Empty for a direct caller, which the grade
@@ -352,6 +356,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The rendered title and body, forwarded rather than derived here: the
         # derivation reads a work-item and this function is handed only an id.
         publication_metadata=publication_metadata,
+        dod_gate_subject=dod_gate_subject,
         # The resolved integration contract's values, substituted into the
         # committed run config's `{{ inputs.* }}` prepare commands because the
         # pinned engine does not render that site. Forwarded rather than
