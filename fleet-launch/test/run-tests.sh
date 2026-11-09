@@ -1636,7 +1636,7 @@ as_legacy_launcher() {
     sed -e 's/^script_changed() {$/script_changed() { return 1/' \
         -e 's/^reexec_on_script_change() {$/reexec_on_script_change() { return 0/' "$1"
 }
-ticket_pid() { grep -oE 'pid=[0-9]+' "$1" 2>/dev/null | head -1; }
+ticket_pid() { grep -oE 'pid=[0-9]+' "$1" 2>/dev/null | sed -n 1p; }
 
 echo "--- 21. an impl launcher started before a hold check was added honours the hold"
 new_case launcher-reexec-dispatch
@@ -1789,8 +1789,9 @@ queue_before=$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -name "[0-9]*" | sort 
 report=$(bash "$LAUNCH_DIR/launcher-versions.sh" 2>&1)
 stale_row=$(printf '%s\n' "$report" | awk -v p="$stale_pid" '$1==p')
 fresh_row=$(printf '%s\n' "$report" | awk -v p="$fresh_pid" '$1==p')
-if printf '%s\n' "$stale_row" | awk -v r="$stale_started" -v d="$stale_on_disk" '$2=="STALE" && $3==r && $4==d {ok=1} END{exit !ok}' \
-    && printf '%s\n' "$fresh_row" | awk -v r="$fresh_started" '$2=="current" && $3==r && $4==r {ok=1} END{exit !ok}'; then
+stale_ok=$(printf '%s\n' "$stale_row" | awk -v r="$stale_started" -v d="$stale_on_disk" '$2=="STALE" && $3==r && $4==d {ok=1} END{if (ok) print "yes"}')
+fresh_ok=$(printf '%s\n' "$fresh_row" | awk -v r="$fresh_started" '$2=="current" && $3==r && $4==r {ok=1} END{if (ok) print "yes"}')
+if [ "$stale_ok" = yes ] && [ "$fresh_ok" = yes ]; then
     pass "the readback lists each launcher's running script version and marks only the one that differs from disk"
 else
     fail "the readback did not mark the stale launcher (stale row: ${stale_row:-none}; fresh row: ${fresh_row:-none})"
