@@ -795,3 +795,28 @@ def test_a_wait_after_the_earlier_wait_returned_blocks_for_its_bound(
     assert program["wait"](_RUN_ID, 3) == 0
     assert _last_report(capsys) == {REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "running"}
     assert sum(clock.sleeps) == 3
+
+
+def test_a_wait_whose_process_was_killed_does_not_refuse_a_later_wait(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 179: a wait that ended without returning is not an open wait."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", "implement")
+    program = _program(tmp_path)
+    program["group_alive"] = _alive
+    path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    clock = _Clock()
+    program["time"] = clock
+    later: list[int] = []
+
+    def the_first_wait_is_killed_then_a_later_wait_starts() -> None:
+        program["process_table"] = lambda _proc_root: {}
+        later.append(program["main"](["wait", _RUN_ID, "--timeout-seconds", "0"], "/runner.py"))
+
+    clock.on_sleep = the_first_wait_is_killed_then_a_later_wait_starts
+
+    assert program["wait"](_RUN_ID, 5) == 0
+    capsys.readouterr()
+
+    assert later == [0]
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "running"}

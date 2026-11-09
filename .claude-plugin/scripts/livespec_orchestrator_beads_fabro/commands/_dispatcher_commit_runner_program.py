@@ -191,13 +191,28 @@ def claim_open_wait(directory, run_id):
     staged = path.with_name(path.name + "." + str(os.getpid()) + ".tmp")
     staged.write_text(json.dumps(claim, sort_keys=True) + "\n", encoding="utf-8")
     try:
-        # A hard link is atomic and fails when the name exists, so two waits cannot both claim.
-        os.link(staged, path)
-    except FileExistsError:
-        return None
+        while True:
+            try:
+                # A hard link is atomic and fails if the name exists, so only one wait claims.
+                os.link(staged, path)
+            except FileExistsError:
+                if open_wait_owner_alive(path):
+                    return None
+                # The owner was killed before it could release the claim, so it is not open.
+                path.unlink(missing_ok=True)
+            else:
+                return path
     finally:
         staged.unlink(missing_ok=True)
-    return path
+
+
+def open_wait_owner_alive(path):
+    claim = read_record(path) or {}
+    pid, start_ticks = claim.get("pid"), claim.get("start_ticks")
+    if not isinstance(pid, int):
+        return False
+    owner = process_table("/proc").get(pid)
+    return owner is not None and owner[0] != "Z" and owner[4] == start_ticks
 
 
 def read_record(path):
