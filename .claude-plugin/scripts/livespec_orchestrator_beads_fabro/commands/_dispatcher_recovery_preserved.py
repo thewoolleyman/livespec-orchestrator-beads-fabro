@@ -65,6 +65,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_refs imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_checkpoint import (
     newest_preserved_tree_row,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
+    MEASUREMENT_PRESERVED_WORK,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_published_head import (
     PublishedHeadUnobservable,
     earlier_head_seed,
@@ -129,10 +132,12 @@ class PreservedWorkUnobservable:
 
     A distinct type rather than `None`, so a caller cannot read "we could not
     look" as "there is nothing there" — the same line the reclaim's own
-    `PublishBranchUnobservable` draws, and for the same reason.
+    `PublishBranchUnobservable` draws, and for the same reason.  `measurement`
+    is the token the recovery-held record names for the read that failed.
     """
 
     detail: str
+    measurement: str = MEASUREMENT_PRESERVED_WORK
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -289,7 +294,7 @@ def _as_preserved(
 ) -> RecoverySeed | PreservedWorkUnobservable | None:
     """The published-head module's answer, in this module's unobservable type."""
     if isinstance(seed, PublishedHeadUnobservable):
-        return PreservedWorkUnobservable(detail=seed.detail)
+        return PreservedWorkUnobservable(detail=seed.detail, measurement=seed.measurement)
     return seed
 
 

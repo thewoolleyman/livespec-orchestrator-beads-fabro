@@ -27,6 +27,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_recla
     PublishBranchUnobservable,
     surviving_publish_branch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
+    MEASUREMENT_PRESERVED_WORK,
+    MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age import (
     published_head_relation,
@@ -49,10 +53,12 @@ class PublishedHeadUnobservable:
     """Origin or the journal could not ANSWER a published-head question.
 
     A distinct type rather than `None`, so a caller cannot read "we could not
-    look" as "there is nothing there".
+    look" as "there is nothing there".  `measurement` is the stable token the
+    recovery-held record names, so an operator sees which read failed.
     """
 
     detail: str
+    measurement: str = MEASUREMENT_PRESERVED_WORK
 
 
 def newer_published_head_seed(
@@ -85,11 +91,12 @@ def newer_published_head_seed(
     )
     if relation is None:
         return PublishedHeadUnobservable(
+            measurement=MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE,
             detail=(
                 "publishing-run-unobservable: the recovery branch head and a"
                 " competing preserved ref are both readable, but the journal cannot"
                 " attribute one of them to a publishing run; neither tree is reclaimed"
-            )
+            ),
         )
     return published if relation else None
 
