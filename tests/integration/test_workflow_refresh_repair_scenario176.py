@@ -66,6 +66,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state im
     PUBLISH_HEAD_STATE_FILENAME,
     REFRESH_COUNT_STATE_FILENAME,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
+    RECORD_FILE_MERGE_PROGRAM_FILENAME,
+    record_file_merge_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
     RECORD_FILE_PROGRAM_FILENAME,
     record_file_program_source,
@@ -1749,3 +1753,121 @@ def test_the_fix_node_instructions_forbid_the_fix_turn_from_rewriting_any_ref() 
 
     assert "and rewrite no ref at all" in prose
     assert "rewrite no ref other than" not in prose
+
+
+_JANITOR_BRIEF = "LIVESPEC_REFRESH_REPAIR_BRIEF\nstage: janitor\n"
+
+
+def _run_janitor(*, repaired: _Repaired) -> subprocess.CompletedProcess[str]:
+    """The shipped `janitor` bytes, entered in the repaired world with a passing suite."""
+    graph = parse_dot_graph(text=_graph_text())
+    assert not isinstance(graph, str), graph
+    script: str = graph.nodes["janitor"]["script"]
+    plugins = repaired.plugins_root
+    gate = plugins / "livespec-run-plugin-gate.py"
+    _ = gate.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    gate.chmod(0o755)
+    _ = (plugins / RECORD_FILE_MERGE_PROGRAM_FILENAME).write_text(
+        record_file_merge_program_source(), encoding="utf-8"
+    )
+    return subprocess.run(
+        [
+            "sh",
+            "-c",
+            script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
+            .replace("{{ inputs.sandbox_check_suite }}", "true")
+            .replace(r"\"", '"'),
+        ],
+        cwd=repaired.world.clone,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{repaired.forge_bin}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(repaired.world.clone.parent / "home"),
+            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
+            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
+        },
+    )
+
+
+def _janitor_stage_repaired_run(*, root: Path) -> _Repaired:
+    """A repaired run whose repair brief was the JANITOR's, as the janitor leaves it.
+
+    The fix turn's integration is the same one the pr_refresh world performs;
+    only the brief it was entered with differs, and it is the brief the shipped
+    janitor visit that follows the fix then removes on entry.
+    """
+    repaired = _repaired_run(root=root, push_program=True)
+    state = repaired.world.state_dir()
+    _ = (state / _BRIEF_FILENAME).write_text(_JANITOR_BRIEF, encoding="utf-8")
+    _ = (state / _REPAIR_COUNT_FILENAME).write_text("1\n", encoding="utf-8")
+    return repaired
+
+
+def test_a_janitor_stage_repair_round_republishes_over_this_run_s_own_published_head(
+    tmp_path: Path,
+) -> None:
+    """The measured loss on bd-ib-ohlkz7: the janitor eats its own brief, publish_draft still knows.
+
+    The janitor visit that follows the fix turn removes the janitor-stage brief
+    on entry, so `publish_draft` cannot learn from the brief that it follows a
+    refresh-repair round. The marker the janitor leaves instead is CONSUMED by
+    the republishing visit: a second visit in the same run, reaching origin's
+    own recorded head again with a rewritten branch, must refuse.
+    """
+    repaired = _janitor_stage_repaired_run(root=tmp_path)
+    world = repaired.world
+
+    janitor = _run_janitor(repaired=repaired)
+    assert janitor.returncode == 0, janitor.stderr
+    assert world.state(name=_BRIEF_FILENAME) is None
+
+    result = _run_repaired_publish_draft(repaired=repaired)
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" in result.stderr
+    assert world.remote_head(ref=_BRANCH) == repaired.repaired_head
+    assert world.state(name=PUBLISH_HEAD_STATE_FILENAME) == f"{repaired.repaired_head}\n"
+
+    _ = _git(
+        "commit", "--quiet", "--amend", "-m", "feat: rewritten after publication", cwd=world.clone
+    )
+    rewritten = world.head()
+    assert rewritten != repaired.repaired_head
+
+    again = _run_repaired_publish_draft(repaired=repaired)
+
+    assert again.returncode != 0, again.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in again.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" not in again.stderr
+    assert world.remote_head(ref=_BRANCH) == repaired.repaired_head
+
+
+def test_a_review_fix_visit_after_an_earlier_janitor_repair_round_refuses_a_divergent_tip(
+    tmp_path: Path,
+) -> None:
+    """The cumulative repair count must not mark a later review-fix visit as a repair visit.
+
+    The run is in the state after an earlier janitor-stage repair round: the
+    repair count is above zero and a janitor visit has already removed that
+    round's brief. A later janitor visit, reached through a review-fix round,
+    enters with no brief at all, and the publish_draft visit that follows it
+    follows no refresh-repair round.
+    """
+    repaired = _janitor_stage_repaired_run(root=tmp_path)
+    world = repaired.world
+
+    first = _run_janitor(repaired=repaired)
+    assert first.returncode == 0, first.stderr
+    later = _run_janitor(repaired=repaired)
+    assert later.returncode == 0, later.stderr
+    assert world.state(name=_REPAIR_COUNT_FILENAME) == "1\n"
+
+    result = _run_repaired_publish_draft(repaired=repaired)
+
+    assert result.returncode != 0, result.stdout
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_REPAIR_REPUBLISH" not in result.stderr
+    assert world.remote_head(ref=_BRANCH) == repaired.published_head
+    assert world.head() == repaired.repaired_head
