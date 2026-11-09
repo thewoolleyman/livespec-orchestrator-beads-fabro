@@ -269,7 +269,7 @@ def test_a_failed_fix_commit_run_reenters_fix_with_a_brief_naming_it(tmp_path: P
         if edge.source == "fix_commit_settle"
     ]
     assert ("fix", "outcome=failed") in targets
-    assert ("janitor_admission", "") in targets
+    assert ("fix_open_red_route", "") in targets
     repo = _repo(tmp_path)
     plugins = _plugins(tmp_path)
     _integrate(repo, "merge")
