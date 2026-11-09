@@ -106,14 +106,24 @@ def validate_repayment_carrier(
     return RepaymentValidation(outstanding=tuple(outstanding))
 
 
-def repayment_brief(*, scope: RepaymentScope) -> str:
-    """The brief a repayment run carries: what to remove and what to exercise."""
+def repayment_brief(*, scope: RepaymentScope, marker_paths: tuple[str, ...] | None = ()) -> str:
+    """The brief a repayment run carries: what to remove and what to exercise.
+
+    `marker_paths` are the paths still carrying the marker where the brief was
+    written; `None` means that scan could not be taken, which the brief says
+    rather than rendering as "no path carries it".
+    """
     lines = [
         (
             f"Normal factory repayment of incident {scope.item_id} "
             f"(expedited repair merged as PR #{scope.repair_pr_number})."
         ),
         f"Remove every `{scope.marker}` marker from the code and tests.",
+        *_marker_path_lines(marker=scope.marker, marker_paths=marker_paths),
+        (
+            f"The repayment pull request MUST leave no file carrying `{scope.marker}`: "
+            "it is not accepted while any file at its head still does."
+        ),
         "Exercise the cumulative original incident paths under normal validation:",
         *(f"- {path}" for path in scope.original_paths),
         "Replay deferred validation over the landed commits:",
@@ -122,6 +132,20 @@ def repayment_brief(*, scope: RepaymentScope) -> str:
         *(f"- {work}" for work in scope.deferred_work),
     ]
     return "\n".join(lines) + "\n"
+
+
+def _marker_path_lines(*, marker: str, marker_paths: tuple[str, ...] | None) -> list[str]:
+    if marker_paths is None:
+        unread = (
+            f"The paths still carrying `{marker}` could not be read when this brief was written;"
+        )
+        return [f"{unread} find every one with `git grep -l -F -e '{marker}'`."]
+    if not marker_paths:
+        return [f"No path was found carrying `{marker}` on the default branch."]
+    return [
+        f"Paths that still carry `{marker}` on the default branch:",
+        *map("- {}".format, marker_paths),
+    ]
 
 
 def scrub_incident_flags(*, environ: MutableMapping[str, str]) -> tuple[str, ...]:
