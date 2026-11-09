@@ -124,4 +124,22 @@ if [[ "$impl_count" -ge 1 ]] \
     exit $?
 fi
 echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
-just check-skipping check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"
+aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
+staged_tree=$(git write-tree)
+set +e
+just check-skipping check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}" 2>&1 | tee "$aggregate_log"
+aggregate_status=${PIPESTATUS[0]}
+set -e
+# The local aggregate reads the working tree, so it can certify the staged tree
+# only when both trees are identical and no untracked file could have affected
+# its result. Capture the staged tree before the aggregate and confirm it again
+# afterwards so an index mutation cannot receive evidence for an untested tree.
+if [[ "$aggregate_status" -eq 0 ]] && git diff --quiet \
+    && [[ -z "$(git ls-files --others --exclude-standard)" ]] \
+    && [[ "$(git write-tree)" == "$staged_tree" ]]; then
+    run_id="pre-commit-aggregate:$(date -u +%Y%m%dT%H%M%SZ):${staged_tree}"
+    output_checksum="sha256:$(sha256sum "$aggregate_log" | awk '{print $1}')"
+    uv run python -m livespec_dev_tooling.green_token write-pre-commit "$run_id" "$output_checksum"
+fi
+rm -f "$aggregate_log"
+exit "$aggregate_status"
