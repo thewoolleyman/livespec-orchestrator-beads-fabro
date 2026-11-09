@@ -608,7 +608,33 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         shape=parallelogram
         timeout="60s"
         max_visits=10
-        script="state=$(git rev-parse --git-path livespec-publication) || exit $?; prior=\"$state/livespec-janitor-failed-head\"; marker=\"$state/livespec-fix-no-progress-head\"; repeat=\"$state/livespec-fix-no-progress-repeated-janitor-failure\"; rm -f \"$repeat\"; if test ! -s \"$prior\"; then rm -f \"$marker\"; exit 0; fi; before=$(cat \"$prior\"); head=$(git rev-parse HEAD) || exit $?; if test \"$head\" = \"$before\"; then printf '%s\\n' \"$head\" > \"$marker\"; echo \"LIVESPEC_FIX_NO_PROGRESS: fix completed without changing the janitor-failed head $head; one repeated janitor failure will take the existing non-converged exit\" >&2; else rm -f \"$marker\"; fi; exit 0"
+        script="state=$(git rev-parse --git-path livespec-publication) || exit $?; counter=$(git rev-parse --git-path livespec-fix-turn-count) || exit $?; turns=$(cat \"$counter\" 2>/dev/null || echo 0); case \"$turns\" in ''|*[!0-9]*) turns=0 ;; esac; printf '%s\\n' $((turns + 1)) > \"$counter\"; prior=\"$state/livespec-janitor-failed-head\"; marker=\"$state/livespec-fix-no-progress-head\"; repeat=\"$state/livespec-fix-no-progress-repeated-janitor-failure\"; rm -f \"$repeat\"; if test ! -s \"$prior\"; then rm -f \"$marker\"; exit 0; fi; before=$(cat \"$prior\"); head=$(git rev-parse HEAD) || exit $?; if test \"$head\" = \"$before\"; then printf '%s\\n' \"$head\" > \"$marker\"; echo \"LIVESPEC_FIX_NO_PROGRESS: fix completed without changing the janitor-failed head $head; one repeated janitor failure will take the existing non-converged exit\" >&2; else rm -f \"$marker\"; fi; exit 0"
+    ]
+
+    // A fix turn whose last commit is a Red with no Green (bd-ib-7fdesc; Scenario 199).
+    // The commit hook accepts a correctly failing Red on its fast path, so
+    // `fix_commit_settle` settles that commit as passed without the tree having been
+    // graded. Routing it on to the janitor failed the open Red each visit and the next
+    // fix turn rebuilt the same Red, so the loop never reached a Green. This node reads
+    // the last commit that is not an engine checkpoint (the engine's empty
+    // `fabro(<run>): <node> (<status>)` checkpoint sits above it) with the same
+    // open-Red reading the `needs_human` terminal uses, and sends an open Red back to
+    // `fix` with a brief naming it. A completed pair, or a last commit with no TDD
+    // trailers, takes the unconditional fallthrough to `janitor_admission`.
+    //
+    // THE VISIT BOUND IS NAMED HERE, NOT BY THE ENGINE. `fix` aborts at entry with
+    // VisitLimitExceeded on its eleventh visit (`max_visits=10`) and emits no outcome
+    // for an edge to route. Every succeeded fix visit passes through `fix_progress_route`
+    // once, and that node keeps the count of fix visits in the git directory; this node
+    // reads it, and the tenth visit ending on an open Red ends at `needs_human` with a
+    // stage cause naming the open Red commit.
+    fix_open_red_route [
+        label="Fix open Red: re-enter fix for the Green, or name the exhausted visit bound"
+        shape=parallelogram
+        timeout="60s"
+        max_visits=8
+        output_schema="routing"
+        script="brief=$(git rev-parse --git-path livespec-fix-open-red-brief) || exit $?; counter=$(git rev-parse --git-path livespec-fix-turn-count) || exit $?; cause_path=$(git rev-parse --git-path livespec-stage-cause) || exit $?; count=$(cat \"$counter\" 2>/dev/null || echo 0); case \"$count\" in ''|*[!0-9]*) count=0 ;; esac; rm -f \"$brief\"; last=$(git log --format='%H %s' origin/{{ inputs.default_branch }}..HEAD 2>/dev/null | grep -vE '^[0-9a-f]+ fabro[(][^)]*[)]: ' | head -n 1 | cut -d' ' -f1); open_red=''; if test -n \"$last\"; then message=$(git log -1 --format=%B \"$last\" 2>/dev/null || true); counts=$(git diff-tree --no-commit-id --name-only -r \"$last\" 2>/dev/null | ( any_py=0; impl_py=0; impl_other=0; while IFS= read -r path; do case \"$path\" in *.py) any_py=$((any_py + 1)) ;; esac; case \"$path\" in tests/*) continue ;; *.py) impl_py=$((impl_py + 1)) ;; *.sh | *.yml | *.yaml | *.fabro | *.just | justfile | Justfile | */justfile | */Justfile) impl_other=$((impl_other + 1)) ;; esac; done; printf '%s %s %s\\n' \"$any_py\" \"$impl_py\" \"$impl_other\" ) || true); case \"$counts\" in [0-9]*' '[0-9]*' '[0-9]*) : ;; *) counts='0 0 0' ;; esac; any_py=${counts%% *}; rest=${counts#* }; impl_py=${rest%% *}; impl_other=${rest##* }; green_exempt=no; if test \"$impl_other\" -gt 0 && test \"$impl_py\" -eq 0; then green_exempt=yes; fi; if printf '%s\\n' \"$message\" | grep -qF 'TDD-Red-Test-File-Checksum:' && ! printf '%s\\n' \"$message\" | grep -qF 'TDD-Green-Verified-At:' && test \"$any_py\" -gt 0 && test \"$green_exempt\" = no; then open_red=$(git rev-parse --short \"$last\" 2>/dev/null || true); fi; fi; if test -z \"$open_red\"; then printf '%s\\n' '{\"preferred_next_label\":\"continue\"}'; exit 0; fi; if test \"$count\" -ge 10; then message=\"LIVESPEC_FIX_OPEN_RED_VISIT_BOUND_EXHAUSTED: the fix node has used its 10 visits and the last commit is still the open Red commit $open_red (TDD-Red trailers, no TDD-Green), so its Green was never written; preserving the tree rather than entering fix an eleventh time\"; printf 'stage: %s\\ncause: %s\\n' fix \"$message\" > \"$cause_path\"; printf '%s\\n' \"$message\" >&2; printf '%s\\n' '{\"preferred_next_label\":\"needs_human\"}'; exit 0; fi; printf '%s\\n' \"The previous fix turn ended with commit $open_red as its last commit, and it carries TDD-Red trailers with no TDD-Green trailers. That Red is open: the commit hook accepts a correctly failing Red on its fast path without grading the tree, so nothing has yet shown the fix works. Do not author a new Red commit. Write the minimum implementation that makes that Red's test pass, run the test file, and complete its Green amend through the commit runner with git commit --amend --no-edit.\" > \"$brief\"; echo \"LIVESPEC_FIX_OPEN_RED_REENTRY: fix turn $count ended on open Red commit $open_red; re-entering fix to complete its Green amend\" >&2; printf '%s\\n' '{\"preferred_next_label\":\"fix\"}'; exit 0"
     ]
 
     // A failed janitor visit records the head its fix must advance. A repeated
@@ -2389,7 +2415,10 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     fix -> fix_commit_settle
     fix_progress_route -> fix_commit_settle
     fix_commit_settle -> fix [label="Settled commit run failed", condition="outcome=failed"]
-    fix_commit_settle -> janitor_admission
+    fix_commit_settle -> fix_open_red_route
+    fix_open_red_route -> fix [label="open Red: finish its Green", condition="preferred_label=fix"]
+    fix_open_red_route -> needs_human [label="fix visit bound reached with an open Red", condition="preferred_label=needs_human"]
+    fix_open_red_route -> janitor_admission
     janitor_admission -> needs_human [label="Janitor visit bound exhausted", condition="outcome=failed"]
     janitor_admission -> janitor
 
