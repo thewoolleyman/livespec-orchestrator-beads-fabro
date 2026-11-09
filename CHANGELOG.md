@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.309.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.309.0...v0.309.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* report a commit-msg hook refusal by its failing check, not as a Git refusal (bd-ib-fkd4ve) ([dbd2a19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dbd2a19cc0d8f94a0d0bb3a6a4cecf2993ce7840))
+
 ## [0.309.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.308.0...v0.309.0) (2026-11-09)
 
 
