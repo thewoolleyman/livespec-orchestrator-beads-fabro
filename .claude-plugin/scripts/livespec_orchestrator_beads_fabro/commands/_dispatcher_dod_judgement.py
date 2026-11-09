@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attemp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_subject_references import (
+    bounded_reference_blocks,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
     EffectiveCriteria,
@@ -184,17 +187,23 @@ def judgement_subject(
         "## Effective acceptance criteria",
         _effective_criteria_body(criteria=criteria, section=section),
     ]
-    for reference in section.references:
-        blocks.extend(
-            (
-                "",
-                f"## Referenced heading: {reference}",
-                _heading_body(repo=cwd, reference=reference),
-            )
+    ending = [
+        "",
+        _RIDERS_HEADING,
+        _riders_body(comments=comments),
+        "",
+        governing_heading_block(verdict=governing),
+    ]
+    blocks.extend(
+        bounded_reference_blocks(
+            prefix=blocks,
+            references=section.references,
+            ending=ending,
+            governing=governing,
+            heading_body=lambda reference: _heading_body(repo=cwd, reference=reference),
         )
-    blocks.extend(("", _RIDERS_HEADING, _riders_body(comments=comments)))
-    blocks.extend(("", governing_heading_block(verdict=governing)))
-    return "\n".join(blocks)
+    )
+    return "\n".join([*blocks, *ending])
 
 
 def _effective_criteria_body(*, criteria: EffectiveCriteria, section: DefinitionOfDone) -> str:

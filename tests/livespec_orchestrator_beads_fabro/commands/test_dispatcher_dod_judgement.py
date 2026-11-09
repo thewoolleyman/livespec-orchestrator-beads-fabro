@@ -7,6 +7,10 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -183,6 +187,175 @@ def test_heading_lookup_skips_irrelevant_sections_and_ends_at_the_next_heading(
 
     assert "Target body." in subject
     assert "Following body." not in subject
+
+
+def test_subject_bounds_a_large_referenced_heading_after_its_verdict_is_available(
+    tmp_path: Path,
+) -> None:
+    """A cited body outside the governing verdict cannot consume the host bound."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    large_body = "x" * 270_000
+    _ = (spec / "contracts.md").write_text(
+        "## Governing\n\n" + large_body + "\n",
+        encoding="utf-8",
+    )
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n"
+            "- The bounded brief remains gradeable.\n\n"
+            "References: ## Governing\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(
+        item=item,
+        cwd=tmp_path,
+        governing=GoverningHeadingVerdict(
+            kind="stated",
+            stated_by=("## Governing",),
+            selected_clauses=(
+                CondensedClause(
+                    heading="## Governing",
+                    body="\n\nThe governing clause remains verbatim.\n",
+                ),
+            ),
+        ),
+    )
+
+    assert len(subject) <= 150_000
+    assert large_body not in subject
+    assert "The governing clause remains verbatim." in subject
+
+
+def test_subject_keeps_named_clauses_verbatim_where_they_fit_and_stays_within_the_bound(
+    tmp_path: Path,
+) -> None:
+    """A verdict-named clause too large for the bound is marked omitted, never sent whole."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    _ = (spec / "contracts.md").write_text("## Governing\n\nBody.\n", encoding="utf-8")
+    named_body = "\n\nNamed clause marker. " + "n" * 160_000 + "\n"
+    selected_body = "\n\nSelected clause marker. " + "s" * 10_000 + "\n"
+    fitting_named_body = "\n\nFitting named clause marker. " + "f" * 10_000 + "\n"
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n"
+            "- The named clause survives.\n\n"
+            "References: ## Governing, ## Second\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(
+        item=item,
+        cwd=tmp_path,
+        governing=GoverningHeadingVerdict(
+            kind="partial",
+            stated_by=("## Second",),
+            generalization_target="## Governing",
+            selected_clauses=(CondensedClause(heading="## Second", body=selected_body),),
+            named_clauses=(
+                CondensedClause(heading="## Governing", body=named_body),
+                CondensedClause(heading="## Governing", body=fitting_named_body),
+            ),
+        ),
+    )
+
+    assert len(subject) <= 150_000
+    assert named_body not in subject
+    assert selected_body in subject
+    assert fitting_named_body in subject
+    assert "clause the governing-heading verdict named or selected was omitted" in subject
+
+
+def test_subject_says_so_when_the_verdict_names_no_clause_of_a_referenced_heading(
+    tmp_path: Path,
+) -> None:
+    """A referenced heading with no named or selected clause is marked, not rendered whole."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    large_body = "x" * 270_000
+    _ = (spec / "contracts.md").write_text(
+        "## Governing\n\n" + large_body + "\n",
+        encoding="utf-8",
+    )
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n- The brief stays gradeable.\n\nReferences: ## Governing\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(
+        item=item,
+        cwd=tmp_path,
+        governing=GoverningHeadingVerdict(kind="unstated"),
+    )
+
+    assert len(subject) <= 150_000
+    assert large_body not in subject
+    assert "named or selected no clause from this referenced heading" in subject
+
+
+def test_subject_bounds_large_references_before_a_governing_verdict_is_available(
+    tmp_path: Path,
+) -> None:
+    """The host's first taking must fit before it can record a verdict."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    large_body = "x" * 270_000
+    _ = (spec / "contracts.md").write_text(
+        "## Governing\n\n" + large_body + "\n",
+        encoding="utf-8",
+    )
+    item = replace(
+        _item(),
+        description=(
+            "## Definition of Done\n\n"
+            "- The first bounded brief remains gradeable.\n\n"
+            "References: ## Governing\n"
+        ),
+    )
+
+    subject = judgement.judgement_subject(item=item, cwd=tmp_path)
+
+    assert len(subject) <= 150_000
+    assert large_body not in subject
+    assert "named or selected no clause" in subject
+
+
+def test_goal_carries_the_byte_identical_subject_the_host_judges(tmp_path: Path) -> None:
+    """The in-run gate receives the same shared subject as every host taking."""
+    judgement = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement"
+    )
+    goal = importlib.import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_goal")
+    spec = tmp_path / "SPECIFICATION"
+    spec.mkdir()
+    _ = (spec / "scenarios.md").write_text(
+        "## Scenario 174 — The judgement runs before admission\n\nThe shared subject text.\n",
+        encoding="utf-8",
+    )
+
+    subject = judgement.judgement_subject(item=_item(), cwd=tmp_path)
+    rendered = goal.render_goal(item=_item(), repo=tmp_path, branch="feat/bd-ib-7f66ar")
+    rendered_subject = rendered.split("## Definition-of-Done judgement subject\n", maxsplit=1)[1]
+
+    assert rendered_subject.rstrip("\n") == subject
 
 
 def test_subject_carries_the_goal_fields_the_rubric_grades(tmp_path: Path) -> None:
