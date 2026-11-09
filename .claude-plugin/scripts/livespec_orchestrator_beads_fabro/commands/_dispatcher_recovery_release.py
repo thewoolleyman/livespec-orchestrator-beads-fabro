@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
+    RUN_WALL_BUDGET_EXCEEDED_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_records import (
     STALE_ASSIGNEE_CLEAR_STAGE,
 )
@@ -141,7 +144,7 @@ def _is_recovery_terminal(*, record: Mapping[str, object]) -> bool:
         return False
     if isinstance(terminal.get(_NEEDS_HUMAN_KIND_KEY), str):
         return True
-    return (
+    return terminal.get(_STATUS_KEY) in {"cancelled", RUN_WALL_BUDGET_EXCEEDED_STAGE} or (
         terminal.get(_STATUS_KEY) == "failed"
         and isinstance(detail, str)
         and NON_CONVERGED_MARKER in detail
