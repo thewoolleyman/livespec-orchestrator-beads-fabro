@@ -1915,9 +1915,8 @@
     "heading": "## Scenario 199 \u2014 A fix turn grades each tree once, through its commit hook",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Revised at v319 (proposal fix-turn-commits-run-the-affected-tests-gate): a fix turn now grades each tree once, through its commit hook, and the fix prompt directs no full-suite run beyond what that hook runs. The earlier prompt-tier test (tests.prompts.test_fix_check_suite_once_per_tree_scenario199) asserts the superseded once-per-tree rule, so a test of the revised rule is owed by work-item bd-ib-fde4ie.",
-    "work_item": "bd-ib-fde4ie"
+    "test": "tests.prompts.test_fix_check_suite_once_per_tree_scenario199.test_the_commit_hook_run_is_the_turn_s_only_grading_of_a_tree",
+    "reason": "Prompt-tier acceptance for this heading, completed by bd-ib-z5yzyq. The deliverable IS the fix prompt's prose, discharged by the agent turn and rendered by no Python caller. The bound case requires the sentences making the commit hook the turn's only grading of a tree with no full check suite run directed beyond it. Sibling cases in the same module bind an unchanged tree, reproduction through the failing tests a target's output names, a return without an exit status being still running, no second live suite, and a changed or Red-fast-path tree being committed through the hook; the dispatched prompt is bound in tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_fix_prompt.py. Its control (test_the_graph_scan_names_one_fix_prompt_that_is_on_disk) derives the fix prompt from workflow.fabro's node block."
   },
   {
     "heading": "## Scenario 200 \u2014 A refresh whose conflicts lie only in declared record files merges them without a repair round",

@@ -69,13 +69,13 @@ conflict or the gate failure:
    rather than through a conflict, and it has the same one remedy: run the
    generator the brief names for that path. If the generator exits non-zero, that
    is the finding to fix — never a reason to write the file by hand.
-2. Establish a full green run of the repository's check suite
-   (`{{ inputs.sandbox_check_suite }}`) on the integrated tree and fix what the
-   integration broke.
-   If a commit's pre-commit hook already passed the full suite on its exact committed tree, do NOT start it yourself.
-   Count that hook run as the integrated tree's run; otherwise, run the suite yourself ONCE per tree, under the once-per-tree rule below.
+2. Fix what the integration broke, and let the commit hook grade the integrated
+   tree, under the rule "A fix turn grades each tree once, through its commit
+   hook" below.
+   Reproduce a gate target the brief names by running the failing tests that
+   target's own output names, not by running the full check suite.
    A gate target the brief names
-   failed on the REFRESHED tree, so a green suite on the pre-refresh tree is not
+   failed on the REFRESHED tree, so a green result on the pre-refresh tree is not
    evidence.
 3. Leave the branch at the integrated, green head. The graph re-enters
    janitor, then `publish_draft`, then `proof_capture`, so publication is
@@ -240,56 +240,59 @@ that the commit-hook section below tells you to leave for `fix_commit_settle`.
    never an edit under an existing Green); commit trailer
    `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`; never
    create or switch branches, never touch `.beads/` or `core.bare`.
-3. Establish a full green run of the repository's check suite
-   (`{{ inputs.sandbox_check_suite }}`) on the tree you leave.
-   If a commit's pre-commit hook already passed the full suite on its exact committed tree, do NOT start it yourself.
-   Count that hook run as this turn's run; otherwise, run the suite yourself ONCE per tree, under the once-per-tree rule below,
-   fixing any failure before running it on the resulting new tree.
-4. Re-run the failed reproduction and report the before/after result,
+3. Leave the tree graded by its commit hook, under the rule "A fix turn grades each tree once, through its commit hook" below.
+   Commit the fix through the commit hook, fix any failure the hook names, and
+   commit again; do not start a run of the full check suite yourself.
+4. Re-run the failed reproduction, through the failing tests its output names,
+   and report the before/after result,
    naming the source stage and assertion alongside the diagnosis and fix.
    Suite success alone is not evidence that the semantic finding is fixed.
    The graph still re-earns janitor, capture, review and independent replay;
    do not claim their downstream approval on their behalf.
 
-## The check suite runs ONCE per tree — a commit hook's green run counts
+## A fix turn grades each tree once, through its commit hook
 
-This repository's pre-commit hook runs the whole declared check suite, so a
-commit the hook admitted has ALREADY run that suite in full on the exact tree
-it committed. That hook run IS this turn's run of the suite for that tree.
-Do NOT launch a second run of the suite on a tree a hook already passed it on
-in this turn.
+This repository's pre-commit hook grades what it commits: it runs the
+affected-tests gate's scoped tests and their coverage, or the whole declared
+check suite (`{{ inputs.sandbox_check_suite }}`) when that gate cannot scope the
+change. That hook run IS this turn's grading of the tree it committed.
+This turn directs no run of the full check suite beyond what its commit hook runs.
 
-Two full runs of a long suite inside one turn exhaust this node's time limit by
-construction, and the limit kills the SECOND one — after the fix is committed,
-leaving the turn nothing to show for work it had already finished. Measured
-2026-10-18 on run 01M56YAEWMS8: the pre-commit hook ran the aggregate green in
-1364 seconds, the turn then launched a second aggregate on the identical tree,
-and the 3600-second ceiling killed it.
+This relaxes NOTHING. The `janitor` visit the graph re-enters after a successful
+turn runs the whole suite as a hard gate on the tree you leave, so a full run
+inside this turn only pays for that verdict twice. Measured 2026-11-07 on run
+01M6V7SGBQXFK2V8JHDMTKK0Z2: the janitor had just failed the tree on three named
+tests, the turn started full suite runs on that unchanged tree, read two tool
+calls that had returned without an exit status as passing verdicts, ran three
+full suites at once, and spent its whole 3600-second limit polling them without
+a repair. The three tests failed in 16 seconds when run by name.
 
-This relaxes NOTHING. The suite must still have passed IN FULL on the tree you
-leave the branch at, and the `janitor` visit the graph re-enters after a
-successful turn runs the whole suite again as a hard gate. What changes is only
-that you do not pay for the same tree twice.
-
-So before you end the turn, ask which tree your last full passing run covered:
-
-- A commit whose pre-commit hook ran the FULL suite to a passing result on the
-  exact tree it committed: that tree is COVERED. Leave the branch at that
-  commit and end the turn without running the suite again.
-- The tree CHANGED after that run — a later commit, an amend, or any edit still
-  sitting in the working tree: the suite is OWED on the new tree. Run it in
-  full before the turn ends.
-- No commit in this turn ran the full suite: the suite is OWED. A Red commit
-  takes the hook's fast path, which runs only part of the suite, and a hook run
-  that covered only part of it counts for nothing here. Run it in full before
-  the turn ends.
-- You cannot tell which of these holds: run it in full. This rule removes a
-  duplicate run, never the obligation.
+- Do NOT start a full run of the check suite while `HEAD` and the working tree
+  are unchanged from the tree the preceding `janitor` visit failed on. That
+  visit already ran the suite on this exact tree, and its verdict stands.
+- When you enter from a red janitor, reproduce a failed target by running the
+  failing tests that target's own output names, in one invocation naming them,
+  never by re-running the aggregate target that contains them. If the preamble's
+  tail does not name those tests, open the full janitor response it references
+  and read them there before running anything.
+- A command whose tool call returned WITHOUT an exit status is STILL RUNNING
+  and has produced NO verdict. It is not a pass, not a failure, and not
+  evidence that a failure is "not reproducible". Wait for its own exit, or read
+  its recorded output, before you draw any conclusion from it.
+- Do NOT start a full run of the check suite while another full run you started is still live.
+  Two or three concurrent suites each run at a fraction of the speed, and a
+  second one cannot overtake the first. Check for a live run before you start
+  anything long, and never kill one the commit hook started.
+- A tree that CHANGED after your last passing commit-hook run, or whose only
+  commit took the hook's Red fast path, which grades only part of the suite, is
+  not yet graded: commit that tree through the commit hook to a passing result before the turn ends.
+  A change is a later commit, an amend, or any edit still sitting in the
+  working tree. Do not run the full check suite beyond what that hook runs.
 
 The same rule governs the refresh-repair steps above, on the tree the repair
-produced: a commit whose hook ran the full suite green on the INTEGRATED tree
-is that tree's run, and no second run of the suite on that integrated tree is
-owed in the same turn.
+produced: a commit whose hook passed on the INTEGRATED tree grades that tree,
+and no run of the full check suite on that integrated tree is directed in the
+same turn.
 
 ## Default-branch attribution is evidence, never a guess
 
