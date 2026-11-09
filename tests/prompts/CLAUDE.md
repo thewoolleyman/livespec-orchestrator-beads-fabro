@@ -162,29 +162,26 @@ instead.
   fault. The mechanism that reads the field is
   `tests/integration/test_implement_completion_field_scenario204.py`.
 
-- `test_fix_check_suite_once_per_tree_scenario199.py` — bd-ib-k6dwyv, and the
-  registry binding for `SPECIFICATION/scenarios.md` Scenario 199: the fix-stage
-  prompt counts a commit whose repository pre-commit hook ran the FULL check
-  suite green on the exact committed tree as that turn's run of the suite, and
-  directs no second run on that same tree — while a changed tree and a partial
-  hook run, such as a Red commit on the hook's fast path, both still owe a full
-  run before the turn ends, and the refresh-repair steps are governed
-  identically on the tree the repair produced. A prompt test because the
-  obligation is discharged by the agent out of this prose and is rendered by no
-  Python caller: nothing host-side can observe whether a turn chose to run the
-  suite twice, and the engine reports the resulting timeout as an ordinary node
-  failure. The bound node id is the DIRECTIVE-SITE enumeration, not a case
-  reading the new section: the defect was never a missing paragraph — each site
-  that directs a run said to re-run it until green with no exemption, so a rule
-  stated in a section the directive never references leaves the directive
-  saying the thing that cost run 01M56YAEWMS8 its turn. That case collects
-  every list item carrying the check-suite workflow input and requires the rule
-  AT each of them, so a third directive added later without it fails; its count
-  control asserts the enumeration reached both known sites, because a splitter
-  that matched nothing would otherwise report clean. Items are split at the
-  list MARKER rather than at blank lines, since the refresh-repair steps are
-  adjacent lines and a blank-line split would let a qualifier on step 1 satisfy
-  an assertion about step 2.
+- `test_fix_check_suite_once_per_tree_scenario199.py` — bd-ib-z5yzyq, and the
+  registry binding for `SPECIFICATION/scenarios.md` Scenario 199 ("A fix turn
+  grades each tree once, through its commit hook"): the fix-stage prompt makes
+  the commit hook the turn's only grading of a tree and directs no run of the
+  full check suite beyond it. Its section states five things as sentences that
+  must be PRESENT: no full suite while `HEAD` and the working tree are unchanged
+  from the tree the janitor failed on; a failed target is reproduced through the
+  failing tests its own output names, never through the aggregate containing
+  them; a tool call that returned without an exit status is still running and has
+  produced no verdict; no full suite while another one the turn started is live;
+  and a tree changed after the last passing hook run, or whose only commit took
+  the hook's Red fast path, is committed through the hook to a passing result.
+  The measured run was 01M6V7SGBQXFK2V8JHDMTKK0Z2 (three concurrent full suites
+  on an unchanged tree, the turn cut at 3600 seconds). One structural absence is
+  asserted, that no LIST ITEM names the check-suite workflow input, and its
+  control is the count of items pointing at the rule, so a splitter that matched
+  nothing fails. Items are split at the list MARKER rather than at blank lines,
+  since the refresh-repair steps are adjacent lines. Its dispatched counterpart,
+  on the prompt after payload materialization, is
+  `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_payload_fix_prompt.py`.
 
 - `test_commit_hook_outlasts_a_tool_call.py` — bd-ib-aaxsta: the implement and
   fix prompts carry ONE wording of the four commit-hook directions — how long
