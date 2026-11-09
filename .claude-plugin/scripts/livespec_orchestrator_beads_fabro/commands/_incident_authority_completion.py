@@ -53,6 +53,7 @@ __all__: list[str] = [
     "observe_marker_paths",
     "observe_master_run",
     "observe_repayment_merge",
+    "pr_head_marker_paths",
 ]
 
 COMPLETION_OUTSTANDING = "incident-completion-outstanding"
@@ -61,6 +62,7 @@ REPAYMENT_PR_UNOBSERVABLE = "incident-completion-repayment-pr-unobservable"
 _LISTS = ("repaid_debt", "undisposed_failures", "validated_paths")
 ATTESTATION_FIELDS: tuple[str, ...] = tuple(sorted(("manual_outcome", *_LISTS)))
 _PR_FIELDS = "number,state"
+_PR_HEAD_FIELD = "headRefOid"
 _RUN_FIELDS = "headSha,status,conclusion"
 _COMPLETED = "completed"
 _MERGED = "MERGED"
@@ -177,6 +179,32 @@ def observe_marker_paths(
         return None
     prefix = f"{head}:"
     return tuple(line.removeprefix(prefix) for line in result.stdout.splitlines() if line)
+
+
+def pr_head_marker_paths(
+    *, runner: CommandRunner, repo: Path, repository: str, pr_number: int, item_id: str
+) -> tuple[str, ...] | None:
+    """The paths of PR `pr_number`'s head tree carrying the incident marker; None if unreadable."""
+    result = runner.run(
+        argv=[
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--repo",
+            repository,
+            "--json",
+            _PR_HEAD_FIELD,
+        ],
+        cwd=repo,
+        timeout_seconds=_TIMEOUT_SECONDS,
+    )
+    raw = parse_json(text=result.stdout) if result.exit_code == 0 else None
+    value = cast("dict[str, object]", raw) if isinstance(raw, dict) else {}
+    head = value.get(_PR_HEAD_FIELD)
+    if not (isinstance(head, str) and head):
+        return None
+    return observe_marker_paths(runner=runner, repo=repo, head=head, item_id=item_id)
 
 
 def completion_reply(
