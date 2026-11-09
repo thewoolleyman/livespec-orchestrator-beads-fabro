@@ -432,3 +432,47 @@ def test_a_passing_commit_after_a_passing_hook_carries_no_git_refusal_line(
         )
     )
     assert "git_refusal_line" not in record
+
+
+_RUFF_FINDING = "pretooluse_background_guard.py:283:89: E501 Line too long (95 > 88)"
+_RUFF_OUTPUT = "\n".join(
+    [
+        _RUFF_FINDING,
+        "    |",
+        "282 |         log.error(",
+        '283 |             "a message that runs past the configured line length limit ...",',
+        "    |                                                                        ^^^ E501",
+        "    |",
+        "Found 1 error.",
+    ]
+)
+
+
+def test_a_ruff_finding_line_is_the_first_error_line_over_a_context_line_quoting_error(
+    tmp_path: Path,
+) -> None:
+    cause, stderr = _exhausted(tmp_path=tmp_path, body=_RUFF_OUTPUT)
+
+    for text in (cause, stderr):
+        assert (
+            "failed targets: unknown, because the hook's recorded output names no failed target"
+            in text
+        )
+    assert f"first error line: {_RUFF_FINDING}" in cause
+    assert "282 |" not in cause
+
+
+def test_a_ruff_finding_line_without_the_word_error_is_an_error_line(tmp_path: Path) -> None:
+    body = "\n".join(["lefthook hook: pre-commit", _RUFF_FINDING, "    |"])
+
+    cause, _ = _exhausted(tmp_path=tmp_path, body=body)
+
+    assert f"first error line: {_RUFF_FINDING}" in cause
+
+
+def test_a_numbered_source_context_line_is_never_an_error_line(tmp_path: Path) -> None:
+    body = "\n".join(["    |", "282 |         log.error(", "283 |     value = 1"])
+
+    cause, _ = _exhausted(tmp_path=tmp_path, body=body)
+
+    assert "no failing test id or error line was found in the hook output" in cause

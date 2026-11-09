@@ -42,6 +42,7 @@ __all__: list[str] = [
     "REASON_STUB_CARVEOUT",
     "REASON_STUB_WITHOUT_PENDING_TEST",
     "REASON_TRAILER_FREE_HEAD",
+    "REASON_UNMERGED_PATH",
     "RED_TRAILER_KEY",
     "REFUSE",
     "Decision",
@@ -64,6 +65,7 @@ REASON_STUB_CARVEOUT = "new-module-stub-carveout"
 REASON_CLOSED_HEAD = "closed-head"
 REASON_TRAILER_FREE_HEAD = "trailer-free-head"
 REASON_STUB_WITHOUT_PENDING_TEST = "stub-without-pending-test"
+REASON_UNMERGED_PATH = "unmerged-path"
 
 RED_TRAILER_KEY = "TDD-Red-Test-File-Checksum:"
 GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"
@@ -137,6 +139,7 @@ def decide(
     head_state: str,
     exists_at_head: bool,
     test_change_pending: bool,
+    unmerged_in_progress: bool = False,
 ) -> Decision:
     """Return the allow-or-refuse verdict for one product-path write.
 
@@ -145,11 +148,17 @@ def decide(
     `MultiEdit` and a parsed shell write target all reach the same answer,
     which is what makes the Bash leg a parity surface rather than a second
     policy.
+
+    `unmerged_in_progress` is True only when a merge, rebase or cherry-pick is
+    in progress AND the index lists `path` as unmerged; resolving that conflict
+    is the one write the operation itself demands, so it is admitted whatever
+    HEAD's trailers say.
     """
     verdict, reason = _verdict(
         head_state=head_state,
         exists_at_head=exists_at_head,
         test_change_pending=test_change_pending,
+        unmerged_in_progress=unmerged_in_progress,
     )
     return Decision(
         decision=verdict,
@@ -161,10 +170,16 @@ def decide(
 
 
 def _verdict(
-    *, head_state: str, exists_at_head: bool, test_change_pending: bool
+    *,
+    head_state: str,
+    exists_at_head: bool,
+    test_change_pending: bool,
+    unmerged_in_progress: bool,
 ) -> tuple[str, str]:
     if head_state == HEAD_OPEN_RED:
         return ALLOW, REASON_OPEN_RED
+    if unmerged_in_progress:
+        return ALLOW, REASON_UNMERGED_PATH
     if not exists_at_head:
         # The ONE carveout: a module absent from HEAD may be created as a
         # failing stub while its test is being written. It is gated on that

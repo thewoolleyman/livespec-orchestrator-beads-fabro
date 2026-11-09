@@ -58,6 +58,13 @@ _TESTS_TREE = "tests"
 _PYTHON_SUFFIX = ".py"
 _GIT_TIMEOUT_SECONDS = 15.0
 _PORCELAIN_STATUS_WIDTH = 3
+_OPERATION_MARKERS = (
+    "MERGE_HEAD",
+    "REBASE_HEAD",
+    "rebase-merge",
+    "rebase-apply",
+    "CHERRY_PICK_HEAD",
+)
 
 
 def main() -> int:
@@ -95,6 +102,7 @@ def _run(*, raw: str, environ: dict[str, str]) -> int:
         return 0
     head_state = policy.head_state(message=_head_message(repo_root=repo_root))
     test_change_pending = _test_change_pending(repo_root=repo_root)
+    unmerged = _unmerged_paths(repo_root=repo_root)
     for path in product_paths:
         decision = policy.decide(
             tool=tool_name,
@@ -102,6 +110,7 @@ def _run(*, raw: str, environ: dict[str, str]) -> int:
             head_state=head_state,
             exists_at_head=_exists_at_head(repo_root=repo_root, path=path),
             test_change_pending=test_change_pending,
+            unmerged_in_progress=path in unmerged,
         )
         _ = span.emit_for_decision(decision=decision, environ=environ)
         if decision.decision == policy.REFUSE:
@@ -188,6 +197,27 @@ def _test_change_pending(*, repo_root: Path) -> bool:
         for line in stdout.splitlines()
         if line.strip()
     )
+
+
+def _unmerged_paths(*, repo_root: Path) -> frozenset[str]:
+    """Return the index's unmerged paths while an operation is in progress.
+
+    Resolving a conflict is the write a merge, rebase or cherry-pick demands,
+    and HEAD is then an engine checkpoint that carries no Red trailer. Empty
+    is the FAIL-CLOSED value: no operation in progress, or a git directory or
+    index that cannot be read, leaves every path on the ordinary verdict.
+    """
+    returncode, git_dir = _git(repo_root=repo_root, arguments=["rev-parse", "--absolute-git-dir"])
+    if returncode != 0 or not any(
+        (Path(git_dir.strip()) / marker).exists() for marker in _OPERATION_MARKERS
+    ):
+        return frozenset()
+    returncode, stdout = _git(
+        repo_root=repo_root, arguments=["ls-files", "--unmerged", "--full-name", "-z"]
+    )
+    if returncode != 0:
+        return frozenset()
+    return frozenset(entry.partition("\t")[2] for entry in stdout.split("\0") if "\t" in entry)
 
 
 def _git(*, repo_root: Path, arguments: list[str]) -> tuple[int, str]:

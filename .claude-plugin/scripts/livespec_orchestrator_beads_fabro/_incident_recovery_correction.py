@@ -34,6 +34,8 @@ from livespec_orchestrator_beads_fabro._incident_recovery_plan import (
 __all__: list[str] = [
     "Correction",
     "RevertReceipt",
+    "corrected_successor",
+    "correction_refusal",
     "plan_corrected_attempt",
     "plan_revert_receipt",
 ]
@@ -86,7 +88,7 @@ def plan_revert_receipt(
     )
 
 
-def _correction_refusal(
+def correction_refusal(
     *, correction: Correction, retained: tuple[Finding, ...], current: IncidentAttempt
 ) -> AuthorityRefusal | None:
     """Why the correction is not fresh: no evidence kind, or an unchanged reland."""
@@ -103,32 +105,11 @@ def _correction_refusal(
     return None
 
 
-def plan_corrected_attempt(
-    *,
-    reading: IncidentReading,
-    retained: tuple[Finding, ...],
-    correction: Correction,
-    target_ref: str,
-) -> RecoveryPlan | AuthorityRefusal:
-    """A corrected `repair` attempt that keeps the original failures and owes repayment."""
-    current = reading.attempt
-    if not reading.is_current or current.phase != CORRECTED_FROM:
-        return _refuse(code="incident-correction-not-eligible", detail=current.phase)
-    if not retained:
-        return _refuse(code="incident-correction-failures-missing", detail=current.item_id)
-    refusal = _correction_refusal(correction=correction, retained=retained, current=current)
-    if refusal is not None:
-        return refusal
-    operation_id = operation_digest(
-        prefix="correction",
-        value={
-            "item_id": current.item_id,
-            "operation_id": current.operation_id,
-            "generation": current.generation,
-            "correction": asdict(correction),
-        },
-    )
-    successor = replace(
+def corrected_successor(
+    *, current: IncidentAttempt, operation_id: str, correction: Correction, target_ref: str
+) -> IncidentAttempt:
+    """The next-generation `repair` attempt on its own fresh reserved branch, owing repayment."""
+    return replace(
         current,
         attempt_id=operation_id,
         phase="repair",
@@ -145,6 +126,36 @@ def plan_corrected_attempt(
             input_parent=correction.base,
             staged_tree=correction.staged_tree,
         ),
+    )
+
+
+def plan_corrected_attempt(
+    *,
+    reading: IncidentReading,
+    retained: tuple[Finding, ...],
+    correction: Correction,
+    target_ref: str,
+) -> RecoveryPlan | AuthorityRefusal:
+    """A corrected `repair` attempt that keeps the original failures and owes repayment."""
+    current = reading.attempt
+    if not reading.is_current or current.phase != CORRECTED_FROM:
+        return _refuse(code="incident-correction-not-eligible", detail=current.phase)
+    if not retained:
+        return _refuse(code="incident-correction-failures-missing", detail=current.item_id)
+    refusal = correction_refusal(correction=correction, retained=retained, current=current)
+    if refusal is not None:
+        return refusal
+    operation_id = operation_digest(
+        prefix="correction",
+        value={
+            "item_id": current.item_id,
+            "operation_id": current.operation_id,
+            "generation": current.generation,
+            "correction": asdict(correction),
+        },
+    )
+    successor = corrected_successor(
+        current=current, operation_id=operation_id, correction=correction, target_ref=target_ref
     )
     record = recovery_record(
         kind="corrected-attempt",

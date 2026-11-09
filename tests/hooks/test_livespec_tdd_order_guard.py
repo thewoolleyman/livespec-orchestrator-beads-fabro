@@ -671,3 +671,155 @@ def test_the_guard_is_registered_as_a_pretooluse_hook_on_every_write_surface() -
     assert len(matchers) == 1
     for tool in ("Write", "Edit", "MultiEdit", "Bash"):
         assert tool in matchers[0]
+
+
+# --- a write to a path an in-progress operation left unmerged -------------
+
+_TRAILER_FREE_MESSAGE = "chore: engine checkpoint"
+_CLOSED_MESSAGE = f"feat: thing\n\n{_RED_TRAILER}\n{_GREEN_TRAILER}\n"
+
+
+def _conflict_in_progress(*, repo: Path, head_message: str) -> None:
+    """Leave `repo` mid-merge with `_PRODUCT_PATH` unmerged and HEAD on `head_message`."""
+    _commit_product(repo=repo, message=head_message)
+    _git(repo=repo, arguments=["switch", "--quiet", "-c", "side"])
+    _write(repo=repo, relative=_PRODUCT_PATH, body="VALUE = 2\n")
+    _git(repo=repo, arguments=["commit", "--quiet", "-am", "side change"])
+    _git(repo=repo, arguments=["switch", "--quiet", "-"])
+    _write(repo=repo, relative=_PRODUCT_PATH, body="VALUE = 3\n")
+    _git(repo=repo, arguments=["commit", "--quiet", "-am", head_message])
+    merged = subprocess.run(
+        ["git", "-C", str(repo), "merge", "--quiet", "side"], check=False, capture_output=True
+    )
+    assert merged.returncode != 0
+    assert (repo / ".git" / "MERGE_HEAD").is_file()
+
+
+def _swap_merge_marker(*, repo: Path, marker: str) -> None:
+    """Keep the unmerged index but present a different operation in progress."""
+    (repo / ".git" / "MERGE_HEAD").unlink()
+    path = repo / ".git" / marker
+    if marker.endswith("HEAD"):
+        _ = path.write_text("0" * 40 + "\n", encoding="utf-8")
+    else:
+        path.mkdir()
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit"])
+@pytest.mark.parametrize("head_message", [_TRAILER_FREE_MESSAGE, _CLOSED_MESSAGE])
+def test_a_structured_write_to_a_path_left_unmerged_mid_merge_is_allowed(
+    repo: Path,
+    tool: str,
+    head_message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    guard = _load_guard()
+    _conflict_in_progress(repo=repo, head_message=head_message)
+    denial = _drive(
+        guard=guard,
+        payload=_structured(tool=tool, path=_PRODUCT_PATH),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is None
+
+
+def test_a_shell_write_to_a_path_left_unmerged_mid_merge_is_allowed(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    guard = _load_guard()
+    _conflict_in_progress(repo=repo, head_message=_TRAILER_FREE_MESSAGE)
+    denial = _drive(
+        guard=guard,
+        payload=_bash(command=f"printf 'VALUE = 4\\n' > {_PRODUCT_PATH}"),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is None
+
+
+@pytest.mark.parametrize(
+    "marker", ["REBASE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD"]
+)
+def test_every_operation_in_progress_admits_a_write_to_an_unmerged_path(
+    repo: Path, marker: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    guard = _load_guard()
+    _conflict_in_progress(repo=repo, head_message=_TRAILER_FREE_MESSAGE)
+    _swap_merge_marker(repo=repo, marker=marker)
+    denial = _drive(
+        guard=guard,
+        payload=_structured(tool="Edit", path=_PRODUCT_PATH),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is None
+
+
+@pytest.mark.parametrize(
+    ("head_message", "reason"),
+    [(_TRAILER_FREE_MESSAGE, "trailer-free-head"), (_CLOSED_MESSAGE, "closed-head")],
+)
+def test_a_product_write_to_a_path_not_left_unmerged_mid_merge_is_still_refused(
+    repo: Path,
+    head_message: str,
+    reason: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    guard = _load_guard()
+    _conflict_in_progress(repo=repo, head_message=head_message)
+    denial = _drive(
+        guard=guard,
+        payload=_structured(tool="Edit", path=_OTHER_PRODUCT_PATH),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is not None
+    assert reason in str(denial["reason"])
+
+
+def test_an_unmerged_index_entry_with_no_operation_in_progress_does_not_admit_a_write(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    guard = _load_guard()
+    _conflict_in_progress(repo=repo, head_message=_TRAILER_FREE_MESSAGE)
+    (repo / ".git" / "MERGE_HEAD").unlink()
+    denial = _drive(
+        guard=guard,
+        payload=_structured(tool="Edit", path=_PRODUCT_PATH),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is not None
+    assert "trailer-free-head" in str(denial["reason"])
+
+
+def test_an_unreadable_index_mid_merge_keeps_the_ordinary_verdict(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    guard = _load_guard()
+    _conflict_in_progress(repo=repo, head_message=_TRAILER_FREE_MESSAGE)
+    real_git = guard._git  # noqa: SLF001
+
+    def _index_unreadable(*, repo_root: Path, arguments: list[str]) -> tuple[int, str]:
+        if "ls-files" in arguments:
+            return 128, ""
+        return real_git(repo_root=repo_root, arguments=arguments)
+
+    monkeypatch.setattr(guard, "_git", _index_unreadable)
+    denial = _drive(
+        guard=guard,
+        payload=_structured(tool="Edit", path=_PRODUCT_PATH),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is not None
+    assert "trailer-free-head" in str(denial["reason"])

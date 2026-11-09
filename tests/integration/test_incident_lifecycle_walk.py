@@ -4,8 +4,9 @@ The plan's acceptance for arming. One canonical item walks attempt 1 from genesi
 through its merge, its first required-leaf failure, the revert and the collected
 evidence; attempt 2 from a staged-tree correction through a green merge and
 repayment entry; a regression reopen that supersedes that repayment; attempt 3
-from `correct-attempt`; and the one repayment that survives, through its merge
-and closure.
+from `correct-attempt`, whose expedited PR fails a retained fast check and is
+closed unmerged; attempt 4 from `correct-unmerged-attempt`; and the one
+repayment that survives, through its merge and closure.
 
 Real, end to end: the orchestrator's `incident_authority.py` process boundary,
 its reader, writers and transition validator; livespec-dev-tooling's observer
@@ -855,7 +856,11 @@ def _attempt_two(
 def _attempt_three(
     walk: _Walk, *, collecting: IncidentAttempt, arm_id: str, revert: str
 ) -> IncidentAttempt:
-    """`correct-attempt` directly: no failed master run, so nothing to collect."""
+    """`correct-attempt` directly: no failed master run, so nothing to collect.
+
+    Its first PR fails a retained fast check and is closed unmerged, so the
+    corrected attempt that merges comes from `correct-unmerged-attempt`.
+    """
     _ = walk.git("checkout", "-q", "-b", "incident/test-incident-attempt-3", revert)
     tree = walk.write_marked("attempt 3")
     corrected = walk.act(
@@ -873,7 +878,9 @@ def _attempt_three(
         ),
         *("--target-ref", "refs/heads/incident/test-incident-attempt-3"),
     )
-    bound = walk.publish(corrected, number=103)
+    failed = walk.publish(corrected, number=106)
+    failed_arm = walk.arm(failed, expected=arm_id)
+    bound, arm_id = _unmerged_correction(walk, failed=failed, arm_id=failed_arm, revert=revert)
     _ = walk.arm(bound, expected=arm_id)
     merged, run_id = walk.merge(bound)
     recorded = walk.act("record-merge", bound)
@@ -884,11 +891,57 @@ def _attempt_three(
     }
     master = ("--master-run", str(run_id))
     # The repayment carrier needs its own ref: the expedited branch cannot be reserved again.
-    expedited = ("--target-ref", "refs/heads/incident/test-incident-attempt-3")
+    expedited = ("--target-ref", "refs/heads/incident/test-incident-attempt-4")
     assert walk.refused("enter-repayment", recorded, *master, *expedited) == (
         "incident-transition-invalid-successor"
     )
     return walk.act("enter-repayment", recorded, *master, "--target-ref", f"refs/heads/feat/{ITEM}")
+
+
+def _unmerged_correction(
+    walk: _Walk, *, failed: IncidentAttempt, arm_id: str, revert: str
+) -> tuple[IncidentAttempt, str]:
+    """PR 106 fails a retained fast check on its head and is closed; attempt 4 corrects it."""
+    carrier = failed.carrier
+    assert carrier is not None
+    branch = carrier.target_ref.removeprefix("refs/heads/")
+    walk.forge.runs["8801"] = {
+        "headSha": failed.head,
+        "status": "completed",
+        "conclusion": "failure",
+    }
+    walk.forge.prs["106"] = {
+        "number": 106,
+        "state": "OPEN",
+        "headRefName": branch,
+        "headRefOid": failed.head,
+    }
+    _ = walk.git("checkout", "-q", "-b", "incident/test-incident-attempt-4", revert)
+    tree = walk.write_marked("attempt 4")
+    correction = (
+        "--correction-json",
+        _canonical(
+            {
+                "base": revert,
+                "evidence_id": "split-the-lloc-overflow",
+                "head": revert,
+                "kind": "repair",
+                "staged_tree": tree,
+            }
+        ),
+        *("--target-ref", "refs/heads/incident/test-incident-attempt-4"),
+    )
+    # An open PR is no unmerged failure: nothing is recorded until the forge says closed.
+    assert walk.refused(
+        "correct-unmerged-attempt", failed, "--failed-run", "8801", *correction
+    ) == ("incident-correction-pr-not-closed-unmerged")
+    walk.forge.prs["106"]["state"] = "CLOSED"
+    corrected = walk.act("correct-unmerged-attempt", failed, "--failed-run", "8801", *correction)
+    assert (corrected.phase, corrected.pr_number, corrected.base) == ("repair", 0, revert)
+    assert corrected.attempt_id != failed.attempt_id
+    history = read_incident_standing(client=walk.client, item_id=ITEM).history
+    assert history[-2] == failed, "the failed bound carrier stays in the history as recorded"
+    return walk.publish(corrected, number=103), arm_id
 
 
 def _repayment(walk: _Walk, admission: IncidentAttempt) -> IncidentAttempt:
@@ -1058,7 +1111,8 @@ def test_one_incident_walks_every_attempt_and_its_repayment_on_the_real_chain(
     assert phases == [
         *("repair", "repair", "repair", "master-observation", "reverting", "collecting-failures"),
         *("repair", "repair", "repair", "master-observation", "repayment-admission", "reverting"),
-        *("collecting-failures", "repair", "repair", "repair", "master-observation"),
+        *("collecting-failures", "repair", "repair", "repair"),
+        *("repair", "repair", "repair", "master-observation"),
         *("repayment-admission", "repayment-ready", "repayment-active", "repayment-acceptance"),
         "closed",
     ]

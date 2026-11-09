@@ -68,6 +68,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_recla
     surviving_publish_branch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_wip import (
+    WipRefUnobservable,
+    verified_latest_wip_seed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_id_for
 
 __all__: list[str] = [
     "NEEDS_HUMAN_REF_PREFIX",
@@ -166,6 +171,7 @@ def verified_preserved_seed(
     work_item_id: str,
     earlier_run_ids: tuple[str, ...],
     journal_records: tuple[dict[str, object], ...],
+    latest_run_id: str | None = None,
 ) -> RecoverySeed | PreservedWorkUnobservable | PreservedWorkAbsent:
     """The seed the failed run's preserved work supports: one, unaskable, or absent.
 
@@ -183,6 +189,7 @@ def verified_preserved_seed(
     journal silently reports the answer of one that did not — here, "this item
     has no preserved tree" for an item whose tree was published minutes ago.
     """
+    latest = latest_run_id or _leading(identifiers=earlier_run_ids)
     if not earlier_run_ids:
         return PreservedWorkUnobservable(
             detail=(
@@ -193,18 +200,33 @@ def verified_preserved_seed(
             )
         )
     asked: list[str] = [PRESERVED_SOURCE_TERMINAL_TREE]
-    terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=earlier_run_ids)
+    run_ids = (latest, dispatch_id_for(records=journal_records, work_item_id=work_item_id))
+    terminal = _needs_human_seed(
+        runner=runner, repo=repo, earlier_run_ids=tuple(dict.fromkeys(filter(None, run_ids)))
+    )
     if terminal is not None:
         return terminal
     # The published tree is named by this item's OWN journal, so with no row
     # naming one there is no ref that source could stand at and the round trip
     # would ask origin about nothing.
-    published_tree = _newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
+    published_tree = _newest_preserved_tree_row(
+        records=journal_records, work_item_id=work_item_id, latest_run_id=latest or None
+    )
+    captured: RecoverySeed | PreservedWorkUnobservable | None = None
     if published_tree is not None:
         asked.append(PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE)
-        tree = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
-        if tree is not None:
-            return tree
+        captured = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
+    if captured is None:
+        wip = verified_latest_wip_seed(
+            runner=runner, repo=repo, work_item_id=work_item_id, run_id=latest or None
+        )
+        captured = (
+            PreservedWorkUnobservable(detail=wip.detail)
+            if isinstance(wip, WipRefUnobservable)
+            else wip
+        )
+    if captured is not None:
+        return captured
     asked.append(PRESERVED_SOURCE_PUBLISHED_HEAD)
     published = _published_head_seed(
         runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
@@ -334,7 +356,7 @@ def _preserved_tree_seed(
 
 
 def _newest_preserved_tree_row(
-    *, records: tuple[dict[str, object], ...], work_item_id: str
+    *, records: tuple[dict[str, object], ...], work_item_id: str, latest_run_id: str | None
 ) -> tuple[str, str, str] | None:
     """This item's newest published-tree row, as (ref, base commit, run id).
 
@@ -358,6 +380,8 @@ def _newest_preserved_tree_row(
         base = record.get(_BASE_COMMIT_KEY)
         run_id = record.get(_RUN_ID_KEY)
         if not (isinstance(ref, str) and isinstance(base, str) and isinstance(run_id, str)):
+            continue
+        if latest_run_id is not None and run_id != latest_run_id:
             continue
         if ref.strip() and base.strip() and run_id.strip():
             return ref.strip(), base.strip(), run_id.strip()
